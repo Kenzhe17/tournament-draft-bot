@@ -1,10 +1,7 @@
-[build]
-builder = "NIXPACKS"
-
-[deploy]
-startCommand = "python bot.py"
-restartPolicyType = "ALWAYS"
-numReplicas = 1
-
-[env]
-DATA_DIR = "/app/data"
+[build]
+builder = "docker"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = ""
+restartPolicyType = "ON_FAILURE"
