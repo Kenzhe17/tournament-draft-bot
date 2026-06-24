@@ -129,7 +129,7 @@ async def build_teams_embed(
             team.get("circle4", ""),
         ]
         embed.add_field(
-            name=f"Team {i + 1}",
+            name=f"П{i + 1}",
             value="\n".join(members),
             inline=True,
         )
@@ -142,15 +142,15 @@ async def build_semifinals_embed(
 ) -> discord.Embed:
     """Embed полуфиналов."""
     embed = discord.Embed(
-        title="🏆 SEMIFINALS",
+        title="🏆 ПОЛУФИНАЛ",
         color=discord.Color.orange(),
     )
 
     for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
-        name_a = f"Team {team_a + 1}"
-        name_b = f"Team {team_b + 1}"
+        name_a = f"П{team_a + 1}"
+        name_b = f"П{team_b + 1}"
         embed.add_field(
-            name=f"Match #{i + 1}",
+            name=f"Игра #{i + 1}",
             value=f"{name_a}\n**VS**\n{name_b}",
             inline=True,
         )
@@ -169,9 +169,9 @@ async def build_final_embed(
         color=discord.Color.red(),
     )
     embed.description = (
-        f"Winner Match #1 — **Team {team_a + 1}**\n"
+        f"Победили — **П{team_a + 1}**\n"
         f"**VS**\n"
-        f"Winner Match #2 — **Team {team_b + 1}**"
+        f"Победили — **П{team_b + 1}**"
     )
     return embed
 
@@ -195,7 +195,7 @@ async def build_winner_embed(
 
     embed = discord.Embed(
         title="🏆 ПОБЕДИТЕЛИ",
-        description=f"🥇 **Team {idx + 1}**",
+        description=f"🥇 **П{idx + 1}**",
         color=discord.Color.gold(),
     )
     embed.add_field(
