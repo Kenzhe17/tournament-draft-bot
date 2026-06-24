@@ -1,7 +1,0 @@
-[build]
-builder = "docker"
-dockerfilePath = "Dockerfile"
-
-[deploy]
-startCommand = ""
-restartPolicyType = "ON_FAILURE"
