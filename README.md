@@ -42,6 +42,20 @@ DISCORD_TOKEN=your_bot_token_here
 3. Включите **Privileged Gateway Intents** → **Server Members Intent**
 4. Пригласите бота на сервер с правами `applications.commands` и `Send Messages`
 
+## Облако 24/7
+
+Бот можно запустить в облаке — ПК не нужен. Подробно: **[DEPLOY.md](DEPLOY.md)**.
+
+Быстрый деплой на Railway:
+
+```powershell
+.\scripts\deploy-railway.ps1
+```
+
+Проект уже создан: [railway.app — tournament-draft-bot](https://railway.com/project/11e62fb3-cde5-40c2-9f24-a77e19216281)
+
+После деплоя добавьте **Volume** с mount path `/app/data`.
+
 ## Запуск
 
 ```bash
