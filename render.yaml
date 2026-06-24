@@ -1,0 +1,18 @@
+# Render — Background Worker (не засыпает, в отличие от free web)
+# https://dashboard.render.com → New → Blueprint
+
+services:
+  - type: worker
+    name: tournament-draft-bot
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DATA_DIR
+        value: /app/data
+    disk:
+      name: tournament-data
+      mountPath: /app/data
+      sizeGB: 1

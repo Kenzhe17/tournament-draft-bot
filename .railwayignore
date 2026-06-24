@@ -1,0 +1,13 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.env
+data/
+bot/
+scripts/
+*.md
+docker-compose.yml
+fly.toml
+render.yaml

@@ -1,0 +1,22 @@
+# Fly.io — бот как фоновый процесс 24/7
+# Документация: DEPLOY.md
+
+app = "tournament-draft-bot"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATA_DIR = "/data"
+
+[mounts]
+  source = "tournament_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[processes]
+  bot = "python bot.py"

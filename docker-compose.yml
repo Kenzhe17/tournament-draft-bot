@@ -1,0 +1,11 @@
+# Альтернатива: бот работает 24/7 на сервере/VPS, даже когда ваш ПК выключен.
+# Требуется: Docker Desktop
+
+services:
+  tournament-bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
