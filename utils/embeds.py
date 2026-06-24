@@ -21,6 +21,50 @@ def _circle_line(players: list[str]) -> str:
     return " ".join(players)
 
 
+async def _captain_display_name(guild: discord.Guild, captain_id: int) -> str:
+    """Имя капитана для отображения."""
+    member = guild.get_member(captain_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(captain_id)
+        except discord.HTTPException:
+            return f"Captain#{captain_id}"
+    return member.display_name
+
+
+async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, tournament: Tournament) -> None:
+    """Вспомогательная функция для сквозного отображения команд красивым списком."""
+    if not tournament.teams:
+        return
+
+    team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣"}
+    teams_text = []
+
+    for i, team in enumerate(tournament.teams):
+        cap_id = team["captain_id"]
+        cap_name = await _captain_display_name(guild, cap_id)
+
+        # Собираем игроков из кругов драфта
+        players = []
+        for circle in ("circle2", "circle3", "circle4"):
+            p_name = team.get(circle, "")
+            if p_name:
+                players.append(p_name)
+
+        players_str = ", ".join(players) if players else "*Ожидание игроков...*"
+        emoji = team_emojis.get(i + 1, "🎮")
+
+        teams_text.append(
+            f"{emoji} **Команда П{i + 1}**\n"
+            f"┣ **Капитан:** {cap_name}\n"
+            f"┗ **Состав:** {players_str}\n"
+        )
+
+    # Добавляем блок команд в самый низ текущего Embed
+    embed.add_field(name="\u200b", value="### 👥 Составы Команд", inline=False)
+    embed.add_field(name="\u200b", value="\n".join(teams_text), inline=False)
+
+
 async def build_setup_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
@@ -38,17 +82,6 @@ async def build_setup_embed(
     embed.add_field(name="3.", value=_circle_line(tournament.circle3) or "*", inline=False)
     embed.add_field(name="4.", value=_circle_line(tournament.circle4) or "*", inline=False)
     return embed
-
-
-async def _captain_display_name(guild: discord.Guild, captain_id: int) -> str:
-    """Имя капитана для отображения."""
-    member = guild.get_member(captain_id)
-    if member is None:
-        try:
-            member = await guild.fetch_member(captain_id)
-        except discord.HTTPException:
-            return f"Captain#{captain_id}"
-    return member.display_name
 
 
 async def build_draft_embed(
@@ -115,25 +148,10 @@ async def build_teams_embed(
 ) -> discord.Embed:
     """Embed с итоговыми командами."""
     embed = discord.Embed(
-        title="🏆 Команды",
+        title="🏆 Сформированные Команды",
         color=discord.Color.green(),
     )
-
-    for i, team in enumerate(tournament.teams):
-        cap_id = team["captain_id"]
-        cap_name = await _captain_display_name(guild, cap_id)
-        members = [
-            cap_name,
-            team.get("circle2", ""),
-            team.get("circle3", ""),
-            team.get("circle4", ""),
-        ]
-        embed.add_field(
-            name=f"П{i + 1}",
-            value="\n".join(members),
-            inline=True,
-        )
-
+    await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
 
 
@@ -142,7 +160,7 @@ async def build_semifinals_embed(
 ) -> discord.Embed:
     """Embed полуфиналов."""
     embed = discord.Embed(
-        title="🏆 ПОЛУФИНАЛ",
+        title="🏆 ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
         color=discord.Color.orange(),
     )
 
@@ -150,11 +168,13 @@ async def build_semifinals_embed(
         name_a = f"П{team_a + 1}"
         name_b = f"П{team_b + 1}"
         embed.add_field(
-            name=f"Игра #{i + 1}",
-            value=f"{name_a}\n**VS**\n{name_b}",
-            inline=True,
+            name=f"🔥 Игра #{i + 1}",
+            value=f"**{name_a}** *vs* **{name_b}**",
+            inline=False,
         )
 
+    # Добавляем отображение команд снизу под полуфиналами
+    await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
 
 
@@ -165,14 +185,17 @@ async def build_final_embed(
     team_a = tournament.final_teams[0]
     team_b = tournament.final_teams[1]
     embed = discord.Embed(
-        title="🏆 FINAL",
+        title="🏆 ТУРНИРНАЯ СЕТКА — ГРАНД-ФИНАЛ",
         color=discord.Color.red(),
     )
-    embed.description = (
-        f"Победили — **П{team_a + 1}**\n"
-        f"**VS**\n"
-        f"Победили — **П{team_b + 1}**"
+    embed.add_field(
+        name="⚡ Главная битва турнира",
+        value=f"Победитель матча **П{team_a + 1}** *vs* Победитель матча **П{team_b + 1}**",
+        inline=False
     )
+
+    # Добавляем отображение команд снизу под финалом
+    await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
 
 
@@ -184,25 +207,14 @@ async def build_winner_embed(
     if idx is None:
         return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
 
-    team = tournament.teams[idx]
-    cap_name = await _captain_display_name(guild, team["captain_id"])
-    roster = [
-        cap_name,
-        team.get("circle2", ""),
-        team.get("circle3", ""),
-        team.get("circle4", ""),
-    ]
-
     embed = discord.Embed(
-        title="🏆 ПОБЕДИТЕЛИ",
-        description=f"🥇 **П{idx + 1}**",
+        title="🎉 ТУРНИР ЗАВЕРШЕН 🎉",
+        description=f"🥇 **Абсолютный Чемпион — Команда П{idx + 1}! Поздравляем!**",
         color=discord.Color.gold(),
     )
-    embed.add_field(
-        name="Состав команды",
-        value="\n".join(roster),
-        inline=False,
-    )
+
+    # Добавляем отображение команд на финальном экране
+    await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
 
 

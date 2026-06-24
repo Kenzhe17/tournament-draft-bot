@@ -9,7 +9,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.checks import is_admin
-from bot.embeds import build_setup_embed
+from bot.embeds import build_tournament_embed, build_setup_embed
 from bot.models import Tournament, TournamentPhase
 from bot.storage import storage
 from bot.services.message_manager import update_tournament_message
@@ -37,6 +37,7 @@ class TournamentCog(commands.Cog):
     @tournament_group.command(name="create", description="Создать новый турнир")
     @is_admin()
     async def create(self, interaction: discord.Interaction) -> None:
+        """Создать турнир и отправить главное Embed-сообщение."""
         if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             await interaction.response.send_message(
                 "❌ Команда доступна только в текстовом канале.",
@@ -46,7 +47,16 @@ class TournamentCog(commands.Cog):
 
         guild_id = interaction.guild.id
 
-        # Новый турнир заменяет предыдущий в этом guild
+        # Проверяем, есть ли уже незавершенный турнир
+        existing = storage.get(guild_id)
+        if existing and existing.phase != TournamentPhase.COMPLETE:
+            await interaction.response.send_message(
+                "❌ На сервере уже есть активный турнир. Сначала удалите его с помощью `/tournament delete`.",
+                ephemeral=True
+            )
+            return
+
+        # Создаем чистый турнир
         tournament = Tournament(
             guild_id=guild_id,
             channel_id=interaction.channel.id,
@@ -59,6 +69,31 @@ class TournamentCog(commands.Cog):
 
         tournament.message_id = message.id
         storage.save(tournament)
+        logger.info("Турнир успешно создан на сервере %s", guild_id)
+
+    @tournament_group.command(name="delete", description="Полностью удалить активный турнир")
+    @is_admin()
+    async def tournament_delete(self, interaction: discord.Interaction) -> None:
+        """Удалить текущий турнир из хранилища."""
+        if not interaction.guild_id:
+            return
+
+        existing = storage.get(interaction.guild_id)
+        if not existing:
+            await interaction.response.send_message(
+                "❌ На этом сервере нет активных турниров для удаления.",
+                ephemeral=True,
+            )
+            return
+
+        storage.delete(interaction.guild_id)
+        logger.info("Турнир принудительно удален администратором %s", interaction.user.id)
+
+        await interaction.response.send_message(
+            "🗑️ **Активный турнир был успешно удален.**",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
     @tournament_group.command(name="replace", description="Заменить игрока в активном турнире")
     @app_commands.describe(
@@ -89,26 +124,33 @@ class TournamentCog(commands.Cog):
 
         # 1. Находим и меняем игрока в командах
         replaced_in_team = False
-        for team in tournament.teams:
-            if old_name in team.players:
-                idx = team.players.index(old_name)
-                team.players[idx] = new_name
-                replaced_in_team = True
-                break
+        if tournament.teams:
+            for team in tournament.teams:
+                if hasattr(team, "players") and old_name in team.players:
+                    idx = team.players.index(old_name)
+                    team.players[idx] = new_name
+                    replaced_in_team = True
+                    break
+                # Обработка на случай, если team — это словарь, а не объект класса
+                elif isinstance(team, dict) and old_name in team.get("players", []):
+                    idx = team["players"].index(old_name)
+                    team["players"][idx] = new_name
+                    replaced_in_team = True
+                    break
 
-        # 2. Меняем в общем списке участников, если он есть в модели
-        if hasattr(tournament, "players") and old_name in tournament.players:
+        # 2. Меняем в общем списке участников (если такое поле есть в модели турнира)
+        if hasattr(tournament, "players") and tournament.players and old_name in tournament.players:
             idx = tournament.players.index(old_name)
             tournament.players[idx] = new_name
 
         if not replaced_in_team:
             await interaction.response.send_message(
-                f"❌ Игрок с именем `{old_name}` не найден ни в одной из команд.",
+                f"❌ Игрок с именем `{old_name}` не найден в составах команд турнира.",
                 ephemeral=True,
             )
             return
 
-        # Сохраняем состояние в твой storage
+        # Сохраняем измененное состояние в storage
         storage.save(tournament)
 
         logger.info(
@@ -116,14 +158,14 @@ class TournamentCog(commands.Cog):
             interaction.user.id, old_name, new_name, interaction.guild_id
         )
 
-        # Отвечаем админу скрытым сообщением на 3 секунды
+        # Отвечаем скрытым сообщением
         await interaction.response.send_message(
             f"✅ Игрок `{old_name}` успешно заменен на `{new_name}`.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
-        # Перерисовываем главное сообщение турнира — сетка обновится «на лету»
+        # Моментально перерисовываем главное сообщение во всех фазах
         await update_tournament_message(self.bot, interaction.guild, tournament)
 
 
