@@ -183,7 +183,7 @@ class Tournament:
             player = remaining[0]
             self.pick_player(auto_pos, player)
             self.last_auto_pick_message = (
-                f"✅ <@{self.captains[self.captain_order[auto_pos]]}> "
+                f" <@{self.captains[self.captain_order[auto_pos]]}> "
                 f"автоматически получает **{player}**"
             )
 

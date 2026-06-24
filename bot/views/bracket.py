@@ -19,7 +19,7 @@ class GenerateMatchesButton(discord.ui.Button):
 
     def __init__(self, guild_id: int) -> None:
         super().__init__(
-            label="🎲 Generate Matches",
+            label="Кто с кем играет?",
             style=discord.ButtonStyle.primary,
             custom_id=f"{VIEW_GENERATE_MATCHES}:{guild_id}",
         )
@@ -54,7 +54,7 @@ class SemifinalWinButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, match_num: int, team_num: int) -> None:
         super().__init__(
-            label=f"Team {team_num} Won",
+            label=f"П{team_num} победил",
             style=discord.ButtonStyle.success,
             custom_id=f"{VIEW_SEMIFINAL_PREFIX}{guild_id}:{match_num}:{team_num}",
         )
@@ -115,7 +115,7 @@ class FinalWinButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, team_num: int) -> None:
         super().__init__(
-            label=f"Team {team_num} Won",
+            label=f"П{team_num} победил",
             style=discord.ButtonStyle.danger,
             custom_id=f"{VIEW_FINAL_PREFIX}{guild_id}:{team_num}",
         )

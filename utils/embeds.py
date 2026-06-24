@@ -185,7 +185,7 @@ async def build_final_embed(
     team_a = tournament.final_teams[0]
     team_b = tournament.final_teams[1]
     embed = discord.Embed(
-        title="🏆 ТУРНИРНАЯ СЕТКА — ГРАНД-ФИНАЛ",
+        title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         color=discord.Color.red(),
     )
     embed.add_field(
@@ -208,7 +208,7 @@ async def build_winner_embed(
         return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
 
     embed = discord.Embed(
-        title="🎉 ТУРНИР ЗАВЕРШЕН 🎉",
+        title=" ТУРНИР ЗАВЕРШЕН ",
         description=f"🥇 **Чемпион — П{idx + 1}!**",
         color=discord.Color.gold(),
     )

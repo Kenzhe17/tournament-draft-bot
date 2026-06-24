@@ -97,7 +97,7 @@ class TournamentCog(commands.Cog):
         # 2. Запускаем таску на удаление через 3 секунды
         asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
-    @tournament_group.command(name="replace", description="🔄 Заменить игрока в активном турнире")
+    @tournament_group.command(name="replace", description="Заменить игрока в активном турнире")
     @app_commands.describe(
         old_name="Имя игрока, которого нужно заменить",
         new_name="Имя нового игрока"
