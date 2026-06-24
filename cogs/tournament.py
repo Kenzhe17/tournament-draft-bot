@@ -72,29 +72,6 @@ class TournamentCog(commands.Cog):
         store.set(tournament)
         logger.info("Турнир создан на сервере %s", interaction.guild_id)
 
-    @tournament_group.command(name="create", description="Создать новый турнир")
-    @is_admin()
-    async def tournament_create(self, interaction: discord.Interaction) -> None:
-        """Создать турнир и отправить главное Embed-сообщение."""
-        existing = store.get(interaction.guild_id)
-        if existing and existing.phase != TournamentPhase.COMPLETE:
-            await interaction.response.send_message(
-                "❌ На сервере уже есть активный турнир.", ephemeral=True
-            )
-            return
-
-        tournament = Tournament(
-            guild_id=interaction.guild_id,
-            channel_id=interaction.channel_id,
-        )
-        embed = await build_setup_embed(tournament, interaction.guild)
-        await interaction.response.send_message(embed=embed)
-        message = await interaction.original_response()
-
-        tournament.message_id = message.id
-        store.set(tournament)
-        logger.info("Турнир создан на сервере %s", interaction.guild_id)
-
     @tournament_group.command(name="delete", description="❌ Полностью удалить активный турнир")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
@@ -107,15 +84,10 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        # Удаляем турнир из json_store. В зависимости от твоего метода в JSONStore,
-        # это может быть store.delete(guild_id) или store.remove(guild_id).
-        # Если там метод удаления принимает guild_id:
         store.delete(interaction.guild_id)
 
         logger.info("Турнир принудительно удален на сервере %s админом %s", interaction.guild_id, interaction.user.id)
 
-        # Отправляем сообщение. Делаем его публичным (не ephemeral),
-        # чтобы все участники видели, что турнир был сброшен.
         await interaction.response.send_message(
             "🗑️ **Активный турнир был успешно удален.**",
             ephemeral=False
