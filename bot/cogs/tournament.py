@@ -121,31 +121,49 @@ class TournamentCog(commands.Cog):
 
         old_name = old_name.strip()
         new_name = new_name.strip()
-
-        # 1. Находим и меняем игрока в командах
         replaced_in_team = False
-        if tournament.teams:
+
+        # 1. Проверяем активный ДРАФТ (Вариант фазы драфта)
+        if hasattr(tournament, "draft") and tournament.draft and hasattr(tournament.draft, "teams") and tournament.draft.teams:
+            for team_num, roster in tournament.draft.teams.items():
+                if isinstance(roster, list) and old_name in roster:
+                    idx = roster.index(old_name)
+                    roster[idx] = new_name
+                    replaced_in_team = True
+                    logger.info("Игрок %s заменен на %s в драфте команды %s", old_name, new_name, team_num)
+                    break
+
+        # 2. Проверяем основные КОМАНДЫ (Если драфт прошел и фаза сменилась на TEAMS/SEMIFINALS/etc.)
+        if not replaced_in_team and hasattr(tournament, "teams") and tournament.teams:
             for team in tournament.teams:
                 if hasattr(team, "players") and old_name in team.players:
                     idx = team.players.index(old_name)
                     team.players[idx] = new_name
                     replaced_in_team = True
                     break
-                # Обработка на случай, если team — это словарь, а не объект класса
                 elif isinstance(team, dict) and old_name in team.get("players", []):
                     idx = team["players"].index(old_name)
                     team["players"][idx] = new_name
                     replaced_in_team = True
                     break
 
-        # 2. Меняем в общем списке участников (если такое поле есть в модели турнира)
+        # 3. Меняем в общих списках (кругах регистрации), если игрок заменяется в самом начале
+        for circle_attr in ("circle2", "circle3", "circle4"):
+            if hasattr(tournament, circle_attr):
+                circle_list = getattr(tournament, circle_attr)
+                if isinstance(circle_list, list) and old_name in circle_list:
+                    idx = circle_list.index(old_name)
+                    circle_list[idx] = new_name
+                    logger.info("Игрок заменен в списке %s", circle_attr)
+
         if hasattr(tournament, "players") and tournament.players and old_name in tournament.players:
             idx = tournament.players.index(old_name)
             tournament.players[idx] = new_name
 
+        # Если нигде не нашли совпадений, сообщаем об этом админу
         if not replaced_in_team:
             await interaction.response.send_message(
-                f"❌ Игрок с именем `{old_name}` не найден в составах команд турнира.",
+                f"❌ Игрок с именем `{old_name}` не найден в текущих составах команд.",
                 ephemeral=True,
             )
             return
