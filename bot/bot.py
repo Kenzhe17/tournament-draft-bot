@@ -52,7 +52,7 @@ class TournamentBot(commands.Bot):
             if isinstance(error, app_commands.CheckFailure):
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ У вас недостаточно прав для выполнения этой команды (требуются права администратора).", 
+                        "❌ У вас недостаточно прав для выполнения этой команды.",
                         ephemeral=True
                     )
                 return
@@ -86,7 +86,7 @@ async def setup_hook(self) -> None:
             if isinstance(error, app_commands.CheckFailure):
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ У вас недостаточно прав для выполнения этой команды (требуются права администратора).", 
+                        "❌ У вас недостаточно прав для выполнения этой команды.",
                         ephemeral=True
                     )
                 return

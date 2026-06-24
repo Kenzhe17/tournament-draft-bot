@@ -28,7 +28,7 @@ def _format_line(num: int, content: str) -> str:
 
 async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed этапа настройки турнира."""
-    embed = discord.Embed(title="🏆 Tournament Setup", color=discord.Color.gold())
+    embed = discord.Embed(title="🏆 Сетка Турнира", color=discord.Color.gold())
 
     if tournament.captains:
         caps = " ".join([await captain_mention(guild, c) for c in tournament.captains])
@@ -97,7 +97,7 @@ async def build_teams_embed(guild: discord.Guild, tournament: Tournament) -> dis
         cap_name = await captain_name(guild, captain_id)
         members = [cap_name] + roster[1:]
         embed.add_field(
-            name=f"Team {team_num}",
+            name=f"П{team_num}",
             value="\n".join(members),
             inline=True,
         )
@@ -106,15 +106,15 @@ async def build_teams_embed(guild: discord.Guild, tournament: Tournament) -> dis
 
 async def build_semifinals_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed полуфиналов."""
-    embed = discord.Embed(title="🏆 SEMIFINALS", color=discord.Color.purple())
+    embed = discord.Embed(title="🏆 ПОЛУФИНАЛ", color=discord.Color.purple())
     bracket = tournament.bracket
     if not bracket:
         return embed
 
     for match_num, (t1, t2) in enumerate(bracket.semifinal_pairs, start=1):
         embed.add_field(
-            name=f"Match #{match_num}",
-            value=f"Team {t1}\nVS\nTeam {t2}",
+            name=f"Игра #{match_num}",
+            value=f"П{t1}\nVS\nП{t2}",
             inline=True,
         )
     return embed
@@ -122,20 +122,19 @@ async def build_semifinals_embed(guild: discord.Guild, tournament: Tournament) -
 
 async def build_final_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed финала."""
-    embed = discord.Embed(title="🏆 FINAL", color=discord.Color.red())
+    embed = discord.Embed(title="🏆 ФИНАЛ", color=discord.Color.red())
     bracket = tournament.bracket
     if not bracket or not bracket.final_pair:
         return embed
 
     t1, t2 = bracket.final_pair
-    embed.description = "Winner Match #1\nVS\nWinner Match #2"
-    embed.add_field(name="\u200b", value=f"Team {t1}\nVS\nTeam {t2}", inline=False)
+    embed.add_field(name="\u200b", value=f"П{t1}\nVS\nП{t2}", inline=False)
     return embed
 
 
 async def build_winner_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed победителя турнира."""
-    embed = discord.Embed(title="🏆 TOURNAMENT WINNER", color=discord.Color.gold())
+    embed = discord.Embed(title="🏆 ПОБЕДИТЕЛИ ТУРНИРА", color=discord.Color.gold())
     bracket = tournament.bracket
     draft = tournament.draft
     if not bracket or bracket.winner_team is None or not draft:
@@ -144,13 +143,13 @@ async def build_winner_embed(guild: discord.Guild, tournament: Tournament) -> di
     team_num = bracket.winner_team
     roster = draft.teams.get(team_num, [])
     if not roster:
-        embed.description = f"🥇 Team {team_num}"
+        embed.description = f"🥇 П{team_num}"
         return embed
 
     captain_id = int(roster[0])
     cap_name = await captain_name(guild, captain_id)
     members = [cap_name] + roster[1:]
-    embed.description = f"🥇 Team {team_num}"
+    embed.description = f"🥇 П{team_num}"
     embed.add_field(name="Состав команды", value="\n".join(members), inline=False)
     return embed
 
