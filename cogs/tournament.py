@@ -72,7 +72,7 @@ class TournamentCog(commands.Cog):
         store.set(tournament)
         logger.info("Турнир создан на сервере %s", interaction.guild_id)
 
-    @tournament_group.command(name="delete", description="❌ Полностью удалить активный турнир")
+    @tournament_group.command(name="delete", description="Полностью удалить активный турнир")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир из хранилища и очистить состояние."""
@@ -88,10 +88,14 @@ class TournamentCog(commands.Cog):
 
         logger.info("Турнир принудительно удален на сервере %s админом %s", interaction.guild_id, interaction.user.id)
 
+        # 1. Делаем сообщение ephemeral=True, иначе Дискорд не разрешит боту его удалить
         await interaction.response.send_message(
             "🗑️ **Активный турнир был успешно удален.**",
-            ephemeral=False
+            ephemeral=True
         )
+
+        # 2. Запускаем таску на удаление через 3 секунды
+        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
     @captains_group.command(name="add", description="Добавить 4 капитанов")
     @app_commands.describe(
