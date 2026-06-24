@@ -52,7 +52,7 @@ class DraftCog(commands.Cog):
         tournament.bracket = None
         storage.save(tournament)
 
-        await interaction.response.send_message("🎲 Драфт начался!", ephemeral=True)
+        await interaction.response.send_message(" Выборка началась!", ephemeral=True)
         await update_tournament_message(self.bot, interaction.guild, tournament)
 
 

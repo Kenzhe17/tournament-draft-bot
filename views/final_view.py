@@ -68,6 +68,6 @@ class FinalView(discord.ui.View):
                 FinalWinnerButton(
                     guild_id,
                     team_idx,
-                    label=f"Team {team_idx + 1} Won",
+                    label=f"П{team_idx + 1} победил",
                 )
             )

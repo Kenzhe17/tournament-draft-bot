@@ -86,7 +86,7 @@ class PlayersCog(commands.Cog):
         if errors:
             await interaction.response.send_message(errors[0], ephemeral=True)
         else:
-            await interaction.response.send_message("✅ Игроки добавлены.", ephemeral=True)
+            await interaction.response.send_message("Игроки добавлены.", ephemeral=True)
 
         await update_tournament_message(self.bot, interaction.guild, tournament)
 

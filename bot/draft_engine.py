@@ -85,7 +85,7 @@ def finish_circle(draft: DraftState, tournament: Tournament, auto_captain_name: 
         auto_idx = get_auto_captain_index(circle)
         auto_captain = draft.captain_order[auto_idx]
         apply_pick(draft, auto_captain, remaining[0])
-        auto_msg = f"✅ {auto_captain_name} автоматически получает {remaining[0]}"
+        auto_msg = f" {auto_captain_name} автоматически получает {remaining[0]}"
         draft.auto_message = auto_msg
 
     draft.pick_index = 0

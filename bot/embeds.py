@@ -33,7 +33,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         return
 
     # Заголовок блока команд
-    embed.add_field(name="\u200b", value="### 👥 Сформированные Команды", inline=False)
+    embed.add_field(name="\u200b", value="Сформированные Команды", inline=False)
 
     # Номерные эмодзи для каждой команды
     team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣"}
@@ -94,7 +94,7 @@ async def build_draft_embed(guild: discord.Guild, tournament: Tournament) -> dis
     if not draft:
         return await build_setup_embed(guild, tournament)
 
-    embed = discord.Embed(title="🎲 Драфт Игроков — Выбор Капитанов", color=discord.Color.blue())
+    embed = discord.Embed(title="Выборка Игроков — Выбор Капитанов", color=discord.Color.blue())
 
     order_lines = []
     for i, cap_id in enumerate(draft.captain_order, start=1):
@@ -156,7 +156,7 @@ async def build_semifinals_embed(guild: discord.Guild, tournament: Tournament) -
 
 async def build_final_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed финала."""
-    embed = discord.Embed(title="👑 ГРАНД-ФИНАЛ ТУРНИРА", color=discord.Color.red())
+    embed = discord.Embed(title="👑 ФИНАЛ ТУРНИРА", color=discord.Color.red())
     bracket = tournament.bracket
     if not bracket or not bracket.final_pair:
         return embed
@@ -175,13 +175,13 @@ async def build_final_embed(guild: discord.Guild, tournament: Tournament) -> dis
 
 async def build_winner_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed победителя турнира."""
-    embed = discord.Embed(title="🎉 ТУРНИР ЗАВЕРШЕН 🎉", color=discord.Color.gold())
+    embed = discord.Embed(title=" ТУРНИР ЗАВЕРШЕН ", color=discord.Color.gold())
     bracket = tournament.bracket
     if not bracket or bracket.winner_team is None:
         return embed
 
     team_num = bracket.winner_team
-    embed.description = f"🥇 **Абсолютный победитель турнира — Команда П{team_num}! Поздравляем!**"
+    embed.description = f"🥇 **Победитель турнира — Команда П{team_num}!*"
 
     # Выводим команды на финальном экране
     await _add_teams_block_to_embed(embed, guild, tournament)

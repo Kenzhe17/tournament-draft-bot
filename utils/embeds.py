@@ -209,7 +209,7 @@ async def build_winner_embed(
 
     embed = discord.Embed(
         title="🎉 ТУРНИР ЗАВЕРШЕН 🎉",
-        description=f"🥇 **Абсолютный Чемпион — Команда П{idx + 1}! Поздравляем!**",
+        description=f"🥇 **Чемпион — П{idx + 1}!**",
         color=discord.Color.gold(),
     )
 
