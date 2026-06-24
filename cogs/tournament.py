@@ -97,6 +97,72 @@ class TournamentCog(commands.Cog):
         # 2. Запускаем таску на удаление через 3 секунды
         asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
+    @tournament_group.command(name="replace", description="🔄 Заменить игрока в активном турнире")
+    @app_commands.describe(
+        old_name="Имя игрока, которого нужно заменить",
+        new_name="Имя нового игрока"
+    )
+    @is_admin()
+    async def tournament_replace(
+        self,
+        interaction: discord.Interaction,
+        old_name: str,
+        new_name: str
+    ) -> None:
+        """Заменить одного игрока на другого в составе сформированных команд драфта."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ На этом сервере нет активного турнира.",
+                ephemeral=True,
+            )
+            return
+
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+
+        draft = tournament.draft
+        if not draft or not draft.teams:
+            await interaction.response.send_message(
+                "❌ Команды ещё не сформированы. Замена на этом этапе невозможна.",
+                ephemeral=True,
+            )
+            return
+
+        # 1. Ищем и меняем игрока внутри сформированных команд драфта (в draft.teams)
+        replaced_in_team = False
+        for team_num, roster in draft.teams.items():
+            if old_name in roster:
+                idx = roster.index(old_name)
+                roster[idx] = new_name
+                replaced_in_team = True
+                break
+
+        if not replaced_in_team:
+            await interaction.response.send_message(
+                f"❌ Игрок с именем `{old_name}` не найден в составах команд.",
+                ephemeral=True,
+            )
+            return
+
+        # Сохраняем обновленные данные в store
+        store.set(tournament)
+
+        logger.info(
+            "Администратор %s заменил игрока %s на %s в турнире %s",
+            interaction.user.id, old_name, new_name, interaction.guild_id
+        )
+
+        # Скрытый ответ админу на 3 секунды
+        await interaction.response.send_message(
+            f"✅ Игрок `{old_name}` успешно заменен на `{new_name}`.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
+
+        # Перерисовываем главное сообщение турнира (сетка и списки обновятся мгновенно!)
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
     @captains_group.command(name="add", description="Добавить 4 капитанов")
     @app_commands.describe(
         cap1="Капитан 1",
