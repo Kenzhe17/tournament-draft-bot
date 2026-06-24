@@ -26,7 +26,7 @@ async def build_setup_embed(
 ) -> discord.Embed:
     """Embed настройки турнира."""
     embed = discord.Embed(
-        title="🏆 Tournament Setup",
+        title="🏆 Сетка Турнира",
         color=discord.Color.gold(),
     )
     embed.add_field(
@@ -182,7 +182,7 @@ async def build_winner_embed(
     """Embed победителя турнира."""
     idx = tournament.winner_team_index
     if idx is None:
-        return discord.Embed(title="🏆 TOURNAMENT WINNER", color=discord.Color.gold())
+        return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
 
     team = tournament.teams[idx]
     cap_name = await _captain_display_name(guild, team["captain_id"])
@@ -194,7 +194,7 @@ async def build_winner_embed(
     ]
 
     embed = discord.Embed(
-        title="🏆 TOURNAMENT WINNER",
+        title="🏆 ПОБЕДИТЕЛИ",
         description=f"🥇 **Team {idx + 1}**",
         color=discord.Color.gold(),
     )
