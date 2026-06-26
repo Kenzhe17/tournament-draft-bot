@@ -94,14 +94,22 @@ class SetupView(discord.ui.View):
         self.tournament = tournament
         
         # Add plus buttons for each circle and slot
-        required_circles = tournament.required_circles
-        for circle in range(1, required_circles + 1):
+        # Circle1, circle2, circle3 - max 4 players each
+        # Circle4 - unlimited, always show one button
+        for circle in range(1, 5):
             circle_list = getattr(tournament, f"circle{circle}")
-            for slot in range(4):
-                # Only add button if slot is empty
-                if slot >= len(circle_list):
-                    button = PlusButton(tournament.guild_id, circle, slot)
-                    self.add_item(button)
+            
+            if circle == 4:
+                # Circle4 - always show one button for unlimited players
+                button = PlusButton(tournament.guild_id, circle, len(circle_list))
+                self.add_item(button)
+            else:
+                # Circle1, circle2, circle3 - max 4 players
+                for slot in range(4):
+                    # Only add button if slot is empty
+                    if slot >= len(circle_list):
+                        button = PlusButton(tournament.guild_id, circle, slot)
+                        self.add_item(button)
 
 
 def build_setup_view(tournament: Tournament) -> SetupView:

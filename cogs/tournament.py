@@ -118,7 +118,7 @@ class TournamentCog(commands.Cog):
 
         if not tournament.is_setup_complete:
             await interaction.response.send_message(
-                f"❌ Турнир заполнен не полностью. Нужно {tournament.required_circles} кругов по 4 игрока.",
+                "❌ Турнир заполнен не полностью. Нужно 4 капитана и по 4 игрока в кругах 2 и 3.",
                 ephemeral=True
             )
             return
@@ -199,11 +199,13 @@ class TournamentCog(commands.Cog):
         tournament.is_test = True
         tournament.captains = ["Cap1", "Cap2", "Cap3", "Cap4"]
         
-        required = tournament.required_circles
-        for circle in range(1, required + 1):
+        # Fill circles 1-3 with 4 players each, circle4 with some players
+        for circle in range(1, 5):
             circle_list = getattr(tournament, f"circle{circle}")
             if circle == 1:
                 circle_list.extend(tournament.captains)
+            elif circle == 4:
+                circle_list.extend([f"P4-{i}" for i in range(6)])  # 6 players in circle4
             else:
                 circle_list.extend([f"P{circle}-{i}" for i in range(4)])
         

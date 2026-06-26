@@ -25,9 +25,9 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     for i, team in enumerate(tournament.teams):
         captain = team.get("captain", "Unknown")
 
-        # Собираем игроков из кругов драфта
+        # Собираем игроков из кругов драфта (всегда круги 1-4)
         players = []
-        for circle in range(1, tournament.required_circles + 1):
+        for circle in range(1, 5):
             p_name = team.get(f"circle{circle}", "")
             if p_name:
                 players.append(p_name)
@@ -56,14 +56,14 @@ async def build_setup_embed(
         color=discord.Color.gold(),
     )
     
-    # Show required circles based on tournament size
-    required = tournament.required_circles
-    for circle in range(1, required + 1):
+    # Show all 4 circles
+    for circle in range(1, 5):
         circle_list = getattr(tournament, f"circle{circle}")
         circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
+        limit_info = "" if circle == 4 else " (макс. 4)"
         value = _circle_line(circle_list) or "*"
         embed.add_field(
-            name=f"{circle_name}",
+            name=f"{circle_name}{limit_info}",
             value=value,
             inline=False,
         )
@@ -101,8 +101,8 @@ async def build_draft_embed(
         order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
-    # Таблица выборов по текущему и пройденным кругам
-    for circle in range(2, tournament.required_circles + 1):
+    # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
+    for circle in range(2, 5):
         lines = []
         for pos in range(4):
             cap_idx = tournament.captain_order[pos]

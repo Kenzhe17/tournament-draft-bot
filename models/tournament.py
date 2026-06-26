@@ -95,22 +95,14 @@ class Tournament:
         return set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
 
     @property
-    def required_circles(self) -> int:
-        """Количество кругов в зависимости от размера турнира."""
-        if self.size == TournamentSize.EIGHT:
-            return 2  # circle1 (captains) + circle2
-        if self.size == TournamentSize.SIXTEEN:
-            return 3  # circle1 + circle2 + circle3
-        return 4  # circle1 + circle2 + circle3 + circle4
-
-    @property
     def is_setup_complete(self) -> bool:
         """Готов ли турнир к запуску драфта."""
         if len(self.captains) != 4:
             return False
         
-        required = self.required_circles
-        for circle_num in range(1, required + 1):
+        # Circle1, circle2, circle3 должны быть по 4 игрока
+        # Circle4 без лимита
+        for circle_num in range(1, 4):
             circle_list = getattr(self, f"circle{circle_num}")
             if len(circle_list) != 4:
                 return False
@@ -129,7 +121,7 @@ class Tournament:
     def add_players(self, names: list[str]) -> tuple[list[str], list[str]]:
         """
         Добавить игроков в круги 1→2→3→4 по порядку заполнения.
-        Возвращает (добавленные, отклонённые).
+        Circle4 без лимита. Возвращает (добавленные, отклонённые).
         """
         added: list[str] = []
         rejected: list[str] = []
@@ -143,10 +135,12 @@ class Tournament:
                 continue
 
             placed = False
-            max_circle = self.required_circles
-            for circle in range(1, max_circle + 1):
+            # Circle1, circle2, circle3 - по 4 игрока
+            # Circle4 - без лимита
+            for circle in range(1, 5):
                 circle_players = self.circle_list(circle)
-                if len(circle_players) < 4:
+                # Circle4 без лимита, остальные по 4
+                if circle == 4 or len(circle_players) < 4:
                     circle_players.append(name)
                     self.set_circle_list(circle, circle_players)
                     added.append(name)
@@ -165,7 +159,8 @@ class Tournament:
             return False
         
         circle_players = self.circle_list(circle)
-        if len(circle_players) >= 4:
+        # Circle4 без лимита, остальные по 4
+        if circle != 4 and len(circle_players) >= 4:
             return False
         
         circle_players.append(name)
@@ -193,10 +188,12 @@ class Tournament:
         self.current_circle = 2
         self.pick_index = 0
         
-        # Initialize available players based on tournament size
-        self.available = {}
-        for circle in range(2, self.required_circles + 1):
-            self.available[str(circle)] = list(getattr(self, f"circle{circle}"))
+        # Initialize available players for circles 2, 3, 4
+        self.available = {
+            "2": list(self.circle2),
+            "3": list(self.circle3),
+            "4": list(self.circle4),
+        }
         
         self.last_auto_pick_message = ""
         self.phase = TournamentPhase.DRAFT
@@ -205,7 +202,7 @@ class Tournament:
         """Позиция капитана (0–3), который сейчас выбирает."""
         if self.phase != TournamentPhase.DRAFT:
             return None
-        if self.current_circle > self.required_circles:
+        if self.current_circle > 4:
             return None
         order = PICK_ORDERS[self.current_circle]["order"]
         if self.pick_index < len(order):
@@ -254,7 +251,7 @@ class Tournament:
         """Перейти к следующему кругу или завершить драфт."""
         self.pick_index = 0
 
-        if self.current_circle >= self.required_circles:
+        if self.current_circle >= 4:
             self.last_auto_pick_message = ""
             self._build_teams()
             self.phase = TournamentPhase.TEAMS
@@ -274,11 +271,10 @@ class Tournament:
             team_data = {
                 "captain": captain_name,
                 "circle1": captain_name,  # Captain is in circle1
+                "circle2": picks.get("2", ""),
+                "circle3": picks.get("3", ""),
+                "circle4": picks.get("4", ""),
             }
-            
-            # Add picks from each circle based on tournament size
-            for circle in range(2, self.required_circles + 1):
-                team_data[f"circle{circle}"] = picks.get(str(circle), "")
             
             self.teams.append(team_data)
 
