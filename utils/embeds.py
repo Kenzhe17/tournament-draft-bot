@@ -105,7 +105,13 @@ async def build_draft_embed(
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):
         lines = []
-        for pos in range(tournament.captain_count):
+        # Get pick order for this circle
+        from models.tournament import PICK_ORDERS
+        circle_orders = PICK_ORDERS.get(tournament.captain_count, {})
+        order_data = circle_orders.get(str(circle), {})
+        pick_order = order_data.get("order", list(range(tournament.captain_count)))
+
+        for pos in pick_order:
             cap_idx = tournament.captain_order[pos]
             captain_name = tournament.captains[cap_idx]
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
