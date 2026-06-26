@@ -270,6 +270,64 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
+    @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
+    @app_commands.describe(
+        circle="Номер круга (2, 3 или 4)",
+        status="on для включения лимита, off для отключения"
+    )
+    @is_admin()
+    async def set_circle_limit(
+        self,
+        interaction: discord.Interaction,
+        circle: int,
+        status: str
+    ) -> None:
+        """Включить или выключить лимит для круга."""
+        if circle not in [2, 3, 4]:
+            await interaction.response.send_message(
+                "❌ Круг должен быть 2, 3 или 4.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        if status.lower() not in ["on", "off"]:
+            await interaction.response.send_message(
+                "❌ Статус должен быть 'on' или 'off'.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.",
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        if tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Лимиты можно менять только в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament.circle_limits_enabled[circle] = (status.lower() == "on")
+        store.set(tournament)
+
+        status_text = "включен" if tournament.circle_limits_enabled[circle] else "отключен"
+        await interaction.response.send_message(
+            f"✅ Лимит для круга {circle} {status_text}.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(
         old_name="Имя игрока которого нужно заменить",

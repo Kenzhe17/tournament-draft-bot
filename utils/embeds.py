@@ -61,7 +61,15 @@ async def build_setup_embed(
         circle_list = getattr(tournament, f"circle{circle}")
         circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
         limit = tournament.circle_limit(circle)
-        limit_info = "" if circle == 4 else f" (макс. {limit})"
+        limit_enabled = tournament.circle_limits_enabled.get(circle, True) if circle != 1 else True
+
+        if circle == 1:
+            limit_info = ""
+        elif limit_enabled:
+            limit_info = f" (макс. {limit})"
+        else:
+            limit_info = " (без лимита)"
+
         value = _circle_line(circle_list) or "*"
         embed.add_field(
             name=f"{circle_name}{limit_info}",
@@ -135,6 +143,16 @@ async def build_draft_embed(
         embed.add_field(
             name="Сейчас выбирает",
             value=captain_name,
+            inline=False,
+        )
+
+    # Warning if more than 25 players available
+    key = str(tournament.current_circle)
+    available = tournament.available.get(key, [])
+    if len(available) > 25:
+        embed.add_field(
+            name="⚠️ Внимание",
+            value=f"Показано 25 из {len(available)} игроков в меню выбора.",
             inline=False,
         )
 
@@ -235,9 +253,13 @@ async def build_winner_embed(
     if idx is None:
         return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
 
+    # Get winning team captain name
+    winning_team = tournament.teams[idx] if idx < len(tournament.teams) else {}
+    captain_name = winning_team.get("captain", "Unknown")
+
     embed = discord.Embed(
         title=" ТУРНИР ЗАВЕРШЕН ",
-        description=f"🥇 **Чемпион — П{idx + 1}!**",
+        description=f"🥇 **Чемпион — П{idx + 1}!**\n🏆 **Команда: {captain_name}**",
         color=discord.Color.gold(),
     )
 

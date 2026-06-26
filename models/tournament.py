@@ -83,6 +83,9 @@ class Tournament:
     phase: TournamentPhase = TournamentPhase.SETUP
     is_test: bool = False
 
+    # Лимиты для кругов (True = лимит включен, False = без лимита)
+    circle_limits_enabled: dict[int, bool] = field(default_factory=lambda: {2: True, 3: True, 4: True})
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -94,13 +97,19 @@ class Tournament:
             return 8
 
     def circle_limit(self, circle: int) -> int:
-        """Лимит игроков для круга на основе размера турнира."""
+        """Лимит игроков для круга на основе размера турнира и настроек."""
         if circle == 1:
             return self.captain_count  # circle1 = captains
         elif circle == 4:
-            return float('inf')  # circle4 unlimited
+            # circle4 unlimited by default, but can be limited
+            if self.circle_limits_enabled.get(4, True):
+                return self.captain_count
+            return float('inf')
         else:
-            return self.captain_count  # circle2, circle3 = captain count
+            # circle2, circle3
+            if self.circle_limits_enabled.get(circle, True):
+                return self.captain_count
+            return float('inf')
 
     # Драфт
     captain_order: list[int] = field(default_factory=list)
@@ -229,11 +238,11 @@ class Tournament:
         self.pick_index = 0
         
         # Initialize available players for circles 2, 3, 4
-        # Only first captain_count players from circle4 are available for draft
+        # All players from circle4 are available for draft
         self.available = {
             "2": list(self.circle2),
             "3": list(self.circle3),
-            "4": list(self.circle4[:self.captain_count]),  # Only first captain_count players
+            "4": list(self.circle4),  # All players from circle4
         }
         
         self.last_auto_pick_message = ""
@@ -451,6 +460,7 @@ class Tournament:
             circle4=data.get("circle4", []),
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
+            circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),

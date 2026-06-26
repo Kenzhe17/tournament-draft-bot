@@ -88,6 +88,9 @@ class DraftView(discord.ui.View):
         ]
         if options:
             self.add_item(PlayerSelect(guild_id, options))
+        # Add warning if more than 25 players available
+        if len(available_players) > 25:
+            self._warning = f"⚠️ Показано 25 из {len(available_players)} игроков"
 
 
 def build_draft_view(tournament: Tournament) -> DraftView | None:
