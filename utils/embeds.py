@@ -43,7 +43,6 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         )
 
     # Добавляем блок команд в самый низ текущего Embed
-    embed.add_field(name="\u200b", value=" - Составы Команд", inline=False)
     embed.add_field(name="\u200b", value="\n".join(teams_text), inline=False)
 
 
