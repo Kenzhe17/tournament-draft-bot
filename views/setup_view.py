@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,15 @@ if TYPE_CHECKING:
     from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
+
+
+async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
+    """Удалить ephemeral-ответ через указанное время."""
+    await asyncio.sleep(delay)
+    try:
+        await interaction.delete_original_response()
+    except discord.HTTPException:
+        pass
 
 
 class CircleSelectButton(discord.ui.Button):
@@ -37,6 +47,7 @@ class CircleSelectButton(discord.ui.Button):
             await interaction.response.send_message(
                 "❌ Турнир не в фазе настройки.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Check if registration is open
@@ -48,6 +59,7 @@ class CircleSelectButton(discord.ui.Button):
                     "❌ Регистрация закрыта. Только админ может добавлять игроков.",
                     ephemeral=True
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
             # Admin can add via modal
             modal = AdminAddModal(self.guild_id, self.circle)
@@ -63,6 +75,7 @@ class CircleSelectButton(discord.ui.Button):
                     f"❌ Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                     ephemeral=True
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
 
         # Get user's nickname
@@ -79,6 +92,7 @@ class CircleSelectButton(discord.ui.Button):
                             "❌ Вы уже находитесь в этом круге.",
                             ephemeral=True
                         )
+                        asyncio.create_task(_delete_ephemeral_later(interaction))
                         return
                     # Remove from old circle
                     tournament.remove_player(user_name)
@@ -92,6 +106,7 @@ class CircleSelectButton(discord.ui.Button):
                 "❌ Не удалось добавить игрока.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.set(tournament)
@@ -104,11 +119,13 @@ class CircleSelectButton(discord.ui.Button):
                 f"✅ Вы перемещены в {circle_names[self.circle]}!",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
         else:
             await interaction.response.send_message(
                 f"✅ Вы добавлены в {circle_names[self.circle]}!",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
 circle_names = {
@@ -141,6 +158,7 @@ class AdminAddModal(discord.ui.Modal):
             await interaction.response.send_message(
                 "❌ Турнир не в фазе настройки.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         player_name = self.name_input.value.strip()
@@ -154,6 +172,7 @@ class AdminAddModal(discord.ui.Modal):
                     f"❌ Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                     ephemeral=True
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
 
         # Check if player already in tournament
@@ -162,6 +181,7 @@ class AdminAddModal(discord.ui.Modal):
                 "❌ Этот игрок уже участвует в турнире.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Add player
@@ -171,6 +191,7 @@ class AdminAddModal(discord.ui.Modal):
                 "❌ Не удалось добавить игрока.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.set(tournament)
@@ -182,6 +203,7 @@ class AdminAddModal(discord.ui.Modal):
             f"✅ Игрок {player_name} добавлен в {circle_names[self.circle]}!",
             ephemeral=True
         )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
 class ExitButton(discord.ui.Button):
@@ -202,6 +224,7 @@ class ExitButton(discord.ui.Button):
                 "❌ Турнир не найден.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         if tournament.phase != TournamentPhase.SETUP:
@@ -209,6 +232,7 @@ class ExitButton(discord.ui.Button):
                 "❌ Турнир не в фазе настройки.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         user_name = interaction.user.display_name
@@ -219,6 +243,7 @@ class ExitButton(discord.ui.Button):
                 "❌ Вы не участвуете в турнире.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Remove player
@@ -228,6 +253,7 @@ class ExitButton(discord.ui.Button):
                 "❌ Не удалось удалить игрока.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.set(tournament)
@@ -239,6 +265,7 @@ class ExitButton(discord.ui.Button):
             "✅ Вы вышли из турнира.",
             ephemeral=True
         )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
 class AdminAddButton(discord.ui.Button):
@@ -261,6 +288,7 @@ class AdminAddButton(discord.ui.Button):
                 "❌ Только админ может добавлять игроков.",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Show modal

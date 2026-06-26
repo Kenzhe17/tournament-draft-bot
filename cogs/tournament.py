@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 2.0) -> None:
+async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
     """Удалить ephemeral-ответ через указанное время."""
     await asyncio.sleep(delay)
     try:
