@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import discord
 
-from models.tournament import RegistrationState, Tournament, TournamentPhase
+# ДОБАВЛЕНО: TournamentSize в список импорта
+from models.tournament import RegistrationState, Tournament, TournamentPhase, TournamentSize
 
 
 def _circle_line(players: list[str]) -> str:
