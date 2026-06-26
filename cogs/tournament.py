@@ -249,7 +249,11 @@ class TournamentCog(commands.Cog):
         embed = build_leaderboard_embed(page=1)
         view = LeaderboardView(interaction.guild_id, page=1)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+        except discord.NotFound:
+            # Interaction expired, use followup
+            await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
     @is_admin()
@@ -406,20 +410,28 @@ class TournamentCog(commands.Cog):
         """Обработка ошибок slash-команд."""
         if isinstance(error, app_commands.CheckFailure):
             msg = str(error) or "❌ Недостаточно прав."
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+            except discord.NotFound:
+                # Interaction expired, can't respond
+                pass
+            return
+
+        logger.exception("Ошибка команды: %s", error)
+        msg = "❌ Произошла ошибка при выполнении команды."
+        try:
             if interaction.response.is_done():
                 await interaction.followup.send(msg, ephemeral=True)
             else:
                 await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        logger.exception("Ошибка команды: %s", error)
-        msg = "❌ Произошла ошибка при выполнении команды."
-        if interaction.response.is_done():
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.response.send_message(msg, ephemeral=True)
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+        except discord.NotFound:
+            # Interaction expired, can't respond
+            pass
 
 
 async def setup(bot: TournamentBot) -> None:
