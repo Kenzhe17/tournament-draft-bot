@@ -246,13 +246,21 @@ async def build_winner_embed(
     if idx is None:
         return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
 
-    # Get winning team captain name
+    # Get winning team captain name and full roster
     winning_team = tournament.teams[idx] if idx < len(tournament.teams) else {}
     captain_name = winning_team.get("captain", "Unknown")
 
+    # Build full roster string
+    players = []
+    for circle in range(1, 5):
+        p_name = winning_team.get(f"circle{circle}", "")
+        if p_name:
+            players.append(p_name)
+    roster_str = ", ".join(players) if players else "Нет игроков"
+
     embed = discord.Embed(
         title=" ТУРНИР ЗАВЕРШЕН ",
-        description=f"🥇 **Чемпион — П{idx + 1}!**\n🏆 **Команда: {captain_name}**",
+        description=f"🥇 **Чемпион — П{idx + 1}!**\n🏆 **Команда: {captain_name}**\n👥 **Состав: {roster_str}**",
         color=discord.Color.gold(),
     )
 
