@@ -180,6 +180,63 @@ class AdminAddModal(discord.ui.Modal):
         )
 
 
+class ExitButton(discord.ui.Button):
+    """Кнопка для выхода из турнира."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Выйти",
+            custom_id=f"exit:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        if tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            return
+
+        user_name = interaction.user.display_name
+
+        # Check if user is in tournament
+        if user_name not in tournament.all_players:
+            await interaction.response.send_message(
+                "❌ Вы не участвуете в турнире.",
+                ephemeral=True
+            )
+            return
+
+        # Remove player
+        success = tournament.remove_player(user_name)
+        if not success:
+            await interaction.response.send_message(
+                "❌ Не удалось удалить игрока.",
+                ephemeral=True
+            )
+            return
+
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            "✅ Вы вышли из турнира.",
+            ephemeral=True
+        )
+
+
 class AdminAddButton(discord.ui.Button):
     """Кнопка для админа добавления игрока в конкретный круг."""
 
@@ -220,6 +277,9 @@ class SetupView(discord.ui.View):
             for circle in range(1, 5):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
                 self.add_item(button)
+            # Add exit button
+            exit_button = ExitButton(tournament.guild_id)
+            self.add_item(exit_button)
         else:
             # Closed registration: buttons for admin to add players
             for circle in range(1, 5):
