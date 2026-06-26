@@ -49,6 +49,10 @@ class CircleSelectButton(discord.ui.Button):
                     ephemeral=True
                 )
                 return
+            # Admin can add via modal
+            modal = AdminAddModal(self.guild_id, self.circle)
+            await interaction.response.send_modal(modal)
+            return
 
         # Check if circle is full (except circle4)
         if self.circle != 4:
@@ -270,21 +274,17 @@ class SetupView(discord.ui.View):
     def __init__(self, tournament: Tournament):
         super().__init__(timeout=None)
         self.tournament = tournament
+        self.registration_state = tournament.registration
 
-        # Always show all 4 circles
-        if tournament.registration == RegistrationState.OPEN:
-            # Open registration: buttons for players to add themselves
-            for circle in range(1, 5):
-                button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
-                self.add_item(button)
-            # Add exit button
-            exit_button = ExitButton(tournament.guild_id)
-            self.add_item(exit_button)
-        else:
-            # Closed registration: buttons for admin to add players
-            for circle in range(1, 5):
-                button = AdminAddButton(tournament.guild_id, circle, circle_names[circle])
-                self.add_item(button)
+        # Always show all 4 circles with the same buttons
+        # The button logic will handle open vs closed registration
+        for circle in range(1, 5):
+            button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
+            self.add_item(button)
+        
+        # Add exit button
+        exit_button = ExitButton(tournament.guild_id)
+        self.add_item(exit_button)
 
 
 def build_setup_view(tournament: Tournament) -> SetupView:
