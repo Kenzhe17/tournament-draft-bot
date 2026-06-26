@@ -177,22 +177,17 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
-    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
+    @commands.command(name="test")
     @is_admin()
-    async def test_start(self, interaction: discord.Interaction) -> None:
+    async def test_start(self, ctx: commands.Context) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(ctx.guild.id)
         if not tournament:
-            await interaction.response.send_message(
-                "❌ Сначала создайте турнир командой `/tournament`.",
-                ephemeral=True,
-            )
+            await ctx.send("❌ Сначала создайте турнир командой `/tournament`.")
             return
 
         if tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                "❌ Турнир уже запущен.", ephemeral=True
-            )
+            await ctx.send("❌ Турнир уже запущен.")
             return
 
         # Fill with test data based on tournament size
@@ -209,13 +204,8 @@ class TournamentCog(commands.Cog):
         tournament.start_draft()
         store.set(tournament)
 
-        await interaction.response.send_message(
-            "🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
+        await ctx.send("🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.")
+        await self.bot.update_tournament_message(ctx.guild, tournament)
 
     @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
