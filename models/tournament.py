@@ -80,7 +80,6 @@ class Tournament:
         else:  # 32 players
             return 8
 
-    @property
     def circle_limit(self, circle: int) -> int:
         """Лимит игроков для круга на основе размера турнира."""
         if circle == 1:
