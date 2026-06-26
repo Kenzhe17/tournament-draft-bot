@@ -204,6 +204,15 @@ class Tournament:
             return None
         if self.current_circle > 4:
             return None
+        
+        # Special handling for circle4 with more than 4 players
+        if self.current_circle == 4:
+            key = str(self.current_circle)
+            remaining = self.available.get(key, [])
+            if len(remaining) > 4:
+                # More than 4 players - all captains pick in round-robin
+                return self.pick_index % 4
+        
         order = PICK_ORDERS[self.current_circle]["order"]
         if self.pick_index < len(order):
             return order[self.pick_index]
@@ -225,6 +234,18 @@ class Tournament:
         Перейти к следующему шагу драфта.
         Возвращает True, если драфт завершён.
         """
+        # Special handling for circle4 with more than 4 players
+        if self.current_circle == 4:
+            key = str(self.current_circle)
+            remaining = self.available.get(key, [])
+            if len(remaining) > 0:
+                # Continue round-robin until all players are picked
+                self.pick_index += 1
+                return False
+            else:
+                # All players picked, advance to next phase
+                return self._advance_circle()
+        
         order = PICK_ORDERS[self.current_circle]["order"]
         self.pick_index += 1
 
@@ -236,6 +257,10 @@ class Tournament:
 
     def _do_auto_pick(self) -> None:
         """Автоматически назначить последнего игрока круга."""
+        # Skip auto-pick for circle4 (handled in advance_after_pick)
+        if self.current_circle == 4:
+            return
+        
         auto_pos = self.auto_picker_position()
         key = str(self.current_circle)
         remaining = self.available.get(key, [])

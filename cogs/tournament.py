@@ -195,19 +195,26 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        # Fill with test data
+        # Fill with test data based on tournament size
         tournament.is_test = True
         tournament.captains = ["Cap1", "Cap2", "Cap3", "Cap4"]
         
-        # Fill circles 1-3 with 4 players each, circle4 with some players
-        for circle in range(1, 5):
-            circle_list = getattr(tournament, f"circle{circle}")
-            if circle == 1:
-                circle_list.extend(tournament.captains)
-            elif circle == 4:
-                circle_list.extend([f"P4-{i}" for i in range(6)])  # 6 players in circle4
-            else:
-                circle_list.extend([f"P{circle}-{i}" for i in range(4)])
+        # Fill circles based on tournament size
+        if tournament.size == TournamentSize.EIGHT:
+            # 8 players: circle1 + circle2 only
+            tournament.circle1.extend(tournament.captains)
+            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
+        elif tournament.size == TournamentSize.SIXTEEN:
+            # 16 players: circle1 + circle2 + circle3
+            tournament.circle1.extend(tournament.captains)
+            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
+            tournament.circle3.extend([f"P3-{i}" for i in range(4)])
+        else:
+            # 32 players: all 4 circles
+            tournament.circle1.extend(tournament.captains)
+            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
+            tournament.circle3.extend([f"P3-{i}" for i in range(4)])
+            tournament.circle4.extend([f"P4-{i}" for i in range(8)])  # 8 players in circle4
         
         tournament.start_draft()
         store.set(tournament)
