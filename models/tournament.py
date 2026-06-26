@@ -160,40 +160,6 @@ class Tournament:
 
     # --- Добавление игроков ---
 
-    def add_players(self, names: list[str]) -> tuple[list[str], list[str]]:
-        """
-        Добавить игроков в круги 1→2→3→4 по порядку заполнения.
-        Circle4 без лимита. Возвращает (добавленные, отклонённые).
-        """
-        added: list[str] = []
-        rejected: list[str] = []
-
-        for name in names:
-            name = name.strip()
-            if not name:
-                continue
-            if name in self.all_players:
-                rejected.append(name)
-                continue
-
-            placed = False
-            # Circle1, circle2, circle3 - по captain_count игроков
-            # Circle4 - без лимита
-            for circle in range(1, 5):
-                circle_players = self.circle_list(circle)
-                # Circle4 без лимита, остальные по captain_count
-                if circle == 4 or len(circle_players) < self.captain_count:
-                    circle_players.append(name)
-                    self.set_circle_list(circle, circle_players)
-                    added.append(name)
-                    placed = True
-                    break
-
-            if not placed:
-                rejected.append(name)
-
-        return added, rejected
-
     def add_player_to_circle(self, circle: int, name: str) -> bool:
         """Добавить игрока в конкретный круг. Возвращает True если успешно."""
         name = name.strip()
