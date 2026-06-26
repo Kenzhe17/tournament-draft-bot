@@ -245,11 +245,25 @@ class TournamentCog(commands.Cog):
         """Показать глобальную таблицу лидеров."""
         from utils.embeds import build_leaderboard_embed
         from views.leaderboard_view import LeaderboardView
-        
+
         embed = build_leaderboard_embed(page=1)
         view = LeaderboardView(interaction.guild_id, page=1)
-        
+
         await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
+    @is_admin()
+    async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
+        """Сбросить всю статистику игроков."""
+        from storage.player_stats_store import player_stats_store
+
+        player_stats_store.reset()
+
+        await interaction.response.send_message(
+            "🗑️ Таблица лидеров сброшена.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(

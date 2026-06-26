@@ -84,6 +84,11 @@ class PlayerStatsStore:
         players_with_games = len([p for p in self._stats.values() if p.games > 0])
         return (players_with_games + per_page - 1) // per_page
 
+    def reset(self) -> None:
+        """Сбросить всю статистику."""
+        self._stats = {}
+        self.save()
+
 
 # Глобальный экземпляр хранилища
 player_stats_store = PlayerStatsStore()
