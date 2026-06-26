@@ -126,7 +126,7 @@ class TournamentCog(commands.Cog):
 
         if not tournament.is_setup_complete:
             captain_count = tournament.captain_count
-            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), {captain_count} игрок(а/ов) в круге 2, {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
+            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), минимум {captain_count} игрок(а/ов) в круге 2, минимум {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
             await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
@@ -265,7 +265,7 @@ class TournamentCog(commands.Cog):
         old_name = old_name.strip()
         new_name = new_name.strip()
 
-        if tournament.phase == TournamentPhase.SETUP:
+        if tournament.phase == TournamentPhase.SETUP or tournament.phase == TournamentPhase.DRAFT:
             # Replace in circles
             if old_name not in tournament.all_players:
                 await interaction.response.send_message(
@@ -281,8 +281,24 @@ class TournamentCog(commands.Cog):
                     idx = circle_list.index(old_name)
                     circle_list[idx] = new_name
                     break
+        elif tournament.phase == TournamentPhase.FINAL:
+            # Replace in final teams
+            found = False
+            for team_idx in range(len(tournament.final_teams)):
+                if tournament.final_teams[team_idx] == old_name:
+                    tournament.final_teams[team_idx] = new_name
+                    found = True
+                    break
+            
+            if not found:
+                await interaction.response.send_message(
+                    f"❌ Игрок `{old_name}` не найден в финальных командах.",
+                    ephemeral=True,
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
         else:
-            # Replace in teams
+            # Replace in teams (TEAMS, QUALIFIERS, SEMIFINALS)
             found = False
             for team in tournament.teams:
                 for key, value in team.items():
