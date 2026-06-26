@@ -203,12 +203,14 @@ class Tournament:
         name = name.strip()
         if not name or name in self.all_players:
             return False
-        
+
         circle_players = self.circle_list(circle)
-        # Circle4 без лимита, остальные по captain_count
-        if circle != 4 and len(circle_players) >= self.captain_count:
+        limit = self.circle_limit(circle)
+
+        # Check limit if not unlimited
+        if limit != float('inf') and len(circle_players) >= limit:
             return False
-        
+
         circle_players.append(name)
         self.set_circle_list(circle, circle_players)
         return True
