@@ -9,6 +9,7 @@ import discord
 
 from models.tournament import TournamentPhase
 from storage.json_store import store
+from storage.player_stats_store import player_stats_store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
 
@@ -53,6 +54,23 @@ class FinalWinnerButton(discord.ui.Button):
 
         tournament.set_final_winner(self.team_index)
         store.set(tournament)
+
+        # Update player statistics
+        winning_team = tournament.teams[self.team_index]
+        losing_team_index = tournament.final_teams[1] if tournament.final_teams[0] == self.team_index else tournament.final_teams[0]
+        losing_team = tournament.teams[losing_team_index]
+
+        # Update winning team stats
+        for circle in range(1, 5):
+            player = winning_team.get(f"circle{circle}")
+            if player:
+                player_stats_store.update_player(player, won=True)
+
+        # Update losing team stats
+        for circle in range(1, 5):
+            player = losing_team.get(f"circle{circle}")
+            if player:
+                player_stats_store.update_player(player, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

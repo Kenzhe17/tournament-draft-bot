@@ -14,6 +14,7 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
+from views.leaderboard_view import LeaderboardView
 from views.matches_view import QualifiersView, SemifinalsView, TeamsView
 from views.setup_view import build_setup_view
 

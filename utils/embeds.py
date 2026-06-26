@@ -259,4 +259,46 @@ async def build_embed_for_phase(
         return await build_final_embed(tournament, guild)
     if phase == TournamentPhase.COMPLETE:
         return await build_winner_embed(tournament, guild)
-    return await build_setup_embed(tournament, guild)
+    return discord.Embed(title="Ошибка", color=discord.Color.red())
+
+
+def build_leaderboard_embed(page: int = 1) -> discord.Embed:
+    """Embed лидерборда с пагинацией."""
+    from storage.player_stats_store import player_stats_store
+    
+    players = player_stats_store.get_leaderboard(page, per_page=10)
+    total_pages = player_stats_store.get_total_pages(per_page=10)
+    
+    embed = discord.Embed(
+        title="🏆 Лидерборд Игроков",
+        color=discord.Color.gold(),
+    )
+    
+    if not players:
+        embed.description = "Пока нет данных. Сыграйте хотя бы один турнир!"
+        return embed
+    
+    lines = []
+    global_rank = (page - 1) * 10
+    
+    for i, player in enumerate(players):
+        rank = global_rank + i + 1
+        
+        # Highlight top 3
+        if rank == 1:
+            rank_emoji = "🥇"
+        elif rank == 2:
+            rank_emoji = "🥈"
+        elif rank == 3:
+            rank_emoji = "🥉"
+        else:
+            rank_emoji = f"{rank}."
+        
+        win_rate_str = f"{player.win_rate:.1f}%"
+        line = f"{rank_emoji} **{player.name}** — {player.wins} побед / {player.games} игр ({win_rate_str})"
+        lines.append(line)
+    
+    embed.description = "\n".join(lines)
+    embed.set_footer(text=f"Страница {page}/{total_pages}")
+    
+    return embed

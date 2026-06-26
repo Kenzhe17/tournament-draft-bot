@@ -219,34 +219,14 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
-        """Показать таблицу лидеров турнира."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Нет активного турнира.", ephemeral=True
-            )
-            return
-
-        if not tournament.teams:
-            await interaction.response.send_message(
-                "❌ Команды ещё не сформированы.", ephemeral=True
-            )
-            return
-
-        embed = discord.Embed(
-            title="🏆 Таблица лидеров",
-            color=discord.Color.gold(),
-        )
-
-        for i, team in enumerate(tournament.teams):
-            captain = team.get("captain", "Unknown")
-            embed.add_field(
-                name=f"Команда {i + 1}",
-                value=f"Капитан: {captain}",
-                inline=False,
-            )
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        """Показать глобальную таблицу лидеров."""
+        from utils.embeds import build_leaderboard_embed
+        from views.leaderboard_view import LeaderboardView
+        
+        embed = build_leaderboard_embed(page=1)
+        view = LeaderboardView(interaction.guild_id, page=1)
+        
+        await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(
