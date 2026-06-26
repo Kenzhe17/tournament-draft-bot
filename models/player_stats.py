@@ -8,6 +8,7 @@ from typing import Any
 class PlayerStats:
     """Статистика игрока по всем турнирам."""
 
+    guild_id: int
     name: str
     wins: int = 0
     games: int = 0
@@ -22,6 +23,7 @@ class PlayerStats:
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
         return {
+            "guild_id": self.guild_id,
             "name": self.name,
             "wins": self.wins,
             "games": self.games,
@@ -31,6 +33,7 @@ class PlayerStats:
     def from_dict(cls, data: dict[str, Any]) -> "PlayerStats":
         """Десериализация из словаря."""
         return cls(
+            guild_id=data.get("guild_id", 0),
             name=data["name"],
             wins=data.get("wins", 0),
             games=data.get("games", 0),

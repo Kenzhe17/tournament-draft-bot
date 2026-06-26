@@ -242,11 +242,11 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
-        """Показать глобальную таблицу лидеров."""
+        """Показать таблицу лидеров сервера."""
         from utils.embeds import build_leaderboard_embed
         from views.leaderboard_view import LeaderboardView
 
-        embed = build_leaderboard_embed(page=1)
+        embed = build_leaderboard_embed(interaction.guild_id, page=1)
         view = LeaderboardView(interaction.guild_id, page=1)
 
         try:
@@ -258,10 +258,10 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
     @is_admin()
     async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
-        """Сбросить всю статистику игроков."""
+        """Сбросить всю статистику игроков сервера."""
         from storage.player_stats_store import player_stats_store
 
-        player_stats_store.reset()
+        player_stats_store.reset(interaction.guild_id)
 
         await interaction.response.send_message(
             "🗑️ Таблица лидеров сброшена.",

@@ -22,8 +22,8 @@ class LeaderboardView(discord.ui.View):
         self.page = page
         self.per_page = 10
 
-        total_pages = player_stats_store.get_total_pages(self.per_page)
-        
+        total_pages = player_stats_store.get_total_pages(self.guild_id, self.per_page)
+
         # Add pagination buttons
         if page > 1:
             self.add_item(
@@ -31,7 +31,7 @@ class LeaderboardView(discord.ui.View):
                     guild_id, page - 1, "⬅️", discord.ButtonStyle.secondary
                 )
             )
-        
+
         if page < total_pages:
             self.add_item(
                 LeaderboardPageButton(
@@ -53,8 +53,8 @@ class LeaderboardPageButton(discord.ui.Button):
         self.page = page
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        total_pages = player_stats_store.get_total_pages(10)
-        
+        total_pages = player_stats_store.get_total_pages(self.guild_id, 10)
+
         if self.page < 1 or self.page > total_pages:
             await interaction.response.send_message(
                 "❌ Неверная страница.",
@@ -62,7 +62,7 @@ class LeaderboardPageButton(discord.ui.Button):
             )
             return
 
-        embed = build_leaderboard_embed(self.page)
+        embed = build_leaderboard_embed(self.guild_id, self.page)
         view = LeaderboardView(self.guild_id, self.page)
-        
+
         await interaction.response.edit_message(embed=embed, view=view)

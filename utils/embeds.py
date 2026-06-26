@@ -262,13 +262,13 @@ async def build_embed_for_phase(
     return discord.Embed(title="Ошибка", color=discord.Color.red())
 
 
-def build_leaderboard_embed(page: int = 1) -> discord.Embed:
+def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
-    
-    players = player_stats_store.get_leaderboard(page, per_page=10)
-    total_pages = player_stats_store.get_total_pages(per_page=10)
-    
+
+    players = player_stats_store.get_leaderboard(guild_id, page, per_page=10)
+    total_pages = player_stats_store.get_total_pages(guild_id, per_page=10)
+
     embed = discord.Embed(
         title="🏆 Лидерборд Игроков",
         color=discord.Color.gold(),
