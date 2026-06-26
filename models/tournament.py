@@ -206,6 +206,9 @@ class Tournament:
 
     def start_draft(self) -> None:
         """Перемешать капитанов и начать драфт."""
+        # Sync captains with circle1
+        self.captains = list(self.circle1)
+        
         self.captain_order = list(range(self.captain_count))
         random.shuffle(self.captain_order)
         self.picks = {str(i): {} for i in range(self.captain_count)}
