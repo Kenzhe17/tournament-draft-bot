@@ -64,13 +64,22 @@ class CircleSelectButton(discord.ui.Button):
         # Get user's nickname
         user_name = interaction.user.display_name
 
-        # Check if user already in tournament
+        # Check if user already in tournament - if so, move them to new circle
+        was_moved = False
         if user_name in tournament.all_players:
-            await interaction.response.send_message(
-                "❌ Вы уже участвуете в турнире.",
-                ephemeral=True
-            )
-            return
+            # Find which circle they're in
+            for circle in range(1, 5):
+                if user_name in getattr(tournament, f"circle{circle}"):
+                    if circle == self.circle:
+                        await interaction.response.send_message(
+                            "❌ Вы уже находитесь в этом круге.",
+                            ephemeral=True
+                        )
+                        return
+                    # Remove from old circle
+                    tournament.remove_player(user_name)
+                    was_moved = True
+                    break
 
         # Add player
         success = tournament.add_player_to_circle(self.circle, user_name)
@@ -86,10 +95,16 @@ class CircleSelectButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.send_message(
-            f"✅ Вы добавлены в {circle_names[self.circle]}!",
-            ephemeral=True
-        )
+        if was_moved:
+            await interaction.response.send_message(
+                f"✅ Вы перемещены в {circle_names[self.circle]}!",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"✅ Вы добавлены в {circle_names[self.circle]}!",
+                ephemeral=True
+            )
 
 
 circle_names = {
