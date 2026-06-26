@@ -188,13 +188,20 @@ class Tournament:
         self.current_circle = 2
         self.pick_index = 0
         
-        # Initialize available players for circles 2, 3, 4
-        # All players from circle4 are available for draft
-        self.available = {
-            "2": list(self.circle2),
-            "3": list(self.circle3),
-            "4": list(self.circle4),
-        }
+        # Initialize available players based on tournament size
+        self.available = {}
+        if self.size == TournamentSize.EIGHT:
+            # 8 players: only circle2
+            self.available["2"] = list(self.circle2)
+        elif self.size == TournamentSize.SIXTEEN:
+            # 16 players: circle2 + circle3
+            self.available["2"] = list(self.circle2)
+            self.available["3"] = list(self.circle3)
+        else:
+            # 32 players: circle2 + circle3 + circle4
+            self.available["2"] = list(self.circle2)
+            self.available["3"] = list(self.circle3)
+            self.available["4"] = list(self.circle4)
         
         self.last_auto_pick_message = ""
         self.phase = TournamentPhase.DRAFT
@@ -203,18 +210,20 @@ class Tournament:
         """Позиция капитана (0–3), который сейчас выбирает."""
         if self.phase != TournamentPhase.DRAFT:
             return None
-        if self.current_circle > 4:
+        
+        # Check if current circle has available players
+        key = str(self.current_circle)
+        if key not in self.available or not self.available[key]:
             return None
         
         # Special handling for circle4 with more than 4 players
         if self.current_circle == 4:
-            key = str(self.current_circle)
             remaining = self.available.get(key, [])
             if len(remaining) > 4:
                 # More than 4 players - all captains pick in round-robin
                 return self.pick_index % 4
         
-        order = PICK_ORDERS[self.current_circle]["order"]
+        order = PICK_ORDERS.get(self.current_circle, {}).get("order", [])
         if self.pick_index < len(order):
             return order[self.pick_index]
         return None

@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.tournament import RegistrationState, Tournament, TournamentPhase
+from models.tournament import RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.json_store import store
 
 if TYPE_CHECKING:
@@ -197,14 +197,22 @@ class SetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.tournament = tournament
 
+        # Determine which circles to show based on tournament size
+        if tournament.size == TournamentSize.EIGHT:
+            circles = [1, 2]  # circle1 + circle2
+        elif tournament.size == TournamentSize.SIXTEEN:
+            circles = [1, 2, 3]  # circle1 + circle2 + circle3
+        else:
+            circles = [1, 2, 3, 4]  # all 4 circles
+
         if tournament.registration == RegistrationState.OPEN:
-            # Open registration: 4 buttons for players to add themselves
-            for circle in range(1, 5):
+            # Open registration: buttons for players to add themselves
+            for circle in circles:
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
                 self.add_item(button)
         else:
-            # Closed registration: 4 buttons for admin to add players
-            for circle in range(1, 5):
+            # Closed registration: buttons for admin to add players
+            for circle in circles:
                 button = AdminAddButton(tournament.guild_id, circle, circle_names[circle])
                 self.add_item(button)
 
