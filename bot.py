@@ -54,10 +54,11 @@ class TournamentBot(commands.Bot):
         if view is None:
             return
         key = self._view_key(view)
+        # Always add the view - Discord handles replacements
+        self.add_view(view)
         if key not in self._registered_view_keys:
-            self.add_view(view)
             self._registered_view_keys.add(key)
-            logger.debug("Зарегистрирован View: %s", key)
+        logger.debug("Зарегистрирован View: %s", key)
 
     def build_view_for_tournament(
         self, tournament: Tournament

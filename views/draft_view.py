@@ -99,6 +99,7 @@ def build_draft_view(tournament: Tournament) -> DraftView | None:
     if not available:
         return None
     # Если сейчас автовыбор — Select не нужен
-    if tournament.current_picker_position() is None:
+    picker_pos = tournament.current_picker_position()
+    if picker_pos is None:
         return None
     return DraftView(tournament.guild_id, available)

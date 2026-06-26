@@ -206,6 +206,14 @@ class Tournament:
         if self.current_circle > 4:
             return None
         
+        # Special handling for circle4 with more than 4 players
+        if self.current_circle == 4:
+            key = str(self.current_circle)
+            remaining = self.available.get(key, [])
+            if len(remaining) > 4:
+                # More than 4 players - all captains pick in round-robin
+                return self.pick_index % 4
+        
         order = PICK_ORDERS[self.current_circle]["order"]
         if self.pick_index < len(order):
             return order[self.pick_index]
