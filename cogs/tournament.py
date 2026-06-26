@@ -147,13 +147,13 @@ class TournamentCog(commands.Cog):
         tournament.registration = RegistrationState.CLOSED
         store.set(tournament)
 
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
         await interaction.response.send_message(
             "🔒 Регистрация закрыта. Только админ может добавлять игроков.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
 
     @app_commands.command(name="open", description="Открыть регистрацию (игроки добавляются сами)")
     @is_admin()
@@ -169,13 +169,13 @@ class TournamentCog(commands.Cog):
         tournament.registration = RegistrationState.OPEN
         store.set(tournament)
 
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
         await interaction.response.send_message(
             "🔓 Регистрация открыта! Игроки могут добавляться через кнопки.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
 
     @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
     @is_admin()
