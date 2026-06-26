@@ -177,7 +177,7 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
-    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
+    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)", hidden=True)
     @is_admin()
     async def test_start(self, interaction: discord.Interaction) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
