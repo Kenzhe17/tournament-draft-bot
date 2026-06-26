@@ -91,7 +91,7 @@ async def build_draft_embed(
 ) -> discord.Embed:
     """Embed во время драфта."""
     embed = discord.Embed(
-        title="🎲 Порядок капитанов",
+        title="Порядок капитанов",
         color=discord.Color.blue(),
     )
 

@@ -329,10 +329,10 @@ class Tournament:
 
     def generate_qualifiers(self) -> None:
         """Сгенерировать отборочные матчи для 32 игроков."""
-        # Simple bracket: 4 teams play qualifiers, winners go to semifinals
-        # Teams 0 vs 1, 2 vs 3 - winners advance to semifinals
-        self.qualifier_matches = [(0, 1), (2, 3)]
-        self.qualifier_winners = [None, None]
+        # All 8 teams play qualifiers: 4 matches, 4 winners advance to semifinals
+        # Teams 0 vs 1, 2 vs 3, 4 vs 5, 6 vs 7 - winners advance to semifinals
+        self.qualifier_matches = [(0, 1), (2, 3), (4, 5), (6, 7)]
+        self.qualifier_winners = [None, None, None, None]
         self.phase = TournamentPhase.QUALIFIERS
 
     def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
@@ -349,10 +349,10 @@ class Tournament:
 
     def generate_semifinals_from_qualifiers(self) -> None:
         """Сгенерировать полуфиналы из победителей отборочных."""
-        # Qualifier winners become the semifinal participants
-        pairing = random.choice(SEMIFINAL_PAIRINGS)
-        # Map qualifier winners to semifinal positions
-        self.semifinal_matches = list(pairing)
+        # 4 qualifier winners advance to semifinals: 2 matches
+        # Winners of qualifiers[0] vs qualifiers[1], qualifiers[2] vs qualifiers[3]
+        winners = self.qualifier_winners
+        self.semifinal_matches = [(winners[0], winners[1]), (winners[2], winners[3])]
         self.semifinal_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
 
