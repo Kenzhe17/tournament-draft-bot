@@ -26,8 +26,16 @@ class PlayerStatsStore:
         try:
             with open(STATS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                for name, stats_data in data.items():
-                    self._stats[name] = PlayerStats.from_dict(stats_data)
+                for key, stats_data in data.items():
+                    # Migration: if key doesn't contain ":", it's old format (no guild_id)
+                    if ":" not in key:
+                        # Migrate old format to new format with guild_id=0
+                        # This preserves old data but marks it as from unknown guild
+                        stats_data["guild_id"] = 0
+                        new_key = f"0:{key}"
+                        self._stats[new_key] = PlayerStats.from_dict(stats_data)
+                    else:
+                        self._stats[key] = PlayerStats.from_dict(stats_data)
         except (json.JSONDecodeError, KeyError):
             # Если файл повреждён, начинаем с пустого состояния
             self._stats = {}
