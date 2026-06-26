@@ -119,10 +119,10 @@ class Tournament:
         if len(self.captains) != self.captain_count:
             return False
         
-        # Check circle2 and circle3 have required players
-        if len(self.circle2) != self.captain_count:
+        # Check circle2 and circle3 have at least required players
+        if len(self.circle2) < self.captain_count:
             return False
-        if len(self.circle3) != self.captain_count:
+        if len(self.circle3) < self.captain_count:
             return False
         
         # Circle4 needs at least captain_count players
@@ -158,12 +158,12 @@ class Tournament:
                 continue
 
             placed = False
-            # Circle1, circle2, circle3 - по 4 игрока
+            # Circle1, circle2, circle3 - по captain_count игроков
             # Circle4 - без лимита
             for circle in range(1, 5):
                 circle_players = self.circle_list(circle)
-                # Circle4 без лимита, остальные по 4
-                if circle == 4 or len(circle_players) < 4:
+                # Circle4 без лимита, остальные по captain_count
+                if circle == 4 or len(circle_players) < self.captain_count:
                     circle_players.append(name)
                     self.set_circle_list(circle, circle_players)
                     added.append(name)
@@ -182,8 +182,8 @@ class Tournament:
             return False
         
         circle_players = self.circle_list(circle)
-        # Circle4 без лимита, остальные по 4
-        if circle != 4 and len(circle_players) >= 4:
+        # Circle4 без лимита, остальные по captain_count
+        if circle != 4 and len(circle_players) >= self.captain_count:
             return False
         
         circle_players.append(name)
