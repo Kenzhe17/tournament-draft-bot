@@ -20,7 +20,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     if not tournament.teams:
         return
 
-    team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣"}
+    team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣"}
     teams_text = []
 
     for i, team in enumerate(tournament.teams):
@@ -57,11 +57,12 @@ async def build_setup_embed(
         color=discord.Color.gold(),
     )
     
-    # Show all 4 circles
+    # Show all 4 circles with dynamic limits
     for circle in range(1, 5):
         circle_list = getattr(tournament, f"circle{circle}")
         circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
-        limit_info = "" if circle == 4 else " (макс. 4)"
+        limit = tournament.circle_limit(circle)
+        limit_info = "" if circle == 4 else f" (макс. {limit})"
         value = _circle_line(circle_list) or "*"
         embed.add_field(
             name=f"{circle_name}{limit_info}",
@@ -105,7 +106,7 @@ async def build_draft_embed(
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):
         lines = []
-        for pos in range(4):
+        for pos in range(tournament.captain_count):
             cap_idx = tournament.captain_order[pos]
             captain_name = tournament.captains[cap_idx]
             pick = tournament.picks.get(str(pos), {}).get(str(circle))

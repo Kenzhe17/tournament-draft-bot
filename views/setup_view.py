@@ -53,9 +53,10 @@ class CircleSelectButton(discord.ui.Button):
         # Check if circle is full (except circle4)
         if self.circle != 4:
             circle_list = getattr(tournament, f"circle{self.circle}")
-            if len(circle_list) >= 4:
+            limit = tournament.circle_limit(self.circle)
+            if len(circle_list) >= limit:
                 await interaction.response.send_message(
-                    f"❌ Круг {self.circle} уже заполнен (максимум 4 игрока).",
+                    f"❌ Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                     ephemeral=True
                 )
                 return
@@ -128,9 +129,10 @@ class AdminAddModal(discord.ui.Modal):
         # Check if circle is full (except circle4)
         if self.circle != 4:
             circle_list = getattr(tournament, f"circle{self.circle}")
-            if len(circle_list) >= 4:
+            limit = tournament.circle_limit(self.circle)
+            if len(circle_list) >= limit:
                 await interaction.response.send_message(
-                    f"❌ Круг {self.circle} уже заполнен (максимум 4 игрока).",
+                    f"❌ Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                     ephemeral=True
                 )
                 return

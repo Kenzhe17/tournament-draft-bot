@@ -35,11 +35,11 @@ class RegistrationState(str, Enum):
     OPEN = "open"
 
 
-# Порядок выбора по кругам: индексы позиций капитанов (0–3)
+# Порядок выбора по кругам для разного количества капитанов
 PICK_ORDERS: dict[int, dict[str, list[int] | int]] = {
-    2: {"order": [0, 1, 2], "auto": 3},
-    3: {"order": [3, 2, 1], "auto": 0},
-    4: {"order": [0, 1, 2], "auto": 3},
+    2: {"order": [0, 1], "auto": 1},  # 2 captains
+    4: {"order": [0, 1, 2], "auto": 3},  # 4 captains
+    8: {"order": [0, 1, 2, 3, 4, 5, 6], "auto": 7},  # 8 captains
 }
 
 # Возможные пары полуфиналов (индексы команд 0-based)
@@ -70,6 +70,26 @@ class Tournament:
     phase: TournamentPhase = TournamentPhase.SETUP
     is_test: bool = False
 
+    @property
+    def captain_count(self) -> int:
+        """Количество капитанов на основе размера турнира."""
+        if self.size == TournamentSize.EIGHT:
+            return 2
+        elif self.size == TournamentSize.SIXTEEN:
+            return 4
+        else:  # 32 players
+            return 8
+
+    @property
+    def circle_limit(self, circle: int) -> int:
+        """Лимит игроков для круга на основе размера турнира."""
+        if circle == 1:
+            return self.captain_count  # circle1 = captains
+        elif circle == 4:
+            return float('inf')  # circle4 unlimited
+        else:
+            return self.captain_count  # circle2, circle3 = captain count
+
     # Драфт
     captain_order: list[int] = field(default_factory=list)
     picks: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -97,22 +117,18 @@ class Tournament:
     @property
     def is_setup_complete(self) -> bool:
         """Готов ли турнир к запуску драфта."""
-        if len(self.captains) != 4:
+        if len(self.captains) != self.captain_count:
             return False
         
-        # Check based on tournament size
-        if self.size == TournamentSize.EIGHT:
-            # 8 players: need 4 in circle2
-            if len(self.circle2) != 4:
-                return False
-        elif self.size == TournamentSize.SIXTEEN:
-            # 16 players: need 4 in circle2 and 4 in circle3
-            if len(self.circle2) != 4 or len(self.circle3) != 4:
-                return False
-        else:
-            # 32 players: need 4 in circle2, 4 in circle3, and at least 4 in circle4
-            if len(self.circle2) != 4 or len(self.circle3) != 4 or len(self.circle4) < 4:
-                return False
+        # Check circle2 and circle3 have required players
+        if len(self.circle2) != self.captain_count:
+            return False
+        if len(self.circle3) != self.captain_count:
+            return False
+        
+        # Circle4 needs at least captain_count players
+        if len(self.circle4) < self.captain_count:
+            return False
         
         return True
 
@@ -190,9 +206,9 @@ class Tournament:
 
     def start_draft(self) -> None:
         """Перемешать капитанов и начать драфт."""
-        self.captain_order = list(range(4))
+        self.captain_order = list(range(self.captain_count))
         random.shuffle(self.captain_order)
-        self.picks = {str(i): {} for i in range(4)}
+        self.picks = {str(i): {} for i in range(self.captain_count)}
         self.current_circle = 2
         self.pick_index = 0
         
@@ -207,7 +223,7 @@ class Tournament:
         self.phase = TournamentPhase.DRAFT
 
     def current_picker_position(self) -> int | None:
-        """Позиция капитана (0–3), который сейчас выбирает."""
+        """Позиция капитана, который сейчас выбирает."""
         if self.phase != TournamentPhase.DRAFT:
             return None
         
@@ -216,21 +232,21 @@ class Tournament:
         if key not in self.available or not self.available[key]:
             return None
         
-        # Special handling for circle4 with more than 4 players
+        # Special handling for circle4 with more than captain_count players
         if self.current_circle == 4:
             remaining = self.available.get(key, [])
-            if len(remaining) > 4:
-                # More than 4 players - all captains pick in round-robin
-                return self.pick_index % 4
+            if len(remaining) > self.captain_count:
+                # More than captain_count players - all captains pick in round-robin
+                return self.pick_index % self.captain_count
         
-        order = PICK_ORDERS.get(self.current_circle, {}).get("order", [])
+        order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
         if self.pick_index < len(order):
             return order[self.pick_index]
         return None
 
     def auto_picker_position(self) -> int:
         """Позиция капитана с автоматическим выбором в текущем круге."""
-        return PICK_ORDERS[self.current_circle]["auto"]  # type: ignore[return-value]
+        return PICK_ORDERS[self.captain_count]["auto"]  # type: ignore[return-value]
 
     def pick_player(self, position: int, player: str) -> None:
         """Зафиксировать выбор игрока капитаном на позиции position."""
@@ -244,7 +260,7 @@ class Tournament:
         Перейти к следующему шагу драфта.
         Возвращает True, если драфт завершён.
         """
-        # Special handling for circle4 with more than 4 players
+        # Special handling for circle4 with more than captain_count players
         if self.current_circle == 4:
             key = str(self.current_circle)
             remaining = self.available.get(key, [])
@@ -256,7 +272,7 @@ class Tournament:
                 # All players picked, advance to next phase
                 return self._advance_circle()
         
-        order = PICK_ORDERS.get(self.current_circle, {}).get("order", [])
+        order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
         self.pick_index += 1
 
         if self.pick_index >= len(order):
@@ -305,16 +321,16 @@ class Tournament:
         
         # Collect all circle4 picks in order
         circle4_picks = []
-        for pos in range(4):
+        for pos in range(self.captain_count):
             pick = self.picks[str(pos)].get("4", "")
             if pick:
                 circle4_picks.append((pos, pick))
         
-        # Only first 4 circle4 picks participate in tournament
-        participating_circle4 = circle4_picks[:4]
+        # Only first captain_count circle4 picks participate in tournament
+        participating_circle4 = circle4_picks[:self.captain_count]
         participating_by_pos = {pos: name for pos, name in participating_circle4}
         
-        for pos in range(4):
+        for pos in range(self.captain_count):
             captain_idx = self.captain_order[pos]
             captain_name = self.captains[captain_idx]
             picks = self.picks[str(pos)]
@@ -324,7 +340,7 @@ class Tournament:
                 "circle1": captain_name,  # Captain is in circle1
                 "circle2": picks.get("2", ""),
                 "circle3": picks.get("3", ""),
-                "circle4": participating_by_pos.get(pos, ""),  # Only if in first 4
+                "circle4": participating_by_pos.get(pos, ""),  # Only if in first captain_count
             }
             
             self.teams.append(team_data)

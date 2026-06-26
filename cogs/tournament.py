@@ -118,12 +118,8 @@ class TournamentCog(commands.Cog):
             return
 
         if not tournament.is_setup_complete:
-            if tournament.size == TournamentSize.EIGHT:
-                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана и 4 игрока в круге 2."
-            elif tournament.size == TournamentSize.SIXTEEN:
-                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана, 4 игрока в круге 2 и 4 игрока в круге 3."
-            else:
-                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана, 4 игрока в круге 2, 4 игрока в круге 3 и минимум 4 игрока в круге 4."
+            captain_count = tournament.captain_count
+            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), {captain_count} игрок(а/ов) в круге 2, {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
             await interaction.response.send_message(msg, ephemeral=True)
             return
 
@@ -201,24 +197,14 @@ class TournamentCog(commands.Cog):
 
         # Fill with test data based on tournament size
         tournament.is_test = True
-        tournament.captains = ["Cap1", "Cap2", "Cap3", "Cap4"]
+        captain_count = tournament.captain_count
+        tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
         
         # Fill circles based on tournament size
-        if tournament.size == TournamentSize.EIGHT:
-            # 8 players: circle1 + circle2 only
-            tournament.circle1.extend(tournament.captains)
-            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
-        elif tournament.size == TournamentSize.SIXTEEN:
-            # 16 players: circle1 + circle2 + circle3
-            tournament.circle1.extend(tournament.captains)
-            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
-            tournament.circle3.extend([f"P3-{i}" for i in range(4)])
-        else:
-            # 32 players: all 4 circles
-            tournament.circle1.extend(tournament.captains)
-            tournament.circle2.extend([f"P2-{i}" for i in range(4)])
-            tournament.circle3.extend([f"P3-{i}" for i in range(4)])
-            tournament.circle4.extend([f"P4-{i}" for i in range(8)])  # 8 players in circle4
+        tournament.circle1.extend(tournament.captains)
+        tournament.circle2.extend([f"P2-{i}" for i in range(captain_count)])
+        tournament.circle3.extend([f"P3-{i}" for i in range(captain_count)])
+        tournament.circle4.extend([f"P4-{i}" for i in range(captain_count + 2)])  # captain_count + 2 players in circle4
         
         tournament.start_draft()
         store.set(tournament)
