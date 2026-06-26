@@ -139,7 +139,18 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
-        await self.bot.update_tournament_message(interaction.guild, tournament)
+        try:
+            await self.bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            logger.error("Ошибка при обновлении сообщения турнира: %s", e)
+            # Revert phase if update fails
+            tournament.phase = TournamentPhase.SETUP
+            store.set(tournament)
+            await interaction.followup.send(
+                "❌ Произошла ошибка при обновлении сообщения. Драфт не запущен. Фаза возвращена в настройку.",
+                ephemeral=True
+            )
+            return
 
     @app_commands.command(name="close", description="Закрыть регистрацию (только админ добавляет)")
     @is_admin()
