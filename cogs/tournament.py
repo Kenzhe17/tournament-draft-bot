@@ -198,17 +198,24 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
-    @commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
+    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
     @is_admin()
-    async def test_start(self, ctx: commands.Context) -> None:
+    async def test_start(self, interaction: discord.Interaction) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
-        tournament = store.get(ctx.guild.id)
+        tournament = store.get(interaction.guild_id)
         if not tournament:
-            await ctx.send("❌ Сначала создайте турнир командой `/tournament`.")
+            await interaction.response.send_message(
+                "❌ Сначала создайте турнир командой `/tournament`.",
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         if tournament.phase != TournamentPhase.SETUP:
-            await ctx.send("❌ Турнир уже запущен.")
+            await interaction.response.send_message(
+                "❌ Турнир уже запущен.", ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Fill with test data based on tournament size
@@ -225,9 +232,13 @@ class TournamentCog(commands.Cog):
         tournament.start_draft()
         store.set(tournament)
 
-        await ctx.send("🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.")
+        await interaction.response.send_message(
+            "🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
-        await self.bot.update_tournament_message(ctx.guild, tournament)
+        await self.bot.update_tournament_message(interaction.guild, tournament)
 
     @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
     async def leaderboard(self, interaction: discord.Interaction) -> None:
@@ -244,15 +255,19 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
-    @commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
+    @app_commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
     @is_admin()
-    async def reset_leaderboard(self, ctx: commands.Context) -> None:
+    async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
         """Сбросить всю статистику игроков."""
         from storage.player_stats_store import player_stats_store
 
         player_stats_store.reset()
 
-        await ctx.send("🗑️ Таблица лидеров сброшена.")
+        await interaction.response.send_message(
+            "🗑️ Таблица лидеров сброшена.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(

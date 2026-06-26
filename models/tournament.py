@@ -36,10 +36,23 @@ class RegistrationState(str, Enum):
 
 
 # Порядок выбора по кругам для разного количества капитанов
+# Rotation Draft: круг 2 - прямой, круг 3 - обратный, круг 4 - циклическая ротация
 PICK_ORDERS: dict[int, dict[str, list[int] | int]] = {
-    2: {"order": [0, 1], "auto": 1},  # 2 captains
-    4: {"order": [0, 1, 2], "auto": 3},  # 4 captains
-    8: {"order": [0, 1, 2, 3, 4, 5, 6], "auto": 7},  # 8 captains
+    2: {
+        "2": {"order": [0, 1], "auto": 1},  # Круг 2: 1 → 2
+        "3": {"order": [1, 0], "auto": 0},  # Круг 3: 2 → 1
+        "4": {"order": [1, 0], "auto": 0},  # Круг 4: 2 → 1
+    },
+    4: {
+        "2": {"order": [0, 1, 2, 3], "auto": 3},  # Круг 2: 1 → 2 → 3 → 4
+        "3": {"order": [3, 2, 1, 0], "auto": 0},  # Круг 3: 4 → 3 → 2 → 1
+        "4": {"order": [1, 2, 3, 0], "auto": 0},  # Круг 4: 2 → 3 → 4 → 1
+    },
+    8: {
+        "2": {"order": [0, 1, 2, 3, 4, 5, 6, 7], "auto": 7},  # Круг 2: 1 → 2 → ... → 8
+        "3": {"order": [7, 6, 5, 4, 3, 2, 1, 0], "auto": 0},  # Круг 3: 8 → 7 → ... → 1
+        "4": {"order": [1, 2, 3, 4, 5, 6, 7, 0], "auto": 0},  # Круг 4: 2 → 3 → ... → 8 → 1
+    },
 }
 
 # Возможные пары полуфиналов (индексы команд 0-based)
@@ -230,20 +243,24 @@ class Tournament:
         """Позиция капитана, который сейчас выбирает."""
         if self.phase != TournamentPhase.DRAFT:
             return None
-        
+
         # Check if current circle has available players
         key = str(self.current_circle)
         if key not in self.available or not self.available[key]:
             return None
-        
-        order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
+
+        circle_orders = PICK_ORDERS.get(self.captain_count, {})
+        order_data = circle_orders.get(key, {})
+        order = order_data.get("order", [])
         if self.pick_index < len(order):
             return order[self.pick_index]
         return None
 
     def auto_picker_position(self) -> int:
         """Позиция капитана с автоматическим выбором в текущем круге."""
-        return PICK_ORDERS[self.captain_count]["auto"]  # type: ignore[return-value]
+        circle_orders = PICK_ORDERS.get(self.captain_count, {})
+        order_data = circle_orders.get(str(self.current_circle), {})
+        return order_data.get("auto", 0)  # type: ignore[return-value]
 
     def pick_player(self, position: int, player: str) -> None:
         """Зафиксировать выбор игрока капитаном на позиции position."""
@@ -263,8 +280,10 @@ class Tournament:
         if not remaining:
             # All players picked, advance to next phase
             return self._advance_circle()
-        
-        order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
+
+        circle_orders = PICK_ORDERS.get(self.captain_count, {})
+        order_data = circle_orders.get(key, {})
+        order = order_data.get("order", [])
         self.pick_index += 1
 
         if self.pick_index >= len(order):
