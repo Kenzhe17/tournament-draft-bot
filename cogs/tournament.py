@@ -126,7 +126,7 @@ class TournamentCog(commands.Cog):
 
         if not tournament.is_setup_complete:
             captain_count = tournament.captain_count
-            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), минимум {captain_count} игрок(а/ов) в круге 2, минимум {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
+            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), ровно {captain_count} игрок(а/ов) в круге 2, ровно {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
             await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return

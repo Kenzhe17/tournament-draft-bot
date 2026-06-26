@@ -119,10 +119,10 @@ class Tournament:
         if len(self.captains) != self.captain_count:
             return False
         
-        # Check circle2 and circle3 have at least required players
-        if len(self.circle2) < self.captain_count:
+        # Check circle2 and circle3 have exactly required players
+        if len(self.circle2) != self.captain_count:
             return False
-        if len(self.circle3) < self.captain_count:
+        if len(self.circle3) != self.captain_count:
             return False
         
         # Circle4 needs at least captain_count players
