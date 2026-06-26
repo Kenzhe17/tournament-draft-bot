@@ -70,7 +70,9 @@ class TournamentCog(commands.Cog):
             size=tournament_size,
         )
         embed = await build_setup_embed(tournament, interaction.guild)
-        await interaction.response.send_message(embed=embed)
+        view = self.bot.build_view_for_tournament(tournament)
+        self.bot._register_view(view)
+        await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
 
         tournament.message_id = message.id
