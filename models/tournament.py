@@ -237,6 +237,12 @@ class Tournament:
             if len(remaining) > self.captain_count:
                 # More than captain_count players - all captains pick in round-robin
                 return self.pick_index % self.captain_count
+            elif len(remaining) > 0:
+                # Still players remaining but not more than captain_count
+                order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
+                if self.pick_index < len(order):
+                    return order[self.pick_index]
+                return None
         
         order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
         if self.pick_index < len(order):
