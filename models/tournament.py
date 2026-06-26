@@ -142,19 +142,11 @@ class Tournament:
         if len(self.circle1) != self.captain_count:
             return False
 
-        # Check circle2, circle3, circle4 based on their limits
+        # Check circle2, circle3, circle4 - all need at least captain_count players
         for circle in [2, 3, 4]:
             circle_list = self.circle_list(circle)
-            limit = self.circle_limit(circle)
-
-            if limit == float('inf'):
-               # No limit - need at least captain_count players
-                if len(circle_list) < self.captain_count:
-                    return False
-            else:
-                # Has limit - need exactly limit players
-                if len(circle_list) != limit:
-                    return False
+            if len(circle_list) < self.captain_count:
+                return False
 
         return True
 

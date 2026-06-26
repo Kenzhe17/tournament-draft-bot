@@ -126,17 +126,7 @@ class TournamentCog(commands.Cog):
 
         if not tournament.is_setup_complete:
             captain_count = tournament.captain_count
-            requirements = []
-            requirements.append(f"{captain_count} игрока в Капитаны")
-
-            for circle in [2, 3, 4]:
-                limit = tournament.circle_limit(circle)
-                if limit == float('inf'):
-                    requirements.append(f"минимум {captain_count} игрока в круге {circle}")
-                else:
-                    requirements.append(f"ровно {limit} игрока в круге {circle}")
-
-            msg = f"❌ Турнир заполнен не полностью. Нужно {', '.join(requirements)}."
+            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитаны, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
             await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
