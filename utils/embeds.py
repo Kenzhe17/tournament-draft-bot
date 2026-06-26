@@ -156,13 +156,6 @@ async def build_draft_embed(
             inline=False,
         )
 
-    if tournament.last_auto_pick_message:
-        embed.add_field(
-            name="Автовыбор",
-            value=tournament.last_auto_pick_message,
-            inline=False,
-        )
-
     return embed
 
 

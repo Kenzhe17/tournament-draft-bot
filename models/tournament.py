@@ -117,7 +117,6 @@ class Tournament:
     current_circle: int = 2
     pick_index: int = 0
     available: dict[str, list[str]] = field(default_factory=dict)
-    last_auto_pick_message: str = ""
 
     # Команды и плей-офф
     teams: list[dict[str, Any]] = field(default_factory=list)
@@ -159,6 +158,40 @@ class Tournament:
         setattr(self, f"circle{circle}", players)
 
     # --- Добавление игроков ---
+
+    def add_players(self, names: list[str]) -> tuple[list[str], list[str]]:
+        """
+        Добавить игроков в круги 1→2→3→4 по порядку заполнения.
+        Circle4 без лимита. Возвращает (добавленные, отклонённые).
+        """
+        added: list[str] = []
+        rejected: list[str] = []
+
+        for name in names:
+            name = name.strip()
+            if not name:
+                continue
+            if name in self.all_players:
+                rejected.append(name)
+                continue
+
+            placed = False
+            # Circle1, circle2, circle3 - по captain_count игроков
+            # Circle4 - без лимита
+            for circle in range(1, 5):
+                circle_players = self.circle_list(circle)
+                # Circle4 без лимита, остальные по captain_count
+                if circle == 4 or len(circle_players) < self.captain_count:
+                    circle_players.append(name)
+                    self.set_circle_list(circle, circle_players)
+                    added.append(name)
+                    placed = True
+                    break
+
+            if not placed:
+                rejected.append(name)
+
+        return added, rejected
 
     def add_player_to_circle(self, circle: int, name: str) -> bool:
         """Добавить игрока в конкретный круг. Возвращает True если успешно."""
@@ -208,8 +241,7 @@ class Tournament:
             "3": list(self.circle3),
             "4": list(self.circle4),  # All players from circle4
         }
-        
-        self.last_auto_pick_message = ""
+
         self.phase = TournamentPhase.DRAFT
 
     def current_picker_position(self) -> int | None:
@@ -229,15 +261,8 @@ class Tournament:
             return order[self.pick_index]
         return None
 
-    def auto_picker_position(self) -> int:
-        """Позиция капитана с автоматическим выбором в текущем круге."""
-        circle_orders = PICK_ORDERS.get(self.captain_count, {})
-        order_data = circle_orders.get(str(self.current_circle), {})
-        return order_data.get("auto", 0)  # type: ignore[return-value]
-
     def pick_player(self, position: int, player: str) -> None:
         """Зафиксировать выбор игрока капитаном на позиции position."""
-        self.last_auto_pick_message = ""
         key = str(self.current_circle)
         self.picks[str(position)][key] = player
         self.available[key].remove(player)
@@ -260,30 +285,16 @@ class Tournament:
         self.pick_index += 1
 
         if self.pick_index >= len(order):
-            self._do_auto_pick()
             return self._advance_circle()
 
         return False
 
-    def _do_auto_pick(self) -> None:
-        """Автоматически назначить последнего игрока круга."""
-        auto_pos = self.auto_picker_position()
-        key = str(self.current_circle)
-        remaining = self.available.get(key, [])
-        if remaining:
-            player = remaining[0]
-            self.pick_player(auto_pos, player)
-            captain_name = self.captains[self.captain_order[auto_pos]]
-            self.last_auto_pick_message = (
-                f" **{captain_name}** автоматически получает **{player}**"
-            )
 
     def _advance_circle(self) -> bool:
         """Перейти к следующему кругу или завершить драфт."""
         self.pick_index = 0
 
         if self.current_circle >= 4:
-            self.last_auto_pick_message = ""
             self._build_teams()
             self.phase = TournamentPhase.TEAMS
             return True
@@ -398,7 +409,6 @@ class Tournament:
             "current_circle": self.current_circle,
             "pick_index": self.pick_index,
             "available": self.available,
-            "last_auto_pick_message": self.last_auto_pick_message,
             "teams": self.teams,
             "qualifier_matches": [list(m) for m in self.qualifier_matches],
             "qualifier_winners": self.qualifier_winners,
@@ -430,7 +440,6 @@ class Tournament:
             current_circle=data.get("current_circle", 2),
             pick_index=data.get("pick_index", 0),
             available=data.get("available", {}),
-            last_auto_pick_message=data.get("last_auto_pick_message", ""),
             teams=data.get("teams", []),
             qualifier_matches=[
                 tuple(m) for m in data.get("qualifier_matches", [])
