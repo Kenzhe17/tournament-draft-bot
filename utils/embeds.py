@@ -268,28 +268,28 @@ async def build_embed_for_phase(
     return discord.Embed(title="Ошибка", color=discord.Color.red())
 
 
-def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed:
+async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
 
-    players = player_stats_store.get_leaderboard(guild_id, page, per_page=10)
-    total_pages = player_stats_store.get_total_pages(guild_id, per_page=10)
+    players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
+    total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
     embed = discord.Embed(
         title="🏆 Лидерборд Игроков",
         color=discord.Color.gold(),
     )
-    
+
     if not players:
         embed.description = "Пока нет данных. Сыграйте хотя бы один турнир!"
         return embed
-    
+
     lines = []
     global_rank = (page - 1) * 10
-    
+
     for i, player in enumerate(players):
         rank = global_rank + i + 1
-        
+
         # Highlight top 3
         if rank == 1:
             rank_emoji = "🥇"

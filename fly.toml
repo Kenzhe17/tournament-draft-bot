@@ -20,3 +20,11 @@ primary_region = "ams"
 
 [processes]
   bot = "python bot.py"
+
+# PostgreSQL database
+[[services]]
+  internal_port = 5432
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 5432

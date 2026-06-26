@@ -8,9 +8,10 @@ import sys
 import discord
 from discord.ext import commands
 
-from config import DISCORD_TOKEN
+from config import DATABASE_URL, DISCORD_TOKEN
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
+from storage.player_stats_store import player_stats_store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
@@ -37,6 +38,16 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Initialize database if DATABASE_URL is set
+        if DATABASE_URL:
+            try:
+                from storage.db import init_db
+                await init_db()
+                player_stats_store.enable_db()
+                logger.info("Database initialized and enabled")
+            except Exception as e:
+                logger.error("Failed to initialize database: %s", e)
+
         await self.load_extension("cogs.tournament")
         await self.tree.sync()
         logger.info("Slash-команды синхронизированы")

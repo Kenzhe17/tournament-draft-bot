@@ -64,13 +64,13 @@ class FinalWinnerButton(discord.ui.Button):
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                player_stats_store.update_player(tournament.guild_id, player, won=True)
+                await player_stats_store.update_player(tournament.guild_id, player, won=True)
 
         # Update losing team stats
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                player_stats_store.update_player(tournament.guild_id, player, won=False)
+                await player_stats_store.update_player(tournament.guild_id, player, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

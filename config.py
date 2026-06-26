@@ -17,6 +17,9 @@ DATA_FILE = DATA_DIR / "tournaments.json"
 # Токен Discord-бота
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 
+# PostgreSQL Database
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
 # Лимиты турнира
 MAX_CAPTAINS = 4
 MAX_PLAYERS_PER_CIRCLE = 4
