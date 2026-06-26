@@ -10,7 +10,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.tournament import Tournament, TournamentPhase
+from models.tournament import (
+    RegistrationState,
+    Tournament,
+    TournamentPhase,
+    TournamentSize,
+)
 from storage.json_store import store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin
@@ -36,23 +41,13 @@ class TournamentCog(commands.Cog):
     def __init__(self, bot: TournamentBot):
         self.bot = bot
 
-    tournament_group = app_commands.Group(
-        name="tournament", description="Управление турниром"
-    )
-    captains_group = app_commands.Group(
-        name="captains", description="Управление капитанами"
-    )
-    player_group = app_commands.Group(
-        name="player", description="Управление игроками"
-    )
-    draft_group = app_commands.Group(
-        name="draft", description="Управление драфтом"
-    )
-
-    @tournament_group.command(name="create", description="Создать новый турнир")
+    @app_commands.command(name="tournament", description="Создать новый турнир")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока")
     @is_admin()
-    async def tournament_create(self, interaction: discord.Interaction) -> None:
-        """Создать турнир и отправить главное Embed-сообщение."""
+    async def tournament_create(
+        self, interaction: discord.Interaction, size: str
+    ) -> None:
+        """Создать турнир с указанным размером."""
         existing = store.get(interaction.guild_id)
         if existing and existing.phase != TournamentPhase.COMPLETE:
             await interaction.response.send_message(
@@ -60,9 +55,19 @@ class TournamentCog(commands.Cog):
             )
             return
 
+        # Validate size
+        try:
+            tournament_size = TournamentSize(size)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Неверный размер. Используйте: 8, 16 или 32.", ephemeral=True
+            )
+            return
+
         tournament = Tournament(
             guild_id=interaction.guild_id,
             channel_id=interaction.channel_id,
+            size=tournament_size,
         )
         embed = await build_setup_embed(tournament, interaction.guild)
         await interaction.response.send_message(embed=embed)
@@ -70,187 +75,37 @@ class TournamentCog(commands.Cog):
 
         tournament.message_id = message.id
         store.set(tournament)
-        logger.info("Турнир создан на сервере %s", interaction.guild_id)
+        logger.info("Турнир создан на сервере %s с размером %s", interaction.guild_id, size)
 
-    @tournament_group.command(name="delete", description="Полностью удалить активный турнир")
+    @app_commands.command(name="delete", description="Удалить активный турнир")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
-        """Удалить текущий турнир из хранилища и очистить состояние."""
+        """Удалить текущий турнир."""
         existing = store.get(interaction.guild_id)
         if not existing:
-            await interaction.response.send_message(
-                "❌ На этом сервере нет активных или созданных турниров.",
-                ephemeral=True,
-            )
-            return
-
-        store.delete(interaction.guild_id)
-
-        logger.info("Турнир принудительно удален на сервере %s админом %s", interaction.guild_id, interaction.user.id)
-
-        # 1. Делаем сообщение ephemeral=True, иначе Дискорд не разрешит боту его удалить
-        await interaction.response.send_message(
-            "🗑️ **Активный турнир был успешно удален.**",
-            ephemeral=True
-        )
-
-        # 2. Запускаем таску на удаление через 3 секунды
-        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
-
-    @tournament_group.command(name="replace", description="Заменить игрока в активном турнире")
-    @app_commands.describe(
-        old_name="Имя игрока, которого нужно заменить",
-        new_name="Имя нового игрока"
-    )
-    @is_admin()
-    async def tournament_replace(
-        self,
-        interaction: discord.Interaction,
-        old_name: str,
-        new_name: str
-    ) -> None:
-        """Заменить одного игрока на другого в составе сформированных команд драфта."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
             await interaction.response.send_message(
                 "❌ На этом сервере нет активного турнира.",
                 ephemeral=True,
             )
             return
 
-        old_name = old_name.strip()
-        new_name = new_name.strip()
+        store.delete(interaction.guild_id)
+        logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
-        draft = tournament.draft
-        if not draft or not draft.teams:
-            await interaction.response.send_message(
-                "❌ Команды ещё не сформированы. Замена на этом этапе невозможна.",
-                ephemeral=True,
-            )
-            return
-
-        # 1. Ищем и меняем игрока внутри сформированных команд драфта (в draft.teams)
-        replaced_in_team = False
-        for team_num, roster in draft.teams.items():
-            if old_name in roster:
-                idx = roster.index(old_name)
-                roster[idx] = new_name
-                replaced_in_team = True
-                break
-
-        if not replaced_in_team:
-            await interaction.response.send_message(
-                f"❌ Игрок с именем `{old_name}` не найден в составах команд.",
-                ephemeral=True,
-            )
-            return
-
-        # Сохраняем обновленные данные в store
-        store.set(tournament)
-
-        logger.info(
-            "Администратор %s заменил игрока %s на %s в турнире %s",
-            interaction.user.id, old_name, new_name, interaction.guild_id
-        )
-
-        # Скрытый ответ админу на 3 секунды
         await interaction.response.send_message(
-            f"✅ Игрок `{old_name}` успешно заменен на `{new_name}`.",
+            "🗑️ **Турнир успешно удален.**",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
-        # Перерисовываем главное сообщение турнира (сетка и списки обновятся мгновенно!)
-        await self.bot.update_tournament_message(interaction.guild, tournament)
-
-    @captains_group.command(name="add", description="Добавить 4 капитанов")
-    @app_commands.describe(
-        cap1="Капитан 1",
-        cap2="Капитан 2",
-        cap3="Капитан 3",
-        cap4="Капитан 4",
-    )
+    @app_commands.command(name="start", description="Запустить драфт")
     @is_admin()
-    async def captains_add(
-        self,
-        interaction: discord.Interaction,
-        cap1: discord.Member,
-        cap2: discord.Member,
-        cap3: discord.Member,
-        cap4: discord.Member,
-    ) -> None:
-        """Добавить капитанов по Discord Member ID."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                "❌ Сначала создайте турнир командой `/tournament create`.",
-                ephemeral=True,
-            )
-            return
-
-        captains = [cap1.id, cap2.id, cap3.id, cap4.id]
-        if len(set(captains)) != 4:
-            await interaction.response.send_message(
-                "❌ Все 4 капитана должны быть разными пользователями.",
-                ephemeral=True,
-            )
-            return
-
-        tournament.captains = captains
-        store.set(tournament)
-
-        await interaction.response.send_message("Капитаны добавлены", ephemeral=True)
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
-
-    @player_group.command(name="add", description="Добавить игроков (через запятую)")
-    @app_commands.describe(names="Имена игроков через запятую")
-    @is_admin()
-    async def player_add(
-        self, interaction: discord.Interaction, names: str
-    ) -> None:
-        """Добавить текстовых игроков в круги 2→3→4."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                "❌ Сначала создайте турнир командой `/tournament create`.",
-                ephemeral=True,
-            )
-            return
-
-        raw_names = [n.strip() for n in names.split(",") if n.strip()]
-        if not raw_names:
-            await interaction.response.send_message(
-                "❌ Укажите хотя бы одного игрока.", ephemeral=True
-            )
-            return
-
-        added, rejected = tournament.add_players(raw_names)
-        store.set(tournament)
-
-        parts = []
-        if added:
-            parts.append(f"✅ Добавлено: {', '.join(added)}")
-        if rejected:
-            parts.append(
-                f"❌ Отклонено (дубликат или лимит): {', '.join(rejected)}"
-            )
-        msg = "\n".join(parts) if parts else "Ничего не добавлено."
-
-        await interaction.response.send_message(msg, ephemeral=True)
-        asyncio.create_task(_delete_ephemeral_later(interaction, 5.0))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
-
-    @draft_group.command(name="start", description="Запустить драфт")
-    @is_admin()
-    async def draft_start(self, interaction: discord.Interaction) -> None:
-        """Запустить драфт после проверки заполненности."""
+    async def start_draft(self, interaction: discord.Interaction) -> None:
+        """Запустить драфт после заполнения игроков."""
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ Сначала создайте турнир командой `/tournament create`.",
+                "❌ Сначала создайте турнир командой `/tournament`.",
                 ephemeral=True,
             )
             return
@@ -263,7 +118,8 @@ class TournamentCog(commands.Cog):
 
         if not tournament.is_setup_complete:
             await interaction.response.send_message(
-                "❌ Турнир заполнен не полностью.", ephemeral=True
+                f"❌ Турнир заполнен не полностью. Нужно {tournament.required_circles} кругов по 4 игрока.",
+                ephemeral=True
             )
             return
 
@@ -274,6 +130,233 @@ class TournamentCog(commands.Cog):
             "🎲 Драфт запущен!", ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="close", description="Закрыть регистрацию (только админ добавляет)")
+    @is_admin()
+    async def close_registration(self, interaction: discord.Interaction) -> None:
+        """Закрыть регистрацию игроков."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.", ephemeral=True
+            )
+            return
+
+        tournament.registration = RegistrationState.CLOSED
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            "🔒 Регистрация закрыта. Только админ может добавлять игроков.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="open", description="Открыть регистрацию (игроки добавляются сами)")
+    @is_admin()
+    async def open_registration(self, interaction: discord.Interaction) -> None:
+        """Открыть регистрацию игроков."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.", ephemeral=True
+            )
+            return
+
+        tournament.registration = RegistrationState.OPEN
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            "🔓 Регистрация открыта! Игроки могут добавляться через кнопки.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
+    @is_admin()
+    async def test_start(self, interaction: discord.Interaction) -> None:
+        """Заполнить турнир тестовыми данными и запустить драфт."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Сначала создайте турнир командой `/tournament`.",
+                ephemeral=True,
+            )
+            return
+
+        if tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир уже запущен.", ephemeral=True
+            )
+            return
+
+        # Fill with test data
+        tournament.is_test = True
+        tournament.captains = ["Cap1", "Cap2", "Cap3", "Cap4"]
+        
+        required = tournament.required_circles
+        for circle in range(1, required + 1):
+            circle_list = getattr(tournament, f"circle{circle}")
+            if circle == 1:
+                circle_list.extend(tournament.captains)
+            else:
+                circle_list.extend([f"P{circle}-{i}" for i in range(4)])
+        
+        tournament.start_draft()
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            "🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
+    async def leaderboard(self, interaction: discord.Interaction) -> None:
+        """Показать таблицу лидеров турнира."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.", ephemeral=True
+            )
+            return
+
+        if not tournament.teams:
+            await interaction.response.send_message(
+                "❌ Команды ещё не сформированы.", ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="🏆 Таблица лидеров",
+            color=discord.Color.gold(),
+        )
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            embed.add_field(
+                name=f"Команда {i + 1}",
+                value=f"Капитан: {captain}",
+                inline=False,
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="replace", description="Заменить игрока")
+    @app_commands.describe(
+        old_name="Имя игрока которого нужно заменить",
+        new_name="Имя нового игрока"
+    )
+    @is_admin()
+    async def replace_player(
+        self,
+        interaction: discord.Interaction,
+        old_name: str,
+        new_name: str
+    ) -> None:
+        """Заменить игрока в турнире."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.",
+                ephemeral=True,
+            )
+            return
+
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+
+        if tournament.phase == TournamentPhase.SETUP:
+            # Replace in circles
+            if old_name not in tournament.all_players:
+                await interaction.response.send_message(
+                    f"❌ Игрок `{old_name}` не найден.",
+                    ephemeral=True,
+                )
+                return
+
+            for circle in range(1, 5):
+                circle_list = getattr(tournament, f"circle{circle}")
+                if old_name in circle_list:
+                    idx = circle_list.index(old_name)
+                    circle_list[idx] = new_name
+                    break
+        else:
+            # Replace in teams
+            found = False
+            for team in tournament.teams:
+                for key, value in team.items():
+                    if value == old_name:
+                        team[key] = new_name
+                        found = True
+                        break
+                if found:
+                    break
+
+            if not found:
+                await interaction.response.send_message(
+                    f"❌ Игрок `{old_name}` не найден в командах.",
+                    ephemeral=True,
+                )
+                return
+
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="delete_player", description="Удалить игрока из турнира")
+    @app_commands.describe(name="Имя игрока которого нужно удалить")
+    @is_admin()
+    async def delete_player(
+        self,
+        interaction: discord.Interaction,
+        name: str
+    ) -> None:
+        """Удалить игрока из турнира."""
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Нет активного турнира.",
+                ephemeral=True,
+            )
+            return
+
+        name = name.strip()
+
+        if tournament.phase == TournamentPhase.SETUP:
+            if not tournament.remove_player(name):
+                await interaction.response.send_message(
+                    f"❌ Игрок `{name}` не найден.",
+                    ephemeral=True,
+                )
+                return
+        else:
+            await interaction.response.send_message(
+                "❌ Можно удалять игроков только на этапе настройки.",
+                ephemeral=True,
+            )
+            return
+
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            f"✅ Игрок `{name}` удален.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 

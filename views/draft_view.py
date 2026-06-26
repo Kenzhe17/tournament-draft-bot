@@ -45,12 +45,14 @@ class PlayerSelect(discord.ui.Select):
             )
             return
 
-        expected_captain_id = tournament.captains[tournament.captain_order[picker_pos]]
-        if interaction.user.id != expected_captain_id:
-            cap_name = interaction.guild.get_member(expected_captain_id)
-            display = cap_name.display_name if cap_name else "капитан"
+        # Check if it's the captain's turn (by nickname)
+        expected_captain_name = tournament.captains[tournament.captain_order[picker_pos]]
+        user_name = interaction.user.display_name
+        
+        # In test mode, allow anyone to pick
+        if not tournament.is_test and user_name != expected_captain_name:
             await interaction.response.send_message(
-                f"❌ Сейчас выбирает {display}",
+                f"❌ Сейчас выбирает {expected_captain_name}",
                 ephemeral=True,
             )
             return

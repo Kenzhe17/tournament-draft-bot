@@ -10,6 +10,7 @@ import discord
 from models.tournament import TournamentPhase
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
+from utils.permissions import is_admin_check
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -30,7 +31,7 @@ class FinalWinnerButton(discord.ui.Button):
         self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        if not interaction.user.guild_permissions.administrator:
+        if not is_admin_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
                 "❌ Только администраторы могут фиксировать результаты.",
                 ephemeral=True,

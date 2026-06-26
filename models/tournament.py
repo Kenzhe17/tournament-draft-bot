@@ -8,15 +8,31 @@ from enum import Enum
 from typing import Any
 
 
+class TournamentSize(str, Enum):
+    """Размер турнира."""
+
+    EIGHT = "8"
+    SIXTEEN = "16"
+    THIRTY_TWO = "32"
+
+
 class TournamentPhase(str, Enum):
     """Фазы жизненного цикла турнира."""
 
     SETUP = "setup"
     DRAFT = "draft"
     TEAMS = "teams"
+    QUALIFIERS = "qualifiers"
     SEMIFINALS = "semifinals"
     FINAL = "final"
     COMPLETE = "complete"
+
+
+class RegistrationState(str, Enum):
+    """Состояние регистрации игроков."""
+
+    CLOSED = "closed"
+    OPEN = "open"
 
 
 # Порядок выбора по кругам: индексы позиций капитанов (0–3)
@@ -43,12 +59,16 @@ class Tournament:
     message_id: int = 0
 
     # Настройка
-    captains: list[int] = field(default_factory=list)
+    size: TournamentSize = TournamentSize.EIGHT
+    registration: RegistrationState = RegistrationState.CLOSED
+    captains: list[str] = field(default_factory=list)  # Now nicknames, not user IDs
+    circle1: list[str] = field(default_factory=list)  # Captain circle (for display)
     circle2: list[str] = field(default_factory=list)
     circle3: list[str] = field(default_factory=list)
     circle4: list[str] = field(default_factory=list)
 
     phase: TournamentPhase = TournamentPhase.SETUP
+    is_test: bool = False
 
     # Драфт
     captain_order: list[int] = field(default_factory=list)
@@ -60,6 +80,8 @@ class Tournament:
 
     # Команды и плей-офф
     teams: list[dict[str, Any]] = field(default_factory=list)
+    qualifier_matches: list[tuple[int, int]] = field(default_factory=list)
+    qualifier_winners: list[int | None] = field(default_factory=list)
     semifinal_matches: list[tuple[int, int]] = field(default_factory=list)
     semifinal_winners: list[int | None] = field(default_factory=list)
     final_teams: list[int] = field(default_factory=list)
@@ -69,18 +91,30 @@ class Tournament:
 
     @property
     def all_players(self) -> set[str]:
-        """Все добавленные игроки (круги 2–4)."""
-        return set(self.circle2 + self.circle3 + self.circle4)
+        """Все добавленные игроки (круги 1–4)."""
+        return set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
+
+    @property
+    def required_circles(self) -> int:
+        """Количество кругов в зависимости от размера турнира."""
+        if self.size == TournamentSize.EIGHT:
+            return 2  # circle1 (captains) + circle2
+        if self.size == TournamentSize.SIXTEEN:
+            return 3  # circle1 + circle2 + circle3
+        return 4  # circle1 + circle2 + circle3 + circle4
 
     @property
     def is_setup_complete(self) -> bool:
         """Готов ли турнир к запуску драфта."""
-        return (
-            len(self.captains) == 4
-            and len(self.circle2) == 4
-            and len(self.circle3) == 4
-            and len(self.circle4) == 4
-        )
+        if len(self.captains) != 4:
+            return False
+        
+        required = self.required_circles
+        for circle_num in range(1, required + 1):
+            circle_list = getattr(self, f"circle{circle_num}")
+            if len(circle_list) != 4:
+                return False
+        return True
 
     def circle_list(self, circle: int) -> list[str]:
         """Получить список игроков круга."""
@@ -94,7 +128,7 @@ class Tournament:
 
     def add_players(self, names: list[str]) -> tuple[list[str], list[str]]:
         """
-        Добавить игроков в круги 2→3→4 по порядку заполнения.
+        Добавить игроков в круги 1→2→3→4 по порядку заполнения.
         Возвращает (добавленные, отклонённые).
         """
         added: list[str] = []
@@ -109,7 +143,8 @@ class Tournament:
                 continue
 
             placed = False
-            for circle in (2, 3, 4):
+            max_circle = self.required_circles
+            for circle in range(1, max_circle + 1):
                 circle_players = self.circle_list(circle)
                 if len(circle_players) < 4:
                     circle_players.append(name)
@@ -123,6 +158,31 @@ class Tournament:
 
         return added, rejected
 
+    def add_player_to_circle(self, circle: int, name: str) -> bool:
+        """Добавить игрока в конкретный круг. Возвращает True если успешно."""
+        name = name.strip()
+        if not name or name in self.all_players:
+            return False
+        
+        circle_players = self.circle_list(circle)
+        if len(circle_players) >= 4:
+            return False
+        
+        circle_players.append(name)
+        self.set_circle_list(circle, circle_players)
+        return True
+
+    def remove_player(self, name: str) -> bool:
+        """Удалить игрока из любого круга. Возвращает True если найден и удален."""
+        name = name.strip()
+        for circle in range(1, 5):
+            circle_players = self.circle_list(circle)
+            if name in circle_players:
+                circle_players.remove(name)
+                self.set_circle_list(circle, circle_players)
+                return True
+        return False
+
     # --- Драфт ---
 
     def start_draft(self) -> None:
@@ -132,17 +192,20 @@ class Tournament:
         self.picks = {str(i): {} for i in range(4)}
         self.current_circle = 2
         self.pick_index = 0
-        self.available = {
-            "2": list(self.circle2),
-            "3": list(self.circle3),
-            "4": list(self.circle4),
-        }
+        
+        # Initialize available players based on tournament size
+        self.available = {}
+        for circle in range(2, self.required_circles + 1):
+            self.available[str(circle)] = list(getattr(self, f"circle{circle}"))
+        
         self.last_auto_pick_message = ""
         self.phase = TournamentPhase.DRAFT
 
     def current_picker_position(self) -> int | None:
         """Позиция капитана (0–3), который сейчас выбирает."""
         if self.phase != TournamentPhase.DRAFT:
+            return None
+        if self.current_circle > self.required_circles:
             return None
         order = PICK_ORDERS[self.current_circle]["order"]
         if self.pick_index < len(order):
@@ -178,20 +241,20 @@ class Tournament:
         """Автоматически назначить последнего игрока круга."""
         auto_pos = self.auto_picker_position()
         key = str(self.current_circle)
-        remaining = self.available[key]
+        remaining = self.available.get(key, [])
         if remaining:
             player = remaining[0]
             self.pick_player(auto_pos, player)
+            captain_name = self.captains[self.captain_order[auto_pos]]
             self.last_auto_pick_message = (
-                f" <@{self.captains[self.captain_order[auto_pos]]}> "
-                f"автоматически получает **{player}**"
+                f" **{captain_name}** автоматически получает **{player}**"
             )
 
     def _advance_circle(self) -> bool:
         """Перейти к следующему кругу или завершить драфт."""
         self.pick_index = 0
 
-        if self.current_circle == 4:
+        if self.current_circle >= self.required_circles:
             self.last_auto_pick_message = ""
             self._build_teams()
             self.phase = TournamentPhase.TEAMS
@@ -205,16 +268,61 @@ class Tournament:
         self.teams = []
         for pos in range(4):
             captain_idx = self.captain_order[pos]
-            captain_id = self.captains[captain_idx]
+            captain_name = self.captains[captain_idx]
             picks = self.picks[str(pos)]
-            self.teams.append(
-                {
-                    "captain_id": captain_id,
-                    "circle2": picks.get("2", ""),
-                    "circle3": picks.get("3", ""),
-                    "circle4": picks.get("4", ""),
-                }
-            )
+            
+            team_data = {
+                "captain": captain_name,
+                "circle1": captain_name,  # Captain is in circle1
+            }
+            
+            # Add picks from each circle based on tournament size
+            for circle in range(2, self.required_circles + 1):
+                team_data[f"circle{circle}"] = picks.get(str(circle), "")
+            
+            self.teams.append(team_data)
+
+    def generate_bracket(self) -> None:
+        """Сгенерировать сетку на основе размера турнира."""
+        if self.size == TournamentSize.EIGHT:
+            # 8 players: straight to final
+            self.final_teams = [0, 1]  # First two teams
+            self.phase = TournamentPhase.FINAL
+        elif self.size == TournamentSize.SIXTEEN:
+            # 16 players: semifinals + final
+            self.generate_semifinals()
+        else:
+            # 32 players: qualifiers + semifinals + final
+            self.generate_qualifiers()
+
+    def generate_qualifiers(self) -> None:
+        """Сгенерировать отборочные матчи для 32 игроков."""
+        # Simple bracket: 4 teams play qualifiers, winners go to semifinals
+        # Teams 0 vs 1, 2 vs 3 - winners advance to semifinals
+        self.qualifier_matches = [(0, 1), (2, 3)]
+        self.qualifier_winners = [None, None]
+        self.phase = TournamentPhase.QUALIFIERS
+
+    def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
+        """
+        Записать победителя отборочного матча.
+        Возвращает True, если все отборочные матчи завершены.
+        """
+        self.qualifier_winners[match_index] = team_index
+        if all(w is not None for w in self.qualifier_winners):
+            # Qualifier winners advance to semifinals
+            self.generate_semifinals_from_qualifiers()
+            return True
+        return False
+
+    def generate_semifinals_from_qualifiers(self) -> None:
+        """Сгенерировать полуфиналы из победителей отборочных."""
+        # Qualifier winners become the semifinal participants
+        pairing = random.choice(SEMIFINAL_PAIRINGS)
+        # Map qualifier winners to semifinal positions
+        self.semifinal_matches = list(pairing)
+        self.semifinal_winners = [None, None]
+        self.phase = TournamentPhase.SEMIFINALS
 
     def generate_semifinals(self) -> None:
         """Случайно сгенерировать пары полуфиналов."""
@@ -248,11 +356,15 @@ class Tournament:
             "guild_id": self.guild_id,
             "channel_id": self.channel_id,
             "message_id": self.message_id,
+            "size": self.size.value,
+            "registration": self.registration.value,
             "captains": self.captains,
+            "circle1": self.circle1,
             "circle2": self.circle2,
             "circle3": self.circle3,
             "circle4": self.circle4,
             "phase": self.phase.value,
+            "is_test": self.is_test,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
@@ -260,6 +372,8 @@ class Tournament:
             "available": self.available,
             "last_auto_pick_message": self.last_auto_pick_message,
             "teams": self.teams,
+            "qualifier_matches": [list(m) for m in self.qualifier_matches],
+            "qualifier_winners": self.qualifier_winners,
             "semifinal_matches": [list(m) for m in self.semifinal_matches],
             "semifinal_winners": self.semifinal_winners,
             "final_teams": self.final_teams,
@@ -273,11 +387,15 @@ class Tournament:
             guild_id=data["guild_id"],
             channel_id=data["channel_id"],
             message_id=data.get("message_id", 0),
+            size=TournamentSize(data.get("size", "8")),
+            registration=RegistrationState(data.get("registration", "closed")),
             captains=data.get("captains", []),
+            circle1=data.get("circle1", []),
             circle2=data.get("circle2", []),
             circle3=data.get("circle3", []),
             circle4=data.get("circle4", []),
             phase=TournamentPhase(data.get("phase", "setup")),
+            is_test=data.get("is_test", False),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),
@@ -285,6 +403,10 @@ class Tournament:
             available=data.get("available", {}),
             last_auto_pick_message=data.get("last_auto_pick_message", ""),
             teams=data.get("teams", []),
+            qualifier_matches=[
+                tuple(m) for m in data.get("qualifier_matches", [])
+            ],
+            qualifier_winners=data.get("qualifier_winners", []),
             semifinal_matches=[
                 tuple(m) for m in data.get("semifinal_matches", [])
             ],

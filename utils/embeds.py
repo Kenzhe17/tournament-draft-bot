@@ -4,14 +4,7 @@ from __future__ import annotations
 
 import discord
 
-from models.tournament import Tournament, TournamentPhase
-
-
-def _captain_mentions(tournament: Tournament) -> str:
-    """Строка с упоминаниями всех капитанов."""
-    if not tournament.captains:
-        return "*"
-    return " ".join(f"<@{cid}>" for cid in tournament.captains)
+from models.tournament import RegistrationState, Tournament, TournamentPhase
 
 
 def _circle_line(players: list[str]) -> str:
@@ -19,17 +12,6 @@ def _circle_line(players: list[str]) -> str:
     if not players:
         return ""
     return " ".join(players)
-
-
-async def _captain_display_name(guild: discord.Guild, captain_id: int) -> str:
-    """Имя капитана для отображения."""
-    member = guild.get_member(captain_id)
-    if member is None:
-        try:
-            member = await guild.fetch_member(captain_id)
-        except discord.HTTPException:
-            return f"Captain#{captain_id}"
-    return member.display_name
 
 
 async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, tournament: Tournament) -> None:
@@ -41,13 +23,12 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     teams_text = []
 
     for i, team in enumerate(tournament.teams):
-        cap_id = team["captain_id"]
-        cap_name = await _captain_display_name(guild, cap_id)
+        captain = team.get("captain", "Unknown")
 
         # Собираем игроков из кругов драфта
         players = []
-        for circle in ("circle2", "circle3", "circle4"):
-            p_name = team.get(circle, "")
+        for circle in range(1, tournament.required_circles + 1):
+            p_name = team.get(f"circle{circle}", "")
             if p_name:
                 players.append(p_name)
 
@@ -56,7 +37,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
 
         teams_text.append(
             f"{emoji} **Команда П{i + 1}**\n"
-            f"┣ **Капитан:** {cap_name}\n"
+            f"┣ **Капитан:** {captain}\n"
             f"┗ **Состав:** {players_str}\n"
         )
 
@@ -69,18 +50,38 @@ async def build_setup_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed настройки турнира."""
+    status_emoji = "🔓" if tournament.registration == RegistrationState.OPEN else "🔒"
     embed = discord.Embed(
-        title="🏆 Сетка Турнира",
+        title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji}",
         color=discord.Color.gold(),
     )
-    embed.add_field(
-        name="1.",
-        value=_captain_mentions(tournament) if tournament.captains else "*",
-        inline=False,
-    )
-    embed.add_field(name="2.", value=_circle_line(tournament.circle2) or "*", inline=False)
-    embed.add_field(name="3.", value=_circle_line(tournament.circle3) or "*", inline=False)
-    embed.add_field(name="4.", value=_circle_line(tournament.circle4) or "*", inline=False)
+    
+    # Show required circles based on tournament size
+    required = tournament.required_circles
+    for circle in range(1, required + 1):
+        circle_list = getattr(tournament, f"circle{circle}")
+        circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
+        value = _circle_line(circle_list) or "*"
+        embed.add_field(
+            name=f"{circle_name}",
+            value=value,
+            inline=False,
+        )
+    
+    # Add info about registration
+    if tournament.registration == RegistrationState.OPEN:
+        embed.add_field(
+            name="ℹ️",
+            value="Регистрация открыта! Нажмите на + чтобы добавить себя.",
+            inline=False,
+        )
+    else:
+        embed.add_field(
+            name="ℹ️",
+            value="Регистрация закрыта. Только админ может добавлять игроков.",
+            inline=False,
+        )
+    
     return embed
 
 
@@ -96,22 +97,20 @@ async def build_draft_embed(
     # Порядок капитанов
     order_lines = []
     for i, cap_idx in enumerate(tournament.captain_order):
-        cap_id = tournament.captains[cap_idx]
-        name = await _captain_display_name(guild, cap_id)
-        order_lines.append(f"{i + 1}. {name}")
+        captain_name = tournament.captains[cap_idx]
+        order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
     # Таблица выборов по текущему и пройденным кругам
-    for circle in (2, 3, 4):
+    for circle in range(2, tournament.required_circles + 1):
         lines = []
         for pos in range(4):
             cap_idx = tournament.captain_order[pos]
-            cap_id = tournament.captains[cap_idx]
-            name = await _captain_display_name(guild, cap_id)
+            captain_name = tournament.captains[cap_idx]
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
                 pick = "-"
-            lines.append(f"{name} → {pick}")
+            lines.append(f"{captain_name} → {pick}")
 
         status = ""
         if circle == tournament.current_circle:
@@ -125,11 +124,10 @@ async def build_draft_embed(
     # Кто сейчас выбирает
     picker_pos = tournament.current_picker_position()
     if picker_pos is not None:
-        cap_id = tournament.captains[tournament.captain_order[picker_pos]]
-        name = await _captain_display_name(guild, cap_id)
+        captain_name = tournament.captains[tournament.captain_order[picker_pos]]
         embed.add_field(
             name="Сейчас выбирает",
-            value=name,
+            value=captain_name,
             inline=False,
         )
 
@@ -151,6 +149,29 @@ async def build_teams_embed(
         title="🏆 Сформированные Команды",
         color=discord.Color.green(),
     )
+    await _add_teams_block_to_embed(embed, guild, tournament)
+    return embed
+
+
+async def build_qualifiers_embed(
+    tournament: Tournament, guild: discord.Guild
+) -> discord.Embed:
+    """Embed отборочных матчей."""
+    embed = discord.Embed(
+        title="🏆 ТУРНИРНАЯ СЕТКА — ОТБОР",
+        color=discord.Color.purple(),
+    )
+
+    for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
+        name_a = f"П{team_a + 1}"
+        name_b = f"П{team_b + 1}"
+        embed.add_field(
+            name=f"🔥 Отбор #{i + 1}",
+            value=f"**{name_a}** *vs* **{name_b}**",
+            inline=False,
+        )
+
+    # Добавляем отображение команд снизу под отборочными
     await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
 
@@ -229,6 +250,8 @@ async def build_embed_for_phase(
         return await build_draft_embed(tournament, guild)
     if phase == TournamentPhase.TEAMS:
         return await build_teams_embed(tournament, guild)
+    if phase == TournamentPhase.QUALIFIERS:
+        return await build_qualifiers_embed(tournament, guild)
     if phase == TournamentPhase.SEMIFINALS:
         return await build_semifinals_embed(tournament, guild)
     if phase == TournamentPhase.FINAL:

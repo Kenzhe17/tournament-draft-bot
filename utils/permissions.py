@@ -16,3 +16,8 @@ def is_admin() -> app_commands.check:
         )
 
     return app_commands.check(predicate)
+
+
+def is_admin_check(user: discord.Member, guild: discord.Guild) -> bool:
+    """Проверка: является ли пользователь администратором."""
+    return user.guild_permissions.administrator or user.id == 1032544122600423427

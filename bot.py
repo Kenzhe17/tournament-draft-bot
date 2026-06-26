@@ -14,7 +14,8 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
-from views.matches_view import SemifinalsView, TeamsView
+from views.matches_view import QualifiersView, SemifinalsView, TeamsView
+from views.setup_view import build_setup_view
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,11 +66,21 @@ class TournamentBot(commands.Bot):
         phase = tournament.phase
         gid = tournament.guild_id
 
+        if phase == TournamentPhase.SETUP:
+            return build_setup_view(tournament)
+
         if phase == TournamentPhase.DRAFT:
             return build_draft_view(tournament)
 
         if phase == TournamentPhase.TEAMS:
             return TeamsView(gid)
+
+        if phase == TournamentPhase.QUALIFIERS:
+            return QualifiersView(
+                gid,
+                tournament.qualifier_matches,
+                tournament.qualifier_winners,
+            )
 
         if phase == TournamentPhase.SEMIFINALS:
             return SemifinalsView(
