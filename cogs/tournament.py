@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 3.0) -> None:
+async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 2.0) -> None:
     """Удалить ephemeral-ответ через указанное время."""
     await asyncio.sleep(delay)
     try:
@@ -53,6 +53,7 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(
                 "❌ На сервере уже есть активный турнир.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Validate size
@@ -62,6 +63,7 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(
                 "❌ Неверный размер. Используйте: 8, 16 или 32.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         tournament = Tournament(
@@ -89,6 +91,7 @@ class TournamentCog(commands.Cog):
                 "❌ На этом сервере нет активного турнира.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.delete(interaction.guild_id)
@@ -98,7 +101,7 @@ class TournamentCog(commands.Cog):
             "🗑️ **Турнир успешно удален.**",
             ephemeral=True
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="start", description="Запустить драфт")
     @is_admin()
@@ -110,6 +113,7 @@ class TournamentCog(commands.Cog):
                 "❌ Сначала создайте турнир командой `/tournament`.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         if tournament.phase != TournamentPhase.SETUP:
@@ -117,12 +121,14 @@ class TournamentCog(commands.Cog):
                 f"❌ Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
                 ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         if not tournament.is_setup_complete:
             captain_count = tournament.captain_count
             msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} капитан(а/ов), {captain_count} игрок(а/ов) в круге 2, {captain_count} игрок(а/ов) в круге 3 и минимум {captain_count} игрок(а/ов) в круге 4."
             await interaction.response.send_message(msg, ephemeral=True)
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         tournament.start_draft()
@@ -144,6 +150,7 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(
                 "❌ Нет активного турнира.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         tournament.registration = RegistrationState.CLOSED
@@ -166,6 +173,7 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(
                 "❌ Нет активного турнира.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         tournament.registration = RegistrationState.OPEN
@@ -189,12 +197,14 @@ class TournamentCog(commands.Cog):
                 "❌ Сначала создайте турнир командой `/tournament`.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
                 "❌ Турнир уже запущен.", ephemeral=True
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Fill with test data based on tournament size
@@ -249,6 +259,7 @@ class TournamentCog(commands.Cog):
                 "❌ Нет активного турнира.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         old_name = old_name.strip()
@@ -261,6 +272,7 @@ class TournamentCog(commands.Cog):
                     f"❌ Игрок `{old_name}` не найден.",
                     ephemeral=True,
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
 
             for circle in range(1, 5):
@@ -286,6 +298,7 @@ class TournamentCog(commands.Cog):
                     f"❌ Игрок `{old_name}` не найден в командах.",
                     ephemeral=True,
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
 
         store.set(tournament)
@@ -294,7 +307,7 @@ class TournamentCog(commands.Cog):
             f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
             ephemeral=True
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
@@ -313,6 +326,7 @@ class TournamentCog(commands.Cog):
                 "❌ Нет активного турнира.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         name = name.strip()
@@ -323,12 +337,14 @@ class TournamentCog(commands.Cog):
                     f"❌ Игрок `{name}` не найден.",
                     ephemeral=True,
                 )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
         else:
             await interaction.response.send_message(
                 "❌ Можно удалять игроков только на этапе настройки.",
                 ephemeral=True,
             )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         store.set(tournament)
@@ -337,7 +353,7 @@ class TournamentCog(commands.Cog):
             f"✅ Игрок `{name}` удален.",
             ephemeral=True
         )
-        asyncio.create_task(_delete_ephemeral_later(interaction, 3.0))
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
@@ -353,6 +369,7 @@ class TournamentCog(commands.Cog):
                 await interaction.followup.send(msg, ephemeral=True)
             else:
                 await interaction.response.send_message(msg, ephemeral=True)
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         logger.exception("Ошибка команды: %s", error)
@@ -361,6 +378,7 @@ class TournamentCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
         else:
             await interaction.response.send_message(msg, ephemeral=True)
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
 async def setup(bot: TournamentBot) -> None:
