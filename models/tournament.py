@@ -211,11 +211,12 @@ class Tournament:
         self.current_circle = 2
         self.pick_index = 0
         
-        # Initialize available players for circles 2, 3, 4 (some may be empty)
+        # Initialize available players for circles 2, 3, 4
+        # Only first captain_count players from circle4 are available for draft
         self.available = {
             "2": list(self.circle2),
             "3": list(self.circle3),
-            "4": list(self.circle4),
+            "4": list(self.circle4[:self.captain_count]),  # Only first captain_count players
         }
         
         self.last_auto_pick_message = ""
@@ -230,19 +231,6 @@ class Tournament:
         key = str(self.current_circle)
         if key not in self.available or not self.available[key]:
             return None
-        
-        # Special handling for circle4 with more than captain_count players
-        if self.current_circle == 4:
-            remaining = self.available.get(key, [])
-            if len(remaining) > self.captain_count:
-                # More than captain_count players - all captains pick in round-robin
-                return self.pick_index % self.captain_count
-            elif len(remaining) > 0:
-                # Still players remaining but not more than captain_count
-                order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
-                if self.pick_index < len(order):
-                    return order[self.pick_index]
-                return None
         
         order = PICK_ORDERS.get(self.captain_count, {}).get("order", [])
         if self.pick_index < len(order):
@@ -324,17 +312,6 @@ class Tournament:
         """Сформировать команды из результатов драфта."""
         self.teams = []
         
-        # Collect all circle4 picks in order
-        circle4_picks = []
-        for pos in range(self.captain_count):
-            pick = self.picks[str(pos)].get("4", "")
-            if pick:
-                circle4_picks.append((pos, pick))
-        
-        # Only first captain_count circle4 picks participate in tournament
-        participating_circle4 = circle4_picks[:self.captain_count]
-        participating_by_pos = {pos: name for pos, name in participating_circle4}
-        
         for pos in range(self.captain_count):
             captain_idx = self.captain_order[pos]
             captain_name = self.captains[captain_idx]
@@ -345,7 +322,7 @@ class Tournament:
                 "circle1": captain_name,  # Captain is in circle1
                 "circle2": picks.get("2", ""),
                 "circle3": picks.get("3", ""),
-                "circle4": participating_by_pos.get(pos, ""),  # Only if in first captain_count
+                "circle4": picks.get("4", ""),
             }
             
             self.teams.append(team_data)
