@@ -189,11 +189,11 @@ class Tournament:
         self.pick_index = 0
         
         # Initialize available players for circles 2, 3, 4
-        # Only first 4 players from circle4 are available for draft
+        # All players from circle4 are available for draft
         self.available = {
             "2": list(self.circle2),
             "3": list(self.circle3),
-            "4": list(self.circle4[:4]),  # Only first 4 players
+            "4": list(self.circle4),
         }
         
         self.last_auto_pick_message = ""
@@ -227,6 +227,18 @@ class Tournament:
         Перейти к следующему шагу драфта.
         Возвращает True, если драфт завершён.
         """
+        # Special handling for circle4 with more than 4 players
+        if self.current_circle == 4:
+            key = str(self.current_circle)
+            remaining = self.available.get(key, [])
+            if len(remaining) > 0:
+                # Continue round-robin until all players are picked
+                self.pick_index += 1
+                return False
+            else:
+                # All players picked, advance to next phase
+                return self._advance_circle()
+        
         order = PICK_ORDERS[self.current_circle]["order"]
         self.pick_index += 1
 
@@ -238,6 +250,14 @@ class Tournament:
 
     def _do_auto_pick(self) -> None:
         """Автоматически назначить последнего игрока круга."""
+        # Skip auto-pick for circle4 if there are more than 4 players initially
+        if self.current_circle == 4:
+            key = str(self.current_circle)
+            remaining = self.available.get(key, [])
+            if len(remaining) > 1:
+                # More than 1 player remaining - skip auto-pick, continue drafting
+                return
+        
         auto_pos = self.auto_picker_position()
         key = str(self.current_circle)
         remaining = self.available.get(key, [])
@@ -265,6 +285,18 @@ class Tournament:
     def _build_teams(self) -> None:
         """Сформировать команды из результатов драфта."""
         self.teams = []
+        
+        # Collect all circle4 picks in order
+        circle4_picks = []
+        for pos in range(4):
+            pick = self.picks[str(pos)].get("4", "")
+            if pick:
+                circle4_picks.append((pos, pick))
+        
+        # Only first 4 circle4 picks participate in tournament
+        participating_circle4 = circle4_picks[:4]
+        participating_by_pos = {pos: name for pos, name in participating_circle4}
+        
         for pos in range(4):
             captain_idx = self.captain_order[pos]
             captain_name = self.captains[captain_idx]
@@ -275,7 +307,7 @@ class Tournament:
                 "circle1": captain_name,  # Captain is in circle1
                 "circle2": picks.get("2", ""),
                 "circle3": picks.get("3", ""),
-                "circle4": picks.get("4", ""),
+                "circle4": participating_by_pos.get(pos, ""),  # Only if in first 4
             }
             
             self.teams.append(team_data)
