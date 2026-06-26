@@ -100,12 +100,20 @@ class Tournament:
         if len(self.captains) != 4:
             return False
         
-        # Circle1, circle2, circle3 должны быть по 4 игрока
-        # Circle4 без лимита
-        for circle_num in range(1, 4):
-            circle_list = getattr(self, f"circle{circle_num}")
-            if len(circle_list) != 4:
+        # Check based on tournament size
+        if self.size == TournamentSize.EIGHT:
+            # 8 players: need 4 in circle2
+            if len(self.circle2) != 4:
                 return False
+        elif self.size == TournamentSize.SIXTEEN:
+            # 16 players: need 4 in circle2 and 4 in circle3
+            if len(self.circle2) != 4 or len(self.circle3) != 4:
+                return False
+        else:
+            # 32 players: need 4 in circle2, 4 in circle3, and at least 4 in circle4
+            if len(self.circle2) != 4 or len(self.circle3) != 4 or len(self.circle4) < 4:
+                return False
+        
         return True
 
     def circle_list(self, circle: int) -> list[str]:
@@ -188,20 +196,12 @@ class Tournament:
         self.current_circle = 2
         self.pick_index = 0
         
-        # Initialize available players based on tournament size
-        self.available = {}
-        if self.size == TournamentSize.EIGHT:
-            # 8 players: only circle2
-            self.available["2"] = list(self.circle2)
-        elif self.size == TournamentSize.SIXTEEN:
-            # 16 players: circle2 + circle3
-            self.available["2"] = list(self.circle2)
-            self.available["3"] = list(self.circle3)
-        else:
-            # 32 players: circle2 + circle3 + circle4
-            self.available["2"] = list(self.circle2)
-            self.available["3"] = list(self.circle3)
-            self.available["4"] = list(self.circle4)
+        # Initialize available players for circles 2, 3, 4 (some may be empty)
+        self.available = {
+            "2": list(self.circle2),
+            "3": list(self.circle3),
+            "4": list(self.circle4),
+        }
         
         self.last_auto_pick_message = ""
         self.phase = TournamentPhase.DRAFT
@@ -256,7 +256,7 @@ class Tournament:
                 # All players picked, advance to next phase
                 return self._advance_circle()
         
-        order = PICK_ORDERS[self.current_circle]["order"]
+        order = PICK_ORDERS.get(self.current_circle, {}).get("order", [])
         self.pick_index += 1
 
         if self.pick_index >= len(order):

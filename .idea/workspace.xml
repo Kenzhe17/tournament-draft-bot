@@ -5,7 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ab8f14f7-9a48-490f-b8c1-3c701b44af5e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/models/tournament.py" beforeDir="false" afterPath="$PROJECT_DIR$/models/tournament.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/utils/embeds.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/embeds.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/views/setup_view.py" beforeDir="false" afterPath="$PROJECT_DIR$/views/setup_view.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

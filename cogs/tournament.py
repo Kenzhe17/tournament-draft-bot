@@ -112,15 +112,19 @@ class TournamentCog(commands.Cog):
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                "❌ Драфт уже запущен или турнир завершён.", ephemeral=True
+                f"❌ Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
+                ephemeral=True
             )
             return
 
         if not tournament.is_setup_complete:
-            await interaction.response.send_message(
-                "❌ Турнир заполнен не полностью. Нужно 4 капитана и по 4 игрока в кругах 2 и 3.",
-                ephemeral=True
-            )
+            if tournament.size == TournamentSize.EIGHT:
+                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана и 4 игрока в круге 2."
+            elif tournament.size == TournamentSize.SIXTEEN:
+                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана, 4 игрока в круге 2 и 4 игрока в круге 3."
+            else:
+                msg = "❌ Турнир заполнен не полностью. Нужно 4 капитана, 4 игрока в круге 2, 4 игрока в круге 3 и минимум 4 игрока в круге 4."
+            await interaction.response.send_message(msg, ephemeral=True)
             return
 
         tournament.start_draft()

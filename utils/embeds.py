@@ -57,41 +57,17 @@ async def build_setup_embed(
         color=discord.Color.gold(),
     )
     
-    # Show circles based on tournament size
-    if tournament.size == TournamentSize.EIGHT:
-        # 8 players: circle1 + circle2
-        for circle in range(1, 3):
-            circle_list = getattr(tournament, f"circle{circle}")
-            circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
-            value = _circle_line(circle_list) or "*"
-            embed.add_field(
-                name=f"{circle_name}",
-                value=value,
-                inline=False,
-            )
-    elif tournament.size == TournamentSize.SIXTEEN:
-        # 16 players: circle1 + circle2 + circle3
-        for circle in range(1, 4):
-            circle_list = getattr(tournament, f"circle{circle}")
-            circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
-            value = _circle_line(circle_list) or "*"
-            embed.add_field(
-                name=f"{circle_name}",
-                value=value,
-                inline=False,
-            )
-    else:
-        # 32 players: all 4 circles
-        for circle in range(1, 5):
-            circle_list = getattr(tournament, f"circle{circle}")
-            circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
-            limit_info = "" if circle == 4 else " (макс. 4)"
-            value = _circle_line(circle_list) or "*"
-            embed.add_field(
-                name=f"{circle_name}{limit_info}",
-                value=value,
-                inline=False,
-            )
+    # Show all 4 circles
+    for circle in range(1, 5):
+        circle_list = getattr(tournament, f"circle{circle}")
+        circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
+        limit_info = "" if circle == 4 else " (макс. 4)"
+        value = _circle_line(circle_list) or "*"
+        embed.add_field(
+            name=f"{circle_name}{limit_info}",
+            value=value,
+            inline=False,
+        )
     
     # Add info about registration
     if tournament.registration == RegistrationState.OPEN:
@@ -126,15 +102,8 @@ async def build_draft_embed(
         order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
-    # Таблица выборов по текущему и пройденным кругам (на основе размера турнира)
-    if tournament.size == TournamentSize.EIGHT:
-        circles = [2]  # only circle2
-    elif tournament.size == TournamentSize.SIXTEEN:
-        circles = [2, 3]  # circle2 + circle3
-    else:
-        circles = [2, 3, 4]  # circle2 + circle3 + circle4
-
-    for circle in circles:
+    # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
+    for circle in range(2, 5):
         lines = []
         for pos in range(4):
             cap_idx = tournament.captain_order[pos]

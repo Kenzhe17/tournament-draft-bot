@@ -197,22 +197,15 @@ class SetupView(discord.ui.View):
         super().__init__(timeout=None)
         self.tournament = tournament
 
-        # Determine which circles to show based on tournament size
-        if tournament.size == TournamentSize.EIGHT:
-            circles = [1, 2]  # circle1 + circle2
-        elif tournament.size == TournamentSize.SIXTEEN:
-            circles = [1, 2, 3]  # circle1 + circle2 + circle3
-        else:
-            circles = [1, 2, 3, 4]  # all 4 circles
-
+        # Always show all 4 circles
         if tournament.registration == RegistrationState.OPEN:
             # Open registration: buttons for players to add themselves
-            for circle in circles:
+            for circle in range(1, 5):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
                 self.add_item(button)
         else:
             # Closed registration: buttons for admin to add players
-            for circle in circles:
+            for circle in range(1, 5):
                 button = AdminAddButton(tournament.guild_id, circle, circle_names[circle])
                 self.add_item(button)
 
