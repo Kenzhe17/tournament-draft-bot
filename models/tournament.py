@@ -116,7 +116,8 @@ class Tournament:
     @property
     def is_setup_complete(self) -> bool:
         """Готов ли турнир к запуску драфта."""
-        if len(self.captains) != self.captain_count:
+        # Use circle1 as captains (they are the same)
+        if len(self.circle1) != self.captain_count:
             return False
         
         # Check circle2 and circle3 have exactly required players
