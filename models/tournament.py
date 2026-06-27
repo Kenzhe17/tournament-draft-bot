@@ -336,6 +336,10 @@ class Tournament:
 
     def generate_bracket(self) -> None:
         """Сгенерировать сетку на основе размера турнира."""
+        # Only generate if we have teams
+        if not self.teams:
+            return
+
         if self.size == TournamentSize.EIGHT:
             # 8 players: straight to final
             self.final_teams = [0, 1]  # First two teams
