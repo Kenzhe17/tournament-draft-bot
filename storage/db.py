@@ -26,7 +26,7 @@ async def init_db() -> None:
     """Initialize database tables."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Check if table exists with old primary key
+        # Check if table exists
         table_exists = await conn.fetchval("""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables
@@ -35,6 +35,19 @@ async def init_db() -> None:
         """)
 
         if table_exists:
+            # Check if user_id column exists
+            user_id_exists = await conn.fetchval("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'player_stats'
+                    AND column_name = 'user_id'
+                )
+            """)
+
+            if not user_id_exists:
+                # Add user_id column
+                await conn.execute("ALTER TABLE player_stats ADD COLUMN user_id BIGINT DEFAULT 0")
+
             # Check primary key constraint
             pk_info = await conn.fetchval("""
                 SELECT conname
@@ -43,12 +56,27 @@ async def init_db() -> None:
                 AND contype = 'p'
             """)
 
-            # If primary key is not (guild_id, user_id), recreate table
+            # If primary key is not (guild_id, user_id), migrate it
             if not pk_info or "user_id" not in str(pk_info):
-                await conn.execute("DROP TABLE IF EXISTS player_stats CASCADE")
-                table_exists = False
+                # Drop old primary key
+                await conn.execute("ALTER TABLE player_stats DROP CONSTRAINT IF EXISTS player_stats_pkey")
+                # Add new primary key
+                await conn.execute("ALTER TABLE player_stats ADD PRIMARY KEY (guild_id, user_id)")
 
-        if not table_exists:
+            # Check for missing columns
+            columns = await conn.fetch("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'player_stats'
+            """)
+            column_names = {row["column_name"] for row in columns}
+
+            required_columns = ["elo", "finals", "current_streak", "best_win_streak", "best_loss_streak"]
+            for col in required_columns:
+                if col not in column_names:
+                    default = "1000" if col == "elo" else "0"
+                    await conn.execute(f"ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT {default}")
+        else:
             await conn.execute("""
                 CREATE TABLE player_stats (
                     guild_id BIGINT NOT NULL,
@@ -61,8 +89,7 @@ async def init_db() -> None:
                     current_streak INTEGER DEFAULT 0,
                     best_win_streak INTEGER DEFAULT 0,
                     best_loss_streak INTEGER DEFAULT 0,
-                    PRIMARY KEY (guild_id, user_id),
-                    UNIQUE (guild_id, name)
+                    PRIMARY KEY (guild_id, user_id)
                 )
             """)
 
