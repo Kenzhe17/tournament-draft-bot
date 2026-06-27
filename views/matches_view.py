@@ -30,17 +30,18 @@ class GenerateMatchesButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer()
+
         if not is_admin_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "❌ Только администраторы могут генерировать матчи.",
-                ephemeral=True,
+            await interaction.edit_original_response(
+                content="❌ Только администраторы могут генерировать матчи."
             )
             return
 
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(
-                "❌ Турнир не найден.", ephemeral=True
+            await interaction.edit_original_response(
+                content="❌ Турнир не найден."
             )
             return
 
@@ -56,8 +57,8 @@ class GenerateMatchesButton(discord.ui.Button):
             store.set(tournament)
 
         if tournament.phase != TournamentPhase.TEAMS:
-            await interaction.response.send_message(
-                f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}", ephemeral=True
+            await interaction.edit_original_response(
+                content=f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
             )
             return
 
