@@ -82,7 +82,6 @@ class TournamentCog(commands.Cog):
         logger.info("Турнир создан на сервере %s с размером %s", interaction.guild_id, size)
 
     @app_commands.command(name="delete", description="Удалить активный турнир")
-    @app_commands.rename(delete="tournament")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
