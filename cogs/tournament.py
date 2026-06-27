@@ -345,8 +345,7 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:

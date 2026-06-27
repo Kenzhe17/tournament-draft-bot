@@ -99,12 +99,20 @@ class SemifinalWinnerButton(discord.ui.Button):
         )
         store.set(tournament)
 
-        # Update stats for losing team (-10 ELO)
+        # Update stats for both teams
         from storage.player_stats_store import player_stats_store
         match = tournament.semifinal_matches[self.match_index]
         losing_team_index = match[1] if match[0] == self.team_index else match[0]
+        winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
+        # Winning team gets +10 ELO for semifinal win
+        for circle in range(1, 5):
+            player = winning_team.get(f"circle{circle}")
+            if player:
+                await player_stats_store.update_player(tournament.guild_id, player, result="semifinal_win")
+
+        # Losing team gets -10 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
@@ -116,17 +124,16 @@ class SemifinalWinnerButton(discord.ui.Button):
 
 
 class TeamNameButton(discord.ui.Button):
-    """Кнопка для капитанов назвать свою команду."""
+    """Единая кнопка для капитанов назвать свою команду."""
 
-    def __init__(self, guild_id: int, team_index: int, captain_name: str):
+    def __init__(self, guild_id: int, tournament):
         super().__init__(
-            label="Название",
+            label="Название команды",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"team_name:{guild_id}:{team_index}",
+            custom_id=f"team_name:{guild_id}",
         )
         self.guild_id = guild_id
-        self.team_index = team_index
-        self.captain_name = captain_name
+        self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
@@ -136,9 +143,15 @@ class TeamNameButton(discord.ui.Button):
             )
             return
 
-        # Check if user is the captain of this team
+        # Find if user is a captain
         user_name = interaction.user.display_name
-        if user_name != self.captain_name:
+        team_index = None
+        for i, team in enumerate(tournament.teams):
+            if team.get("captain") == user_name:
+                team_index = i
+                break
+
+        if team_index is None:
             await interaction.response.send_message(
                 "❌ Только капитан может назвать свою команду.",
                 ephemeral=True
@@ -146,7 +159,7 @@ class TeamNameButton(discord.ui.Button):
             return
 
         # Create modal for team name input
-        modal = TeamNameModal(self.guild_id, self.team_index)
+        modal = TeamNameModal(self.guild_id, team_index)
         await interaction.response.send_modal(modal)
 
 
@@ -195,11 +208,7 @@ class TeamsView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(GenerateMatchesButton(guild_id))
 
-        # Add rename buttons for each team
-        for i, team in enumerate(tournament.teams):
-            captain = team.get("captain", "")
-            if captain:
-                self.add_item(TeamNameButton(guild_id, i, captain))
+        self.add_item(TeamNameButton(guild_id, tournament))
 
 
 class QualifierWinnerButton(discord.ui.Button):
@@ -249,12 +258,20 @@ class QualifierWinnerButton(discord.ui.Button):
         )
         store.set(tournament)
 
-        # Update stats for losing team (-10 ELO)
+        # Update stats for both teams
         from storage.player_stats_store import player_stats_store
         match = tournament.qualifier_matches[self.match_index]
         losing_team_index = match[1] if match[0] == self.team_index else match[0]
+        winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
+        # Winning team gets +5 ELO for qualifier win
+        for circle in range(1, 5):
+            player = winning_team.get(f"circle{circle}")
+            if player:
+                await player_stats_store.update_player(tournament.guild_id, player, result="qualifier_win")
+
+        # Losing team gets -10 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
