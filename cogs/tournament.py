@@ -41,7 +41,9 @@ class TournamentCog(commands.Cog):
     def __init__(self, bot: TournamentBot):
         self.bot = bot
 
-    @app_commands.command(name="tournament", description="Создать новый турнир")
+    tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
+
+    @tournament_group.command(name="create", description="Создать новый турнир")
     @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока")
     @is_admin()
     async def tournament_create(
@@ -81,7 +83,7 @@ class TournamentCog(commands.Cog):
         store.set(tournament)
         logger.info("Турнир создан на сервере %s с размером %s", interaction.guild_id, size)
 
-    @app_commands.command(name="delete", description="Удалить активный турнир")
+    @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
