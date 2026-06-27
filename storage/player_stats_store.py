@@ -100,7 +100,7 @@ class PlayerStatsStore:
 
     async def update_player(self, guild_id: int, name: str, result: str = "loss") -> None:
         """Обновить статистику игрока после турнира.
-        result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+10 ELO), 'qualifier_win' (+5 ELO), 'loss' (-10 ELO)
+        result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO)
         """
         key = f"{guild_id}:{name}"
 
@@ -133,11 +133,11 @@ class PlayerStatsStore:
                     elo_change = 10
                     finals += 1
                 elif result == "semifinal_win":
-                    elo_change = 10
+                    elo_change = 0
                 elif result == "qualifier_win":
-                    elo_change = 5
+                    elo_change = 0
                 else:  # loss
-                    elo_change = -10
+                    elo_change = -25
 
                 games += 1
                 new_elo = current_elo + elo_change
@@ -162,11 +162,11 @@ class PlayerStatsStore:
                 self._stats[key].elo += 10
                 self._stats[key].finals += 1
             elif result == "semifinal_win":
-                self._stats[key].elo += 10
+                self._stats[key].elo += 0
             elif result == "qualifier_win":
-                self._stats[key].elo += 5
+                self._stats[key].elo += 0
             else:  # loss
-                self._stats[key].elo -= 10
+                self._stats[key].elo -= 25
 
             self._stats[key].games += 1
             self.save()
