@@ -54,11 +54,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, name, wins, games FROM player_stats WHERE guild_id = $1 AND name = $2",
+                    "SELECT guild_id, name, elo, wins, finals, games FROM player_stats WHERE guild_id = $1 AND name = $2",
                     guild_id, name
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], name=row["name"], wins=row["wins"], games=row["games"])
+                    return PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"])
                 return None
         else:
             key = f"{guild_id}:{name}"
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, name, wins, games FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, name, elo, wins, finals, games FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], wins=row["wins"], games=row["games"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"]) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -86,46 +86,85 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, name, wins, games)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO player_stats (guild_id, name, elo, wins, finals, games)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (guild_id, name)
-                    DO UPDATE SET wins = $3, games = $4
+                    DO UPDATE SET elo = $3, wins = $4, finals = $5, games = $6
                     """,
-                    stats.guild_id, stats.name, stats.wins, stats.games
+                    stats.guild_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games
                 )
         else:
             key = f"{stats.guild_id}:{stats.name}"
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, name: str, won: bool = False) -> None:
-        """Обновить статистику игрока после турнира."""
+    async def update_player(self, guild_id: int, name: str, result: str = "loss") -> None:
+        """Обновить статистику игрока после турнира.
+        result: 'win' (+25 ELO), 'final' (+10 ELO), 'loss' (-10 ELO)
+        """
+        key = f"{guild_id}:{name}"
+
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                # Get current ELO
+                row = await conn.fetchrow(
+                    "SELECT elo, wins, finals, games FROM player_stats WHERE guild_id = $1 AND name = $2",
+                    guild_id, name
+                )
+
+                if row:
+                    current_elo = row["elo"]
+                    wins = row["wins"]
+                    finals = row["finals"]
+                    games = row["games"]
+                else:
+                    current_elo = 1000
+                    wins = 0
+                    finals = 0
+                    games = 0
+
+                # Calculate ELO change
+                if result == "win":
+                    elo_change = 25
+                    wins += 1
+                elif result == "final":
+                    elo_change = 10
+                    finals += 1
+                else:  # loss
+                    elo_change = -10
+
+                games += 1
+                new_elo = current_elo + elo_change
+
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, name, wins, games)
-                    VALUES ($1, $2, $3, 1)
+                    INSERT INTO player_stats (guild_id, name, elo, wins, finals, games)
+                    VALUES ($1, $2, $3, $4, $5, $6)
                     ON CONFLICT (guild_id, name)
-                    DO UPDATE SET games = player_stats.games + 1, wins = player_stats.wins + $3
+                    DO UPDATE SET elo = $3, wins = $4, finals = $5, games = $6
                     """,
-                    guild_id, name, 1 if won else 0
+                    guild_id, name, new_elo, wins, finals, games
                 )
         else:
-            key = f"{guild_id}:{name}"
             if key not in self._stats:
                 self._stats[key] = PlayerStats(guild_id=guild_id, name=name)
 
-            self._stats[key].games += 1
-            if won:
+            if result == "win":
+                self._stats[key].elo += 25
                 self._stats[key].wins += 1
+            elif result == "final":
+                self._stats[key].elo += 10
+                self._stats[key].finals += 1
+            else:  # loss
+                self._stats[key].elo -= 10
 
+            self._stats[key].games += 1
             self.save()
 
     async def get_leaderboard(self, guild_id: int, page: int = 1, per_page: int = 10) -> list[PlayerStats]:
-        """Получить страницу лидерборда, отсортированную по победам."""
+        """Получить страницу лидерборда, отсортированную по ELO."""
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
@@ -133,23 +172,23 @@ class PlayerStatsStore:
                 offset = (page - 1) * per_page
                 rows = await conn.fetch(
                     """
-                    SELECT guild_id, name, wins, games
+                    SELECT guild_id, name, elo, wins, finals, games
                     FROM player_stats
                     WHERE guild_id = $1 AND games > 0
-                    ORDER BY wins DESC, (wins::float / NULLIF(games, 0)) DESC
+                    ORDER BY elo DESC
                     LIMIT $2 OFFSET $3
                     """,
                     guild_id, per_page, offset
                 )
-                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], wins=row["wins"], games=row["games"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"]) for row in rows]
         else:
             # Filter players with at least 1 game and from the same guild
             players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
 
-            # Sort by wins (descending), then by win rate (descending)
+            # Sort by ELO (descending)
             sorted_players = sorted(
                 players_with_games,
-                key=lambda p: (p.wins, p.win_rate),
+                key=lambda p: p.elo,
                 reverse=True
             )
 

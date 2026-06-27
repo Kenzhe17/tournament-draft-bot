@@ -82,6 +82,7 @@ class TournamentCog(commands.Cog):
         logger.info("Турнир создан на сервере %s с размером %s", interaction.guild_id, size)
 
     @app_commands.command(name="delete", description="Удалить активный турнир")
+    @app_commands.rename(delete="tournament")
     @is_admin()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
@@ -256,20 +257,6 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="reset_leaderboard", description="Сбросить таблицу лидеров")
-    @is_admin()
-    async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
-        """Сбросить всю статистику игроков сервера."""
-        from storage.player_stats_store import player_stats_store
-
-        await player_stats_store.reset(interaction.guild_id)
-
-        await interaction.response.send_message(
-            "🗑️ Таблица лидеров сброшена.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
     @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
     @app_commands.describe(
         circle="Номер круга (2, 3 или 4)",
@@ -327,6 +314,92 @@ class TournamentCog(commands.Cog):
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="profile", description="Просмотреть статистику игрока")
+    @app_commands.describe(player="Имя игрока (оставьте пустым для просмотра своей статистики)")
+    async def profile(
+        self,
+        interaction: discord.Interaction,
+        player: str | None = None
+    ) -> None:
+        """Показать статистику игрока."""
+        name = player if player else interaction.user.display_name
+
+        from storage.player_stats_store import player_stats_store
+        stats = await player_stats_store.get(interaction.guild_id, name)
+
+        if not stats:
+            await interaction.response.send_message(
+                f"❌ Игрок `{name}` не найден в статистике.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        win_rate = (stats.wins / stats.games * 100) if stats.games > 0 else 0
+
+        embed = discord.Embed(
+            title=f"📊 Профиль: {stats.name}",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="🏆 ELO", value=str(stats.elo), inline=True)
+        embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
+        embed.add_field(name="🥈 Финалы", value=str(stats.finals), inline=True)
+        embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
+        embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+    @app_commands.command(name="booyah", description="Рекорды турнира")
+    async def booyah(self, interaction: discord.Interaction) -> None:
+        """Показать рекорды турнира."""
+        from storage.player_stats_store import player_stats_store
+
+        all_players = await player_stats_store.get_all(interaction.guild_id)
+
+        if not all_players:
+            await interaction.response.send_message(
+                "❌ Пока нет данных для рекордов.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Find records
+        most_wins = max(all_players, key=lambda p: p.wins)
+        most_finals = max(all_players, key=lambda p: p.finals)
+        highest_elo = max(all_players, key=lambda p: p.elo)
+        most_games = max(all_players, key=lambda p: p.games)
+
+        embed = discord.Embed(
+            title="🏆 Рекорды Турнира",
+            color=discord.Color.gold(),
+        )
+
+        embed.add_field(
+            name="🥇 Наибольшее количество побед",
+            value=f"{most_wins.name} — {most_wins.wins} побед",
+            inline=False
+        )
+        embed.add_field(
+            name="🥈 Наибольшее количество финалов",
+            value=f"{most_finals.name} — {most_finals.finals} финалов",
+            inline=False
+        )
+        embed.add_field(
+            name="📈 Самый высокий ELO",
+            value=f"{highest_elo.name} — {highest_elo.elo} ELO",
+            inline=False
+        )
+        embed.add_field(
+            name="🎮 Наибольшее количество игр",
+            value=f"{most_games.name} — {most_games.games} игр",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(

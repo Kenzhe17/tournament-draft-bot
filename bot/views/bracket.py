@@ -19,7 +19,7 @@ class GenerateMatchesButton(discord.ui.Button):
 
     def __init__(self, guild_id: int) -> None:
         super().__init__(
-            label="Кто с кем играет?",
+            label="Распределить",
             style=discord.ButtonStyle.primary,
             custom_id=f"{VIEW_GENERATE_MATCHES}:{guild_id}",
         )

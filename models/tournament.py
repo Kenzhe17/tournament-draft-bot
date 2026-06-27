@@ -86,6 +86,9 @@ class Tournament:
     # Лимиты для кругов (True = лимит включен, False = без лимита)
     circle_limits_enabled: dict[int, bool] = field(default_factory=lambda: {2: True, 3: True, 4: True})
 
+    # Названия команд (индекс команды -> название)
+    team_names: dict[int, str] = field(default_factory=dict)
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -215,10 +218,12 @@ class Tournament:
         name = name.strip()
         for circle in range(1, 5):
             circle_players = self.circle_list(circle)
-            if name in circle_players:
-                circle_players.remove(name)
-                self.set_circle_list(circle, circle_players)
-                return True
+            # Case-insensitive search
+            for i, player in enumerate(circle_players):
+                if player.strip().lower() == name.lower():
+                    circle_players.pop(i)
+                    self.set_circle_list(circle, circle_players)
+                    return True
         return False
 
     # --- Драфт ---
@@ -404,6 +409,8 @@ class Tournament:
             "circle4": self.circle4,
             "phase": self.phase.value,
             "is_test": self.is_test,
+            "circle_limits_enabled": self.circle_limits_enabled,
+            "team_names": self.team_names,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
@@ -435,6 +442,7 @@ class Tournament:
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
+            team_names=data.get("team_names", {}),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),

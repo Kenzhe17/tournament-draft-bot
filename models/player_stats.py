@@ -10,22 +10,19 @@ class PlayerStats:
 
     guild_id: int
     name: str
+    elo: int = 1000
     wins: int = 0
+    finals: int = 0
     games: int = 0
-
-    @property
-    def win_rate(self) -> float:
-        """Процент побед."""
-        if self.games == 0:
-            return 0.0
-        return (self.wins / self.games) * 100
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
         return {
             "guild_id": self.guild_id,
             "name": self.name,
+            "elo": self.elo,
             "wins": self.wins,
+            "finals": self.finals,
             "games": self.games,
         }
 
@@ -35,6 +32,8 @@ class PlayerStats:
         return cls(
             guild_id=data.get("guild_id", 0),
             name=data["name"],
+            elo=data.get("elo", 1000),
             wins=data.get("wins", 0),
+            finals=data.get("finals", 0),
             games=data.get("games", 0),
         )

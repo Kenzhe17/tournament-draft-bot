@@ -86,13 +86,14 @@ class TournamentBot(commands.Bot):
             return build_draft_view(tournament)
 
         if phase == TournamentPhase.TEAMS:
-            return TeamsView(gid)
+            return TeamsView(gid, tournament)
 
         if phase == TournamentPhase.QUALIFIERS:
             return QualifiersView(
                 gid,
                 tournament.qualifier_matches,
                 tournament.qualifier_winners,
+                tournament,
             )
 
         if phase == TournamentPhase.SEMIFINALS:
@@ -100,10 +101,11 @@ class TournamentBot(commands.Bot):
                 gid,
                 tournament.semifinal_matches,
                 tournament.semifinal_winners,
+                tournament,
             )
 
         if phase == TournamentPhase.FINAL:
-            return FinalView(gid, tournament.final_teams)
+            return FinalView(gid, tournament.final_teams, tournament)
 
         return None
 

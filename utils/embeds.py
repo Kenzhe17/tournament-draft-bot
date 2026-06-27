@@ -26,6 +26,9 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     for i, team in enumerate(tournament.teams):
         captain = team.get("captain", "Unknown")
 
+        # Get team name or default to captain name
+        team_name = tournament.team_names.get(i, captain)
+
         # Собираем игроков из кругов драфта (всегда круги 1-4)
         players = []
         for circle in range(1, 5):
@@ -37,7 +40,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         emoji = team_emojis.get(i + 1, "🎮")
 
         teams_text.append(
-            f"{emoji} **Команда П{i + 1}**\n"
+            f"{emoji} **Команда {team_name}**\n"
             f"┣ **Капитан:** {captain}\n"
             f"┗ **Состав:** {players_str}\n"
         )
@@ -181,8 +184,14 @@ async def build_qualifiers_embed(
     )
 
     for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
-        name_a = f"П{team_a + 1}"
-        name_b = f"П{team_b + 1}"
+        # Get team names or default to captain names
+        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+        captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+        captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+        name_a = tournament.team_names.get(team_a, captain_a)
+        name_b = tournament.team_names.get(team_b, captain_b)
+
         embed.add_field(
             name=f"🔥 Отбор #{i + 1}",
             value=f"**{name_a}** *vs* **{name_b}**",
@@ -204,8 +213,14 @@ async def build_semifinals_embed(
     )
 
     for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
-        name_a = f"П{team_a + 1}"
-        name_b = f"П{team_b + 1}"
+        # Get team names or default to captain names
+        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+        captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+        captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+        name_a = tournament.team_names.get(team_a, captain_a)
+        name_b = tournament.team_names.get(team_b, captain_b)
+
         embed.add_field(
             name=f"🔥 Игра #{i + 1}",
             value=f"**{name_a}** *vs* **{name_b}**",
@@ -223,13 +238,22 @@ async def build_final_embed(
     """Embed финала."""
     team_a = tournament.final_teams[0]
     team_b = tournament.final_teams[1]
+
+    # Get team names or default to captain names
+    team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+    team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+    name_a = tournament.team_names.get(team_a, captain_a)
+    name_b = tournament.team_names.get(team_b, captain_b)
+
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         color=discord.Color.red(),
     )
     embed.add_field(
         name="⚡ Главная битва турнира",
-        value=f"Победитель матча **П{team_a + 1}** *vs* Победитель матча **П{team_b + 1}**",
+        value=f"**{name_a}** *vs* **{name_b}**",
         inline=False
     )
 
@@ -260,7 +284,7 @@ async def build_winner_embed(
 
     embed = discord.Embed(
         title=" ТУРНИР ЗАВЕРШЕН ",
-        description=f"🥇 **Чемпион — П{idx + 1}!**\n🏆 **Команда: {captain_name}**\n👥 **Состав: {roster_str}**",
+        description=f"🥇 **Чемпион — П{idx + 1}!**\n🏆 **Капитан: {captain_name}**\n👥 **Состав: {roster_str}**",
         color=discord.Color.gold(),
     )
 
@@ -322,9 +346,8 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
             rank_emoji = "🥉"
         else:
             rank_emoji = f"{rank}."
-        
-        win_rate_str = f"{player.win_rate:.1f}%"
-        line = f"{rank_emoji} **{player.name}** — {player.wins} побед / {player.games} игр ({win_rate_str})"
+
+        line = f"{rank_emoji} **{player.name}** — {player.elo} ELO"
         lines.append(line)
     
     embed.description = "\n".join(lines)
