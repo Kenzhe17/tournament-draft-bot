@@ -53,14 +53,8 @@ class GenerateMatchesButton(discord.ui.Button):
             for circle in range(1, 5):
                 player = team.get(f"circle{circle}")
                 if player:
-                    # Try to get user_id from Discord member
-                    member = None
-                    for member in interaction.guild.members:
-                        if member.display_name == player:
-                            user_id = member.id
-                            break
-                    else:
-                        user_id = 0  # Fallback if not found
+                    # Get user_id from tournament's player_user_ids
+                    user_id = tournament.player_user_ids.get(player, 0)
                     await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -126,22 +120,14 @@ class SemifinalWinnerButton(discord.ui.Button):
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                user_id = 0
-                for member in interaction.guild.members:
-                    if member.display_name == player:
-                        user_id = member.id
-                        break
+                user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="semifinal_win", count_game=False)
 
         # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                user_id = 0
-                for member in interaction.guild.members:
-                    if member.display_name == player:
-                        user_id = member.id
-                        break
+                user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="loss", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -295,22 +281,14 @@ class QualifierWinnerButton(discord.ui.Button):
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                user_id = 0
-                for member in interaction.guild.members:
-                    if member.display_name == player:
-                        user_id = member.id
-                        break
+                user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_win", count_game=False)
 
         # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                user_id = 0
-                for member in interaction.guild.members:
-                    if member.display_name == player:
-                        user_id = member.id
-                        break
+                user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="loss", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]

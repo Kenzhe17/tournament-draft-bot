@@ -74,8 +74,8 @@ class Tournament:
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
     registration: RegistrationState = RegistrationState.CLOSED
-    captains: list[str] = field(default_factory=list)  # Now nicknames, not user IDs
-    circle1: list[str] = field(default_factory=list)  # Captain circle (for display)
+    captains: list[str] = field(default_factory=list)  # Display names
+    circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
     circle2: list[str] = field(default_factory=list)
     circle3: list[str] = field(default_factory=list)
     circle4: list[str] = field(default_factory=list)
@@ -88,6 +88,9 @@ class Tournament:
 
     # Названия команд (индекс команды -> название)
     team_names: dict[int, str] = field(default_factory=dict)
+
+    # Отображение имени на user_id для статистики
+    player_user_ids: dict[str, int] = field(default_factory=dict)
 
     @property
     def captain_count(self) -> int:
@@ -133,8 +136,8 @@ class Tournament:
     # --- Свойства ---
 
     @property
-    def all_players(self) -> set[str]:
-        """Все добавленные игроки (круги 1–4)."""
+    def all_players(self) -> set[int]:
+        """Все добавленные игроки (круги 1–4) - user IDs."""
         return set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
 
     @property
@@ -153,11 +156,11 @@ class Tournament:
         return True
 
     def circle_list(self, circle: int) -> list[str]:
-        """Получить список игроков круга."""
+        """Получить список игроков круга (display names)."""
         return getattr(self, f"circle{circle}")
 
     def set_circle_list(self, circle: int, players: list[str]) -> None:
-        """Установить список игроков круга."""
+        """Установить список игроков круга (display names)."""
         setattr(self, f"circle{circle}", players)
 
     # --- Добавление игроков ---
@@ -196,7 +199,7 @@ class Tournament:
 
         return added, rejected
 
-    def add_player_to_circle(self, circle: int, name: str) -> bool:
+    def add_player_to_circle(self, circle: int, name: str, user_id: int | None = None) -> bool:
         """Добавить игрока в конкретный круг. Возвращает True если успешно."""
         name = name.strip()
         if not name or name in self.all_players:
@@ -211,6 +214,11 @@ class Tournament:
 
         circle_players.append(name)
         self.set_circle_list(circle, circle_players)
+
+        # Register user_id if provided
+        if user_id is not None:
+            self.player_user_ids[name] = user_id
+
         return True
 
     def remove_player(self, name: str) -> bool:
@@ -411,6 +419,7 @@ class Tournament:
             "is_test": self.is_test,
             "circle_limits_enabled": self.circle_limits_enabled,
             "team_names": self.team_names,
+            "player_user_ids": self.player_user_ids,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
@@ -443,6 +452,7 @@ class Tournament:
             is_test=data.get("is_test", False),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
+            player_user_ids=data.get("player_user_ids", {}),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),

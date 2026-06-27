@@ -99,8 +99,8 @@ class CircleSelectButton(discord.ui.Button):
                     was_moved = True
                     break
 
-        # Add player
-        success = tournament.add_player_to_circle(self.circle, user_name)
+        # Add player with user_id
+        success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
         if not success:
             await interaction.response.send_message(
                 "❌ Не удалось добавить игрока.",
@@ -184,8 +184,15 @@ class AdminAddModal(discord.ui.Modal):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Add player
-        success = tournament.add_player_to_circle(self.circle, player_name)
+        # Get user_id from Discord member
+        user_id = 0
+        for member in interaction.guild.members:
+            if member.display_name == player_name:
+                user_id = member.id
+                break
+
+        # Add player with user_id
+        success = tournament.add_player_to_circle(self.circle, player_name, user_id)
         if not success:
             await interaction.response.send_message(
                 "❌ Не удалось добавить игрока.",
