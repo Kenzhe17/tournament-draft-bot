@@ -103,17 +103,29 @@ class PlayerStatsStore:
         result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO), 'none' (no ELO change)
         count_game: если True, увеличивает games
         """
-        key = f"{guild_id}:{user_id}"
+        # Fallback: if user_id is 0, use name as identifier
+        if user_id == 0:
+            key = f"{guild_id}:{name}"
+            use_name_key = True
+        else:
+            key = f"{guild_id}:{user_id}"
+            use_name_key = False
 
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
                 # Get current stats
-                row = await conn.fetchrow(
-                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
-                    guild_id, user_id
-                )
+                if use_name_key:
+                    row = await conn.fetchrow(
+                        "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND name = $2",
+                        guild_id, name
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                        guild_id, user_id
+                    )
 
                 if row:
                     current_elo = row["elo"]
@@ -172,15 +184,27 @@ class PlayerStatsStore:
 
                 new_elo = current_elo + elo_change
 
-                await conn.execute(
-                    """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
-                    """,
-                    guild_id, user_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
-                )
+                if use_name_key:
+                    # Use name as identifier for ON CONFLICT
+                    await conn.execute(
+                        """
+                        INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (guild_id, name)
+                        DO UPDATE SET user_id = $2, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
+                        """,
+                        guild_id, user_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                        ON CONFLICT (guild_id, user_id)
+                        DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
+                        """,
+                        guild_id, user_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    )
         else:
             if key not in self._stats:
                 self._stats[key] = PlayerStats(guild_id=guild_id, user_id=user_id, name=name)

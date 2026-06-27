@@ -61,7 +61,8 @@ async def init_db() -> None:
                     current_streak INTEGER DEFAULT 0,
                     best_win_streak INTEGER DEFAULT 0,
                     best_loss_streak INTEGER DEFAULT 0,
-                    PRIMARY KEY (guild_id, user_id)
+                    PRIMARY KEY (guild_id, user_id),
+                    UNIQUE (guild_id, name)
                 )
             """)
 
