@@ -38,9 +38,15 @@ class GenerateMatchesButton(discord.ui.Button):
             return
 
         tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.TEAMS:
+        if not tournament:
             await interaction.response.send_message(
-                "❌ Невозможно сгенерировать матчи.", ephemeral=True
+                "❌ Турнир не найден.", ephemeral=True
+            )
+            return
+
+        if tournament.phase != TournamentPhase.TEAMS:
+            await interaction.response.send_message(
+                f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}", ephemeral=True
             )
             return
 
