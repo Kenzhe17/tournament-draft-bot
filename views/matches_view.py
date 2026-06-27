@@ -106,17 +106,17 @@ class SemifinalWinnerButton(discord.ui.Button):
         winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
-        # Winning team gets +10 ELO for semifinal win
+        # Winning team gets +0 ELO for semifinal win
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="semifinal_win")
+                await player_stats_store.update_player(tournament.guild_id, player, result="semifinal_win", count_game=False)
 
-        # Losing team gets -10 ELO
+        # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="loss")
+                await player_stats_store.update_player(tournament.guild_id, player, result="loss", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -265,17 +265,17 @@ class QualifierWinnerButton(discord.ui.Button):
         winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
-        # Winning team gets +5 ELO for qualifier win
+        # Winning team gets +0 ELO for qualifier win
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="qualifier_win")
+                await player_stats_store.update_player(tournament.guild_id, player, result="qualifier_win", count_game=False)
 
-        # Losing team gets -10 ELO
+        # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="loss")
+                await player_stats_store.update_player(tournament.guild_id, player, result="loss", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

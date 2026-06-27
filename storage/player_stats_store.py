@@ -98,9 +98,10 @@ class PlayerStatsStore:
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, name: str, result: str = "loss") -> None:
+    async def update_player(self, guild_id: int, name: str, result: str = "loss", count_game: bool = False) -> None:
         """Обновить статистику игрока после турнира.
         result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO)
+        count_game: если True, увеличивает games (только для финала)
         """
         key = f"{guild_id}:{name}"
 
@@ -139,7 +140,9 @@ class PlayerStatsStore:
                 else:  # loss
                     elo_change = -25
 
-                games += 1
+                if count_game:
+                    games += 1
+
                 new_elo = current_elo + elo_change
 
                 await conn.execute(
@@ -168,7 +171,8 @@ class PlayerStatsStore:
             else:  # loss
                 self._stats[key].elo -= 25
 
-            self._stats[key].games += 1
+            if count_game:
+                self._stats[key].games += 1
             self.save()
 
     async def get_leaderboard(self, guild_id: int, page: int = 1, per_page: int = 10) -> list[PlayerStats]:
