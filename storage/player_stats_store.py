@@ -100,8 +100,8 @@ class PlayerStatsStore:
 
     async def update_player(self, guild_id: int, name: str, result: str = "loss", count_game: bool = False) -> None:
         """Обновить статистику игрока после турнира.
-        result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO)
-        count_game: если True, увеличивает games (только для финала)
+        result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO), 'none' (no ELO change)
+        count_game: если True, увеличивает games
         """
         key = f"{guild_id}:{name}"
 
@@ -137,6 +137,8 @@ class PlayerStatsStore:
                     elo_change = 0
                 elif result == "qualifier_win":
                     elo_change = 0
+                elif result == "none":
+                    elo_change = 0
                 else:  # loss
                     elo_change = -25
 
@@ -168,6 +170,8 @@ class PlayerStatsStore:
                 self._stats[key].elo += 0
             elif result == "qualifier_win":
                 self._stats[key].elo += 0
+            elif result == "none":
+                elo_change = 0
             else:  # loss
                 self._stats[key].elo -= 25
 

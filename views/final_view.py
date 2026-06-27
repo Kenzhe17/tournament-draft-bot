@@ -60,17 +60,17 @@ class FinalWinnerButton(discord.ui.Button):
         losing_team_index = tournament.final_teams[1] if tournament.final_teams[0] == self.team_index else tournament.final_teams[0]
         losing_team = tournament.teams[losing_team_index]
 
-        # Update winning team stats (+25 ELO, count game)
+        # Update winning team stats (+25 ELO)
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="win", count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, player, result="win", count_game=False)
 
-        # Update losing team stats (+10 ELO for finalist, count game)
+        # Update losing team stats (+10 ELO for finalist)
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
-                await player_stats_store.update_player(tournament.guild_id, player, result="final", count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, player, result="final", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

@@ -47,6 +47,14 @@ class GenerateMatchesButton(discord.ui.Button):
         tournament.generate_bracket()
         store.set(tournament)
 
+        # Update games for all players (tournament started)
+        from storage.player_stats_store import player_stats_store
+        for team in tournament.teams:
+            for circle in range(1, 5):
+                player = team.get(f"circle{circle}")
+                if player:
+                    await player_stats_store.update_player(tournament.guild_id, player, result="none", count_game=True)
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.defer()
