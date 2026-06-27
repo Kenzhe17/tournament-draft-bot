@@ -410,6 +410,20 @@ class TournamentCog(commands.Cog):
 
         await interaction.edit_original_response(embed=embed)
 
+    @app_commands.command(name="reset_stats", description="Сбросить статистику всех игроков")
+    @is_admin()
+    async def reset_stats(self, interaction: discord.Interaction) -> None:
+        """Сбросить статистику всех игроков на сервере."""
+        from storage.player_stats_store import player_stats_store
+
+        await player_stats_store.reset(interaction.guild_id)
+
+        await interaction.response.send_message(
+            "✅ Статистика всех игроков сброшена.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(
         old_name="Имя игрока которого нужно заменить",
