@@ -370,10 +370,8 @@ class TournamentCog(commands.Cog):
 
         if not all_players:
             await interaction.response.send_message(
-                "❌ Пока нет данных для рекордов.",
-                ephemeral=True
+                "❌ Пока нет данных для рекордов."
             )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Find records
@@ -381,6 +379,8 @@ class TournamentCog(commands.Cog):
         most_finals = max(all_players, key=lambda p: p.finals)
         highest_elo = max(all_players, key=lambda p: p.elo)
         most_games = max(all_players, key=lambda p: p.games)
+        best_win_streak = max(all_players, key=lambda p: p.best_win_streak)
+        best_loss_streak = max(all_players, key=lambda p: p.best_loss_streak)
 
         embed = discord.Embed(
             title="🏆 Рекорды Турнира",
@@ -407,8 +407,31 @@ class TournamentCog(commands.Cog):
             value=f"{most_games.name} — {most_games.games} игр",
             inline=False
         )
+        embed.add_field(
+            name="🔥 Лучшая серия побед",
+            value=f"{best_win_streak.name} — {best_win_streak.best_win_streak} подряд",
+            inline=False
+        )
+        embed.add_field(
+            name="❄️ Худшая серия поражений",
+            value=f"{best_loss_streak.name} — {best_loss_streak.best_loss_streak} подряд",
+            inline=False
+        )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="reset_stats", description="Сбросить статистику всех игроков")
+    @is_admin()
+    async def reset_stats(self, interaction: discord.Interaction) -> None:
+        """Сбросить статистику всех игроков на сервере."""
+        from storage.player_stats_store import player_stats_store
+
+        await player_stats_store.reset(interaction.guild_id)
+
+        await interaction.response.send_message(
+            "✅ Статистика всех игроков сброшена.",
+            ephemeral=True
+        )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="replace", description="Заменить игрока")

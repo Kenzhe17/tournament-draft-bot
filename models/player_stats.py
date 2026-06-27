@@ -14,6 +14,9 @@ class PlayerStats:
     wins: int = 0
     finals: int = 0
     games: int = 0
+    current_streak: int = 0
+    best_win_streak: int = 0
+    best_loss_streak: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
@@ -24,11 +27,14 @@ class PlayerStats:
             "wins": self.wins,
             "finals": self.finals,
             "games": self.games,
+            "current_streak": self.current_streak,
+            "best_win_streak": self.best_win_streak,
+            "best_loss_streak": self.best_loss_streak,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PlayerStats":
-        """Десериализация из словаря."""
+        """Десериализация из словарЯ."""
         return cls(
             guild_id=data.get("guild_id", 0),
             name=data["name"],
@@ -36,4 +42,7 @@ class PlayerStats:
             wins=data.get("wins", 0),
             finals=data.get("finals", 0),
             games=data.get("games", 0),
+            current_streak=data.get("current_streak", 0),
+            best_win_streak=data.get("best_win_streak", 0),
+            best_loss_streak=data.get("best_loss_streak", 0),
         )

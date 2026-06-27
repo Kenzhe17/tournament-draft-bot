@@ -34,6 +34,9 @@ async def init_db() -> None:
                 wins INTEGER DEFAULT 0,
                 finals INTEGER DEFAULT 0,
                 games INTEGER DEFAULT 0,
+                current_streak INTEGER DEFAULT 0,
+                best_win_streak INTEGER DEFAULT 0,
+                best_loss_streak INTEGER DEFAULT 0,
                 PRIMARY KEY (guild_id, name)
             )
         """)
@@ -46,5 +49,20 @@ async def init_db() -> None:
 
         try:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS finals INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS current_streak INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS best_win_streak INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS best_loss_streak INTEGER DEFAULT 0")
         except asyncpg.DuplicateColumnError:
             pass
