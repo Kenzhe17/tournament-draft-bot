@@ -352,13 +352,15 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:
         """Показать рекорды турнира."""
+        await interaction.response.defer()
+
         from storage.player_stats_store import player_stats_store
 
         all_players = await player_stats_store.get_all(interaction.guild_id)
 
         if not all_players:
-            await interaction.response.send_message(
-                "❌ Пока нет данных для рекордов."
+            await interaction.edit_original_response(
+                content="❌ Пока нет данных для рекордов."
             )
             return
 
@@ -406,7 +408,7 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.edit_original_response(embed=embed)
 
     @app_commands.command(name="reset_stats", description="Сбросить статистику всех игроков")
     @is_admin()
