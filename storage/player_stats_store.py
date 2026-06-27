@@ -232,7 +232,7 @@ class PlayerStatsStore:
                 offset = (page - 1) * per_page
                 rows = await conn.fetch(
                     """
-                    SELECT guild_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
                     FROM player_stats
                     WHERE guild_id = $1 AND games > 0
                     ORDER BY elo DESC
@@ -240,7 +240,7 @@ class PlayerStatsStore:
                     """,
                     guild_id, per_page, offset
                 )
-                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
         else:
             # Filter players with at least 1 game and from the same guild
             players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
