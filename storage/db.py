@@ -26,46 +26,29 @@ async def init_db() -> None:
     """Initialize database tables."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS player_stats (
-                guild_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                name TEXT NOT NULL,
-                elo INTEGER DEFAULT 1000,
-                wins INTEGER DEFAULT 0,
-                finals INTEGER DEFAULT 0,
-                games INTEGER DEFAULT 0,
-                current_streak INTEGER DEFAULT 0,
-                best_win_streak INTEGER DEFAULT 0,
-                best_loss_streak INTEGER DEFAULT 0,
-                PRIMARY KEY (guild_id, user_id)
+        # Check if table exists with old primary key
+        table_exists = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'player_stats'
             )
         """)
 
-        # Add new columns if they don't exist (for existing databases)
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS user_id BIGINT")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        # Migrate primary key from (guild_id, name) to (guild_id, user_id)
-        # Check if old primary key exists
-        try:
-            # Get current primary key
+        if table_exists:
+            # Check primary key constraint
             pk_info = await conn.fetchval("""
                 SELECT conname
                 FROM pg_constraint
                 WHERE conrelid = 'player_stats'::regclass
                 AND contype = 'p'
             """)
-            if pk_info and pk_info != "player_stats_pkey":
-                # Drop old primary key
-                await conn.execute(f"ALTER TABLE player_stats DROP CONSTRAINT {pk_info}")
-                # Add new primary key
-                await conn.execute("ALTER TABLE player_stats ADD PRIMARY KEY (guild_id, user_id)")
-        except Exception:
-            # If migration fails, recreate table
-            await conn.execute("DROP TABLE IF EXISTS player_stats")
+
+            # If primary key is not (guild_id, user_id), recreate table
+            if not pk_info or "user_id" not in str(pk_info):
+                await conn.execute("DROP TABLE IF EXISTS player_stats CASCADE")
+                table_exists = False
+
+        if not table_exists:
             await conn.execute("""
                 CREATE TABLE player_stats (
                     guild_id BIGINT NOT NULL,
