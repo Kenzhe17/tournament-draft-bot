@@ -324,7 +324,19 @@ class TournamentCog(commands.Cog):
         player: str | None = None
     ) -> None:
         """Показать статистику игрока."""
-        name = player if player else interaction.user.display_name
+        if player:
+            # Handle mentions: extract user ID and get display name
+            if player.startswith("<@") and player.endswith(">"):
+                user_id = int(player.strip("<@!>"))
+                mentioned_user = interaction.guild.get_member(user_id)
+                if mentioned_user:
+                    name = mentioned_user.display_name
+                else:
+                    name = player
+            else:
+                name = player
+        else:
+            name = interaction.user.display_name
 
         from storage.player_stats_store import player_stats_store
         from models.player_stats import PlayerStats
