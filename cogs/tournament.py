@@ -325,15 +325,13 @@ class TournamentCog(commands.Cog):
         name = player if player else interaction.user.display_name
 
         from storage.player_stats_store import player_stats_store
+        from models.player_stats import PlayerStats
+
         stats = await player_stats_store.get(interaction.guild_id, name)
 
         if not stats:
-            await interaction.response.send_message(
-                f"❌ Игрок `{name}` не найден в статистике.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+            # Create default stats for new players
+            stats = PlayerStats(guild_id=interaction.guild_id, name=name)
 
         win_rate = (stats.wins / stats.games * 100) if stats.games > 0 else 0
 
