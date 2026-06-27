@@ -317,35 +317,23 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
-    @app_commands.describe(player="Имя игрока (оставьте пустым для просмотра своей статистики)")
+    @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
     async def profile(
         self,
         interaction: discord.Interaction,
-        player: str | None = None
+        player: discord.Member | None = None
     ) -> None:
         """Показать статистику игрока."""
-        if player:
-            # Handle mentions: extract user ID and get display name
-            if player.startswith("<@") and player.endswith(">"):
-                user_id = int(player.strip("<@!>"))
-                mentioned_user = interaction.guild.get_member(user_id)
-                if mentioned_user:
-                    name = mentioned_user.display_name
-                else:
-                    name = player
-            else:
-                name = player
-        else:
-            name = interaction.user.display_name
+        target_user = player if player else interaction.user
 
         from storage.player_stats_store import player_stats_store
         from models.player_stats import PlayerStats
 
-        stats = await player_stats_store.get(interaction.guild_id, name)
+        stats = await player_stats_store.get(interaction.guild_id, target_user.id)
 
         if not stats:
             # Create default stats for new players
-            stats = PlayerStats(guild_id=interaction.guild_id, name=name)
+            stats = PlayerStats(guild_id=interaction.guild_id, user_id=target_user.id, name=target_user.display_name)
 
         win_rate = (stats.wins / stats.games * 100) if stats.games > 0 else 0
 

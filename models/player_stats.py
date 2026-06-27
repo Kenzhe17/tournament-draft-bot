@@ -9,6 +9,7 @@ class PlayerStats:
     """Статистика игрока по всем турнирам."""
 
     guild_id: int
+    user_id: int
     name: str
     elo: int = 1000
     wins: int = 0
@@ -22,6 +23,7 @@ class PlayerStats:
         """Сериализация в словарь."""
         return {
             "guild_id": self.guild_id,
+            "user_id": self.user_id,
             "name": self.name,
             "elo": self.elo,
             "wins": self.wins,
@@ -37,7 +39,8 @@ class PlayerStats:
         """Десериализация из словарЯ."""
         return cls(
             guild_id=data.get("guild_id", 0),
-            name=data["name"],
+            user_id=data.get("user_id", 0),
+            name=data.get("name", "Unknown"),
             elo=data.get("elo", 1000),
             wins=data.get("wins", 0),
             finals=data.get("finals", 0),

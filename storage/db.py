@@ -29,6 +29,7 @@ async def init_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS player_stats (
                 guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
                 name TEXT NOT NULL,
                 elo INTEGER DEFAULT 1000,
                 wins INTEGER DEFAULT 0,
@@ -37,11 +38,16 @@ async def init_db() -> None:
                 current_streak INTEGER DEFAULT 0,
                 best_win_streak INTEGER DEFAULT 0,
                 best_loss_streak INTEGER DEFAULT 0,
-                PRIMARY KEY (guild_id, name)
+                PRIMARY KEY (guild_id, user_id)
             )
         """)
 
         # Add new columns if they don't exist (for existing databases)
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS user_id BIGINT")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         try:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS elo INTEGER DEFAULT 1000")
         except asyncpg.DuplicateColumnError:

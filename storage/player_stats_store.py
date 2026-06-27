@@ -47,21 +47,21 @@ class PlayerStatsStore:
         with open(STATS_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    async def get(self, guild_id: int, name: str) -> PlayerStats | None:
+    async def get(self, guild_id: int, user_id: int) -> PlayerStats | None:
         """Получить статистику игрока."""
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND name = $2",
-                    guild_id, name
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"])
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"])
                 return None
         else:
-            key = f"{guild_id}:{name}"
+            key = f"{guild_id}:{user_id}"
             return self._stats.get(key)
 
     async def get_all(self, guild_id: int) -> list[PlayerStats]:
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -86,24 +86,24 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (guild_id, name)
-                    DO UPDATE SET elo = $3, wins = $4, finals = $5, games = $6, current_streak = $7, best_win_streak = $8, best_loss_streak = $9
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
                     """,
-                    stats.guild_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak
+                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak
                 )
         else:
-            key = f"{stats.guild_id}:{stats.name}"
+            key = f"{stats.guild_id}:{stats.user_id}"
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, name: str, result: str = "loss", count_game: bool = False) -> None:
+    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "loss", count_game: bool = False) -> None:
         """Обновить статистику игрока после турнира.
         result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO), 'none' (no ELO change)
         count_game: если True, увеличивает games
         """
-        key = f"{guild_id}:{name}"
+        key = f"{guild_id}:{user_id}"
 
         if self._use_db:
             from storage.db import get_pool
@@ -111,8 +111,8 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 # Get current stats
                 row = await conn.fetchrow(
-                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND name = $2",
-                    guild_id, name
+                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
                 )
 
                 if row:
@@ -174,16 +174,16 @@ class PlayerStatsStore:
 
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (guild_id, name)
-                    DO UPDATE SET elo = $3, wins = $4, finals = $5, games = $6, current_streak = $7, best_win_streak = $8, best_loss_streak = $9
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
                     """,
-                    guild_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    guild_id, user_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
                 )
         else:
             if key not in self._stats:
-                self._stats[key] = PlayerStats(guild_id=guild_id, name=name)
+                self._stats[key] = PlayerStats(guild_id=guild_id, user_id=user_id, name=name)
 
             if result == "win":
                 self._stats[key].elo += 25
