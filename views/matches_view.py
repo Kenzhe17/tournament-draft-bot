@@ -62,7 +62,9 @@ class GenerateMatchesButton(discord.ui.Button):
             )
             return
 
+        logger.info(f"Generating bracket for tournament size: {tournament.size.value}, teams: {len(tournament.teams)}")
         tournament.generate_bracket()
+        logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
         store.set(tournament)
 
         # Update games for all players (tournament started)
