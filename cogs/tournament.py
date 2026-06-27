@@ -410,6 +410,40 @@ class TournamentCog(commands.Cog):
 
         await interaction.edit_original_response(embed=embed)
 
+    @app_commands.command(name="reset_phase", description="Сбросить фазу турнира на teams")
+    @is_admin()
+    async def reset_phase(self, interaction: discord.Interaction) -> None:
+        """Сбросить фазу турнира на teams."""
+        from storage.json_store import store
+        from models.tournament import TournamentPhase
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        tournament.phase = TournamentPhase.TEAMS
+        tournament.teams = []
+        tournament.qualifier_matches = []
+        tournament.qualifier_winners = []
+        tournament.semifinal_matches = []
+        tournament.semifinal_winners = []
+        tournament.final_teams = []
+        tournament.winner_team_index = None
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            "✅ Фаза турнира сброшена на teams.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
     @app_commands.command(name="reset_stats", description="Сбросить статистику всех игроков")
     @is_admin()
     async def reset_stats(self, interaction: discord.Interaction) -> None:
