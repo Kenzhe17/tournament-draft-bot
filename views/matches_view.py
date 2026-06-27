@@ -68,6 +68,48 @@ class GenerateMatchesButton(discord.ui.Button):
         await interaction.response.defer()
 
 
+class ResetPhaseButton(discord.ui.Button):
+    """Кнопка сброса фазы турнира."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            label="Сбросить фазу",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"reset_phase:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_admin_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только администраторы могут сбрасывать фазу.",
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        tournament.phase = TournamentPhase.TEAMS
+        tournament.teams = []
+        tournament.qualifier_matches = []
+        tournament.qualifier_winners = []
+        tournament.semifinal_matches = []
+        tournament.semifinal_winners = []
+        tournament.final_teams = []
+        tournament.winner_team_index = None
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+        await interaction.response.defer()
+
+
 class SemifinalWinnerButton(discord.ui.Button):
     """Кнопка выбора победителя полуфинала."""
 
@@ -225,6 +267,7 @@ class TeamsView(discord.ui.View):
     def __init__(self, guild_id: int, tournament):
         super().__init__(timeout=None)
         self.add_item(GenerateMatchesButton(guild_id))
+        self.add_item(ResetPhaseButton(guild_id))
 
         self.add_item(TeamNameButton(guild_id, tournament))
 
