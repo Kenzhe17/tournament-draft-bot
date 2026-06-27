@@ -77,7 +77,6 @@ class GenerateMatchesButton(discord.ui.Button):
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.defer()
 
 
 class SemifinalWinnerButton(discord.ui.Button):
