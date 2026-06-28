@@ -36,7 +36,12 @@ class TournamentBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            max_ratelimit_timeout=30.0,
+            max_ratelimit_retries=5
+        )
         self._registered_view_keys: set[str] = set()
 
     async def setup_hook(self) -> None:
