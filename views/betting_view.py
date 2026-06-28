@@ -175,9 +175,10 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             await interaction.response.send_message(f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙", ephemeral=True)
             return
 
-        # Check if user is in the match (restriction)
-        if self._is_user_in_match(interaction.user.id):
-            await interaction.response.send_message("❌ Вы не можете делать ставки на матчи, в которых участвуете.", ephemeral=True)
+        # Check if user is in the match and betting against themselves
+        user_team_index = self._get_user_team_index(interaction.user.id)
+        if user_team_index is not None and user_team_index != self.team_index:
+            await interaction.response.send_message("❌ Вы не можете ставить против своей команды.", ephemeral=True)
             return
 
         # Deduct balance
@@ -199,8 +200,8 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             ephemeral=True
         )
 
-    def _is_user_in_match(self, user_id: int) -> bool:
-        """Check if user is participating in this match."""
+    def _get_user_team_index(self, user_id: int) -> int | None:
+        """Get the team index if user is participating in this match, or None otherwise."""
         # Get teams in this match
         if self.match_type == "qualifier":
             match = self.tournament.qualifier_matches[self.match_index]
@@ -209,7 +210,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         elif self.match_type == "final":
             match = self.tournament.final_teams
         else:
-            return False
+            return None
 
         # Check if user is in any of the teams
         for team_index in match:
@@ -219,8 +220,8 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
                 if player:
                     player_user_id = self.tournament.player_user_ids.get(player, 0)
                     if player_user_id == user_id:
-                        return True
-        return False
+                        return team_index
+        return None
 
 
 class BettingButton(discord.ui.Button):
