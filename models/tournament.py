@@ -35,6 +35,13 @@ class RegistrationState(str, Enum):
     OPEN = "open"
 
 
+class FormationMode(str, Enum):
+    """Режим формирования кругов."""
+
+    MANUAL = "manual"
+    ELO = "elo"
+
+
 # Порядок выбора по кругам для разного количества капитанов
 # Rotation Draft: круг 2 - прямой, круг 3 - обратный, круг 4 - с середины к концу, потом к началу
 PICK_ORDERS: dict[int, dict[str, list[int] | int]] = {
@@ -84,6 +91,7 @@ class Tournament:
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
     registration: RegistrationState = RegistrationState.CLOSED
+    formation_mode: FormationMode = FormationMode.MANUAL
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
     circle2: list[str] = field(default_factory=list)
@@ -243,6 +251,67 @@ class Tournament:
                     self.set_circle_list(circle, circle_players)
                     return True
         return False
+
+    # --- Формирование кругов по ELO ---
+
+    async def distribute_by_elo(self, guild_id: int) -> None:
+        """Распределить игроков по кругам на основе ELO."""
+        from storage.player_stats_store import player_stats_store
+
+        # Collect all players from all circles
+        all_players = []
+        for circle in range(1, 5):
+            circle_list = self.circle_list(circle)
+            for player_name in circle_list:
+                user_id = self.player_user_ids.get(player_name, 0)
+                all_players.append((player_name, user_id))
+
+        # Get ELO for each player
+        players_with_elo = []
+        for player_name, user_id in all_players:
+            stats = await player_stats_store.get(guild_id, user_id)
+            elo = stats.elo if stats else 1000  # Default ELO for new players
+            players_with_elo.append((player_name, user_id, elo))
+
+        # Sort by ELO (descending)
+        players_with_elo.sort(key=lambda x: x[2], reverse=True)
+
+        # Clear all circles
+        self.circle1 = []
+        self.circle2 = []
+        self.circle3 = []
+        self.circle4 = []
+
+        # Distribute to circles based on tournament size
+        captain_count = self.captain_count
+
+        # Top players become captains (circle1)
+        for i in range(captain_count):
+            if i < len(players_with_elo):
+                player_name, user_id, _ = players_with_elo[i]
+                self.circle1.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # Next group goes to circle2
+        for i in range(captain_count, captain_count * 2):
+            if i < len(players_with_elo):
+                player_name, user_id, _ = players_with_elo[i]
+                self.circle2.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # Next group goes to circle3
+        for i in range(captain_count * 2, captain_count * 3):
+            if i < len(players_with_elo):
+                player_name, user_id, _ = players_with_elo[i]
+                self.circle3.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # Last group goes to circle4
+        for i in range(captain_count * 3, captain_count * 4):
+            if i < len(players_with_elo):
+                player_name, user_id, _ = players_with_elo[i]
+                self.circle4.append(player_name)
+                self.player_user_ids[player_name] = user_id
 
     # --- Драфт ---
 

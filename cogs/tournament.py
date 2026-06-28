@@ -11,6 +11,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from models.tournament import (
+    FormationMode,
     RegistrationState,
     Tournament,
     TournamentPhase,
@@ -44,10 +45,10 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим формирования кругов: manual или elo")
     @is_admin()
     async def tournament_create(
-        self, interaction: discord.Interaction, size: str
+        self, interaction: discord.Interaction, size: str, formation: str = "manual"
     ) -> None:
         """Создать турнир с указанным размером."""
         existing = store.get(interaction.guild_id)
@@ -68,10 +69,21 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
+        # Validate formation mode
+        try:
+            formation_mode = FormationMode(formation)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Неверный режим формирования. Используйте: manual или elo.", ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
         tournament = Tournament(
             guild_id=interaction.guild_id,
             channel_id=interaction.channel_id,
             size=tournament_size,
+            formation_mode=formation_mode,
         )
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
@@ -81,7 +93,7 @@ class TournamentCog(commands.Cog):
 
         tournament.message_id = message.id
         store.set(tournament)
-        logger.info("Турнир создан на сервере %s с размером %s", interaction.guild_id, size)
+        logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_admin()

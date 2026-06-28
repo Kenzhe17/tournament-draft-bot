@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from models.tournament import RegistrationState, Tournament, TournamentPhase, TournamentSize
+from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.json_store import store
 
 if TYPE_CHECKING:
@@ -303,6 +303,70 @@ class AdminAddButton(discord.ui.Button):
         await interaction.response.send_modal(modal)
 
 
+class AutoDistributeButton(discord.ui.Button):
+    """Кнопка для автоматического распределения по ELO."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="🎯 Распределить по ELO",
+            custom_id=f"auto_distribute:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_admin_check
+        if not is_admin_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только админ может распределять игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        if tournament.formation_mode != FormationMode.ELO:
+            await interaction.response.send_message(
+                "❌ Турнир создан в ручном режиме. Используйте /tournament create с параметром formation=elo.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Check if we have enough players
+        total_players = len(tournament.all_players)
+        required_players = int(tournament.size.value)
+        if total_players < required_players:
+            await interaction.response.send_message(
+                f"❌ Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        await interaction.response.defer()
+
+        # Distribute by ELO
+        await tournament.distribute_by_elo(self.guild_id)
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.followup.send(
+            "✅ Игроки распределены по кругам на основе ELO!",
+            ephemeral=True
+        )
+
+
 class SetupView(discord.ui.View):
     """View с кнопками выбора круга для добавления игроков."""
 
@@ -316,7 +380,12 @@ class SetupView(discord.ui.View):
         for circle in range(1, 5):
             button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle])
             self.add_item(button)
-        
+
+        # Add auto-distribute button if in ELO mode
+        if tournament.formation_mode == FormationMode.ELO:
+            auto_distribute_button = AutoDistributeButton(tournament.guild_id)
+            self.add_item(auto_distribute_button)
+
         # Add exit button
         exit_button = ExitButton(tournament.guild_id)
         self.add_item(exit_button)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import discord
 
 # ДОБАВЛЕНО: TournamentSize в список импорта
-from models.tournament import RegistrationState, Tournament, TournamentPhase, TournamentSize
+from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 
 
 def _circle_line(players: list[str]) -> str:
@@ -54,8 +54,9 @@ async def build_setup_embed(
 ) -> discord.Embed:
     """Embed настройки турнира."""
     status_emoji = "🔓" if tournament.registration == RegistrationState.OPEN else "🔒"
+    formation_text = "🎯 ELO" if tournament.formation_mode == FormationMode.ELO else "✋ Ручной"
     embed = discord.Embed(
-        title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji}",
+        title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji} | {formation_text}",
         color=discord.Color.gold(),
     )
     
