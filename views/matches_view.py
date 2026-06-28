@@ -11,7 +11,7 @@ from models.tournament import TournamentPhase
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
-from views.betting_view import OpenBettingButton
+from views.betting_view import BettingButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -393,8 +393,9 @@ class QualifiersView(discord.ui.View):
         for i, (team1, team2) in enumerate(matches):
             self.add_item(QualifierWinnerButton(guild_id, i, team1, self._get_team_name(team1, tournament)))
             self.add_item(QualifierWinnerButton(guild_id, i, team2, self._get_team_name(team2, tournament)))
-            # Add betting button for each match
-            self.add_item(OpenBettingButton(guild_id, tournament, "qualifier", i))
+
+        # Add betting button
+        self.add_item(BettingButton(guild_id, tournament))
 
     def _get_team_name(self, team_index: int, tournament) -> str:
         """Get team name or default to captain name."""
@@ -423,5 +424,6 @@ class SemifinalsView(discord.ui.View):
             name_b = tournament.team_names.get(team_b, captain_b)
             self.add_item(SemifinalWinnerButton(guild_id, i, team_a, name_a))
             self.add_item(SemifinalWinnerButton(guild_id, i, team_b, name_b))
-            # Add betting button for each match
-            self.add_item(OpenBettingButton(guild_id, tournament, "semifinal", i))
+
+        # Add betting button
+        self.add_item(BettingButton(guild_id, tournament))

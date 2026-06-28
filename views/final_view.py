@@ -140,6 +140,7 @@ class FinalView(discord.ui.View):
                     label=f"{team_name} победил",
                 )
             )
-        # Add betting button for final
-        from views.betting_view import OpenBettingButton
-        self.add_item(OpenBettingButton(guild_id, tournament, "final", 0))
+
+        # Add betting button
+        from views.betting_view import BettingButton
+        self.add_item(BettingButton(guild_id, tournament))
