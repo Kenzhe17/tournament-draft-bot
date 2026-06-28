@@ -362,7 +362,7 @@ class MatchWinnerButton(discord.ui.Button):
             color=discord.Color.green()
         )
 
-        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True, delete_after=2)
+        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True, delete_after=3)
 
 
 class TeamWinnerSelectView(discord.ui.View):
@@ -600,7 +600,7 @@ class TeamWinnerButton(discord.ui.Button):
         await interaction.response.send_message(
             f"✅ Победитель {self.team_name} записан!",
             ephemeral=True,
-            delete_after=2
+            delete_after=3
         )
 
 
@@ -627,7 +627,7 @@ class SelectWinnerButton(discord.ui.Button):
             color=discord.Color.green()
         )
 
-        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=2)
+        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=3)
 
 
 class QualifierWinnerButton(discord.ui.Button):
