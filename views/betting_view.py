@@ -92,7 +92,7 @@ class MatchButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True, delete_after=2)
 
 
 class TeamSelectView(discord.ui.View):
@@ -196,7 +196,8 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         await interaction.response.send_message(
             f"✅ Ставка {amount} 🪙 на {self.team_name} принята!",
-            ephemeral=True
+            ephemeral=True,
+            delete_after=2
         )
 
     def _is_user_in_match(self, user_id: int) -> bool:
@@ -245,4 +246,4 @@ class BettingButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=2)
