@@ -410,7 +410,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.edit_original_response(embed=embed)
 
-    @app_commands.command(name="elo", description="Изменить ELO игрока")
+    @tournament_group.command(name="elo", description="Изменить ELO игрока")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         player="Игрок",
