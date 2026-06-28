@@ -251,13 +251,9 @@ class Tournament:
         # Sync captains with circle1
         self.captains = list(self.circle1)
 
-        # Shuffle captains randomly
-        shuffled_captains = list(self.captains)
-        random.shuffle(shuffled_captains)
-        self.captains = shuffled_captains
-
-        # captain_order is fixed [0, 1, 2, 3...] for PICK_ORDERS to work
+        # Shuffle captain_order randomly, keep captains in original order
         self.captain_order = list(range(self.captain_count))
+        random.shuffle(self.captain_order)
         self.picks = {str(i): {} for i in range(self.captain_count)}
         self.current_circle = 2
         self.pick_index = 0
@@ -286,7 +282,7 @@ class Tournament:
         order_data = circle_orders.get(key, {})
         order = order_data.get("order", [])
         if self.pick_index < len(order):
-            # Return the captain index directly from pick order
+            # Return the position in captain_order for the current picker
             return order[self.pick_index]
         return None
 
