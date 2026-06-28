@@ -282,13 +282,17 @@ class Tournament:
         order_data = circle_orders.get(key, {})
         order = order_data.get("order", [])
         if self.pick_index < len(order):
-            return order[self.pick_index]
+            # Return the captain index from captain_order at the pick order position
+            captain_order_pos = order[self.pick_index]
+            return self.captain_order[captain_order_pos]
         return None
 
     def pick_player(self, position: int, player: str) -> None:
         """Зафиксировать выбор игрока капитаном на позиции position."""
         key = str(self.current_circle)
-        self.picks[str(position)][key] = player
+        # Store picks by actual captain index, not position in captain_order
+        captain_index = self.captain_order[position]
+        self.picks[str(captain_index)][key] = player
         self.available[key].remove(player)
 
     def advance_after_pick(self) -> bool:
