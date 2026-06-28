@@ -250,9 +250,11 @@ class Tournament:
         """Перемешать капитанов и начать драфт."""
         # Sync captains with circle1
         self.captains = list(self.circle1)
-        
+
         self.captain_order = list(range(self.captain_count))
-        random.shuffle(self.captain_order)
+        # Don't shuffle for 16 and 32 players to maintain fixed order
+        if self.size != TournamentSize.SIXTEEN and self.size != TournamentSize.THIRTY_TWO:
+            random.shuffle(self.captain_order)
         self.picks = {str(i): {} for i in range(self.captain_count)}
         self.current_circle = 2
         self.pick_index = 0
