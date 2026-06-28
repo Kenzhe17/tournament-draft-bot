@@ -108,8 +108,7 @@ async def build_draft_embed(
 
     # Порядок капитанов
     order_lines = []
-    for i, cap_idx in enumerate(tournament.captain_order):
-        captain_name = tournament.captains[cap_idx]
+    for i, captain_name in enumerate(tournament.captains):
         order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
@@ -122,10 +121,9 @@ async def build_draft_embed(
         order_data = circle_orders.get(str(circle), {})
         pick_order = order_data.get("order", list(range(tournament.captain_count)))
 
-        for pos in pick_order:
-            cap_idx = tournament.captain_order[pos]
+        for cap_idx in pick_order:
             captain_name = tournament.captains[cap_idx]
-            pick = tournament.picks.get(str(pos), {}).get(str(circle))
+            pick = tournament.picks.get(str(cap_idx), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
                 pick = "-"
             lines.append(f"{captain_name} → {pick}")
@@ -142,8 +140,7 @@ async def build_draft_embed(
     # Кто сейчас выбирает
     picker_pos = tournament.current_picker_position()
     if picker_pos is not None:
-        cap_idx = tournament.captain_order[picker_pos]
-        captain_name = tournament.captains[cap_idx]
+        captain_name = tournament.captains[picker_pos]
         embed.add_field(
             name="Сейчас выбирает",
             value=captain_name,
