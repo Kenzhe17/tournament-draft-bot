@@ -106,14 +106,9 @@ async def build_draft_embed(
         color=discord.Color.blue(),
     )
 
-    # Порядок капитанов (show the actual order they will pick in)
+    # Порядок капитанов (show the shuffled order)
     order_lines = []
-    from models.tournament import PICK_ORDERS
-    circle_orders = PICK_ORDERS.get(tournament.captain_count, {})
-    order_data = circle_orders.get(str(tournament.current_circle), {})
-    pick_order = order_data.get("order", list(range(tournament.captain_count)))
-    for i, pos in enumerate(pick_order):
-        captain_name = tournament.captains[pos]
+    for i, captain_name in enumerate(tournament.captains):
         order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
