@@ -92,7 +92,7 @@ class MatchButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.edit_message(embed=embed, view=team_view)
+        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
 
 
 class TeamSelectView(discord.ui.View):
