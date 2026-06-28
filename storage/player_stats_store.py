@@ -381,7 +381,7 @@ class PlayerStatsStore:
                     """
                     SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
                     FROM player_stats
-                    WHERE guild_id = $1 AND games > 0
+                    WHERE guild_id = $1 AND games > 0 AND user_id > 0
                     ORDER BY elo DESC
                     LIMIT $2 OFFSET $3
                     """,
