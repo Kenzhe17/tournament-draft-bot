@@ -118,6 +118,9 @@ class TournamentBot(commands.Bot):
         if phase == TournamentPhase.FINAL:
             return FinalView(gid, tournament.final_teams, tournament)
 
+        if phase == TournamentPhase.COMPLETE:
+            return None  # No buttons needed for completed tournament
+
         return None
 
     async def update_tournament_message(
