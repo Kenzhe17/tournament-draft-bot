@@ -362,8 +362,7 @@ class MatchWinnerButton(discord.ui.Button):
             color=discord.Color.green()
         )
 
-        await interaction.response.defer()
-        await interaction.followup.send(embed=embed, view=team_view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=team_view)
 
 
 class TeamWinnerSelectView(discord.ui.View):
