@@ -258,6 +258,58 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="coins", description="Показать таблицу лидеров по монетам")
+    async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
+        """Показать таблицу лидеров по монетам."""
+        from storage.user_balance_store import user_balance_store
+        from storage.player_stats_store import player_stats_store
+        from storage.db import get_pool
+
+        if not user_balance_store._use_db:
+            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
+            return
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            offset = (page - 1) * 10
+            rows = await conn.fetch(
+                """
+                SELECT ub.guild_id, ub.user_id, ub.balance, ps.name
+                FROM user_balance ub
+                JOIN player_stats ps ON ub.guild_id = ps.guild_id AND ub.user_id = ps.user_id
+                WHERE ub.guild_id = $1 AND ps.games > 0 AND ub.user_id > 0
+                ORDER BY ub.balance DESC
+                LIMIT 10 OFFSET $2
+                """,
+                interaction.guild_id, offset
+            )
+
+        if not rows:
+            await interaction.response.send_message("❌ Пока нет данных для лидерборда монет.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="💰 Лидерборд монет",
+            color=discord.Color.gold()
+        )
+
+        for i, row in enumerate(rows):
+            rank = (page - 1) * 10 + i + 1
+            medal = ""
+            if rank == 1:
+                medal = "🥇"
+            elif rank == 2:
+                medal = "🥈"
+            elif rank == 3:
+                medal = "🥉"
+            embed.add_field(
+                name=f"{medal} #{rank} {row['name']}",
+                value=f"{row['balance']} 🪙",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
     @app_commands.describe(
         circle="Номер круга (2, 3 или 4)",
@@ -327,6 +379,7 @@ class TournamentCog(commands.Cog):
         target_user = player if player else interaction.user
 
         from storage.player_stats_store import player_stats_store
+        from storage.user_balance_store import user_balance_store
         from models.player_stats import PlayerStats
 
         stats = await player_stats_store.get(interaction.guild_id, target_user.id)
@@ -336,6 +389,7 @@ class TournamentCog(commands.Cog):
             stats = PlayerStats(guild_id=interaction.guild_id, user_id=target_user.id, name=target_user.display_name)
 
         win_rate = (stats.wins / stats.games * 100) if stats.games > 0 else 0
+        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
         embed = discord.Embed(
             title=f"📊 Профиль: {stats.name}",
@@ -346,6 +400,7 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🥈 Финалы", value=str(stats.finals), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
+        embed.add_field(name="💰 Монеты", value=f"{balance} 🪙", inline=True)
 
         await interaction.response.send_message(embed=embed)
 
