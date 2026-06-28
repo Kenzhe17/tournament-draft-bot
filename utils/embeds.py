@@ -122,8 +122,7 @@ async def build_draft_embed(
         order_data = circle_orders.get(str(circle), {})
         pick_order = order_data.get("order", list(range(tournament.captain_count)))
 
-        for pos in pick_order:
-            cap_idx = tournament.captain_order[pos]
+        for cap_idx in pick_order:
             captain_name = tournament.captains[cap_idx]
             pick = tournament.picks.get(str(cap_idx), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:

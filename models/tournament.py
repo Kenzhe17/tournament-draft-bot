@@ -251,9 +251,13 @@ class Tournament:
         # Sync captains with circle1
         self.captains = list(self.circle1)
 
+        # Shuffle captains randomly
+        shuffled_captains = list(self.captains)
+        random.shuffle(shuffled_captains)
+        self.captains = shuffled_captains
+
+        # captain_order is fixed [0, 1, 2, 3...] for PICK_ORDERS to work
         self.captain_order = list(range(self.captain_count))
-        random.shuffle(self.captain_order)
-        # Store picks by position in captain_order, not by captain index
         self.picks = {str(i): {} for i in range(self.captain_count)}
         self.current_circle = 2
         self.pick_index = 0
@@ -282,17 +286,15 @@ class Tournament:
         order_data = circle_orders.get(key, {})
         order = order_data.get("order", [])
         if self.pick_index < len(order):
-            # Return the captain index from captain_order at the pick order position
-            captain_order_pos = order[self.pick_index]
-            return self.captain_order[captain_order_pos]
+            # Return the captain index directly from pick order
+            return order[self.pick_index]
         return None
 
     def pick_player(self, position: int, player: str) -> None:
         """Зафиксировать выбор игрока капитаном на позиции position."""
         key = str(self.current_circle)
-        # Store picks by actual captain index, not position in captain_order
-        captain_index = self.captain_order[position]
-        self.picks[str(captain_index)][key] = player
+        # Store picks by position in captain_order
+        self.picks[str(position)][key] = player
         self.available[key].remove(player)
 
     def advance_after_pick(self) -> bool:
