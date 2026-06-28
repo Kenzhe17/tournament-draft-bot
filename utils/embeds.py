@@ -125,7 +125,7 @@ async def build_draft_embed(
         for pos in pick_order:
             cap_idx = tournament.captain_order[pos]
             captain_name = tournament.captains[cap_idx]
-            pick = tournament.picks.get(str(cap_idx), {}).get(str(circle))
+            pick = tournament.picks.get(str(pos), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
                 pick = "-"
             lines.append(f"{captain_name} → {pick}")
