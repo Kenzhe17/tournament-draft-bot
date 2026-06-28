@@ -623,7 +623,7 @@ class SelectWinnerButton(discord.ui.Button):
             color=discord.Color.green()
         )
 
-        await interaction.response.edit_message(embed=embed, view=match_view)
+        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
 
 
 class QualifierWinnerButton(discord.ui.Button):
