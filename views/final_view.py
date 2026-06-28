@@ -127,19 +127,10 @@ class FinalView(discord.ui.View):
 
     def __init__(self, guild_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
-        for team_idx in final_teams:
-            # Get team name or default to captain name
-            team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
-            captain = team_data.get("captain", f"П{team_idx + 1}")
-            team_name = tournament.team_names.get(team_idx, captain)
 
-            self.add_item(
-                FinalWinnerButton(
-                    guild_id,
-                    team_idx,
-                    label=f"{team_name} победил",
-                )
-            )
+        # Add single winner selection button
+        from views.matches_view import SelectWinnerButton
+        self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
 
         # Add betting button
         from views.betting_view import BettingButton
