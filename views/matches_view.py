@@ -535,6 +535,7 @@ class TeamWinnerButton(discord.ui.Button):
 
             # Set winner
             tournament.final_winner = self.team_index
+            tournament.winner_team_index = self.team_index
             tournament.phase = TournamentPhase.COMPLETE
             store.set(tournament)
 
