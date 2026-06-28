@@ -106,9 +106,14 @@ async def build_draft_embed(
         color=discord.Color.blue(),
     )
 
-    # Порядок капитанов
+    # Порядок капитанов (show the actual order they will pick in)
     order_lines = []
-    for i, captain_name in enumerate(tournament.captains):
+    from models.tournament import PICK_ORDERS
+    circle_orders = PICK_ORDERS.get(tournament.captain_count, {})
+    order_data = circle_orders.get(str(tournament.current_circle), {})
+    pick_order = order_data.get("order", list(range(tournament.captain_count)))
+    for i, pos in enumerate(pick_order):
+        captain_name = tournament.captains[pos]
         order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
@@ -121,9 +126,9 @@ async def build_draft_embed(
         order_data = circle_orders.get(str(circle), {})
         pick_order = order_data.get("order", list(range(tournament.captain_count)))
 
-        for cap_idx in pick_order:
-            captain_name = tournament.captains[cap_idx]
-            pick = tournament.picks.get(str(cap_idx), {}).get(str(circle))
+        for pos in pick_order:
+            captain_name = tournament.captains[pos]
+            pick = tournament.picks.get(str(pos), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
                 pick = "-"
             lines.append(f"{captain_name} → {pick}")
