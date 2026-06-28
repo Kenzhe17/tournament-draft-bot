@@ -131,24 +131,35 @@ class SemifinalWinnerButton(discord.ui.Button):
 
         # Update stats for both teams
         from storage.player_stats_store import player_stats_store
+        from models.tournament import TournamentSize
         match = tournament.semifinal_matches[self.match_index]
         losing_team_index = match[1] if match[0] == self.team_index else match[0]
         winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
-        # Winning team gets +0 ELO for semifinal win
+        # Determine result type based on tournament size
+        if tournament.size == TournamentSize.SIXTEEN:
+            # 16 players: semifinal losers get -25, winners get ELO in final
+            loser_result = "semifinal_loss"  # -25
+            winner_result = "none"  # No ELO change yet
+        else:
+            # 32 players: semifinal losers get +25 (won qualifier), winners get ELO in final
+            loser_result = "qualifier_win_semifinal_loss"  # +25
+            winner_result = "none"  # No ELO change yet
+
+        # Winning team gets no ELO change (will be updated in final)
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="semifinal_win", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
 
-        # Losing team gets -25 ELO
+        # Losing team gets ELO change based on tournament size
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="loss", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -297,19 +308,19 @@ class QualifierWinnerButton(discord.ui.Button):
         winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
 
-        # Winning team gets +0 ELO for qualifier win
+        # Winning team gets no ELO change (will be updated in semifinals/final)
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_win", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
 
         # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="loss", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

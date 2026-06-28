@@ -100,7 +100,11 @@ class PlayerStatsStore:
 
     async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "loss", count_game: bool = False, set_elo: int | None = None) -> None:
         """Обновить статистику игрока после турнира.
-        result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO), 'none' (no ELO change)
+        result types:
+        - 8 players: 'final_loss' (-25), 'final_win' (+25)
+        - 16 players: 'semifinal_loss' (-25), 'semifinal_win_final_loss' (+25), 'semifinal_win_final_win' (+50)
+        - 32 players: 'qualifier_loss' (-25), 'qualifier_win_semifinal_loss' (+25), 'qualifier_win_semifinal_win_final_loss' (+50), 'qualifier_win_semifinal_win_final_win' (+100)
+        - 'none' (no ELO change)
         count_game: если True, увеличивает games
         set_elo: если указано, устанавливает ELO на это значение (игнорирует result)
         """
@@ -133,10 +137,20 @@ class PlayerStatsStore:
                     best_win_streak = 0
                     best_loss_streak = 0
 
-                # Calculate ELO change
-                if result == "win":
+                # Calculate ELO change based on new cumulative system
+                if result == "final_loss":
+                    elo_change = -25
+                    # Update loss streak
+                    if current_streak < 0:
+                        current_streak -= 1
+                    else:
+                        current_streak = -1
+                    if abs(current_streak) > best_loss_streak:
+                        best_loss_streak = abs(current_streak)
+                elif result == "final_win":
                     elo_change = 25
                     wins += 1
+                    finals += 1
                     # Update win streak
                     if current_streak > 0:
                         current_streak += 1
@@ -144,21 +158,79 @@ class PlayerStatsStore:
                         current_streak = 1
                     if current_streak > best_win_streak:
                         best_win_streak = current_streak
-                elif result == "final":
-                    elo_change = 10
+                elif result == "semifinal_loss":
+                    elo_change = -25
+                    # Update loss streak
+                    if current_streak < 0:
+                        current_streak -= 1
+                    else:
+                        current_streak = -1
+                    if abs(current_streak) > best_loss_streak:
+                        best_loss_streak = abs(current_streak)
+                elif result == "semifinal_win_final_loss":
+                    elo_change = 25
                     finals += 1
-                    # Finalist - reset streak
-                    current_streak = 0
-                elif result == "semifinal_win":
-                    elo_change = 0
-                    # No streak change for semifinal win
-                elif result == "qualifier_win":
-                    elo_change = 0
-                    # No streak change for qualifier win
+                    # Update win streak
+                    if current_streak > 0:
+                        current_streak += 1
+                    else:
+                        current_streak = 1
+                    if current_streak > best_win_streak:
+                        best_win_streak = current_streak
+                elif result == "semifinal_win_final_win":
+                    elo_change = 50
+                    wins += 1
+                    finals += 1
+                    # Update win streak
+                    if current_streak > 0:
+                        current_streak += 1
+                    else:
+                        current_streak = 1
+                    if current_streak > best_win_streak:
+                        best_win_streak = current_streak
+                elif result == "qualifier_loss":
+                    elo_change = -25
+                    # Update loss streak
+                    if current_streak < 0:
+                        current_streak -= 1
+                    else:
+                        current_streak = -1
+                    if abs(current_streak) > best_loss_streak:
+                        best_loss_streak = abs(current_streak)
+                elif result == "qualifier_win_semifinal_loss":
+                    elo_change = 25
+                    # Update win streak
+                    if current_streak > 0:
+                        current_streak += 1
+                    else:
+                        current_streak = 1
+                    if current_streak > best_win_streak:
+                        best_win_streak = current_streak
+                elif result == "qualifier_win_semifinal_win_final_loss":
+                    elo_change = 50
+                    finals += 1
+                    # Update win streak
+                    if current_streak > 0:
+                        current_streak += 1
+                    else:
+                        current_streak = 1
+                    if current_streak > best_win_streak:
+                        best_win_streak = current_streak
+                elif result == "qualifier_win_semifinal_win_final_win":
+                    elo_change = 100
+                    wins += 1
+                    finals += 1
+                    # Update win streak
+                    if current_streak > 0:
+                        current_streak += 1
+                    else:
+                        current_streak = 1
+                    if current_streak > best_win_streak:
+                        best_win_streak = current_streak
                 elif result == "none":
                     elo_change = 0
                     # No streak change
-                else:  # loss
+                else:  # legacy 'loss' for backward compatibility
                     elo_change = -25
                     # Update loss streak
                     if current_streak < 0:
@@ -191,9 +263,19 @@ class PlayerStatsStore:
 
             if set_elo is not None:
                 self._stats[key].elo = set_elo
-            elif result == "win":
+            elif result == "final_loss":
+                self._stats[key].elo -= 25
+                # Update loss streak
+                if self._stats[key].current_streak < 0:
+                    self._stats[key].current_streak -= 1
+                else:
+                    self._stats[key].current_streak = -1
+                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
+                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
+            elif result == "final_win":
                 self._stats[key].elo += 25
                 self._stats[key].wins += 1
+                self._stats[key].finals += 1
                 # Update win streak
                 if self._stats[key].current_streak > 0:
                     self._stats[key].current_streak += 1
@@ -201,21 +283,79 @@ class PlayerStatsStore:
                     self._stats[key].current_streak = 1
                 if self._stats[key].current_streak > self._stats[key].best_win_streak:
                     self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "final":
-                self._stats[key].elo += 10
+            elif result == "semifinal_loss":
+                self._stats[key].elo -= 25
+                # Update loss streak
+                if self._stats[key].current_streak < 0:
+                    self._stats[key].current_streak -= 1
+                else:
+                    self._stats[key].current_streak = -1
+                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
+                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
+            elif result == "semifinal_win_final_loss":
+                self._stats[key].elo += 25
                 self._stats[key].finals += 1
-                # Finalist - reset streak
-                self._stats[key].current_streak = 0
-            elif result == "semifinal_win":
-                self._stats[key].elo += 0
-                # No streak change
-            elif result == "qualifier_win":
-                self._stats[key].elo += 0
-                # No streak change
+                # Update win streak
+                if self._stats[key].current_streak > 0:
+                    self._stats[key].current_streak += 1
+                else:
+                    self._stats[key].current_streak = 1
+                if self._stats[key].current_streak > self._stats[key].best_win_streak:
+                    self._stats[key].best_win_streak = self._stats[key].current_streak
+            elif result == "semifinal_win_final_win":
+                self._stats[key].elo += 50
+                self._stats[key].wins += 1
+                self._stats[key].finals += 1
+                # Update win streak
+                if self._stats[key].current_streak > 0:
+                    self._stats[key].current_streak += 1
+                else:
+                    self._stats[key].current_streak = 1
+                if self._stats[key].current_streak > self._stats[key].best_win_streak:
+                    self._stats[key].best_win_streak = self._stats[key].current_streak
+            elif result == "qualifier_loss":
+                self._stats[key].elo -= 25
+                # Update loss streak
+                if self._stats[key].current_streak < 0:
+                    self._stats[key].current_streak -= 1
+                else:
+                    self._stats[key].current_streak = -1
+                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
+                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
+            elif result == "qualifier_win_semifinal_loss":
+                self._stats[key].elo += 25
+                # Update win streak
+                if self._stats[key].current_streak > 0:
+                    self._stats[key].current_streak += 1
+                else:
+                    self._stats[key].current_streak = 1
+                if self._stats[key].current_streak > self._stats[key].best_win_streak:
+                    self._stats[key].best_win_streak = self._stats[key].current_streak
+            elif result == "qualifier_win_semifinal_win_final_loss":
+                self._stats[key].elo += 50
+                self._stats[key].finals += 1
+                # Update win streak
+                if self._stats[key].current_streak > 0:
+                    self._stats[key].current_streak += 1
+                else:
+                    self._stats[key].current_streak = 1
+                if self._stats[key].current_streak > self._stats[key].best_win_streak:
+                    self._stats[key].best_win_streak = self._stats[key].current_streak
+            elif result == "qualifier_win_semifinal_win_final_win":
+                self._stats[key].elo += 100
+                self._stats[key].wins += 1
+                self._stats[key].finals += 1
+                # Update win streak
+                if self._stats[key].current_streak > 0:
+                    self._stats[key].current_streak += 1
+                else:
+                    self._stats[key].current_streak = 1
+                if self._stats[key].current_streak > self._stats[key].best_win_streak:
+                    self._stats[key].best_win_streak = self._stats[key].current_streak
             elif result == "none":
                 # No streak change
                 pass
-            else:  # loss
+            else:  # legacy 'loss' for backward compatibility
                 self._stats[key].elo -= 25
                 # Update loss streak
                 if self._stats[key].current_streak < 0:
