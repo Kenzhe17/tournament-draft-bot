@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from models.tournament import TournamentPhase
+from models.tournament import TournamentPhase, TournamentSize
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
@@ -595,52 +595,11 @@ class TeamWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        # Update the ephemeral message to show the new state
-        if self.match_type == "qualifier":
-            # Check if qualifiers are complete
-            if all(w is not None for w in tournament.qualifier_winners):
-                embed = discord.Embed(
-                    title="✅ Отборочные завершены",
-                    description="Переход к полуфиналам...",
-                    color=discord.Color.green()
-                )
-                await interaction.edit_original_response(embed=embed, view=None)
-            else:
-                # Show remaining matches
-                match_view = MatchWinnerSelectView(self.guild_id, self.tournament, "qualifier")
-                embed = discord.Embed(
-                    title="🏆 Выбор победителей",
-                    description="Выберите матч для определения победителя:",
-                    color=discord.Color.green()
-                )
-                await interaction.edit_original_response(embed=embed, view=match_view)
-        elif self.match_type == "semifinal":
-            # Check if semifinals are complete
-            if all(w is not None for w in tournament.semifinal_winners):
-                embed = discord.Embed(
-                    title="✅ Полуфиналы завершены",
-                    description="Переход к финалу...",
-                    color=discord.Color.green()
-                )
-                await interaction.edit_original_response(embed=embed, view=None)
-            else:
-                # Show remaining matches
-                match_view = MatchWinnerSelectView(self.guild_id, self.tournament, "semifinal")
-                embed = discord.Embed(
-                    title="🏆 Выбор победителей",
-                    description="Выберите матч для определения победителя:",
-                    color=discord.Color.green()
-                )
-                await interaction.edit_original_response(embed=embed, view=match_view)
-        elif self.match_type == "final":
-            embed = discord.Embed(
-                title="✅ Турнир завершен",
-                description=f"Победитель: {self.team_name}",
-                color=discord.Color.gold()
-            )
-            await interaction.edit_original_response(embed=embed, view=None)
-        else:
-            await interaction.response.defer()
+        # Send confirmation message
+        await interaction.response.send_message(
+            f"✅ Победитель {self.team_name} записан!",
+            ephemeral=True
+        )
 
 
 class SelectWinnerButton(discord.ui.Button):
