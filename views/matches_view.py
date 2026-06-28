@@ -597,7 +597,8 @@ class TeamWinnerButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         # Send confirmation message
-        await interaction.response.send_message(
+        await interaction.response.defer()
+        await interaction.followup.send(
             f"✅ Победитель {self.team_name} записан!",
             ephemeral=True
         )
