@@ -426,15 +426,17 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-    @commands.command(name="fix_userid")
+    @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(player="Игрок")
     @is_admin()
-    async def fix_userid(self, ctx: commands.Context, player: discord.Member) -> None:
-        """Исправить user_id игрока в базе данных. Использование: !fix_userid @player"""
+    async def fix_userid(self, interaction: discord.Interaction, player: discord.Member) -> None:
+        """Исправить user_id игрока в базе данных."""
         from storage.player_stats_store import player_stats_store
         from storage.db import get_pool
 
         if not player_stats_store._use_db:
-            await ctx.send("❌ База данных не включена.", delete_after=10)
+            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
             return
 
         pool = await get_pool()
@@ -442,10 +444,10 @@ class TournamentCog(commands.Cog):
             # Update all records with the player's name to use their user_id
             result = await conn.execute(
                 "UPDATE player_stats SET user_id = $1 WHERE guild_id = $2 AND name = $3",
-                player.id, ctx.guild.id, player.display_name
+                player.id, interaction.guild_id, player.display_name
             )
 
-        await ctx.send(f"✅ Обновлено {result} записей для {player.display_name}.", delete_after=10)
+        await interaction.response.send_message(f"✅ Обновлено {result} записей для {player.display_name}.", ephemeral=True)
 
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(
