@@ -30,13 +30,14 @@ class GenerateMatchesButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer()
-
         if not is_admin_check(interaction.user, interaction.guild):
-            await interaction.edit_original_response(
-                content="❌ Только администраторы могут генерировать матчи."
+            await interaction.response.send_message(
+                "❌ Только администраторы могут генерировать матчи.",
+                ephemeral=True
             )
             return
+
+        await interaction.response.defer()
 
         tournament = store.get(self.guild_id)
         if not tournament:

@@ -98,10 +98,11 @@ class PlayerStatsStore:
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "loss", count_game: bool = False) -> None:
+    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "loss", count_game: bool = False, set_elo: int | None = None) -> None:
         """Обновить статистику игрока после турнира.
         result: 'win' (+25 ELO), 'final' (+10 ELO), 'semifinal_win' (+0 ELO), 'qualifier_win' (+0 ELO), 'loss' (-25 ELO), 'none' (no ELO change)
         count_game: если True, увеличивает games
+        set_elo: если указано, устанавливает ELO на это значение (игнорирует result)
         """
         key = f"{guild_id}:{user_id}"
 
@@ -170,7 +171,10 @@ class PlayerStatsStore:
                 if count_game:
                     games += 1
 
-                new_elo = current_elo + elo_change
+                if set_elo is not None:
+                    new_elo = set_elo
+                else:
+                    new_elo = current_elo + elo_change
 
                 await conn.execute(
                     """
@@ -185,7 +189,9 @@ class PlayerStatsStore:
             if key not in self._stats:
                 self._stats[key] = PlayerStats(guild_id=guild_id, user_id=user_id, name=name)
 
-            if result == "win":
+            if set_elo is not None:
+                self._stats[key].elo = set_elo
+            elif result == "win":
                 self._stats[key].elo += 25
                 self._stats[key].wins += 1
                 # Update win streak
@@ -221,6 +227,7 @@ class PlayerStatsStore:
 
             if count_game:
                 self._stats[key].games += 1
+
             self.save()
 
     async def get_leaderboard(self, guild_id: int, page: int = 1, per_page: int = 10) -> list[PlayerStats]:

@@ -410,6 +410,35 @@ class TournamentCog(commands.Cog):
 
         await interaction.edit_original_response(embed=embed)
 
+    @app_commands.command(name="elo", description="Изменить ELO игрока")
+    @app_commands.describe(
+        player="Игрок",
+        elo="Новое значение ELO"
+    )
+    @is_admin()
+    async def set_elo(
+        self,
+        interaction: discord.Interaction,
+        player: discord.Member,
+        elo: int
+    ) -> None:
+        """Изменить ELO игрока."""
+        from storage.player_stats_store import player_stats_store
+
+        await player_stats_store.update_player(
+            interaction.guild_id,
+            player.id,
+            player.display_name,
+            result="none",
+            set_elo=elo
+        )
+
+        await interaction.response.send_message(
+            f"✅ ELO игрока {player.display_name} изменен на {elo}.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
     @app_commands.command(name="replace", description="Заменить игрока")
     @app_commands.describe(
         old_name="Имя игрока которого нужно заменить",
