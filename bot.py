@@ -12,6 +12,9 @@ from config import DATABASE_URL, DISCORD_TOKEN
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
+from storage.user_balance_store import user_balance_store
+from storage.bets_store import bets_store
+from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
@@ -44,6 +47,9 @@ class TournamentBot(commands.Bot):
                 from storage.db import init_db
                 await init_db()
                 player_stats_store.enable_db()
+                user_balance_store.enable_db()
+                bets_store.enable_db()
+                betting_stats_store.enable_db()
                 logger.info("Database initialized and enabled")
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)

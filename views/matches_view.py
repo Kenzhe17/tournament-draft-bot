@@ -11,6 +11,7 @@ from models.tournament import TournamentPhase
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
+from views.betting_view import OpenBettingButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -70,6 +71,7 @@ class GenerateMatchesButton(discord.ui.Button):
 
         # Update games for all players (tournament started)
         from storage.player_stats_store import player_stats_store
+        from storage.user_balance_store import user_balance_store
         for team in tournament.teams:
             for circle in range(1, 5):
                 player = team.get(f"circle{circle}")
@@ -77,6 +79,8 @@ class GenerateMatchesButton(discord.ui.Button):
                     # Get user_id from tournament's player_user_ids
                     user_id = tournament.player_user_ids.get(player, 0)
                     await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
+                    # Give participation reward
+                    await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -148,11 +152,14 @@ class SemifinalWinnerButton(discord.ui.Button):
             winner_result = "none"  # No ELO change yet
 
         # Winning team gets no ELO change (will be updated in final)
+        from storage.user_balance_store import user_balance_store
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
+                # Give semifinal win reward
+                await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
         # Losing team gets ELO change based on tournament size
         for circle in range(1, 5):
@@ -160,6 +167,30 @@ class SemifinalWinnerButton(discord.ui.Button):
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
+
+        # Resolve betting for this match
+        from storage.bets_store import bets_store
+        from storage.betting_stats_store import betting_stats_store
+        from storage.user_balance_store import user_balance_store
+
+        payouts = await bets_store.resolve_match_bets(
+            tournament.guild_id,
+            str(tournament.guild_id),  # Use guild_id as tournament_id
+            "semifinal",
+            self.match_index,
+            self.team_index
+        )
+
+        # Pay out winners and update statistics
+        for user_id, payout in payouts.items():
+            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
+            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, payout, won=True)
+
+        # Update statistics for losers
+        all_bets = await bets_store.get_match_bets(tournament.guild_id, str(tournament.guild_id), "semifinal", self.match_index)
+        losing_bets = [b for b in all_bets if b.team_index != self.team_index]
+        for bet in losing_bets:
+            await betting_stats_store.record_bet_result(tournament.guild_id, bet.user_id, bet.amount, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -322,6 +353,30 @@ class QualifierWinnerButton(discord.ui.Button):
                 user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
 
+        # Resolve betting for this match
+        from storage.bets_store import bets_store
+        from storage.betting_stats_store import betting_stats_store
+        from storage.user_balance_store import user_balance_store
+
+        payouts = await bets_store.resolve_match_bets(
+            tournament.guild_id,
+            str(tournament.guild_id),  # Use guild_id as tournament_id
+            "qualifier",
+            self.match_index,
+            self.team_index
+        )
+
+        # Pay out winners and update statistics
+        for user_id, payout in payouts.items():
+            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
+            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, payout, won=True)
+
+        # Update statistics for losers
+        all_bets = await bets_store.get_match_bets(tournament.guild_id, str(tournament.guild_id), "qualifier", self.match_index)
+        losing_bets = [b for b in all_bets if b.team_index != self.team_index]
+        for bet in losing_bets:
+            await betting_stats_store.record_bet_result(tournament.guild_id, bet.user_id, bet.amount, won=False)
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.defer()
@@ -332,19 +387,20 @@ class QualifiersView(discord.ui.View):
 
     def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
-        for i, (team_a, team_b) in enumerate(matches):
-            if winners[i] is not None:
-                continue
-            # Get team names
-            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = tournament.team_names.get(team_a, captain_a)
-            name_b = tournament.team_names.get(team_b, captain_b)
+        self.guild_id = guild_id
+        self.tournament = tournament
 
-            self.add_item(QualifierWinnerButton(guild_id, i, team_a, name_a))
-            self.add_item(QualifierWinnerButton(guild_id, i, team_b, name_b))
+        for i, (team1, team2) in enumerate(matches):
+            self.add_item(QualifierWinnerButton(guild_id, i, team1, self._get_team_name(team1, tournament)))
+            self.add_item(QualifierWinnerButton(guild_id, i, team2, self._get_team_name(team2, tournament)))
+            # Add betting button for each match
+            self.add_item(OpenBettingButton(guild_id, tournament, "qualifier", i))
+
+    def _get_team_name(self, team_index: int, tournament) -> str:
+        """Get team name or default to captain name."""
+        team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+        captain = team_data.get("captain", f"П{team_index + 1}")
+        return tournament.team_names.get(team_index, captain)
 
 
 class SemifinalsView(discord.ui.View):
@@ -352,6 +408,9 @@ class SemifinalsView(discord.ui.View):
 
     def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+
         for i, (team_a, team_b) in enumerate(matches):
             if winners[i] is not None:
                 continue
@@ -362,6 +421,7 @@ class SemifinalsView(discord.ui.View):
             captain_b = team_b_data.get("captain", f"П{team_b + 1}")
             name_a = tournament.team_names.get(team_a, captain_a)
             name_b = tournament.team_names.get(team_b, captain_b)
-
             self.add_item(SemifinalWinnerButton(guild_id, i, team_a, name_a))
             self.add_item(SemifinalWinnerButton(guild_id, i, team_b, name_b))
+            # Add betting button for each match
+            self.add_item(OpenBettingButton(guild_id, tournament, "semifinal", i))

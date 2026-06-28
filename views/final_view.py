@@ -77,11 +77,14 @@ class FinalWinnerButton(discord.ui.Button):
             loser_result = "qualifier_win_semifinal_win_final_loss"  # +50
 
         # Update winning team stats
+        from storage.user_balance_store import user_balance_store
         for circle in range(1, 5):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
+                # Give tournament win reward
+                await user_balance_store.add_balance(tournament.guild_id, user_id, 50)
 
         # Update losing team stats
         for circle in range(1, 5):
@@ -89,6 +92,30 @@ class FinalWinnerButton(discord.ui.Button):
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
+
+        # Resolve betting for final match
+        from storage.bets_store import bets_store
+        from storage.betting_stats_store import betting_stats_store
+        from storage.user_balance_store import user_balance_store
+
+        payouts = await bets_store.resolve_match_bets(
+            tournament.guild_id,
+            str(tournament.guild_id),  # Use guild_id as tournament_id
+            "final",
+            0,  # Final has only one match (index 0)
+            self.team_index
+        )
+
+        # Pay out winners and update statistics
+        for user_id, payout in payouts.items():
+            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
+            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, payout, won=True)
+
+        # Update statistics for losers
+        all_bets = await bets_store.get_match_bets(tournament.guild_id, str(tournament.guild_id), "final", 0)
+        losing_bets = [b for b in all_bets if b.team_index != self.team_index]
+        for bet in losing_bets:
+            await betting_stats_store.record_bet_result(tournament.guild_id, bet.user_id, bet.amount, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -113,3 +140,6 @@ class FinalView(discord.ui.View):
                     label=f"{team_name} победил",
                 )
             )
+        # Add betting button for final
+        from views.betting_view import OpenBettingButton
+        self.add_item(OpenBettingButton(guild_id, tournament, "final", 0))

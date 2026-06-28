@@ -117,3 +117,44 @@ async def init_db() -> None:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS best_loss_streak INTEGER DEFAULT 0")
         except asyncpg.DuplicateColumnError:
             pass
+
+        # Create user_balance table for betting system
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_balance (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                balance INTEGER DEFAULT 100,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+
+        # Create bets table for betting system
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bets (
+                id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                tournament_id TEXT NOT NULL,
+                user_id BIGINT NOT NULL,
+                match_type TEXT NOT NULL,
+                match_index INTEGER NOT NULL,
+                team_index INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
+        # Create betting_stats table for betting statistics
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS betting_stats (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                total_won INTEGER DEFAULT 0,
+                total_lost INTEGER DEFAULT 0,
+                total_bets INTEGER DEFAULT 0,
+                successful_bets INTEGER DEFAULT 0,
+                best_win INTEGER DEFAULT 0,
+                worst_loss INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
