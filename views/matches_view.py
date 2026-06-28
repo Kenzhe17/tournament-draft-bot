@@ -358,12 +358,9 @@ class MatchWinnerButton(discord.ui.Button):
 
         embed = discord.Embed(
             title="🏆 Выберите победителя",
-            description="Какая команда победила?",
+            description=f"{teams[0][1]} vs {teams[1][1]}",
             color=discord.Color.green()
         )
-
-        for team_index, team_name in teams:
-            embed.add_field(name=team_name, value="👆", inline=False)
 
         await interaction.response.edit_message(embed=embed, view=team_view)
 
