@@ -28,11 +28,15 @@ from views.matches_view import QualifiersView, SemifinalsView, TeamsView
 from views.setup_view import build_setup_view
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
+# Set specific loggers to INFO level for important messages
+logging.getLogger('__main__').setLevel(logging.INFO)
+logging.getLogger('discord').setLevel(logging.WARNING)
 
 
 class TournamentBot(commands.Bot):
@@ -165,27 +169,20 @@ class TournamentBot(commands.Bot):
 
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages, including screenshot uploads and confirmations."""
-        logger.info(f"Message received from {message.author.id} in guild {message.guild.id if message.guild else 'DM'}")
-        logger.info(f"Message content: {message.content[:50] if message.content else 'None'}")
-        logger.info(f"Attachments: {len(message.attachments)}")
 
         # Ignore bot messages
         if message.author.bot:
-            logger.info(f"Ignoring bot message from {message.author.id}")
             return
 
         # Check for manual confirmation response
         if message.content and message.content.lower() in ['подтвердить', 'отмена']:
-            logger.info(f"Handling confirmation response: {message.content}")
             await self._handle_confirmation_response(message)
             return
 
         # Check if this is a screenshot upload
         if message.attachments and len(message.attachments) > 0:
             attachment = message.attachments[0]
-            logger.info(f"Attachment detected: {attachment.content_type}, filename: {attachment.filename}")
             if attachment.content_type and attachment.content_type.startswith('image/'):
-                logger.info(f"Image upload detected, calling handler")
                 await self._handle_screenshot_upload(message, attachment)
 
     async def _handle_screenshot_upload(self, message: discord.Message, attachment: discord.Attachment) -> None:
