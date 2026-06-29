@@ -238,7 +238,16 @@ class TournamentBot(commands.Bot):
                 import os
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from services.image_analyzer import image_analyzer
-                result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
+
+                logger.info("Starting OCR analysis...")
+                try:
+                    result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
+                    logger.info(f"OCR analysis completed. Result: {result is not None}")
+                except Exception as e:
+                    logger.error(f"OCR analysis failed: {e}", exc_info=True)
+                    await message.reply(f"❌ Ошибка при распознавании скриншота: {str(e)}")
+                    os.unlink(tmp_path)
+                    return
 
                 # Clean up temporary file
                 os.unlink(tmp_path)
