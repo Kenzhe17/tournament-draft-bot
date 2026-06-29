@@ -290,28 +290,28 @@ class Tournament:
         # Distribute to circles based on tournament size
         captain_count = self.captain_count
 
-        # Top players become captains (circle1)
+        # Top players become captains (circle1) - always N players
         for i in range(captain_count):
             if i < len(players_with_elo):
                 player_name, user_id, _ = players_with_elo[i]
                 self.circle1.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
-        # Next group goes to circle2
+        # Next group goes to circle2 - always N players
         for i in range(captain_count, captain_count * 2):
             if i < len(players_with_elo):
                 player_name, user_id, _ = players_with_elo[i]
                 self.circle2.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
-        # Next group goes to circle3
+        # Next group goes to circle3 - always N players
         for i in range(captain_count * 2, captain_count * 3):
             if i < len(players_with_elo):
                 player_name, user_id, _ = players_with_elo[i]
                 self.circle3.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
-        # All remaining players go to circle4
+        # All remaining players (with lowest ELO) go to circle4
         for i in range(captain_count * 3, len(players_with_elo)):
             player_name, user_id, _ = players_with_elo[i]
             self.circle4.append(player_name)
