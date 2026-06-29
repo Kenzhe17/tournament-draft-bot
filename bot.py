@@ -61,6 +61,7 @@ class TournamentBot(commands.Bot):
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.matchmaking")
+        await self.load_extension("cogs.economy")
         await self.tree.sync()
         logger.info("Slash-команды синхронизированы")
 
