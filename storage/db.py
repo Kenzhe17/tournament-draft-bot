@@ -166,6 +166,11 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id, match_id)
             )
         """)
+        
+        # Add user_name column if it doesn't exist (migration)
+        await conn.execute("""
+            ALTER TABLE bets ADD COLUMN IF NOT EXISTS user_name TEXT NOT NULL DEFAULT ''
+        """)
 
         # Create betting_stats table for betting statistics
         await conn.execute("""
