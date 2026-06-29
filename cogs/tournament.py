@@ -371,27 +371,27 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
             return
 
-        stats = await betting_stats_store.get(interaction.guild_id, interaction.user.id)
+        stats = await betting_stats_store.get_user_stats(interaction.guild_id, interaction.user.id)
 
-        if not stats:
+        if not stats or stats["total_bets"] == 0:
             await interaction.response.send_message(
                 "❌ У вас пока нет статистики ставок.",
                 ephemeral=True
             )
             return
 
-        accuracy = (stats.successful_bets / stats.total_bets * 100) if stats.total_bets > 0 else 0
+        accuracy = stats["success_rate"]
 
         embed = discord.Embed(
             title="💰 Ставки",
             color=discord.Color.gold()
         )
-        embed.add_field(name="Всего ставок", value=str(stats.total_bets), inline=True)
-        embed.add_field(name="Выигрышных", value=str(stats.successful_bets), inline=True)
-        embed.add_field(name="Проигрышных", value=str(stats.total_bets - stats.successful_bets), inline=True)
+        embed.add_field(name="Всего ставок", value=str(stats["total_bets"]), inline=True)
+        embed.add_field(name="Выигрышных", value=str(stats["successful_bets"]), inline=True)
+        embed.add_field(name="Проигрышных", value=str(stats["total_bets"] - stats["successful_bets"]), inline=True)
         embed.add_field(name="Точность", value=f"{accuracy:.1f}%", inline=True)
-        embed.add_field(name="Выиграно", value=f"+{stats.total_won}", inline=True)
-        embed.add_field(name="Проиграно", value=f"-{stats.total_lost}", inline=True)
+        embed.add_field(name="Выиграно", value=f"+{stats['total_won']}", inline=True)
+        embed.add_field(name="Проиграно", value=f"-{stats['total_lost']}", inline=True)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
