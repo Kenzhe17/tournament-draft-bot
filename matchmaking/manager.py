@@ -29,6 +29,7 @@ class MatchmakingManager:
     def create_session(self, guild_id: int, main_channel_id: int) -> MatchmakingSession:
         """Создать новую сессию matchmaking."""
         session = MatchmakingSession(guild_id, main_channel_id)
+        session.match.main_channel_id = main_channel_id
         self.sessions[guild_id] = session
         logger.info(f"Created matchmaking session {session.match_id} for guild {guild_id}")
         return session
@@ -65,12 +66,12 @@ class MatchmakingManager:
 
         logger.info(f"Reset matchmaking session for guild {guild_id}")
 
-    def add_player(self, guild_id: int, user_id: int, user_name: str) -> tuple[bool, str]:
+    def add_player(self, guild_id: int, user_id: int, user_name: str, channel_id: int = 1521101891235221594) -> tuple[bool, str]:
         """Добавить игрока в matchmaking. Возвращает (success, message)."""
         # Проверяем, есть ли активная сессия
         session = self.get_session(guild_id)
         if not session:
-            session = self.create_session(guild_id, 1521101891235221594)
+            session = self.create_session(guild_id, channel_id)
 
         # Проверяем, не находится ли игрок уже в сессии
         if session.is_player_in_session(user_id):

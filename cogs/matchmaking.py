@@ -33,6 +33,11 @@ class MatchmakingCog(commands.Cog):
         """Создать embed для matchmaking в канале."""
         from views.matchmaking_view import MatchmakingView
 
+        # Создаем сессию если её нет
+        session = matchmaking_manager.get_session(interaction.guild_id)
+        if not session:
+            session = matchmaking_manager.create_session(interaction.guild_id, interaction.channel_id)
+
         embed = discord.Embed(
             title="🎮 Matchmaking",
             description="Поиск игры:\n0/8 игроков",
@@ -46,7 +51,11 @@ class MatchmakingCog(commands.Cog):
         )
 
         view = MatchmakingView(interaction.guild_id)
-        await interaction.response.send_message(embed=embed, view=view)
+        message = await interaction.response.send_message(embed=embed, view=view)
+
+        # Сохраняем message_id в сессии
+        session.match.main_message_id = message.id
+        session.match.main_channel_id = interaction.channel_id
 
     @app_commands.command(name="mm_leave", description="Покинуть matchmaking")
     async def leave_matchmaking(self, interaction: discord.Interaction) -> None:

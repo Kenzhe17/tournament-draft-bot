@@ -43,12 +43,12 @@ class MatchmakingView(View):
         user_id = interaction.user.id
         user_name = interaction.user.display_name
 
-        success, message = matchmaking_manager.add_player(self.guild_id, user_id, user_name)
+        success, message = matchmaking_manager.add_player(
+            self.guild_id, user_id, user_name, interaction.channel_id
+        )
 
         if success:
             await interaction.response.send_message(f"✅ {message}", ephemeral=True)
-            # Обновить embed
-            await self.update_embed(interaction)
         else:
             await interaction.response.send_message(f"❌ {message}", ephemeral=True)
 
