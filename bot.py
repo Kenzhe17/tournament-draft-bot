@@ -166,6 +166,8 @@ class TournamentBot(commands.Bot):
     async def on_message(self, message: discord.Message) -> None:
         """Handle incoming messages, including screenshot uploads and confirmations."""
         logger.info(f"Message received from {message.author.id} in guild {message.guild.id if message.guild else 'DM'}")
+        logger.info(f"Message content: {message.content[:50] if message.content else 'None'}")
+        logger.info(f"Attachments: {len(message.attachments)}")
 
         # Ignore bot messages
         if message.author.bot:
@@ -173,7 +175,7 @@ class TournamentBot(commands.Bot):
             return
 
         # Check for manual confirmation response
-        if message.content.lower() in ['подтвердить', 'отмена']:
+        if message.content and message.content.lower() in ['подтвердить', 'отмена']:
             logger.info(f"Handling confirmation response: {message.content}")
             await self._handle_confirmation_response(message)
             return
@@ -181,7 +183,7 @@ class TournamentBot(commands.Bot):
         # Check if this is a screenshot upload
         if message.attachments and len(message.attachments) > 0:
             attachment = message.attachments[0]
-            logger.info(f"Attachment detected: {attachment.content_type}")
+            logger.info(f"Attachment detected: {attachment.content_type}, filename: {attachment.filename}")
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 logger.info(f"Image upload detected, calling handler")
                 await self._handle_screenshot_upload(message, attachment)
