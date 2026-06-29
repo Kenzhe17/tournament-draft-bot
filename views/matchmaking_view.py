@@ -38,6 +38,14 @@ class MatchmakingView(View):
         self.leave_button.callback = self.leave_callback
         self.add_item(self.leave_button)
 
+        self.ready_button = Button(
+            label="Ready",
+            style=discord.ButtonStyle.primary,
+            custom_id="mm_ready"
+        )
+        self.ready_button.callback = self.ready_callback
+        self.add_item(self.ready_button)
+
     async def join_callback(self, interaction: discord.Interaction):
         """Обработка нажатия кнопки Join."""
         user_id = interaction.user.id
@@ -66,6 +74,31 @@ class MatchmakingView(View):
             await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
+
+        # Обновляем embed через менеджер для всех
+        bot = interaction.client
+        await matchmaking_manager.update_main_embed(self.guild_id, bot)
+
+    async def ready_callback(self, interaction: discord.Interaction):
+        """Обработка нажатия кнопки Ready."""
+        user_id = interaction.user.id
+
+        session = matchmaking_manager.get_session(self.guild_id)
+        if not session:
+            await interaction.response.send_message("❌ Сессия не найдена", ephemeral=True)
+            return
+
+        if not session.is_player_in_session(user_id):
+            await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
+            return
+
+        if session.is_player_ready(user_id):
+            await interaction.response.send_message("✅ Вы уже готовы!", ephemeral=True)
+            return
+
+        session.set_player_ready(user_id, True)
+
+        await interaction.response.send_message("✅ Вы готовы!", ephemeral=True)
 
         # Обновляем embed через менеджер для всех
         bot = interaction.client

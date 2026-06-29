@@ -27,8 +27,10 @@ class MatchmakingSession:
             main_channel_id=main_channel_id,
         )
         self.created_at = datetime.utcnow()
+        self.player_ready: dict[int, bool] = {}  # user_id -> ready status
+        self.player_join_time: dict[int, datetime] = {}  # user_id -> join time
 
-    def add_player(self, user_id: int, user_name: str) -> bool:
+    def add_player(self, user_id: int, user_name: str, is_bot: bool = False) -> bool:
         """Добавить игрока в сессию. Возвращает True если добавлен, False если уже в сессии."""
         if user_id in self.match.players:
             return False
@@ -37,6 +39,9 @@ class MatchmakingSession:
 
         self.match.players.append(user_id)
         self.match.player_names[user_id] = user_name
+        self.player_join_time[user_id] = datetime.utcnow()
+        # Боты сразу ready, обычные игроки должны нажать ready
+        self.player_ready[user_id] = is_bot
         return True
 
     def remove_player(self, user_id: int) -> bool:
@@ -46,6 +51,8 @@ class MatchmakingSession:
 
         self.match.players.remove(user_id)
         self.match.player_names.pop(user_id, None)
+        self.player_ready.pop(user_id, None)
+        self.player_join_time.pop(user_id, None)
         return True
 
     def is_player_in_session(self, user_id: int) -> bool:
@@ -59,6 +66,34 @@ class MatchmakingSession:
     def is_full(self) -> bool:
         """Проверить, собрана ли полная команда (8 игроков)."""
         return self.match.is_full
+
+    def set_player_ready(self, user_id: int, ready: bool) -> bool:
+        """Установить готовность игрока. Возвращает True если статус изменен."""
+        if user_id not in self.player_ready:
+            return False
+        self.player_ready[user_id] = ready
+        return True
+
+    def is_player_ready(self, user_id: int) -> bool:
+        """Проверить готовность игрока."""
+        return self.player_ready.get(user_id, False)
+
+    def are_all_ready(self) -> bool:
+        """Проверить, готовы ли все игроки."""
+        if not self.is_full():
+            return False
+        return all(self.player_ready.get(pid, False) for pid in self.match.players)
+
+    def get_timeout_players(self, timeout_seconds: int = 30) -> list[int]:
+        """Получить список игроков, которые не нажали ready в течение timeout_seconds."""
+        now = datetime.utcnow()
+        timeout_players = []
+        for player_id in self.match.players:
+            if not self.player_ready.get(player_id, False):
+                join_time = self.player_join_time.get(player_id)
+                if join_time and (now - join_time).total_seconds() > timeout_seconds:
+                    timeout_players.append(player_id)
+        return timeout_players
 
     def start_draft(self) -> None:
         """Начать драфт после сбора 8 игроков."""

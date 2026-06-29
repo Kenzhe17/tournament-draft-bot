@@ -71,7 +71,7 @@ class MatchmakingCog(commands.Cog):
         for i, name in enumerate(bot_names):
             bot_id = 1000000 + i  # Фиктивные ID для ботов
             success, message = matchmaking_manager.add_player(
-                interaction.guild_id, bot_id, name, interaction.channel_id
+                interaction.guild_id, bot_id, name, interaction.channel_id, is_bot=True
             )
             if not success:
                 logger.warning(f"Failed to add bot {name}: {message}")

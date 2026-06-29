@@ -66,7 +66,7 @@ class MatchmakingManager:
 
         logger.info(f"Reset matchmaking session for guild {guild_id}")
 
-    def add_player(self, guild_id: int, user_id: int, user_name: str, channel_id: int = 1521101891235221594) -> tuple[bool, str]:
+    def add_player(self, guild_id: int, user_id: int, user_name: str, channel_id: int = 1521101891235221594, is_bot: bool = False) -> tuple[bool, str]:
         """Добавить игрока в matchmaking. Возвращает (success, message)."""
         # Проверяем, есть ли активная сессия
         session = self.get_session(guild_id)
@@ -88,7 +88,7 @@ class MatchmakingManager:
             return False, "Лобби заполнено"
 
         # Добавляем игрока
-        if session.add_player(user_id, user_name):
+        if session.add_player(user_id, user_name, is_bot):
             self.player_sessions[user_id] = session.match_id
             return True, f"Вы добавлены в очередь ({session.get_player_count()}/8)"
 
@@ -173,15 +173,22 @@ class MatchmakingManager:
             )
 
             if session.is_full():
-                embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано."
+                if session.are_all_ready():
+                    embed.description = "🎉 **Все готовы! Начинаем драфт!**"
+                else:
+                    embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано. Нажмите Ready!"
             else:
                 embed.description = f"Поиск игры:\n{player_count}/8 игроков"
 
-            # Список игроков
+            # Список игроков с ready статусом
             players_text = ""
             for i in range(8):
-                if i < len(player_names):
-                    players_text += f"{i + 1}. {player_names[i]}\n"
+                if i < len(session.match.players):
+                    player_id = session.match.players[i]
+                    name = session.match.player_names.get(player_id, "Unknown")
+                    is_ready = session.is_player_ready(player_id)
+                    status = "✅" if is_ready else "⏳"
+                    players_text += f"{i + 1}. {status} {name}\n"
                 else:
                     players_text += f"{i + 1}.\n"
 
@@ -189,8 +196,21 @@ class MatchmakingManager:
 
             await message.edit(embed=embed)
 
-            # Если собрано 8 игроков и команды еще не созданы, запускаем драфт
-            if session.is_full() and not session.match.teams:
+            # Проверяем таймаут - кикаем игроков которые не нажали ready за 30 секунд
+            timeout_players = session.get_timeout_players(30)
+            for player_id in timeout_players:
+                session.remove_player(player_id)
+                if player_id in self.player_sessions:
+                    del self.player_sessions[player_id]
+                logger.info(f"Kicked player {player_id} for not pressing ready in time")
+
+            # Если есть кикнутые игроки, обновляем embed снова
+            if timeout_players:
+                await self.update_main_embed(guild_id, bot)
+                return
+
+            # Если собрано 8 игроков и все готовы, запускаем драфт
+            if session.is_full() and session.are_all_ready() and not session.match.teams:
                 await self.start_matchmaking_flow(channel, session)
         except Exception as e:
             logger.error(f"Ошибка обновления embed: {e}")
