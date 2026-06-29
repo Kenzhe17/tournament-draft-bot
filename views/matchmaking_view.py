@@ -159,3 +159,108 @@ class MatchmakingView(View):
         embed.add_field(name="Team 2 Captain", value=captain2_name, inline=True)
 
         await channel.send(embed=embed)
+
+        # Подготовить драфт
+        await self.prepare_draft(channel, session)
+
+    async def prepare_draft(self, channel, session):
+        """Подготовить драфт - распределить игроков по командам."""
+        import random
+
+        # Получаем всех игроков кроме капитанов
+        captain_ids = {session.match.teams[0].captain_id, session.match.teams[1].captain_id}
+        available_players = [pid for pid in session.match.players if pid not in captain_ids]
+
+        # Распределяем игроков по кругам (круг 2, 3, 4 по 3 игрока каждый)
+        session.match.draft_data = {
+            "available": available_players,
+            "circle": 2,
+            "pick_index": 0,
+            "picks": {
+                "team0": {"circle2": None, "circle3": None, "circle4": None},
+                "team1": {"circle2": None, "circle3": None, "circle4": None},
+            }
+        }
+
+        # Добавляем капитанов в команды
+        session.match.teams[0].players = [session.match.teams[0].captain_id]
+        session.match.teams[1].players = [session.match.teams[1].captain_id]
+
+        embed = discord.Embed(
+            title="🎲 Драфт",
+            description="Капитаны выбирают игроков по очереди.",
+            color=discord.Color.blue()
+        )
+
+        await channel.send(embed=embed)
+
+        # Начинаем драфт - упрощенная версия: случайное распределение
+        await self.auto_draft(channel, session)
+
+    async def auto_draft(self, channel, session):
+        """Автоматически распределить игроков по командам (упрощенный драфт)."""
+        import random
+
+        available = session.match.draft_data["available"].copy()
+        random.shuffle(available)
+
+        # Распределяем по 3 игрока каждой команде
+        team0_players = available[:3]
+        team1_players = available[3:6]
+
+        session.match.teams[0].players.extend(team0_players)
+        session.match.teams[1].players.extend(team1_players)
+
+        # Показываем результаты драфта
+        team0_names = [session.match.player_names[pid] for pid in session.match.teams[0].players]
+        team1_names = [session.match.player_names[pid] for pid in session.match.teams[1].players]
+
+        embed = discord.Embed(
+            title="✅ Драфт завершен",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(
+            name=f"{session.match.teams[0].name}",
+            value="\n".join(team0_names),
+            inline=True
+        )
+        embed.add_field(
+            name=f"{session.match.teams[1].name}",
+            value="\n".join(team1_names),
+            inline=True
+        )
+
+        await channel.send(embed=embed)
+
+        # Переходим к фазе настройки команд
+        session.start_team_setup()
+
+        # Показываем TeamSetupView
+        from views.team_setup_view import TeamSetupView
+        view = TeamSetupView(session.guild_id, session)
+
+        setup_embed = discord.Embed(
+            title="⚙️ Настройка команд",
+            description="Капитаны могут изменить название команды и нажать Ready когда будут готовы.",
+            color=discord.Color.orange()
+        )
+
+        await channel.send(embed=setup_embed, view=view)
+
+        # Добавляем кнопки для ставок
+        from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
+        matches = [(0, 1)]  # Одна игра между командой 0 и командой 1
+
+        betting_view = discord.ui.View(timeout=None)
+        betting_view.add_item(BetButton(session.guild_id, session.match, matches, "matchmaking"))
+        betting_view.add_item(ViewBetsButton(session.guild_id, session.match, matches, "matchmaking"))
+        betting_view.add_item(ToggleBettingButton(session.guild_id, session.match.betting_open))
+
+        betting_embed = discord.Embed(
+            title="💰 Ставки",
+            description="Делайте ставки на матч! Ставки закроются когда обе команды нажмут Ready.",
+            color=discord.Color.gold()
+        )
+
+        await channel.send(embed=betting_embed, view=betting_view)

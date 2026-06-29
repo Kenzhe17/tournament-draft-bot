@@ -106,9 +106,57 @@ class TeamSetupView(View):
                 ephemeral=True
             )
 
-            # Обновить view
-            await self.update_view(interaction)
+            # Проверяем, готовы ли обе команды
+            if self.session.match.is_ready():
+                await self.start_match(interaction)
+            else:
+                # Обновить view
+                await self.update_view(interaction)
         return callback
+
+    async def start_match(self, interaction: discord.Interaction):
+        """Начать матч после готовности обеих команд."""
+        self.session.start_match()
+
+        # Закрываем ставки
+        self.session.match.betting_open = False
+
+        embed = discord.Embed(
+            title="🎮 Матч начался!",
+            description="Обе команды готовы. Матч идет!",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(
+            name=f"{self.session.match.teams[0].name}",
+            value="✅ Ready",
+            inline=True
+        )
+        embed.add_field(
+            name=f"{self.session.match.teams[1].name}",
+            value="✅ Ready",
+            inline=True
+        )
+
+        try:
+            if interaction.response.is_done():
+                await interaction.edit_original_response(embed=embed, view=None)
+            else:
+                await interaction.response.edit_message(embed=embed, view=None)
+        except discord.NotFound:
+            pass
+
+        # Добавляем кнопку для завершения матча (только капитаны)
+        from views.match_result_view import MatchResultView
+        view = MatchResultView(self.session.guild_id, self.session)
+
+        result_embed = discord.Embed(
+            title="⚔️ Завершение матча",
+            description="Капитан победившей команды должен выбрать свою команду.",
+            color=discord.Color.red()
+        )
+
+        await interaction.followup.send(embed=result_embed, view=view)
 
     async def update_view(self, interaction: discord.Interaction):
         """Обновить view после изменений."""
