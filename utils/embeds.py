@@ -7,13 +7,22 @@ import discord
 # ДОБАВЛЕНО: TournamentSize в список импорта
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
+from storage.player_stats_store import player_stats_store
 
 
-def _circle_line(players: list[str]) -> str:
-    """Строка игроков круга или пустой слот."""
+def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None) -> str:
+    """Строка игроков круга с ELO или пустой слот."""
     if not players:
         return ""
-    return " ".join(players)
+    
+    player_strings = []
+    for player_name in players:
+        if elo_dict and player_name in elo_dict:
+            player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+        else:
+            player_strings.append(player_name)
+    
+    return " ".join(player_strings)
 
 
 async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tournament, matches: list[tuple[int, int]], match_type: str) -> None:
@@ -112,6 +121,13 @@ async def build_setup_embed(
         color=discord.Color.gold(),
     )
     
+    # Build ELO dictionary for all registered players
+    elo_dict = {}
+    for player_name, user_id in tournament.player_user_ids.items():
+        stats = await player_stats_store.get(tournament.guild_id, user_id)
+        if stats:
+            elo_dict[player_name] = stats.elo
+    
     # Show all 4 circles with dynamic limits
     for circle in range(1, 5):
         circle_list = getattr(tournament, f"circle{circle}")
@@ -126,7 +142,7 @@ async def build_setup_embed(
         else:
             limit_info = " (без лимита)"
 
-        value = _circle_line(circle_list) or "*"
+        value = _circle_line(circle_list, elo_dict) or "*"
         embed.add_field(
             name=f"{circle_name}{limit_info}",
             value=value,
