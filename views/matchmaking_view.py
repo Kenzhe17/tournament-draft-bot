@@ -81,9 +81,11 @@ class MatchmakingView(View):
             await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
             return
 
-        # Обновляем embed через менеджер для всех
-        bot = interaction.client
-        await matchmaking_manager.update_main_embed(self.guild_id, bot)
+        # Обновляем embed через менеджер для всех, только если сессия еще существует
+        session_after = matchmaking_manager.get_session(self.guild_id)
+        if session_after:
+            bot = interaction.client
+            await matchmaking_manager.update_main_embed(self.guild_id, bot)
 
     async def ready_callback(self, interaction: discord.Interaction):
         """Обработка нажатия кнопки Ready."""
