@@ -151,6 +151,11 @@ class Tournament:
     final_teams: list[int] = field(default_factory=list)
     winner_team_index: int | None = None
 
+    # Betting system
+    betting_open: bool = True
+    # Store bets temporarily in tournament (persisted in database)
+    # Format: match_id -> list of Bet objects
+
     # --- Свойства ---
 
     @property

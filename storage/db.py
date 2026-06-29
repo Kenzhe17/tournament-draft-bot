@@ -157,16 +157,13 @@ async def init_db() -> None:
         # Create bets table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS bets (
-                id SERIAL PRIMARY KEY,
                 guild_id BIGINT NOT NULL,
-                tournament_id TEXT NOT NULL,
                 user_id BIGINT NOT NULL,
-                match_type TEXT NOT NULL,
-                match_index INTEGER NOT NULL,
-                team_index INTEGER NOT NULL,
+                user_name TEXT NOT NULL,
+                match_id TEXT NOT NULL,
+                team_name TEXT NOT NULL,
                 amount INTEGER NOT NULL,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT NOW()
+                PRIMARY KEY (guild_id, user_id, match_id)
             )
         """)
 

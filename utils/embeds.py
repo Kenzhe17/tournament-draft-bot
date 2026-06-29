@@ -6,6 +6,7 @@ import discord
 
 # ДОБАВЛЕНО: TournamentSize в список импорта
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
+from storage.bet_store import bet_store
 
 
 def _circle_line(players: list[str]) -> str:
@@ -13,6 +14,57 @@ def _circle_line(players: list[str]) -> str:
     if not players:
         return ""
     return " ".join(players)
+
+
+async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tournament, matches: list[tuple[int, int]], match_type: str) -> None:
+    """Добавить секцию ставок в embed."""
+    if not tournament.betting_open:
+        embed.add_field(
+            name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
+            value="🔒 СТАВКИ ЗАКРЫТЫ",
+            inline=False,
+        )
+        return
+
+    betting_text = []
+    for i, (team_a, team_b) in enumerate(matches):
+        match_id = f"{match_type}_{i}"
+        bets = await bet_store.get_bets_by_match(match_id)
+        
+        # Calculate team totals
+        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+        captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+        captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+        name_a = tournament.team_names.get(team_a, captain_a)
+        name_b = tournament.team_names.get(team_b, captain_b)
+        
+        # Calculate bets per team
+        team_a_amount = sum(b.amount for b in bets if b.team_name == name_a)
+        team_b_amount = sum(b.amount for b in bets if b.team_name == name_b)
+        total_bank = team_a_amount + team_b_amount
+        
+        # Calculate percentages
+        team_a_pct = (team_a_amount / total_bank * 100) if total_bank > 0 else 0
+        team_b_pct = (team_b_amount / total_bank * 100) if total_bank > 0 else 0
+        
+        match_text = f"🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n💰 Банк: {total_bank} 🪙\n\n"
+        
+        if total_bank > 0:
+            match_text += f"1️⃣ {name_a}\n┗ {team_a_amount} 🪙 ({team_a_pct:.0f}%)\n\n"
+            match_text += f"2️⃣ {name_b}\n┗ {team_b_amount} 🪙 ({team_b_pct:.0f}%)\n"
+        else:
+            match_text += f"1️⃣ {name_a}\n┗ 0 🪙 (0%)\n\n"
+            match_text += f"2️⃣ {name_b}\n┗ 0 🪙 (0%)\n"
+        
+        betting_text.append(match_text)
+    
+    if betting_text:
+        embed.add_field(
+            name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
+            value="\n".join(betting_text),
+            inline=False,
+        )
 
 
 async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, tournament: Tournament) -> None:
@@ -199,6 +251,10 @@ async def build_qualifiers_embed(
 
     # Добавляем отображение команд снизу под отборочными
     await _add_teams_block_to_embed(embed, guild, tournament)
+    
+    # Добавляем секцию ставок
+    await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifier")
+    
     return embed
 
 
@@ -228,6 +284,10 @@ async def build_semifinals_embed(
 
     # Добавляем отображение команд снизу под полуфиналами
     await _add_teams_block_to_embed(embed, guild, tournament)
+    
+    # Добавляем секцию ставок
+    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinal")
+    
     return embed
 
 
@@ -258,6 +318,11 @@ async def build_final_embed(
 
     # Добавляем отображение команд снизу под финалом
     await _add_teams_block_to_embed(embed, guild, tournament)
+    
+    # Добавляем секцию ставок для финала
+    final_matches = [(tournament.final_teams[0], tournament.final_teams[1])]
+    await _add_betting_section_to_embed(embed, tournament, final_matches, "final")
+    
     return embed
 
 

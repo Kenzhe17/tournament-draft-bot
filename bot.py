@@ -13,7 +13,7 @@ from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
-from storage.bets_store import bets_store
+from storage.bet_store import bet_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
@@ -53,7 +53,7 @@ class TournamentBot(commands.Bot):
                 await init_db()
                 player_stats_store.enable_db()
                 user_balance_store.enable_db()
-                bets_store.enable_db()
+                bet_store.enable_db()
                 betting_stats_store.enable_db()
                 logger.info("Database initialized and enabled")
             except Exception as e:

@@ -11,7 +11,7 @@ from models.tournament import TournamentPhase, TournamentSize
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
-from views.betting_view import BettingButton
+from views.bet_views import BetButton, ViewBetsButton, CloseBettingButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -169,28 +169,19 @@ class SemifinalWinnerButton(discord.ui.Button):
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
 
         # Resolve betting for this match
-        from storage.bets_store import bets_store
-        from storage.betting_stats_store import betting_stats_store
+        from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
 
-        payouts = await bets_store.resolve_match_bets(
-            tournament.guild_id,
-            str(tournament.guild_id),  # Use guild_id as tournament_id
-            "semifinal",
-            self.match_index,
-            self.team_index
-        )
+        # Get winning team name
+        winning_team_data = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
+        winning_team_name = tournament.team_names.get(self.team_index, winning_team_data.get("captain", f"Team {self.team_index}"))
+        
+        match_id = f"semifinal_{self.match_index}"
+        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
 
-        # Pay out winners and update statistics
+        # Pay out winners
         for user_id, payout in payouts.items():
             await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
-            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, payout, won=True)
-
-        # Update statistics for losers
-        all_bets = await bets_store.get_match_bets(tournament.guild_id, str(tournament.guild_id), "semifinal", self.match_index)
-        losing_bets = [b for b in all_bets if b.team_index != self.team_index]
-        for bet in losing_bets:
-            await betting_stats_store.record_bet_result(tournament.guild_id, bet.user_id, bet.amount, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -563,28 +554,19 @@ class QualifierWinnerButton(discord.ui.Button):
                 await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
 
         # Resolve betting for this match
-        from storage.bets_store import bets_store
-        from storage.betting_stats_store import betting_stats_store
+        from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
 
-        payouts = await bets_store.resolve_match_bets(
-            tournament.guild_id,
-            str(tournament.guild_id),  # Use guild_id as tournament_id
-            "qualifier",
-            self.match_index,
-            self.team_index
-        )
+        # Get winning team name
+        winning_team_data = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
+        winning_team_name = tournament.team_names.get(self.team_index, winning_team_data.get("captain", f"Team {self.team_index}"))
+        
+        match_id = f"qualifier_{self.match_index}"
+        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
 
-        # Pay out winners and update statistics
+        # Pay out winners
         for user_id, payout in payouts.items():
             await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
-            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, payout, won=True)
-
-        # Update statistics for losers
-        all_bets = await bets_store.get_match_bets(tournament.guild_id, str(tournament.guild_id), "qualifier", self.match_index)
-        losing_bets = [b for b in all_bets if b.team_index != self.team_index]
-        for bet in losing_bets:
-            await betting_stats_store.record_bet_result(tournament.guild_id, bet.user_id, bet.amount, won=False)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -602,8 +584,10 @@ class QualifiersView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
-        # Add betting button
-        self.add_item(BettingButton(guild_id, tournament))
+        # Add betting buttons
+        self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
+        self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
+        self.add_item(CloseBettingButton(guild_id))
 
 
 class SemifinalsView(discord.ui.View):
@@ -617,5 +601,7 @@ class SemifinalsView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
 
-        # Add betting button
-        self.add_item(BettingButton(guild_id, tournament))
+        # Add betting buttons
+        self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(CloseBettingButton(guild_id))
