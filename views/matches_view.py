@@ -40,50 +40,56 @@ class GenerateMatchesButton(discord.ui.Button):
 
         await interaction.response.defer()
 
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.edit_original_response(
-                content="❌ Турнир не найден."
-            )
-            return
+        try:
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.edit_original_response(
+                    content="❌ Турнир не найден."
+                )
+                return
 
-        # Auto-fix phase mismatch: if phase is not TEAMS but we have teams, reset to TEAMS
-        if tournament.phase != TournamentPhase.TEAMS and tournament.teams:
-            tournament.phase = TournamentPhase.TEAMS
-            tournament.qualifier_matches = []
-            tournament.qualifier_winners = []
-            tournament.semifinal_matches = []
-            tournament.semifinal_winners = []
-            tournament.final_teams = []
-            tournament.winner_team_index = None
+            # Auto-fix phase mismatch: if phase is not TEAMS but we have teams, reset to TEAMS
+            if tournament.phase != TournamentPhase.TEAMS and tournament.teams:
+                tournament.phase = TournamentPhase.TEAMS
+                tournament.qualifier_matches = []
+                tournament.qualifier_winners = []
+                tournament.semifinal_matches = []
+                tournament.semifinal_winners = []
+                tournament.final_teams = []
+                tournament.winner_team_index = None
+                store.set(tournament)
+
+            if tournament.phase != TournamentPhase.TEAMS:
+                await interaction.edit_original_response(
+                    content=f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
+                )
+                return
+
+            logger.info(f"Generating bracket for tournament size: {tournament.size.value}, teams: {len(tournament.teams)}")
+            tournament.generate_bracket()
+            logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
             store.set(tournament)
 
-        if tournament.phase != TournamentPhase.TEAMS:
+            # Update games for all players (tournament started)
+            from storage.player_stats_store import player_stats_store
+            from storage.user_balance_store import user_balance_store
+            for team in tournament.teams:
+                for circle in range(1, 5):
+                    player = team.get(f"circle{circle}")
+                    if player:
+                        # Get user_id from tournament's player_user_ids
+                        user_id = tournament.player_user_ids.get(player, 0)
+                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
+                        # Give participation reward
+                        await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            logger.error(f"Error generating matches: {e}", exc_info=True)
             await interaction.edit_original_response(
-                content=f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
+                content=f"❌ Ошибка при генерации матчей: {str(e)}"
             )
-            return
-
-        logger.info(f"Generating bracket for tournament size: {tournament.size.value}, teams: {len(tournament.teams)}")
-        tournament.generate_bracket()
-        logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
-        store.set(tournament)
-
-        # Update games for all players (tournament started)
-        from storage.player_stats_store import player_stats_store
-        from storage.user_balance_store import user_balance_store
-        for team in tournament.teams:
-            for circle in range(1, 5):
-                player = team.get(f"circle{circle}")
-                if player:
-                    # Get user_id from tournament's player_user_ids
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
-                    # Give participation reward
-                    await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
 
 
 class SemifinalWinnerButton(discord.ui.Button):
