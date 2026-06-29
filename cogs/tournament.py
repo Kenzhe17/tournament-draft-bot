@@ -400,7 +400,7 @@ class TournamentCog(commands.Cog):
             # Create default stats for new players
             stats = PlayerStats(guild_id=interaction.guild_id, user_id=target_user.id, name=target_user.display_name)
 
-        win_rate = (stats.wins / stats.games * 100) if stats.games > 0 else 0
+        win_rate = stats.win_rate
         balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
         embed = discord.Embed(
@@ -409,10 +409,16 @@ class TournamentCog(commands.Cog):
         )
         embed.add_field(name="🏆 ELO", value=str(stats.elo), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
-        embed.add_field(name="🥈 Финалы", value=str(stats.finals), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
-        embed.add_field(name="💰 Монеты", value=f"{balance} 🪙", inline=True)
+        embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
+        embed.add_field(name="� Монеты", value=f"{balance} 🪙", inline=True)
+        
+        # Additional stats
+        embed.add_field(name="🎯 Средние убийства", value=f"{stats.avg_kills:.1f}", inline=True)
+        embed.add_field(name="💀 Средние смерти", value=f"{stats.avg_deaths:.1f}", inline=True)
+        embed.add_field(name="🔥 Лучший матч", value=str(stats.best_match_kills), inline=True)
+        embed.add_field(name="� Среднее изменение ELO", value=f"{stats.avg_elo_change:+.1f}", inline=True)
 
         await interaction.response.send_message(embed=embed)
 
