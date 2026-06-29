@@ -58,14 +58,11 @@ class EconomyCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="bet", description="Показать статистику ставок и баланс пользователя")
+    @app_commands.command(name="bet", description="Показать статистику ставок пользователя")
     @app_commands.describe(user="Пользователь для просмотра статистики")
     async def bet_stats(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
-        """Показать статистику ставок и баланс пользователя."""
+        """Показать статистику ставок пользователя."""
         target_user = user or interaction.user
-
-        # Получаем баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
         # Получаем статистику ставок
         from storage.betting_stats_store import betting_stats_store
@@ -93,7 +90,20 @@ class EconomyCog(commands.Cog):
         embed.add_field(name="Выиграно", value=f"+{total_won}", inline=True)
         embed.add_field(name="Проиграно", value=f"-{total_lost}", inline=True)
 
-        embed.add_field(name="Баланс", value=str(balance), inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="balance", description="Показать баланс монет пользователя")
+    @app_commands.describe(user="Пользователь для просмотра баланса")
+    async def balance(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+        """Показать баланс монет пользователя."""
+        target_user = user or interaction.user
+        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
+
+        embed = discord.Embed(
+            title=f"💰 Баланс {target_user.display_name}",
+            description=f"{balance} 🪙",
+            color=discord.Color.gold()
+        )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

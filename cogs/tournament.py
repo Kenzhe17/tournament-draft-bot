@@ -424,7 +424,6 @@ class TournamentCog(commands.Cog):
             stats = PlayerStats(guild_id=interaction.guild_id, user_id=target_user.id, name=target_user.display_name)
 
         win_rate = stats.win_rate
-        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
         embed = discord.Embed(
             title=f"📊 Профиль: {stats.name}",
@@ -435,8 +434,7 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
         embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
-        embed.add_field(name="� Монеты", value=f"{balance} 🪙", inline=True)
-        
+
         # Additional stats
         embed.add_field(name="🎯 Total Kills", value=str(stats.total_kills), inline=True)
         embed.add_field(name="💀 Total Deaths", value=str(stats.total_deaths), inline=True)
