@@ -126,3 +126,46 @@ class Matchmaking:
     def is_player_in_matchmaking(self, name: str) -> bool:
         """Проверить, находится ли игрок в matchmaking."""
         return name in self.players
+
+    async def distribute_by_elo(self, guild_id: int) -> None:
+        """Распределить игроков по командам на основе ELO."""
+        from storage.player_stats_store import player_stats_store
+
+        # Get ELO for each player
+        players_with_elo = []
+        for player_name in self.players:
+            user_id = self.player_ids.get(player_name, 0)
+            stats = await player_stats_store.get(guild_id, user_id)
+            elo = stats.elo if stats else 1000  # Default ELO for new players
+            players_with_elo.append((player_name, user_id, elo))
+
+        # Sort by ELO (descending)
+        players_with_elo.sort(key=lambda x: x[2], reverse=True)
+
+        # Top 2 become captains
+        if len(players_with_elo) >= 2:
+            self.team1_captain = players_with_elo[0][0]
+            self.team2_captain = players_with_elo[1][0]
+
+        # Distribute players to teams (snake draft by ELO)
+        self.team1_players = [self.team1_captain] if self.team1_captain else []
+        self.team2_players = [self.team2_captain] if self.team2_captain else []
+
+        # Remaining players (skip captains if they were added)
+        remaining = players_with_elo[2:] if len(players_with_elo) > 2 else []
+
+        # Snake draft: T1, T2, T2, T1, T2, T1 for 6 players
+        for i, (player_name, user_id, _) in enumerate(remaining):
+            if i % 3 == 0:
+                self.team1_players.append(player_name)
+            elif i % 3 == 1:
+                self.team2_players.append(player_name)
+            elif i % 3 == 2:
+                self.team2_players.append(player_name)
+
+        # Set available players for draft (all non-captains)
+        self.available_players = [p for p in self.players if p not in [self.team1_captain, self.team2_captain]]
+
+        # Set team names
+        self.team1_name = f"Team {self.team1_captain}" if self.team1_captain else "Team 1"
+        self.team2_name = f"Team {self.team2_captain}" if self.team2_captain else "Team 2"

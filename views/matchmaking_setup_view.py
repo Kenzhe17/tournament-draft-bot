@@ -211,6 +211,16 @@ class ReadyButton(Button):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
+        # Check if all 8 players are ready (full lobby)
+        if matchmaking.is_full:
+            # Distribute by ELO and start draft
+            await matchmaking.distribute_by_elo(self.guild_id)
+            matchmaking.phase = MatchmakingPhase.DRAFT
+            matchmaking_store.set(matchmaking)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_matchmaking_message(interaction.guild, matchmaking)
+
 
 class MatchmakingSetupView(View):
     """View с кнопками для фазы регистрации matchmaking."""

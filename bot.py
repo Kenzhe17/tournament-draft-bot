@@ -25,6 +25,7 @@ from views.leaderboard_view import LeaderboardView
 from views.matches_view import QualifiersView, SemifinalsView, TeamsView
 from views.setup_view import build_setup_view
 from views.matchmaking_setup_view import build_matchmaking_setup_view
+from views.matchmaking_draft_view_new import build_matchmaking_draft_view
 
 logging.basicConfig(
     level=logging.INFO,
@@ -142,6 +143,9 @@ class TournamentBot(commands.Bot):
 
         if phase == MatchmakingPhaseEnum.SETUP:
             return build_matchmaking_setup_view(matchmaking)
+
+        if phase == MatchmakingPhaseEnum.DRAFT:
+            return build_matchmaking_draft_view(matchmaking)
 
         # Add other phases later
         return None
