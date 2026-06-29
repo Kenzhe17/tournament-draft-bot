@@ -96,10 +96,10 @@ class TeamKDInputModal(discord.ui.Modal):
         for player_name, circle in players:
             # Use a shorter label for the input
             label = f"{player_name} (K/D)"
-            # Create a single text input for K/D format like "8/2"
+            # Create a single text input for K/D format like "8 2"
             kd_input = discord.ui.TextInput(
                 label=label,
-                placeholder="Формат: kills/deaths (например: 8/2)",
+                placeholder="Формат: kills deaths (например: 8 2)",
                 required=True,
                 max_length=10,
             )
@@ -130,8 +130,8 @@ class TeamKDInputModal(discord.ui.Modal):
                 kd_str = item.value.strip()
 
                 try:
-                    # Parse format "kills/deaths"
-                    parts = kd_str.split('/')
+                    # Parse format "kills deaths"
+                    parts = kd_str.split()
                     if len(parts) != 2:
                         raise ValueError
                     
@@ -149,7 +149,7 @@ class TeamKDInputModal(discord.ui.Modal):
                     }
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        f"❌ Неверный формат для {player_name}. Используйте формат: kills/deaths (например: 8/2)",
+                        f"❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
                         ephemeral=True
                     )
                     return
