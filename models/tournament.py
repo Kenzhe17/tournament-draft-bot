@@ -321,12 +321,9 @@ class Tournament:
     # --- Драфт ---
 
     def start_draft(self) -> None:
-        """Перемешать капитанов и начать драфт."""
+        """Начать драфт без перемешивания капитанов."""
         # Sync captains with circle1
         self.captains = list(self.circle1)
-
-        # Shuffle captains randomly
-        random.shuffle(self.captains)
 
         # captain_order is fixed [0, 1, 2, 3...] for PICK_ORDERS to work
         self.captain_order = list(range(self.captain_count))
