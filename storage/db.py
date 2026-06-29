@@ -167,9 +167,20 @@ async def init_db() -> None:
             )
         """)
         
-        # Add user_name column if it doesn't exist (migration)
+        # Migrations for bets table
+        # Add user_name column if it doesn't exist
         await conn.execute("""
             ALTER TABLE bets ADD COLUMN IF NOT EXISTS user_name TEXT NOT NULL DEFAULT ''
+        """)
+        
+        # Add match_id column if it doesn't exist (old schema used match_index)
+        await conn.execute("""
+            ALTER TABLE bets ADD COLUMN IF NOT EXISTS match_id TEXT NOT NULL DEFAULT ''
+        """)
+        
+        # Add team_name column if it doesn't exist (old schema used team_index)
+        await conn.execute("""
+            ALTER TABLE bets ADD COLUMN IF NOT EXISTS team_name TEXT NOT NULL DEFAULT ''
         """)
 
         # Create betting_stats table for betting statistics
