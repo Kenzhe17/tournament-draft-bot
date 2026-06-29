@@ -5,7 +5,10 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import re
+import logging
 from rapidfuzz import fuzz, process
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -146,20 +149,62 @@ class ImageAnalyzer:
         reader = self._get_reader()
         results = reader.readtext(region)
 
+        # Log detailed OCR results
+        logger.info(f"OCR detected {len(results)} text blocks")
+        for i, (bbox, text, confidence) in enumerate(results):
+            logger.info(f"  Block {i}: text='{text}', confidence={confidence:.2f}, bbox={bbox}")
+
         # Combine all detected text
         text_lines = [result[1] for result in results]
-        return '\n'.join(text_lines)
+        combined_text = '\n'.join(text_lines)
+        logger.info(f"Combined OCR text: '{combined_text}'")
+        return combined_text
 
     def _parse_score(self, text: str) -> Optional[str]:
         """
-        Parse score from text.
+        Parse score from text with multiple format support.
 
-        Expected format: "4 - 2" or similar.
+        Expected formats: "4 - 2", "4-2", "4 : 2", "4/2", "4 2", etc.
+        Also handles OCR errors like O instead of 0, l instead 1.
         """
-        # Look for pattern like "4 - 2" or "4-2"
-        match = re.search(r'(\d+)\s*-\s*(\d+)', text)
-        if match:
-            return f"{match.group(1)} - {match.group(2)}"
+        logger.info(f"Attempting to parse score from text: '{text}'")
+
+        # Normalize text - remove extra spaces, common OCR errors
+        normalized = text.strip()
+        # Replace common OCR mistakes
+        normalized = normalized.replace('O', '0').replace('o', '0')
+        normalized = normalized.replace('l', '1').replace('I', '1')
+        normalized = normalized.replace(':', '-').replace('/', '-')
+        # Remove extra spaces around dash
+        normalized = re.sub(r'\s*-\s*', '-', normalized)
+
+        logger.info(f"Normalized text for score parsing: '{normalized}'")
+
+        # Try multiple patterns
+        patterns = [
+            r'(\d+)-(\d+)',  # 4-2
+            r'(\d+)\s+(\d+)',  # 4 2
+            r'(\d+):(\d+)',  # 4:2
+            r'(\d+)/(\d+)',  # 4/2
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                score1 = match.group(1)
+                score2 = match.group(2)
+                result = f"{score1} - {score2}"
+                logger.info(f"Successfully parsed score: '{result}' using pattern '{pattern}'")
+                return result
+
+        # If no pattern matched, try to find any two numbers
+        numbers = re.findall(r'\d+', normalized)
+        if len(numbers) >= 2:
+            result = f"{numbers[0]} - {numbers[1]}"
+            logger.info(f"Found two numbers, using as score: '{result}'")
+            return result
+
+        logger.warning(f"Failed to parse score from text: '{text}'")
         return None
 
     def _parse_player_stats(self, text: str, expected_players: List[str]) -> List[PlayerStats]:
