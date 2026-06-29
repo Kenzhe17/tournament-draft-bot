@@ -174,8 +174,6 @@ class MatchmakingManager:
 
             if session.is_full():
                 embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано."
-                # Если собрано 8 игроков, начинаем драфт
-                await self.start_matchmaking_flow(channel, session)
             else:
                 embed.description = f"Поиск игры:\n{player_count}/8 игроков"
 
@@ -190,6 +188,10 @@ class MatchmakingManager:
             embed.add_field(name="Players:", value=players_text, inline=False)
 
             await message.edit(embed=embed)
+
+            # Если собрано 8 игроков и драфт еще не начался, запускаем драфт
+            if session.is_full() and session.match.phase.name == "searching":
+                await self.start_matchmaking_flow(channel, session)
         except Exception as e:
             logger.error(f"Ошибка обновления embed: {e}")
             # Если сообщение не найдено, сбрасываем message_id и пробуем снова
@@ -199,29 +201,11 @@ class MatchmakingManager:
         """Начать драфт в главном канале."""
         session.start_draft()
 
-        # Отправляем сообщение о начале матча
-        await self.send_match_start_message(channel, session)
-
         # Выбираем капитанов по ELO (2 самых высоких ELO)
         await self.select_captains_by_elo(channel, session)
 
         # Начинаем драфт с Select Menu
         await self.start_draft_selection(channel, session)
-
-    async def send_match_start_message(self, channel, session):
-        """Отправить сообщение о начале матча в главном канале."""
-        player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
-
-        embed = discord.Embed(
-            title="🎮 Match Found!",
-            description="8 игроков собрано. Начинаем драфт!",
-            color=discord.Color.green()
-        )
-
-        players_text = "\n".join([f"{i + 1}. {name}" for i, name in enumerate(player_names)])
-        embed.add_field(name="Players:", value=players_text, inline=False)
-
-        await channel.send(embed=embed)
 
     async def select_captains_by_elo(self, channel, session):
         """Выбрать 2 капитана по наивысшему ELO."""
