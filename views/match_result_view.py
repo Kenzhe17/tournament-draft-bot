@@ -81,18 +81,57 @@ class MatchResultView(View):
         except discord.NotFound:
             pass
 
+        # Показываем результаты матча
+        await self.show_match_results(interaction)
+
         # Сбрасываем сессию для нового матча
         matchmaking_manager.reset_session(self.guild_id)
 
-        # Отправляем финальное сообщение
-        await interaction.followup.send(
-            "✅ Статистика обновлена. Матч завершен. Начинается новый матч!",
-            ephemeral=True
+        # Создаем новый matchmaking embed
+        await self.create_new_matchmaking_embed(interaction)
+
+    async def show_match_results(self, interaction: discord.Interaction):
+        """Показать результаты матча."""
+        winner_team = self.session.match.teams[self.session.match.winner_team_id]
+        loser_team = self.session.match.teams[1 - self.session.match.winner_team_id]
+
+        results_embed = discord.Embed(
+            title="🏆 Результаты матча",
+            color=discord.Color.gold()
         )
 
-        # Обновляем embed в главном канале
-        bot = interaction.client
-        await matchmaking_manager.update_main_embed(self.guild_id, bot)
+        results_embed.add_field(
+            name=f"🥇 Победитель: {winner_team.name}",
+            value="\n".join([self.session.match.player_names.get(pid, "Unknown") for pid in winner_team.players]),
+            inline=False
+        )
+        results_embed.add_field(
+            name=f"🥈 Проигравший: {loser_team.name}",
+            value="\n".join([self.session.match.player_names.get(pid, "Unknown") for pid in loser_team.players]),
+            inline=False
+        )
+
+        await interaction.followup.send(embed=results_embed)
+
+    async def create_new_matchmaking_embed(self, interaction: discord.Interaction):
+        """Создать новый matchmaking embed для следующего матча."""
+        from views.matchmaking_view import MatchmakingView
+
+        embed = discord.Embed(
+            title="🎮 Matchmaking Lobby",
+            description="Поиск игры:\n0/8 игроков",
+            color=discord.Color.blue()
+        )
+
+        embed.add_field(
+            name="Players:",
+            value="1.\n2.\n3.\n4.\n5.\n6.\n7.\n8.",
+            inline=False
+        )
+
+        view = MatchmakingView(self.guild_id)
+
+        await interaction.followup.send(embed=embed, view=view)
 
     async def update_elo(self, winner_team, loser_team):
         """Обновить ELO для всех игроков."""

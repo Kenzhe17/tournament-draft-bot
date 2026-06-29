@@ -89,8 +89,8 @@ class MatchmakingView(View):
 
         if session.is_full():
             embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано."
-            # Если собрано 8 игроков, создаем закрытый канал
-            await self.create_private_channel(interaction, session)
+            # Если собрано 8 игроков, начинаем драфт в этом же канале
+            await self.start_matchmaking_flow(interaction, session)
         else:
             embed.description = f"Поиск игры:\n{player_count}/8 игроков"
 
@@ -116,47 +116,18 @@ class MatchmakingView(View):
         except discord.NotFound:
             pass
 
-    async def create_private_channel(self, interaction: discord.Interaction, session):
-        """Создать закрытый канал для матча."""
-        if session.match.channel_id:
-            return  # Канал уже создан
-
-        guild = interaction.guild
-        category = guild.get_channel(1519430641085710346)  # ID категории для закрытых каналов
-
-        if not category:
-            logger.error("Категория для закрытых каналов не найдена")
-            return
-
-        # Создаем закрытый канал
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-        }
-
-        # Даем доступ всем игрокам
-        for player_id in session.match.players:
-            member = guild.get_member(player_id)
-            if member:
-                overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
-
-        channel = await guild.create_text_channel(
-            f"match-{session.match_id[:8]}",
-            category=category,
-            overwrites=overwrites
-        )
-
-        session.match.channel_id = channel.id
+    async def start_matchmaking_flow(self, interaction: discord.Interaction, session):
+        """Начать драфт в главном канале."""
         session.start_draft()
 
-        # Отправляем сообщение в закрытый канал
-        await self.send_match_start_message(channel, session)
+        # Отправляем сообщение в главном канале
+        await self.send_match_start_message(interaction.channel, session)
 
         # Выбираем капитанов
-        await self.select_captains(channel, session)
+        await self.select_captains(interaction.channel, session)
 
     async def send_match_start_message(self, channel, session):
-        """Отправить сообщение о начале матча в закрытый канал."""
+        """Отправить сообщение о начале матча в главном канале."""
         player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
 
         embed = discord.Embed(
@@ -297,3 +268,6 @@ class MatchmakingView(View):
         )
 
         await channel.send(embed=betting_embed, view=betting_view)
+
+        # Сохраняем ссылку на канал для дальнейшего использования
+        session.match.channel_id = channel.id
