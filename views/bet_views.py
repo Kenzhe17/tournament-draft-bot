@@ -70,9 +70,17 @@ class TeamSelectView(View):
         self.name_a = name_a
         self.name_b = name_b
         self.match_type = match_type
+        
+        # Add buttons dynamically
+        team_a_btn = Button(label=name_a, style=discord.ButtonStyle.primary)
+        team_a_btn.callback = self.team_a_button
+        self.add_item(team_a_btn)
+        
+        team_b_btn = Button(label=name_b, style=discord.ButtonStyle.primary)
+        team_b_btn.callback = self.team_b_button
+        self.add_item(team_b_btn)
     
-    @button(label=name_a, style=discord.ButtonStyle.primary)
-    async def team_a_button(self, interaction: discord.Interaction, button: Button):
+    async def team_a_button(self, interaction: discord.Interaction):
         """Handle team A selection."""
         from views.bet_modal import BetAmountModal
         modal = BetAmountModal(
@@ -85,8 +93,7 @@ class TeamSelectView(View):
         )
         await interaction.response.send_modal(modal)
     
-    @button(label=name_b, style=discord.ButtonStyle.primary)
-    async def team_b_button(self, interaction: discord.Interaction, button: Button):
+    async def team_b_button(self, interaction: discord.Interaction):
         """Handle team B selection."""
         from views.bet_modal import BetAmountModal
         modal = BetAmountModal(
