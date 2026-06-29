@@ -163,13 +163,12 @@ class MatchmakingManager:
         logger.info(f"Updating embed for guild {guild_id}, player count: {session.get_player_count()}")
         logger.info(f"main_message_id: {session.match.main_message_id}, main_channel_id: {session.match.main_channel_id}")
 
-        # Если нет main_message_id, пытаемся найти последнее сообщение с matchmaking embed
+        # Всегда ищем сообщение, чтобы убедиться что оно актуальное
+        logger.info("Searching for current matchmaking message...")
+        await self.find_and_set_main_message(guild_id, bot)
         if not session.match.main_message_id:
-            logger.info("No main_message_id, searching for message...")
-            await self.find_and_set_main_message(guild_id, bot)
-            if not session.match.main_message_id:
-                logger.warning("Still no main_message_id after search, cannot update embed")
-                return
+            logger.warning("No matchmaking message found, cannot update embed")
+            return
 
         try:
             channel = bot.get_channel(session.match.main_channel_id)
@@ -207,6 +206,9 @@ class MatchmakingManager:
             logger.info(f"Successfully updated embed for guild {guild_id}")
         except Exception as e:
             logger.error(f"Ошибка обновления embed: {e}", exc_info=True)
+            # Если сообщение не найдено, сбрасываем message_id и пробуем снова
+            session.match.main_message_id = None
+            logger.info("Reset main_message_id due to error, will search again next time")
 
 
 # Глобальный экземпляр менеджера
