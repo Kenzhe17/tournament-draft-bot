@@ -180,14 +180,28 @@ class TournamentBot(commands.Bot):
         """Handle screenshot upload for match results."""
         from storage.json_store import store
 
+        logger.info(f"Screenshot upload detected from user {message.author.id}")
+
         # Get tournament for this guild
         tournament = store.get(message.guild.id)
-        if not tournament or not hasattr(tournament, 'pending_screenshot_upload'):
+        if not tournament:
+            logger.warning(f"No tournament found for guild {message.guild.id}")
+            return
+
+        if not hasattr(tournament, 'pending_screenshot_upload'):
+            logger.warning(f"Tournament does not have pending_screenshot_upload attribute")
             return
 
         upload_info = tournament.pending_screenshot_upload
-        if not upload_info or upload_info['user_id'] != message.author.id:
+        if not upload_info:
+            logger.warning(f"No pending screenshot upload info")
             return
+
+        if upload_info['user_id'] != message.author.id:
+            logger.warning(f"User ID mismatch: expected {upload_info['user_id']}, got {message.author.id}")
+            return
+
+        logger.info(f"Processing screenshot upload for match {upload_info.get('match_index')}")
 
         try:
             # Download image to temporary file
