@@ -15,6 +15,54 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class LeaveButton(Button):
+    """Кнопка для выхода из matchmaking."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Leave",
+            custom_id=f"mm_leave:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        user_id = interaction.user.id
+
+        session = matchmaking_manager.get_session(self.guild_id)
+        if not session:
+            await interaction.response.send_message(
+                "❌ Сессия не найдена.",
+                ephemeral=True
+            )
+            return
+
+        if not session.is_player_in_session(user_id):
+            await interaction.response.send_message(
+                "❌ Вы не находитесь в Matchmaking.",
+                ephemeral=True
+            )
+            return
+
+        # Remove player
+        success = matchmaking_manager.remove_player(self.guild_id, user_id)
+        if not success:
+            await interaction.response.send_message(
+                "❌ Не удалось удалить игрока.",
+                ephemeral=True
+            )
+            return
+
+        # Update embed
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await matchmaking_manager.update_main_embed(self.guild_id, bot)
+
+        await interaction.response.send_message(
+            "✅ Вы покинули Matchmaking.",
+            ephemeral=True
+        )
+
+
 class MatchmakingView(View):
     """View для matchmaking в главном канале."""
 
@@ -30,12 +78,7 @@ class MatchmakingView(View):
         self.join_button.callback = self.join_callback
         self.add_item(self.join_button)
 
-        self.leave_button = Button(
-            label="Leave",
-            style=discord.ButtonStyle.danger,
-            custom_id="mm_leave"
-        )
-        self.leave_button.callback = self.leave_callback
+        self.leave_button = LeaveButton(guild_id)
         self.add_item(self.leave_button)
 
         self.ready_button = Button(
@@ -63,29 +106,6 @@ class MatchmakingView(View):
         # Обновляем embed через менеджер для всех
         bot = interaction.client
         await matchmaking_manager.update_main_embed(self.guild_id, bot)
-
-    async def leave_callback(self, interaction: discord.Interaction):
-        """Обработка нажатия кнопки Leave."""
-        user_id = interaction.user.id
-
-        # Сначала проверяем, находится ли игрок в сессии
-        session = matchmaking_manager.get_session(self.guild_id)
-        if session and session.is_player_in_session(user_id):
-            success = matchmaking_manager.remove_player(self.guild_id, user_id)
-            if success:
-                await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ Ошибка при выходе", ephemeral=True)
-                return
-        else:
-            await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
-            return
-
-        # Обновляем embed через менеджер для всех, только если сессия еще существует
-        session_after = matchmaking_manager.get_session(self.guild_id)
-        if session_after:
-            bot = interaction.client
-            await matchmaking_manager.update_main_embed(self.guild_id, bot)
 
     async def ready_callback(self, interaction: discord.Interaction):
         """Обработка нажатия кнопки Ready."""
