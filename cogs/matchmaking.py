@@ -39,7 +39,7 @@ class MatchmakingCog(commands.Cog):
             session = matchmaking_manager.create_session(interaction.guild_id, interaction.channel_id)
 
         embed = discord.Embed(
-            title="🎮 Matchmaking",
+            title="🎮 Matchmaking Lobby",
             description="Поиск игры:\n0/8 игроков",
             color=discord.Color.blue()
         )
