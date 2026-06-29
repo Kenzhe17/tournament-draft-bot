@@ -544,6 +544,77 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="screen", description="Распознать скриншот результатов матча")
+    @app_commands.describe(screenshot="Скриншот результатов матча")
+    async def screen(
+        self,
+        interaction: discord.Interaction,
+        screenshot: discord.Attachment
+    ) -> None:
+        """Распознать скриншот и вернуть текст для ручного ввода."""
+        await interaction.response.defer()
+
+        if not screenshot.content_type or not screenshot.content_type.startswith('image/'):
+            await interaction.edit_original_response(
+                content="❌ Пожалуйста, загрузите изображение."
+            )
+            return
+
+        import sys
+        import os
+        import tempfile
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        try:
+            # Download image to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
+                await screenshot.save(tmp.name)
+                tmp_path = tmp.name
+
+            from services.image_analyzer import image_analyzer
+
+            # Analyze screenshot without expected players
+            result = image_analyzer.analyze_screenshot(tmp_path, [])
+
+            # Clean up
+            os.unlink(tmp_path)
+
+            if not result:
+                await interaction.edit_original_response(
+                    content="❌ Не удалось распознать скриншот. Убедитесь, что это скриншот результатов Free Fire."
+                )
+                return
+
+            # Format result as text for manual input
+            text = f"**Счет:** {result.score}\n"
+            text += f"**Победитель:** {result.winner_team}\n"
+            text += f"**Проигравший:** {result.loser_team}\n\n"
+            text += "**Команда 1:**\n"
+            for player in result.team1_players:
+                text += f"- {player.nickname} | K:{player.kills} D:{player.deaths} A:{player.assists} DMG:{player.damage}\n"
+            text += "\n**Команда 2:**\n"
+            for player in result.team2_players:
+                text += f"- {player.nickname} | K:{player.kills} D:{player.deaths} A:{player.assists} DMG:{player.damage}\n"
+
+            embed = discord.Embed(
+                title="📷 Результаты распознавания",
+                description=text,
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="💡 Используйте эти данные для ручного ввода",
+                value="Скопируйте информацию выше и используйте её при выборе победителя",
+                inline=False
+            )
+
+            await interaction.edit_original_response(embed=embed)
+
+        except Exception as e:
+            logger.error(f"Error in /screen command: {e}", exc_info=True)
+            await interaction.edit_original_response(
+                content=f"❌ Ошибка при распознавании: {str(e)}"
+            )
+
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:
         """Показать рекорды турнира."""
