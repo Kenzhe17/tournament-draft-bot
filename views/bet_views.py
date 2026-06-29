@@ -38,7 +38,6 @@ class MatchSelectView(View):
     def _create_match_callback(self, match_index: int, team_a: int, team_b: int, name_a: str, name_b: str):
         """Create a callback for a match button."""
         async def callback(interaction: discord.Interaction):
-            from views.team_select_view import TeamSelectView
             team_view = TeamSelectView(
                 self.guild_id,
                 self.tournament,
