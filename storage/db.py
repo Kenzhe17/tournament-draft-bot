@@ -210,3 +210,13 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+
+        # Create bonus_cooldowns table for tracking daily bonuses
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bonus_cooldowns (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                last_claim TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)

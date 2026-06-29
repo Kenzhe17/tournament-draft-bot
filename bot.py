@@ -60,7 +60,6 @@ class TournamentBot(commands.Bot):
                 logger.error("Failed to initialize database: %s", e)
 
         await self.load_extension("cogs.tournament")
-        await self.load_extension("cogs.economy")
         await self.tree.sync()
         logger.info("Slash-команды синхронизированы")
 

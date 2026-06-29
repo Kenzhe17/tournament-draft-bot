@@ -88,10 +88,8 @@ class TournamentCog(commands.Cog):
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
-
-        # Use followup to avoid interaction expiration issues
-        await interaction.response.defer()
-        message = await interaction.followup.send(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=view)
+        message = await interaction.original_response()
 
         tournament.message_id = message.id
         store.set(tournament)
@@ -295,7 +293,109 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="coins", description="Показать таблицу лидеров по монетам")
+    @app_commands.command(name="bonus", description="Получить ежедневный бонус 100 монет")
+    async def daily_bonus(self, interaction: discord.Interaction) -> None:
+        """Получить ежедневный бонус монет."""
+        from storage.user_balance_store import user_balance_store
+        from storage.db import get_pool
+        from datetime import datetime, timedelta
+
+        if not user_balance_store._use_db:
+            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
+            return
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Check last claim time
+            row = await conn.fetchrow(
+                "SELECT last_claim FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                interaction.guild_id, interaction.user.id
+            )
+
+            now = datetime.utcnow()
+            if row and row['last_claim']:
+                last_claim = row['last_claim']
+                if now - last_claim < timedelta(hours=24):
+                    remaining = timedelta(hours=24) - (now - last_claim)
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    await interaction.response.send_message(
+                        f"❌ Вы уже получили бонус. Следующий бонус через {hours}ч {minutes}мин.",
+                        ephemeral=True
+                    )
+                    return
+
+            # Give bonus
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 100)
+
+            # Update cooldown
+            await conn.execute(
+                """
+                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET last_claim = $3
+                """,
+                interaction.guild_id, interaction.user.id, now
+            )
+
+        await interaction.response.send_message(
+            "🎁 Вы получили 100 монет!",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="balance", description="Показать ваш баланс")
+    async def balance(self, interaction: discord.Interaction) -> None:
+        """Показать баланс пользователя."""
+        from storage.user_balance_store import user_balance_store
+
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+
+        embed = discord.Embed(
+            title="💰 Ваш баланс",
+            color=discord.Color.gold()
+        )
+        embed.add_field(
+            name="Монеты",
+            value=f"{balance} 🪙",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="bet", description="Показать вашу статистику ставок")
+    async def betting_stats(self, interaction: discord.Interaction) -> None:
+        """Показать статистику ставок пользователя."""
+        from storage.betting_stats_store import betting_stats_store
+
+        if not betting_stats_store._use_db:
+            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
+            return
+
+        stats = await betting_stats_store.get(interaction.guild_id, interaction.user.id)
+
+        if not stats:
+            await interaction.response.send_message(
+                "❌ У вас пока нет статистики ставок.",
+                ephemeral=True
+            )
+            return
+
+        accuracy = (stats.successful_bets / stats.total_bets * 100) if stats.total_bets > 0 else 0
+
+        embed = discord.Embed(
+            title="💰 Ставки",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="Всего ставок", value=str(stats.total_bets), inline=True)
+        embed.add_field(name="Выигрышных", value=str(stats.successful_bets), inline=True)
+        embed.add_field(name="Проигрышных", value=str(stats.total_bets - stats.successful_bets), inline=True)
+        embed.add_field(name="Точность", value=f"{accuracy:.1f}%", inline=True)
+        embed.add_field(name="Выиграно", value=f"+{stats.total_won}", inline=True)
+        embed.add_field(name="Проиграно", value=f"-{stats.total_lost}", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="moneytop", description="Показать таблицу лидеров по монетам")
     async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
         """Показать таблицу лидеров по монетам."""
         from storage.user_balance_store import user_balance_store
@@ -416,7 +516,6 @@ class TournamentCog(commands.Cog):
         target_user = player if player else interaction.user
 
         from storage.player_stats_store import player_stats_store
-        from storage.user_balance_store import user_balance_store
         from models.player_stats import PlayerStats
 
         stats = await player_stats_store.get(interaction.guild_id, target_user.id)
@@ -436,7 +535,7 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
         embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
-
+        
         # Additional stats
         embed.add_field(name="🎯 Total Kills", value=str(stats.total_kills), inline=True)
         embed.add_field(name="💀 Total Deaths", value=str(stats.total_deaths), inline=True)
@@ -462,50 +561,53 @@ class TournamentCog(commands.Cog):
 
         # Find records
         most_wins = max(all_players, key=lambda p: p.wins)
-        most_kills = max(all_players, key=lambda p: p.total_kills)
-        most_deaths = max(all_players, key=lambda p: p.total_deaths)
+        most_finals = max(all_players, key=lambda p: p.finals)
         highest_elo = max(all_players, key=lambda p: p.elo)
-        best_kd = max(all_players, key=lambda p: p.kd_ratio)
+        most_games = max(all_players, key=lambda p: p.games)
         best_win_streak = max(all_players, key=lambda p: p.best_win_streak)
         best_loss_streak = max(all_players, key=lambda p: p.best_loss_streak)
+        most_kills = max(all_players, key=lambda p: p.total_kills)
+        most_deaths = max(all_players, key=lambda p: p.total_deaths)
+        best_match_kills = max(all_players, key=lambda p: p.best_match_kills)
+        highest_kd = max(all_players, key=lambda p: p.kd_ratio)
 
         embed = discord.Embed(
-            title=":trophy: Рекорды Турнира",
+            title="🏆 Рекорды Турнира",
             color=discord.Color.gold(),
         )
 
         embed.add_field(
-            name=":first_place: Наибольшее количество побед",
-            value=f"{most_wins.name} — {most_wins.wins} побед",
+            name="🎯 Наибольшее количество киллов",
+            value=f"{most_kills.name} — {most_kills.total_kills}",
             inline=False
         )
         embed.add_field(
-            name=":man_detective: Наибольшее количество киллов",
-            value=f"{most_kills.name} — {most_kills.total_kills} киллов",
+            name="💀 Наибольшее количество смертей",
+            value=f"{most_deaths.name} — {most_deaths.total_deaths}",
             inline=False
         )
         embed.add_field(
-            name=":skull: Наибольшее количество смертей",
-            value=f"{most_deaths.name} — {most_deaths.total_deaths} смертей",
+            name="🔥 Наибольшее количество киллов за матч",
+            value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
             inline=False
         )
         embed.add_field(
-            name=":chart_with_upwards_trend: Самый высокий ELO",
+            name="📈 Самый высокий ELO",
             value=f"{highest_elo.name} — {highest_elo.elo} ELO",
             inline=False
         )
         embed.add_field(
-            name=":dart: Наибольшее количество K/D",
-            value=f"{best_kd.name} — {best_kd.kd_ratio:.2f} K/D",
+            name="⚔️ Наибольшее K/D",
+            value=f"{highest_kd.name} — {highest_kd.kd_ratio:.2f}",
             inline=False
         )
         embed.add_field(
-            name=":fire: Лучшая серия побед",
+            name="🔥 Лучшая серия побед",
             value=f"{best_win_streak.name} — {best_win_streak.best_win_streak} подряд",
             inline=False
         )
         embed.add_field(
-            name=":snowflake: Худшая серия поражений",
+            name="❄️ Худшая серия поражений",
             value=f"{best_loss_streak.name} — {best_loss_streak.best_loss_streak} подряд",
             inline=False
         )
