@@ -58,16 +58,42 @@ class EconomyCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="balance", description="Показать ваш баланс")
-    async def balance(self, interaction: discord.Interaction) -> None:
-        """Показать баланс пользователя."""
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    @app_commands.command(name="bet", description="Показать статистику ставок и баланс пользователя")
+    @app_commands.describe(user="Пользователь для просмотра статистики")
+    async def bet_stats(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+        """Показать статистику ставок и баланс пользователя."""
+        target_user = user or interaction.user
+
+        # Получаем баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
+
+        # Получаем статистику ставок
+        from storage.betting_stats_store import betting_stats_store
+        stats = await betting_stats_store.get_user_stats(interaction.guild_id, target_user.id)
+
+        total_bets = stats["total_bets"]
+        successful_bets = stats["successful_bets"]
+        lost_bets = total_bets - successful_bets
+        success_rate = stats["success_rate"]
+        total_won = stats["total_won"]
+        total_lost = stats["total_lost"]
+        profit = total_won - total_lost
 
         embed = discord.Embed(
-            title="💰 Ваш баланс",
-            description=f"{balance} coin",
+            title=f"💰 Ставки {target_user.display_name}",
             color=discord.Color.gold()
         )
+
+        embed.add_field(name="Всего ставок", value=str(total_bets), inline=True)
+        embed.add_field(name="Выигрышных", value=str(successful_bets), inline=True)
+        embed.add_field(name="Проигрышных", value=str(lost_bets), inline=True)
+
+        embed.add_field(name="Точность", value=f"{success_rate:.1f}%", inline=True)
+
+        embed.add_field(name="Выиграно", value=f"+{total_won}", inline=True)
+        embed.add_field(name="Проиграно", value=f"-{total_lost}", inline=True)
+
+        embed.add_field(name="Баланс", value=str(balance), inline=False)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
