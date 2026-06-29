@@ -71,7 +71,7 @@ class GenerateMatchesButton(discord.ui.Button):
             logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
             store.set(tournament)
 
-            # Update games for all players (tournament started)
+            # Give participation reward to all players (tournament started)
             from storage.player_stats_store import player_stats_store
             from storage.user_balance_store import user_balance_store
             for team in tournament.teams:
@@ -80,8 +80,7 @@ class GenerateMatchesButton(discord.ui.Button):
                     if player:
                         # Get user_id from tournament's player_user_ids
                         user_id = tournament.player_user_ids.get(player, 0)
-                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
-                        # Give participation reward
+                        # Give participation reward only, don't count game yet
                         await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -164,7 +163,7 @@ class SemifinalWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=True)
                 # Give semifinal win reward
                 await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
@@ -173,7 +172,7 @@ class SemifinalWinnerButton(discord.ui.Button):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=True)
 
         # Resolve betting for this match
         from storage.bet_store import bet_store
@@ -551,14 +550,14 @@ class QualifierWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
 
         # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=True)
 
         # Resolve betting for this match
         from storage.bet_store import bet_store

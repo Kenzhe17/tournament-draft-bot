@@ -82,7 +82,7 @@ class FinalWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=True)
                 # Give tournament win reward
                 await user_balance_store.add_balance(tournament.guild_id, user_id, 50)
 
@@ -91,7 +91,7 @@ class FinalWinnerButton(discord.ui.Button):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=True)
 
         # Resolve betting for final match
         from storage.bet_store import bet_store
