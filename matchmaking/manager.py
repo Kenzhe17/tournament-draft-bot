@@ -189,6 +189,8 @@ class MatchmakingManager:
 
             if session.is_full():
                 embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано."
+                # Если собрано 8 игроков, начинаем драфт
+                await self.start_matchmaking_flow(channel, session)
             else:
                 embed.description = f"Поиск игры:\n{player_count}/8 игроков"
 
@@ -209,6 +211,54 @@ class MatchmakingManager:
             # Если сообщение не найдено, сбрасываем message_id и пробуем снова
             session.match.main_message_id = None
             logger.info("Reset main_message_id due to error, will search again next time")
+
+    async def start_matchmaking_flow(self, channel, session):
+        """Начать драфт в главном канале."""
+        session.start_draft()
+
+        # Отправляем сообщение о начале матча
+        await self.send_match_start_message(channel, session)
+
+        # Выбираем капитанов
+        await self.select_captains(channel, session)
+
+    async def send_match_start_message(self, channel, session):
+        """Отправить сообщение о начале матча в главном канале."""
+        player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
+
+        embed = discord.Embed(
+            title="🎮 Match Found!",
+            description="8 игроков собрано. Начинаем драфт!",
+            color=discord.Color.green()
+        )
+
+        players_text = "\n".join([f"{i + 1}. {name}" for i, name in enumerate(player_names)])
+        embed.add_field(name="Players:", value=players_text, inline=False)
+
+        await channel.send(embed=embed)
+
+    async def select_captains(self, channel, session):
+        """Выбрать 2 капитанов из 8 игроков."""
+        import random
+
+        players = session.match.players.copy()
+        random.shuffle(players)
+
+        captain1_id = players[0]
+        captain2_id = players[1]
+        captain1_name = session.match.player_names[captain1_id]
+        captain2_name = session.match.player_names[captain2_id]
+
+        session.create_teams(captain1_id, captain1_name, captain2_id, captain2_name)
+
+        embed = discord.Embed(
+            title="👑 Капитаны выбраны",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="Team 1 Captain", value=captain1_name, inline=True)
+        embed.add_field(name="Team 2 Captain", value=captain2_name, inline=True)
+
+        await channel.send(embed=embed)
 
 
 # Глобальный экземпляр менеджера

@@ -57,6 +57,47 @@ class MatchmakingCog(commands.Cog):
         session.match.main_message_id = message.id
         session.match.main_channel_id = interaction.channel_id
 
+    @app_commands.command(name="mmtest", description="Тестовый запуск matchmaking (заполнить ботами)")
+    @is_admin()
+    async def mmtest(self, interaction: discord.Interaction) -> None:
+        """Заполнить matchmaking тестовыми данными и запустить драфт."""
+        # Создаем сессию если её нет
+        session = matchmaking_manager.get_session(interaction.guild_id)
+        if not session:
+            session = matchmaking_manager.create_session(interaction.guild_id, interaction.channel_id)
+
+        # Добавляем 7 ботов
+        bot_names = ["Bot1", "Bot2", "Bot3", "Bot4", "Bot5", "Bot6", "Bot7"]
+        for i, name in enumerate(bot_names):
+            bot_id = 1000000 + i  # Фиктивные ID для ботов
+            success, message = matchmaking_manager.add_player(
+                interaction.guild_id, bot_id, name, interaction.channel_id
+            )
+            if not success:
+                logger.warning(f"Failed to add bot {name}: {message}")
+
+        # Добавляем админа как 8 игрока
+        admin_id = interaction.user.id
+        admin_name = interaction.user.display_name
+        success, message = matchmaking_manager.add_player(
+            interaction.guild_id, admin_id, admin_name, interaction.channel_id
+        )
+
+        if success:
+            await interaction.response.send_message(
+                "🧪 Тестовый режим активирован! 7 ботов добавлены, вы как 8 игрок. Драфт запущен.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"❌ Ошибка: {message}",
+                ephemeral=True
+            )
+
+        # Обновляем embed
+        bot = interaction.client
+        await matchmaking_manager.update_main_embed(interaction.guild_id, bot)
+
     async def cog_app_command_error(
         self,
         interaction: discord.Interaction,
