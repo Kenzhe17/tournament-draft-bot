@@ -10,22 +10,17 @@ from discord.ext import commands
 
 from config import DATABASE_URL, DISCORD_TOKEN
 from models.tournament import Tournament, TournamentPhase
-from models.matchmaking import Matchmaking, MatchmakingPhase as MatchmakingPhaseEnum
 from storage.json_store import store
-from storage.matchmaking_store import matchmaking_store
 from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
 from storage.bet_store import bet_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_embed_for_phase
-from utils.matchmaking_embeds import build_matchmaking_embed
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
 from views.leaderboard_view import LeaderboardView
 from views.matches_view import QualifiersView, SemifinalsView, TeamsView
 from views.setup_view import build_setup_view
-from views.matchmaking_setup_view import build_matchmaking_setup_view
-from views.matchmaking_draft_view_new import build_matchmaking_draft_view
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,18 +60,12 @@ class TournamentBot(commands.Bot):
                 logger.error("Failed to initialize database: %s", e)
 
         await self.load_extension("cogs.tournament")
-        await self.load_extension("cogs.matchmaking")
-        await self.load_extension("cogs.matchmaking_new")
         await self.load_extension("cogs.economy")
         await self.tree.sync()
         logger.info("Slash-команды синхронизированы")
 
         for tournament in store.all():
             view = self.build_view_for_tournament(tournament)
-            self._register_view(view)
-
-        for matchmaking in matchmaking_store.all():
-            view = self.build_view_for_matchmaking(matchmaking)
             self._register_view(view)
 
     def _view_key(self, view: discord.ui.View) -> str:
@@ -135,21 +124,6 @@ class TournamentBot(commands.Bot):
 
         return None
 
-    def build_view_for_matchmaking(
-        self, matchmaking: Matchmaking
-    ) -> discord.ui.View | None:
-        """Построить View в зависимости от фазы matchmaking."""
-        phase = matchmaking.phase
-
-        if phase == MatchmakingPhaseEnum.SETUP:
-            return build_matchmaking_setup_view(matchmaking)
-
-        if phase == MatchmakingPhaseEnum.DRAFT:
-            return build_matchmaking_draft_view(matchmaking)
-
-        # Add other phases later
-        return None
-
     async def update_tournament_message(
         self, guild: discord.Guild, tournament: Tournament
     ) -> None:
@@ -174,37 +148,6 @@ class TournamentBot(commands.Bot):
 
         embed = await build_embed_for_phase(tournament, guild)
         view = self.build_view_for_tournament(tournament)
-        self._register_view(view)
-
-        try:
-            await message.edit(embed=embed, view=view)
-        except discord.HTTPException as exc:
-            logger.error("Не удалось обновить сообщение: %s", exc)
-
-    async def update_matchmaking_message(
-        self, guild: discord.Guild, matchmaking: Matchmaking
-    ) -> None:
-        """Отредактировать главное сообщение matchmaking."""
-        if not matchmaking.message_id:
-            logger.warning("Нет message_id для matchmaking сервера %s", guild.id)
-            return
-
-        channel = guild.get_channel(matchmaking.channel_id)
-        if channel is None:
-            try:
-                channel = await guild.fetch_channel(matchmaking.channel_id)
-            except discord.HTTPException as exc:
-                logger.error("Канал не найден: %s", exc)
-                return
-
-        try:
-            message = await channel.fetch_message(matchmaking.message_id)
-        except discord.HTTPException as exc:
-            logger.error("Сообщение не найдено: %s", exc)
-            return
-
-        embed = await build_matchmaking_embed(matchmaking, guild)
-        view = self.build_view_for_matchmaking(matchmaking)
         self._register_view(view)
 
         try:
