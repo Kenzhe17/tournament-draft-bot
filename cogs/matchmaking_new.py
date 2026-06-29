@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class MatchmakingCog(commands.Cog):
+class NewMatchmakingCog(commands.Cog):
     """Ког с командами matchmaking."""
 
     def __init__(self, bot: TournamentBot):
@@ -109,4 +109,4 @@ class MatchmakingCog(commands.Cog):
 
 async def setup(bot: TournamentBot) -> None:
     """Загрузить ког."""
-    await bot.add_cog(MatchmakingCog(bot))
+    await bot.add_cog(NewMatchmakingCog(bot))
