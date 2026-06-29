@@ -139,6 +139,11 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS last_elo_change INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create user_balance table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (

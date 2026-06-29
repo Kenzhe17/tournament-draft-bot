@@ -23,7 +23,8 @@ class PlayerStats:
     total_kills: int = 0
     total_deaths: int = 0
     best_match_kills: int = 0
-    total_elo_change: int = 0  # Sum of all ELO changes
+    total_elo_change: int = 0
+    last_elo_change: int = 0  # Sum of all ELO changes
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
@@ -42,6 +43,7 @@ class PlayerStats:
             "total_deaths": self.total_deaths,
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
+            "last_elo_change": self.last_elo_change,
         }
 
     @classmethod
@@ -62,6 +64,7 @@ class PlayerStats:
             total_deaths=data.get("total_deaths", 0),
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
+            last_elo_change=data.get("last_elo_change", 0),
         )
 
     @property

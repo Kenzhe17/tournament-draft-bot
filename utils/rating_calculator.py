@@ -147,6 +147,9 @@ def update_player_stats_from_match(
     # Update total ELO change
     stats.total_elo_change += elo_change
     
+    # Update last ELO change
+    stats.last_elo_change = elo_change
+    
     # Update current ELO
     stats.elo += elo_change
     

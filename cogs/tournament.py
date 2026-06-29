@@ -1,4 +1,4 @@
-"""Slash-команды турнира."""
+﻿"""Slash-команды турнира."""
 
 from __future__ import annotations
 
@@ -410,15 +410,15 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🏆 ELO", value=str(stats.elo), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
-        embed.add_field(name="📈 Win Rate", value=f"{win_rate:.1f}%", inline=True)
+        embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
         embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
         embed.add_field(name="� Монеты", value=f"{balance} 🪙", inline=True)
         
         # Additional stats
-        embed.add_field(name="🎯 Средние убийства", value=f"{stats.avg_kills:.1f}", inline=True)
-        embed.add_field(name="💀 Средние смерти", value=f"{stats.avg_deaths:.1f}", inline=True)
-        embed.add_field(name="🔥 Лучший матч", value=str(stats.best_match_kills), inline=True)
-        embed.add_field(name="� Среднее изменение ELO", value=f"{stats.avg_elo_change:+.1f}", inline=True)
+        embed.add_field(name="🎯 Total Kills", value=str(stats.total_kills), inline=True)
+        embed.add_field(name="💀 Total Deaths", value=str(stats.total_deaths), inline=True)
+        embed.add_field(name="🔥 Max Kills", value=str(stats.best_match_kills), inline=True)
+        embed.add_field(name="� Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
 
         await interaction.response.send_message(embed=embed)
 
@@ -690,3 +690,15 @@ class TournamentCog(commands.Cog):
 async def setup(bot: TournamentBot) -> None:
     """Загрузить ког."""
     await bot.add_cog(TournamentCog(bot))
+
+
+
+
+
+
+
+
+
+
+
+
