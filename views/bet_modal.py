@@ -45,58 +45,66 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             )
             return
         
-        # Check if betting is open
-        if not self.tournament.betting_open:
-            await interaction.response.send_message(
-                "❌ Ставки закрыты.",
-                ephemeral=True
-            )
-            return
-        
-        # Check user balance
-        balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
-        if balance < amount:
-            await interaction.response.send_message(
-                f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙",
-                ephemeral=True
-            )
-            return
-        
-        # Check if user is playing in the match
-        user_team_index = self._get_user_team_index(interaction.user.id)
-        if user_team_index is not None:
-            if user_team_index == self.team_index:
+        try:
+            # Check if betting is open
+            if not self.tournament.betting_open:
                 await interaction.response.send_message(
-                    "❌ Вы не можете ставить на свою команду.",
+                    "❌ Ставки закрыты.",
                     ephemeral=True
                 )
                 return
-        
-        # Deduct balance
-        await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
-        
-        # Create and save bet
-        from models.bet import Bet
-        match_id = f"{self.match_type}_{self.match_index}"
-        bet = Bet(
-            guild_id=self.guild_id,
-            user_id=interaction.user.id,
-            user_name=interaction.user.display_name,
-            match_id=match_id,
-            team_name=self.team_name,
-            amount=amount
-        )
-        await bet_store.save_bet(bet)
-        
-        # Update tournament message
-        from bot import TournamentBot
-        bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, self.tournament)
-        
-        await interaction.response.send_message(
-            f"✅ Ставка принята\n\n{amount} 🪙 → {self.team_name}",
-            ephemeral=True
-        )
+            
+            # Check user balance
+            balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
+            if balance < amount:
+                await interaction.response.send_message(
+                    f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙",
+                    ephemeral=True
+                )
+                return
+            
+            # Check if user is playing in the match
+            user_team_index = self._get_user_team_index(interaction.user.id)
+            if user_team_index is not None:
+                if user_team_index == self.team_index:
+                    await interaction.response.send_message(
+                        "❌ Вы не можете ставить на свою команду.",
+                        ephemeral=True
+                    )
+                    return
+            
+            # Deduct balance
+            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+            
+            # Create and save bet
+            from models.bet import Bet
+            match_id = f"{self.match_type}_{self.match_index}"
+            bet = Bet(
+                guild_id=self.guild_id,
+                user_id=interaction.user.id,
+                user_name=interaction.user.display_name,
+                match_id=match_id,
+                team_name=self.team_name,
+                amount=amount
+            )
+            await bet_store.save_bet(bet)
+            
+            # Update tournament message
+            from bot import TournamentBot
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, self.tournament)
+            
+            await interaction.response.send_message(
+                f"✅ Ставка принята\n\n{amount} 🪙 → {self.team_name}",
+                ephemeral=True
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"Error placing bet: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Ошибка при создании ставки: {str(e)}",
+                ephemeral=True
+            )
     
     def _get_user_team_index(self, user_id: int) -> int | None:
         """Get the team index if user is participating in this match, or None otherwise."""
