@@ -178,37 +178,54 @@ class CloseBettingButton(Button):
     
     async def callback(self, interaction: discord.Interaction):
         """Close betting for the tournament."""
-        from storage.json_store import store
-        from utils.permissions import is_admin
-        
-        # Check if user is admin
-        if not is_admin(interaction):
+        try:
+            from storage.json_store import store
+            from utils.permissions import is_admin
+            
+            # Check if user is admin
+            if not is_admin(interaction):
+                await interaction.response.send_message(
+                    "❌ Только администратор может закрывать ставки.",
+                    ephemeral=True
+                )
+                return
+            
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    "❌ Турнир не найден.",
+                    ephemeral=True
+                )
+                return
+            
+            tournament.betting_open = False
+            store.set(tournament)
+            
             await interaction.response.send_message(
-                "❌ Только администратор может закрывать ставки.",
+                "✅ Ставки закрыты.",
                 ephemeral=True
             )
-            return
-        
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Турнир не найден.",
-                ephemeral=True
-            )
-            return
-        
-        tournament.betting_open = False
-        store.set(tournament)
-        
-        await interaction.response.send_message(
-            "✅ Ставки закрыты.",
-            ephemeral=True
-        )
-        
-        # Update the tournament message
-        from bot import TournamentBot
-        bot = interaction.client
-        await bot.update_tournament_message(interaction.guild, tournament)
+            
+            # Update the tournament message
+            from bot import TournamentBot
+            bot = interaction.client
+            await bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            import logging
+            logging.error(f"Error closing betting: {e}", exc_info=True)
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        f"❌ Ошибка при закрытии ставок: {str(e)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        f"❌ Ошибка при закрытии ставок: {str(e)}",
+                        ephemeral=True
+                    )
+            except:
+                pass
 
 
 class BetButton(Button):
