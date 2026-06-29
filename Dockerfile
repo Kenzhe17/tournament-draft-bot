@@ -33,7 +33,6 @@ COPY storage/ storage/
 COPY utils/ utils/
 
 COPY views/ views/
-COPY matchmaking/ matchmaking/
 
 
 
