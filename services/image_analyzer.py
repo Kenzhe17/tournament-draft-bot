@@ -16,6 +16,7 @@ class PlayerStats:
     deaths: int
     assists: int
     damage: int
+    confidence: float = 100.0  # OCR confidence percentage
 
 
 @dataclass
@@ -200,7 +201,7 @@ class ImageAnalyzer:
             PlayerStats if successful, None otherwise
         """
         # Try to match nickname with expected players using fuzzy matching
-        nickname = self._match_nickname(line, expected_players)
+        nickname, confidence = self._match_nickname(line, expected_players)
         if not nickname:
             return None
 
@@ -220,12 +221,13 @@ class ImageAnalyzer:
                 kills=kills,
                 deaths=deaths,
                 assists=assists,
-                damage=damage
+                damage=damage,
+                confidence=confidence
             )
         except (ValueError, IndexError):
             return None
 
-    def _match_nickname(self, line: str, expected_players: List[str]) -> Optional[str]:
+    def _match_nickname(self, line: str, expected_players: List[str]) -> Tuple[Optional[str], float]:
         """
         Match nickname from line using fuzzy matching.
 
@@ -234,7 +236,7 @@ class ImageAnalyzer:
             expected_players: List of expected player names
 
         Returns:
-            Matched nickname if confidence > 90%, None otherwise
+            Tuple of (matched_nickname, confidence_percentage)
         """
         # Normalize line for comparison
         normalized_line = self._normalize_nickname(line)
@@ -243,7 +245,7 @@ class ImageAnalyzer:
         for player in expected_players:
             normalized_player = self._normalize_nickname(player)
             if normalized_player == normalized_line:
-                return player
+                return player, 100.0
 
         # Try fuzzy matching
         result = process.extractOne(
@@ -252,12 +254,13 @@ class ImageAnalyzer:
             scorer=fuzz.WRatio
         )
 
-        if result and result[1] >= 90:
+        if result:
+            confidence = result[1]
             # Find original player name
             idx = result[2]
-            return expected_players[idx]
+            return expected_players[idx], confidence
 
-        return None
+        return None, 0.0
 
     def _normalize_nickname(self, nickname: str) -> str:
         """

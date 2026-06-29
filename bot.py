@@ -160,9 +160,14 @@ class TournamentBot(commands.Bot):
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
 
     async def on_message(self, message: discord.Message) -> None:
-        """Handle incoming messages, including screenshot uploads."""
+        """Handle incoming messages, including screenshot uploads and confirmations."""
         # Ignore bot messages
         if message.author.bot:
+            return
+
+        # Check for manual confirmation response
+        if message.content.lower() in ['подтвердить', 'отмена']:
+            await self._handle_confirmation_response(message)
             return
 
         # Check if this is a screenshot upload
@@ -215,6 +220,17 @@ class TournamentBot(commands.Bot):
                     await message.reply("❌ Не удалось распознать скриншот. Попробуйте еще раз или выберите победителя вручную.")
                     return
 
+                # Check for low confidence matches
+                low_confidence_players = []
+                for player in result.team1_players + result.team2_players:
+                    if player.confidence < 90:
+                        low_confidence_players.append(player)
+
+                if low_confidence_players:
+                    # Ask for manual confirmation
+                    await self._request_manual_confirmation(message, tournament, upload_info, result, low_confidence_players)
+                    return
+
                 # Process match result
                 await self._process_match_result(message, tournament, upload_info, result)
 
@@ -229,6 +245,62 @@ class TournamentBot(commands.Bot):
             if hasattr(tournament, 'pending_screenshot_upload'):
                 tournament.pending_screenshot_upload = None
                 store.set(tournament)
+
+    async def _handle_confirmation_response(self, message: discord.Message) -> None:
+        """Handle manual confirmation response for low-confidence OCR matches."""
+        from storage.json_store import store
+
+        tournament = store.get(message.guild.id)
+        if not tournament or not hasattr(tournament, 'pending_confirmation'):
+            return
+
+        confirmation = tournament.pending_confirmation
+        if not confirmation or confirmation['user_id'] != message.author.id:
+            return
+
+        if message.content.lower() == 'подтвердить':
+            # Process the result
+            await self._process_match_result(message, tournament, confirmation['upload_info'], confirmation['result'])
+            await message.reply("✅ Результат подтвержден и обработан.")
+        elif message.content.lower() == 'отмена':
+            await message.reply("❌ Обработка отменена. Загрузите скриншот заново.")
+
+        # Clear pending confirmation
+        tournament.pending_confirmation = None
+        store.set(tournament)
+
+    async def _request_manual_confirmation(self, message: discord.Message, tournament, upload_info, result, low_confidence_players) -> None:
+        """Request manual confirmation for low-confidence OCR matches."""
+        embed = discord.Embed(
+            title="⚠️ Требуется подтверждение",
+            description="Некоторые игроки были распознаны с низкой точностью. Пожалуйста, подтвердите или исправьте:",
+            color=discord.Color.orange()
+        )
+
+        for player in low_confidence_players:
+            embed.add_field(
+                name=f"{player.nickname} (уверенность: {player.confidence:.1f}%)",
+                value=f"Kills: {player.kills}, Deaths: {player.deaths}, Assists: {player.assists}, Damage: {player.damage}",
+                inline=False
+            )
+
+        embed.add_field(
+            name="Счет",
+            value=result.score,
+            inline=False
+        )
+
+        embed.set_footer(text="Ответьте 'подтвердить' для принятия или 'отмена' для повторной загрузки.")
+
+        # Store result for confirmation
+        tournament.pending_confirmation = {
+            "upload_info": upload_info,
+            "result": result,
+            "user_id": message.author.id
+        }
+        store.set(tournament)
+
+        await message.reply(embed=embed)
 
     async def _process_match_result(self, message: discord.Message, tournament, upload_info, result) -> None:
         """Process the match result from screenshot analysis."""
