@@ -11,7 +11,7 @@ from models.tournament import TournamentPhase, TournamentSize
 from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
-from views.bet_views import BetButton, ViewBetsButton, CloseBettingButton
+from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -593,7 +593,7 @@ class QualifiersView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
-        self.add_item(CloseBettingButton(guild_id))
+        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
 
 
 class SemifinalsView(discord.ui.View):
@@ -610,4 +610,4 @@ class SemifinalsView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
-        self.add_item(CloseBettingButton(guild_id))
+        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))

@@ -165,19 +165,21 @@ class ViewBetsButton(Button):
         )
 
 
-class CloseBettingButton(Button):
-    """Button for admin to close betting."""
+class ToggleBettingButton(Button):
+    """Button for admin to toggle betting open/close."""
     
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, betting_open: bool):
+        label = "🔒 Закрыть ставки" if betting_open else "🔓 Открыть ставки"
+        style = discord.ButtonStyle.danger if betting_open else discord.ButtonStyle.success
         super().__init__(
-            label="🔒 Закрыть ставки",
-            style=discord.ButtonStyle.danger,
-            custom_id="close_betting"
+            label=label,
+            style=style,
+            custom_id="toggle_betting"
         )
         self.guild_id = guild_id
     
     async def callback(self, interaction: discord.Interaction):
-        """Close betting for the tournament."""
+        """Toggle betting for the tournament."""
         try:
             from storage.json_store import store
             from utils.permissions import is_admin_check
@@ -185,7 +187,7 @@ class CloseBettingButton(Button):
             # Check if user is admin
             if not is_admin_check(interaction.user, interaction.guild):
                 await interaction.response.send_message(
-                    "❌ Только администратор может закрывать ставки.",
+                    "❌ Только администратор может менять статус ставок.",
                     ephemeral=True
                 )
                 return
@@ -198,11 +200,13 @@ class CloseBettingButton(Button):
                 )
                 return
             
-            tournament.betting_open = False
+            # Toggle betting status
+            tournament.betting_open = not tournament.betting_open
+            status = "открыты" if tournament.betting_open else "закрыты"
             store.set(tournament)
             
             await interaction.response.send_message(
-                "✅ Ставки закрыты.",
+                f"✅ Ставки {status}.",
                 ephemeral=True
             )
             
@@ -212,16 +216,16 @@ class CloseBettingButton(Button):
             await bot.update_tournament_message(interaction.guild, tournament)
         except Exception as e:
             import logging
-            logging.error(f"Error closing betting: {e}", exc_info=True)
+            logging.error(f"Error toggling betting: {e}", exc_info=True)
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        f"❌ Ошибка при закрытии ставок: {str(e)}",
+                        f"❌ Ошибка при изменении статуса ставок: {str(e)}",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        f"❌ Ошибка при закрытии ставок: {str(e)}",
+                        f"❌ Ошибка при изменении статуса ставок: {str(e)}",
                         ephemeral=True
                     )
             except:
