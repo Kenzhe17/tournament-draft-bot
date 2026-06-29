@@ -270,6 +270,29 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="reset_leaderboard", description="Сбросить статистику лидерборда")
+    @is_admin()
+    async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
+        """Сбросить всю статистику лидерборда сервера."""
+        from storage.player_stats_store import player_stats_store
+        from storage.db import get_pool
+
+        if not player_stats_store._use_db:
+            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
+            return
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM player_stats WHERE guild_id = $1",
+                interaction.guild_id
+            )
+
+        await interaction.response.send_message(
+            f"✅ Статистика лидерборда сброшена. Удалено {result} записей.",
+            ephemeral=True
+        )
+
     @app_commands.command(name="coins", description="Показать таблицу лидеров по монетам")
     async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
         """Показать таблицу лидеров по монетам."""
