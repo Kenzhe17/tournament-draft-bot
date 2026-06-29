@@ -57,16 +57,6 @@ class MatchmakingCog(commands.Cog):
         session.match.main_message_id = message.id
         session.match.main_channel_id = interaction.channel_id
 
-    @app_commands.command(name="mm_leave", description="Покинуть matchmaking")
-    async def leave_matchmaking(self, interaction: discord.Interaction) -> None:
-        """Покинуть текущую сессию matchmaking."""
-        success = matchmaking_manager.remove_player(interaction.guild_id, interaction.user.id)
-
-        if success:
-            await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
-
     async def cog_app_command_error(
         self,
         interaction: discord.Interaction,

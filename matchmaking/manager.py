@@ -72,6 +72,8 @@ class MatchmakingManager:
         session = self.get_session(guild_id)
         if not session:
             session = self.create_session(guild_id, channel_id)
+            # Если сессия создана через Join, нужно найти существующее сообщение
+            # Это будет обработано в update_main_embed
 
         # Проверяем, не находится ли игрок уже в сессии
         if session.is_player_in_session(user_id):
@@ -125,11 +127,37 @@ class MatchmakingManager:
         """Проверить, находится ли игрок в matchmaking."""
         return user_id in self.player_sessions
 
+    async def find_and_set_main_message(self, guild_id: int, bot):
+        """Найти последнее сообщение с matchmaking embed."""
+        session = self.get_session(guild_id)
+        if not session:
+            return
+
+        try:
+            channel = bot.get_channel(session.match.main_channel_id)
+            if not channel:
+                return
+
+            # Ищем последнее сообщение в канале
+            async for message in channel.history(limit=10):
+                if message.embeds and message.embeds[0].title == "🎮 Matchmaking Lobby":
+                    session.match.main_message_id = message.id
+                    logger.info(f"Found matchmaking message {message.id} for guild {guild_id}")
+                    return
+        except Exception as e:
+            logger.error(f"Error finding main message: {e}")
+
     async def update_main_embed(self, guild_id: int, bot):
         """Обновить embed в главном канале."""
         session = self.get_session(guild_id)
-        if not session or not session.match.main_message_id:
+        if not session:
             return
+
+        # Если нет main_message_id, пытаемся найти последнее сообщение с matchmaking embed
+        if not session.match.main_message_id:
+            await self.find_and_set_main_message(guild_id, bot)
+            if not session.match.main_message_id:
+                return
 
         try:
             channel = bot.get_channel(session.match.main_channel_id)
