@@ -189,8 +189,8 @@ class MatchmakingManager:
 
             await message.edit(embed=embed)
 
-            # Если собрано 8 игроков и драфт еще не начался, запускаем драфт
-            if session.is_full() and session.match.phase.name == "searching":
+            # Если собрано 8 игроков и команды еще не созданы, запускаем драфт
+            if session.is_full() and not session.match.teams:
                 await self.start_matchmaking_flow(channel, session)
         except Exception as e:
             logger.error(f"Ошибка обновления embed: {e}")

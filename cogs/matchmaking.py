@@ -76,23 +76,10 @@ class MatchmakingCog(commands.Cog):
             if not success:
                 logger.warning(f"Failed to add bot {name}: {message}")
 
-        # Добавляем админа как 8 игрока
-        admin_id = interaction.user.id
-        admin_name = interaction.user.display_name
-        success, message = matchmaking_manager.add_player(
-            interaction.guild_id, admin_id, admin_name, interaction.channel_id
+        await interaction.response.send_message(
+            "🧪 Тестовый режим активирован! 7 ботов добавлены. Драфт запущен.",
+            ephemeral=True
         )
-
-        if success:
-            await interaction.response.send_message(
-                "🧪 Тестовый режим активирован! 7 ботов добавлены, вы как 8 игрок. Драфт запущен.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"❌ Ошибка: {message}",
-                ephemeral=True
-            )
 
         # Обновляем embed
         bot = interaction.client
