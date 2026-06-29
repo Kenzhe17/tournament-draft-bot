@@ -82,7 +82,7 @@ class FinalWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
                 # Give tournament win reward
                 await user_balance_store.add_balance(tournament.guild_id, user_id, 50)
 
@@ -91,7 +91,7 @@ class FinalWinnerButton(discord.ui.Button):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
 
         # Resolve betting for final match
         from storage.bet_store import bet_store
@@ -119,13 +119,13 @@ class FinalView(discord.ui.View):
     def __init__(self, guild_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
-        # Add screenshot upload button
-        from views.screenshot_upload_view import UploadResultsButton
-        final_matches = [(final_teams[0], final_teams[1])]
-        self.add_item(UploadResultsButton(guild_id, tournament, final_matches, "final"))
+        # Add single winner selection button
+        from views.matches_view import SelectWinnerButton
+        self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
 
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
+        final_matches = [(final_teams[0], final_teams[1])]
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))

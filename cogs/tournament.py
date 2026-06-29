@@ -270,6 +270,62 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="screen", description="Обработать скриншот результата матча")
+    async def process_screen(self, interaction: discord.Interaction, attachment: discord.Attachment) -> None:
+        """Обработать скриншот результата матча Free Fire."""
+        try:
+            from services.screen_processor import ScreenProcessor
+
+            # Download image
+            image_bytes = await attachment.read()
+
+            # Process screenshot
+            processor = ScreenProcessor()
+            result = processor.process_screenshot_from_bytes(image_bytes)
+
+            # Format result for display
+            import json
+            result_json = json.dumps(result, indent=2, ensure_ascii=False)
+
+            embed = discord.Embed(
+                title="📸 Результат обработки скриншота",
+                color=discord.Color.green()
+            )
+
+            embed.add_field(
+                name="Победитель",
+                value=result.get("winner", "Не определен"),
+                inline=False
+            )
+
+            for i, team in enumerate(result.get("teams", []), 1):
+                team_name = team.get("name", f"Команда {i}")
+                players_text = "\n".join([
+                    f"• {p['nickname']}: {p['kills']} kills, {p['damage']} dmg"
+                    for p in team.get("players", [])
+                ])
+                embed.add_field(
+                    name=f"🏆 {team_name}",
+                    value=players_text or "Нет данных",
+                    inline=False
+                )
+
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            # Also send raw JSON for debugging
+            if len(result_json) < 1900:
+                await interaction.followup.send(f"```json\n{result_json}\n```", ephemeral=True)
+            else:
+                await interaction.followup.send("JSON слишком длинный для отображения", ephemeral=True)
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error processing screenshot: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Ошибка при обработке скриншота: {str(e)}",
+                ephemeral=True
+            )
+
     @app_commands.command(name="reset_leaderboard", description="Сбросить статистику лидерборда")
     @is_admin()
     async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
@@ -543,77 +599,6 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="� Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
 
         await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="screen", description="Распознать скриншот результатов матча")
-    @app_commands.describe(screenshot="Скриншот результатов матча")
-    async def screen(
-        self,
-        interaction: discord.Interaction,
-        screenshot: discord.Attachment
-    ) -> None:
-        """Распознать скриншот и вернуть текст для ручного ввода."""
-        await interaction.response.defer()
-
-        if not screenshot.content_type or not screenshot.content_type.startswith('image/'):
-            await interaction.edit_original_response(
-                content="❌ Пожалуйста, загрузите изображение."
-            )
-            return
-
-        import sys
-        import os
-        import tempfile
-        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-        try:
-            # Download image to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                await screenshot.save(tmp.name)
-                tmp_path = tmp.name
-
-            from services.image_analyzer import image_analyzer
-
-            # Analyze screenshot without expected players
-            result = await image_analyzer.analyze_screenshot(tmp_path, [])
-
-            # Clean up
-            os.unlink(tmp_path)
-
-            if not result:
-                await interaction.edit_original_response(
-                    content="❌ Не удалось распознать скриншот. Убедитесь, что это скриншот результатов Free Fire."
-                )
-                return
-
-            # Format result as text for manual input
-            text = f"**Счет:** {result.score}\n"
-            text += f"**Победитель:** {result.winner_team}\n"
-            text += f"**Проигравший:** {result.loser_team}\n\n"
-            text += "**Команда 1:**\n"
-            for player in result.team1_players:
-                text += f"- {player.nickname} | K:{player.kills} D:{player.deaths} A:{player.assists} DMG:{player.damage}\n"
-            text += "\n**Команда 2:**\n"
-            for player in result.team2_players:
-                text += f"- {player.nickname} | K:{player.kills} D:{player.deaths} A:{player.assists} DMG:{player.damage}\n"
-
-            embed = discord.Embed(
-                title="📷 Результаты распознавания",
-                description=text,
-                color=discord.Color.green()
-            )
-            embed.add_field(
-                name="💡 Используйте эти данные для ручного ввода",
-                value="Скопируйте информацию выше и используйте её при выборе победителя",
-                inline=False
-            )
-
-            await interaction.edit_original_response(embed=embed)
-
-        except Exception as e:
-            logger.error(f"Error in /screen command: {e}", exc_info=True)
-            await interaction.edit_original_response(
-                content=f"❌ Ошибка при распознавании: {str(e)}"
-            )
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:

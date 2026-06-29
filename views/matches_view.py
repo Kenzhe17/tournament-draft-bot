@@ -12,7 +12,6 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
 from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
-from views.screenshot_upload_view import UploadResultsButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -71,7 +70,7 @@ class GenerateMatchesButton(discord.ui.Button):
             logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
             store.set(tournament)
 
-            # Give participation reward to all players (tournament started)
+            # Update games for all players (tournament started)
             from storage.player_stats_store import player_stats_store
             from storage.user_balance_store import user_balance_store
             for team in tournament.teams:
@@ -80,7 +79,8 @@ class GenerateMatchesButton(discord.ui.Button):
                     if player:
                         # Get user_id from tournament's player_user_ids
                         user_id = tournament.player_user_ids.get(player, 0)
-                        # Give participation reward only, don't count game yet
+                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
+                        # Give participation reward
                         await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -163,7 +163,7 @@ class SemifinalWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
                 # Give semifinal win reward
                 await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 
@@ -172,7 +172,7 @@ class SemifinalWinnerButton(discord.ui.Button):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
 
         # Resolve betting for this match
         from storage.bet_store import bet_store
@@ -550,14 +550,14 @@ class QualifierWinnerButton(discord.ui.Button):
             player = winning_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
 
         # Losing team gets -25 ELO
         for circle in range(1, 5):
             player = losing_team.get(f"circle{circle}")
             if player:
                 user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=True)
+                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
 
         # Resolve betting for this match
         from storage.bet_store import bet_store
@@ -587,8 +587,8 @@ class QualifiersView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add screenshot upload button
-        self.add_item(UploadResultsButton(guild_id, tournament, matches, "qualifier"))
+        # Add single winner selection button
+        self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
@@ -604,8 +604,8 @@ class SemifinalsView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add screenshot upload button
-        self.add_item(UploadResultsButton(guild_id, tournament, matches, "semifinal"))
+        # Add single winner selection button
+        self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))

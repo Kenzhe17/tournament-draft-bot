@@ -66,9 +66,9 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Check if user is playing in the match
             user_team_index = self._get_user_team_index(interaction.user.id)
             if user_team_index is not None:
-                if user_team_index != self.team_index:
+                if user_team_index == self.team_index:
                     await interaction.response.send_message(
-                        "❌ Вы не можете ставить против своей команды.",
+                        "❌ Вы не можете ставить на свою команду.",
                         ephemeral=True
                     )
                     return
