@@ -54,11 +54,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"])
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0))
                 return None
         else:
             key = f"{guild_id}:{user_id}"
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0)) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -86,27 +86,34 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14
                     """,
-                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak
+                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.best_match_kills, stats.total_elo_change
                 )
         else:
             key = f"{stats.guild_id}:{stats.user_id}"
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "loss", count_game: bool = False, set_elo: int | None = None) -> None:
-        """Обновить статистику игрока после турнира.
-        result types:
-        - 8 players: 'final_loss' (-25), 'final_win' (+25)
-        - 16 players: 'semifinal_loss' (-25), 'semifinal_win_final_loss' (+25), 'semifinal_win_final_win' (+50)
-        - 32 players: 'qualifier_loss' (-25), 'qualifier_win_semifinal_loss' (+25), 'qualifier_win_semifinal_win_final_loss' (+50), 'qualifier_win_semifinal_win_final_win' (+100)
-        - 'none' (no ELO change)
-        count_game: если True, увеличивает games
-        set_elo: если указано, устанавливает ELO на это значение (игнорирует result)
+    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "none", count_game: bool = False, set_elo: int | None = None) -> None:
+        """Обновить статистику игрока.
+        
+        Note: The old ELO calculation logic has been removed. ELO is now calculated
+        through the new rating system in utils/rating_calculator.py based on:
+        - Circle (1-4)
+        - Position within team (1-4)
+        - Team result (win/loss)
+        - Individual K/D performance
+        
+        This method now only handles basic operations:
+        - set_elo: Directly set ELO to a specific value
+        - count_game: Increment games counter
+        - result: Only used for legacy compatibility, no ELO changes
+        
+        For new rating system, use process_match_result() in views/kd_input_view.py
         """
         key = f"{guild_id}:{user_id}"
 
@@ -116,7 +123,7 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 # Get current stats
                 row = await conn.fetchrow(
-                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
 
@@ -128,6 +135,10 @@ class PlayerStatsStore:
                     current_streak = row["current_streak"]
                     best_win_streak = row["best_win_streak"]
                     best_loss_streak = row["best_loss_streak"]
+                    total_kills = row.get("total_kills", 0)
+                    total_deaths = row.get("total_deaths", 0)
+                    best_match_kills = row.get("best_match_kills", 0)
+                    total_elo_change = row.get("total_elo_change", 0)
                 else:
                     current_elo = 1000
                     wins = 0
@@ -136,234 +147,34 @@ class PlayerStatsStore:
                     current_streak = 0
                     best_win_streak = 0
                     best_loss_streak = 0
+                    total_kills = 0
+                    total_deaths = 0
+                    best_match_kills = 0
+                    total_elo_change = 0
 
-                # Calculate ELO change based on new cumulative system
-                if result == "final_loss":
-                    elo_change = -25
-                    # Update loss streak
-                    if current_streak < 0:
-                        current_streak -= 1
-                    else:
-                        current_streak = -1
-                    if abs(current_streak) > best_loss_streak:
-                        best_loss_streak = abs(current_streak)
-                elif result == "final_win":
-                    elo_change = 25
-                    wins += 1
-                    finals += 1
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "semifinal_loss":
-                    elo_change = -25
-                    # Update loss streak
-                    if current_streak < 0:
-                        current_streak -= 1
-                    else:
-                        current_streak = -1
-                    if abs(current_streak) > best_loss_streak:
-                        best_loss_streak = abs(current_streak)
-                elif result == "semifinal_win_final_loss":
-                    elo_change = 25
-                    finals += 1
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "semifinal_win_final_win":
-                    elo_change = 50
-                    wins += 1
-                    finals += 1
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "qualifier_loss":
-                    elo_change = -25
-                    # Update loss streak
-                    if current_streak < 0:
-                        current_streak -= 1
-                    else:
-                        current_streak = -1
-                    if abs(current_streak) > best_loss_streak:
-                        best_loss_streak = abs(current_streak)
-                elif result == "qualifier_win_semifinal_loss":
-                    elo_change = 25
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "qualifier_win_semifinal_win_final_loss":
-                    elo_change = 50
-                    finals += 1
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "qualifier_win_semifinal_win_final_win":
-                    elo_change = 100
-                    wins += 1
-                    finals += 1
-                    # Update win streak
-                    if current_streak > 0:
-                        current_streak += 1
-                    else:
-                        current_streak = 1
-                    if current_streak > best_win_streak:
-                        best_win_streak = current_streak
-                elif result == "none":
-                    elo_change = 0
-                    # No streak change
-                else:  # legacy 'loss' for backward compatibility
-                    elo_change = -25
-                    # Update loss streak
-                    if current_streak < 0:
-                        current_streak -= 1
-                    else:
-                        current_streak = -1
-                    if abs(current_streak) > best_loss_streak:
-                        best_loss_streak = abs(current_streak)
+                # Only handle set_elo and count_game - no ELO calculation based on result
+                if set_elo is not None:
+                    current_elo = set_elo
 
                 if count_game:
                     games += 1
 
-                if set_elo is not None:
-                    new_elo = set_elo
-                else:
-                    new_elo = current_elo + elo_change
-
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14
                     """,
-                    guild_id, user_id, name, new_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    guild_id, user_id, name, current_elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change
                 )
         else:
             if key not in self._stats:
                 self._stats[key] = PlayerStats(guild_id=guild_id, user_id=user_id, name=name)
 
+            # Only handle set_elo and count_game - no ELO calculation based on result
             if set_elo is not None:
                 self._stats[key].elo = set_elo
-            elif result == "final_loss":
-                self._stats[key].elo -= 25
-                # Update loss streak
-                if self._stats[key].current_streak < 0:
-                    self._stats[key].current_streak -= 1
-                else:
-                    self._stats[key].current_streak = -1
-                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
-                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
-            elif result == "final_win":
-                self._stats[key].elo += 25
-                self._stats[key].wins += 1
-                self._stats[key].finals += 1
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "semifinal_loss":
-                self._stats[key].elo -= 25
-                # Update loss streak
-                if self._stats[key].current_streak < 0:
-                    self._stats[key].current_streak -= 1
-                else:
-                    self._stats[key].current_streak = -1
-                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
-                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
-            elif result == "semifinal_win_final_loss":
-                self._stats[key].elo += 25
-                self._stats[key].finals += 1
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "semifinal_win_final_win":
-                self._stats[key].elo += 50
-                self._stats[key].wins += 1
-                self._stats[key].finals += 1
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "qualifier_loss":
-                self._stats[key].elo -= 25
-                # Update loss streak
-                if self._stats[key].current_streak < 0:
-                    self._stats[key].current_streak -= 1
-                else:
-                    self._stats[key].current_streak = -1
-                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
-                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
-            elif result == "qualifier_win_semifinal_loss":
-                self._stats[key].elo += 25
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "qualifier_win_semifinal_win_final_loss":
-                self._stats[key].elo += 50
-                self._stats[key].finals += 1
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "qualifier_win_semifinal_win_final_win":
-                self._stats[key].elo += 100
-                self._stats[key].wins += 1
-                self._stats[key].finals += 1
-                # Update win streak
-                if self._stats[key].current_streak > 0:
-                    self._stats[key].current_streak += 1
-                else:
-                    self._stats[key].current_streak = 1
-                if self._stats[key].current_streak > self._stats[key].best_win_streak:
-                    self._stats[key].best_win_streak = self._stats[key].current_streak
-            elif result == "none":
-                # No streak change
-                pass
-            else:  # legacy 'loss' for backward compatibility
-                self._stats[key].elo -= 25
-                # Update loss streak
-                if self._stats[key].current_streak < 0:
-                    self._stats[key].current_streak -= 1
-                else:
-                    self._stats[key].current_streak = -1
-                if abs(self._stats[key].current_streak) > self._stats[key].best_loss_streak:
-                    self._stats[key].best_loss_streak = abs(self._stats[key].current_streak)
 
             if count_game:
                 self._stats[key].games += 1
@@ -379,7 +190,7 @@ class PlayerStatsStore:
                 offset = (page - 1) * per_page
                 rows = await conn.fetch(
                     """
-                    SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak
+                    SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change
                     FROM player_stats
                     WHERE guild_id = $1 AND games > 0 AND user_id > 0
                     ORDER BY elo DESC
@@ -387,7 +198,7 @@ class PlayerStatsStore:
                     """,
                     guild_id, per_page, offset
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"]) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0)) for row in rows]
         else:
             # Filter players with at least 1 game and from the same guild
             players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
