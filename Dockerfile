@@ -34,6 +34,8 @@ COPY utils/ utils/
 
 COPY views/ views/
 
+COPY services/ services/
+
 
 
 CMD ["python", "bot.py"]

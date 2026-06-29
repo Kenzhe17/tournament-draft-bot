@@ -234,6 +234,9 @@ class TournamentBot(commands.Bot):
                         expected_players.append(player_b)
 
                 # Analyze screenshot
+                import sys
+                import os
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from services.image_analyzer import image_analyzer
                 result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
 
