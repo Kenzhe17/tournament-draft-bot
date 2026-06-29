@@ -140,7 +140,7 @@ class MatchmakingManager:
 
             # Ищем последнее сообщение в канале
             async for message in channel.history(limit=10):
-                if message.embeds and message.embeds[0].title == "🎮 Matchmaking Lobby":
+                if message.embeds and ("🎮 Matchmaking" in message.embeds[0].title):
                     session.match.main_message_id = message.id
                     logger.info(f"Found matchmaking message {message.id} for guild {guild_id}")
                     return
