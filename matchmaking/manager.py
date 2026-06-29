@@ -131,25 +131,18 @@ class MatchmakingManager:
         """Найти последнее сообщение с matchmaking embed."""
         session = self.get_session(guild_id)
         if not session:
-            logger.warning(f"No session found for guild {guild_id}")
             return
 
         try:
             channel = bot.get_channel(session.match.main_channel_id)
             if not channel:
-                logger.warning(f"Channel {session.match.main_channel_id} not found for guild {guild_id}")
                 return
 
-            logger.info(f"Searching for matchmaking message in channel {session.match.main_channel_id}")
             # Ищем последнее сообщение в канале
             async for message in channel.history(limit=10):
-                if message.embeds:
-                    logger.info(f"Found embed with title: {message.embeds[0].title}")
-                    if "🎮 Matchmaking" in message.embeds[0].title:
-                        session.match.main_message_id = message.id
-                        logger.info(f"Found matchmaking message {message.id} for guild {guild_id}")
-                        return
-            logger.warning(f"No matchmaking message found in last 10 messages for guild {guild_id}")
+                if message.embeds and ("🎮 Matchmaking" in message.embeds[0].title):
+                    session.match.main_message_id = message.id
+                    return
         except Exception as e:
             logger.error(f"Error finding main message: {e}")
 
@@ -157,27 +150,19 @@ class MatchmakingManager:
         """Обновить embed в главном канале."""
         session = self.get_session(guild_id)
         if not session:
-            logger.warning(f"No session found for guild {guild_id} in update_main_embed")
             return
 
-        logger.info(f"Updating embed for guild {guild_id}, player count: {session.get_player_count()}")
-        logger.info(f"main_message_id: {session.match.main_message_id}, main_channel_id: {session.match.main_channel_id}")
-
         # Всегда ищем сообщение, чтобы убедиться что оно актуальное
-        logger.info("Searching for current matchmaking message...")
         await self.find_and_set_main_message(guild_id, bot)
         if not session.match.main_message_id:
-            logger.warning("No matchmaking message found, cannot update embed")
             return
 
         try:
             channel = bot.get_channel(session.match.main_channel_id)
             if not channel:
-                logger.warning(f"Channel {session.match.main_channel_id} not found")
                 return
 
             message = await channel.fetch_message(session.match.main_message_id)
-            logger.info(f"Found message {message.id}, updating embed")
 
             player_count = session.get_player_count()
             player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
@@ -205,12 +190,10 @@ class MatchmakingManager:
             embed.add_field(name="Players:", value=players_text, inline=False)
 
             await message.edit(embed=embed)
-            logger.info(f"Successfully updated embed for guild {guild_id}")
         except Exception as e:
-            logger.error(f"Ошибка обновления embed: {e}", exc_info=True)
+            logger.error(f"Ошибка обновления embed: {e}")
             # Если сообщение не найдено, сбрасываем message_id и пробуем снова
             session.match.main_message_id = None
-            logger.info("Reset main_message_id due to error, will search again next time")
 
     async def start_matchmaking_flow(self, channel, session):
         """Начать драфт в главном канале."""
