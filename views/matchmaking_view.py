@@ -23,7 +23,7 @@ class MatchmakingView(View):
         self.guild_id = guild_id
 
         self.join_button = Button(
-            label="Join Matchmaking",
+            label="Join",
             style=discord.ButtonStyle.success,
             custom_id="mm_join"
         )
@@ -31,7 +31,7 @@ class MatchmakingView(View):
         self.add_item(self.join_button)
 
         self.leave_button = Button(
-            label="Leave Matchmaking",
+            label="Leave",
             style=discord.ButtonStyle.danger,
             custom_id="mm_leave"
         )
@@ -64,8 +64,6 @@ class MatchmakingView(View):
 
         if success:
             await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
-            # Обновить embed
-            await self.update_embed(interaction)
         else:
             await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
 
