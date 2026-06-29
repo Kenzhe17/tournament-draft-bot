@@ -149,15 +149,17 @@ class ImageAnalyzer:
         reader = self._get_reader()
         results = reader.readtext(region)
 
-        # Log detailed OCR results
+        # Log only summary info
         logger.info(f"OCR detected {len(results)} text blocks")
-        for i, (bbox, text, confidence) in enumerate(results):
-            logger.info(f"  Block {i}: text='{text}', confidence={confidence:.2f}, bbox={bbox}")
 
         # Combine all detected text
         text_lines = [result[1] for result in results]
         combined_text = '\n'.join(text_lines)
-        logger.info(f"Combined OCR text: '{combined_text}'")
+
+        # Only log combined text in DEBUG mode
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Combined OCR text: '{combined_text}'")
+
         return combined_text
 
     def _parse_score(self, text: str) -> Optional[str]:
@@ -167,8 +169,6 @@ class ImageAnalyzer:
         Expected formats: "4 - 2", "4-2", "4 : 2", "4/2", "4 2", etc.
         Also handles OCR errors like O instead of 0, l instead 1.
         """
-        logger.info(f"Attempting to parse score from text: '{text}'")
-
         # Normalize text - remove extra spaces, common OCR errors
         normalized = text.strip()
         # Replace common OCR mistakes
@@ -177,8 +177,6 @@ class ImageAnalyzer:
         normalized = normalized.replace(':', '-').replace('/', '-')
         # Remove extra spaces around dash
         normalized = re.sub(r'\s*-\s*', '-', normalized)
-
-        logger.info(f"Normalized text for score parsing: '{normalized}'")
 
         # Try multiple patterns
         patterns = [
@@ -194,17 +192,17 @@ class ImageAnalyzer:
                 score1 = match.group(1)
                 score2 = match.group(2)
                 result = f"{score1} - {score2}"
-                logger.info(f"Successfully parsed score: '{result}' using pattern '{pattern}'")
+                logger.info(f"Score parsed successfully: {result}")
                 return result
 
         # If no pattern matched, try to find any two numbers
         numbers = re.findall(r'\d+', normalized)
         if len(numbers) >= 2:
             result = f"{numbers[0]} - {numbers[1]}"
-            logger.info(f"Found two numbers, using as score: '{result}'")
+            logger.info(f"Score parsed from numbers: {result}")
             return result
 
-        logger.warning(f"Failed to parse score from text: '{text}'")
+        logger.warning("Failed to parse score from OCR text")
         return None
 
     def _parse_player_stats(self, text: str, expected_players: List[str]) -> List[PlayerStats]:

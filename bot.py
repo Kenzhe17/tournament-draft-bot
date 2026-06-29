@@ -53,6 +53,7 @@ class TournamentBot(commands.Bot):
             max_ratelimit_retries=5
         )
         self._registered_view_keys: set[str] = set()
+        self._processed_attachments: set[str] = set()  # Track processed attachment IDs
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
@@ -183,6 +184,15 @@ class TournamentBot(commands.Bot):
         if message.attachments and len(message.attachments) > 0:
             attachment = message.attachments[0]
             if attachment.content_type and attachment.content_type.startswith('image/'):
+                # Check if this attachment was already processed
+                if attachment.id in self._processed_attachments:
+                    return
+                self._processed_attachments.add(attachment.id)
+
+                # Clean up old entries (keep last 100)
+                if len(self._processed_attachments) > 100:
+                    self._processed_attachments = set(list(self._processed_attachments)[-50:])
+
                 await self._handle_screenshot_upload(message, attachment)
 
     async def _handle_screenshot_upload(self, message: discord.Message, attachment: discord.Attachment) -> None:
