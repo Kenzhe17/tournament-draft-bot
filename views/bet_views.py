@@ -180,10 +180,10 @@ class CloseBettingButton(Button):
         """Close betting for the tournament."""
         try:
             from storage.json_store import store
-            from utils.permissions import is_admin
+            from utils.permissions import is_admin_check
             
             # Check if user is admin
-            if not is_admin(interaction):
+            if not is_admin_check(interaction.user, interaction.guild):
                 await interaction.response.send_message(
                     "❌ Только администратор может закрывать ставки.",
                     ephemeral=True
