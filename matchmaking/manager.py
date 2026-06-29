@@ -198,7 +198,11 @@ class MatchmakingManager:
 
             embed.add_field(name="Players:", value=players_text, inline=False)
 
-            await message.edit(embed=embed)
+            # Создаем новый view
+            from views.matchmaking_view import MatchmakingView
+            view = MatchmakingView(guild_id)
+
+            await message.edit(embed=embed, view=view)
 
             # Проверяем таймаут - кикаем игроков которые не нажали ready за 30 секунд
             timeout_players = session.get_timeout_players(30)
