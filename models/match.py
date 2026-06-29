@@ -97,6 +97,10 @@ class Match:
     # Победитель
     winner_team_id: int | None = None
 
+    # Подтверждение победы
+    pending_winner_team_id: int | None = None
+    pending_winner_captain_id: int | None = None
+
     # Ставки
     betting_open: bool = True
 
@@ -120,6 +124,8 @@ class Match:
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "winner_team_id": self.winner_team_id,
             "betting_open": self.betting_open,
+            "pending_winner_team_id": self.pending_winner_team_id,
+            "pending_winner_captain_id": self.pending_winner_captain_id,
         }
 
     @classmethod
@@ -143,6 +149,8 @@ class Match:
             completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
             winner_team_id=data.get("winner_team_id"),
             betting_open=data.get("betting_open", True),
+            pending_winner_team_id=data.get("pending_winner_team_id"),
+            pending_winner_captain_id=data.get("pending_winner_captain_id"),
         )
 
     @property
