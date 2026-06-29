@@ -168,7 +168,8 @@ class MatchmakingManager:
             message = await channel.fetch_message(session.match.main_message_id)
 
             player_count = session.get_player_count()
-            player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
+            logger.info(f"Updating embed for guild {guild_id}, player count: {player_count}")
+            logger.info(f"Players in session: {session.match.players}")
 
             embed = discord.Embed(
                 title="🎮 Matchmaking Lobby",

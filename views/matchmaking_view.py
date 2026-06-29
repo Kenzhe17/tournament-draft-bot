@@ -68,10 +68,15 @@ class MatchmakingView(View):
         """Обработка нажатия кнопки Leave."""
         user_id = interaction.user.id
 
-        success = matchmaking_manager.remove_player(self.guild_id, user_id)
-
-        if success:
-            await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
+        # Сначала проверяем, находится ли игрок в сессии
+        session = matchmaking_manager.get_session(self.guild_id)
+        if session and session.is_player_in_session(user_id):
+            success = matchmaking_manager.remove_player(self.guild_id, user_id)
+            if success:
+                await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Ошибка при выходе", ephemeral=True)
+                return
         else:
             await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
             return
