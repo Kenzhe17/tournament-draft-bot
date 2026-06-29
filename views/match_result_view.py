@@ -1,6 +1,6 @@
 """View for match result selection."""
 
-from __future__ annotations
+from __future__ import annotations
 
 import discord
 from discord.ui import View, Button

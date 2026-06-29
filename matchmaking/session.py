@@ -1,6 +1,6 @@
 """Matchmaking session management."""
 
-from __future__ annotations
+from __future__ import annotations
 
 import uuid
 from datetime import datetime
