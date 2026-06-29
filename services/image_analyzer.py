@@ -6,6 +6,9 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import re
 import logging
+import gc
+import asyncio
+import psutil
 from rapidfuzz import fuzz, process
 
 logger = logging.getLogger(__name__)
@@ -37,15 +40,26 @@ class ImageAnalyzer:
 
     def __init__(self):
         self.reader = None  # EasyOCR reader, initialized lazily
+        self._lock = asyncio.Lock()  # Prevent concurrent OCR processing
 
     def _get_reader(self):
-        """Lazy load EasyOCR reader."""
+        """Lazy load EasyOCR reader (singleton)."""
         if self.reader is None:
             import easyocr
+            logger.info("Initializing EasyOCR reader (this happens only once)")
             self.reader = easyocr.Reader(['en'], gpu=False)
         return self.reader
 
-    def analyze_screenshot(self, image_path: str, expected_players: List[str]) -> Optional[MatchResult]:
+    def _log_memory_usage(self, label: str):
+        """Log current memory usage."""
+        try:
+            process = psutil.Process()
+            mem_info = process.memory_info()
+            logger.info(f"{label} - Memory: {mem_info.rss / 1024 / 1024:.2f} MB")
+        except Exception as e:
+            logger.warning(f"Failed to log memory usage: {e}")
+
+    async def analyze_screenshot(self, image_path: str, expected_players: List[str]) -> Optional[MatchResult]:
         """
         Analyze a Free Fire match screenshot.
 
@@ -56,48 +70,71 @@ class ImageAnalyzer:
         Returns:
             MatchResult if successful, None if analysis fails
         """
-        try:
-            # Load image
-            image = cv2.imread(image_path)
-            if image is None:
-                raise ValueError(f"Failed to load image: {image_path}")
+        async with self._lock:  # Prevent concurrent OCR processing
+            self._log_memory_usage("Before OCR")
 
-            # Detect regions
-            score_region = self._detect_score_region(image)
-            team1_region = self._detect_team_region(image, team=1)
-            team2_region = self._detect_team_region(image, team=2)
+            try:
+                # Load image
+                image = cv2.imread(image_path)
+                if image is None:
+                    raise ValueError(f"Failed to load image: {image_path}")
 
-            if score_region is None or team1_region is None or team2_region is None:
-                raise ValueError("Failed to detect required regions")
+                # Resize image to reduce memory usage
+                max_dimension = 1920
+                height, width = image.shape[:2]
+                if max(height, width) > max_dimension:
+                    scale = max_dimension / max(height, width)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                    logger.info(f"Resized image from {width}x{height} to {new_width}x{new_height}")
 
-            # Extract text from regions
-            score_text = self._extract_text(score_region)
-            team1_text = self._extract_text(team1_region)
-            team2_text = self._extract_text(team2_region)
+                # Detect regions
+                score_region = self._detect_score_region(image)
+                team1_region = self._detect_team_region(image, team=1)
+                team2_region = self._detect_team_region(image, team=2)
 
-            # Parse score
-            score = self._parse_score(score_text)
-            if not score:
-                raise ValueError("Failed to parse score")
+                if score_region is None or team1_region is None or team2_region is None:
+                    raise ValueError("Failed to detect required regions")
 
-            # Parse player stats
-            team1_players = self._parse_player_stats(team1_text, expected_players)
-            team2_players = self._parse_player_stats(team2_text, expected_players)
+                # Extract text from regions
+                score_text = self._extract_text(score_region)
+                team1_text = self._extract_text(team1_region)
+                team2_text = self._extract_text(team2_region)
 
-            # Determine winner based on score
-            winner_team, loser_team = self._determine_winner(score)
+                # Parse score
+                score = self._parse_score(score_text)
+                if not score:
+                    raise ValueError("Failed to parse score")
 
-            return MatchResult(
-                winner_team=winner_team,
-                loser_team=loser_team,
-                score=score,
-                team1_players=team1_players,
-                team2_players=team2_players
-            )
+                # Parse player stats
+                team1_players = self._parse_player_stats(team1_text, expected_players)
+                team2_players = self._parse_player_stats(team2_text, expected_players)
 
-        except Exception as e:
-            print(f"Error analyzing screenshot: {e}")
-            return None
+                # Determine winner based on score
+                winner_team, loser_team = self._determine_winner(score)
+
+                # Clean up
+                del image
+                del score_region
+                del team1_region
+                del team2_region
+
+                self._log_memory_usage("After OCR")
+                gc.collect()  # Force garbage collection
+
+                return MatchResult(
+                    winner_team=winner_team,
+                    loser_team=loser_team,
+                    score=score,
+                    team1_players=team1_players,
+                    team2_players=team2_players
+                )
+
+            except Exception as e:
+                logger.error(f"Error analyzing screenshot: {e}")
+                gc.collect()
+                return None
 
     def _detect_score_region(self, image: np.ndarray) -> Optional[np.ndarray]:
         """

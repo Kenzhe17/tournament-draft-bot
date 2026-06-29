@@ -574,7 +574,7 @@ class TournamentCog(commands.Cog):
             from services.image_analyzer import image_analyzer
 
             # Analyze screenshot without expected players
-            result = image_analyzer.analyze_screenshot(tmp_path, [])
+            result = await image_analyzer.analyze_screenshot(tmp_path, [])
 
             # Clean up
             os.unlink(tmp_path)

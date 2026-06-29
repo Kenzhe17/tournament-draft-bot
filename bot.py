@@ -248,9 +248,9 @@ class TournamentBot(commands.Bot):
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from services.image_analyzer import image_analyzer
 
-                logger.info(f"Starting OCR analysis with {len(expected_players)} expected players: {expected_players}")
+                logger.info(f"Starting OCR analysis with {len(expected_players)} expected players")
                 try:
-                    result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
+                    result = await image_analyzer.analyze_screenshot(tmp_path, expected_players)
                     logger.info(f"OCR analysis completed. Result: {result is not None}")
                     if not result:
                         logger.warning("OCR returned None - image may not match expected format")
