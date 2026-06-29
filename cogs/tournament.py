@@ -462,44 +462,50 @@ class TournamentCog(commands.Cog):
 
         # Find records
         most_wins = max(all_players, key=lambda p: p.wins)
-        most_finals = max(all_players, key=lambda p: p.finals)
+        most_kills = max(all_players, key=lambda p: p.total_kills)
+        most_deaths = max(all_players, key=lambda p: p.total_deaths)
         highest_elo = max(all_players, key=lambda p: p.elo)
-        most_games = max(all_players, key=lambda p: p.games)
+        best_kd = max(all_players, key=lambda p: p.kd_ratio)
         best_win_streak = max(all_players, key=lambda p: p.best_win_streak)
         best_loss_streak = max(all_players, key=lambda p: p.best_loss_streak)
 
         embed = discord.Embed(
-            title="🏆 Рекорды Турнира",
+            title=":trophy: Рекорды Турнира",
             color=discord.Color.gold(),
         )
 
         embed.add_field(
-            name="🥇 Наибольшее количество побед",
+            name=":first_place: Наибольшее количество побед",
             value=f"{most_wins.name} — {most_wins.wins} побед",
             inline=False
         )
         embed.add_field(
-            name="🥈 Наибольшее количество финалов",
-            value=f"{most_finals.name} — {most_finals.finals} финалов",
+            name=":man_detective: Наибольшее количество киллов",
+            value=f"{most_kills.name} — {most_kills.total_kills} киллов",
             inline=False
         )
         embed.add_field(
-            name="📈 Самый высокий ELO",
+            name=":skull: Наибольшее количество смертей",
+            value=f"{most_deaths.name} — {most_deaths.total_deaths} смертей",
+            inline=False
+        )
+        embed.add_field(
+            name=":chart_with_upwards_trend: Самый высокий ELO",
             value=f"{highest_elo.name} — {highest_elo.elo} ELO",
             inline=False
         )
         embed.add_field(
-            name="🎮 Наибольшее количество игр",
-            value=f"{most_games.name} — {most_games.games} игр",
+            name=":dart: Наибольшее количество K/D",
+            value=f"{best_kd.name} — {best_kd.kd_ratio:.2f} K/D",
             inline=False
         )
         embed.add_field(
-            name="🔥 Лучшая серия побед",
+            name=":fire: Лучшая серия побед",
             value=f"{best_win_streak.name} — {best_win_streak.best_win_streak} подряд",
             inline=False
         )
         embed.add_field(
-            name="❄️ Худшая серия поражений",
+            name=":snowflake: Худшая серия поражений",
             value=f"{best_loss_streak.name} — {best_loss_streak.best_loss_streak} подряд",
             inline=False
         )
