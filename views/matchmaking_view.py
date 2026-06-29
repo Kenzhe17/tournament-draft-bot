@@ -74,6 +74,7 @@ class MatchmakingView(View):
             await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
+            return
 
         # Обновляем embed через менеджер для всех
         bot = interaction.client

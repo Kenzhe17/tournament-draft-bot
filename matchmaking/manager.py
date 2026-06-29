@@ -98,6 +98,7 @@ class MatchmakingManager:
         """Удалить игрока из matchmaking."""
         session = self.get_session(guild_id)
         if not session:
+            logger.warning(f"No session found for guild {guild_id} when removing player {user_id}")
             return False
 
         if session.remove_player(user_id):
@@ -108,9 +109,11 @@ class MatchmakingManager:
             if session.get_player_count() == 0:
                 self.delete_session(guild_id)
 
+            logger.info(f"Removed player {user_id} from guild {guild_id}")
             return True
-
-        return False
+        else:
+            logger.warning(f"Player {user_id} not found in session for guild {guild_id}")
+            return False
 
     def get_player_session(self, user_id: int) -> MatchmakingSession | None:
         """Получить сессию игрока по user_id."""
