@@ -88,8 +88,10 @@ class TournamentCog(commands.Cog):
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
-        await interaction.response.send_message(embed=embed, view=view)
-        message = await interaction.original_response()
+
+        # Use followup to avoid interaction expiration issues
+        await interaction.response.defer()
+        message = await interaction.followup.send(embed=embed, view=view)
 
         tournament.message_id = message.id
         store.set(tournament)
