@@ -30,6 +30,14 @@ class MatchmakingView(View):
         self.join_button.callback = self.join_callback
         self.add_item(self.join_button)
 
+        self.leave_button = Button(
+            label="Leave Matchmaking",
+            style=discord.ButtonStyle.danger,
+            custom_id="mm_leave"
+        )
+        self.leave_button.callback = self.leave_callback
+        self.add_item(self.leave_button)
+
     async def join_callback(self, interaction: discord.Interaction):
         """Обработка нажатия кнопки Join."""
         user_id = interaction.user.id
@@ -43,6 +51,27 @@ class MatchmakingView(View):
             await self.update_embed(interaction)
         else:
             await interaction.response.send_message(f"❌ {message}", ephemeral=True)
+
+        # Обновляем embed через менеджер для всех
+        bot = interaction.client
+        await matchmaking_manager.update_main_embed(self.guild_id, bot)
+
+    async def leave_callback(self, interaction: discord.Interaction):
+        """Обработка нажатия кнопки Leave."""
+        user_id = interaction.user.id
+
+        success = matchmaking_manager.remove_player(self.guild_id, user_id)
+
+        if success:
+            await interaction.response.send_message("✅ Вы покинули Matchmaking", ephemeral=True)
+            # Обновить embed
+            await self.update_embed(interaction)
+        else:
+            await interaction.response.send_message("❌ Вы не находитесь в Matchmaking", ephemeral=True)
+
+        # Обновляем embed через менеджер для всех
+        bot = interaction.client
+        await matchmaking_manager.update_main_embed(self.guild_id, bot)
 
     async def update_embed(self, interaction: discord.Interaction):
         """Обновить embed с количеством игроков."""
@@ -74,6 +103,10 @@ class MatchmakingView(View):
                 players_text += f"{i + 1}.\n"
 
         embed.add_field(name="Players:", value=players_text, inline=False)
+
+        # Сохраняем ссылку на сообщение
+        if not session.match.main_message_id:
+            session.match.main_message_id = interaction.message.id
 
         try:
             if interaction.response.is_done():

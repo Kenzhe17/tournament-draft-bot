@@ -81,14 +81,18 @@ class MatchResultView(View):
         except discord.NotFound:
             pass
 
-        # Удаляем сессию
-        matchmaking_manager.delete_session(self.guild_id)
+        # Сбрасываем сессию для нового матча
+        matchmaking_manager.reset_session(self.guild_id)
 
         # Отправляем финальное сообщение
         await interaction.followup.send(
-            "✅ Статистика обновлена. Матч завершен.",
+            "✅ Статистика обновлена. Матч завершен. Начинается новый матч!",
             ephemeral=True
         )
+
+        # Обновляем embed в главном канале
+        bot = interaction.client
+        await matchmaking_manager.update_main_embed(self.guild_id, bot)
 
     async def update_elo(self, winner_team, loser_team):
         """Обновить ELO для всех игроков."""

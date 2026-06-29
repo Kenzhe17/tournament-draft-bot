@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import discord
+
 from matchmaking.session import MatchmakingSession
 
 if TYPE_CHECKING:
@@ -41,6 +43,27 @@ class MatchmakingManager:
                     del self.player_sessions[player_id]
             del self.sessions[guild_id]
             logger.info(f"Deleted matchmaking session for guild {guild_id}")
+
+    def reset_session(self, guild_id: int) -> None:
+        """Сбросить сессию для нового матча (сохраняя main_message_id)."""
+        if guild_id not in self.sessions:
+            return
+
+        session = self.sessions[guild_id]
+        main_message_id = session.match.main_message_id
+        main_channel_id = session.match.main_channel_id
+
+        # Удаляем ссылки на игроков
+        for player_id in session.match.players:
+            if player_id in self.player_sessions:
+                del self.player_sessions[player_id]
+
+        # Создаем новую сессию с теми же параметрами
+        new_session = MatchmakingSession(guild_id, main_channel_id)
+        new_session.match.main_message_id = main_message_id
+        self.sessions[guild_id] = new_session
+
+        logger.info(f"Reset matchmaking session for guild {guild_id}")
 
     def add_player(self, guild_id: int, user_id: int, user_name: str) -> tuple[bool, str]:
         """Добавить игрока в matchmaking. Возвращает (success, message)."""
@@ -100,6 +123,46 @@ class MatchmakingManager:
     def is_player_in_matchmaking(self, user_id: int) -> bool:
         """Проверить, находится ли игрок в matchmaking."""
         return user_id in self.player_sessions
+
+    async def update_main_embed(self, guild_id: int, bot):
+        """Обновить embed в главном канале."""
+        session = self.get_session(guild_id)
+        if not session or not session.match.main_message_id:
+            return
+
+        try:
+            channel = bot.get_channel(session.match.main_channel_id)
+            if not channel:
+                return
+
+            message = await channel.fetch_message(session.match.main_message_id)
+
+            player_count = session.get_player_count()
+            player_names = [session.match.player_names.get(pid, "Unknown") for pid in session.match.players]
+
+            embed = discord.Embed(
+                title="🎮 Matchmaking Lobby",
+                color=discord.Color.blue()
+            )
+
+            if session.is_full():
+                embed.description = "🎉 **Match Found!**\n\n8/8 игроков собрано."
+            else:
+                embed.description = f"Поиск игры:\n{player_count}/8 игроков"
+
+            # Список игроков
+            players_text = ""
+            for i in range(8):
+                if i < len(player_names):
+                    players_text += f"{i + 1}. {player_names[i]}\n"
+                else:
+                    players_text += f"{i + 1}.\n"
+
+            embed.add_field(name="Players:", value=players_text, inline=False)
+
+            await message.edit(embed=embed)
+        except Exception as e:
+            logger.error(f"Ошибка обновления embed: {e}")
 
 
 # Глобальный экземпляр менеджера
