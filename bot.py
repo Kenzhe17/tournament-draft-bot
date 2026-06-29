@@ -26,7 +26,6 @@ from views.final_view import FinalView
 from views.leaderboard_view import LeaderboardView
 from views.matches_view import QualifiersView, SemifinalsView, TeamsView
 from views.setup_view import build_setup_view
-from services.image_analyzer import image_analyzer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -235,6 +234,7 @@ class TournamentBot(commands.Bot):
                         expected_players.append(player_b)
 
                 # Analyze screenshot
+                from services.image_analyzer import image_analyzer
                 result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
 
                 # Clean up temporary file
