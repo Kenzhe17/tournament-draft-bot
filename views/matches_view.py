@@ -12,6 +12,7 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
 from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
+from views.screenshot_upload_view import UploadResultsButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -587,8 +588,8 @@ class QualifiersView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add single winner selection button
-        self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
+        # Add screenshot upload button
+        self.add_item(UploadResultsButton(guild_id, tournament, matches, "qualifier"))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
@@ -604,8 +605,8 @@ class SemifinalsView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add single winner selection button
-        self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
+        # Add screenshot upload button
+        self.add_item(UploadResultsButton(guild_id, tournament, matches, "semifinal"))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))

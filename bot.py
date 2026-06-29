@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import sys
+import os
+import tempfile
 
 import discord
 from discord.ext import commands
@@ -156,6 +158,254 @@ class TournamentBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
+
+    async def on_message(self, message: discord.Message) -> None:
+        """Handle incoming messages, including screenshot uploads."""
+        # Ignore bot messages
+        if message.author.bot:
+            return
+
+        # Check if this is a screenshot upload
+        if message.attachments and len(message.attachments) > 0:
+            attachment = message.attachments[0]
+            if attachment.content_type and attachment.content_type.startswith('image/'):
+                await self._handle_screenshot_upload(message, attachment)
+
+    async def _handle_screenshot_upload(self, message: discord.Message, attachment: discord.Attachment) -> None:
+        """Handle screenshot upload for match results."""
+        from storage.json_store import store
+
+        # Get tournament for this guild
+        tournament = store.get(message.guild.id)
+        if not tournament or not hasattr(tournament, 'pending_screenshot_upload'):
+            return
+
+        upload_info = tournament.pending_screenshot_upload
+        if not upload_info or upload_info['user_id'] != message.author.id:
+            return
+
+        try:
+            # Download image to temporary file
+            async with message.channel.typing():
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp_file:
+                    await attachment.save(tmp_file.name)
+                    tmp_path = tmp_file.name
+
+                # Get expected players for this match
+                team_a_data = tournament.teams[upload_info['team_a']] if upload_info['team_a'] < len(tournament.teams) else {}
+                team_b_data = tournament.teams[upload_info['team_b']] if upload_info['team_b'] < len(tournament.teams) else {}
+
+                expected_players = []
+                for circle in range(1, 5):
+                    player_a = team_a_data.get(f"circle{circle}")
+                    player_b = team_b_data.get(f"circle{circle}")
+                    if player_a:
+                        expected_players.append(player_a)
+                    if player_b:
+                        expected_players.append(player_b)
+
+                # Analyze screenshot
+                from services.image_analyzer import image_analyzer
+                result = image_analyzer.analyze_screenshot(tmp_path, expected_players)
+
+                # Clean up temporary file
+                os.unlink(tmp_path)
+
+                if not result:
+                    await message.reply("❌ Не удалось распознать скриншот. Попробуйте еще раз или выберите победителя вручную.")
+                    return
+
+                # Process match result
+                await self._process_match_result(message, tournament, upload_info, result)
+
+                # Clear pending upload
+                tournament.pending_screenshot_upload = None
+                store.set(tournament)
+
+        except Exception as e:
+            logger.error(f"Error handling screenshot upload: {e}", exc_info=True)
+            await message.reply(f"❌ Ошибка при обработке скриншота: {str(e)}")
+            # Clear pending upload on error
+            if hasattr(tournament, 'pending_screenshot_upload'):
+                tournament.pending_screenshot_upload = None
+                store.set(tournament)
+
+    async def _process_match_result(self, message: discord.Message, tournament, upload_info, result) -> None:
+        """Process the match result from screenshot analysis."""
+        from storage.player_stats_store import player_stats_store
+        from storage.user_balance_store import user_balance_store
+        from storage.bet_store import bet_store
+        from storage.betting_stats_store import betting_stats_store
+        from utils.rating_calculator import (
+            calculate_team_position,
+            calculate_total_elo_change,
+            update_player_stats_from_match,
+        )
+
+        match_index = upload_info['match_index']
+        team_a = upload_info['team_a']
+        team_b = upload_info['team_b']
+        match_type = upload_info['match_type']
+
+        # Determine winner based on score
+        score_parts = result.score.split(' - ')
+        if len(score_parts) == 2:
+            try:
+                score_a = int(score_parts[0].strip())
+                score_b = int(score_parts[1].strip())
+                winning_team = team_a if score_a > score_b else team_b
+                losing_team = team_b if score_a > score_b else team_a
+            except ValueError:
+                await message.reply("❌ Не удалось определить победителя по счету.")
+                return
+        else:
+            await message.reply("❌ Неверный формат счета.")
+            return
+
+        # Prepare player stats for both teams
+        team_a_stats = {}
+        team_b_stats = {}
+
+        for player in result.team1_players:
+            team_a_stats[player.nickname] = {
+                'kills': player.kills,
+                'deaths': player.deaths,
+                'assists': player.assists,
+                'damage': player.damage
+            }
+
+        for player in result.team2_players:
+            team_b_stats[player.nickname] = {
+                'kills': player.kills,
+                'deaths': player.deaths,
+                'assists': player.assists,
+                'damage': player.damage
+            }
+
+        # Update tournament state based on match type
+        if match_type == "qualifier":
+            if match_index < len(tournament.qualifier_winners):
+                tournament.qualifier_winners[match_index] = winning_team
+        elif match_type == "semifinal":
+            if match_index < len(tournament.semifinal_winners):
+                tournament.semifinal_winners[match_index] = winning_team
+        elif match_type == "final":
+            tournament.set_final_winner(winning_team)
+
+        # Update player statistics
+        winning_team_data = tournament.teams[winning_team] if winning_team < len(tournament.teams) else {}
+        losing_team_data = tournament.teams[losing_team] if losing_team < len(tournament.teams) else {}
+
+        # Process winning team
+        for circle in range(1, 5):
+            player = winning_team_data.get(f"circle{circle}")
+            if player:
+                stats = team_a_stats.get(player) if winning_team == team_a else team_b_stats.get(player)
+                if stats:
+                    await self._update_player_stats(
+                        tournament.guild_id,
+                        player,
+                        stats['kills'],
+                        stats['deaths'],
+                        True,
+                        circle,
+                        winning_team_data
+                    )
+
+        # Process losing team
+        for circle in range(1, 5):
+            player = losing_team_data.get(f"circle{circle}")
+            if player:
+                stats = team_a_stats.get(player) if losing_team == team_a else team_b_stats.get(player)
+                if stats:
+                    await self._update_player_stats(
+                        tournament.guild_id,
+                        player,
+                        stats['kills'],
+                        stats['deaths'],
+                        False,
+                        circle,
+                        losing_team_data
+                    )
+
+        # Resolve bets
+        match_id = f"{match_type}_{match_index}"
+        winning_team_name = tournament.team_names.get(winning_team, f"Team {winning_team}")
+        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
+
+        # Distribute winnings
+        for user_id, amount in payouts.items():
+            await user_balance_store.add_balance(tournament.guild_id, user_id, amount)
+            await betting_stats_store.record_bet_result(tournament.guild_id, user_id, amount, won=True)
+
+        # Update tournament phase if needed
+        self._advance_tournament_phase(tournament)
+        store.set(tournament)
+
+        # Update tournament message
+        await self.update_tournament_message(message.guild, tournament)
+
+        # Send confirmation
+        await message.reply(
+            f"✅ Результаты матча #{match_index + 1} обработаны!\n"
+            f"Счет: {result.score}\n"
+            f"Победитель: {winning_team_name}"
+        )
+
+    async def _update_player_stats(self, guild_id: int, player_name: str, kills: int, deaths: int, team_won: bool, circle: int, team_data: dict) -> None:
+        """Update player statistics after a match."""
+        from storage.player_stats_store import player_stats_store
+        from utils.rating_calculator import calculate_total_elo_change, update_player_stats_from_match
+
+        user_id = team_data.get('player_user_ids', {}).get(player_name, 0)
+        if not user_id:
+            return
+
+        stats = await player_stats_store.get(guild_id, user_id)
+        if not stats:
+            from models.player_stats import PlayerStats
+            stats = PlayerStats(guild_id=guild_id, user_id=user_id, name=player_name)
+
+        # Calculate position (simplified - use circle as position for now)
+        position = circle
+
+        # Calculate ELO change
+        elo_change = calculate_total_elo_change(
+            circle=circle,
+            position=position,
+            team_won=team_won,
+            kills=kills,
+            deaths=deaths
+        )
+
+        # Update stats
+        stats = update_player_stats_from_match(
+            stats=stats,
+            kills=kills,
+            deaths=deaths,
+            elo_change=elo_change,
+            team_won=team_won
+        )
+
+        await player_stats_store.update(guild_id, user_id, player_name, stats)
+
+    def _advance_tournament_phase(self, tournament) -> None:
+        """Advance tournament phase if all matches in current phase are complete."""
+        from models.tournament import TournamentPhase
+
+        if tournament.phase == TournamentPhase.QUALIFIERS:
+            if all(w is not None for w in tournament.qualifier_winners):
+                tournament.phase = TournamentPhase.SEMIFINALS
+                tournament.generate_semifinals()
+
+        elif tournament.phase == TournamentPhase.SEMIFINALS:
+            if all(w is not None for w in tournament.semifinal_winners):
+                tournament.phase = TournamentPhase.FINAL
+                tournament.final_teams = tournament.semifinal_winners
+
+        elif tournament.phase == TournamentPhase.FINAL:
+            if tournament.final_winner is not None:
+                tournament.phase = TournamentPhase.COMPLETE
 
 
 def main() -> None:

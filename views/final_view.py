@@ -119,13 +119,13 @@ class FinalView(discord.ui.View):
     def __init__(self, guild_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
-        # Add single winner selection button
-        from views.matches_view import SelectWinnerButton
-        self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
+        # Add screenshot upload button
+        from views.screenshot_upload_view import UploadResultsButton
+        final_matches = [(final_teams[0], final_teams[1])]
+        self.add_item(UploadResultsButton(guild_id, tournament, final_matches, "final"))
 
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
-        final_matches = [(final_teams[0], final_teams[1])]
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
