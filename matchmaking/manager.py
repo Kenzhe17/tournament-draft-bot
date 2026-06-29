@@ -202,8 +202,11 @@ class MatchmakingManager:
         # Отправляем сообщение о начале матча
         await self.send_match_start_message(channel, session)
 
-        # Выбираем капитанов
-        await self.select_captains(channel, session)
+        # Выбираем капитанов по ELO (2 самых высоких ELO)
+        await self.select_captains_by_elo(channel, session)
+
+        # Начинаем драфт с Select Menu
+        await self.start_draft_selection(channel, session)
 
     async def send_match_start_message(self, channel, session):
         """Отправить сообщение о начале матча в главном канале."""
@@ -220,28 +223,89 @@ class MatchmakingManager:
 
         await channel.send(embed=embed)
 
-    async def select_captains(self, channel, session):
-        """Выбрать 2 капитанов из 8 игроков."""
-        import random
+    async def select_captains_by_elo(self, channel, session):
+        """Выбрать 2 капитана по наивысшему ELO."""
+        from storage.player_stats_store import player_stats_store
 
-        players = session.match.players.copy()
-        random.shuffle(players)
+        # Получаем ELO для всех игроков
+        player_elos = []
+        for player_id in session.match.players:
+            stats = await player_stats_store.get_stats(session.guild_id, player_id)
+            elo = stats.elo if stats else 1000  # Default ELO if no stats
+            player_elos.append((player_id, elo))
 
-        captain1_id = players[0]
-        captain2_id = players[1]
+        # Сортируем по ELO (убывание)
+        player_elos.sort(key=lambda x: x[1], reverse=True)
+
+        # Выбираем 2 лучших как капитанов
+        captain1_id, captain1_elo = player_elos[0]
+        captain2_id, captain2_elo = player_elos[1]
         captain1_name = session.match.player_names[captain1_id]
         captain2_name = session.match.player_names[captain2_id]
 
         session.create_teams(captain1_id, captain1_name, captain2_id, captain2_name)
 
         embed = discord.Embed(
-            title="👑 Капитаны выбраны",
+            title="👑 Капитаны выбраны по ELO",
             color=discord.Color.gold()
         )
-        embed.add_field(name="Team 1 Captain", value=captain1_name, inline=True)
-        embed.add_field(name="Team 2 Captain", value=captain2_name, inline=True)
+        embed.add_field(name=f"Team 1 Captain ({captain1_elo} ELO)", value=captain1_name, inline=True)
+        embed.add_field(name=f"Team 2 Captain ({captain2_elo} ELO)", value=captain2_name, inline=True)
 
         await channel.send(embed=embed)
+
+    async def start_draft_selection(self, channel, session):
+        """Начать интерактивный драфт с Select Menu."""
+        from storage.player_stats_store import player_stats_store
+
+        # Получаем всех игроков кроме капитанов
+        captain_ids = {session.match.teams[0].captain_id, session.match.teams[1].captain_id}
+        available_players = [pid for pid in session.match.players if pid not in captain_ids]
+
+        # Получаем ELO для сортировки
+        player_elos = []
+        for player_id in available_players:
+            stats = await player_stats_store.get_stats(session.guild_id, player_id)
+            elo = stats.elo if stats else 1000
+            player_elos.append((player_id, elo))
+
+        # Сортируем по ELO (убывание)
+        player_elos.sort(key=lambda x: x[1], reverse=True)
+
+        # Инициализируем драфт данные
+        session.match.draft_data = {
+            "available": [pid for pid, _ in player_elos],
+            "current_picker": 0,  # 0 = Team 1, 1 = Team 2
+            "pick_order": [0, 1, 1, 0, 1, 0],  # Порядок выбора для 6 игроков
+            "pick_index": 0,
+        }
+
+        # Добавляем капитанов в команды
+        session.match.teams[0].players = [session.match.teams[0].captain_id]
+        session.match.teams[1].players = [session.match.teams[1].captain_id]
+
+        # Показываем драфт view
+        from views.matchmaking_draft_view import MatchmakingDraftView
+        view = MatchmakingDraftView(session.guild_id, session)
+
+        embed = discord.Embed(
+            title="🎲 Драфт",
+            description=f"Капитан {session.match.teams[0].name} выбирает первым.",
+            color=discord.Color.blue()
+        )
+
+        # Показываем доступных игроков с ELO
+        available_text = ""
+        for i, (pid, elo) in enumerate(player_elos):
+            name = session.match.player_names[pid]
+            available_text += f"{i + 1}. {name} ({elo} ELO)\n"
+
+        embed.add_field(name="Доступные игроки:", value=available_text, inline=False)
+
+        message = await channel.send(embed=embed, view=view)
+
+        # Сохраняем message_id для обновления
+        session.match.message_id = message.id
 
 
 # Глобальный экземпляр менеджера
