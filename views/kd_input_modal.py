@@ -13,10 +13,16 @@ if TYPE_CHECKING:
 class KDInputModal(discord.ui.Modal):
     """Modal for inputting Kills/Deaths for a player."""
 
-    def __init__(self, guild_id: int, player_name: str, circle: int, team_index: int):
-        super().__init__(title=f"Статистика: {player_name}")
+    def __init__(self, guild_id: int, player_name: str, circle: int, team_index: int, tournament: Tournament | None = None):
+        # Use game nickname for display if available
+        display_name = player_name
+        if tournament and player_name in tournament.player_game_nicknames:
+            display_name = tournament.player_game_nicknames[player_name]
+
+        super().__init__(title=f"Статистика: {display_name}")
         self.guild_id = guild_id
-        self.player_name = player_name
+        self.player_name = player_name  # Keep original name for data storage
+        self.display_name = display_name  # For display
         self.circle = circle
         self.team_index = team_index
 
@@ -71,7 +77,7 @@ class KDInputModal(discord.ui.Modal):
             store.set(tournament)
 
         await interaction.response.send_message(
-            f"✅ Статистика для {self.player_name}: {kills}/{deaths}",
+            f"✅ Статистика для {self.display_name}: {kills}/{deaths}",
             ephemeral=True
         )
 
@@ -79,23 +85,28 @@ class KDInputModal(discord.ui.Modal):
 class TeamKDInputModal(discord.ui.Modal):
     """Modal for inputting K/D for all players in a team."""
 
-    def __init__(self, guild_id: int, team_index: int, team_name: str, players: list[tuple[str, int]]):
+    def __init__(self, guild_id: int, team_index: int, team_name: str, players: list[tuple[str, int]], tournament: Tournament | None = None):
         """
         Args:
             guild_id: Server ID
             team_index: Team index (0 or 1)
             team_name: Team name for display
             players: List of (player_name, circle) tuples
+            tournament: Tournament object for game nickname lookup
         """
         super().__init__(title=f"Статистика: {team_name}")
         self.guild_id = guild_id
         self.team_index = team_index
         self.players = players
+        self.tournament = tournament
 
         # Create input fields for each player
         for player_name, circle in players:
+            # Use game nickname for display if available
+            display_name = tournament.player_game_nicknames.get(player_name, player_name) if tournament else player_name
+
             # Use a shorter label for the input
-            label = f"{player_name} (K/D)"
+            label = f"{display_name} (K/D)"
             # Create a single text input for K/D format like "8 2"
             kd_input = discord.ui.TextInput(
                 label=label,

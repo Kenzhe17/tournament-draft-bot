@@ -110,6 +110,9 @@ class Tournament:
     # Отображение имени на user_id для статистики
     player_user_ids: dict[str, int] = field(default_factory=dict)
 
+    # Отображение Discord имени на игровой ник (для отображения в турнире)
+    player_game_nicknames: dict[str, str] = field(default_factory=dict)
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""

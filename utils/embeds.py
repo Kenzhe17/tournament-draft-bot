@@ -10,18 +10,23 @@ from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
 
 
-def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None) -> str:
+def _circle_line(players: list[str], tournament: Tournament | None = None, elo_dict: dict[str, int] | None = None) -> str:
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
         return ""
-    
+
     player_strings = []
     for player_name in players:
+        # Use game nickname for display if available
+        display_name = player_name
+        if tournament and player_name in tournament.player_game_nicknames:
+            display_name = tournament.player_game_nicknames[player_name]
+
         if elo_dict and player_name in elo_dict:
-            player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+            player_strings.append(f"{display_name} ({elo_dict[player_name]})")
         else:
-            player_strings.append(player_name)
-    
+            player_strings.append(display_name)
+
     return " ".join(player_strings)
 
 
@@ -95,7 +100,9 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         for circle in range(1, 5):
             p_name = team.get(f"circle{circle}", "")
             if p_name:
-                players.append(p_name)
+                # Use game nickname for display if available
+                display_name = tournament.player_game_nicknames.get(p_name, p_name)
+                players.append(display_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
         emoji = team_emojis.get(i + 1, "🎮")
@@ -142,7 +149,7 @@ async def build_setup_embed(
         else:
             limit_info = " (без лимита)"
 
-        value = _circle_line(circle_list, elo_dict) or "*"
+        value = _circle_line(circle_list, tournament, elo_dict) or "*"
         embed.add_field(
             name=f"{circle_name}{limit_info}",
             value=value,
