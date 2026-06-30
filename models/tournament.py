@@ -481,6 +481,7 @@ class Tournament:
         winners = self.qualifier_winners
         self.semifinal_matches = [(winners[0], winners[1]), (winners[2], winners[3])]
         self.semifinal_winners = [None, None]
+        self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
 
     def generate_semifinals(self) -> None:
@@ -488,6 +489,7 @@ class Tournament:
         pairing = random.choice(SEMIFINAL_PAIRINGS)
         self.semifinal_matches = list(pairing)
         self.semifinal_winners = [None, None]
+        self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
 
     def set_semifinal_winner(self, match_index: int, team_index: int) -> bool:
