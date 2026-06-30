@@ -262,7 +262,7 @@ class AdminMatchSelectView(View):
 
 
 class AdminStatsModal(Modal):
-    """Modal for admin to input statistics (same as captain modal)."""
+    """Modal for admin to input statistics (pre-filled with captain-submitted stats)."""
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_a: int, team_b: int):
         super().__init__(title=f"Статистика матча #{match_index + 1}")
@@ -292,11 +292,23 @@ class AdminStatsModal(Modal):
                 display_name = tournament.player_game_nicknames.get(p_name, p_name)
                 self.team_b_players.append((p_name, display_name))
 
-        # Create single input for team A with format: PlayerName: kills deaths
-        team_a_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_a_players])
+        # Load existing stats from temp_match_stats if available
+        existing_stats = tournament.temp_match_stats.get(match_type, {}).get(match_index, {})
+
+        # Build team A input with existing stats pre-filled
+        team_a_lines = []
+        for player_name, display_name in self.team_a_players:
+            # Check if stats exist for this player
+            stats = existing_stats.get("team1", {}).get(player_name, {})
+            kills = stats.get("kills", 0)
+            deaths = stats.get("deaths", 0)
+            team_a_lines.append(f"{display}: {kills} {deaths}")
+
+        team_a_default = "\n".join(team_a_lines) if team_a_lines else ""
         team_a_input = TextInput(
             label=f"Статистика команды A",
-            placeholder=team_a_placeholder,
+            placeholder="Формат: PlayerName: kills deaths",
+            default=team_a_default,
             required=True,
             style=discord.TextStyle.paragraph,
             max_length=500,
@@ -304,11 +316,20 @@ class AdminStatsModal(Modal):
         )
         self.add_item(team_a_input)
 
-        # Create single input for team B with format: PlayerName: kills deaths
-        team_b_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_b_players])
+        # Build team B input with existing stats pre-filled
+        team_b_lines = []
+        for player_name, display_name in self.team_b_players:
+            # Check if stats exist for this player
+            stats = existing_stats.get("team2", {}).get(player_name, {})
+            kills = stats.get("kills", 0)
+            deaths = stats.get("deaths", 0)
+            team_b_lines.append(f"{display}: {kills} {deaths}")
+
+        team_b_default = "\n".join(team_b_lines) if team_b_lines else ""
         team_b_input = TextInput(
             label=f"Статистика команды B",
-            placeholder=team_b_placeholder,
+            placeholder="Формат: PlayerName: kills deaths",
+            default=team_b_default,
             required=True,
             style=discord.TextStyle.paragraph,
             max_length=500,
