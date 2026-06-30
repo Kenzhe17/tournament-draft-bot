@@ -674,9 +674,13 @@ class AdvancePhaseButton(discord.ui.Button):
             await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
             return
 
-        # Clear temporary stats (they won't be confirmed)
-        if self.current_phase in tournament.temp_match_stats:
-            del tournament.temp_match_stats[self.current_phase]
+        # Check if there are unconfirmed stats
+        if self.current_phase in tournament.temp_match_stats and tournament.temp_match_stats[self.current_phase]:
+            await interaction.response.send_message(
+                "❌ Невозможно перейти к следующей фазе. Сначала подтвердите всю статистику текущего этапа.",
+                ephemeral=True
+            )
+            return
 
         # Advance to next phase
         if self.current_phase == "qualifier":

@@ -98,21 +98,22 @@ class PlayerStatsStore:
             self._stats[key] = stats
             self.save()
 
-    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "none", count_game: bool = False, set_elo: int | None = None) -> None:
+    async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "none", count_game: bool = False, set_elo: int | None = None, kills: int = 0, deaths: int = 0) -> None:
         """Обновить статистику игрока.
-        
+
         Note: The old ELO calculation logic has been removed. ELO is now calculated
         through the new rating system in utils/rating_calculator.py based on:
         - Circle (1-4)
         - Position within team (1-4)
         - Team result (win/loss)
         - Individual K/D performance
-        
+
         This method now only handles basic operations:
         - set_elo: Directly set ELO to a specific value
         - count_game: Increment games counter
+        - kills/deaths: Update total kills and deaths
         - result: Only used for legacy compatibility, no ELO changes
-        
+
         For new rating system, use process_match_result() in views/kd_input_view.py
         """
         key = f"{guild_id}:{user_id}"
@@ -161,6 +162,12 @@ class PlayerStatsStore:
                 if count_game:
                     games += 1
 
+                # Update kills and deaths
+                total_kills += kills
+                total_deaths += deaths
+                if kills > best_match_kills:
+                    best_match_kills = kills
+
                 await conn.execute(
                     """
                     INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change)
@@ -180,6 +187,12 @@ class PlayerStatsStore:
 
             if count_game:
                 self._stats[key].games += 1
+
+            # Update kills and deaths
+            self._stats[key].total_kills += kills
+            self._stats[key].total_deaths += deaths
+            if kills > self._stats[key].best_match_kills:
+                self._stats[key].best_match_kills = kills
 
             self.save()
 

@@ -469,15 +469,17 @@ class Tournament:
                     qualifier_stats_filled = False
                     break
 
+            # Log for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"All winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. Stats filled: {qualifier_stats_filled}")
+
             if qualifier_stats_filled:
                 # Qualifier winners advance to semifinals
                 self.generate_semifinals_from_qualifiers()
                 return True
             else:
                 # Stats not filled yet, don't advance
-                # Log for debugging
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.warning(f"Phase transition blocked: qualifier stats not confirmed. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}")
                 return False
         return False
