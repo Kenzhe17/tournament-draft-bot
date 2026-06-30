@@ -92,6 +92,9 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     for i, team in enumerate(tournament.teams):
         captain = team.get("captain", "Unknown")
 
+        # Use game nickname for captain display if available
+        captain_display = tournament.player_game_nicknames.get(captain, captain)
+
         # Get team name or default to captain name
         team_name = tournament.team_names.get(i, captain)
 
@@ -109,7 +112,7 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
 
         teams_text.append(
             f"{emoji} **Команда {team_name}**\n"
-            f"┣ **Капитан:** {captain}\n"
+            f"┣ **Капитан:** {captain_display}\n"
             f"┗ **Состав:** {players_str}\n"
         )
 
