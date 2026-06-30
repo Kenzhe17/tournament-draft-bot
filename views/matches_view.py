@@ -137,6 +137,13 @@ class SemifinalWinnerButton(discord.ui.Button):
         both_done = tournament.set_semifinal_winner(
             self.match_index, self.team_index
         )
+
+        # Mark match as completed for stats filling
+        if "semifinal" not in tournament.completed_matches:
+            tournament.completed_matches["semifinal"] = []
+        if self.match_index not in tournament.completed_matches["semifinal"]:
+            tournament.completed_matches["semifinal"].append(self.match_index)
+
         store.set(tournament)
 
         # Update stats for both teams
@@ -536,6 +543,13 @@ class QualifierWinnerButton(discord.ui.Button):
         both_done = tournament.set_qualifier_winner(
             self.match_index, self.team_index
         )
+
+        # Mark match as completed for stats filling
+        if "qualifier" not in tournament.completed_matches:
+            tournament.completed_matches["qualifier"] = []
+        if self.match_index not in tournament.completed_matches["qualifier"]:
+            tournament.completed_matches["qualifier"].append(self.match_index)
+
         store.set(tournament)
 
         # Update stats for both teams
@@ -595,6 +609,17 @@ class QualifiersView(discord.ui.View):
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
 
+        # Add stats fill button for admin
+        from views.stats_fill_view import AdminFillStatsButton
+        self.add_item(AdminFillStatsButton(guild_id, tournament))
+
+        # Add stats fill buttons for captains of completed matches
+        from views.stats_fill_view import FillStatsButton
+        completed_matches = tournament.completed_matches.get("qualifier", [])
+        for match_index in completed_matches:
+            team_a, team_b = matches[match_index]
+            self.add_item(FillStatsButton(guild_id, tournament, "qualifier", match_index, team_a, team_b))
+
 
 class SemifinalsView(discord.ui.View):
     """View с кнопками победителей полуфиналов."""
@@ -611,3 +636,14 @@ class SemifinalsView(discord.ui.View):
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add stats fill button for admin
+        from views.stats_fill_view import AdminFillStatsButton
+        self.add_item(AdminFillStatsButton(guild_id, tournament))
+
+        # Add stats fill buttons for captains of completed matches
+        from views.stats_fill_view import FillStatsButton
+        completed_matches = tournament.completed_matches.get("semifinal", [])
+        for match_index in completed_matches:
+            team_a, team_b = matches[match_index]
+            self.add_item(FillStatsButton(guild_id, tournament, "semifinal", match_index, team_a, team_b))

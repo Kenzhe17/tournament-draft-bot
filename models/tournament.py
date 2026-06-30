@@ -154,6 +154,14 @@ class Tournament:
     final_teams: list[int] = field(default_factory=list)
     winner_team_index: int | None = None
 
+    # Match completion tracking (match_type -> list of completed match indices)
+    # match_type: "qualifier", "semifinal", "final"
+    completed_matches: dict[str, list[int]] = field(default_factory=dict)
+
+    # Temporary stats storage (match_type -> match_index -> stats data)
+    # Format: {"qualifier": {0: {"team1": {player: {kills, deaths}}, "team2": {...}}}}
+    temp_match_stats: dict[str, dict[int, dict]] = field(default_factory=dict)
+
     # Betting system
     betting_open: bool = True
     # Store bets temporarily in tournament (persisted in database)

@@ -53,6 +53,13 @@ class FinalWinnerButton(discord.ui.Button):
             return
 
         tournament.set_final_winner(self.team_index)
+
+        # Mark match as completed for stats filling
+        if "final" not in tournament.completed_matches:
+            tournament.completed_matches["final"] = []
+        if 0 not in tournament.completed_matches["final"]:
+            tournament.completed_matches["final"].append(0)
+
         store.set(tournament)
 
         # Update player statistics with ELO based on tournament size
@@ -129,3 +136,12 @@ class FinalView(discord.ui.View):
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add stats fill button for admin
+        from views.stats_fill_view import AdminFillStatsButton
+        self.add_item(AdminFillStatsButton(guild_id, tournament))
+
+        # Add stats fill button for captains if final is completed
+        from views.stats_fill_view import FillStatsButton
+        if 0 in tournament.completed_matches.get("final", []):
+            self.add_item(FillStatsButton(guild_id, tournament, "final", 0, final_teams[0], final_teams[1]))
