@@ -384,116 +384,122 @@ class AdminStatsModal(Modal):
         """Process stats submission and show confirmation view."""
         from storage.json_store import store
 
-        # Parse team A stats
-        stats_data = {"team1": {}, "team2": {}}
-
-        team_a_input = None
-        team_b_input = None
-        for item in self.children:
-            if isinstance(item, TextInput):
-                if item.custom_id == "team_a_stats":
-                    team_a_input = item
-                elif item.custom_id == "team_b_stats":
-                    team_b_input = item
-
-        # Parse team A
-        if team_a_input:
-            lines = team_a_input.value.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    # Format: PlayerName: kills deaths
-                    parts = line.split(':')
-                    if len(parts) != 2:
-                        raise ValueError(f"Неверный формат: {line}")
-
-                    player_display = parts[0].strip()
-                    kd_parts = parts[1].strip().split()
-                    if len(kd_parts) != 2:
-                        raise ValueError(f"Неверный формат K/D: {line}")
-
-                    kills = int(kd_parts[0])
-                    deaths = int(kd_parts[1])
-
-                    if kills < 0 or deaths < 0:
-                        raise ValueError(f"Отрицательные значения: {line}")
-
-                    # Find player name by display name
-                    player_name = None
-                    for pn, pd in self.team_a_players:
-                        if pd == player_display:
-                            player_name = pn
-                            break
-
-                    if player_name:
-                        stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
-                except (ValueError, IndexError) as e:
-                    await interaction.response.send_message(
-                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
-                        ephemeral=True
-                    )
-                    return
-
-        # Parse team B
-        if team_b_input:
-            lines = team_b_input.value.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    # Format: PlayerName: kills deaths
-                    parts = line.split(':')
-                    if len(parts) != 2:
-                        raise ValueError(f"Неверный формат: {line}")
-
-                    player_display = parts[0].strip()
-                    kd_parts = parts[1].strip().split()
-                    if len(kd_parts) != 2:
-                        raise ValueError(f"Неверный формат K/D: {line}")
-
-                    kills = int(kd_parts[0])
-                    deaths = int(kd_parts[1])
-
-                    if kills < 0 or deaths < 0:
-                        raise ValueError(f"Отрицательные значения: {line}")
-
-                    # Find player name by display name
-                    player_name = None
-                    for pn, pd in self.team_b_players:
-                        if pd == player_display:
-                            player_name = pn
-                            break
-
-                    if player_name:
-                        stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
-                except (ValueError, IndexError) as e:
-                    await interaction.response.send_message(
-                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
-                        ephemeral=True
-                    )
-                    return
-
-        # Store in tournament temporarily
-        if self.match_type not in self.tournament.temp_match_stats:
-            self.tournament.temp_match_stats[self.match_type] = {}
-
-        self.tournament.temp_match_stats[self.match_type][self.match_index] = stats_data
-        store.set(self.tournament)
-
-        # Show confirmation view
-        confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
         try:
-            await interaction.followup.send(
-                "Проверьте статистику перед подтверждением:",
-                view=confirm_view,
+            # Parse team A stats
+            stats_data = {"team1": {}, "team2": {}}
+
+            team_a_input = None
+            team_b_input = None
+            for item in self.children:
+                if isinstance(item, TextInput):
+                    if item.custom_id == "team_a_stats":
+                        team_a_input = item
+                    elif item.custom_id == "team_b_stats":
+                        team_b_input = item
+
+            # Parse team A
+            if team_a_input:
+                lines = team_a_input.value.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        # Format: PlayerName: kills deaths
+                        parts = line.split(':')
+                        if len(parts) != 2:
+                            raise ValueError(f"Неверный формат: {line}")
+
+                        player_display = parts[0].strip()
+                        kd_parts = parts[1].strip().split()
+                        if len(kd_parts) != 2:
+                            raise ValueError(f"Неверный формат K/D: {line}")
+
+                        kills = int(kd_parts[0])
+                        deaths = int(kd_parts[1])
+
+                        if kills < 0 or deaths < 0:
+                            raise ValueError(f"Отрицательные значения: {line}")
+
+                        # Find player name by display name
+                        player_name = None
+                        for pn, pd in self.team_a_players:
+                            if pd == player_display:
+                                player_name = pn
+                                break
+
+                        if player_name:
+                            stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
+                    except (ValueError, IndexError) as e:
+                        await interaction.response.send_message(
+                            f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
+                            ephemeral=True
+                        )
+                        return
+
+            # Parse team B
+            if team_b_input:
+                lines = team_b_input.value.strip().split('\n')
+                for line in lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        # Format: PlayerName: kills deaths
+                        parts = line.split(':')
+                        if len(parts) != 2:
+                            raise ValueError(f"Неверный формат: {line}")
+
+                        player_display = parts[0].strip()
+                        kd_parts = parts[1].strip().split()
+                        if len(kd_parts) != 2:
+                            raise ValueError(f"Неверный формат K/D: {line}")
+
+                        kills = int(kd_parts[0])
+                        deaths = int(kd_parts[1])
+
+                        if kills < 0 or deaths < 0:
+                            raise ValueError(f"Отрицательные значения: {line}")
+
+                        # Find player name by display name
+                        player_name = None
+                        for pn, pd in self.team_b_players:
+                            if pd == player_display:
+                                player_name = pn
+                                break
+
+                        if player_name:
+                            stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
+                    except (ValueError, IndexError) as e:
+                        await interaction.response.send_message(
+                            f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
+                            ephemeral=True
+                        )
+                        return
+
+            # Store in tournament temporarily
+            if self.match_type not in self.tournament.temp_match_stats:
+                self.tournament.temp_match_stats[self.match_type] = {}
+
+            self.tournament.temp_match_stats[self.match_type][self.match_index] = stats_data
+            store.set(self.tournament)
+
+            # Show confirmation view
+            confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
+            try:
+                await interaction.followup.send(
+                    "Проверьте статистику перед подтверждением:",
+                    view=confirm_view,
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                # Interaction expired
+                pass
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка: {str(e)}",
                 ephemeral=True
             )
-        except discord.NotFound:
-            # Interaction expired
-            pass
 
 
 class AdminConfirmView(View):
