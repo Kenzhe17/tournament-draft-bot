@@ -17,15 +17,10 @@ def _circle_line(players: list[str], tournament: Tournament | None = None, elo_d
 
     player_strings = []
     for player_name in players:
-        # Use game nickname for display if available
-        display_name = player_name
-        if tournament and player_name in tournament.player_game_nicknames:
-            display_name = tournament.player_game_nicknames[player_name]
-
         if elo_dict and player_name in elo_dict:
-            player_strings.append(f"{display_name} ({elo_dict[player_name]})")
+            player_strings.append(f"{player_name} ({elo_dict[player_name]})")
         else:
-            player_strings.append(display_name)
+            player_strings.append(player_name)
 
     return " ".join(player_strings)
 
@@ -92,9 +87,6 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
     for i, team in enumerate(tournament.teams):
         captain = team.get("captain", "Unknown")
 
-        # Use game nickname for captain display if available
-        captain_display = tournament.player_game_nicknames.get(captain, captain)
-
         # Get team name or default to captain name
         team_name = tournament.team_names.get(i, captain)
 
@@ -103,16 +95,14 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         for circle in range(1, 5):
             p_name = team.get(f"circle{circle}", "")
             if p_name:
-                # Use game nickname for display if available
-                display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                players.append(display_name)
+                players.append(p_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
         emoji = team_emojis.get(i + 1, "🎮")
 
         teams_text.append(
             f"{emoji} **Команда {team_name}**\n"
-            f"┣ **Капитан:** {captain_display}\n"
+            f"┣ **Капитан:** {captain}\n"
             f"┗ **Состав:** {players_str}\n"
         )
 
@@ -185,15 +175,10 @@ async def build_draft_embed(
         color=discord.Color.blue(),
     )
 
-    # Helper function to get display name
-    def get_display_name(player_name: str) -> str:
-        return tournament.player_game_nicknames.get(player_name, player_name)
-
     # Порядок капитанов (show the shuffled order)
     order_lines = []
     for i, captain_name in enumerate(tournament.captains):
-        display_name = get_display_name(captain_name)
-        order_lines.append(f"{i + 1}. {display_name}")
+        order_lines.append(f"{i + 1}. {captain_name}")
     embed.description = "\n".join(order_lines)
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)

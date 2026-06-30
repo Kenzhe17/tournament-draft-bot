@@ -153,8 +153,7 @@ class CaptainStatsModal(Modal):
         for circle in range(1, 5):
             p_name = team_data.get(f"circle{circle}", "")
             if p_name:
-                display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                self.team_players.append((p_name, display_name))
+                self.team_players.append((p_name, p_name))
 
         # Create individual input fields for each player
         for player_name, display_name in self.team_players:
@@ -341,13 +340,11 @@ class AdminStatsModal(Modal):
         for circle in range(1, 5):
             p_name = team_a_data.get(f"circle{circle}", "")
             if p_name:
-                display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                self.team_a_players.append((p_name, display_name))
+                self.team_a_players.append((p_name, p_name))
 
             p_name = team_b_data.get(f"circle{circle}", "")
             if p_name:
-                display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                self.team_b_players.append((p_name, display_name))
+                self.team_b_players.append((p_name, p_name))
 
         # Load existing stats from temp_match_stats if available
         existing_stats = tournament.temp_match_stats.get(match_type, {}).get(match_index, {})
@@ -595,10 +592,9 @@ class AdminConfirmView(View):
         lines.append(f"**{self.name_a}**")
         team1_stats = self.stats_data.get("team1", {})
         for player_name, stats in team1_stats.items():
-            display_name = self.tournament.player_game_nicknames.get(player_name, player_name)
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
-            lines.append(f"{display_name}: {kills}K / {deaths}D")
+            lines.append(f"{player_name}: {kills}K / {deaths}D")
 
         lines.append("")
 
@@ -606,10 +602,9 @@ class AdminConfirmView(View):
         lines.append(f"**{self.name_b}**")
         team2_stats = self.stats_data.get("team2", {})
         for player_name, stats in team2_stats.items():
-            display_name = self.tournament.player_game_nicknames.get(player_name, player_name)
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
-            lines.append(f"{display_name}: {kills}K / {deaths}D")
+            lines.append(f"{player_name}: {kills}K / {deaths}D")
 
         return "\n".join(lines)
 
