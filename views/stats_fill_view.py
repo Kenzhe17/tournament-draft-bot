@@ -174,8 +174,22 @@ class CaptainStatsModal(Modal):
         # Parse stats from individual player inputs
         stats_data = {"team1": {}, "team2": {}}
 
-        # Determine which team key to use based on captain's team
-        team_key = "team1" if self.captain_team == 0 or (self.match_type == "qualifier" and self.captain_team < 2) else "team2"
+        # Determine which team key to use based on match pairing
+        # In the match, team_a is team1 and team_b is team2
+        # captain_team is the actual team index, opponent_team is the opponent's index
+        # We need to check if captain_team is the first team in the match (team_a)
+        # For this, we need to look at the match structure
+        if self.match_type == "qualifier":
+            match_teams = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match_teams = self.tournament.semifinal_matches[self.match_index]
+        elif self.match_type == "final":
+            match_teams = self.tournament.final_teams
+        else:
+            match_teams = (self.captain_team, self.opponent_team)
+
+        # captain_team is team1 if it's the first team in the match
+        team_key = "team1" if match_teams[0] == self.captain_team else "team2"
 
         for item in self.children:
             if isinstance(item, TextInput):
