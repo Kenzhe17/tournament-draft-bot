@@ -88,12 +88,17 @@ class TournamentCog(commands.Cog):
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
-        await interaction.response.send_message(embed=embed, view=view)
-        message = await interaction.original_response()
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+            message = await interaction.original_response()
 
-        tournament.message_id = message.id
-        store.set(tournament)
-        logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
+            tournament.message_id = message.id
+            store.set(tournament)
+            logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
+        except discord.NotFound:
+            # Interaction already expired
+            logger.warning("Interaction expired before tournament creation response")
+            pass
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_admin()
@@ -816,8 +821,8 @@ class TournamentCog(commands.Cog):
             else:
                 await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
-        except discord.NotFound:
-            # Interaction expired, can't respond
+        except (discord.NotFound, discord.HTTPException):
+            # Interaction expired or already acknowledged, can't respond
             pass
 
 
