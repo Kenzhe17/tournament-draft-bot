@@ -359,7 +359,11 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed)
+        try:
+            await interaction.response.send_message(embed=embed)
+        except discord.NotFound:
+            # Interaction already expired or was responded to
+            pass
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
