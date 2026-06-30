@@ -52,15 +52,21 @@ class FinalWinnerButton(discord.ui.Button):
             )
             return
 
-        # Store winner temporarily instead of saving immediately
-        if "final" not in tournament.pending_winners:
-            tournament.pending_winners["final"] = {}
-        tournament.pending_winners["final"][0] = self.team_index
+        if tournament.final_pending_winner is not None:
+            await interaction.response.send_message(
+                "❌ Результат финала уже выбран. Ожидается заполнение статистики.", ephemeral=True
+            )
+            return
+
+        tournament.set_final_winner(self.team_index)
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.defer()
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
 
 
 class FinalView(discord.ui.View):
@@ -73,21 +79,19 @@ class FinalView(discord.ui.View):
         from views.matches_view import SelectWinnerButton
         self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
 
-        # Add captain fill buttons for final match
-        if "final" in tournament.pending_winners and 0 in tournament.pending_winners["final"]:
-            # Add fill button for team A
-            from views.match_fill_views import CaptainFillButton, AdminFillButton
-            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
-            # Add fill button for team B
-            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))
-
-        # Add admin fill button
-        from views.match_fill_views import AdminFillButton
-        self.add_item(AdminFillButton(guild_id, tournament))
-
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
         final_matches = [(final_teams[0], final_teams[1])]
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add admin fill button
+        from views.match_stats_view import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add captain fill buttons for pending final
+        from views.match_stats_view import CaptainFillButton
+        if tournament.final_pending_winner is not None:
+            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
+            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))

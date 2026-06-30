@@ -12,7 +12,6 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
 from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
-from views.match_fill_views import CaptainFillButton, AdminFillButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -129,21 +128,23 @@ class SemifinalWinnerButton(discord.ui.Button):
             )
             return
 
-        if tournament.semifinal_winners[self.match_index] is not None:
+        if tournament.semifinal_pending_winners[self.match_index] is not None:
             await interaction.response.send_message(
-                "❌ Результат этого матча уже зафиксирован.", ephemeral=True
+                "❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
             )
             return
 
-        # Store winner temporarily instead of saving immediately
-        if "semifinal" not in tournament.pending_winners:
-            tournament.pending_winners["semifinal"] = {}
-        tournament.pending_winners["semifinal"][self.match_index] = self.team_index
+        both_done = tournament.set_semifinal_winner(
+            self.match_index, self.team_index
+        )
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.defer()
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
 
 
 class TeamNameButton(discord.ui.Button):
@@ -481,19 +482,21 @@ class QualifierWinnerButton(discord.ui.Button):
 
         if tournament.qualifier_winners[self.match_index] is not None:
             await interaction.response.send_message(
-                "❌ Результат этого матча уже зафиксирован.", ephemeral=True
+                "❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
             )
             return
 
-        # Store winner temporarily instead of saving immediately
-        if "qualifier" not in tournament.pending_winners:
-            tournament.pending_winners["qualifier"] = {}
-        tournament.pending_winners["qualifier"][self.match_index] = self.team_index
+        both_done = tournament.set_qualifier_winner(
+            self.match_index, self.team_index
+        )
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.defer()
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
 
 
 class QualifiersView(discord.ui.View):
@@ -507,21 +510,23 @@ class QualifiersView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
-        # Add captain fill buttons for each match
-        for i, (team_a, team_b) in enumerate(matches):
-            if "qualifier" in tournament.pending_winners and i in tournament.pending_winners["qualifier"]:
-                # Add fill button for team A
-                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, team_a))
-                # Add fill button for team B
-                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, team_b))
-
-        # Add admin fill button
-        self.add_item(AdminFillButton(guild_id, tournament))
-
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add admin fill button
+        from views.match_stats_view import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add captain fill buttons for pending matches
+        from views.match_stats_view import CaptainFillButton
+        for i, winner in enumerate(tournament.qualifier_winners):
+            if winner is not None:
+                # Add fill button for both teams in this match
+                match = matches[i]
+                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
+                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
 
 
 class SemifinalsView(discord.ui.View):
@@ -535,18 +540,20 @@ class SemifinalsView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
 
-        # Add captain fill buttons for each match
-        for i, (team_a, team_b) in enumerate(matches):
-            if "semifinal" in tournament.pending_winners and i in tournament.pending_winners["semifinal"]:
-                # Add fill button for team A
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, team_a))
-                # Add fill button for team B
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, team_b))
-
-        # Add admin fill button
-        self.add_item(AdminFillButton(guild_id, tournament))
-
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add admin fill button
+        from views.match_stats_view import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add captain fill buttons for pending matches
+        from views.match_stats_view import CaptainFillButton
+        for i, winner in enumerate(tournament.semifinal_pending_winners):
+            if winner is not None:
+                # Add fill button for both teams in this match
+                match = matches[i]
+                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[0]))
+                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[1]))

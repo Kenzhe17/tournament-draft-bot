@@ -110,9 +110,6 @@ class Tournament:
     # Отображение имени на user_id для статистики
     player_user_ids: dict[str, int] = field(default_factory=dict)
 
-    # Отображение Discord имени на игровой ник (для отображения в турнире)
-    player_game_nicknames: dict[str, str] = field(default_factory=dict)
-
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -151,17 +148,14 @@ class Tournament:
     qualifier_winners: list[int | None] = field(default_factory=list)
     semifinal_matches: list[tuple[int, int]] = field(default_factory=list)
     semifinal_winners: list[int | None] = field(default_factory=list)
+    semifinal_pending_winners: list[int | None] = field(default_factory=list)  # Pending confirmation
     final_teams: list[int] = field(default_factory=list)
     winner_team_index: int | None = None
+    final_pending_winner: int | None = None  # Pending confirmation
 
-    # Temporary winner storage for confirmation workflow
-    # Format: match_type -> match_index -> winning_team_index
-    # match_type: "qualifier", "semifinal", "final"
-    pending_winners: dict[str, dict[int, int]] = field(default_factory=dict)
-
-    # Temporary K/D data storage for confirmation workflow
-    # Format: match_type -> match_index -> team_index -> circle -> (kills, deaths)
-    pending_kd_data: dict[str, dict[int, dict[int, dict[int, tuple[int, int]]]]] = field(default_factory=dict)
+    # Temporary match statistics storage (before confirmation)
+    # Format: match_id -> {player_name: {"kills": int, "deaths": int, "circle": int}}
+    temp_match_stats: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
     # Betting system
     betting_open: bool = True
@@ -458,12 +452,24 @@ class Tournament:
 
     def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
         """
-        Записать победителя отборочного матча.
+        Записать победителя отборочного матча (pending confirmation).
         Возвращает True, если все отборочные матчи завершены.
         """
         self.qualifier_winners[match_index] = team_index
         if all(w is not None for w in self.qualifier_winners):
             # Qualifier winners advance to semifinals
+            self.generate_semifinals_from_qualifiers()
+            return True
+        return False
+
+    def confirm_qualifier_winner(self, match_index: int, team_index: int) -> bool:
+        """
+        Подтвердить победителя отборочного матча с сохранением статистики.
+        Возвращает True, если все отборочные матчи завершены.
+        """
+        # Winner is already set in qualifier_winners, this just confirms
+        # Statistics should be saved before calling this
+        if all(w is not None for w in self.qualifier_winners):
             self.generate_semifinals_from_qualifiers()
             return True
         return False
@@ -486,9 +492,22 @@ class Tournament:
 
     def set_semifinal_winner(self, match_index: int, team_index: int) -> bool:
         """
-        Записать победителя полуфинала.
+        Записать победителя полуфинала (pending confirmation).
         Возвращает True, если оба полуфинала завершены.
         """
+        self.semifinal_pending_winners[match_index] = team_index
+        if all(w is not None for w in self.semifinal_pending_winners):
+            self.final_teams = list(self.semifinal_pending_winners)  # type: ignore[arg-type]
+            self.phase = TournamentPhase.FINAL
+            return True
+        return False
+
+    def confirm_semifinal_winner(self, match_index: int, team_index: int) -> bool:
+        """
+        Подтвердить победителя полуфинала с сохранением статистики.
+        Возвращает True, если оба полуфинала завершены.
+        """
+        # Move from pending to confirmed
         self.semifinal_winners[match_index] = team_index
         if all(w is not None for w in self.semifinal_winners):
             self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
@@ -497,7 +516,12 @@ class Tournament:
         return False
 
     def set_final_winner(self, team_index: int) -> None:
-        """Записать победителя финала."""
+        """Записать победителя финала (pending confirmation)."""
+        self.final_pending_winner = team_index
+        # Don't set phase to COMPLETE yet, wait for confirmation
+
+    def confirm_final_winner(self, team_index: int) -> None:
+        """Подтвердить победителя финала с сохранением статистики."""
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
 

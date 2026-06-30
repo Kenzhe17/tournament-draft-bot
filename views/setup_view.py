@@ -52,18 +52,11 @@ class CircleSelectButton(discord.ui.Button):
 
         # Check if registration is open
         if tournament.registration == RegistrationState.CLOSED:
-            # Only admin can add
-            from utils.permissions import is_admin_check
-            if not is_admin_check(interaction.user, interaction.guild):
-                await interaction.response.send_message(
-                    "❌ Регистрация закрыта. Только админ может добавлять игроков.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-            # Admin can add via modal
-            modal = AdminAddModal(self.guild_id, self.circle)
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_message(
+                "❌ Регистрация закрыта. Невозможно добавить игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Check if circle is full (except circle4)
@@ -78,7 +71,7 @@ class CircleSelectButton(discord.ui.Button):
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
 
-        # Get user's Discord name
+        # Get user's nickname
         user_name = interaction.user.display_name
 
         # Check if user already in tournament - if so, move them to new circle
@@ -99,28 +92,30 @@ class CircleSelectButton(discord.ui.Button):
                     was_moved = True
                     break
 
-        # Show nickname modal for new registration
-        if not was_moved:
-            modal = GameNicknameModal(self.guild_id, self.circle, user_name, interaction.user.id)
-            await interaction.response.send_modal(modal)
-        else:
-            # Just move the player
-            success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
-            if not success:
-                await interaction.response.send_message(
-                    "❌ Не удалось добавить игрока.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
+        # Add player with user_id
+        success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
+        if not success:
+            await interaction.response.send_message(
+                "❌ Не удалось добавить игрока.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
-            store.set(tournament)
+        store.set(tournament)
 
-            bot: TournamentBot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, tournament)
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
 
+        if was_moved:
             await interaction.response.send_message(
                 f"✅ Вы перемещены в {circle_names[self.circle]}!",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+        else:
+            await interaction.response.send_message(
+                f"✅ Вы добавлены в {circle_names[self.circle]}!",
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -134,70 +129,6 @@ circle_names = {
 }
 
 
-class GameNicknameModal(discord.ui.Modal):
-    """Модальное окно для ввода игрового ника."""
-
-    def __init__(self, guild_id: int, circle: int, discord_name: str, user_id: int):
-        super().__init__(title="Регистрация в турнире")
-        self.guild_id = guild_id
-        self.circle = circle
-        self.discord_name = discord_name
-        self.user_id = user_id
-
-        self.nickname_input = discord.ui.TextInput(
-            label="Ваш ник в Free Fire",
-            placeholder="Введите ваш игровой ник",
-            min_length=1,
-            max_length=20,
-        )
-        self.add_item(self.nickname_input)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Handle modal submission."""
-        game_nickname = self.nickname_input.value.strip()
-
-        if not game_nickname:
-            await interaction.response.send_message(
-                "❌ Ник не может быть пустым.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Турнир не найден.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Add player with user_id
-        success = tournament.add_player_to_circle(self.circle, self.discord_name, self.user_id)
-        if not success:
-            await interaction.response.send_message(
-                "❌ Не удалось добавить игрока.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Store game nickname mapping
-        tournament.player_game_nicknames[self.discord_name] = game_nickname
-
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        await interaction.response.send_message(
-            f"✅ Вы добавлены в {circle_names[self.circle]} как {game_nickname}!",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
-
 class AdminAddModal(discord.ui.Modal):
     """Модальное окно для админа добавления игрока."""
 
@@ -207,20 +138,12 @@ class AdminAddModal(discord.ui.Modal):
         self.circle = circle
 
         self.name_input = discord.ui.TextInput(
-            label="Discord имя игрока",
-            placeholder="Введите Discord имя игрока",
+            label="Имя игрока",
+            placeholder="Введите имя игрока",
             required=True,
             max_length=50,
         )
         self.add_item(self.name_input)
-
-        self.nickname_input = discord.ui.TextInput(
-            label="Игровой ник",
-            placeholder="Введите игровой ник в Free Fire",
-            required=True,
-            max_length=20,
-        )
-        self.add_item(self.nickname_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
@@ -232,15 +155,6 @@ class AdminAddModal(discord.ui.Modal):
             return
 
         player_name = self.name_input.value.strip()
-        game_nickname = self.nickname_input.value.strip()
-
-        if not game_nickname:
-            await interaction.response.send_message(
-                "❌ Игровой ник не может быть пустым.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
 
         # Check if circle is full (except circle4)
         if self.circle != 4:
@@ -279,9 +193,6 @@ class AdminAddModal(discord.ui.Modal):
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
-
-        # Store game nickname mapping
-        tournament.player_game_nicknames[player_name] = game_nickname
 
         store.set(tournament)
 

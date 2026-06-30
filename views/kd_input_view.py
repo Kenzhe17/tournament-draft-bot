@@ -51,14 +51,14 @@ class TeamKDButton(discord.ui.Button):
             players = self.match_info.get('team2_players', [])
 
         from views.kd_input_modal import TeamKDInputModal
-        modal = TeamKDInputModal(self.guild_id, self.team_number, self.team_name, players, self.tournament)
-
+        modal = TeamKDInputModal(self.guild_id, self.team_number, self.team_name, players)
+        
         # Store the view reference in the modal so it can update buttons
         view = self.view
         if isinstance(view, KDInputView):
             modal.parent_view = view
             modal.interaction = interaction  # Store interaction for editing
-
+        
         await interaction.response.send_modal(modal)
 
 
