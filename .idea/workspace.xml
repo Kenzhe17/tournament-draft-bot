@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="ab8f14f7-9a48-490f-b8c1-3c701b44af5e" name="Changes" comment="" />
+    <list default="true" id="ab8f14f7-9a48-490f-b8c1-3c701b44af5e" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/cogs/tournament.py" beforeDir="false" afterPath="$PROJECT_DIR$/cogs/tournament.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/services/screen_processor.py" beforeDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />

@@ -270,62 +270,6 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="screen", description="Обработать скриншот результата матча")
-    async def process_screen(self, interaction: discord.Interaction, attachment: discord.Attachment) -> None:
-        """Обработать скриншот результата матча Free Fire."""
-        try:
-            from services.screen_processor import ScreenProcessor
-
-            # Download image
-            image_bytes = await attachment.read()
-
-            # Process screenshot
-            processor = ScreenProcessor()
-            result = processor.process_screenshot_from_bytes(image_bytes)
-
-            # Format result for display
-            import json
-            result_json = json.dumps(result, indent=2, ensure_ascii=False)
-
-            embed = discord.Embed(
-                title="📸 Результат обработки скриншота",
-                color=discord.Color.green()
-            )
-
-            embed.add_field(
-                name="Победитель",
-                value=result.get("winner", "Не определен"),
-                inline=False
-            )
-
-            for i, team in enumerate(result.get("teams", []), 1):
-                team_name = team.get("name", f"Команда {i}")
-                players_text = "\n".join([
-                    f"• {p['nickname']}: {p['kills']} kills, {p['damage']} dmg"
-                    for p in team.get("players", [])
-                ])
-                embed.add_field(
-                    name=f"🏆 {team_name}",
-                    value=players_text or "Нет данных",
-                    inline=False
-                )
-
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-            # Also send raw JSON for debugging
-            if len(result_json) < 1900:
-                await interaction.followup.send(f"```json\n{result_json}\n```", ephemeral=True)
-            else:
-                await interaction.followup.send("JSON слишком длинный для отображения", ephemeral=True)
-
-        except Exception as e:
-            import logging
-            logging.error(f"Error processing screenshot: {e}", exc_info=True)
-            await interaction.response.send_message(
-                f"❌ Ошибка при обработке скриншота: {str(e)}",
-                ephemeral=True
-            )
-
     @app_commands.command(name="reset_leaderboard", description="Сбросить статистику лидерборда")
     @is_admin()
     async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
@@ -395,8 +339,7 @@ class TournamentCog(commands.Cog):
             )
 
         await interaction.response.send_message(
-            "🎁 Вы получили 100 монет!",
-            ephemeral=True
+            "🎁 Вы получили 100 монет!"
         )
 
     @app_commands.command(name="balance", description="Показать ваш баланс")
@@ -416,7 +359,7 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:

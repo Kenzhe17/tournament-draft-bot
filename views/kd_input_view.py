@@ -197,6 +197,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 team_won=team_won
             )
 
+            # Increment games count for this match
+            updated_stats.games += 1
+
             await player_stats_store.set(updated_stats)
 
     # Set the match winner based on match type

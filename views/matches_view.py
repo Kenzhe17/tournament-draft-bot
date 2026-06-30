@@ -79,7 +79,7 @@ class GenerateMatchesButton(discord.ui.Button):
                     if player:
                         # Get user_id from tournament's player_user_ids
                         user_id = tournament.player_user_ids.get(player, 0)
-                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=True)
+                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
                         # Give participation reward
                         await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
 

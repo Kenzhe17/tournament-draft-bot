@@ -153,9 +153,6 @@ def update_player_stats_from_match(
     # Update current ELO
     stats.elo += elo_change
     
-    # Update games count
-    stats.games += 1
-    
     # Update wins/finals
     if team_won:
         stats.wins += 1

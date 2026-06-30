@@ -311,12 +311,11 @@ class Tournament:
                 self.circle3.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
-        # Last group goes to circle4
-        for i in range(captain_count * 3, captain_count * 4):
-            if i < len(players_with_elo):
-                player_name, user_id, _ = players_with_elo[i]
-                self.circle4.append(player_name)
-                self.player_user_ids[player_name] = user_id
+        # All remaining players go to circle4
+        for i in range(captain_count * 3, len(players_with_elo)):
+            player_name, user_id, _ = players_with_elo[i]
+            self.circle4.append(player_name)
+            self.player_user_ids[player_name] = user_id
 
     # --- Драфт ---
 
