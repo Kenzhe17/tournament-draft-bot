@@ -791,12 +791,9 @@ class QualifiersView(discord.ui.View):
         from views.stats_fill_view import AdminFillStatsButton
         self.add_item(AdminFillStatsButton(guild_id, tournament))
 
-        # Add stats fill buttons for captains of completed matches
+        # Add single adaptive stats fill button for captains
         from views.stats_fill_view import FillStatsButton
-        completed_matches = tournament.completed_matches.get("qualifier", [])
-        for match_index in completed_matches:
-            team_a, team_b = matches[match_index]
-            self.add_item(FillStatsButton(guild_id, tournament, "qualifier", match_index, team_a, team_b))
+        self.add_item(FillStatsButton(guild_id, tournament))
 
         # Add manual phase advance button for admin (only if all winners selected but stats not filled)
         if all(w is not None for w in tournament.qualifier_winners):
@@ -824,12 +821,9 @@ class SemifinalsView(discord.ui.View):
         from views.stats_fill_view import AdminFillStatsButton
         self.add_item(AdminFillStatsButton(guild_id, tournament))
 
-        # Add stats fill buttons for captains of completed matches
+        # Add single adaptive stats fill button for captains
         from views.stats_fill_view import FillStatsButton
-        completed_matches = tournament.completed_matches.get("semifinal", [])
-        for match_index in completed_matches:
-            team_a, team_b = matches[match_index]
-            self.add_item(FillStatsButton(guild_id, tournament, "semifinal", match_index, team_a, team_b))
+        self.add_item(FillStatsButton(guild_id, tournament))
 
         # Add manual phase advance button for admin (only if all winners selected but stats not filled)
         if all(w is not None for w in tournament.semifinal_winners):

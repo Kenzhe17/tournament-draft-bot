@@ -141,7 +141,6 @@ class FinalView(discord.ui.View):
         from views.stats_fill_view import AdminFillStatsButton
         self.add_item(AdminFillStatsButton(guild_id, tournament))
 
-        # Add stats fill button for captains if final is completed
+        # Add single adaptive stats fill button for captains
         from views.stats_fill_view import FillStatsButton
-        if 0 in tournament.completed_matches.get("final", []):
-            self.add_item(FillStatsButton(guild_id, tournament, "final", 0, final_teams[0], final_teams[1]))
+        self.add_item(FillStatsButton(guild_id, tournament))

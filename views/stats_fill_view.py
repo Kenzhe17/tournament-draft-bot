@@ -9,51 +9,94 @@ from discord.ui import Modal, TextInput, View, Button, button
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
+else:
+    from models.tournament import TournamentPhase
 
 
 class FillStatsButton(Button):
-    """Button for captains to fill stats for their completed match."""
+    """Single adaptive button for captains to fill stats for their match."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_a: int, team_b: int):
+    def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label="📝 Заполнить",
+            label="📝 Заполнить статистику",
             style=discord.ButtonStyle.primary,
-            custom_id=f"fill_stats:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"fill_stats:{guild_id}"
         )
         self.guild_id = guild_id
         self.tournament = tournament
-        self.match_type = match_type
-        self.match_index = match_index
-        self.team_a = team_a
-        self.team_b = team_b
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Check if user is a captain of this match and show modal."""
-        # Get team data
-        team_a_data = self.tournament.teams[self.team_a] if self.team_a < len(self.tournament.teams) else {}
-        team_b_data = self.tournament.teams[self.team_b] if self.team_b < len(self.tournament.teams) else {}
-
-        captain_a = team_a_data.get("captain", "")
-        captain_b = team_b_data.get("captain", "")
-
-        # Check if user is a captain of either team
+        """Check if user is a captain and show appropriate modal."""
         user_name = interaction.user.display_name
-        is_captain_a = user_name == captain_a
-        is_captain_b = user_name == captain_b
 
-        if not is_captain_a and not is_captain_b:
+        # Find which team this user captains
+        captain_team_index = None
+        for i, team in enumerate(self.tournament.teams):
+            if team.get("captain") == user_name:
+                captain_team_index = i
+                break
+
+        if captain_team_index is None:
             await interaction.response.send_message(
-                "❌ Только капитаны команд этого матча могут заполнять статистику.",
+                "❌ Только капитаны могут заполнять статистику.",
                 ephemeral=True
             )
             return
 
-        # Determine which team this captain belongs to
-        captain_team_index = self.team_a if is_captain_a else self.team_b
-        opponent_team_index = self.team_b if is_captain_a else self.team_a
+        # Find which match this team is in and if it's completed
+        match_info = None
+
+        # Check qualifiers
+        if self.tournament.phase == TournamentPhase.QUALIFIERS:
+            for match_index, (team_a, team_b) in enumerate(self.tournament.qualifier_matches):
+                if captain_team_index in (team_a, team_b):
+                    if match_index not in self.tournament.completed_matches.get("qualifier", []):
+                        await interaction.response.send_message(
+                            "❌ Ваш матч еще не завершен. Дождитесь выбора победителя.",
+                            ephemeral=True
+                        )
+                        return
+                    opponent_team_index = team_b if captain_team_index == team_a else team_a
+                    match_info = ("qualifier", match_index, captain_team_index, opponent_team_index)
+                    break
+
+        # Check semifinals
+        elif self.tournament.phase == TournamentPhase.SEMIFINALS:
+            for match_index, (team_a, team_b) in enumerate(self.tournament.semifinal_matches):
+                if captain_team_index in (team_a, team_b):
+                    if match_index not in self.tournament.completed_matches.get("semifinal", []):
+                        await interaction.response.send_message(
+                            "❌ Ваш матч еще не завершен. Дождитесь выбора победителя.",
+                            ephemeral=True
+                        )
+                        return
+                    opponent_team_index = team_b if captain_team_index == team_a else team_a
+                    match_info = ("semifinal", match_index, captain_team_index, opponent_team_index)
+                    break
+
+        # Check final
+        elif self.tournament.phase == TournamentPhase.FINAL:
+            if captain_team_index in self.tournament.final_teams:
+                if 0 not in self.tournament.completed_matches.get("final", []):
+                    await interaction.response.send_message(
+                        "❌ Ваш матч еще не завершен. Дождитесь выбора победителя.",
+                        ephemeral=True
+                    )
+                    return
+                opponent_team_index = self.tournament.final_teams[1] if captain_team_index == self.tournament.final_teams[0] else self.tournament.final_teams[0]
+                match_info = ("final", 0, captain_team_index, opponent_team_index)
+
+        if match_info is None:
+            await interaction.response.send_message(
+                "❌ Ваша команда не участвует в текущем этапе турнира.",
+                ephemeral=True
+            )
+            return
+
+        match_type, match_index, captain_team, opponent_team = match_info
 
         # Show modal with only the captain's team
-        modal = CaptainStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, captain_team_index, opponent_team_index)
+        modal = CaptainStatsModal(self.guild_id, self.tournament, match_type, match_index, captain_team, opponent_team)
         await interaction.response.send_modal(modal)
 
 
