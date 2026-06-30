@@ -475,6 +475,10 @@ class Tournament:
                 return True
             else:
                 # Stats not filled yet, don't advance
+                # Log for debugging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Phase transition blocked: qualifier stats not confirmed. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}")
                 return False
         return False
 
@@ -514,6 +518,10 @@ class Tournament:
                 return True
             else:
                 # Stats not filled yet, don't advance
+                # Log for debugging
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Phase transition blocked: semifinal stats not confirmed. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}")
                 return False
         return False
 

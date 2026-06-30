@@ -597,12 +597,21 @@ class AdminConfirmView(View):
                 deaths=deaths
             )
 
-        # Clear temporary stats
+        # Clear temporary stats for this match only
         if self.match_type in self.tournament.temp_match_stats:
             if self.match_index in self.tournament.temp_match_stats[self.match_type]:
                 del self.tournament.temp_match_stats[self.match_type][self.match_index]
 
+            # If no more stats for this match type, remove the key entirely
+            if not self.tournament.temp_match_stats[self.match_type]:
+                del self.tournament.temp_match_stats[self.match_type]
+
         store.set(self.tournament)
+
+        # Update tournament message to check if phase should advance
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, self.tournament)
 
         await interaction.response.edit_message(
             content="✅ Статистика сохранена!",

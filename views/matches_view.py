@@ -435,13 +435,24 @@ class TeamWinnerButton(discord.ui.Button):
                 )
                 return
 
-            tournament.set_qualifier_winner(self.match_index, self.team_index)
+            phase_advanced = tournament.set_qualifier_winner(self.match_index, self.team_index)
 
             # Mark match as completed for stats filling
             if "qualifier" not in tournament.completed_matches:
                 tournament.completed_matches["qualifier"] = []
             if self.match_index not in tournament.completed_matches["qualifier"]:
                 tournament.completed_matches["qualifier"].append(self.match_index)
+
+            if phase_advanced:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Фаза автоматически перешла к полуфиналам (все статистики подтверждены).",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Ожидание заполнения статистики для перехода к следующей фазе.",
+                    ephemeral=True
+                )
 
         elif self.match_type == "semifinal":
             if tournament.semifinal_winners[self.match_index] is not None:
@@ -451,13 +462,24 @@ class TeamWinnerButton(discord.ui.Button):
                 )
                 return
 
-            tournament.set_semifinal_winner(self.match_index, self.team_index)
+            phase_advanced = tournament.set_semifinal_winner(self.match_index, self.team_index)
 
             # Mark match as completed for stats filling
             if "semifinal" not in tournament.completed_matches:
                 tournament.completed_matches["semifinal"] = []
             if self.match_index not in tournament.completed_matches["semifinal"]:
                 tournament.completed_matches["semifinal"].append(self.match_index)
+
+            if phase_advanced:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Фаза автоматически перешла к финалу (все статистики подтверждены).",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Ожидание заполнения статистики для перехода к следующей фазе.",
+                    ephemeral=True
+                )
 
         elif self.match_type == "final":
             if tournament.winner_team_index is not None:
