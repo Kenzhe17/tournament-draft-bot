@@ -615,10 +615,17 @@ class TeamWinnerButton(discord.ui.Button):
         bot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.edit_message(
-            content=f"✅ Победитель выбран: {self.team_name}",
-            view=None
-        )
+        try:
+            await interaction.response.edit_message(
+                content=f"✅ Победитель выбран: {self.team_name}",
+                view=None
+            )
+        except discord.InteractionResponded:
+            # Already responded, try followup instead
+            await interaction.followup.send(
+                f"✅ Победитель выбран: {self.team_name}",
+                ephemeral=True
+            )
 
 
 class SelectWinnerButton(discord.ui.Button):

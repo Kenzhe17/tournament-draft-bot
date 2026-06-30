@@ -512,19 +512,26 @@ class AdminStatsModal(Modal):
 
             logger.info(f"AdminStatsModal: Saved to temp_match_stats")
 
-            # Show confirmation view
+            # Show confirmation view - use response instead of followup since modal just submitted
             confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     "Проверьте статистику перед подтверждением:",
                     view=confirm_view,
                     ephemeral=True
                 )
                 logger.info(f"AdminStatsModal: Sent confirmation view")
-            except discord.NotFound:
-                # Interaction expired
-                logger.warning(f"AdminStatsModal: Interaction expired when sending confirmation")
-                pass
+            except discord.InteractionResponded:
+                # If already responded (shouldn't happen with modal), use followup
+                logger.warning(f"AdminStatsModal: Interaction already responded, using followup")
+                try:
+                    await interaction.followup.send(
+                        "Проверьте статистику перед подтверждением:",
+                        view=confirm_view,
+                        ephemeral=True
+                    )
+                except Exception as e:
+                    logger.error(f"AdminStatsModal: Error sending followup: {e}")
             except Exception as e:
                 logger.error(f"AdminStatsModal: Error sending confirmation: {e}")
                 raise
