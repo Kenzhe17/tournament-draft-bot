@@ -592,7 +592,7 @@ class AdminConfirmView(View):
                 await interaction.response.send_message("❌ Победитель не выбран.", ephemeral=True)
                 return
 
-            # Process the match with statistics
+            # Process the match with statistics (this applies ELO and stats immediately)
             await process_match_result(self.guild_id, tournament, {
                 "match_type": self.match_type,
                 "match_index": self.match_index,
@@ -601,6 +601,9 @@ class AdminConfirmView(View):
                 "team2_index": self.team_b_index,
                 "temp_kd_data": temp_stats
             })
+
+            # Store tournament after stats are processed
+            store.set(tournament)
 
             # Resolve betting
             if self.match_type == "qualifier":
@@ -617,7 +620,7 @@ class AdminConfirmView(View):
             for user_id, payout in payouts.items():
                 await user_balance_store.add_balance(self.guild_id, user_id, payout)
 
-            # Confirm winner
+            # Confirm winner (this may trigger phase transition)
             if self.match_type == "qualifier":
                 tournament.confirm_qualifier_winner(self.match_index, winning_team_index)
             elif self.match_type == "semifinal":
@@ -629,6 +632,7 @@ class AdminConfirmView(View):
             if match_id in tournament.temp_match_stats:
                 del tournament.temp_match_stats[match_id]
 
+            # Store tournament again after winner confirmation
             store.set(tournament)
 
             from bot import TournamentBot

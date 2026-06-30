@@ -469,6 +469,10 @@ class Tournament:
         """
         # Winner is already set in qualifier_winners, this just confirms
         # Statistics should be saved before calling this
+        # Clear pending winner for this match
+        if match_index in range(len(self.qualifier_winners)):
+            self.qualifier_winners[match_index] = team_index
+
         if all(w is not None for w in self.qualifier_winners):
             self.generate_semifinals_from_qualifiers()
             return True
@@ -510,7 +514,12 @@ class Tournament:
         Возвращает True, если оба полуфинала завершены.
         """
         # Move from pending to confirmed
-        self.semifinal_winners[match_index] = team_index
+        if match_index in range(len(self.semifinal_winners)):
+            self.semifinal_winners[match_index] = team_index
+        # Clear pending winner
+        if match_index in range(len(self.semifinal_pending_winners)):
+            self.semifinal_pending_winners[match_index] = None
+
         if all(w is not None for w in self.semifinal_winners):
             self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
             self.phase = TournamentPhase.FINAL
