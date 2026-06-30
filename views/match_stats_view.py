@@ -15,8 +15,10 @@ class CaptainFillButton(Button):
     """Button for captains to fill match statistics."""
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
+        team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+        team_name = tournament.team_names.get(team_index, team.get("captain", f"Team {team_index}"))
         super().__init__(
-            label="✏️ Заполнить статистику",
+            label=f"✏️ {team_name}",
             style=discord.ButtonStyle.primary,
             custom_id=f"captain_fill:{guild_id}:{match_type}:{match_index}:{team_index}"
         )
@@ -183,8 +185,8 @@ class AdminMatchSelectView(View):
         self.tournament = tournament
 
         # Add buttons for pending matches
-        if tournament.size.value == "32":
-            # Qualifiers
+        # Qualifiers (only for 32 player tournaments)
+        if tournament.size.value == "32" and tournament.phase.value in ["qualifiers", "semifinals", "final", "complete"]:
             for i, winner in enumerate(tournament.qualifier_winners):
                 if winner is not None:
                     match = tournament.qualifier_matches[i]
@@ -199,21 +201,22 @@ class AdminMatchSelectView(View):
                     self.add_item(btn)
 
         # Semifinals
-        for i, winner in enumerate(tournament.semifinal_pending_winners):
-            if winner is not None:
-                match = tournament.semifinal_matches[i]
-                team_a_name = tournament.team_names.get(match[0], f"Team {match[0]}")
-                team_b_name = tournament.team_names.get(match[1], f"Team {match[1]}")
-                btn = Button(
-                    label=f"Полуфинал {i+1}: {team_a_name} vs {team_b_name}",
-                    style=discord.ButtonStyle.primary,
-                    custom_id=f"admin_match:semifinal:{i}"
-                )
-                btn.callback = self._create_callback("semifinal", i)
-                self.add_item(btn)
+        if tournament.phase.value in ["semifinals", "final", "complete"]:
+            for i, winner in enumerate(tournament.semifinal_pending_winners):
+                if winner is not None:
+                    match = tournament.semifinal_matches[i]
+                    team_a_name = tournament.team_names.get(match[0], f"Team {match[0]}")
+                    team_b_name = tournament.team_names.get(match[1], f"Team {match[1]}")
+                    btn = Button(
+                        label=f"Полуфинал {i+1}: {team_a_name} vs {team_b_name}",
+                        style=discord.ButtonStyle.primary,
+                        custom_id=f"admin_match:semifinal:{i}"
+                    )
+                    btn.callback = self._create_callback("semifinal", i)
+                    self.add_item(btn)
 
         # Final
-        if tournament.final_pending_winner is not None:
+        if tournament.phase.value in ["final", "complete"] and tournament.final_pending_winner is not None:
             team_a = tournament.final_teams[0]
             team_b = tournament.final_teams[1]
             team_a_name = tournament.team_names.get(team_a, f"Team {team_a}")

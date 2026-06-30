@@ -358,64 +358,23 @@ class TeamWinnerButton(discord.ui.Button):
             await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
             return
 
-        # Get teams for this match
+        # Call the appropriate winner setter based on match type
         if self.match_type == "qualifier":
-            match = tournament.qualifier_matches[self.match_index]
+            tournament.set_qualifier_winner(self.match_index, self.team_index)
         elif self.match_type == "semifinal":
-            match = tournament.semifinal_matches[self.match_index]
+            tournament.set_semifinal_winner(self.match_index, self.team_index)
         elif self.match_type == "final":
-            match = tournament.final_teams
-        else:
-            await interaction.response.send_message("❌ Неверный тип матча.", ephemeral=True)
-            return
+            tournament.set_final_winner(self.team_index)
 
-        # Get team data for K/D input
-        team1_index, team2_index = match
-        team1_data = tournament.teams[team1_index] if team1_index < len(tournament.teams) else {}
-        team2_data = tournament.teams[team2_index] if team2_index < len(tournament.teams) else {}
+        store.set(tournament)
 
-        # Get players from both teams with their circles
-        team1_players = []
-        team2_players = []
-        
-        for circle in range(1, 5):
-            player1 = team1_data.get(f"circle{circle}")
-            if player1:
-                team1_players.append((player1, circle))
-            
-            player2 = team2_data.get(f"circle{circle}")
-            if player2:
-                team2_players.append((player2, circle))
-
-        # Get team names
-        team1_name = tournament.team_names.get(team1_index, team1_data.get("captain", f"Team {team1_index}"))
-        team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
-
-        # Store match info for K/D input
-        match_info = {
-            'match_type': self.match_type,
-            'match_index': self.match_index,
-            'winning_team_index': self.team_index,
-            'team1_index': team1_index,
-            'team2_index': team2_index,
-            'team1_name': team1_name,
-            'team2_name': team2_name,
-            'team1_players': team1_players,
-            'team2_players': team2_players,
-            'temp_kd_data': {},
-        }
-
-        # Show K/D input view
-        from views.kd_input_view import KDInputView
-        kd_view = KDInputView(self.guild_id, tournament, match_info)
-
-        embed = discord.Embed(
-            title="📊 Ввод статистики матча",
-            description=f"{team1_name} vs {team2_name}\n\nПобедитель: {self.team_name}\n\nВведите K/D для обеих команд:",
-            color=discord.Color.blue()
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
         )
-
-        await interaction.response.send_message(embed=embed, view=kd_view, ephemeral=True)
 
 
 class SelectWinnerButton(discord.ui.Button):
