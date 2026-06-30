@@ -119,7 +119,7 @@ class ProcessMatchButton(discord.ui.Button):
 
 
 async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict) -> None:
-    """Process match result with new rating system."""
+    """Process match result with new rating system (only stats, no winner setting)."""
     from storage.player_stats_store import player_stats_store
     from utils.rating_calculator import (
         calculate_team_position,
@@ -143,19 +143,19 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
 
         # Collect player data for position calculation
         players_for_position = []
-        
+
         for circle in range(1, 5):
             player = team_data.get(f"circle{circle}")
             if player and player in temp_kd_data:
                 kd = temp_kd_data[player]
                 kills = kd.get('kills', 0)
                 deaths = kd.get('deaths', 0)
-                
+
                 # Get current ELO
                 user_id = tournament.player_user_ids.get(player, 0)
                 stats = await player_stats_store.get(guild_id, user_id)
                 current_elo = stats.elo if stats else 1000
-                
+
                 players_for_position.append((player, kills, deaths, current_elo))
 
         # Calculate positions within team
@@ -166,7 +166,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         for player_name, kills, deaths, current_elo in players_for_position:
             position = position_map.get(player_name, 1)
             circle = temp_kd_data[player_name].get('circle', 1)
-            
+
             # Calculate ELO change
             elo_change = calculate_total_elo_change(
                 circle=circle,
@@ -201,16 +201,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             updated_stats.games += 1
 
             await player_stats_store.set(updated_stats)
-
-    # Set the match winner based on match type
-    if match_type == "qualifier":
-        tournament.set_qualifier_winner(match_index, winning_team_index)
-    elif match_type == "semifinal":
-        tournament.set_semifinal_winner(match_index, winning_team_index)
-    elif match_type == "final":
-        tournament.final_winner = winning_team_index
-        tournament.winner_team_index = winning_team_index
-        tournament.phase = tournament.phase.__class__.COMPLETE
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):
