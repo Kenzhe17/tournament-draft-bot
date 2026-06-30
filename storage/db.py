@@ -220,3 +220,33 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+
+        # Reset betting statistics (migration)
+        migration_run = await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'db_migrations')"
+        )
+        if not migration_run:
+            # Create migrations table
+            await conn.execute("""
+                CREATE TABLE db_migrations (
+                    migration_name TEXT PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+        else:
+            # Check if this specific migration has been run
+            migration_exists = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM db_migrations WHERE migration_name = 'reset_betting_stats_2024')"
+            )
+            if migration_exists:
+                return  # Migration already run
+
+        # Apply migration: reset betting statistics
+        await conn.execute("TRUNCATE TABLE betting_stats")
+
+        # Record migration
+        await conn.execute("""
+            INSERT INTO db_migrations (migration_name)
+            VALUES ('reset_betting_stats_2024')
+            ON CONFLICT (migration_name) DO NOTHING
+        """)

@@ -135,30 +135,42 @@ class BetStore:
 
     async def resolve_match_bets(self, guild_id: int, match_id: str, winning_team_name: str) -> dict[int, int]:
         """Resolve bets for a match and return payouts (user_id -> amount)."""
+        from storage.betting_stats_store import betting_stats_store
+
         bets = await self.get_bets_by_match(match_id)
         payouts = {}
-        
+
         # Calculate total bank and winning team bets
         total_bank = sum(b.amount for b in bets)
         winning_bets = [b for b in bets if b.team_name == winning_team_name]
         winning_total = sum(b.amount for b in winning_bets)
-        
+
         if winning_total == 0:
-            # No one bet on the winner, return all bets
+            # No one bet on the winner, return all bets to their owners
             for bet in bets:
                 payouts[bet.user_id] = bet.amount
+                # Record as loss (bet amount lost)
+                await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
         else:
-            # Calculate payout ratio
+            # Calculate payout ratio (total bank / winning bets total)
             payout_ratio = total_bank / winning_total
-            
+
             # Distribute winnings
             for bet in winning_bets:
                 payout = int(bet.amount * payout_ratio)
                 payouts[bet.user_id] = payout
-        
+                # Record as win (profit = payout - bet_amount)
+                profit = payout - bet.amount
+                await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
+
+            # Record losses for losing bets
+            losing_bets = [b for b in bets if b.team_name != winning_team_name]
+            for bet in losing_bets:
+                await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
+
         # Delete bets after resolution
         await self.delete_bets_by_match(match_id)
-        
+
         return payouts
 
     def enable_db(self) -> None:
