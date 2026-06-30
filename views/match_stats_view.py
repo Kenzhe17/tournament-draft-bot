@@ -99,13 +99,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             if player:
                 self.players.append((player, circle))
 
-        # Create input fields for each player (format: Name: kills/deaths)
+        # Create input fields for each player (format: kills/deaths)
         for i, (player_name, circle) in enumerate(self.players):
             kd_input = TextInput(
-                label=f"Круг {circle}",
-                placeholder="Name: kills/deaths (например: Player1: 7/2)",
+                label=player_name,
+                placeholder="Убийства/Смерти (например: 8/2)",
                 required=False,
-                max_length=30
+                max_length=7
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
@@ -126,22 +126,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                     deaths = 0
                 else:
                     try:
-                        # Parse format: "Name: kills/deaths" or just "kills/deaths"
-                        value = kd_field.value.strip()
-                        if ':' in value:
-                            # Format: "Name: kills/deaths"
-                            parts = value.split(':')
-                            kd_part = parts[1].strip() if len(parts) > 1 else ""
-                        else:
-                            # Format: "kills/deaths"
-                            kd_part = value
-
-                        kd_parts = kd_part.split('/')
+                        # Parse format: "kills/deaths"
+                        kd_parts = kd_field.value.split('/')
                         kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
                         deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                     except (ValueError, IndexError):
                         await interaction.response.send_message(
-                            f"❌ Некорректный формат для круга {circle}. Используйте формат: Name: kills/deaths (например: Player1: 7/2)",
+                            f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)",
                             ephemeral=True
                         )
                         return
@@ -573,7 +564,7 @@ class AdminConfirmView(View):
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
-        from views.matches_view import process_match_result
+        from views.kd_input_view import process_match_result
         from storage.player_stats_store import player_stats_store
         from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
