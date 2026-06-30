@@ -189,7 +189,7 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            "🔒 Регистрация закрыта. Только админ может добавлять игроков.",
+            "🔒 Регистрация закрыта.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -212,7 +212,7 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            "🔓 Регистрация открыта! Игроки могут добавляться через кнопки.",
+            "🔓 Регистрация открыта.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))

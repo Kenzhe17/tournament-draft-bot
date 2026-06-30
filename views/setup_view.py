@@ -52,18 +52,11 @@ class CircleSelectButton(discord.ui.Button):
 
         # Check if registration is open
         if tournament.registration == RegistrationState.CLOSED:
-            # Only admin can add
-            from utils.permissions import is_admin_check
-            if not is_admin_check(interaction.user, interaction.guild):
-                await interaction.response.send_message(
-                    "❌ Регистрация закрыта. Только админ может добавлять игроков.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-            # Admin can add via modal
-            modal = AdminAddModal(self.guild_id, self.circle)
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_message(
+                "❌ Регистрация закрыта.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
         # Check if circle is full (except circle4)
