@@ -56,6 +56,19 @@ class CaptainFillButton(Button):
                 await interaction.response.send_message("❌ Матч ещё не завершён.", ephemeral=True)
                 return
 
+        # Check if this team already filled stats
+        match_id = f"{self.match_type}_{self.match_index}"
+        if match_id in tournament.temp_match_stats:
+            # Check if any player from this team has stats filled
+            team_filled = False
+            for player_name, circle in [(team.get(f"circle{c}"), c) for c in range(1, 5)]:
+                if player_name and player_name in tournament.temp_match_stats[match_id]:
+                    team_filled = True
+                    break
+            if team_filled:
+                await interaction.response.send_message("❌ Статистика вашей команды уже заполнена.", ephemeral=True)
+                return
+
         # Open modal for captain to fill stats
         modal = CaptainStatsModal(
             self.guild_id,
@@ -108,44 +121,54 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
 
-        # Parse statistics
-        match_id = f"{self.match_type}_{self.match_index}"
-        stats = {}
+        try:
+            # Parse statistics
+            match_id = f"{self.match_type}_{self.match_index}"
+            stats = {}
 
-        for i, (player_name, circle) in enumerate(self.players):
-            kills_field = getattr(self, f"kills_{i}")
-            deaths_field = getattr(self, f"deaths_{i}")
+            for i, (player_name, circle) in enumerate(self.players):
+                kills_field = getattr(self, f"kills_{i}")
+                deaths_field = getattr(self, f"deaths_{i}")
 
-            try:
-                kills = int(kills_field.value) if kills_field.value else 0
-                deaths = int(deaths_field.value) if deaths_field.value else 0
-            except ValueError:
-                await interaction.response.send_message("❌ Некорректные значения. Введите числа.", ephemeral=True)
+                try:
+                    kills = int(kills_field.value) if kills_field.value else 0
+                    deaths = int(deaths_field.value) if deaths_field.value else 0
+                except ValueError:
+                    await interaction.response.send_message("❌ Некорректные значения. Введите числа.", ephemeral=True)
+                    return
+
+                stats[player_name] = {
+                    "kills": kills,
+                    "deaths": deaths,
+                    "circle": circle
+                }
+
+            # Store in tournament temp stats
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
                 return
 
-            stats[player_name] = {
-                "kills": kills,
-                "deaths": deaths,
-                "circle": circle
-            }
+            if match_id not in tournament.temp_match_stats:
+                tournament.temp_match_stats[match_id] = {}
 
-        # Store in tournament temp stats
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
-            return
+            # Merge with existing stats (captain fills their team only)
+            tournament.temp_match_stats[match_id].update(stats)
+            store.set(tournament)
 
-        if match_id not in tournament.temp_match_stats:
-            tournament.temp_match_stats[match_id] = {}
+            # Update tournament message to refresh view
+            from bot import TournamentBot
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
 
-        # Merge with existing stats (captain fills their team only)
-        tournament.temp_match_stats[match_id].update(stats)
-        store.set(tournament)
-
-        await interaction.response.send_message(
-            "✅ Данные отправлены\n\n⏳ Ожидается подтверждение администратора",
-            ephemeral=True
-        )
+            await interaction.response.send_message(
+                "✅ Данные отправлены\n\n⏳ Ожидается подтверждение администратора",
+                ephemeral=True
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"Error in CaptainStatsModal.on_submit: {e}", exc_info=True)
+            await interaction.response.send_message("❌ Произошла ошибка при сохранении статистики.", ephemeral=True)
 
 
 class AdminFillButton(Button):

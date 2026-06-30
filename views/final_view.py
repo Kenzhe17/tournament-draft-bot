@@ -93,5 +93,18 @@ class FinalView(discord.ui.View):
         # Add captain fill buttons for pending final
         from views.match_stats_view import CaptainFillButton
         if tournament.final_pending_winner is not None:
-            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
-            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))
+            match_id = "final_0"
+            # Check if team 0 has filled stats
+            team0_filled = any(
+                tournament.teams[final_teams[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                for c in range(1, 5)
+            )
+            if not team0_filled:
+                self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
+            # Check if team 1 has filled stats
+            team1_filled = any(
+                tournament.teams[final_teams[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                for c in range(1, 5)
+            )
+            if not team1_filled:
+                self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))

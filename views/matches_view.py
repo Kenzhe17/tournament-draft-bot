@@ -484,8 +484,21 @@ class QualifiersView(discord.ui.View):
             if winner is not None:
                 # Add fill button for both teams in this match
                 match = matches[i]
-                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
-                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
+                match_id = f"qualifier_{i}"
+                # Check if team 0 has filled stats
+                team0_filled = any(
+                    tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team0_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
+                # Check if team 1 has filled stats
+                team1_filled = any(
+                    tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team1_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
 
 
 class SemifinalsView(discord.ui.View):
@@ -514,5 +527,18 @@ class SemifinalsView(discord.ui.View):
             if winner is not None:
                 # Add fill button for both teams in this match
                 match = matches[i]
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[0]))
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[1]))
+                match_id = f"semifinal_{i}"
+                # Check if team 0 has filled stats
+                team0_filled = any(
+                    tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team0_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[0]))
+                # Check if team 1 has filled stats
+                team1_filled = any(
+                    tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team1_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[1]))
