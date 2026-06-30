@@ -527,10 +527,27 @@ class Tournament:
                 return False
         return False
 
-    def set_final_winner(self, team_index: int) -> None:
-        """Записать победителя финала."""
+    def set_final_winner(self, team_index: int) -> bool:
+        """Записать победителя финала. Возвращает True, если финал завершен."""
         self.winner_team_index = team_index
-        self.phase = TournamentPhase.COMPLETE
+
+        # Check if final stats have been confirmed (not in temp_match_stats)
+        final_stats_filled = True
+        if 0 in self.temp_match_stats.get("final", {}):
+            final_stats_filled = False
+
+        # Log for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Final winner selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('final', {})}. Stats filled: {final_stats_filled}")
+
+        if final_stats_filled:
+            self.phase = TournamentPhase.COMPLETE
+            return True
+        else:
+            # Stats not filled yet, don't complete tournament
+            logger.warning(f"Phase transition blocked: final stats not confirmed. temp_match_stats: {self.temp_match_stats.get('final', {})}")
+            return False
 
     # --- Сериализация ---
 

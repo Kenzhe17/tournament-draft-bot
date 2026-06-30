@@ -489,13 +489,24 @@ class TeamWinnerButton(discord.ui.Button):
                 )
                 return
 
-            tournament.set_final_winner(self.team_index)
+            phase_advanced = tournament.set_final_winner(self.team_index)
 
             # Mark match as completed for stats filling
             if "final" not in tournament.completed_matches:
                 tournament.completed_matches["final"] = []
             if 0 not in tournament.completed_matches["final"]:
                 tournament.completed_matches["final"].append(0)
+
+            if phase_advanced:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Турнир завершен (все статистики подтверждены).",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "✅ Победитель выбран. Ожидание заполнения статистики для завершения турнира.",
+                    ephemeral=True
+                )
 
         store.set(tournament)
 
