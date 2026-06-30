@@ -292,8 +292,10 @@ class AdminTeamSelectView(View):
             match = (tournament.final_teams[0], tournament.final_teams[1])
 
         team_a_index, team_b_index = match
-        team_a_name = tournament.team_names.get(team_a_index, f"Team {team_a_index}")
-        team_b_name = tournament.team_names.get(team_b_index, f"Team {team_b_index}")
+        team_a_data = tournament.teams[team_a_index] if team_a_index < len(tournament.teams) else {}
+        team_b_data = tournament.teams[team_b_index] if team_b_index < len(tournament.teams) else {}
+        team_a_name = tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
+        team_b_name = tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
 
         # Add buttons for each team
         team_a_btn = Button(label=team_a_name, style=discord.ButtonStyle.primary)
