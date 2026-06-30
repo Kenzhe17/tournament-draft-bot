@@ -114,10 +114,10 @@ async def build_setup_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed настройки турнира."""
-    status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
+    status_emoji = "🔓" if tournament.registration == RegistrationState.OPEN else "🔒"
     formation_text = "🎯 ELO" if tournament.formation_mode == FormationMode.ELO else "✋ Ручной"
     embed = discord.Embed(
-        title=f"🏆 Турнир ({tournament.size.value} игроков) | {status_text} | {formation_text}",
+        title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji} | {formation_text}",
         color=discord.Color.gold(),
     )
     
@@ -150,18 +150,12 @@ async def build_setup_embed(
         )
     
     # Add info about registration
-    if tournament.registration == RegistrationState.OPEN:
-        embed.add_field(
-            name="\u200b",
-            value="Регистрация открыта! Нажмите на кнопку чтобы добавить себя.",
-            inline=False,
-        )
-    else:
-        embed.add_field(
-            name="\u200b",
-            value="Регистрация закрыта. Только админ может добавлять игроков.",
-            inline=False,
-        )
+    status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
+    embed.add_field(
+        name="\u200b",
+        value=status_text,
+        inline=False,
+    )
     
     return embed
 
