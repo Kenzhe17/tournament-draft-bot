@@ -485,11 +485,15 @@ class AdminStatsModal(Modal):
 
         # Show confirmation view
         confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
-        await interaction.response.send_message(
-            "Проверьте статистику перед подтверждением:",
-            view=confirm_view,
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                "Проверьте статистику перед подтверждением:",
+                view=confirm_view,
+                ephemeral=True
+            )
+        except discord.NotFound:
+            # Interaction expired
+            pass
 
 
 class AdminConfirmView(View):
