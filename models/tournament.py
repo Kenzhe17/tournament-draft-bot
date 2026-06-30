@@ -463,24 +463,31 @@ class Tournament:
         self.qualifier_winners[match_index] = team_index
         if all(w is not None for w in self.qualifier_winners):
             # Check if all qualifier stats have been confirmed (not in temp_match_stats)
-            qualifier_stats_filled = True
+            # AND all qualifier matches are marked as completed
+            qualifier_stats_confirmed = True
             for i in range(len(self.qualifier_matches)):
                 if i in self.temp_match_stats.get("qualifier", {}):
-                    qualifier_stats_filled = False
+                    qualifier_stats_confirmed = False
+                    break
+
+            all_matches_completed = True
+            for i in range(len(self.qualifier_matches)):
+                if "qualifier" not in self.completed_matches or i not in self.completed_matches["qualifier"]:
+                    all_matches_completed = False
                     break
 
             # Log for debugging
             import logging
             logger = logging.getLogger(__name__)
-            logger.info(f"All winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. Stats filled: {qualifier_stats_filled}")
+            logger.info(f"All winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. Stats confirmed: {qualifier_stats_confirmed}. All matches completed: {all_matches_completed}")
 
-            if qualifier_stats_filled:
+            if qualifier_stats_confirmed and all_matches_completed:
                 # Qualifier winners advance to semifinals
                 self.generate_semifinals_from_qualifiers()
                 return True
             else:
                 # Stats not filled yet, don't advance
-                logger.warning(f"Phase transition blocked: qualifier stats not confirmed. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}")
+                logger.warning(f"Phase transition blocked: qualifier stats not confirmed or matches not completed. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. completed_matches: {self.completed_matches.get('qualifier', [])}")
                 return False
         return False
 
@@ -508,22 +515,31 @@ class Tournament:
         self.semifinal_winners[match_index] = team_index
         if all(w is not None for w in self.semifinal_winners):
             # Check if all semifinal stats have been confirmed (not in temp_match_stats)
-            semifinal_stats_filled = True
+            # AND all semifinal matches are marked as completed
+            semifinal_stats_confirmed = True
             for i in range(len(self.semifinal_matches)):
                 if i in self.temp_match_stats.get("semifinal", {}):
-                    semifinal_stats_filled = False
+                    semifinal_stats_confirmed = False
                     break
 
-            if semifinal_stats_filled:
+            all_matches_completed = True
+            for i in range(len(self.semifinal_matches)):
+                if "semifinal" not in self.completed_matches or i not in self.completed_matches["semifinal"]:
+                    all_matches_completed = False
+                    break
+
+            # Log for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"All semifinal winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}. Stats confirmed: {semifinal_stats_confirmed}. All matches completed: {all_matches_completed}")
+
+            if semifinal_stats_confirmed and all_matches_completed:
                 self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
                 self.phase = TournamentPhase.FINAL
                 return True
             else:
                 # Stats not filled yet, don't advance
-                # Log for debugging
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Phase transition blocked: semifinal stats not confirmed. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}")
+                logger.warning(f"Phase transition blocked: semifinal stats not confirmed or matches not completed. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}. completed_matches: {self.completed_matches.get('semifinal', [])}")
                 return False
         return False
 
@@ -532,21 +548,23 @@ class Tournament:
         self.winner_team_index = team_index
 
         # Check if final stats have been confirmed (not in temp_match_stats)
-        final_stats_filled = True
-        if 0 in self.temp_match_stats.get("final", {}):
-            final_stats_filled = False
+        # Stats are considered confirmed if they are NOT in temp_match_stats
+        # AND the match is marked as completed
+        final_stats_confirmed = 0 not in self.temp_match_stats.get("final", {})
+        match_completed = "final" in self.completed_matches and 0 in self.completed_matches["final"]
 
         # Log for debugging
         import logging
         logger = logging.getLogger(__name__)
-        logger.info(f"Final winner selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('final', {})}. Stats filled: {final_stats_filled}")
+        logger.info(f"Final winner selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('final', {})}. Stats confirmed: {final_stats_confirmed}. Match completed: {match_completed}")
 
-        if final_stats_filled:
+        # Only complete tournament if stats are confirmed AND match is completed
+        if final_stats_confirmed and match_completed:
             self.phase = TournamentPhase.COMPLETE
             return True
         else:
-            # Stats not filled yet, don't complete tournament
-            logger.warning(f"Phase transition blocked: final stats not confirmed. temp_match_stats: {self.temp_match_stats.get('final', {})}")
+            # Stats not confirmed yet, don't complete tournament
+            logger.warning(f"Phase transition blocked: final stats not confirmed or match not completed. temp_match_stats: {self.temp_match_stats.get('final', {})}. completed_matches: {self.completed_matches.get('final', [])}")
             return False
 
     # --- Сериализация ---
