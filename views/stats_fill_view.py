@@ -113,71 +113,122 @@ class CaptainStatsModal(Modal):
                 display_name = tournament.player_game_nicknames.get(p_name, p_name)
                 self.team_b_players.append((p_name, display_name))
 
-        # Create input fields for each player
-        for player_name, display_name in self.team_a_players:
-            kills_input = TextInput(
-                label=f"{display_name} (Team A) - Kills",
-                placeholder="Количество убийств",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_a|kills"
-            )
-            self.add_item(kills_input)
+        # Create single input for team A with format: PlayerName: kills deaths
+        team_a_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_a_players])
+        team_a_input = TextInput(
+            label=f"Статистика команды A",
+            placeholder=team_a_placeholder,
+            required=True,
+            style=discord.TextStyle.paragraph,
+            max_length=500,
+            custom_id="team_a_stats"
+        )
+        self.add_item(team_a_input)
 
-            deaths_input = TextInput(
-                label=f"{display_name} (Team A) - Deaths",
-                placeholder="Количество смертей",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_a|deaths"
-            )
-            self.add_item(deaths_input)
-
-        for player_name, display_name in self.team_b_players:
-            kills_input = TextInput(
-                label=f"{display_name} (Team B) - Kills",
-                placeholder="Количество убийств",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_b|kills"
-            )
-            self.add_item(kills_input)
-
-            deaths_input = TextInput(
-                label=f"{display_name} (Team B) - Deaths",
-                placeholder="Количество смертей",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_b|deaths"
-            )
-            self.add_item(deaths_input)
+        # Create single input for team B with format: PlayerName: kills deaths
+        team_b_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_b_players])
+        team_b_input = TextInput(
+            label=f"Статистика команды B",
+            placeholder=team_b_placeholder,
+            required=True,
+            style=discord.TextStyle.paragraph,
+            max_length=500,
+            custom_id="team_b_stats"
+        )
+        self.add_item(team_b_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Process stats submission."""
         from storage.json_store import store
 
-        # Parse all inputs
+        # Parse team A stats)
         stats_data = {"team1": {}, "team2": {}}
 
+        team_a_input = None
+        team_b_input = None
         for item in self.children:
             if isinstance(item, TextInput):
-                player_name, team, stat_type = item.custom_id.split('|')
+                if item.custom_id == "team_a_stats":
+                    team_a_input = item
+                elif item.custom_id == "team_b_stats":
+                    team_b_input = item
 
+        # Parse team A
+        if team_a_input:
+            lines = team_a_input.value.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    value = int(item.value.strip())
-                    if value < 0:
-                        raise ValueError
+                    # Format: PlayerName: kills deaths
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        raise ValueError(f"Неверный формат: {line}")
 
-                    # Map team_a/team_b to team1/team2 for consistency
-                    team_key = "team1" if team == "team_a" else "team2"
+                    player_display = parts[0].strip()
+                    kd_parts = parts[1].strip().split()
+                    if len(kd_parts) != 2:
+                        raise ValueError(f"Неверный формат K/D: {line}")
 
-                    if player_name not in stats_data[team_key]:
-                        stats_data[team_key][player_name] = {}
+                    kills = int(kd_parts[0])
+                    deaths = int(kd_parts[1])
 
-                    stats_data[team_key][player_name][stat_type] = value
-                except ValueError:
+                    if kills < 0 or deaths < 0:
+                        raise ValueError(f"Отрицательные значения: {line}")
+
+                    # Find player name by display name
+                    player_name = None
+                    for pn, pd in self.team_a_players:
+                        if pd == player_display:
+                            player_name = pn
+                            break
+
+                    if player_name:
+                        stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
+                except (ValueError, IndexError) as e:
                     await interaction.response.send_message(
-                        f"❌ Неверное значение для {item.label}",
+                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
+                        ephemeral=True
+                    )
+                    return
+
+        # Parse team B
+        if team_b_input:
+            lines = team_b_input.value.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    # Format: PlayerName: kills deaths
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        raise ValueError(f"Неверный формат: {line}")
+
+                    player_display = parts[0].strip()
+                    kd_parts = parts[1].strip().split()
+                    if len(kd_parts) != 2:
+                        raise ValueError(f"Неверный формат K/D: {line}")
+
+                    kills = int(kd_parts[0])
+                    deaths = int(kd_parts[1])
+
+                    if kills < 0 or deaths < 0:
+                        raise ValueError(f"Отрицательные значения: {line}")
+
+                    # Find player name by display name
+                    player_name = None
+                    for pn, pd in self.team_b_players:
+                        if pd == player_display:
+                            player_name = pn
+                            break
+
+                    if player_name:
+                        stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
+                except (ValueError, IndexError) as e:
+                    await interaction.response.send_message(
+                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
                         ephemeral=True
                     )
                     return
@@ -267,8 +318,14 @@ class AdminMatchSelectView(View):
 
     def _create_callback(self, match_type: str, match_index: int, team_a: int, team_b: int):
         async def callback(interaction: discord.Interaction):
-            modal = AdminStatsModal(self.guild_id, self.tournament, match_type, match_index, team_a, team_b)
-            await interaction.response.send_modal(modal)
+            try:
+                modal = AdminStatsModal(self.guild_id, self.tournament, match_type, match_index, team_a, team_b)
+                await interaction.response.send_modal(modal)
+            except Exception as e:
+                await interaction.response.send_message(
+                    f"❌ Ошибка: {str(e)}",
+                    ephemeral=True
+                )
         return callback
 
 
@@ -303,71 +360,122 @@ class AdminStatsModal(Modal):
                 display_name = tournament.player_game_nicknames.get(p_name, p_name)
                 self.team_b_players.append((p_name, display_name))
 
-        # Create input fields for each player
-        for player_name, display_name in self.team_a_players:
-            kills_input = TextInput(
-                label=f"{display_name} (Team A) - Kills",
-                placeholder="Количество убийств",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_a|kills"
-            )
-            self.add_item(kills_input)
+        # Create single input for team A with format: PlayerName: kills deaths
+        team_a_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_a_players])
+        team_a_input = TextInput(
+            label=f"Статистика команды A",
+            placeholder=team_a_placeholder,
+            required=True,
+            style=discord.TextStyle.paragraph,
+            max_length=500,
+            custom_id="team_a_stats"
+        )
+        self.add_item(team_a_input)
 
-            deaths_input = TextInput(
-                label=f"{display_name} (Team A) - Deaths",
-                placeholder="Количество смертей",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_a|deaths"
-            )
-            self.add_item(deaths_input)
-
-        for player_name, display_name in self.team_b_players:
-            kills_input = TextInput(
-                label=f"{display_name} (Team B) - Kills",
-                placeholder="Количество убийств",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_b|kills"
-            )
-            self.add_item(kills_input)
-
-            deaths_input = TextInput(
-                label=f"{display_name} (Team B) - Deaths",
-                placeholder="Количество смертей",
-                required=True,
-                max_length=3,
-                custom_id=f"{player_name}|team_b|deaths"
-            )
-            self.add_item(deaths_input)
+        # Create single input for team B with format: PlayerName: kills deaths
+        team_b_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_b_players])
+        team_b_input = TextInput(
+            label=f"Статистика команды B",
+            placeholder=team_b_placeholder,
+            required=True,
+            style=discord.TextStyle.paragraph,
+            max_length=500,
+            custom_id="team_b_stats"
+        )
+        self.add_item(team_b_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Process stats submission and show confirmation view."""
         from storage.json_store import store
 
-        # Parse all inputs
+        # Parse team A stats
         stats_data = {"team1": {}, "team2": {}}
 
+        team_a_input = None
+        team_b_input = None
         for item in self.children:
             if isinstance(item, TextInput):
-                player_name, team, stat_type = item.custom_id.split('|')
+                if item.custom_id == "team_a_stats":
+                    team_a_input = item
+                elif item.custom_id == "team_b_stats":
+                    team_b_input = item
 
+        # Parse team A
+        if team_a_input:
+            lines = team_a_input.value.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    value = int(item.value.strip())
-                    if value < 0:
-                        raise ValueError
+                    # Format: PlayerName: kills deaths
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        raise ValueError(f"Неверный формат: {line}")
 
-                    # Map team_a/team_b to team1/team2 for consistency
-                    team_key = "team1" if team == "team_a" else "team2"
+                    player_display = parts[0].strip()
+                    kd_parts = parts[1].strip().split()
+                    if len(kd_parts) != 2:
+                        raise ValueError(f"Неверный формат K/D: {line}")
 
-                    if player_name not in stats_data[team_key]:
-                        stats_data[team_key][player_name] = {}
+                    kills = int(kd_parts[0])
+                    deaths = int(kd_parts[1])
 
-                    stats_data[team_key][player_name][stat_type] = value
-                except ValueError:
+                    if kills < 0 or deaths < 0:
+                        raise ValueError(f"Отрицательные значения: {line}")
+
+                    # Find player name by display name
+                    player_name = None
+                    for pn, pd in self.team_a_players:
+                        if pd == player_display:
+                            player_name = pn
+                            break
+
+                    if player_name:
+                        stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
+                except (ValueError, IndexError) as e:
                     await interaction.response.send_message(
-                        f"❌ Неверное значение для {item.label}",
+                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
+                        ephemeral=True
+                    )
+                    return
+
+        # Parse team B
+        if team_b_input:
+            lines = team_b_input.value.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    # Format: PlayerName: kills deaths
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        raise ValueError(f"Неверный формат: {line}")
+
+                    player_display = parts[0].strip()
+                    kd_parts = parts[1].strip().split()
+                    if len(kd_parts) != 2:
+                        raise ValueError(f"Неверный формат K/D: {line}")
+
+                    kills = int(kd_parts[0])
+                    deaths = int(kd_parts[1])
+
+                    if kills < 0 or deaths < 0:
+                        raise ValueError(f"Отрицательные значения: {line}")
+
+                    # Find player name by display name
+                    player_name = None
+                    for pn, pd in self.team_b_players:
+                        if pd == player_display:
+                            player_name = pn
+                            break
+
+                    if player_name:
+                        stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
+                except (ValueError, IndexError) as e:
+                    await interaction.response.send_message(
+                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
                         ephemeral=True
                     )
                     return
