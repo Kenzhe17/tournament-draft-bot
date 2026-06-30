@@ -182,10 +182,15 @@ async def build_draft_embed(
         color=discord.Color.blue(),
     )
 
+    # Helper function to get display name
+    def get_display_name(player_name: str) -> str:
+        return tournament.player_game_nicknames.get(player_name, player_name)
+
     # Порядок капитанов (show the shuffled order)
     order_lines = []
     for i, captain_name in enumerate(tournament.captains):
-        order_lines.append(f"{i + 1}. {captain_name}")
+        display_name = get_display_name(captain_name)
+        order_lines.append(f"{i + 1}. {display_name}")
     embed.description = "\n".join(order_lines)
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
@@ -199,10 +204,13 @@ async def build_draft_embed(
 
         for pos in pick_order:
             captain_name = tournament.captains[pos]
+            captain_display = get_display_name(captain_name)
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
-                pick = "-"
-            lines.append(f"{captain_name} → {pick}")
+                pick_display = "-"
+            else:
+                pick_display = get_display_name(pick)
+            lines.append(f"{captain_display} → {pick_display}")
 
         status = ""
         if circle == tournament.current_circle:
@@ -217,9 +225,10 @@ async def build_draft_embed(
     picker_pos = tournament.current_picker_position()
     if picker_pos is not None:
         captain_name = tournament.captains[picker_pos]
+        display_name = get_display_name(captain_name)
         embed.add_field(
             name="Сейчас выбирает",
-            value=captain_name,
+            value=display_name,
             inline=False,
         )
 
