@@ -207,12 +207,20 @@ class AdminAddModal(discord.ui.Modal):
         self.circle = circle
 
         self.name_input = discord.ui.TextInput(
-            label="Имя игрока",
-            placeholder="Введите имя игрока",
+            label="Discord имя игрока",
+            placeholder="Введите Discord имя игрока",
             required=True,
             max_length=50,
         )
         self.add_item(self.name_input)
+
+        self.nickname_input = discord.ui.TextInput(
+            label="Игровой ник",
+            placeholder="Введите игровой ник в Free Fire",
+            required=True,
+            max_length=20,
+        )
+        self.add_item(self.nickname_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
@@ -224,6 +232,15 @@ class AdminAddModal(discord.ui.Modal):
             return
 
         player_name = self.name_input.value.strip()
+        game_nickname = self.nickname_input.value.strip()
+
+        if not game_nickname:
+            await interaction.response.send_message(
+                "❌ Игровой ник не может быть пустым.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
 
         # Check if circle is full (except circle4)
         if self.circle != 4:
@@ -262,6 +279,9 @@ class AdminAddModal(discord.ui.Modal):
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
+
+        # Store game nickname mapping
+        tournament.player_game_nicknames[player_name] = game_nickname
 
         store.set(tournament)
 

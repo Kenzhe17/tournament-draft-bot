@@ -160,13 +160,13 @@ async def build_setup_embed(
     if tournament.registration == RegistrationState.OPEN:
         embed.add_field(
             name="\u200b",
-            value="Регистрация открыта! Нажмите на кнопку чтобы добавить себя.",
+            value="Открыто",
             inline=False,
         )
     else:
         embed.add_field(
             name="\u200b",
-            value="Регистрация закрыта. Только админ может добавлять игроков.",
+            value="Закрыто",
             inline=False,
         )
     
