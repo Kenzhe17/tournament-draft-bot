@@ -38,15 +38,22 @@ class FillStatsButton(Button):
 
         # Check if user is a captain of either team
         user_name = interaction.user.display_name
-        if user_name != captain_a and user_name != captain_b:
+        is_captain_a = user_name == captain_a
+        is_captain_b = user_name == captain_b
+
+        if not is_captain_a and not is_captain_b:
             await interaction.response.send_message(
                 "❌ Только капитаны команд этого матча могут заполнять статистику.",
                 ephemeral=True
             )
             return
 
-        # Show modal
-        modal = CaptainStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
+        # Determine which team this captain belongs to
+        captain_team_index = self.team_a if is_captain_a else self.team_b
+        opponent_team_index = self.team_b if is_captain_a else self.team_a
+
+        # Show modal with only the captain's team
+        modal = CaptainStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, captain_team_index, opponent_team_index)
         await interaction.response.send_modal(modal)
 
 
@@ -83,152 +90,71 @@ class AdminFillStatsButton(Button):
 
 
 class CaptainStatsModal(Modal):
-    """Modal for captains to input statistics for both teams in their match."""
+    """Modal for captains to input statistics for their team only."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_a: int, team_b: int):
-        super().__init__(title=f"Статистика матча #{match_index + 1}")
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, captain_team: int, opponent_team: int):
+        super().__init__(title=f"Статистика вашей команды")
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
-        self.team_a = team_a
-        self.team_b = team_b
+        self.captain_team = captain_team
+        self.opponent_team = opponent_team
 
-        # Get team data
-        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+        # Get team data for captain's team only
+        team_data = tournament.teams[captain_team] if captain_team < len(tournament.teams) else {}
 
-        # Collect players from both teams
-        self.team_a_players = []
-        self.team_b_players = []
+        # Collect players from captain's team
+        self.team_players = []
 
         for circle in range(1, 5):
-            p_name = team_a_data.get(f"circle{circle}", "")
+            p_name = team_data.get(f"circle{circle}", "")
             if p_name:
                 display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                self.team_a_players.append((p_name, display_name))
+                self.team_players.append((p_name, display_name))
 
-            p_name = team_b_data.get(f"circle{circle}", "")
-            if p_name:
-                display_name = tournament.player_game_nicknames.get(p_name, p_name)
-                self.team_b_players.append((p_name, display_name))
-
-        # Create single input for team A with format: PlayerName: kills deaths
-        team_a_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_a_players])
-        team_a_input = TextInput(
-            label=f"Статистика команды A",
-            placeholder=team_a_placeholder,
-            required=True,
-            style=discord.TextStyle.paragraph,
-            max_length=500,
-            custom_id="team_a_stats"
-        )
-        self.add_item(team_a_input)
-
-        # Create single input for team B with format: PlayerName: kills deaths
-        team_b_placeholder = "\n".join([f"{display}: 0 0" for _, display in self.team_b_players])
-        team_b_input = TextInput(
-            label=f"Статистика команды B",
-            placeholder=team_b_placeholder,
-            required=True,
-            style=discord.TextStyle.paragraph,
-            max_length=500,
-            custom_id="team_b_stats"
-        )
-        self.add_item(team_b_input)
+        # Create individual input fields for each player
+        for player_name, display_name in self.team_players:
+            input_field = TextInput(
+                label=display_name,
+                placeholder="Формат: убийства смерти (например: 7 2)",
+                required=True,
+                max_length=10,
+                custom_id=f"{player_name}|stats"
+            )
+            self.add_item(input_field)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Process stats submission."""
         from storage.json_store import store
 
-        # Parse team A stats)
+        # Parse stats from individual player inputs
         stats_data = {"team1": {}, "team2": {}}
 
-        team_a_input = None
-        team_b_input = None
+        # Determine which team key to use based on captain's team
+        team_key = "team1" if self.captain_team == 0 or (self.match_type == "qualifier" and self.captain_team < 2) else "team2"
+
         for item in self.children:
             if isinstance(item, TextInput):
-                if item.custom_id == "team_a_stats":
-                    team_a_input = item
-                elif item.custom_id == "team_b_stats":
-                    team_b_input = item
+                player_name = item.custom_id.split('|')[0]
+                value = item.value.strip()
 
-        # Parse team A
-        if team_a_input:
-            lines = team_a_input.value.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
                 try:
-                    # Format: PlayerName: kills deaths
-                    parts = line.split(':')
+                    # Format: kills deaths (e.g., "7 2")
+                    parts = value.split()
                     if len(parts) != 2:
-                        raise ValueError(f"Неверный формат: {line}")
+                        raise ValueError(f"Неверный формат для {item.label}. Используйте: убийства смерти")
 
-                    player_display = parts[0].strip()
-                    kd_parts = parts[1].strip().split()
-                    if len(kd_parts) != 2:
-                        raise ValueError(f"Неверный формат K/D: {line}")
-
-                    kills = int(kd_parts[0])
-                    deaths = int(kd_parts[1])
+                    kills = int(parts[0])
+                    deaths = int(parts[1])
 
                     if kills < 0 or deaths < 0:
-                        raise ValueError(f"Отрицательные значения: {line}")
+                        raise ValueError(f"Отрицательные значения для {item.label}")
 
-                    # Find player name by display name
-                    player_name = None
-                    for pn, pd in self.team_a_players:
-                        if pd == player_display:
-                            player_name = pn
-                            break
-
-                    if player_name:
-                        stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
+                    stats_data[team_key][player_name] = {"kills": kills, "deaths": deaths}
                 except (ValueError, IndexError) as e:
                     await interaction.response.send_message(
-                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
-                        ephemeral=True
-                    )
-                    return
-
-        # Parse team B
-        if team_b_input:
-            lines = team_b_input.value.strip().split('\n')
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    # Format: PlayerName: kills deaths
-                    parts = line.split(':')
-                    if len(parts) != 2:
-                        raise ValueError(f"Неверный формат: {line}")
-
-                    player_display = parts[0].strip()
-                    kd_parts = parts[1].strip().split()
-                    if len(kd_parts) != 2:
-                        raise ValueError(f"Неверный формат K/D: {line}")
-
-                    kills = int(kd_parts[0])
-                    deaths = int(kd_parts[1])
-
-                    if kills < 0 or deaths < 0:
-                        raise ValueError(f"Отрицательные значения: {line}")
-
-                    # Find player name by display name
-                    player_name = None
-                    for pn, pd in self.team_b_players:
-                        if pd == player_display:
-                            player_name = pn
-                            break
-
-                    if player_name:
-                        stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
-                except (ValueError, IndexError) as e:
-                    await interaction.response.send_message(
-                        f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
+                        f"❌ {str(e)}",
                         ephemeral=True
                     )
                     return
@@ -237,11 +163,17 @@ class CaptainStatsModal(Modal):
         if self.match_type not in self.tournament.temp_match_stats:
             self.tournament.temp_match_stats[self.match_type] = {}
 
+        # Merge with existing stats if any
+        if self.match_index in self.tournament.temp_match_stats[self.match_type]:
+            existing_stats = self.tournament.temp_match_stats[self.match_type][self.match_index]
+            existing_stats[team_key].update(stats_data[team_key])
+            stats_data = existing_stats
+
         self.tournament.temp_match_stats[self.match_type][self.match_index] = stats_data
         store.set(self.tournament)
 
         await interaction.response.send_message(
-            "✅ Данные отправлены\n⏳ Ожидается подтверждение администратора",
+            "✅ Статистика вашей команды отправлена\n⏳ Ожидается подтверждение администратора",
             ephemeral=True
         )
 
