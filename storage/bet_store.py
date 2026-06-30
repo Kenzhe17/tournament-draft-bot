@@ -45,8 +45,15 @@ class BetStore:
         """Сохранить ставку."""
         if self._use_db:
             from storage.db import get_pool
+            from storage.user_balance_store import user_balance_store
             pool = await get_pool()
             async with pool.acquire() as conn:
+                # Check if user already has a bet on this match
+                existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
+                if existing_bet:
+                    # Refund previous bet amount
+                    await user_balance_store.add_balance(bet.guild_id, bet.user_id, existing_bet.amount)
+
                 await conn.execute(
                     """
                     INSERT INTO bets (guild_id, user_id, user_name, match_id, team_name, amount)
@@ -57,19 +64,25 @@ class BetStore:
                     bet.guild_id, bet.user_id, bet.user_name, bet.match_id, bet.team_name, bet.amount
                 )
         else:
+            from storage.user_balance_store import user_balance_store
+
             if bet.match_id not in self._bets:
                 self._bets[bet.match_id] = []
-            
+
             # Check if user already has a bet on this match
             existing_idx = next(
                 (i for i, b in enumerate(self._bets[bet.match_id]) if b.user_id == bet.user_id),
                 None
             )
             if existing_idx is not None:
+                # Refund previous bet amount
+                existing_bet = self._bets[bet.match_id][existing_idx]
+                await user_balance_store.add_balance(bet.guild_id, bet.user_id, existing_bet.amount)
+                # Replace with new bet
                 self._bets[bet.match_id][existing_idx] = bet
             else:
                 self._bets[bet.match_id].append(bet)
-            
+
             self.save()
 
     async def get_bets_by_match(self, match_id: str) -> list[Bet]:

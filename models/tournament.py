@@ -456,10 +456,7 @@ class Tournament:
         Возвращает True, если все отборочные матчи завершены.
         """
         self.qualifier_winners[match_index] = team_index
-        if all(w is not None for w in self.qualifier_winners):
-            # Qualifier winners advance to semifinals
-            self.generate_semifinals_from_qualifiers()
-            return True
+        # Don't auto-advance to semifinals - wait for confirmation with stats
         return False
 
     def confirm_qualifier_winner(self, match_index: int, team_index: int) -> bool:
@@ -502,10 +499,7 @@ class Tournament:
         Возвращает True, если оба полуфинала завершены.
         """
         self.semifinal_pending_winners[match_index] = team_index
-        if all(w is not None for w in self.semifinal_pending_winners):
-            self.final_teams = list(self.semifinal_pending_winners)  # type: ignore[arg-type]
-            self.phase = TournamentPhase.FINAL
-            return True
+        # Don't auto-advance to final - wait for confirmation with stats
         return False
 
     def confirm_semifinal_winner(self, match_index: int, team_index: int) -> bool:

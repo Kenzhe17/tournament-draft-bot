@@ -213,8 +213,10 @@ class AdminMatchSelectView(View):
             for i, winner in enumerate(tournament.qualifier_winners):
                 if winner is not None:
                     match = tournament.qualifier_matches[i]
-                    team_a_name = tournament.team_names.get(match[0], f"Team {match[0]}")
-                    team_b_name = tournament.team_names.get(match[1], f"Team {match[1]}")
+                    team_a_data = tournament.teams[match[0]] if match[0] < len(tournament.teams) else {}
+                    team_b_data = tournament.teams[match[1]] if match[1] < len(tournament.teams) else {}
+                    team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
+                    team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
                     btn = Button(
                         label=f"Отборочный {i+1}: {team_a_name} vs {team_b_name}",
                         style=discord.ButtonStyle.primary,
@@ -228,8 +230,10 @@ class AdminMatchSelectView(View):
             for i, winner in enumerate(tournament.semifinal_pending_winners):
                 if winner is not None:
                     match = tournament.semifinal_matches[i]
-                    team_a_name = tournament.team_names.get(match[0], f"Team {match[0]}")
-                    team_b_name = tournament.team_names.get(match[1], f"Team {match[1]}")
+                    team_a_data = tournament.teams[match[0]] if match[0] < len(tournament.teams) else {}
+                    team_b_data = tournament.teams[match[1]] if match[1] < len(tournament.teams) else {}
+                    team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
+                    team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
                     btn = Button(
                         label=f"Полуфинал {i+1}: {team_a_name} vs {team_b_name}",
                         style=discord.ButtonStyle.primary,
@@ -242,8 +246,10 @@ class AdminMatchSelectView(View):
         if tournament.phase.value in ["final", "complete"] and tournament.final_pending_winner is not None:
             team_a = tournament.final_teams[0]
             team_b = tournament.final_teams[1]
-            team_a_name = tournament.team_names.get(team_a, f"Team {team_a}")
-            team_b_name = tournament.team_names.get(team_b, f"Team {team_b}")
+            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+            team_a_name = tournament.team_names.get(team_a, team_a_data.get("captain", f"Team {team_a}"))
+            team_b_name = tournament.team_names.get(team_b, team_b_data.get("captain", f"Team {team_b}"))
             btn = Button(
                 label=f"Финал: {team_a_name} vs {team_b_name}",
                 style=discord.ButtonStyle.primary,
