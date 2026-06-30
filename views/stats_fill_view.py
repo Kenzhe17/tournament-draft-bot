@@ -302,7 +302,7 @@ class AdminStatsModal(Modal):
             stats = existing_stats.get("team1", {}).get(player_name, {})
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
-            team_a_lines.append(f"{display}: {kills} {deaths}")
+            team_a_lines.append(f"{display_name}: {kills} {deaths}")
 
         team_a_default = "\n".join(team_a_lines) if team_a_lines else ""
         team_a_input = TextInput(
@@ -323,7 +323,7 @@ class AdminStatsModal(Modal):
             stats = existing_stats.get("team2", {}).get(player_name, {})
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
-            team_b_lines.append(f"{display}: {kills} {deaths}")
+            team_b_lines.append(f"{display_name}: {kills} {deaths}")
 
         team_b_default = "\n".join(team_b_lines) if team_b_lines else ""
         team_b_input = TextInput(
