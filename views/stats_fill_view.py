@@ -397,6 +397,8 @@ class AdminStatsModal(Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Process stats submission and show confirmation view."""
         from storage.json_store import store
+        import logging
+        logger = logging.getLogger(__name__)
 
         try:
             # Parse team A stats
@@ -411,9 +413,12 @@ class AdminStatsModal(Modal):
                     elif item.custom_id == "team_b_stats":
                         team_b_input = item
 
+            logger.info(f"AdminStatsModal: team_a_input={team_a_input is not None}, team_b_input={team_b_input is not None}")
+
             # Parse team A
             if team_a_input:
                 lines = team_a_input.value.strip().split('\n')
+                logger.info(f"AdminStatsModal: team_a lines count={len(lines)}")
                 for line in lines:
                     line = line.strip()
                     if not line:
@@ -444,7 +449,9 @@ class AdminStatsModal(Modal):
 
                         if player_name:
                             stats_data["team1"][player_name] = {"kills": kills, "deaths": deaths}
+                            logger.info(f"AdminStatsModal: Added team1 player {player_name}: {kills}/{deaths}")
                     except (ValueError, IndexError) as e:
+                        logger.error(f"AdminStatsModal: Error parsing team A line '{line}': {e}")
                         await interaction.response.send_message(
                             f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
                             ephemeral=True
@@ -454,6 +461,7 @@ class AdminStatsModal(Modal):
             # Parse team B
             if team_b_input:
                 lines = team_b_input.value.strip().split('\n')
+                logger.info(f"AdminStatsModal: team_b lines count={len(lines)}")
                 for line in lines:
                     line = line.strip()
                     if not line:
@@ -484,12 +492,16 @@ class AdminStatsModal(Modal):
 
                         if player_name:
                             stats_data["team2"][player_name] = {"kills": kills, "deaths": deaths}
+                            logger.info(f"AdminStatsModal: Added team2 player {player_name}: {kills}/{deaths}")
                     except (ValueError, IndexError) as e:
+                        logger.error(f"AdminStatsModal: Error parsing team B line '{line}': {e}")
                         await interaction.response.send_message(
                             f"❌ Ошибка в строке: {line}. Формат: PlayerName: kills deaths",
                             ephemeral=True
                         )
                         return
+
+            logger.info(f"AdminStatsModal: Parsed stats_data={stats_data}")
 
             # Store in tournament temporarily
             if self.match_type not in self.tournament.temp_match_stats:
@@ -497,6 +509,8 @@ class AdminStatsModal(Modal):
 
             self.tournament.temp_match_stats[self.match_type][self.match_index] = stats_data
             store.set(self.tournament)
+
+            logger.info(f"AdminStatsModal: Saved to temp_match_stats")
 
             # Show confirmation view
             confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a, self.team_b)
@@ -506,14 +520,23 @@ class AdminStatsModal(Modal):
                     view=confirm_view,
                     ephemeral=True
                 )
+                logger.info(f"AdminStatsModal: Sent confirmation view")
             except discord.NotFound:
                 # Interaction expired
+                logger.warning(f"AdminStatsModal: Interaction expired when sending confirmation")
                 pass
+            except Exception as e:
+                logger.error(f"AdminStatsModal: Error sending confirmation: {e}")
+                raise
         except Exception as e:
-            await interaction.response.send_message(
-                f"❌ Ошибка: {str(e)}",
-                ephemeral=True
-            )
+            logger.error(f"AdminStatsModal: Unexpected error: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    f"❌ Ошибка: {str(e)}",
+                    ephemeral=True
+                )
+            except:
+                pass
 
 
 class AdminConfirmView(View):
