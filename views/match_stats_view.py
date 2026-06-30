@@ -500,6 +500,9 @@ class AdminConfirmView(View):
 
         self.team_a_index, self.team_b_index = match
 
+        # Build stats display
+        self.embed = self._build_stats_embed()
+
         # Add confirm and edit buttons
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.confirm_callback
@@ -508,6 +511,65 @@ class AdminConfirmView(View):
         edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         self.add_item(edit_btn)
+
+    def _build_stats_embed(self) -> discord.Embed:
+        """Build embed displaying match statistics."""
+        match_name = {
+            "qualifier": "Отборочный",
+            "semifinal": "Полуфинал",
+            "final": "Финал"
+        }.get(self.match_type, "Матч")
+
+        embed = discord.Embed(
+            title=f"📊 Статистика {match_name} #{self.match_index + 1}",
+            color=discord.Color.blue()
+        )
+
+        # Group stats by actual team
+        team_a_stats = {}
+        team_b_stats = {}
+
+        # Get team data to identify which players belong to which team
+        team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
+
+        team_a_players = set()
+        team_b_players = set()
+
+        for circle in range(1, 5):
+            player = team_a_data.get(f"circle{circle}")
+            if player:
+                team_a_players.add(player)
+            player = team_b_data.get(f"circle{circle}")
+            if player:
+                team_b_players.add(player)
+
+        # Group stats by team membership
+        for player_name, stat in self.stats.items():
+            if player_name in team_a_players:
+                team_a_stats[player_name] = stat
+            elif player_name in team_b_players:
+                team_b_stats[player_name] = stat
+
+        # Get team names
+        team_a_name = self.tournament.team_names.get(self.team_a_index, team_a_data.get("captain", f"Team {self.team_a_index}"))
+        team_b_name = self.tournament.team_names.get(self.team_b_index, team_b_data.get("captain", f"Team {self.team_b_index}"))
+
+        # Display team A stats
+        team_a_text = ""
+        for player_name, stat in team_a_stats.items():
+            team_a_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
+        if team_a_text:
+            embed.add_field(name=f"🔵 {team_a_name}", value=team_a_text or "Нет данных", inline=False)
+
+        # Display team B stats
+        team_b_text = ""
+        for player_name, stat in team_b_stats.items():
+            team_b_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
+        if team_b_text:
+            embed.add_field(name=f"🔴 {team_b_name}", value=team_b_text or "Нет данных", inline=False)
+
+        return embed
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store

@@ -325,18 +325,30 @@ class TeamWinnerSelectView(discord.ui.View):
         self.match_type = match_type
         self.match_index = match_index
 
+        # Check if winner already selected
+        winner_already_selected = False
+        if match_type == "qualifier":
+            winner_already_selected = tournament.qualifier_winners[match_index] is not None
+        elif match_type == "semifinal":
+            winner_already_selected = tournament.semifinal_pending_winners[match_index] is not None
+        elif match_type == "final":
+            winner_already_selected = tournament.final_pending_winner is not None
+
         for team_index, team_name in teams:
-            self.add_item(TeamWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name))
+            # Disable button if winner already selected
+            disabled = winner_already_selected
+            self.add_item(TeamWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, disabled))
 
 
 class TeamWinnerButton(discord.ui.Button):
     """Button to select the winning team."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, disabled: bool = False):
         super().__init__(
             label=team_name,
             style=discord.ButtonStyle.success,
-            custom_id=f"team_winner_select:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"team_winner_select:{guild_id}:{match_type}:{match_index}:{team_index}",
+            disabled=disabled
         )
         self.guild_id = guild_id
         self.tournament = tournament
