@@ -14,9 +14,15 @@ class KDInputModal(discord.ui.Modal):
     """Modal for inputting Kills/Deaths for a player."""
 
     def __init__(self, guild_id: int, player_name: str, circle: int, team_index: int, tournament: Tournament | None = None):
-        super().__init__(title=f"Статистика: {player_name}")
+        # Use game nickname for display if available
+        display_name = player_name
+        if tournament and player_name in tournament.player_game_nicknames:
+            display_name = tournament.player_game_nicknames[player_name]
+
+        super().__init__(title=f"Статистика: {display_name}")
         self.guild_id = guild_id
         self.player_name = player_name  # Keep original name for data storage
+        self.display_name = display_name  # For display
         self.circle = circle
         self.team_index = team_index
 
@@ -96,8 +102,11 @@ class TeamKDInputModal(discord.ui.Modal):
 
         # Create input fields for each player
         for player_name, circle in players:
+            # Use game nickname for display if available
+            display_name = tournament.player_game_nicknames.get(player_name, player_name) if tournament else player_name
+
             # Use a shorter label for the input
-            label = f"{player_name} (K/D)"
+            label = f"{display_name} (K/D)"
             # Create a single text input for K/D format like "8 2"
             kd_input = discord.ui.TextInput(
                 label=label,

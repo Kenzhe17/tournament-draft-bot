@@ -17,10 +17,15 @@ def _circle_line(players: list[str], tournament: Tournament | None = None, elo_d
 
     player_strings = []
     for player_name in players:
+        # Use game nickname for display if available
+        display_name = player_name
+        if tournament and player_name in tournament.player_game_nicknames:
+            display_name = tournament.player_game_nicknames[player_name]
+
         if elo_dict and player_name in elo_dict:
-            player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+            player_strings.append(f"{display_name} ({elo_dict[player_name]})")
         else:
-            player_strings.append(player_name)
+            player_strings.append(display_name)
 
     return " ".join(player_strings)
 
@@ -95,7 +100,9 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         for circle in range(1, 5):
             p_name = team.get(f"circle{circle}", "")
             if p_name:
-                players.append(p_name)
+                # Use game nickname for display if available
+                display_name = tournament.player_game_nicknames.get(p_name, p_name)
+                players.append(display_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
         emoji = team_emojis.get(i + 1, "🎮")
@@ -153,13 +160,13 @@ async def build_setup_embed(
     if tournament.registration == RegistrationState.OPEN:
         embed.add_field(
             name="\u200b",
-            value="Открыто",
+            value="Регистрация открыта! Нажмите на кнопку чтобы добавить себя.",
             inline=False,
         )
     else:
         embed.add_field(
             name="\u200b",
-            value="Закрыто",
+            value="Регистрация закрыта. Только админ может добавлять игроков.",
             inline=False,
         )
     
@@ -192,13 +199,10 @@ async def build_draft_embed(
 
         for pos in pick_order:
             captain_name = tournament.captains[pos]
-            captain_display = get_display_name(captain_name)
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
             if circle > tournament.current_circle or not pick:
-                pick_display = "-"
-            else:
-                pick_display = get_display_name(pick)
-            lines.append(f"{captain_display} → {pick_display}")
+                pick = "-"
+            lines.append(f"{captain_name} → {pick}")
 
         status = ""
         if circle == tournament.current_circle:
@@ -213,10 +217,9 @@ async def build_draft_embed(
     picker_pos = tournament.current_picker_position()
     if picker_pos is not None:
         captain_name = tournament.captains[picker_pos]
-        display_name = get_display_name(captain_name)
         embed.add_field(
             name="Сейчас выбирает",
-            value=display_name,
+            value=captain_name,
             inline=False,
         )
 

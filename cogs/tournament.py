@@ -88,17 +88,12 @@ class TournamentCog(commands.Cog):
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
-        try:
-            await interaction.response.send_message(embed=embed, view=view)
-            message = await interaction.original_response()
+        await interaction.response.send_message(embed=embed, view=view)
+        message = await interaction.original_response()
 
-            tournament.message_id = message.id
-            store.set(tournament)
-            logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
-        except discord.NotFound:
-            # Interaction already expired
-            logger.warning("Interaction expired before tournament creation response")
-            pass
+        tournament.message_id = message.id
+        store.set(tournament)
+        logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_admin()
@@ -189,7 +184,7 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            "🔒 Регистрация закрыта.",
+            "🔒 Регистрация закрыта. Только админ может добавлять игроков.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -212,7 +207,7 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            "🔓 Регистрация открыта.",
+            "🔓 Регистрация открыта! Игроки могут добавляться через кнопки.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -364,11 +359,7 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        try:
-            await interaction.response.send_message(embed=embed)
-        except discord.NotFound:
-            # Interaction already expired or was responded to
-            pass
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
@@ -821,8 +812,8 @@ class TournamentCog(commands.Cog):
             else:
                 await interaction.response.send_message(msg, ephemeral=True)
             asyncio.create_task(_delete_ephemeral_later(interaction))
-        except (discord.NotFound, discord.HTTPException):
-            # Interaction expired or already acknowledged, can't respond
+        except discord.NotFound:
+            # Interaction expired, can't respond
             pass
 
 

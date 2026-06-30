@@ -57,18 +57,18 @@ def get_base_elo_change(
     if team_won:
         # Team won
         base_changes = {
-            1: {1: 2, 2: 0, 3: -2, 4: -4},   # Circle 1 (captains)
-            2: {1: 4, 2: 2, 3: 0, 4: -2},    # Circle 2
-            3: {1: 6, 2: 4, 3: 2, 4: 0},    # Circle 3
-            4: {1: 8, 2: 6, 3: 4, 4: 2},   # Circle 4
+            1: {1: 5, 2: 0, 3: -5, 4: -10},   # Circle 1 (captains)
+            2: {1: 10, 2: 5, 3: 0, 4: -5},    # Circle 2
+            3: {1: 15, 2: 10, 3: 5, 4: 0},    # Circle 3
+            4: {1: 20, 2: 15, 3: 10, 4: 5},   # Circle 4
         }
     else:
         # Team lost
         base_changes = {
-            1: {1: -2, 2: -4, 3: -6, 4: -8},  # Circle 1 (captains)
-            2: {1: 0, 2: -2, 3: -4, 4: -6},     # Circle 2
-            3: {1: 2, 2: 0, 3: -4, 4: -6},       # Circle 3
-            4: {1: 4, 2: 2, 3: 0, 4: -2},        # Circle 4
+            1: {1: -5, 2: -10, 3: -15, 4: -20},  # Circle 1 (captains)
+            2: {1: 0, 2: -5, 3: -10, 4: -15},     # Circle 2
+            3: {1: 5, 2: 0, 3: -5, 4: -10},       # Circle 3
+            4: {1: 10, 2: 5, 3: 0, 4: -5},        # Circle 4
         }
     
     return base_changes.get(circle, {}).get(position, 0)
@@ -77,17 +77,17 @@ def get_base_elo_change(
 def calculate_kd_bonus(kills: int, deaths: int) -> int:
     """
     Calculate individual K/D bonus.
-
-    Formula: (Kills × 3) - Deaths
-
+    
+    Formula: (Kills × 2) - Deaths
+    
     Args:
         kills: Number of kills
         deaths: Number of deaths
-
+    
     Returns:
         K/D bonus ELO change
     """
-    return (kills * 3) - deaths
+    return (kills * 2) - deaths
 
 
 def calculate_total_elo_change(

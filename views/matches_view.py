@@ -12,6 +12,7 @@ from storage.json_store import store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_admin_check
 from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
+from views.match_fill_views import CaptainFillButton, AdminFillButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -134,67 +135,11 @@ class SemifinalWinnerButton(discord.ui.Button):
             )
             return
 
-        both_done = tournament.set_semifinal_winner(
-            self.match_index, self.team_index
-        )
-
-        # Mark match as completed for stats filling
-        if "semifinal" not in tournament.completed_matches:
-            tournament.completed_matches["semifinal"] = []
-        if self.match_index not in tournament.completed_matches["semifinal"]:
-            tournament.completed_matches["semifinal"].append(self.match_index)
-
+        # Store winner temporarily instead of saving immediately
+        if "semifinal" not in tournament.pending_winners:
+            tournament.pending_winners["semifinal"] = {}
+        tournament.pending_winners["semifinal"][self.match_index] = self.team_index
         store.set(tournament)
-
-        # Update stats for both teams
-        from storage.player_stats_store import player_stats_store
-        from models.tournament import TournamentSize
-        match = tournament.semifinal_matches[self.match_index]
-        losing_team_index = match[1] if match[0] == self.team_index else match[0]
-        winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-        losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
-
-        # Determine result type based on tournament size
-        if tournament.size == TournamentSize.SIXTEEN:
-            # 16 players: semifinal losers get -25, winners get ELO in final
-            loser_result = "semifinal_loss"  # -25
-            winner_result = "none"  # No ELO change yet
-        else:
-            # 32 players: semifinal losers get +25 (won qualifier), winners get ELO in final
-            loser_result = "qualifier_win_semifinal_loss"  # +25
-            winner_result = "none"  # No ELO change yet
-
-        # Winning team gets no ELO change (will be updated in final)
-        from storage.user_balance_store import user_balance_store
-        for circle in range(1, 5):
-            player = winning_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
-                # Give semifinal win reward
-                await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
-
-        # Losing team gets ELO change based on tournament size
-        for circle in range(1, 5):
-            player = losing_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
-
-        # Resolve betting for this match
-        from storage.bet_store import bet_store
-        from storage.user_balance_store import user_balance_store
-
-        # Get winning team name
-        winning_team_data = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-        winning_team_name = tournament.team_names.get(self.team_index, winning_team_data.get("captain", f"Team {self.team_index}"))
-        
-        match_id = f"semifinal_{self.match_index}"
-        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-        # Pay out winners
-        for user_id, payout in payouts.items():
-            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -423,220 +368,53 @@ class TeamWinnerButton(discord.ui.Button):
             await interaction.response.send_message("❌ Неверный тип матча.", ephemeral=True)
             return
 
-        # K/D input is now handled by the new stats fill system (FillStatsButton)
-        # Remove old K/D input view
+        # Get team data for K/D input
+        team1_index, team2_index = match
+        team1_data = tournament.teams[team1_index] if team1_index < len(tournament.teams) else {}
+        team2_data = tournament.teams[team2_index] if team2_index < len(tournament.teams) else {}
 
-        # Set the winner based on match type
-        if self.match_type == "qualifier":
-            if tournament.qualifier_winners[self.match_index] is not None:
-                await interaction.response.send_message(
-                    "❌ Результат этого матча уже зафиксирован.",
-                    ephemeral=True
-                )
-                return
+        # Get players from both teams with their circles
+        team1_players = []
+        team2_players = []
+        
+        for circle in range(1, 5):
+            player1 = team1_data.get(f"circle{circle}")
+            if player1:
+                team1_players.append((player1, circle))
+            
+            player2 = team2_data.get(f"circle{circle}")
+            if player2:
+                team2_players.append((player2, circle))
 
-            phase_advanced = tournament.set_qualifier_winner(self.match_index, self.team_index)
+        # Get team names
+        team1_name = tournament.team_names.get(team1_index, team1_data.get("captain", f"Team {team1_index}"))
+        team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
 
-            # Mark match as completed for stats filling
-            if "qualifier" not in tournament.completed_matches:
-                tournament.completed_matches["qualifier"] = []
-            if self.match_index not in tournament.completed_matches["qualifier"]:
-                tournament.completed_matches["qualifier"].append(self.match_index)
+        # Store match info for K/D input
+        match_info = {
+            'match_type': self.match_type,
+            'match_index': self.match_index,
+            'winning_team_index': self.team_index,
+            'team1_index': team1_index,
+            'team2_index': team2_index,
+            'team1_name': team1_name,
+            'team2_name': team2_name,
+            'team1_players': team1_players,
+            'team2_players': team2_players,
+            'temp_kd_data': {},
+        }
 
-            if phase_advanced:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Фаза автоматически перешла к полуфиналам (все статистики подтверждены).",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Ожидание заполнения статистики для перехода к следующей фазе.",
-                    ephemeral=True
-                )
+        # Show K/D input view
+        from views.kd_input_view import KDInputView
+        kd_view = KDInputView(self.guild_id, tournament, match_info)
 
-        elif self.match_type == "semifinal":
-            if tournament.semifinal_winners[self.match_index] is not None:
-                await interaction.response.send_message(
-                    "❌ Результат этого матча уже зафиксирован.",
-                    ephemeral=True
-                )
-                return
+        embed = discord.Embed(
+            title="📊 Ввод статистики матча",
+            description=f"{team1_name} vs {team2_name}\n\nПобедитель: {self.team_name}\n\nВведите K/D для обеих команд:",
+            color=discord.Color.blue()
+        )
 
-            phase_advanced = tournament.set_semifinal_winner(self.match_index, self.team_index)
-
-            # Mark match as completed for stats filling
-            if "semifinal" not in tournament.completed_matches:
-                tournament.completed_matches["semifinal"] = []
-            if self.match_index not in tournament.completed_matches["semifinal"]:
-                tournament.completed_matches["semifinal"].append(self.match_index)
-
-            if phase_advanced:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Фаза автоматически перешла к финалу (все статистики подтверждены).",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Ожидание заполнения статистики для перехода к следующей фазе.",
-                    ephemeral=True
-                )
-
-        elif self.match_type == "final":
-            if tournament.winner_team_index is not None:
-                await interaction.response.send_message(
-                    "❌ Результат финала уже зафиксирован.",
-                    ephemeral=True
-                )
-                return
-
-            phase_advanced = tournament.set_final_winner(self.team_index)
-
-            # Mark match as completed for stats filling
-            if "final" not in tournament.completed_matches:
-                tournament.completed_matches["final"] = []
-            if 0 not in tournament.completed_matches["final"]:
-                tournament.completed_matches["final"].append(0)
-
-            if phase_advanced:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Турнир завершен (все статистики подтверждены).",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "✅ Победитель выбран. Ожидание заполнения статистики для завершения турнира.",
-                    ephemeral=True
-                )
-
-        store.set(tournament)
-
-        # Update stats for both teams (ELO calculations)
-        from storage.player_stats_store import player_stats_store
-        from storage.user_balance_store import user_balance_store
-        from storage.bet_store import bet_store
-        from models.tournament import TournamentSize
-
-        if self.match_type == "qualifier":
-            match = tournament.qualifier_matches[self.match_index]
-            losing_team_index = match[1] if match[0] == self.team_index else match[0]
-            winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-            losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
-
-            # Winning team gets +25 ELO
-            for circle in range(1, 5):
-                player = winning_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_win", count_game=False)
-                    await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
-
-            # Losing team gets -25 ELO
-            for circle in range(1, 5):
-                player = losing_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
-
-            # Resolve betting
-            winning_team_name = tournament.team_names.get(self.team_index, winning_team.get("captain", f"Team {self.team_index}"))
-            match_id = f"qualifier_{self.match_index}"
-            payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-            for user_id, payout in payouts.items():
-                await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
-
-        elif self.match_type == "semifinal":
-            match = tournament.semifinal_matches[self.match_index]
-            losing_team_index = match[1] if match[0] == self.team_index else match[0]
-            winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-            losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
-
-            # Determine result type based on tournament size
-            if tournament.size == TournamentSize.SIXTEEN:
-                loser_result = "semifinal_loss"  # -25
-                winner_result = "none"  # No ELO change yet
-            else:
-                loser_result = "qualifier_win_semifinal_loss"  # +25
-                winner_result = "none"  # No ELO change yet
-
-            # Winning team gets no ELO change (will be updated in final)
-            for circle in range(1, 5):
-                player = winning_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
-                    await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
-
-            # Losing team
-            for circle in range(1, 5):
-                player = losing_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
-
-            # Resolve betting
-            winning_team_name = tournament.team_names.get(self.team_index, winning_team.get("captain", f"Team {self.team_index}"))
-            match_id = f"semifinal_{self.match_index}"
-            payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-            for user_id, payout in payouts.items():
-                await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
-
-        elif self.match_type == "final":
-            winning_team = tournament.teams[self.team_index]
-            losing_team_index = tournament.final_teams[1] if tournament.final_teams[0] == self.team_index else tournament.final_teams[0]
-            losing_team = tournament.teams[losing_team_index]
-
-            # Determine result type based on tournament size
-            if tournament.size == TournamentSize.EIGHT:
-                winner_result = "final_win"  # +25
-                loser_result = "final_loss"  # -25
-            elif tournament.size == TournamentSize.SIXTEEN:
-                winner_result = "semifinal_win_final_win"  # +50
-                loser_result = "semifinal_win_final_loss"  # +25
-            else:
-                winner_result = "qualifier_win_semifinal_win_final_win"  # +100
-                loser_result = "qualifier_win_semifinal_win_final_loss"  # +50
-
-            # Update winning team stats
-            for circle in range(1, 5):
-                player = winning_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
-                    await user_balance_store.add_balance(tournament.guild_id, user_id, 50)
-
-            # Update losing team stats
-            for circle in range(1, 5):
-                player = losing_team.get(f"circle{circle}")
-                if player:
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
-
-            # Resolve betting for final match
-            winning_team_name = tournament.team_names.get(self.team_index, winning_team.get("captain", f"Team {self.team_index}"))
-            match_id = f"final_0"
-            payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-            for user_id, payout in payouts.items():
-                await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
-
-        # Update tournament message
-        from bot import TournamentBot
-        bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        try:
-            await interaction.response.edit_message(
-                content=f"✅ Победитель выбран: {self.team_name}",
-                view=None
-            )
-        except discord.InteractionResponded:
-            # Already responded, try followup instead
-            await interaction.followup.send(
-                f"✅ Победитель выбран: {self.team_name}",
-                ephemeral=True
-            )
+        await interaction.response.send_message(embed=embed, view=kd_view, ephemeral=True)
 
 
 class SelectWinnerButton(discord.ui.Button):
@@ -663,61 +441,6 @@ class SelectWinnerButton(discord.ui.Button):
         )
 
         await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=3)
-
-
-class AdvancePhaseButton(discord.ui.Button):
-    """Button for admin to manually advance to next phase (when stats not filled)."""
-
-    def __init__(self, guild_id: int, tournament, current_phase: str, next_phase: str):
-        super().__init__(
-            label=f"⏭️ Перейти к {next_phase}",
-            style=discord.ButtonStyle.danger,
-            custom_id=f"advance_phase:{guild_id}:{current_phase}"
-        )
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.current_phase = current_phase
-        self.next_phase = next_phase
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_admin_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "❌ Только администраторы могут переходить к следующей фазе.",
-                ephemeral=True
-            )
-            return
-
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
-            return
-
-        # Check if there are unconfirmed stats
-        if self.current_phase in tournament.temp_match_stats and tournament.temp_match_stats[self.current_phase]:
-            await interaction.response.send_message(
-                "❌ Невозможно перейти к следующей фазе. Сначала подтвердите всю статистику текущего этапа.",
-                ephemeral=True
-            )
-            return
-
-        # Advance to next phase
-        if self.current_phase == "qualifier":
-            tournament.generate_semifinals_from_qualifiers()
-        elif self.current_phase == "semifinal":
-            tournament.final_teams = list(tournament.semifinal_winners)  # type: ignore[arg-type]
-            tournament.phase = TournamentPhase.FINAL
-
-        store.set(tournament)
-
-        # Update tournament message
-        from bot import TournamentBot
-        bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        await interaction.response.send_message(
-            f"✅ Переход к {self.next_phase} выполнен (статистика не сохранена)",
-            ephemeral=True
-        )
 
 
 class QualifierWinnerButton(discord.ui.Button):
@@ -762,53 +485,11 @@ class QualifierWinnerButton(discord.ui.Button):
             )
             return
 
-        both_done = tournament.set_qualifier_winner(
-            self.match_index, self.team_index
-        )
-
-        # Mark match as completed for stats filling
-        if "qualifier" not in tournament.completed_matches:
-            tournament.completed_matches["qualifier"] = []
-        if self.match_index not in tournament.completed_matches["qualifier"]:
-            tournament.completed_matches["qualifier"].append(self.match_index)
-
+        # Store winner temporarily instead of saving immediately
+        if "qualifier" not in tournament.pending_winners:
+            tournament.pending_winners["qualifier"] = {}
+        tournament.pending_winners["qualifier"][self.match_index] = self.team_index
         store.set(tournament)
-
-        # Update stats for both teams
-        from storage.player_stats_store import player_stats_store
-        match = tournament.qualifier_matches[self.match_index]
-        losing_team_index = match[1] if match[0] == self.team_index else match[0]
-        winning_team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-        losing_team = tournament.teams[losing_team_index] if losing_team_index < len(tournament.teams) else {}
-
-        # Winning team gets no ELO change (will be updated in semifinals/final)
-        for circle in range(1, 5):
-            player = winning_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
-
-        # Losing team gets -25 ELO
-        for circle in range(1, 5):
-            player = losing_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result="qualifier_loss", count_game=False)
-
-        # Resolve betting for this match
-        from storage.bet_store import bet_store
-        from storage.user_balance_store import user_balance_store
-
-        # Get winning team name
-        winning_team_data = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
-        winning_team_name = tournament.team_names.get(self.team_index, winning_team_data.get("captain", f"Team {self.team_index}"))
-        
-        match_id = f"qualifier_{self.match_index}"
-        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-        # Pay out winners
-        for user_id, payout in payouts.items():
-            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -826,23 +507,21 @@ class QualifiersView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
+        # Add captain fill buttons for each match
+        for i, (team_a, team_b) in enumerate(matches):
+            if "qualifier" in tournament.pending_winners and i in tournament.pending_winners["qualifier"]:
+                # Add fill button for team A
+                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, team_a))
+                # Add fill button for team B
+                self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, team_b))
+
+        # Add admin fill button
+        self.add_item(AdminFillButton(guild_id, tournament))
+
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
-
-        # Add stats fill button for admin
-        from views.stats_fill_view import AdminFillStatsButton
-        self.add_item(AdminFillStatsButton(guild_id, tournament))
-
-        # Add single adaptive stats fill button for captains
-        from views.stats_fill_view import FillStatsButton
-        self.add_item(FillStatsButton(guild_id, tournament))
-
-        # Add manual phase advance button for admin (only if all winners selected but stats not filled)
-        if all(w is not None for w in tournament.qualifier_winners):
-            if tournament.temp_match_stats.get("qualifier"):
-                self.add_item(AdvancePhaseButton(guild_id, tournament, "qualifier", "semifinal"))
 
 
 class SemifinalsView(discord.ui.View):
@@ -856,20 +535,18 @@ class SemifinalsView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
 
+        # Add captain fill buttons for each match
+        for i, (team_a, team_b) in enumerate(matches):
+            if "semifinal" in tournament.pending_winners and i in tournament.pending_winners["semifinal"]:
+                # Add fill button for team A
+                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, team_a))
+                # Add fill button for team B
+                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, team_b))
+
+        # Add admin fill button
+        self.add_item(AdminFillButton(guild_id, tournament))
+
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
-
-        # Add stats fill button for admin
-        from views.stats_fill_view import AdminFillStatsButton
-        self.add_item(AdminFillStatsButton(guild_id, tournament))
-
-        # Add single adaptive stats fill button for captains
-        from views.stats_fill_view import FillStatsButton
-        self.add_item(FillStatsButton(guild_id, tournament))
-
-        # Add manual phase advance button for admin (only if all winners selected but stats not filled)
-        if all(w is not None for w in tournament.semifinal_winners):
-            if tournament.temp_match_stats.get("semifinal"):
-                self.add_item(AdvancePhaseButton(guild_id, tournament, "semifinal", "final"))

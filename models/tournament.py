@@ -110,6 +110,9 @@ class Tournament:
     # Отображение имени на user_id для статистики
     player_user_ids: dict[str, int] = field(default_factory=dict)
 
+    # Отображение Discord имени на игровой ник (для отображения в турнире)
+    player_game_nicknames: dict[str, str] = field(default_factory=dict)
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -151,13 +154,14 @@ class Tournament:
     final_teams: list[int] = field(default_factory=list)
     winner_team_index: int | None = None
 
-    # Match completion tracking (match_type -> list of completed match indices)
+    # Temporary winner storage for confirmation workflow
+    # Format: match_type -> match_index -> winning_team_index
     # match_type: "qualifier", "semifinal", "final"
-    completed_matches: dict[str, list[int]] = field(default_factory=dict)
+    pending_winners: dict[str, dict[int, int]] = field(default_factory=dict)
 
-    # Temporary stats storage (match_type -> match_index -> stats data)
-    # Format: {"qualifier": {0: {"team1": {player: {kills, deaths}}, "team2": {...}}}}
-    temp_match_stats: dict[str, dict[int, dict]] = field(default_factory=dict)
+    # Temporary K/D data storage for confirmation workflow
+    # Format: match_type -> match_index -> team_index -> circle -> (kills, deaths)
+    pending_kd_data: dict[str, dict[int, dict[int, dict[int, tuple[int, int]]]]] = field(default_factory=dict)
 
     # Betting system
     betting_open: bool = True
@@ -459,33 +463,9 @@ class Tournament:
         """
         self.qualifier_winners[match_index] = team_index
         if all(w is not None for w in self.qualifier_winners):
-            # Check if all qualifier stats have been confirmed (not in temp_match_stats)
-            # AND all qualifier matches are marked as completed
-            qualifier_stats_confirmed = True
-            for i in range(len(self.qualifier_matches)):
-                if i in self.temp_match_stats.get("qualifier", {}):
-                    qualifier_stats_confirmed = False
-                    break
-
-            all_matches_completed = True
-            for i in range(len(self.qualifier_matches)):
-                if "qualifier" not in self.completed_matches or i not in self.completed_matches["qualifier"]:
-                    all_matches_completed = False
-                    break
-
-            # Log for debugging
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"All winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. Stats confirmed: {qualifier_stats_confirmed}. All matches completed: {all_matches_completed}")
-
-            if qualifier_stats_confirmed and all_matches_completed:
-                # Qualifier winners advance to semifinals
-                self.generate_semifinals_from_qualifiers()
-                return True
-            else:
-                # Stats not filled yet, don't advance
-                logger.warning(f"Phase transition blocked: qualifier stats not confirmed or matches not completed. temp_match_stats: {self.temp_match_stats.get('qualifier', {})}. completed_matches: {self.completed_matches.get('qualifier', [])}")
-                return False
+            # Qualifier winners advance to semifinals
+            self.generate_semifinals_from_qualifiers()
+            return True
         return False
 
     def generate_semifinals_from_qualifiers(self) -> None:
@@ -511,58 +491,15 @@ class Tournament:
         """
         self.semifinal_winners[match_index] = team_index
         if all(w is not None for w in self.semifinal_winners):
-            # Check if all semifinal stats have been confirmed (not in temp_match_stats)
-            # AND all semifinal matches are marked as completed
-            semifinal_stats_confirmed = True
-            for i in range(len(self.semifinal_matches)):
-                if i in self.temp_match_stats.get("semifinal", {}):
-                    semifinal_stats_confirmed = False
-                    break
-
-            all_matches_completed = True
-            for i in range(len(self.semifinal_matches)):
-                if "semifinal" not in self.completed_matches or i not in self.completed_matches["semifinal"]:
-                    all_matches_completed = False
-                    break
-
-            # Log for debugging
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"All semifinal winners selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}. Stats confirmed: {semifinal_stats_confirmed}. All matches completed: {all_matches_completed}")
-
-            if semifinal_stats_confirmed and all_matches_completed:
-                self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
-                self.phase = TournamentPhase.FINAL
-                return True
-            else:
-                # Stats not filled yet, don't advance
-                logger.warning(f"Phase transition blocked: semifinal stats not confirmed or matches not completed. temp_match_stats: {self.temp_match_stats.get('semifinal', {})}. completed_matches: {self.completed_matches.get('semifinal', [])}")
-                return False
+            self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
+            self.phase = TournamentPhase.FINAL
+            return True
         return False
 
-    def set_final_winner(self, team_index: int) -> bool:
-        """Записать победителя финала. Возвращает True, если финал завершен."""
+    def set_final_winner(self, team_index: int) -> None:
+        """Записать победителя финала."""
         self.winner_team_index = team_index
-
-        # Check if final stats have been confirmed (not in temp_match_stats)
-        # Stats are considered confirmed if they are NOT in temp_match_stats
-        # AND the match is marked as completed
-        final_stats_confirmed = 0 not in self.temp_match_stats.get("final", {})
-        match_completed = "final" in self.completed_matches and 0 in self.completed_matches["final"]
-
-        # Log for debugging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Final winner selected. Checking stats confirmation. temp_match_stats: {self.temp_match_stats.get('final', {})}. Stats confirmed: {final_stats_confirmed}. Match completed: {match_completed}")
-
-        # Only complete tournament if stats are confirmed AND match is completed
-        if final_stats_confirmed and match_completed:
-            self.phase = TournamentPhase.COMPLETE
-            return True
-        else:
-            # Stats not confirmed yet, don't complete tournament
-            logger.warning(f"Phase transition blocked: final stats not confirmed or match not completed. temp_match_stats: {self.temp_match_stats.get('final', {})}. completed_matches: {self.completed_matches.get('final', [])}")
-            return False
+        self.phase = TournamentPhase.COMPLETE
 
     # --- Сериализация ---
 

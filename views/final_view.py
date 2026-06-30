@@ -52,68 +52,11 @@ class FinalWinnerButton(discord.ui.Button):
             )
             return
 
-        tournament.set_final_winner(self.team_index)
-
-        # Mark match as completed for stats filling
-        if "final" not in tournament.completed_matches:
-            tournament.completed_matches["final"] = []
-        if 0 not in tournament.completed_matches["final"]:
-            tournament.completed_matches["final"].append(0)
-
+        # Store winner temporarily instead of saving immediately
+        if "final" not in tournament.pending_winners:
+            tournament.pending_winners["final"] = {}
+        tournament.pending_winners["final"][0] = self.team_index
         store.set(tournament)
-
-        # Update player statistics with ELO based on tournament size
-        winning_team = tournament.teams[self.team_index]
-        losing_team_index = tournament.final_teams[1] if tournament.final_teams[0] == self.team_index else tournament.final_teams[0]
-        losing_team = tournament.teams[losing_team_index]
-
-        # Determine result type based on tournament size
-        from models.tournament import TournamentSize
-
-        if tournament.size == TournamentSize.EIGHT:
-            # 8 players: direct final
-            winner_result = "final_win"  # +25
-            loser_result = "final_loss"  # -25
-        elif tournament.size == TournamentSize.SIXTEEN:
-            # 16 players: semifinals + final
-            winner_result = "semifinal_win_final_win"  # +50
-            loser_result = "semifinal_win_final_loss"  # +25
-        else:
-            # 32 players: qualifiers + semifinals + final
-            winner_result = "qualifier_win_semifinal_win_final_win"  # +100
-            loser_result = "qualifier_win_semifinal_win_final_loss"  # +50
-
-        # Update winning team stats
-        from storage.user_balance_store import user_balance_store
-        for circle in range(1, 5):
-            player = winning_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=winner_result, count_game=False)
-                # Give tournament win reward
-                await user_balance_store.add_balance(tournament.guild_id, user_id, 50)
-
-        # Update losing team stats
-        for circle in range(1, 5):
-            player = losing_team.get(f"circle{circle}")
-            if player:
-                user_id = tournament.player_user_ids.get(player, 0)
-                await player_stats_store.update_player(tournament.guild_id, user_id, player, result=loser_result, count_game=False)
-
-        # Resolve betting for final match
-        from storage.bet_store import bet_store
-        from storage.user_balance_store import user_balance_store
-
-        # Get winning team name
-        winning_team_data = tournament.teams[self.team_index]
-        winning_team_name = tournament.team_names.get(self.team_index, winning_team_data.get("captain", f"Team {self.team_index}"))
-        
-        match_id = f"final_0"
-        payouts = await bet_store.resolve_match_bets(tournament.guild_id, match_id, winning_team_name)
-
-        # Pay out winners
-        for user_id, payout in payouts.items():
-            await user_balance_store.add_balance(tournament.guild_id, user_id, payout)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -130,17 +73,21 @@ class FinalView(discord.ui.View):
         from views.matches_view import SelectWinnerButton
         self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
 
+        # Add captain fill buttons for final match
+        if "final" in tournament.pending_winners and 0 in tournament.pending_winners["final"]:
+            # Add fill button for team A
+            from views.match_fill_views import CaptainFillButton, AdminFillButton
+            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
+            # Add fill button for team B
+            self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))
+
+        # Add admin fill button
+        from views.match_fill_views import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
         final_matches = [(final_teams[0], final_teams[1])]
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
-
-        # Add stats fill button for admin
-        from views.stats_fill_view import AdminFillStatsButton
-        self.add_item(AdminFillStatsButton(guild_id, tournament))
-
-        # Add single adaptive stats fill button for captains
-        from views.stats_fill_view import FillStatsButton
-        self.add_item(FillStatsButton(guild_id, tournament))
