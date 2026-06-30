@@ -462,9 +462,20 @@ class Tournament:
         """
         self.qualifier_winners[match_index] = team_index
         if all(w is not None for w in self.qualifier_winners):
-            # Qualifier winners advance to semifinals
-            self.generate_semifinals_from_qualifiers()
-            return True
+            # Check if all qualifier stats have been confirmed (not in temp_match_stats)
+            qualifier_stats_filled = True
+            for i in range(len(self.qualifier_matches)):
+                if i in self.temp_match_stats.get("qualifier", {}):
+                    qualifier_stats_filled = False
+                    break
+
+            if qualifier_stats_filled:
+                # Qualifier winners advance to semifinals
+                self.generate_semifinals_from_qualifiers()
+                return True
+            else:
+                # Stats not filled yet, don't advance
+                return False
         return False
 
     def generate_semifinals_from_qualifiers(self) -> None:
@@ -490,9 +501,20 @@ class Tournament:
         """
         self.semifinal_winners[match_index] = team_index
         if all(w is not None for w in self.semifinal_winners):
-            self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
-            self.phase = TournamentPhase.FINAL
-            return True
+            # Check if all semifinal stats have been confirmed (not in temp_match_stats)
+            semifinal_stats_filled = True
+            for i in range(len(self.semifinal_matches)):
+                if i in self.temp_match_stats.get("semifinal", {}):
+                    semifinal_stats_filled = False
+                    break
+
+            if semifinal_stats_filled:
+                self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
+                self.phase = TournamentPhase.FINAL
+                return True
+            else:
+                # Stats not filled yet, don't advance
+                return False
         return False
 
     def set_final_winner(self, team_index: int) -> None:

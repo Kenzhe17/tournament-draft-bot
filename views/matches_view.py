@@ -625,6 +625,57 @@ class SelectWinnerButton(discord.ui.Button):
         await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=3)
 
 
+class AdvancePhaseButton(discord.ui.Button):
+    """Button for admin to manually advance to next phase (when stats not filled)."""
+
+    def __init__(self, guild_id: int, tournament, current_phase: str, next_phase: str):
+        super().__init__(
+            label=f"⏭️ Перейти к {next_phase}",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"advance_phase:{guild_id}:{current_phase}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.current_phase = current_phase
+        self.next_phase = next_phase
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_admin_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только администраторы могут переходить к следующей фазе.",
+                ephemeral=True
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return
+
+        # Clear temporary stats (they won't be confirmed)
+        if self.current_phase in tournament.temp_match_stats:
+            del tournament.temp_match_stats[self.current_phase]
+
+        # Advance to next phase
+        if self.current_phase == "qualifier":
+            tournament.generate_semifinals_from_qualifiers()
+        elif self.current_phase == "semifinal":
+            tournament.final_teams = list(tournament.semifinal_winners)  # type: ignore[arg-type]
+            tournament.phase = TournamentPhase.FINAL
+
+        store.set(tournament)
+
+        # Update tournament message
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            f"✅ Переход к {self.next_phase} выполнен (статистика не сохранена)",
+            ephemeral=True
+        )
+
+
 class QualifierWinnerButton(discord.ui.Button):
     """Кнопка выбора победителя отборочного матча."""
 
@@ -747,6 +798,11 @@ class QualifiersView(discord.ui.View):
             team_a, team_b = matches[match_index]
             self.add_item(FillStatsButton(guild_id, tournament, "qualifier", match_index, team_a, team_b))
 
+        # Add manual phase advance button for admin (only if all winners selected but stats not filled)
+        if all(w is not None for w in tournament.qualifier_winners):
+            if tournament.temp_match_stats.get("qualifier"):
+                self.add_item(AdvancePhaseButton(guild_id, tournament, "qualifier", "semifinal"))
+
 
 class SemifinalsView(discord.ui.View):
     """View с кнопками победителей полуфиналов."""
@@ -774,3 +830,8 @@ class SemifinalsView(discord.ui.View):
         for match_index in completed_matches:
             team_a, team_b = matches[match_index]
             self.add_item(FillStatsButton(guild_id, tournament, "semifinal", match_index, team_a, team_b))
+
+        # Add manual phase advance button for admin (only if all winners selected but stats not filled)
+        if all(w is not None for w in tournament.semifinal_winners):
+            if tournament.temp_match_stats.get("semifinal"):
+                self.add_item(AdvancePhaseButton(guild_id, tournament, "semifinal", "final"))
