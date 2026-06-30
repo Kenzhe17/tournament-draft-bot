@@ -516,62 +516,77 @@ class AdminConfirmView(View):
         from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
 
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
-            return
+        try:
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+                return
 
-        match_id = f"{self.match_type}_{self.match_index}"
-        temp_stats = tournament.temp_match_stats.get(match_id, {})
+            match_id = f"{self.match_type}_{self.match_index}"
+            temp_stats = tournament.temp_match_stats.get(match_id, {})
 
-        # Process the match with statistics
-        await process_match_result(self.guild_id, tournament, {
-            "match_type": self.match_type,
-            "match_index": self.match_index,
-            "winning_team_index": self._get_winning_team_index(),
-            "team1_index": self.team_a_index,
-            "team2_index": self.team_b_index,
-            "temp_kd_data": temp_stats
-        })
+            winning_team_index = self._get_winning_team_index()
+            if winning_team_index is None:
+                await interaction.response.send_message("❌ Победитель не выбран.", ephemeral=True)
+                return
 
-        # Resolve betting
-        if self.match_type == "qualifier":
-            winning_team_index = tournament.qualifier_winners[self.match_index]
-        elif self.match_type == "semifinal":
-            winning_team_index = tournament.semifinal_pending_winners[self.match_index]
-        else:  # final
-            winning_team_index = tournament.final_pending_winner
+            # Process the match with statistics
+            await process_match_result(self.guild_id, tournament, {
+                "match_type": self.match_type,
+                "match_index": self.match_index,
+                "winning_team_index": winning_team_index,
+                "team1_index": self.team_a_index,
+                "team2_index": self.team_b_index,
+                "temp_kd_data": temp_stats
+            })
 
-        winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
-        winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
+            # Resolve betting
+            if self.match_type == "qualifier":
+                winning_team_index = tournament.qualifier_winners[self.match_index]
+            elif self.match_type == "semifinal":
+                winning_team_index = tournament.semifinal_pending_winners[self.match_index]
+            else:  # final
+                winning_team_index = tournament.final_pending_winner
 
-        payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
-        for user_id, payout in payouts.items():
-            await user_balance_store.add_balance(self.guild_id, user_id, payout)
+            winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
+            winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
 
-        # Confirm winner
-        if self.match_type == "qualifier":
-            tournament.confirm_qualifier_winner(self.match_index, winning_team_index)
-        elif self.match_type == "semifinal":
-            tournament.confirm_semifinal_winner(self.match_index, winning_team_index)
-        else:  # final
-            tournament.confirm_final_winner(winning_team_index)
+            payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+            for user_id, payout in payouts.items():
+                await user_balance_store.add_balance(self.guild_id, user_id, payout)
 
-        # Clear temp stats
-        if match_id in tournament.temp_match_stats:
-            del tournament.temp_match_stats[match_id]
+            # Confirm winner
+            if self.match_type == "qualifier":
+                tournament.confirm_qualifier_winner(self.match_index, winning_team_index)
+            elif self.match_type == "semifinal":
+                tournament.confirm_semifinal_winner(self.match_index, winning_team_index)
+            else:  # final
+                tournament.confirm_final_winner(winning_team_index)
 
-        store.set(tournament)
+            # Clear temp stats
+            if match_id in tournament.temp_match_stats:
+                del tournament.temp_match_stats[match_id]
 
-        from bot import TournamentBot
-        bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
+            store.set(tournament)
 
-        await interaction.response.send_message("✅ Статистика сохранена и победитель подтверждён!", ephemeral=True)
+            from bot import TournamentBot
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
+            await interaction.response.send_message("✅ Статистика сохранена и победитель подтверждён!", ephemeral=True)
+        except Exception as e:
+            import logging
+            logging.error(f"Error in confirm_callback: {e}", exc_info=True)
+            await interaction.response.send_message("❌ Произошла ошибка при подтверждении.", ephemeral=True)
 
     async def edit_callback(self, interaction: discord.Interaction) -> None:
-        modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index)
-        await interaction.response.send_modal(modal)
+        # Show team selection again for editing
+        view = AdminTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index)
+        await interaction.response.send_message(
+            "Выберите команду для редактирования статистики:",
+            view=view,
+            ephemeral=True
+        )
 
     def _get_winning_team_index(self) -> int:
         if self.match_type == "qualifier":
