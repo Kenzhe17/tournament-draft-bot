@@ -99,24 +99,16 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             if player:
                 self.players.append((player, circle))
 
-        # Create input fields for each player
+        # Create input fields for each player (format: kills/deaths)
         for i, (player_name, circle) in enumerate(self.players):
-            kills_input = TextInput(
-                label=f"{player_name} (Круг {circle}) - Убийства",
-                placeholder="0",
+            kd_input = TextInput(
+                label=f"{player_name} (Круг {circle})",
+                placeholder="Убийства/Смерти (например: 5/3)",
                 required=False,
-                max_length=3
+                max_length=7
             )
-            deaths_input = TextInput(
-                label=f"{player_name} (Круг {circle}) - Смерти",
-                placeholder="0",
-                required=False,
-                max_length=3
-            )
-            setattr(self, f"kills_{i}", kills_input)
-            setattr(self, f"deaths_{i}", deaths_input)
-            self.add_item(kills_input)
-            self.add_item(deaths_input)
+            setattr(self, f"kd_{i}", kd_input)
+            self.add_item(kd_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
@@ -127,15 +119,22 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             stats = {}
 
             for i, (player_name, circle) in enumerate(self.players):
-                kills_field = getattr(self, f"kills_{i}")
-                deaths_field = getattr(self, f"deaths_{i}")
+                kd_field = getattr(self, f"kd_{i}")
 
-                try:
-                    kills = int(kills_field.value) if kills_field.value else 0
-                    deaths = int(deaths_field.value) if deaths_field.value else 0
-                except ValueError:
-                    await interaction.response.send_message("❌ Некорректные значения. Введите числа.", ephemeral=True)
-                    return
+                if not kd_field.value:
+                    kills = 0
+                    deaths = 0
+                else:
+                    try:
+                        parts = kd_field.value.split('/')
+                        kills = int(parts[0].strip()) if parts[0].strip() else 0
+                        deaths = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0
+                    except (ValueError, IndexError):
+                        await interaction.response.send_message(
+                            f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 5/3)",
+                            ephemeral=True
+                        )
+                        return
 
                 stats[player_name] = {
                     "kills": kills,
@@ -162,7 +161,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             await interaction.response.send_message(
-                "✅ Данные отправлены\n\n⏳ Ожидается подтверждение администратора",
+                "✅ Данные отправлены\n\n⏳ Ожидается подтверждения администратора",
                 ephemeral=True
             )
         except Exception as e:
@@ -291,25 +290,17 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
             if player:
                 self.players.append((player, circle, team_b_index))
 
-        # Create input fields for each player
+        # Create input fields for each player (format: kills/deaths)
         for i, (player_name, circle, team_idx) in enumerate(self.players):
             team_name = tournament.team_names.get(team_idx, f"Team {team_idx}")
-            kills_input = TextInput(
-                label=f"{player_name} ({team_name}, Круг {circle}) - Убийства",
-                placeholder="0",
+            kd_input = TextInput(
+                label=f"{player_name} ({team_name}, Круг {circle})",
+                placeholder="Убийства/Смерти (например: 5/3)",
                 required=False,
-                max_length=3
+                max_length=7
             )
-            deaths_input = TextInput(
-                label=f"{player_name} ({team_name}, Круг {circle}) - Смерти",
-                placeholder="0",
-                required=False,
-                max_length=3
-            )
-            setattr(self, f"kills_{i}", kills_input)
-            setattr(self, f"deaths_{i}", deaths_input)
-            self.add_item(kills_input)
-            self.add_item(deaths_input)
+            setattr(self, f"kd_{i}", kd_input)
+            self.add_item(kd_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
@@ -319,15 +310,22 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
         stats = {}
 
         for i, (player_name, circle, team_idx) in enumerate(self.players):
-            kills_field = getattr(self, f"kills_{i}")
-            deaths_field = getattr(self, f"deaths_{i}")
+            kd_field = getattr(self, f"kd_{i}")
 
-            try:
-                kills = int(kills_field.value) if kills_field.value else 0
-                deaths = int(deaths_field.value) if deaths_field.value else 0
-            except ValueError:
-                await interaction.response.send_message("❌ Некорректные значения. Введите числа.", ephemeral=True)
-                return
+            if not kd_field.value:
+                kills = 0
+                deaths = 0
+            else:
+                try:
+                    parts = kd_field.value.split('/')
+                    kills = int(parts[0].strip()) if parts[0].strip() else 0
+                    deaths = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0
+                except (ValueError, IndexError):
+                    await interaction.response.send_message(
+                        f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 5/3)",
+                        ephemeral=True
+                    )
+                    return
 
             stats[player_name] = {
                 "kills": kills,
