@@ -99,13 +99,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             if player:
                 self.players.append((player, circle))
 
-        # Create input fields for each player (format: kills/deaths)
+        # Create input fields for each player (format: Name: kills/deaths)
         for i, (player_name, circle) in enumerate(self.players):
             kd_input = TextInput(
-                label=f"{player_name} (Круг {circle})",
-                placeholder="Убийства/Смерти (например: 5/3)",
+                label=f"Круг {circle}",
+                placeholder="Name: kills/deaths (например: Player1: 7/2)",
                 required=False,
-                max_length=7
+                max_length=30
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
@@ -126,12 +126,22 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                     deaths = 0
                 else:
                     try:
-                        parts = kd_field.value.split('/')
-                        kills = int(parts[0].strip()) if parts[0].strip() else 0
-                        deaths = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0
+                        # Parse format: "Name: kills/deaths" or just "kills/deaths"
+                        value = kd_field.value.strip()
+                        if ':' in value:
+                            # Format: "Name: kills/deaths"
+                            parts = value.split(':')
+                            kd_part = parts[1].strip() if len(parts) > 1 else ""
+                        else:
+                            # Format: "kills/deaths"
+                            kd_part = value
+
+                        kd_parts = kd_part.split('/')
+                        kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
+                        deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                     except (ValueError, IndexError):
                         await interaction.response.send_message(
-                            f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 5/3)",
+                            f"❌ Некорректный формат для круга {circle}. Используйте формат: Name: kills/deaths (например: Player1: 7/2)",
                             ephemeral=True
                         )
                         return
@@ -253,16 +263,21 @@ class AdminMatchSelectView(View):
 
     def _create_callback(self, match_type: str, match_index: int):
         async def callback(interaction: discord.Interaction) -> None:
-            modal = AdminStatsModal(self.guild_id, self.tournament, match_type, match_index)
-            await interaction.response.send_modal(modal)
+            # Show team selection for admin
+            view = AdminTeamSelectView(self.guild_id, self.tournament, match_type, match_index)
+            await interaction.response.send_message(
+                "Выберите команду для заполнения статистики:",
+                view=view,
+                ephemeral=True
+            )
         return callback
 
 
-class AdminStatsModal(Modal, title="Статистика матча (Админ)"):
-    """Modal for admin to fill statistics for both teams."""
+class AdminTeamSelectView(View):
+    """View for admin to select which team to fill stats for."""
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int):
-        super().__init__()
+        super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
@@ -277,27 +292,91 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
             match = (tournament.final_teams[0], tournament.final_teams[1])
 
         team_a_index, team_b_index = match
+        team_a_name = tournament.team_names.get(team_a_index, f"Team {team_a_index}")
+        team_b_name = tournament.team_names.get(team_b_index, f"Team {team_b_index}")
+
+        # Add buttons for each team
+        team_a_btn = Button(label=team_a_name, style=discord.ButtonStyle.primary)
+        team_a_btn.callback = self._create_callback(team_a_index)
+        self.add_item(team_a_btn)
+
+        team_b_btn = Button(label=team_b_name, style=discord.ButtonStyle.primary)
+        team_b_btn.callback = self._create_callback(team_b_index)
+        self.add_item(team_b_btn)
+
+        # Add confirm button if both teams have stats
+        match_id = f"{match_type}_{match_index}"
+        temp_stats = tournament.temp_match_stats.get(match_id, {})
         team_a = tournament.teams[team_a_index] if team_a_index < len(tournament.teams) else {}
         team_b = tournament.teams[team_b_index] if team_b_index < len(tournament.teams) else {}
 
-        # Collect all players from both teams
+        team_a_filled = any(team_a.get(f"circle{c}") in temp_stats for c in range(1, 5))
+        team_b_filled = any(team_b.get(f"circle{c}") in temp_stats for c in range(1, 5))
+
+        if team_a_filled and team_b_filled:
+            confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
+            confirm_btn.callback = self._create_confirm_callback()
+            self.add_item(confirm_btn)
+
+    def _create_callback(self, team_index: int):
+        async def callback(interaction: discord.Interaction) -> None:
+            modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, team_index)
+            await interaction.response.send_modal(modal)
+        return callback
+
+    def _create_confirm_callback(self):
+        async def callback(interaction: discord.Interaction) -> None:
+            match_id = f"{self.match_type}_{self.match_index}"
+            temp_stats = self.tournament.temp_match_stats.get(match_id, {})
+            view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, temp_stats)
+            await interaction.response.send_message(
+                "Проверьте статистику перед подтверждением:",
+                view=view,
+                ephemeral=True
+            )
+        return callback
+
+
+class AdminStatsModal(Modal, title="Статистика команды (Админ)"):
+    """Modal for admin to fill statistics for a single team."""
+
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+
+        # Get team data
+        team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+
+        # Get existing stats from captain submissions
+        match_id = f"{match_type}_{match_index}"
+        temp_stats = tournament.temp_match_stats.get(match_id, {})
+
+        # Collect players from this team
         self.players = []
         for circle in range(1, 5):
-            player = team_a.get(f"circle{circle}")
+            player = team.get(f"circle{circle}")
             if player:
-                self.players.append((player, circle, team_a_index))
-            player = team_b.get(f"circle{circle}")
-            if player:
-                self.players.append((player, circle, team_b_index))
+                self.players.append((player, circle))
 
-        # Create input fields for each player (format: kills/deaths)
-        for i, (player_name, circle, team_idx) in enumerate(self.players):
-            team_name = tournament.team_names.get(team_idx, f"Team {team_idx}")
+        # Create input fields for each player (format: Name: kills/deaths)
+        for i, (player_name, circle) in enumerate(self.players):
+            # Pre-fill with captain-submitted stats if available
+            existing_stat = temp_stats.get(player_name, {})
+            if existing_stat:
+                default_value = f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
+            else:
+                default_value = ""
+
             kd_input = TextInput(
-                label=f"{player_name} ({team_name}, Круг {circle})",
-                placeholder="Убийства/Смерти (например: 5/3)",
+                label=f"Круг {circle}",
+                placeholder="Name: kills/deaths (например: Player1: 7/2)",
                 required=False,
-                max_length=7
+                max_length=30,
+                default=default_value
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
@@ -309,7 +388,7 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
         match_id = f"{self.match_type}_{self.match_index}"
         stats = {}
 
-        for i, (player_name, circle, team_idx) in enumerate(self.players):
+        for i, (player_name, circle) in enumerate(self.players):
             kd_field = getattr(self, f"kd_{i}")
 
             if not kd_field.value:
@@ -317,12 +396,22 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
                 deaths = 0
             else:
                 try:
-                    parts = kd_field.value.split('/')
-                    kills = int(parts[0].strip()) if parts[0].strip() else 0
-                    deaths = int(parts[1].strip()) if len(parts) > 1 and parts[1].strip() else 0
+                    # Parse format: "Name: kills/deaths" or just "kills/deaths"
+                    value = kd_field.value.strip()
+                    if ':' in value:
+                        # Format: "Name: kills/deaths"
+                        parts = value.split(':')
+                        kd_part = parts[1].strip() if len(parts) > 1 else ""
+                    else:
+                        # Format: "kills/deaths"
+                        kd_part = value
+
+                    kd_parts = kd_part.split('/')
+                    kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
+                    deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 5/3)",
+                        f"❌ Некорректный формат для круга {circle}. Используйте формат: Name: kills/deaths (например: Player1: 7/2)",
                         ephemeral=True
                     )
                     return
@@ -339,16 +428,53 @@ class AdminStatsModal(Modal, title="Статистика матча (Админ)
             await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
             return
 
-        tournament.temp_match_stats[match_id] = stats
+        # Merge with existing stats (admin fills one team at a time)
+        if match_id not in tournament.temp_match_stats:
+            tournament.temp_match_stats[match_id] = {}
+        tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
 
-        # Show confirmation view
-        view = AdminConfirmView(self.guild_id, tournament, self.match_type, self.match_index, stats)
-        await interaction.response.send_message(
-            "Проверьте статистику перед подтверждением:",
-            view=view,
-            ephemeral=True
+        # Update tournament message to refresh view
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        # Ask if admin wants to fill the other team or confirm
+        # Get match teams to check if both teams have stats
+        if self.match_type == "qualifier":
+            match = tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (tournament.final_teams[0], tournament.final_teams[1])
+
+        team_a_index, team_b_index = match
+        team_a = tournament.teams[team_a_index] if team_a_index < len(tournament.teams) else {}
+        team_b = tournament.teams[team_b_index] if team_b_index < len(tournament.teams) else {}
+
+        # Check if other team has stats
+        other_team_index = team_b_index if self.team_index == team_a_index else team_a_index
+        other_team = tournament.teams[other_team_index] if other_team_index < len(tournament.teams) else {}
+        other_team_filled = any(
+            other_team.get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+            for c in range(1, 5)
         )
+
+        if other_team_filled:
+            # Both teams filled, show confirmation
+            view = AdminConfirmView(self.guild_id, tournament, self.match_type, self.match_index, tournament.temp_match_stats[match_id])
+            await interaction.response.send_message(
+                "Проверьте статистику перед подтверждением:",
+                view=view,
+                ephemeral=True
+            )
+        else:
+            # Other team not filled, ask to fill it
+            other_team_name = tournament.team_names.get(other_team_index, f"Team {other_team_index}")
+            await interaction.response.send_message(
+                f"✅ Статистика команды сохранена.\n\nХотите заполнить статистику для команды {other_team_name}?",
+                ephemeral=True
+            )
 
 
 class AdminConfirmView(View):
