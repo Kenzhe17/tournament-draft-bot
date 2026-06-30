@@ -617,15 +617,23 @@ class AdminConfirmView(View):
         """Confirm and save stats."""
         from storage.json_store import store
         from storage.player_stats_store import player_stats_store
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Save stats to database
         stats_data = self.tournament.temp_match_stats.get(self.match_type, {}).get(self.match_index, {})
+
+        logger.info(f"AdminConfirmView: Confirming stats for {self.match_type} match {self.match_index}")
+        logger.info(f"AdminConfirmView: stats_data={stats_data}")
+        logger.info(f"AdminConfirmView: player_user_ids={self.tournament.player_user_ids}")
 
         # Process team 1
         for player_name, stats in stats_data.get("team1", {}).items():
             user_id = self.tournament.player_user_ids.get(player_name, 0)
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
+
+            logger.info(f"AdminConfirmView: Processing team1 player {player_name}, user_id={user_id}, kills={kills}, deaths={deaths}")
 
             # Update player stats
             await player_stats_store.update_player(
@@ -641,6 +649,8 @@ class AdminConfirmView(View):
             user_id = self.tournament.player_user_ids.get(player_name, 0)
             kills = stats.get("kills", 0)
             deaths = stats.get("deaths", 0)
+
+            logger.info(f"AdminConfirmView: Processing team2 player {player_name}, user_id={user_id}, kills={kills}, deaths={deaths}")
 
             # Update player stats
             await player_stats_store.update_player(
