@@ -293,10 +293,11 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="bonus", description="Получить ежедневный бонус 100 монет")
-    async def daily_bonus(self, interaction: discord.Interaction) -> None:
-        """Получить ежедневный бонус монет."""
+    @app_commands.command(name="зарплата", description="Получить ежедневную зарплату")
+    async def daily_salary(self, interaction: discord.Interaction) -> None:
+        """Получить ежедневную зарплату монет."""
         from storage.user_balance_store import user_balance_store
+        from storage.player_stats_store import player_stats_store
         from storage.db import get_pool
         from datetime import datetime, timedelta
 
@@ -320,13 +321,37 @@ class TournamentCog(commands.Cog):
                     hours = int(remaining.total_seconds() // 3600)
                     minutes = int((remaining.total_seconds() % 3600) // 60)
                     await interaction.response.send_message(
-                        f"❌ Вы уже получили бонус. Следующий бонус через {hours}ч {minutes}мин.",
+                        f"❌ Вы уже получили зарплату. Следующая зарплата через {hours}ч {minutes}мин.",
                         ephemeral=True
                     )
                     return
 
-            # Give bonus
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 100)
+            # Get player ELO and ranking
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+            player_elo = stats.elo if stats else 1000
+
+            # Get all players to calculate ranking
+            all_stats = await player_stats_store.get_all(interaction.guild_id)
+            ranked_players = sorted(all_stats, key=lambda x: x.elo, reverse=True)
+
+            # Find player's rank
+            player_rank = 0
+            for i, player_stats in enumerate(ranked_players):
+                if player_stats.user_id == interaction.user.id:
+                    player_rank = i + 1
+                    break
+
+            # Calculate salary based on rank
+            base_salary = 100
+            rank_bonus = 0
+            if player_rank <= 10:
+                # Top 10: +10 for rank 10, +20 for rank 9, ..., +100 for rank 1
+                rank_bonus = (11 - player_rank) * 10
+
+            total_salary = base_salary + rank_bonus
+
+            # Give salary
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, total_salary)
 
             # Update cooldown
             await conn.execute(
@@ -338,9 +363,21 @@ class TournamentCog(commands.Cog):
                 interaction.guild_id, interaction.user.id, now
             )
 
-        await interaction.response.send_message(
-            "🎁 Вы получили 100 монет!"
-        )
+        # Create response message
+        if player_rank <= 10:
+            # Special message for top 10
+            rank_emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"][player_rank - 1]
+            embed = discord.Embed(
+                title=f"{rank_emoji} Премиальная зарплата для топ-{player_rank}!",
+                description=f"🏆 Вы в топ-10 по ELO на сервере!\n\n💰 Ваша зарплата: **{total_salary} монет**\n📊 Базовая: {base_salary} 🪙\n⭐ Бонус за топ-{player_rank}: +{rank_bonus} 🪙",
+                color=discord.Color.gold()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"💰 Ваша зарплата за сегодня: {total_salary} монет",
+                ephemeral=True
+            )
 
     @app_commands.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
@@ -359,7 +396,7 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
