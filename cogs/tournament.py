@@ -549,6 +549,8 @@ class TournamentCog(commands.Cog):
         player: discord.Member | None = None
     ) -> None:
         """Показать статистику игрока."""
+        await interaction.response.defer()
+
         target_user = player if player else interaction.user
 
         from storage.player_stats_store import player_stats_store
@@ -571,14 +573,14 @@ class TournamentCog(commands.Cog):
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
         embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
-        
+
         # Additional stats
         embed.add_field(name="🎯 Total Kills", value=str(stats.total_kills), inline=True)
         embed.add_field(name="💀 Total Deaths", value=str(stats.total_deaths), inline=True)
         embed.add_field(name="🔥 Max Kills", value=str(stats.best_match_kills), inline=True)
-        embed.add_field(name="� Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
+        embed.add_field(name="📊 Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:
