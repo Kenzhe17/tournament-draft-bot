@@ -169,7 +169,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
 
             # Calculate ELO change
             elo_change = calculate_total_elo_change(
-                circle=circle,
                 position=position,
                 team_won=team_won,
                 kills=kills,

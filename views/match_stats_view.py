@@ -371,10 +371,10 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                 default_value = ""
 
             kd_input = TextInput(
-                label=f"Круг {circle}",
-                placeholder="Name: kills/deaths (например: Player1: 7/2)",
+                label=player_name,
+                placeholder="Убийства/Смерти (например: 8/2)",
                 required=False,
-                max_length=30,
+                max_length=7,
                 default=default_value
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -395,22 +395,13 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                 deaths = 0
             else:
                 try:
-                    # Parse format: "Name: kills/deaths" or just "kills/deaths"
-                    value = kd_field.value.strip()
-                    if ':' in value:
-                        # Format: "Name: kills/deaths"
-                        parts = value.split(':')
-                        kd_part = parts[1].strip() if len(parts) > 1 else ""
-                    else:
-                        # Format: "kills/deaths"
-                        kd_part = value
-
-                    kd_parts = kd_part.split('/')
+                    # Parse format: "kills/deaths"
+                    kd_parts = kd_field.value.split('/')
                     kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
                     deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        f"❌ Некорректный формат для круга {circle}. Используйте формат: Name: kills/deaths (например: Player1: 7/2)",
+                        f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)",
                         ephemeral=True
                     )
                     return

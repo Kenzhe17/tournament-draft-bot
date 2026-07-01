@@ -36,49 +36,48 @@ def calculate_team_position(
 
 
 def get_base_elo_change(
-    circle: int,
     position: int,  # 1-4 within team
     team_won: bool
 ) -> int:
     """
-    Calculate base ELO change based on circle, position, and team result.
-    
+    Calculate base ELO change based on position and team result.
+    Same for all circles (placement-based system).
+
     Args:
-        circle: Circle where player was drafted (1-4)
         position: Position within team (1-4, 1 = best)
         team_won: Whether the player's team won the match
-    
+
     Returns:
         Base ELO change
     """
     # Define base ELO changes for each scenario
-    # Format: {circle: {team_won: {position: elo_change}}}
-    
+    # Format: {team_won: {position: elo_change}}
+
     if team_won:
         # Team won
         base_changes = {
-            1: {1: 2, 2: 0, 3: -2, 4: -4},   # Circle 1 (captains)
-            2: {1: 4, 2: 2, 3: 0, 4: -2},    # Circle 2
-            3: {1: 6, 2: 4, 3: 2, 4: 0},    # Circle 3
-            4: {1: 8, 2: 6, 3: 4, 4: 2},   # Circle 4
+            1: 12,   # 1st place
+            2: 10,   # 2nd place
+            3: 8,    # 3rd place
+            4: 6,    # 4th place
         }
     else:
         # Team lost
         base_changes = {
-            1: {1: -2, 2: -4, 3: -6, 4: -8},  # Circle 1 (captains)
-            2: {1: 0, 2: -2, 3: -4, 4: -6},     # Circle 2
-            3: {1: 2, 2: 0, 3: -4, 4: -6},       # Circle 3
-            4: {1: 4, 2: 2, 3: 0, 4: -2},        # Circle 4
+            1: -2,   # 1st place
+            2: -4,   # 2nd place
+            3: -6,   # 3rd place
+            4: -8,   # 4th place
         }
-    
-    return base_changes.get(circle, {}).get(position, 0)
+
+    return base_changes.get(position, 0)
 
 
 def calculate_kd_bonus(kills: int, deaths: int) -> int:
     """
     Calculate individual K/D bonus.
 
-    Formula: (Kills × 3) - Deaths
+    Formula: (Kills × 2) - (Deaths × 1)
 
     Args:
         kills: Number of kills
@@ -87,11 +86,10 @@ def calculate_kd_bonus(kills: int, deaths: int) -> int:
     Returns:
         K/D bonus ELO change
     """
-    return (kills * 3) - deaths
+    return (kills * 2) - deaths
 
 
 def calculate_total_elo_change(
-    circle: int,
     position: int,
     team_won: bool,
     kills: int,
@@ -99,20 +97,19 @@ def calculate_total_elo_change(
 ) -> int:
     """
     Calculate total ELO change for a player.
-    
+
     Args:
-        circle: Circle where player was drafted (1-4)
         position: Position within team (1-4, 1 = best)
         team_won: Whether the player's team won the match
         kills: Number of kills
         deaths: Number of deaths
-    
+
     Returns:
         Total ELO change
     """
-    base_change = get_base_elo_change(circle, position, team_won)
+    base_change = get_base_elo_change(position, team_won)
     kd_bonus = calculate_kd_bonus(kills, deaths)
-    
+
     return base_change + kd_bonus
 
 
