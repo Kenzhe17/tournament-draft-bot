@@ -37,7 +37,11 @@ class ShopCategoryButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        # Добавить товары
+        # Создать View с кнопками товаров
+        view = discord.ui.View()
+        view.add_item(ShopBackButton())
+
+        # Добавить кнопки для каждого товара
         for item in items:
             rarity_emoji = {
                 "basic": "⚪",
@@ -46,15 +50,8 @@ class ShopCategoryButton(discord.ui.Button):
                 "special": "🟣"
             }.get(item.rarity.value, "⚪")
 
-            embed.add_field(
-                name=f"{rarity_emoji} {item.name} - {item.price} 🪙",
-                value=f"ID: `{item.id}`",
-                inline=False
-            )
-
-        # Создать View с кнопкой "Назад"
-        view = discord.ui.View()
-        view.add_item(ShopBackButton())
+            label = f"{rarity_emoji} {item.name} - {item.price} 🪙"
+            view.add_item(ShopBuyButton(item.id, label))
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -93,11 +90,70 @@ class ShopBackButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+class ShopBuyButton(discord.ui.Button):
+    """Кнопка покупки товара."""
+
+    def __init__(self, item_id: str, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label=label,
+            custom_id=f"shop_buy:{item_id}"
+        )
+        self.item_id = item_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Купить товар."""
+        # Получить товар
+        item = shop_store.get_item(self.item_id)
+        if not item:
+            await interaction.response.send_message(
+                "❌ Товар не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < item.price:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙",
+                ephemeral=True
+            )
+            return
+
+        # Проверить есть ли уже
+        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        for cosmetic in inventory:
+            if cosmetic.item_id == self.item_id:
+                await interaction.response.send_message(
+                    f"❌ У вас уже есть этот товар!",
+                    ephemeral=True
+                )
+                return
+
+        # Списать монеты
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
+
+        # Добавить в инвентарь и экипировать
+        cosmetic = PlayerCosmetic(
+            guild_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            item_id=self.item_id,
+            equipped=True  # Автоматически экипировать
+        )
+        inventory_store.add_cosmetic(cosmetic)
+
+        await interaction.response.send_message(
+            f"✅ Вы купили **{item.name}** за {item.price} 🪙!\n\n"
+            f"Товар автоматически экипирован.",
+            ephemeral=True
+        )
+
+
 class ShopMainView(discord.ui.View):
     """Главное меню магазина."""
 
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(ShopCategoryButton("colors", "Цвета", "🎨"))
         self.add_item(ShopCategoryButton("icons", "Значки", "✨"))
         self.add_item(ShopCategoryButton("tags", "Теги", "🏷️"))
