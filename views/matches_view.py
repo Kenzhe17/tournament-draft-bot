@@ -161,7 +161,7 @@ class TeamNameButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.TEAMS:
+        if not tournament or not tournament.team_names_editable:
             await interaction.response.send_message(
                 "❌ Невозможно назвать команду.", ephemeral=True
             )
