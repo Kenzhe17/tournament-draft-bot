@@ -269,6 +269,18 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="stats", description="Показать детальную статистику игрока")
+    @app_commands.describe(user="Игрок для просмотра статистики (по умолчанию вы)")
+    async def player_stats(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+        """Показать детальную статистику игрока."""
+        from utils.embeds import build_player_stats_embed
+
+        if user is None:
+            user = interaction.user
+
+        embed = await build_player_stats_embed(interaction.guild_id, user)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @app_commands.command(name="moneytop", description="Показать таблицу лидеров по монетам")
     async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
         """Показать таблицу лидеров по монетам."""

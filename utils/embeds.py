@@ -10,6 +10,123 @@ from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
 
 
+async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
+    """Рассчитать среднее ELO команды."""
+    total_elo = 0
+    player_count = 0
+
+    for circle in range(1, 5):
+        player_name = team.get(f"circle{circle}", "")
+        if player_name:
+            user_id = tournament.player_user_ids.get(player_name)
+            if user_id:
+                stats = await player_stats_store.get(tournament.guild_id, user_id)
+                if stats:
+                    total_elo += stats.elo
+                    player_count += 1
+
+    avg_elo = total_elo // player_count if player_count > 0 else 0
+    return avg_elo
+
+
+async def build_player_stats_embed(guild_id: int, user: discord.Member) -> discord.Embed:
+    """Создать embed с детальной статистикой игрока."""
+    stats = await player_stats_store.get(guild_id, user.id)
+
+    if not stats:
+        embed = discord.Embed(
+            title=f"📊 Статистика {user.display_name}",
+            description="❌ Статистика не найдена. Игрок ещё не участвовал в турнирах.",
+            color=discord.Color.red()
+        )
+        embed.set_thumbnail(url=user.display_avatar.url)
+        return embed
+
+    # Calculate win rate
+    total_matches = stats.wins + stats.losses
+    win_rate = (stats.wins / total_matches * 100) if total_matches > 0 else 0
+
+    # Calculate average K/D
+    avg_kd = stats.kills / stats.deaths if stats.deaths > 0 else stats.kills
+
+    # Get server average ELO for comparison
+    server_avg_elo = await get_server_average_elo(guild_id)
+    elo_diff = stats.elo - server_avg_elo
+    elo_diff_text = f"+{elo_diff}" if elo_diff > 0 else str(elo_diff)
+
+    embed = discord.Embed(
+        title=f"📊 Статистика {user.display_name}",
+        color=discord.Color.blue()
+    )
+    embed.set_thumbnail(url=user.display_avatar.url)
+
+    # Basic stats
+    embed.add_field(
+        name="🎯 Текущий ELO",
+        value=f"{stats.elo} ({elo_diff_text} от среднего)",
+        inline=True
+    )
+    embed.add_field(
+        name="⚔️ Матчи",
+        value=f"{total_matches}",
+        inline=True
+    )
+    embed.add_field(
+        name="🏆 Победы",
+        value=f"{stats.wins}",
+        inline=True
+    )
+
+    # Performance stats
+    embed.add_field(
+        name="💀 Убийства",
+        value=f"{stats.kills}",
+        inline=True
+    )
+    embed.add_field(
+        name="☠️ Смерти",
+        value=f"{stats.deaths}",
+        inline=True
+    )
+    embed.add_field(
+        name="📈 K/D",
+        value=f"{avg_kd:.2f}",
+        inline=True
+    )
+
+    # Win rate
+    embed.add_field(
+        name="📊 Винрейт",
+        value=f"{win_rate:.1f}%",
+        inline=False
+    )
+
+    # Losses
+    embed.add_field(
+        name="❌ Поражения",
+        value=f"{stats.losses}",
+        inline=True
+    )
+
+    return embed
+
+
+async def get_server_average_elo(guild_id: int) -> int:
+    """Рассчитать средний ELO по серверу."""
+    from storage.db import get_pool
+
+    if not player_stats_store._use_db:
+        return 1000  # Default ELO
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.fetchval(
+            "SELECT AVG(elo) FROM player_stats WHERE guild_id = $1",
+            guild_id
+        )
+        return int(result) if result else 1000
+
+
 def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None) -> str:
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
@@ -94,7 +211,10 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
         players = []
         for circle in range(1, 5):
             p_name = team.get(f"circle{circle}", "")
-            if p_name:
+            # Handle both string and tuple cases
+            if isinstance(p_name, tuple):
+                p_name = p_name[0] if p_name else ""
+            if p_name and isinstance(p_name, str):
                 players.append(p_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
@@ -118,7 +238,7 @@ async def build_setup_embed(
     formation_text = "🎯 ELO" if tournament.formation_mode == FormationMode.ELO else "✋ Ручной" if tournament.formation_mode == FormationMode.MANUAL else "🎲 Случайный"
     embed = discord.Embed(
         title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji} | {formation_text}",
-        color=discord.Color.gold(),
+        color=discord.Color.red(),  # Красный для настроек
     )
 
     # Build ELO dictionary for all registered players
@@ -191,7 +311,7 @@ async def build_draft_embed(
 ) -> discord.Embed:
     """Embed во время драфта."""
     embed = discord.Embed(
-        title="Порядок капитанов",
+        title="⚔️ Порядок капитанов",
         color=discord.Color.blue(),
     )
 
@@ -221,7 +341,7 @@ async def build_draft_embed(
         if circle == tournament.current_circle:
             status = " ⬅"
         embed.add_field(
-            name=f"Круг {circle}:{status}",
+            name=f"⚔️ Круг {circle}:{status}",
             value="\n".join(lines),
             inline=False,
         )
@@ -231,7 +351,7 @@ async def build_draft_embed(
     if picker_pos is not None:
         captain_name = tournament.captains[picker_pos]
         embed.add_field(
-            name="Сейчас выбирает",
+            name="👤 Сейчас выбирает",
             value=captain_name,
             inline=False,
         )
@@ -269,7 +389,7 @@ async def build_qualifiers_embed(
     """Embed отборочных матчей."""
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ОТБОР",
-        color=discord.Color.purple(),
+        color=discord.Color.dark_magenta(),  # Бронзовый для отборочных
     )
 
     for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
@@ -281,9 +401,13 @@ async def build_qualifiers_embed(
         name_a = tournament.team_names.get(team_a, captain_a)
         name_b = tournament.team_names.get(team_b, captain_b)
 
+        # Get average ELO for each team
+        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
+        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+
         embed.add_field(
             name=f"🔥 Отбор #{i + 1}",
-            value=f"**{name_a}** *vs* **{name_b}**",
+            value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
             inline=False,
         )
 
@@ -302,7 +426,7 @@ async def build_semifinals_embed(
     """Embed полуфиналов."""
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
-        color=discord.Color.orange(),
+        color=discord.Color.light_gray(),  # Серебряный для полуфиналов
     )
 
     for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
@@ -314,9 +438,13 @@ async def build_semifinals_embed(
         name_a = tournament.team_names.get(team_a, captain_a)
         name_b = tournament.team_names.get(team_b, captain_b)
 
+        # Get average ELO for each team
+        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
+        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+
         embed.add_field(
             name=f"🔥 Игра #{i + 1}",
-            value=f"**{name_a}** *vs* **{name_b}**",
+            value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
             inline=False,
         )
 
@@ -344,13 +472,17 @@ async def build_final_embed(
     name_a = tournament.team_names.get(team_a, captain_a)
     name_b = tournament.team_names.get(team_b, captain_b)
 
+    # Get average ELO for each team
+    avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
+    avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
-        color=discord.Color.red(),
+        color=discord.Color.gold(),  # Золотой для финала
     )
     embed.add_field(
         name="⚡ Главная битва турнира",
-        value=f"**{name_a}** *vs* **{name_b}**",
+        value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
         inline=False
     )
 
