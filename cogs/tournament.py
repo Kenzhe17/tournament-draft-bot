@@ -264,21 +264,11 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="shop", description="Магазин косметики")
     async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин косметики."""
-        from storage.shop_store import shop_store
         from storage.user_balance_store import user_balance_store
+        from views.shop_view import ShopMainView
 
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-
-        # Получить все товары
-        items = shop_store.get_all_items()
-
-        # Группировать по категориям
-        categories = {}
-        for item in items:
-            if item.category not in categories:
-                categories[item.category] = []
-            categories[item.category].append(item)
 
         # Создать embed
         embed = discord.Embed(
@@ -287,35 +277,16 @@ class TournamentCog(commands.Cog):
             color=discord.Color.gold()
         )
 
-        # Добавить товары по категориям
-        for cat_name, cat_items in categories.items():
-            category_names = {
-                "colors": "🎨 Цвета текста",
-                "icons": "✨ Значки",
-                "tags": "🏷️ Теги"
-            }
-            cat_display = category_names.get(cat_name, cat_name)
-
-            items_text = "\n".join([
-                f"**{item.name}** - {item.price} 🪙\n{item.description}"
-                for item in cat_items
-            ])
-
-            embed.add_field(
-                name=cat_display,
-                value=items_text,
-                inline=False
-            )
-
-        # Добавить инструкции
         embed.add_field(
             name="📖 Как купить",
-            value="Используйте `/buy <item_id>` для покупки товара.\n\n"
-                   "Например: `/buy color_gold`",
+            value="Выберите категорию ниже, затем используйте `/buy <item_id>` для покупки.",
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Создать View с кнопками категорий
+        view = ShopMainView()
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="buy", description="Купить товар из магазина")
     @app_commands.describe(item_id="ID товара")
