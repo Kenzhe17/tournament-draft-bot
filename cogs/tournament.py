@@ -137,22 +137,40 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Fill with test data based on tournament size
+        # Fill with test data based on tournament size and formation mode
         tournament.is_test = True
         captain_count = tournament.captain_count
-        tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
+        required_players = int(tournament.size.value)
 
-        # Fill circles based on tournament size
-        tournament.circle1.extend(tournament.captains)
-        tournament.circle2.extend([f"P2-{i}" for i in range(captain_count)])
-        tournament.circle3.extend([f"P3-{i}" for i in range(captain_count)])
-        tournament.circle4.extend([f"P4-{i}" for i in range(captain_count + 2)])  # captain_count + 2 players in circle4
+        if tournament.formation_mode == FormationMode.RANDOM:
+            # RANDOM mode: fill players_pool
+            tournament.players_pool = [f"Player{i+1}" for i in range(required_players)]
+            # Add random user_ids
+            for i, player_name in enumerate(tournament.players_pool):
+                tournament.player_user_ids[player_name] = 1000 + i  # Fake user_ids
+        else:
+            # MANUAL/ELO modes: fill circles
+            tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
+            tournament.circle1.extend(tournament.captains)
+            tournament.circle2.extend([f"P2-{i}" for i in range(captain_count)])
+            tournament.circle3.extend([f"P3-{i}" for i in range(captain_count)])
+            # Add extra players to circle4 to reach required total
+            remaining_players = required_players - (captain_count * 3)
+            tournament.circle4.extend([f"P4-{i}" for i in range(remaining_players)])
+            # Add user_ids for all players
+            for i, player_name in enumerate(tournament.captains):
+                tournament.player_user_ids[player_name] = 1000 + i
+            for i, player_name in enumerate(tournament.circle2):
+                tournament.player_user_ids[player_name] = 2000 + i
+            for i, player_name in enumerate(tournament.circle3):
+                tournament.player_user_ids[player_name] = 3000 + i
+            for i, player_name in enumerate(tournament.circle4):
+                tournament.player_user_ids[player_name] = 4000 + i
 
-        tournament.start_draft()
         store.set(tournament)
 
         await interaction.response.send_message(
-            "🧪 Тестовый режим активирован! Турнир заполнен и драфт запущен.",
+            f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))

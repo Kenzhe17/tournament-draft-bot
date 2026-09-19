@@ -490,6 +490,10 @@ class QualifiersView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
+        # Add team name button if editable
+        if tournament.team_names_editable:
+            self.add_item(TeamNameButton(guild_id, tournament))
+
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
@@ -532,6 +536,10 @@ class SemifinalsView(discord.ui.View):
 
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
+
+        # Add team name button if editable
+        if tournament.team_names_editable:
+            self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))

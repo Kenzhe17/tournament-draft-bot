@@ -79,6 +79,11 @@ class FinalView(discord.ui.View):
         from views.matches_view import SelectWinnerButton
         self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
 
+        # Add team name button if editable
+        if tournament.team_names_editable:
+            from views.matches_view import TeamNameButton
+            self.add_item(TeamNameButton(guild_id, tournament))
+
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
         final_matches = [(final_teams[0], final_teams[1])]
