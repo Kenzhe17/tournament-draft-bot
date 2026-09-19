@@ -6,7 +6,7 @@ from storage.shop_store import inventory_store, shop_store
 def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
     """Форматировать имя игрока с учётом косметики.
 
-    Формат: [COLOR_TAG] Name ICON (ANSI цвета для тегов)
+    Формат: ```ansi\n[COLOR_TAG] Name ICON\n``` (ANSI цвета для тегов)
     """
     # Получить экипированную косметику
     cosmetics = inventory_store.get_equipped_cosmetics(guild_id, user_id)
@@ -40,6 +40,10 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
             formatted = f"{tag} {formatted}"
     if icon:
         formatted = f"{formatted} {icon}"
+
+    # Обернуть в кодовый блок ansi если есть цветной тег
+    if tag_ansi:
+        formatted = f"```ansi\n{formatted}\n```"
 
     return formatted
 
