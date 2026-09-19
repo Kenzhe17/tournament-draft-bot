@@ -288,60 +288,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="buy", description="Купить товар из магазина")
-    @app_commands.describe(item_id="ID товара")
-    async def buy(self, interaction: discord.Interaction, item_id: str) -> None:
-        """Купить товар из магазина."""
-        from storage.shop_store import shop_store, inventory_store
-        from storage.user_balance_store import user_balance_store
-        from models.shop_item import PlayerCosmetic
-
-        # Получить товар
-        item = shop_store.get_item(item_id)
-        if not item:
-            await interaction.response.send_message(
-                f"❌ Товар с ID '{item_id}' не найден.",
-                ephemeral=True
-            )
-            return
-
-        # Проверить баланс
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < item.price:
-            await interaction.response.send_message(
-                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙",
-                ephemeral=True
-            )
-            return
-
-        # Проверить есть ли уже
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        for cosmetic in inventory:
-            if cosmetic.item_id == item_id:
-                await interaction.response.send_message(
-                    f"❌ У вас уже есть этот товар!",
-                    ephemeral=True
-                )
-                return
-
-        # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
-
-        # Добавить в инвентарь и экипировать
-        cosmetic = PlayerCosmetic(
-            guild_id=interaction.guild_id,
-            user_id=interaction.user.id,
-            item_id=item_id,
-            equipped=True  # Автоматически экипировать
-        )
-        inventory_store.add_cosmetic(cosmetic)
-
-        await interaction.response.send_message(
-            f"✅ Вы купили **{item.name}** за {item.price} 🪙!\n\n"
-            f"Товар автоматически экипирован.",
-            ephemeral=True
-        )
-
     @app_commands.command(name="inventory", description="Ваш инвентарь косметики")
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь косметики."""
@@ -397,98 +343,13 @@ class TournamentCog(commands.Cog):
         # Добавить инструкции
         embed.add_field(
             name="📖 Управление",
-            value="Используйте `/equip <item_id>` для экипировки\n"
-                   "Используйте `/unequip <item_id>` для снятия",
+            value="Используйте `/shop` для покупки товаров.\n"
+                   "Товары автоматически экипируются при покупке.",
             inline=False
         )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="equip", description="Экипировать косметический предмет")
-    @app_commands.describe(item_id="ID предмета")
-    async def equip(self, interaction: discord.Interaction, item_id: str) -> None:
-        """Экипировать косметический предмет."""
-        from storage.shop_store import inventory_store, shop_store
-
-        # Проверить есть ли предмет
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        cosmetic = None
-        for c in inventory:
-            if c.item_id == item_id:
-                cosmetic = c
-                break
-
-        if not cosmetic:
-            await interaction.response.send_message(
-                f"❌ Предмет с ID '{item_id}' не найден в вашем инвентаре.",
-                ephemeral=True
-            )
-            return
-
-        # Получить информацию о предмете
-        item = shop_store.get_item(item_id)
-        if not item:
-            await interaction.response.send_message(
-                f"❌ Предмет не найден в магазине.",
-                ephemeral=True
-            )
-            return
-
-        # Снять другие предметы того же типа
-        for c in inventory:
-            if c.item_id != item_id and c.equipped:
-                item2 = shop_store.get_item(c.item_id)
-                if item2 and item2.cosmetic_type == item.cosmetic_type:
-                    inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, c.item_id)
-
-        # Экипировать
-        success = inventory_store.equip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
-        if success:
-            await interaction.response.send_message(
-                f"✅ **{item.name}** экипирован!",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Не удалось экипировать предмет.",
-                ephemeral=True
-            )
-
-    @app_commands.command(name="unequip", description="Снять косметический предмет")
-    @app_commands.describe(item_id="ID предмета")
-    async def unequip(self, interaction: discord.Interaction, item_id: str) -> None:
-        """Снять косметический предмет."""
-        from storage.shop_store import inventory_store, shop_store
-
-        # Проверить есть ли предмет
-        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
-        cosmetic = None
-        for c in inventory:
-            if c.item_id == item_id:
-                cosmetic = c
-                break
-
-        if not cosmetic:
-            await interaction.response.send_message(
-                f"❌ Предмет с ID '{item_id}' не найден в вашем инвентаре.",
-                ephemeral=True
-            )
-            return
-
-        # Снять
-        success = inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
-        if success:
-            item = shop_store.get_item(item_id)
-            item_name = item.name if item else item_id
-            await interaction.response.send_message(
-                f"✅ **{item_name}** снят.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Не удалось снять предмет.",
-                ephemeral=True
-            )
 
     @app_commands.command(name="test_shop", description="Тестовая команда: дать монеты для тестирования магазина")
     async def test_shop(self, interaction: discord.Interaction) -> None:
