@@ -134,20 +134,78 @@ class ShopBuyButton(discord.ui.Button):
         # Списать монеты
         await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
 
-        # Добавить в инвентарь и экипировать
+        # Добавить в инвентарь (не экипировать автоматически)
         cosmetic = PlayerCosmetic(
             guild_id=interaction.guild_id,
             user_id=interaction.user.id,
             item_id=self.item_id,
-            equipped=True  # Автоматически экипировать
+            equipped=False
         )
         inventory_store.add_cosmetic(cosmetic)
 
         await interaction.response.send_message(
             f"✅ Вы купили **{item.name}** за {item.price} 🪙!\n\n"
-            f"Товар автоматически экипирован.",
+            f"Используйте `/inventory` для экипировки.",
             ephemeral=True
         )
+
+
+class InventoryEquipButton(discord.ui.Button):
+    """Кнопка экипировки предмета."""
+
+    def __init__(self, item_id: str, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label=label,
+            custom_id=f"inv_equip:{item_id}"
+        )
+        self.item_id = item_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Экипировать предмет."""
+        # Экипировать
+        success = inventory_store.equip_cosmetic(interaction.guild_id, interaction.user.id, self.item_id)
+        if success:
+            item = shop_store.get_item(self.item_id)
+            item_name = item.name if item else self.item_id
+            await interaction.response.send_message(
+                f"✅ **{item_name}** экипирован!",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось экипировать предмет.",
+                ephemeral=True
+            )
+
+
+class InventoryUnequipButton(discord.ui.Button):
+    """Кнопка снятия предмета."""
+
+    def __init__(self, item_id: str, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label=label,
+            custom_id=f"inv_unequip:{item_id}"
+        )
+        self.item_id = item_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Снять предмет."""
+        # Снять
+        success = inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, self.item_id)
+        if success:
+            item = shop_store.get_item(self.item_id)
+            item_name = item.name if item else self.item_id
+            await interaction.response.send_message(
+                f"✅ **{item_name}** снят.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось снять предмет.",
+                ephemeral=True
+            )
 
 
 class ShopMainView(discord.ui.View):

@@ -292,6 +292,7 @@ class TournamentCog(commands.Cog):
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь косметики."""
         from storage.shop_store import inventory_store, shop_store
+        from views.shop_view import InventoryEquipButton, InventoryUnequipButton
 
         # Получить инвентарь
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
@@ -309,6 +310,9 @@ class TournamentCog(commands.Cog):
             color=discord.Color.blue()
         )
 
+        # Создать View с кнопками
+        view = discord.ui.View()
+
         # Сгруппировать по типам
         equipped_text = []
         unequipped_text = []
@@ -323,8 +327,12 @@ class TournamentCog(commands.Cog):
 
             if cosmetic.equipped:
                 equipped_text.append(item_text)
+                # Добавить кнопку снятия
+                view.add_item(InventoryUnequipButton(cosmetic.item_id, f"Снять {item.name}"))
             else:
                 unequipped_text.append(item_text)
+                # Добавить кнопку экипировки
+                view.add_item(InventoryEquipButton(cosmetic.item_id, f"Экипировать {item.name}"))
 
         if equipped_text:
             embed.add_field(
@@ -343,12 +351,12 @@ class TournamentCog(commands.Cog):
         # Добавить инструкции
         embed.add_field(
             name="📖 Управление",
-            value="Используйте `/shop` для покупки товаров.\n"
-                   "Товары автоматически экипируются при покупке.",
+            value="Используйте кнопки ниже для экипировки/снятия.\n"
+                   "Максимум 1 тег и 1 иконка одновременно.",
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
     @app_commands.command(name="test_shop", description="Тестовая команда: дать монеты для тестирования магазина")
