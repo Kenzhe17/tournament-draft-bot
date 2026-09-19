@@ -40,6 +40,90 @@ class CircleSelectButton(discord.ui.Button):
         )
         self.guild_id = guild_id
         self.circle = circle
+        self.circle_name = circle_name
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            tournament = store.get(self.guild_id)
+            if not tournament or tournament.phase != TournamentPhase.SETUP:
+                await interaction.response.send_message(
+                    "❌ Турнир не в фазе настройки.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if registration is open
+            if tournament.registration == RegistrationState.CLOSED:
+                await interaction.response.send_message(
+                    "❌ Регистрация закрыта. Невозможно добавить игроков.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if circle is full (except circle4)
+            if self.circle != 4:
+                circle_list = getattr(tournament, f"circle{self.circle}")
+                limit = tournament.circle_limit(self.circle)
+                if len(circle_list) >= limit:
+                    await interaction.response.send_message(
+                        f"❌ Круг {self.circle} уже заполнен (максимум {limit} игрока).",
+                        ephemeral=True
+                    )
+                    return
+
+            # Get user's nickname
+            user_name = interaction.user.display_name
+
+            # Check if user already in tournament - if so, move them to new circle
+            was_moved = False
+            if user_name in tournament.all_players:
+                # Find which circle they're in
+                for circle in range(1, 5):
+                    if user_name in getattr(tournament, f"circle{circle}"):
+                        if circle == self.circle:
+                            await interaction.response.send_message(
+                                "❌ Вы уже находитесь в этом круге.",
+                                ephemeral=True
+                            )
+                            return
+                        # Remove from old circle
+                        tournament.remove_player(user_name)
+                        was_moved = True
+                        break
+
+            # Add player with user_id
+            success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
+            if not success:
+                await interaction.response.send_message(
+                    "❌ Не удалось добавить игрока.",
+                    ephemeral=True
+                )
+                return
+
+            store.set(tournament)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
+            if was_moved:
+                await interaction.response.send_message(
+                    f"✅ Вы перемещены в {circle_names[self.circle]}!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"✅ Вы добавлены в {circle_names[self.circle]}!",
+                    ephemeral=True
+                )
+        except Exception as e:
+            logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при добавлении игрока.",
+                    ephemeral=True
+                )
+            except:
+                pass
 
 
 class JoinPoolButton(discord.ui.Button):
@@ -57,58 +141,63 @@ class JoinPoolButton(discord.ui.Button):
         self.limit = limit
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.SETUP:
+        try:
+            tournament = store.get(self.guild_id)
+            if not tournament or tournament.phase != TournamentPhase.SETUP:
+                await interaction.response.send_message(
+                    "❌ Турнир не в фазе настройки.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if registration is open
+            if tournament.registration == RegistrationState.CLOSED:
+                await interaction.response.send_message(
+                    "❌ Регистрация закрыта. Невозможно добавить игроков.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if pool is full
+            if len(tournament.players_pool) >= int(tournament.size.value):
+                await interaction.response.send_message(
+                    f"❌ Турнир заполнен (максимум {tournament.size.value} игрока).",
+                    ephemeral=True
+                )
+                return
+
+            # Get user's nickname
+            user_name = interaction.user.display_name
+
+            # Check if user already in pool
+            if user_name in tournament.players_pool:
+                await interaction.response.send_message(
+                    "❌ Вы уже участвуете в турнире.",
+                    ephemeral=True
+                )
+                return
+
+            # Add player to pool
+            tournament.players_pool.append(user_name)
+            tournament.player_user_ids[user_name] = interaction.user.id
+            store.set(tournament)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
             await interaction.response.send_message(
-                "❌ Турнир не в фазе настройки.",
+                "✅ Вы добавлены в турнир!",
                 ephemeral=True
             )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Check if registration is open
-        if tournament.registration == RegistrationState.CLOSED:
-            await interaction.response.send_message(
-                "❌ Регистрация закрыта. Невозможно добавить игроков.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Check if pool is full
-        if len(tournament.players_pool) >= int(tournament.size.value):
-            await interaction.response.send_message(
-                f"❌ Турнир заполнен (максимум {tournament.size.value} игрока).",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Get user's nickname
-        user_name = interaction.user.display_name
-
-        # Check if user already in pool
-        if user_name in tournament.players_pool:
-            await interaction.response.send_message(
-                "❌ Вы уже участвуете в турнире.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Add player to pool
-        tournament.players_pool.append(user_name)
-        tournament.player_user_ids[user_name] = interaction.user.id
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        await interaction.response.send_message(
-            "✅ Вы добавлены в турнир!",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+        except Exception as e:
+            logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    "❌ Произошла ошибка при добавлении игрока.",
+                    ephemeral=True
+                )
+            except:
+                pass
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
