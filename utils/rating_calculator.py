@@ -256,7 +256,8 @@ def calculate_balanced_elo_change(
     catch_up_bonus = calculate_catch_up_bonus(current_elo, avg_server_elo)
     adjusted_change += catch_up_bonus
 
-    return adjusted_change
+    # Ensure final result is int
+    return int(adjusted_change)
 
 
 async def get_server_average_elo(guild_id: int) -> float:
@@ -277,7 +278,7 @@ async def get_server_average_elo(guild_id: int) -> float:
         return 0.0
 
     total_elo = sum(stats.elo for stats in all_stats)
-    return total_elo / len(all_stats)
+    return int(total_elo / len(all_stats))
 
 
 def update_player_stats_from_match(

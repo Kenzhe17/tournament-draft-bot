@@ -58,7 +58,7 @@ class PlayerStatsStore:
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0))
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0))
                 return None
         else:
             key = f"{guild_id}:{user_id}"
@@ -74,7 +74,7 @@ class PlayerStatsStore:
                     "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0)) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0)) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
