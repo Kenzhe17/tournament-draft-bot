@@ -262,8 +262,7 @@ class TournamentCog(commands.Cog):
         await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 5)
 
     @app_commands.command(name="shop", description="Магазин косметики")
-    @app_commands.describe(category="Категория товаров")
-    async def shop(self, interaction: discord.Interaction, category: str = None) -> None:
+    async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин косметики."""
         from storage.shop_store import shop_store
         from storage.user_balance_store import user_balance_store
@@ -271,17 +270,8 @@ class TournamentCog(commands.Cog):
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
-        # Получить товары
-        if category:
-            items = shop_store.get_items_by_category(category)
-            if not items:
-                await interaction.response.send_message(
-                    f"❌ Категория '{category}' не найдена.",
-                    ephemeral=True
-                )
-                return
-        else:
-            items = shop_store.get_all_items()
+        # Получить все товары
+        items = shop_store.get_all_items()
 
         # Группировать по категориям
         categories = {}
@@ -321,7 +311,7 @@ class TournamentCog(commands.Cog):
         embed.add_field(
             name="📖 Как купить",
             value="Используйте `/buy <item_id>` для покупки товара.\n\n"
-                   "Доступные категории: colors, icons, tags",
+                   "Например: `/buy color_gold`",
             inline=False
         )
 
