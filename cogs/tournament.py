@@ -654,7 +654,8 @@ class TournamentCog(commands.Cog):
     ) -> None:
         """Изменить ELO или монеты игрока."""
         # Только владелец бота может использовать эту команду
-        if interaction.user.id != interaction.application_owner.id:
+        bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
+        if interaction.user.id != bot_owner_id:
             await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
             return
 
