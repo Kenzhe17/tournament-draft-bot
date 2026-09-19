@@ -198,6 +198,11 @@ class TournamentCog(commands.Cog):
     @is_admin()
     async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
         """Сбросить всю статистику лидерборда сервера."""
+        # Только владелец бота может использовать эту команду
+        if interaction.user.id != interaction.application_owner.id:
+            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
+            return
+
         from storage.player_stats_store import player_stats_store
         from storage.db import get_pool
 
@@ -237,6 +242,7 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
+    @app_commands.guilds()  # Скрыть команду
     async def betting_stats(self, interaction: discord.Interaction) -> None:
         """Показать статистику ставок пользователя."""
         from storage.betting_stats_store import betting_stats_store
@@ -269,19 +275,8 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="stats", description="Показать детальную статистику игрока")
-    @app_commands.describe(user="Игрок для просмотра статистики (по умолчанию вы)")
-    async def player_stats(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
-        """Показать детальную статистику игрока."""
-        from utils.embeds import build_player_stats_embed
-
-        if user is None:
-            user = interaction.user
-
-        embed = await build_player_stats_embed(interaction.guild_id, user)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
     @app_commands.command(name="moneytop", description="Показать таблицу лидеров по монетам")
+    @app_commands.guilds()  # Скрыть команду
     async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
         """Показать таблицу лидеров по монетам."""
         from storage.user_balance_store import user_balance_store
@@ -446,35 +441,38 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        # Find records
+        # Find records (all players)
         most_wins = max(all_players, key=lambda p: p.wins)
         most_finals = max(all_players, key=lambda p: p.finals)
         highest_elo = max(all_players, key=lambda p: p.elo)
         most_games = max(all_players, key=lambda p: p.games)
-        best_win_streak = max(all_players, key=lambda p: p.best_win_streak)
-        best_loss_streak = max(all_players, key=lambda p: p.best_loss_streak)
-        best_match_kills = max(all_players, key=lambda p: p.best_match_kills)
-        best_avg_kills = max(all_players, key=lambda p: p.avg_kills)
 
-        # K/D record only for players with 20+ matches
+        # Records only for players with 20+ matches
         players_20_plus = [p for p in all_players if p.games >= 20]
         highest_kd = max(players_20_plus, key=lambda p: p.kd_ratio) if players_20_plus else None
+        highest_winrate = max(players_20_plus, key=lambda p: p.win_rate) if players_20_plus else None
+        best_avg_kills_20 = max(players_20_plus, key=lambda p: p.avg_kills) if players_20_plus else None
+        best_win_streak_20 = max(players_20_plus, key=lambda p: p.best_win_streak) if players_20_plus else None
+        best_loss_streak_20 = max(players_20_plus, key=lambda p: p.best_loss_streak) if players_20_plus else None
+        best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
 
         embed = discord.Embed(
             title="🏆 Рекорды Турнира",
             color=discord.Color.gold(),
         )
 
-        embed.add_field(
-            name="🎯 Наибольшее AVG Kills",
-            value=f"{best_avg_kills.name} — {best_avg_kills.avg_kills:.2f}",
-            inline=False
-        )
-        embed.add_field(
-            name="🔥 Наибольшее количество киллов за матч",
-            value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
-            inline=False
-        )
+        if best_avg_kills_20:
+            embed.add_field(
+                name="🎯 Наибольшее AVG Kills (20 игр)",
+                value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
+                inline=False
+            )
+        if best_match_kills_20:
+            embed.add_field(
+                name="🔥 Наибольшее количество киллов за матч (20 игр)",
+                value=f"{best_match_kills_20.name} — {best_match_kills_20.best_match_kills}",
+                inline=False
+            )
         embed.add_field(
             name="📈 Самый высокий ELO",
             value=f"{highest_elo.name} — {highest_elo.elo} ELO",
@@ -482,20 +480,28 @@ class TournamentCog(commands.Cog):
         )
         if highest_kd:
             embed.add_field(
-                name="⚔️ Наибольшее K/D (20+ матчей)",
+                name="⚔️ Наибольшее K/D (20 игр)",
                 value=f"{highest_kd.name} — {highest_kd.kd_ratio:.2f}",
                 inline=False
             )
-        embed.add_field(
-            name="🔥 Лучшая серия побед",
-            value=f"{best_win_streak.name} — {best_win_streak.best_win_streak} подряд",
-            inline=False
-        )
-        embed.add_field(
-            name="❄️ Худшая серия поражений",
-            value=f"{best_loss_streak.name} — {best_loss_streak.best_loss_streak} подряд",
-            inline=False
-        )
+        if highest_winrate:
+            embed.add_field(
+                name="🏆 Лучший WinRate (20 игр)",
+                value=f"{highest_winrate.name} — {highest_winrate.win_rate:.1f}%",
+                inline=False
+            )
+        if best_win_streak_20:
+            embed.add_field(
+                name="🔥 Лучшая серия побед (20 игр)",
+                value=f"{best_win_streak_20.name} — {best_win_streak_20.best_win_streak} подряд",
+                inline=False
+            )
+        if best_loss_streak_20:
+            embed.add_field(
+                name="❄️ Худшая серия поражений (20 игр)",
+                value=f"{best_loss_streak_20.name} — {best_loss_streak_20.best_loss_streak} подряд",
+                inline=False
+            )
 
         await interaction.edit_original_response(embed=embed)
 
@@ -517,6 +523,7 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
     @app_commands.default_permissions(administrator=True)
+    @app_commands.guilds()  # Полностью скрыть команду
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",
@@ -533,6 +540,11 @@ class TournamentCog(commands.Cog):
         operation: str = "set"
     ) -> None:
         """Изменить ELO или монеты игрока."""
+        # Только владелец бота может использовать эту команду
+        if interaction.user.id != interaction.application_owner.id:
+            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
+            return
+
         if type not in ["elo", "money"]:
             await interaction.response.send_message(
                 "❌ Тип должен быть 'elo' или 'money'.",

@@ -26,6 +26,12 @@ class PlayerStats:
     total_elo_change: int = 0
     last_elo_change: int = 0  # Sum of all ELO changes
 
+    # Stats for last 20 matches only
+    last_20_kills: int = 0
+    last_20_deaths: int = 0
+    last_20_wins: int = 0
+    last_20_games: int = 0
+
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
         return {
