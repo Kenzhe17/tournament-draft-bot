@@ -46,6 +46,14 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Initialize shop items
+        try:
+            from storage.shop_items import initialize_shop_items
+            initialize_shop_items()
+            logger.info("Shop items initialized")
+        except Exception as e:
+            logger.error("Failed to initialize shop items: %s", e)
+
         # Initialize database if DATABASE_URL is set
         if DATABASE_URL:
             try:
