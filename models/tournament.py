@@ -408,9 +408,9 @@ class Tournament:
             team_data = {
                 "captain": captain_name,
                 "circle1": captain_name,
-                "circle2": remaining_players[0] if len(remaining_players) > 0 else "",
-                "circle3": remaining_players[1] if len(remaining_players) > 1 else "",
-                "circle4": remaining_players[2] if len(remaining_players) > 2 else "",
+                "circle2": remaining_players[0][0] if len(remaining_players) > 0 else "",
+                "circle3": remaining_players[1][0] if len(remaining_players) > 1 else "",
+                "circle4": remaining_players[2][0] if len(remaining_players) > 2 else "",
             }
 
             self.teams.append(team_data)
