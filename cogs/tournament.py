@@ -358,26 +358,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-
-    @app_commands.command(name="test_shop", description="Тестовая команда: дать монеты для тестирования магазина")
-    async def test_shop(self, interaction: discord.Interaction) -> None:
-        """Тестовая команда для тестирования магазина."""
-        from storage.user_balance_store import user_balance_store
-
-        # Дать 10000 монет для тестирования
-        await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 10000)
-
-        await interaction.response.send_message(
-            "🧪 **Тестовый режим:** +10000 монет добавлено!\n\n"
-            "Теперь вы можете:\n"
-            "• `/shop` - посмотреть магазин\n"
-            "• `/buy <item_id>` - купить товар\n"
-            "• `/inventory` - посмотреть инвентарь\n"
-            "• `/equip <item_id>` - экипировать предмет\n"
-            "• `/unequip <item_id>` - снять предмет",
-            ephemeral=True
-        )
-
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
         """Показать статистику ставок пользователя."""
