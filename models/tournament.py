@@ -99,6 +99,9 @@ class Tournament:
     circle3: list[str] = field(default_factory=list)
     circle4: list[str] = field(default_factory=list)
 
+    # Players pool for RANDOM mode (instead of circles)
+    players_pool: list[str] = field(default_factory=list)  # List of all player names
+
     phase: TournamentPhase = TournamentPhase.SETUP
     is_test: bool = False
 
@@ -107,6 +110,7 @@ class Tournament:
 
     # Названия команд (индекс команды -> название)
     team_names: dict[int, str] = field(default_factory=dict)
+    team_names_changed: bool = False  # Флаг для отслеживания изменения названий
 
     # Отображение имени на user_id для статистики
     player_user_ids: dict[str, int] = field(default_factory=dict)
@@ -188,8 +192,9 @@ class Tournament:
     @property
     def team_names_editable(self) -> bool:
         """Можно ли редактировать названия команд."""
-        # Team names can only be edited after distribution (not in SETUP phase)
-        return self.phase != TournamentPhase.SETUP
+        # Team names can only be edited in bracket phases and only once
+        bracket_phases = [TournamentPhase.QUALIFIERS, TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]
+        return self.phase in bracket_phases and not self.team_names_changed
 
     def circle_list(self, circle: int) -> list[str]:
         """Получить список игроков круга (display names)."""
@@ -208,6 +213,13 @@ class Tournament:
             4: len(self.circle4),
         }
 
+    def shuffle_circles(self) -> None:
+        """Случайно перераспределить игроков внутри каждого круга."""
+        random.shuffle(self.circle1)
+        random.shuffle(self.circle2)
+        random.shuffle(self.circle3)
+        random.shuffle(self.circle4)
+
     # --- Добавление игроков ---
 
     def add_players(self, names: list[str]) -> tuple[list[str], list[str]]:
@@ -222,6 +234,21 @@ class Tournament:
             name = name.strip()
             if not name:
                 continue
+
+            # For RANDOM mode, add to players_pool instead of circles
+            if self.formation_mode == FormationMode.RANDOM:
+                if name in self.players_pool:
+                    rejected.append(name)
+                    continue
+
+                if len(self.players_pool) < int(self.size.value):
+                    self.players_pool.append(name)
+                    added.append(name)
+                else:
+                    rejected.append(name)
+                continue
+
+            # For MANUAL/ELO modes, use circles
             if name in self.all_players:
                 rejected.append(name)
                 continue
@@ -343,48 +370,58 @@ class Tournament:
 
     def distribute_randomly(self) -> None:
         """Случайно распределить игроков по командам без кругов."""
-        # Collect all players from all circles
+        # Collect all players from players_pool (RANDOM mode)
         all_players = []
-        for circle in range(1, 5):
-            circle_list = self.circle_list(circle)
-            for player_name in circle_list:
-                user_id = self.player_user_ids.get(player_name, 0)
-                all_players.append((player_name, user_id))
+        for player_name in self.players_pool:
+            user_id = self.player_user_ids.get(player_name, 0)
+            all_players.append((player_name, user_id))
 
         # Shuffle players randomly
         random.shuffle(all_players)
 
-        # Clear all circles
+        # Distribute players into teams of 4
+        captain_count = self.captain_count
+        players_per_team = 4  # Fixed 4 players per team
+        total_teams = len(all_players) // players_per_team
+
+        # Create teams
+        self.teams = []
+        for team_idx in range(total_teams):
+            start_idx = team_idx * players_per_team
+            end_idx = start_idx + players_per_team
+
+            team_players = all_players[start_idx:end_idx]
+
+            # Randomly select captain from team players
+            random.shuffle(team_players)
+            captain_name, captain_user_id = team_players[0]
+            remaining_players = team_players[1:]
+
+            # Create team data
+            team_data = {
+                "captain": captain_name,
+                "circle1": captain_name,
+                "circle2": remaining_players[0] if len(remaining_players) > 0 else "",
+                "circle3": remaining_players[1] if len(remaining_players) > 1 else "",
+                "circle4": remaining_players[2] if len(remaining_players) > 2 else "",
+            }
+
+            self.teams.append(team_data)
+
+            # Update player_user_ids for all team members
+            self.player_user_ids[captain_name] = captain_user_id
+            for player_name, user_id in remaining_players:
+                self.player_user_ids[player_name] = user_id
+
+        # Clear circles and players_pool since we don't use them in RANDOM mode
         self.circle1 = []
         self.circle2 = []
         self.circle3 = []
         self.circle4 = []
+        self.players_pool = []
 
-        # Distribute players evenly across teams based on tournament size
-        captain_count = self.captain_count
-        players_per_team = len(all_players) // captain_count
-
-        # Create teams directly without circle structure
-        self.teams = []
-        for team_idx in range(captain_count):
-            start_idx = team_idx * players_per_team
-            end_idx = start_idx + players_per_team if team_idx < captain_count - 1 else len(all_players)
-
-            team_players = all_players[start_idx:end_idx]
-
-            # First player in each team becomes captain
-            if team_players:
-                captain_name, captain_user_id = team_players[0]
-                self.circle1.append(captain_name)
-                self.player_user_ids[captain_name] = captain_user_id
-
-            # Remaining players go to circle4 (all in one pool for random mode)
-            for player_name, user_id in team_players[1:]:
-                self.circle4.append(player_name)
-                self.player_user_ids[player_name] = user_id
-
-        # Set phase to teams directly since we bypass draft
-        self.phase = TournamentPhase.TEAMS
+        # Skip TEAMS phase and go directly to bracket generation
+        self.generate_bracket()
 
     # --- Драфт ---
 
@@ -463,7 +500,8 @@ class Tournament:
 
         if self.current_circle >= 4:
             self._build_teams()
-            self.phase = TournamentPhase.TEAMS
+            # Skip TEAMS phase and go directly to bracket generation
+            self.generate_bracket()
             return True
 
         self.current_circle += 1
@@ -608,16 +646,18 @@ class Tournament:
             "circle2": self.circle2,
             "circle3": self.circle3,
             "circle4": self.circle4,
+            "players_pool": self.players_pool,
             "phase": self.phase.value,
             "is_test": self.is_test,
             "circle_limits_enabled": self.circle_limits_enabled,
             "team_names": self.team_names,
+            "team_names_changed": self.team_names_changed,
             "player_user_ids": self.player_user_ids,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
             "pick_index": self.pick_index,
-            "available": self.available,
+            "available": self.available if hasattr(self, 'available') else {},
             "teams": self.teams,
             "qualifier_matches": [list(m) for m in self.qualifier_matches],
             "qualifier_winners": self.qualifier_winners,
@@ -641,10 +681,12 @@ class Tournament:
             circle2=data.get("circle2", []),
             circle3=data.get("circle3", []),
             circle4=data.get("circle4", []),
+            players_pool=data.get("players_pool", []),
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
+            team_names_changed=data.get("team_names_changed", False),
             player_user_ids=data.get("player_user_ids", {}),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),

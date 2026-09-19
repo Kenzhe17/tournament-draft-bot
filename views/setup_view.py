@@ -32,7 +32,7 @@ class CircleSelectButton(discord.ui.Button):
     """Кнопка для выбора круга при добавлении игрока."""
 
     def __init__(self, guild_id: int, circle: int, circle_name: str, count: int = 0, limit: int = 0):
-        label = f"{circle_name} ({count}/{limit})" if limit > 0 else f"{circle_name} ({count})"
+        label = circle_name  # Убрали счётчики из label
         super().__init__(
             style=discord.ButtonStyle.primary,
             label=label,
@@ -40,6 +40,75 @@ class CircleSelectButton(discord.ui.Button):
         )
         self.guild_id = guild_id
         self.circle = circle
+
+
+class JoinPoolButton(discord.ui.Button):
+    """Кнопка для входа в players_pool в режиме RANDOM."""
+
+    def __init__(self, guild_id: int, current: int, limit: int):
+        label = f"Войти ({current}/{limit})"
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label=label,
+            custom_id=f"join_pool:{guild_id}",
+        )
+        self.guild_id = guild_id
+        self.current = current
+        self.limit = limit
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Check if registration is open
+        if tournament.registration == RegistrationState.CLOSED:
+            await interaction.response.send_message(
+                "❌ Регистрация закрыта. Невозможно добавить игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Check if pool is full
+        if len(tournament.players_pool) >= int(tournament.size.value):
+            await interaction.response.send_message(
+                f"❌ Турнир заполнен (максимум {tournament.size.value} игрока).",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Get user's nickname
+        user_name = interaction.user.display_name
+
+        # Check if user already in pool
+        if user_name in tournament.players_pool:
+            await interaction.response.send_message(
+                "❌ Вы уже участвуете в турнире.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Add player to pool
+        tournament.players_pool.append(user_name)
+        tournament.player_user_ids[user_name] = interaction.user.id
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            "✅ Вы добавлены в турнир!",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
@@ -122,7 +191,7 @@ class CircleSelectButton(discord.ui.Button):
 
 
 circle_names = {
-    1: "Капитаны",
+    1: "Капитан",
     2: "Круг 2",
     3: "Круг 3",
     4: "Круг 4",
@@ -237,24 +306,40 @@ class ExitButton(discord.ui.Button):
 
         user_name = interaction.user.display_name
 
-        # Check if user is in tournament
-        if user_name not in tournament.all_players:
-            await interaction.response.send_message(
-                "❌ Вы не участвуете в турнире.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+        # Handle different modes
+        if tournament.formation_mode == FormationMode.RANDOM:
+            # RANDOM mode: check players_pool
+            if user_name not in tournament.players_pool:
+                await interaction.response.send_message(
+                    "❌ Вы не участвуете в турнире.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
 
-        # Remove player
-        success = tournament.remove_player(user_name)
-        if not success:
-            await interaction.response.send_message(
-                "❌ Не удалось удалить игрока.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+            # Remove from pool
+            tournament.players_pool.remove(user_name)
+            if user_name in tournament.player_user_ids:
+                del tournament.player_user_ids[user_name]
+        else:
+            # Other modes: check circles
+            if user_name not in tournament.all_players:
+                await interaction.response.send_message(
+                    "❌ Вы не участвуете в турнире.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+
+            # Remove player
+            success = tournament.remove_player(user_name)
+            if not success:
+                await interaction.response.send_message(
+                    "❌ Не удалось удалить игрока.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
 
         store.set(tournament)
 
@@ -398,12 +483,26 @@ class StartTournamentButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        if not tournament.is_setup_complete:
-            captain_count = tournament.captain_count
-            msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитаны, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
-            await interaction.response.send_message(msg, ephemeral=True)
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+        # Check if tournament is ready to start based on formation mode
+        if tournament.formation_mode == FormationMode.RANDOM:
+            # RANDOM mode: check if players_pool has enough players
+            required_players = int(tournament.size.value)
+            current_players = len(tournament.players_pool)
+            if current_players < required_players:
+                await interaction.response.send_message(
+                    f"❌ Недостаточно игроков. Нужно {required_players}, есть {current_players}.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+        else:
+            # MANUAL/ELO modes: check circles
+            if not tournament.is_setup_complete:
+                captain_count = tournament.captain_count
+                msg = f"❌ Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
+                await interaction.response.send_message(msg, ephemeral=True)
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
 
         await interaction.response.defer()
 
@@ -421,7 +520,8 @@ class StartTournamentButton(discord.ui.Button):
                 ephemeral=True
             )
         else:
-            # Manual or ELO mode: start draft
+            # Manual or ELO mode: shuffle circles and start draft
+            tournament.shuffle_circles()
             tournament.start_draft()
             store.set(tournament)
 
@@ -429,7 +529,7 @@ class StartTournamentButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             await interaction.followup.send(
-                "🎲 Драфт запущен!",
+                "🎲 Драфт запущен! Игроки перераспределены в кругах.",
                 ephemeral=True
             )
 
@@ -440,7 +540,7 @@ class OpenRegistrationButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="🔓 Открыть регистрацию",
+            label="🔓 Открыть",
             custom_id=f"open_registration:{guild_id}",
         )
         self.guild_id = guild_id
@@ -482,7 +582,7 @@ class CloseRegistrationButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label="🔒 Закрыть регистрацию",
+            label="🔒 Закрыть",
             custom_id=f"close_registration:{guild_id}",
         )
         self.guild_id = guild_id
@@ -526,21 +626,29 @@ class SetupView(discord.ui.View):
         self.tournament = tournament
         self.registration_state = tournament.registration
 
-        # Get circle counts
-        circle_counts = tournament.get_circle_counts()
+        # Show different buttons based on formation mode
+        if tournament.formation_mode == FormationMode.RANDOM:
+            # RANDOM mode: single join button with counter
+            current = len(tournament.players_pool)
+            limit = int(tournament.size.value)
+            join_button = JoinPoolButton(tournament.guild_id, current, limit)
+            self.add_item(join_button)
+        else:
+            # MANUAL/ELO modes: circle buttons
+            circle_counts = tournament.get_circle_counts()
 
-        # Always show all 4 circles with the same buttons
-        # The button logic will handle open vs closed registration
-        for circle in range(1, 5):
-            count = circle_counts[circle]
-            limit = tournament.circle_limit(circle) if circle != 4 else 0
-            button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
-            self.add_item(button)
+            # Always show all 4 circles with the same buttons
+            # The button logic will handle open vs closed registration
+            for circle in range(1, 5):
+                count = circle_counts[circle]
+                limit = tournament.circle_limit(circle) if circle != 4 else 0
+                button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
+                self.add_item(button)
 
-        # Add auto-distribute button if in ELO mode
-        if tournament.formation_mode == FormationMode.ELO:
-            auto_distribute_button = AutoDistributeButton(tournament.guild_id)
-            self.add_item(auto_distribute_button)
+            # Add auto-distribute button if in ELO mode
+            if tournament.formation_mode == FormationMode.ELO:
+                auto_distribute_button = AutoDistributeButton(tournament.guild_id)
+                self.add_item(auto_distribute_button)
 
         # Add management buttons (Start, Open, Close)
         start_button = StartTournamentButton(tournament.guild_id)

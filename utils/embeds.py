@@ -128,30 +128,52 @@ async def build_setup_embed(
         if stats:
             elo_dict[player_name] = stats.elo
 
-    # Get circle counts
-    circle_counts = tournament.get_circle_counts()
+    # Show different content based on formation mode
+    if tournament.formation_mode == FormationMode.RANDOM:
+        # RANDOM mode: show players pool
+        current = len(tournament.players_pool)
+        limit = int(tournament.size.value)
 
-    # Show all 4 circles with dynamic limits and counts
-    for circle in range(1, 5):
-        circle_list = getattr(tournament, f"circle{circle}")
-        circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
-        limit = tournament.circle_limit(circle)
-        limit_enabled = tournament.circle_limits_enabled.get(circle, True) if circle != 1 else True
-        count = circle_counts[circle]
+        # Build player list with ELO
+        player_strings = []
+        for player_name in tournament.players_pool:
+            if player_name in elo_dict:
+                player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+            else:
+                player_strings.append(player_name)
 
-        if circle == 1:
-            limit_info = f" ({count}/{limit})"
-        elif limit_enabled:
-            limit_info = f" ({count}/{limit})"
-        else:
-            limit_info = f" ({count}/∞)"
+        players_text = " ".join(player_strings) if player_strings else "*"
 
-        value = _circle_line(circle_list, elo_dict) or "*"
         embed.add_field(
-            name=f"{circle_name}{limit_info}",
-            value=value,
+            name=f"Игроки ({current}/{limit})",
+            value=players_text,
             inline=False,
         )
+    else:
+        # MANUAL/ELO modes: show circles
+        circle_counts = tournament.get_circle_counts()
+
+        # Show all 4 circles with dynamic limits and counts
+        for circle in range(1, 5):
+            circle_list = getattr(tournament, f"circle{circle}")
+            circle_name = "Капитан" if circle == 1 else f"Круг {circle}"
+            limit = tournament.circle_limit(circle)
+            limit_enabled = tournament.circle_limits_enabled.get(circle, True) if circle != 1 else True
+            count = circle_counts[circle]
+
+            if circle == 1:
+                limit_info = f" ({count}/{limit})"
+            elif limit_enabled:
+                limit_info = f" ({count}/{limit})"
+            else:
+                limit_info = f" ({count}/∞)"
+
+            value = _circle_line(circle_list, elo_dict) or "*"
+            embed.add_field(
+                name=f"{circle_name}{limit_info}",
+                value=value,
+                inline=False,
+            )
 
     # Add info about registration
     status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
@@ -230,7 +252,9 @@ async def build_draft_embed(
 async def build_teams_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
-    """Embed с итоговыми командами."""
+    """Embed с итоговыми командами (deprecated - skipped)."""
+    # This function is kept for backward compatibility but shouldn't be used
+    # since we skip the TEAMS phase now
     embed = discord.Embed(
         title="🏆 Сформированные Команды",
         color=discord.Color.green(),
@@ -381,8 +405,7 @@ async def build_embed_for_phase(
         return await build_setup_embed(tournament, guild)
     if phase == TournamentPhase.DRAFT:
         return await build_draft_embed(tournament, guild)
-    if phase == TournamentPhase.TEAMS:
-        return await build_teams_embed(tournament, guild)
+    # Skip TEAMS phase - go directly to bracket phases
     if phase == TournamentPhase.QUALIFIERS:
         return await build_qualifiers_embed(tournament, guild)
     if phase == TournamentPhase.SEMIFINALS:

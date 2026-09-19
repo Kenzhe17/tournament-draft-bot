@@ -213,7 +213,16 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
 
         tournament = store.get(self.guild_id)
         if tournament:
+            # Check if team names can still be edited
+            if not tournament.team_names_editable:
+                await interaction.response.send_message(
+                    "❌ Названия команд можно изменить только один раз.",
+                    ephemeral=True
+                )
+                return
+
             tournament.team_names[self.team_index] = name
+            tournament.team_names_changed = True
             store.set(tournament)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
