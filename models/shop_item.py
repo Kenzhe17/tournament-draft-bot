@@ -31,6 +31,7 @@ class ShopItem:
     rarity: CosmeticRarity
     value: str  # Значение (hex код цвета, эмодзи, текст тега)
     category: str  # Для группировки в магазине
+    ansi_color: str = ""  # ANSI код цвета для тегов (например: "\u001b[1;31m")
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -43,6 +44,7 @@ class ShopItem:
             "rarity": self.rarity.value,
             "value": self.value,
             "category": self.category,
+            "ansi_color": self.ansi_color,
         }
 
     @classmethod
@@ -57,6 +59,7 @@ class ShopItem:
             rarity=CosmeticRarity(data.get("rarity", "basic")),
             value=data.get("value", ""),
             category=data.get("category", ""),
+            ansi_color=data.get("ansi_color", ""),
         )
 
 
