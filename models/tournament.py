@@ -370,11 +370,16 @@ class Tournament:
 
     def distribute_randomly(self) -> None:
         """Случайно распределить игроков по командам без кругов."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Collect all players from players_pool (RANDOM mode)
         all_players = []
         for player_name in self.players_pool:
             user_id = self.player_user_ids.get(player_name, 0)
             all_players.append((player_name, user_id))
+
+        logger.info(f"distribute_randomly: collected {len(all_players)} players")
 
         # Shuffle players randomly
         random.shuffle(all_players)
@@ -383,6 +388,8 @@ class Tournament:
         captain_count = self.captain_count
         players_per_team = 4  # Fixed 4 players per team
         total_teams = len(all_players) // players_per_team
+
+        logger.info(f"distribute_randomly: creating {total_teams} teams, captain_count={captain_count}")
 
         # Create teams
         self.teams = []
@@ -413,6 +420,8 @@ class Tournament:
             for player_name, user_id in remaining_players:
                 self.player_user_ids[player_name] = user_id
 
+        logger.info(f"distribute_randomly: created {len(self.teams)} teams")
+
         # Clear circles and players_pool since we don't use them in RANDOM mode
         self.circle1 = []
         self.circle2 = []
@@ -421,7 +430,9 @@ class Tournament:
         self.players_pool = []
 
         # Skip TEAMS phase and go directly to bracket generation
+        logger.info(f"distribute_randomly: calling generate_bracket, current phase={self.phase.value}")
         self.generate_bracket()
+        logger.info(f"distribute_randomly: after generate_bracket, new phase={self.phase.value}")
 
     # --- Драфт ---
 
@@ -528,20 +539,29 @@ class Tournament:
 
     def generate_bracket(self) -> None:
         """Сгенерировать сетку на основе размера турнира."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Only generate if we have teams
         if not self.teams:
+            logger.warning("generate_bracket: no teams available")
             return
+
+        logger.info(f"generate_bracket: tournament size={self.size.value}, teams={len(self.teams)}")
 
         if self.size == TournamentSize.EIGHT:
             # 8 players: straight to final
             self.final_teams = [0, 1]  # First two teams
             self.phase = TournamentPhase.FINAL
+            logger.info(f"generate_bracket: set phase to FINAL")
         elif self.size == TournamentSize.SIXTEEN:
             # 16 players: semifinals + final
             self.generate_semifinals()
+            logger.info(f"generate_bracket: called generate_semifinals, phase={self.phase.value}")
         else:
             # 32 players: qualifiers + semifinals + final
             self.generate_qualifiers()
+            logger.info(f"generate_bracket: called generate_qualifiers, phase={self.phase.value}")
 
     def generate_qualifiers(self) -> None:
         """Сгенерировать отборочные матчи для 32 игроков."""
