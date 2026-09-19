@@ -43,14 +43,9 @@ class ShopCategoryButton(discord.ui.Button):
 
         # Добавить кнопки для каждого товара
         for item in items:
-            rarity_emoji = {
-                "basic": "⚪",
-                "premium": "🔵",
-                "elite": "🟡",
-                "special": "🟣"
-            }.get(item.rarity.value, "⚪")
-
-            label = f"{rarity_emoji} {item.name} - {item.price} 🪙"
+            # Показывать значок/тег вместо названия
+            display_name = item.value if item.value else item.name
+            label = f"{display_name} - {item.price} 🪙"
             view.add_item(ShopBuyButton(item.id, label))
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
