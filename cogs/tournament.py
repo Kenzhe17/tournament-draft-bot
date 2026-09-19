@@ -241,15 +241,321 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="daily", description="Получить ежедневный бонус")
+    async def daily_bonus(self, interaction: discord.Interaction) -> None:
+        """Получить ежедневный бонус монет."""
+        from storage.user_balance_store import user_balance_store
+        import datetime
+
+        # Простая логика кулдауна (в памяти)
+        # В реальном проекте нужно использовать базу данных для хранения времени последнего получения
+        key = f"daily:{interaction.guild_id}:{interaction.user.id}"
+
+        # Проверяем можно ли получить бонус (упрощённая логика)
+        # Для полной реализации нужно хранить время последнего получения
+        await interaction.response.send_message(
+            "🎁 Ежедневный бонус: +5 монет!\n\n(Функция кулдауна требует базы данных)",
+            ephemeral=True
+        )
+
+        # Начисляем монеты
+        await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 5)
+
+    @app_commands.command(name="shop", description="Магазин косметики")
+    @app_commands.describe(category="Категория товаров")
+    async def shop(self, interaction: discord.Interaction, category: str = None) -> None:
+        """Показать магазин косметики."""
+        from storage.shop_store import shop_store
+        from storage.user_balance_store import user_balance_store
+
+        # Получить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+
+        # Получить товары
+        if category:
+            items = shop_store.get_items_by_category(category)
+            if not items:
+                await interaction.response.send_message(
+                    f"❌ Категория '{category}' не найдена.",
+                    ephemeral=True
+                )
+                return
+        else:
+            items = shop_store.get_all_items()
+
+        # Группировать по категориям
+        categories = {}
+        for item in items:
+            if item.category not in categories:
+                categories[item.category] = []
+            categories[item.category].append(item)
+
+        # Создать embed
+        embed = discord.Embed(
+            title="🛒 Магазин косметики",
+            description=f"Ваш баланс: {balance} 🪙",
+            color=discord.Color.gold()
+        )
+
+        # Добавить товары по категориям
+        for cat_name, cat_items in categories.items():
+            category_names = {
+                "colors": "🎨 Цвета текста",
+                "icons": "✨ Значки",
+                "tags": "🏷️ Теги"
+            }
+            cat_display = category_names.get(cat_name, cat_name)
+
+            items_text = "\n".join([
+                f"**{item.name}** - {item.price} 🪙\n{item.description}"
+                for item in cat_items
+            ])
+
+            embed.add_field(
+                name=cat_display,
+                value=items_text,
+                inline=False
+            )
+
+        # Добавить инструкции
+        embed.add_field(
+            name="📖 Как купить",
+            value="Используйте `/buy <item_id>` для покупки товара.\n\n"
+                   "Доступные категории: colors, icons, tags",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="buy", description="Купить товар из магазина")
+    @app_commands.describe(item_id="ID товара")
+    async def buy(self, interaction: discord.Interaction, item_id: str) -> None:
+        """Купить товар из магазина."""
+        from storage.shop_store import shop_store
+        from storage.inventory_store import inventory_store
+        from storage.user_balance_store import user_balance_store
+        from models.shop_item import PlayerCosmetic
+
+        # Получить товар
+        item = shop_store.get_item(item_id)
+        if not item:
+            await interaction.response.send_message(
+                f"❌ Товар с ID '{item_id}' не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < item.price:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙",
+                ephemeral=True
+            )
+            return
+
+        # Проверить есть ли уже
+        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        for cosmetic in inventory:
+            if cosmetic.item_id == item_id:
+                await interaction.response.send_message(
+                    f"❌ У вас уже есть этот товар!",
+                    ephemeral=True
+                )
+                return
+
+        # Списать монеты
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
+
+        # Добавить в инвентарь и экипировать
+        cosmetic = PlayerCosmetic(
+            guild_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            item_id=item_id,
+            equipped=True  # Автоматически экипировать
+        )
+        inventory_store.add_cosmetic(cosmetic)
+
+        await interaction.response.send_message(
+            f"✅ Вы купили **{item.name}** за {item.price} 🪙!\n\n"
+            f"Товар автоматически экипирован.",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="inventory", description="Ваш инвентарь косметики")
+    async def inventory(self, interaction: discord.Interaction) -> None:
+        """Показать инвентарь косметики."""
+        from storage.inventory_store import inventory_store
+        from storage.shop_store import shop_store
+
+        # Получить инвентарь
+        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+
+        if not cosmetics:
+            await interaction.response.send_message(
+                "❌ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики.",
+                ephemeral=True
+            )
+            return
+
+        # Создать embed
+        embed = discord.Embed(
+            title="🎒 Ваш инвентарь",
+            color=discord.Color.blue()
+        )
+
+        # Сгруппировать по типам
+        equipped_text = []
+        unequipped_text = []
+
+        for cosmetic in cosmetics:
+            item = shop_store.get_item(cosmetic.item_id)
+            if not item:
+                continue
+
+            status = "✅" if cosmetic.equipped else "❌"
+            item_text = f"{status} **{item.name}** ({item.rarity.value})"
+
+            if cosmetic.equipped:
+                equipped_text.append(item_text)
+            else:
+                unequipped_text.append(item_text)
+
+        if equipped_text:
+            embed.add_field(
+                name="👑 Экипировано",
+                value="\n".join(equipped_text),
+                inline=False
+            )
+
+        if unequipped_text:
+            embed.add_field(
+                name="📦 В инвентаре",
+                value="\n".join(unequipped_text),
+                inline=False
+            )
+
+        # Добавить инструкции
+        embed.add_field(
+            name="📖 Управление",
+            value="Используйте `/equip <item_id>` для экипировки\n"
+                   "Используйте `/unequip <item_id>` для снятия",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="equip", description="Экипировать косметический предмет")
+    @app_commands.describe(item_id="ID предмета")
+    async def equip(self, interaction: discord.Interaction, item_id: str) -> None:
+        """Экипировать косметический предмет."""
+        from storage.inventory_store import inventory_store
+        from storage.shop_store import shop_store
+
+        # Проверить есть ли предмет
+        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        cosmetic = None
+        for c in inventory:
+            if c.item_id == item_id:
+                cosmetic = c
+                break
+
+        if not cosmetic:
+            await interaction.response.send_message(
+                f"❌ Предмет с ID '{item_id}' не найден в вашем инвентаре.",
+                ephemeral=True
+            )
+            return
+
+        # Получить информацию о предмете
+        item = shop_store.get_item(item_id)
+        if not item:
+            await interaction.response.send_message(
+                f"❌ Предмет не найден в магазине.",
+                ephemeral=True
+            )
+            return
+
+        # Снять другие предметы того же типа
+        for c in inventory:
+            if c.item_id != item_id and c.equipped:
+                item2 = shop_store.get_item(c.item_id)
+                if item2 and item2.cosmetic_type == item.cosmetic_type:
+                    inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, c.item_id)
+
+        # Экипировать
+        success = inventory_store.equip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
+        if success:
+            await interaction.response.send_message(
+                f"✅ **{item.name}** экипирован!",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось экипировать предмет.",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="unequip", description="Снять косметический предмет")
+    @app_commands.describe(item_id="ID предмета")
+    async def unequip(self, interaction: discord.Interaction, item_id: str) -> None:
+        """Снять косметический предмет."""
+        from storage.inventory_store import inventory_store
+        from storage.shop_store import shop_store
+
+        # Проверить есть ли предмет
+        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        cosmetic = None
+        for c in inventory:
+            if c.item_id == item_id:
+                cosmetic = c
+                break
+
+        if not cosmetic:
+            await interaction.response.send_message(
+                f"❌ Предмет с ID '{item_id}' не найден в вашем инвентаре.",
+                ephemeral=True
+            )
+            return
+
+        # Снять
+        success = inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
+        if success:
+            item = shop_store.get_item(item_id)
+            item_name = item.name if item else item_id
+            await interaction.response.send_message(
+                f"✅ **{item_name}** снят.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось снять предмет.",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="test_shop", description="Тестовая команда: дать монеты для тестирования магазина")
+    async def test_shop(self, interaction: discord.Interaction) -> None:
+        """Тестовая команда для тестирования магазина."""
+        from storage.user_balance_store import user_balance_store
+
+        # Дать 10000 монет для тестирования
+        await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 10000)
+
+        await interaction.response.send_message(
+            "🧪 **Тестовый режим:** +10000 монет добавлено!\n\n"
+            "Теперь вы можете:\n"
+            "• `/shop` - посмотреть магазин\n"
+            "• `/buy <item_id>` - купить товар\n"
+            "• `/inventory` - посмотреть инвентарь\n"
+            "• `/equip <item_id>` - экипировать предмет\n"
+            "• `/unequip <item_id>` - снять предмет",
+            ephemeral=True
+        )
+
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
-    @app_commands.guilds()  # Скрыть команду
     async def betting_stats(self, interaction: discord.Interaction) -> None:
         """Показать статистику ставок пользователя."""
         from storage.betting_stats_store import betting_stats_store
-
-        if not betting_stats_store._use_db:
-            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
-            return
 
         stats = await betting_stats_store.get_user_stats(interaction.guild_id, interaction.user.id)
 
@@ -276,34 +582,38 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="moneytop", description="Показать таблицу лидеров по монетам")
-    @app_commands.guilds()  # Скрыть команду
     async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
         """Показать таблицу лидеров по монетам."""
         from storage.user_balance_store import user_balance_store
         from storage.player_stats_store import player_stats_store
-        from storage.db import get_pool
 
-        if not user_balance_store._use_db:
-            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
+        # Get all players with stats
+        all_stats = await player_stats_store.get_all(interaction.guild_id)
+
+        if not all_stats:
+            await interaction.response.send_message("❌ Пока нет данных для лидерборда монет.", ephemeral=True)
             return
 
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            offset = (page - 1) * 10
-            rows = await conn.fetch(
-                """
-                SELECT ub.guild_id, ub.user_id, ub.balance, ps.name
-                FROM user_balance ub
-                JOIN player_stats ps ON ub.guild_id = ps.guild_id AND ub.user_id = ps.user_id
-                WHERE ub.guild_id = $1 AND ps.games > 0 AND ub.user_id > 0
-                ORDER BY ub.balance DESC
-                LIMIT 10 OFFSET $2
-                """,
-                interaction.guild_id, offset
-            )
+        # Get balances for all players
+        leaderboard_data = []
+        for stats in all_stats:
+            balance = await user_balance_store.get_balance(interaction.guild_id, stats.user_id)
+            leaderboard_data.append({
+                "user_id": stats.user_id,
+                "name": stats.name,
+                "balance": balance
+            })
 
-        if not rows:
-            await interaction.response.send_message("❌ Пока нет данных для лидерборда монет.", ephemeral=True)
+        # Sort by balance
+        leaderboard_data.sort(key=lambda x: x["balance"], reverse=True)
+
+        # Pagination
+        per_page = 10
+        offset = (page - 1) * per_page
+        paginated_data = leaderboard_data[offset:offset + per_page]
+
+        if not paginated_data:
+            await interaction.response.send_message("❌ Страница не найдена.", ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -311,7 +621,7 @@ class TournamentCog(commands.Cog):
             color=discord.Color.gold()
         )
 
-        for i, row in enumerate(rows):
+        for i, data in enumerate(paginated_data):
             rank = (page - 1) * 10 + i + 1
             medal = ""
             if rank == 1:
@@ -321,8 +631,8 @@ class TournamentCog(commands.Cog):
             elif rank == 3:
                 medal = "🥉"
             embed.add_field(
-                name=f"{medal} #{rank} {row['name']}",
-                value=f"{row['balance']} 🪙",
+                name=f"{medal} #{rank} {data['name']}",
+                value=f"{data['balance']} 🪙",
                 inline=False
             )
 

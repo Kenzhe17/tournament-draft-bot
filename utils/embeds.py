@@ -8,6 +8,7 @@ import discord
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
+from utils.cosmetics import format_player_name
 
 
 async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
@@ -581,7 +582,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
         else:
             rank_emoji = f"{rank}."
 
-        line = f"{rank_emoji} **{player.name}** — {int(player.elo)} ELO"
+        # Format name with cosmetics
+        formatted_name = format_player_name(guild_id, player.user_id, player.name)
+        line = f"{rank_emoji} **{formatted_name}** — {int(player.elo)} ELO"
         lines.append(line)
     
     embed.description = "\n".join(lines)

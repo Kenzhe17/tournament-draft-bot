@@ -616,6 +616,24 @@ class AdminConfirmView(View):
             else:  # final
                 tournament.confirm_final_winner(winning_team_index)
 
+                # Award coins for tournament participation
+                from storage.user_balance_store import user_balance_store
+                participation_bonus = 10  # +10 coins for participation
+                winner_bonus = 20  # +20 coins for winner
+
+                # Award participation bonus to all players
+                for player_name, user_id in tournament.player_user_ids.items():
+                    await user_balance_store.add_balance(self.guild_id, user_id, participation_bonus)
+
+                # Award extra bonus to winner team
+                if tournament.winner_team_index is not None and tournament.winner_team_index < len(tournament.teams):
+                    winner_team = tournament.teams[tournament.winner_team_index]
+                    for circle in range(1, 5):
+                        player_name = winner_team.get(f"circle{circle}", "")
+                        if player_name and player_name in tournament.player_user_ids:
+                            user_id = tournament.player_user_ids[player_name]
+                            await user_balance_store.add_balance(self.guild_id, user_id, winner_bonus)
+
             # Clear temp stats
             if match_id in tournament.temp_match_stats:
                 del tournament.temp_match_stats[match_id]
