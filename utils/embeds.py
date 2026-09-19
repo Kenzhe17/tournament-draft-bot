@@ -63,7 +63,7 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
     # Basic stats
     embed.add_field(
         name="🎯 Текущий ELO",
-        value=f"{stats.elo} ({elo_diff_text} от среднего)",
+        value=f"{int(stats.elo)} ({elo_diff_text} от среднего)",
         inline=True
     )
     embed.add_field(
@@ -131,14 +131,14 @@ def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None) -> 
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
         return ""
-    
+
     player_strings = []
     for player_name in players:
         if elo_dict and player_name in elo_dict:
-            player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+            player_strings.append(f"{player_name} ({int(elo_dict[player_name])})")
         else:
             player_strings.append(player_name)
-    
+
     return " ".join(player_strings)
 
 
@@ -246,7 +246,7 @@ async def build_setup_embed(
     for player_name, user_id in tournament.player_user_ids.items():
         stats = await player_stats_store.get(tournament.guild_id, user_id)
         if stats:
-            elo_dict[player_name] = stats.elo
+            elo_dict[player_name] = int(stats.elo)
 
     # Show different content based on formation mode
     if tournament.formation_mode == FormationMode.RANDOM:
@@ -258,7 +258,7 @@ async def build_setup_embed(
         player_strings = []
         for player_name in tournament.players_pool:
             if player_name in elo_dict:
-                player_strings.append(f"{player_name} ({elo_dict[player_name]})")
+                player_strings.append(f"{player_name} ({int(elo_dict[player_name])})")
             else:
                 player_strings.append(player_name)
 
@@ -407,7 +407,7 @@ async def build_qualifiers_embed(
 
         embed.add_field(
             name=f"🔥 Отбор #{i + 1}",
-            value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
             inline=False,
         )
 
@@ -444,7 +444,7 @@ async def build_semifinals_embed(
 
         embed.add_field(
             name=f"🔥 Игра #{i + 1}",
-            value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
             inline=False,
         )
 
@@ -482,7 +482,7 @@ async def build_final_embed(
     )
     embed.add_field(
         name="⚡ Главная битва турнира",
-        value=f"**{name_a} ({avg_elo_a})** *vs* **{name_b} ({avg_elo_b})**",
+        value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
         inline=False
     )
 
@@ -581,7 +581,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
         else:
             rank_emoji = f"{rank}."
 
-        line = f"{rank_emoji} **{player.name}** — {player.elo} ELO"
+        line = f"{rank_emoji} **{player.name}** — {int(player.elo)} ELO"
         lines.append(line)
     
     embed.description = "\n".join(lines)
