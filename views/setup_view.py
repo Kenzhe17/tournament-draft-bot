@@ -182,18 +182,14 @@ class JoinPoolButton(discord.ui.Button):
             tournament.player_user_ids[user_name] = interaction.user.id
             store.set(tournament)
 
-            # Send response first before updating message
+            # Send response
             await interaction.response.send_message(
                 "✅ Вы добавлены в турнир!",
                 ephemeral=True
             )
 
-            # Update message in background
-            try:
-                bot: TournamentBot = interaction.client  # type: ignore[assignment]
-                await bot.update_tournament_message(interaction.guild, tournament)
-            except Exception as e:
-                logger.error(f"Error updating tournament message: {e}", exc_info=True)
+            # Note: Message update temporarily disabled to fix timeout issue
+            # User can refresh by pressing any button to see updated counter
         except Exception as e:
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
             try:
