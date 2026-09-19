@@ -601,12 +601,25 @@ class AdminConfirmView(View):
             else:  # final
                 winning_team_index = tournament.final_pending_winner
 
+            import logging
+            logging.info(f"Confirming winner: match_type={self.match_type}, winning_team_index={winning_team_index}")
+
+            # Проверка на None для финала
+            if winning_team_index is None:
+                logging.error(f"Winning team index is None for match_type={self.match_type}")
+                await interaction.response.send_message("❌ Ошибка: победитель не выбран.", ephemeral=True)
+                return
+
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
             winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
 
-            payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
-            for user_id, payout in payouts.items():
-                await user_balance_store.add_balance(self.guild_id, user_id, payout)
+            try:
+                payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+                for user_id, payout in payouts.items():
+                    await user_balance_store.add_balance(self.guild_id, user_id, payout)
+            except Exception as e:
+                import logging
+                logging.error(f"Error resolving bets: {e}", exc_info=True)
 
             # Confirm winner (this may trigger phase transition)
             if self.match_type == "qualifier":
@@ -614,25 +627,36 @@ class AdminConfirmView(View):
             elif self.match_type == "semifinal":
                 tournament.confirm_semifinal_winner(self.match_index, winning_team_index)
             else:  # final
-                tournament.confirm_final_winner(winning_team_index)
+                logging.info(f"Confirming final winner: team_index={winning_team_index}")
+                try:
+                    tournament.confirm_final_winner(winning_team_index)
+                    logging.info(f"Final winner confirmed, phase={tournament.phase.value}, winner_team_index={tournament.winner_team_index}")
+                except Exception as e:
+                    import logging
+                    logging.error(f"Error confirming final winner: {e}", exc_info=True)
+                    raise
 
                 # Award coins for tournament participation
                 from storage.user_balance_store import user_balance_store
                 participation_bonus = 10  # +10 coins for participation
                 winner_bonus = 20  # +20 coins for winner
 
-                # Award participation bonus to all players
-                for player_name, user_id in tournament.player_user_ids.items():
-                    await user_balance_store.add_balance(self.guild_id, user_id, participation_bonus)
+                try:
+                    # Award participation bonus to all players
+                    for player_name, user_id in tournament.player_user_ids.items():
+                        await user_balance_store.add_balance(self.guild_id, user_id, participation_bonus)
 
-                # Award extra bonus to winner team
-                if tournament.winner_team_index is not None and tournament.winner_team_index < len(tournament.teams):
-                    winner_team = tournament.teams[tournament.winner_team_index]
-                    for circle in range(1, 5):
-                        player_name = winner_team.get(f"circle{circle}", "")
-                        if player_name and player_name in tournament.player_user_ids:
-                            user_id = tournament.player_user_ids[player_name]
-                            await user_balance_store.add_balance(self.guild_id, user_id, winner_bonus)
+                    # Award extra bonus to winner team
+                    if tournament.winner_team_index is not None and tournament.winner_team_index < len(tournament.teams):
+                        winner_team = tournament.teams[tournament.winner_team_index]
+                        for circle in range(1, 5):
+                            player_name = winner_team.get(f"circle{circle}", "")
+                            if player_name and player_name in tournament.player_user_ids:
+                                user_id = tournament.player_user_ids[player_name]
+                                await user_balance_store.add_balance(self.guild_id, user_id, winner_bonus)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Error awarding coins: {e}", exc_info=True)
 
             # Clear temp stats
             if match_id in tournament.temp_match_stats:
@@ -641,9 +665,13 @@ class AdminConfirmView(View):
             # Store tournament again after winner confirmation
             store.set(tournament)
 
-            from bot import TournamentBot
-            bot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, tournament)
+            try:
+                from bot import TournamentBot
+                bot = interaction.client  # type: ignore[assignment]
+                await bot.update_tournament_message(interaction.guild, tournament)
+            except Exception as e:
+                import logging
+                logging.error(f"Error updating tournament message: {e}", exc_info=True)
 
             await interaction.response.send_message("✅ Статистика сохранена и победитель подтверждён!", ephemeral=True)
         except Exception as e:

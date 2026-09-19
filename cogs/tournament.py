@@ -277,12 +277,6 @@ class TournamentCog(commands.Cog):
             color=discord.Color.gold()
         )
 
-        embed.add_field(
-            name="📖 Как купить",
-            value="Выберите категорию ниже, затем используйте `/buy <item_id>` для покупки.",
-            inline=False
-        )
-
         # Создать View с кнопками категорий
         view = ShopMainView()
 
@@ -643,7 +637,6 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.guilds()  # Полностью скрыть команду
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",

@@ -386,12 +386,19 @@ class TeamWinnerButton(discord.ui.Button):
             tournament.set_semifinal_winner(self.match_index, self.team_index)
         elif self.match_type == "final":
             tournament.set_final_winner(self.team_index)
+            import logging
+            logging.info(f"Final winner set to team {self.team_index}")
 
         store.set(tournament)
 
-        from bot import TournamentBot
-        bot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
+        try:
+            from bot import TournamentBot
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            import logging
+            logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
+
         await interaction.response.send_message(
             f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
@@ -412,6 +419,14 @@ class SelectWinnerButton(discord.ui.Button):
         self.match_type = match_type
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Проверка прав доступа
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут выбирать победителей.",
+                ephemeral=True,
+            )
+            return
+
         # Create match selection view
         match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
 
