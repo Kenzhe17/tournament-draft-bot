@@ -1,0 +1,556 @@
+"""View для полуфиналов — кнопки победителей и генерации матчей."""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+import discord
+
+from models.tournament import TournamentPhase, TournamentSize
+from storage.json_store import store
+from utils.embeds import build_embed_for_phase
+from utils.permissions import is_org_check
+from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
+
+if TYPE_CHECKING:
+    from bot import TournamentBot
+
+logger = logging.getLogger(__name__)
+
+
+class GenerateMatchesButton(discord.ui.Button):
+    """Кнопка генерации пар для матчей."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            label="Распределить",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"generate_matches:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут генерировать матчи.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        try:
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.edit_original_response(
+                    content="❌ Турнир не найден."
+                )
+                return
+
+            # Auto-fix phase mismatch: if phase is not TEAMS but we have teams, reset to TEAMS
+            if tournament.phase != TournamentPhase.TEAMS and tournament.teams:
+                tournament.phase = TournamentPhase.TEAMS
+                tournament.qualifier_matches = []
+                tournament.qualifier_winners = []
+                tournament.semifinal_matches = []
+                tournament.semifinal_winners = []
+                tournament.final_teams = []
+                tournament.winner_team_index = None
+                store.set(tournament)
+
+            if tournament.phase != TournamentPhase.TEAMS:
+                await interaction.edit_original_response(
+                    content=f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
+                )
+                return
+
+            logger.info(f"Generating bracket for tournament size: {tournament.size.value}, teams: {len(tournament.teams)}")
+            tournament.generate_bracket()
+            logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
+            store.set(tournament)
+
+            # Update games for all players (tournament started)
+            from storage.player_stats_store import player_stats_store
+            from storage.user_balance_store import user_balance_store
+            for team in tournament.teams:
+                for circle in range(1, 5):
+                    player = team.get(f"circle{circle}")
+                    if player:
+                        # Get user_id from tournament's player_user_ids
+                        user_id = tournament.player_user_ids.get(player, 0)
+                        await player_stats_store.update_player(tournament.guild_id, user_id, player, result="none", count_game=False)
+                        # Give participation reward
+                        await user_balance_store.add_balance(tournament.guild_id, user_id, 20)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            logger.error(f"Error generating matches: {e}", exc_info=True)
+            await interaction.edit_original_response(
+                content=f"❌ Ошибка при генерации матчей: {str(e)}"
+            )
+
+
+class SemifinalWinnerButton(discord.ui.Button):
+    """Кнопка выбора победителя полуфинала."""
+
+    def __init__(self, guild_id: int, match_index: int, team_index: int, team_name: str):
+        super().__init__(
+            label=f"{team_name} победил",
+            style=discord.ButtonStyle.success,
+            custom_id=f"semi_win:{guild_id}:{match_index}:{team_index}",
+        )
+        self.guild_id = guild_id
+        self.match_index = match_index
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут фиксировать результаты.",
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SEMIFINALS:
+            await interaction.response.send_message(
+                "❌ Полуфиналы не активны.", ephemeral=True
+            )
+            return
+
+        # Проверяем, что team_index — участник этого матча
+        match = tournament.semifinal_matches[self.match_index]
+        if self.team_index not in match:
+            await interaction.response.send_message(
+                "❌ Неверная команда для этого матча.", ephemeral=True
+            )
+            return
+
+        if tournament.semifinal_pending_winners[self.match_index] is not None:
+            await interaction.response.send_message(
+                "❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
+            )
+            return
+
+        both_done = tournament.set_semifinal_winner(
+            self.match_index, self.team_index
+        )
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
+
+
+class TeamNameButton(discord.ui.Button):
+    """Единая кнопка для капитанов назвать свою команду."""
+
+    def __init__(self, guild_id: int, tournament):
+        super().__init__(
+            label="Название команды",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"team_name:{guild_id}",
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.TEAMS:
+            await interaction.response.send_message(
+                "❌ Невозможно назвать команду.", ephemeral=True
+            )
+            return
+
+        # Find if user is a captain
+        user_name = interaction.user.display_name
+        team_index = None
+        for i, team in enumerate(tournament.teams):
+            if team.get("captain") == user_name:
+                team_index = i
+                break
+
+        if team_index is None:
+            await interaction.response.send_message(
+                "❌ Только капитан может назвать свою команду.",
+                ephemeral=True
+            )
+            return
+
+        # Create modal for team name input
+        modal = TeamNameModal(self.guild_id, team_index)
+        await interaction.response.send_modal(modal)
+
+
+class TeamNameModal(discord.ui.Modal, title="Название команды"):
+    """Modal для ввода названия команды."""
+
+    def __init__(self, guild_id: int, team_index: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.team_index = team_index
+        self.name_input = discord.ui.TextInput(
+            label="Название команды",
+            placeholder="Введите название...",
+            max_length=30,
+            required=True
+        )
+        self.add_item(self.name_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        name = self.name_input.value.strip()
+        if not name:
+            await interaction.response.send_message(
+                "❌ Название не может быть пустым.",
+                ephemeral=True
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if tournament:
+            tournament.team_names[self.team_index] = name
+            store.set(tournament)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            f"✅ Название команды изменено на '{name}'.",
+            ephemeral=True
+        )
+
+
+class TeamsView(discord.ui.View):
+    """View с кнопкой генерации матчей после драфта."""
+
+    def __init__(self, guild_id: int, tournament):
+        super().__init__(timeout=None)
+        self.add_item(GenerateMatchesButton(guild_id))
+
+        self.add_item(TeamNameButton(guild_id, tournament))
+
+
+class MatchWinnerSelectView(discord.ui.View):
+    """View for selecting match winners."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+
+        # Add buttons for available matches based on match type
+        if match_type == "qualifier":
+            for i, (team1, team2) in enumerate(tournament.qualifier_matches):
+                if tournament.qualifier_winners[i] is None:
+                    team1_name = self._get_team_name(team1)
+                    team2_name = self._get_team_name(team2)
+                    self.add_item(MatchWinnerButton(guild_id, tournament, "qualifier", i, f"{team1_name} vs {team2_name}"))
+        elif match_type == "semifinal":
+            for i, (team1, team2) in enumerate(tournament.semifinal_matches):
+                if tournament.semifinal_winners[i] is None:
+                    team1_name = self._get_team_name(team1)
+                    team2_name = self._get_team_name(team2)
+                    self.add_item(MatchWinnerButton(guild_id, tournament, "semifinal", i, f"{team1_name} vs {team2_name}"))
+        elif match_type == "final":
+            team1_name = self._get_team_name(tournament.final_teams[0])
+            team2_name = self._get_team_name(tournament.final_teams[1])
+            self.add_item(MatchWinnerButton(guild_id, tournament, "final", 0, f"{team1_name} vs {team2_name}"))
+
+    def _get_team_name(self, team_index: int) -> str:
+        """Get team name or default to captain name."""
+        team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
+        captain = team_data.get("captain", f"П{team_index + 1}")
+        return self.tournament.team_names.get(team_index, captain)
+
+
+class MatchWinnerButton(discord.ui.Button):
+    """Button to select a match and choose winner."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str):
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.primary,
+            custom_id=f"match_winner_select:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Get teams for this match
+        if self.match_type == "qualifier":
+            match = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = self.tournament.semifinal_matches[self.match_index]
+        elif self.match_type == "final":
+            match = self.tournament.final_teams
+        else:
+            await interaction.response.send_message("❌ Неверный тип матча.", ephemeral=True)
+            return
+
+        # Get team names
+        teams = []
+        for team_index in match:
+            team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
+            captain = team_data.get("captain", f"П{team_index + 1}")
+            team_name = self.tournament.team_names.get(team_index, captain)
+            teams.append((team_index, team_name))
+
+        # Create team selection view
+        team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
+
+        embed = discord.Embed(
+            title="🏆 Выберите победителя",
+            description=f"{teams[0][1]} vs {teams[1][1]}",
+            color=discord.Color.green()
+        )
+
+        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True, delete_after=3)
+
+
+class TeamWinnerSelectView(discord.ui.View):
+    """View for selecting the winning team."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, teams: list[tuple[int, str]]):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+
+        # Check if winner already selected
+        winner_already_selected = False
+        if match_type == "qualifier":
+            winner_already_selected = tournament.qualifier_winners[match_index] is not None
+        elif match_type == "semifinal":
+            winner_already_selected = tournament.semifinal_pending_winners[match_index] is not None
+        elif match_type == "final":
+            winner_already_selected = tournament.final_pending_winner is not None
+
+        for team_index, team_name in teams:
+            # Disable button if winner already selected
+            disabled = winner_already_selected
+            self.add_item(TeamWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, disabled))
+
+
+class TeamWinnerButton(discord.ui.Button):
+    """Button to select the winning team."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, disabled: bool = False):
+        super().__init__(
+            label=team_name,
+            style=discord.ButtonStyle.success,
+            custom_id=f"team_winner_select:{guild_id}:{match_type}:{match_index}:{team_index}",
+            disabled=disabled
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут выбирать победителей.",
+                ephemeral=True
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+            return
+
+        # Call the appropriate winner setter based on match type
+        if self.match_type == "qualifier":
+            tournament.set_qualifier_winner(self.match_index, self.team_index)
+        elif self.match_type == "semifinal":
+            tournament.set_semifinal_winner(self.match_index, self.team_index)
+        elif self.match_type == "final":
+            tournament.set_final_winner(self.team_index)
+
+        store.set(tournament)
+
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
+
+
+class SelectWinnerButton(discord.ui.Button):
+    """Main button to open winner selection interface."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str):
+        super().__init__(
+            label="🏆 Выбрать победителя",
+            style=discord.ButtonStyle.success,
+            custom_id=f"select_winner:{guild_id}:{match_type}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Create match selection view
+        match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
+
+        embed = discord.Embed(
+            title="🏆 Выбор победителей",
+            description="Выберите матч для определения победителя:",
+            color=discord.Color.green()
+        )
+
+        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True, delete_after=3)
+
+
+class QualifierWinnerButton(discord.ui.Button):
+    """Кнопка выбора победителя отборочного матча."""
+
+    def __init__(self, guild_id: int, match_index: int, team_index: int, team_name: str):
+        super().__init__(
+            label=f"{team_name} победил",
+            style=discord.ButtonStyle.success,
+            custom_id=f"qual_win:{guild_id}:{match_index}:{team_index}",
+        )
+        self.guild_id = guild_id
+        self.match_index = match_index
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут фиксировать результаты.",
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.QUALIFIERS:
+            await interaction.response.send_message(
+                "❌ Отборочные матчи не активны.", ephemeral=True
+            )
+            return
+
+        # Проверяем, что team_index — участник этого матча
+        match = tournament.qualifier_matches[self.match_index]
+        if self.team_index not in match:
+            await interaction.response.send_message(
+                "❌ Неверная команда для этого матча.", ephemeral=True
+            )
+            return
+
+        if tournament.qualifier_winners[self.match_index] is not None:
+            await interaction.response.send_message(
+                "❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
+            )
+            return
+
+        both_done = tournament.set_qualifier_winner(
+            self.match_index, self.team_index
+        )
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+        await interaction.response.send_message(
+            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            ephemeral=True
+        )
+
+
+class QualifiersView(discord.ui.View):
+    """View с кнопками победителей отборочных матчей."""
+
+    def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+
+        # Add single winner selection button
+        self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
+
+        # Add betting buttons
+        self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
+        self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
+        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add admin fill button
+        from views.match_stats_view import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add captain fill buttons for pending matches
+        from views.match_stats_view import CaptainFillButton
+        for i, winner in enumerate(tournament.qualifier_winners):
+            if winner is not None:
+                # Add fill button for both teams in this match
+                match = matches[i]
+                match_id = f"qualifier_{i}"
+                # Check if team 0 has filled stats
+                team0_filled = any(
+                    tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team0_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
+                # Check if team 1 has filled stats
+                team1_filled = any(
+                    tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team1_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
+
+
+class SemifinalsView(discord.ui.View):
+    """View с кнопками победителей полуфиналов."""
+
+    def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+
+        # Add single winner selection button
+        self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
+
+        # Add betting buttons
+        self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
+
+        # Add admin fill button
+        from views.match_stats_view import AdminFillButton
+        self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add captain fill buttons for pending matches
+        from views.match_stats_view import CaptainFillButton
+        for i, winner in enumerate(tournament.semifinal_pending_winners):
+            if winner is not None:
+                # Add fill button for both teams in this match
+                match = matches[i]
+                match_id = f"semifinal_{i}"
+                # Check if team 0 has filled stats
+                team0_filled = any(
+                    tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team0_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[0]))
+                # Check if team 1 has filled stats
+                team1_filled = any(
+                    tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team1_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[1]))

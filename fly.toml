@@ -1,0 +1,30 @@
+# Fly.io — бот как фоновый процесс 24/7
+# Документация: DEPLOY.md
+
+app = "tournament-draft-bot"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATA_DIR = "/data"
+
+[mounts]
+  source = "tournament_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[processes]
+  bot = "python bot.py"
+
+# PostgreSQL database
+[[services]]
+  internal_port = 5432
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 5432
