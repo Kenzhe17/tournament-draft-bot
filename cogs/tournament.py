@@ -331,8 +331,7 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(item_id="ID товара")
     async def buy(self, interaction: discord.Interaction, item_id: str) -> None:
         """Купить товар из магазина."""
-        from storage.shop_store import shop_store
-        from storage.inventory_store import inventory_store
+        from storage.shop_store import shop_store, inventory_store
         from storage.user_balance_store import user_balance_store
         from models.shop_item import PlayerCosmetic
 
@@ -385,8 +384,7 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="inventory", description="Ваш инвентарь косметики")
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь косметики."""
-        from storage.inventory_store import inventory_store
-        from storage.shop_store import shop_store
+        from storage.shop_store import inventory_store, shop_store
 
         # Получить инвентарь
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
@@ -449,8 +447,7 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(item_id="ID предмета")
     async def equip(self, interaction: discord.Interaction, item_id: str) -> None:
         """Экипировать косметический предмет."""
-        from storage.inventory_store import inventory_store
-        from storage.shop_store import shop_store
+        from storage.shop_store import inventory_store, shop_store
 
         # Проверить есть ли предмет
         inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
@@ -500,8 +497,7 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(item_id="ID предмета")
     async def unequip(self, interaction: discord.Interaction, item_id: str) -> None:
         """Снять косметический предмет."""
-        from storage.inventory_store import inventory_store
-        from storage.shop_store import shop_store
+        from storage.shop_store import inventory_store, shop_store
 
         # Проверить есть ли предмет
         inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)

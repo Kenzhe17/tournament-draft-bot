@@ -1,7 +1,6 @@
 """Утилиты для форматирования имен с косметикой."""
 
-from storage.inventory_store import inventory_store
-from storage.shop_store import shop_store
+from storage.shop_store import inventory_store, shop_store
 
 
 def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
