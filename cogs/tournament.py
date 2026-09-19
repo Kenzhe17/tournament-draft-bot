@@ -413,7 +413,7 @@ class TournamentCog(commands.Cog):
             title=f"📊 Профиль: {stats.name}",
             color=discord.Color.blue(),
         )
-        embed.add_field(name="🏆 ELO", value=str(stats.elo), inline=True)
+        embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
