@@ -7,133 +7,7 @@ from storage.shop_store import shop_store
 def initialize_shop_items() -> None:
     """Инициализировать товары в магазине."""
 
-    # Цвет текста (Color Palette)
-    colors = [
-        # Базовые (500 монет)
-        ShopItem(
-            id="color_emerald",
-            name="Изумрудный",
-            description="Зелёный цвет текста",
-            price=500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.BASIC,
-            value="#2ecc71",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_sky_blue",
-            name="Светло-синий",
-            description="Небесно-голубой цвет текста",
-            price=500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.BASIC,
-            value="#3498db",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_orange",
-            name="Оранжевый",
-            description="Яркий оранжевый цвет текста",
-            price=500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.BASIC,
-            value="#e67e22",
-            category="colors"
-        ),
-        # Премиум (1 500 монет)
-        ShopItem(
-            id="color_purple",
-            name="Пурпурный",
-            description="Богатый пурпурный цвет текста",
-            price=1500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.PREMIUM,
-            value="#9b59b6",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_scarlet",
-            name="Алый",
-            description="Ярко-красный цвет текста",
-            price=1500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.PREMIUM,
-            value="#e74c3c",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_turquoise",
-            name="Бирюзовый",
-            description="Свежий бирюзовый цвет текста",
-            price=1500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.PREMIUM,
-            value="#1abc9c",
-            category="colors"
-        ),
-        # Элитные (3 500 монет)
-        ShopItem(
-            id="color_gold",
-            name="Золотой",
-            description="Сияющий золотой цвет текста",
-            price=3500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.ELITE,
-            value="#f1c40f",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_platinum",
-            name="Платиновый",
-            description="Благородный платиновый цвет текста",
-            price=3500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.ELITE,
-            value="#bdc3c7",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_dark_amber",
-            name="Тёмный янтарь",
-            description="Тёплый янтарный цвет текста",
-            price=3500,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.ELITE,
-            value="#d35400",
-            category="colors"
-        ),
-        # Спецэффекты / Градиенты (6 000 монет)
-        ShopItem(
-            id="color_neon_ultramarine",
-            name="Неоновый ультрамарин",
-            description="Сияющий неоновый синий цвет",
-            price=6000,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.SPECIAL,
-            value="#8e44ad",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_cyberpunk",
-            name="Киберпанк",
-            description="Розово-фиолетовый градиент",
-            price=6000,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.SPECIAL,
-            value="#ff00ff",
-            category="colors"
-        ),
-        ShopItem(
-            id="color_sunset",
-            name="Закат",
-            description="Огненный оранжево-красный градиент",
-            price=6000,
-            cosmetic_type=CosmeticType.COLOR,
-            rarity=CosmeticRarity.SPECIAL,
-            value="#ff4500",
-            category="colors"
-        ),
-    ]
+    # Цвета удалены (Discord не поддерживает цветной текст в embed'ах)
 
     # Графические значки (Icons & Emblems)
     icons = [
@@ -392,7 +266,7 @@ def initialize_shop_items() -> None:
     ]
 
     # Добавить все товары в магазин
-    for item in colors + icons + tags:
+    for item in icons + tags:
         shop_store.add_item(item)
 
 

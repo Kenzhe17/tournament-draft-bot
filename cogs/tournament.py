@@ -676,8 +676,12 @@ class TournamentCog(commands.Cog):
 
         win_rate = stats.win_rate
 
+        # Format name with cosmetics
+        from utils.cosmetics import format_player_name
+        formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
+
         embed = discord.Embed(
-            title=f"📊 Профиль: {stats.name}",
+            title=f"📊 Профиль: {formatted_name}",
             color=discord.Color.blue(),
         )
         embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)

@@ -128,17 +128,27 @@ async def get_server_average_elo(guild_id: int) -> int:
         return int(result) if result else 1000
 
 
-def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None) -> str:
+def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tournament: Tournament = None, guild_id: int = None) -> str:
     """Строка игроков круга с ELO или пустой слот."""
     if not players:
         return ""
 
     player_strings = []
     for player_name in players:
-        if elo_dict and player_name in elo_dict:
-            player_strings.append(f"{player_name} ({int(elo_dict[player_name])})")
+        # Format name with cosmetics if tournament and guild_id provided
+        if tournament and guild_id:
+            user_id = tournament.player_user_ids.get(player_name)
+            if user_id:
+                formatted_name = format_player_name(guild_id, user_id, player_name)
+            else:
+                formatted_name = player_name
         else:
-            player_strings.append(player_name)
+            formatted_name = player_name
+
+        if elo_dict and player_name in elo_dict:
+            player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])})")
+        else:
+            player_strings.append(formatted_name)
 
     return " ".join(player_strings)
 
@@ -216,7 +226,13 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
             if isinstance(p_name, tuple):
                 p_name = p_name[0] if p_name else ""
             if p_name and isinstance(p_name, str):
-                players.append(p_name)
+                # Format name with cosmetics
+                user_id = tournament.player_user_ids.get(p_name)
+                if user_id:
+                    formatted_name = format_player_name(guild.id, user_id, p_name)
+                else:
+                    formatted_name = p_name
+                players.append(formatted_name)
 
         players_str = ", ".join(players) if players else "*Ожидание игроков...*"
         emoji = team_emojis.get(i + 1, "🎮")
@@ -258,10 +274,17 @@ async def build_setup_embed(
         # Build player list with ELO
         player_strings = []
         for player_name in tournament.players_pool:
-            if player_name in elo_dict:
-                player_strings.append(f"{player_name} ({int(elo_dict[player_name])})")
+            # Format name with cosmetics
+            user_id = tournament.player_user_ids.get(player_name)
+            if user_id:
+                formatted_name = format_player_name(guild.id, user_id, player_name)
             else:
-                player_strings.append(player_name)
+                formatted_name = player_name
+
+            if player_name in elo_dict:
+                player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])})")
+            else:
+                player_strings.append(formatted_name)
 
         players_text = " ".join(player_strings) if player_strings else "*"
 
@@ -289,7 +312,7 @@ async def build_setup_embed(
             else:
                 limit_info = f" ({count}/∞)"
 
-            value = _circle_line(circle_list, elo_dict) or "*"
+            value = _circle_line(circle_list, elo_dict, tournament, guild_id) or "*"
             embed.add_field(
                 name=f"{circle_name}{limit_info}",
                 value=value,
@@ -515,7 +538,13 @@ async def build_winner_embed(
     for circle in range(1, 5):
         p_name = winning_team.get(f"circle{circle}", "")
         if p_name:
-            players.append(p_name)
+            # Format name with cosmetics
+            user_id = tournament.player_user_ids.get(p_name)
+            if user_id:
+                formatted_name = format_player_name(guild_id, user_id, p_name)
+            else:
+                formatted_name = p_name
+            players.append(formatted_name)
     roster_str = ", ".join(players) if players else "Нет игроков"
 
     embed = discord.Embed(
