@@ -127,21 +127,32 @@ class InventoryStore:
         if key not in self._inventory:
             return False
 
-        # Найти предмет
+        # Найти предмет и его тип
+        target_cosmetic = None
+        target_type = None
         for cosmetic in self._inventory[key]:
             if cosmetic.item_id == item_id:
-                # Отключить другие предметы того же типа
-                from models.shop_item import CosmeticType
-                target_type = cosmetic.cosmetic_type if hasattr(cosmetic, 'cosmetic_type') else None
-                if target_type:
-                    # Это упрощённая логика, нужно загрузить item для получения типа
-                    pass
+                target_cosmetic = cosmetic
+                # Получить тип предмета
+                item = shop_store.get_item(item_id)
+                if item:
+                    target_type = item.cosmetic_type.value
+                break
 
-                cosmetic.equipped = True
-                self.save()
-                return True
+        if not target_cosmetic or not target_type:
+            return False
 
-        return False
+        # Снять все предметы того же типа (кроме текущего)
+        for cosmetic in self._inventory[key]:
+            if cosmetic.item_id != item_id:
+                item = shop_store.get_item(cosmetic.item_id)
+                if item and item.cosmetic_type.value == target_type:
+                    cosmetic.equipped = False
+
+        # Экипировать текущий предмет
+        target_cosmetic.equipped = True
+        self.save()
+        return True
 
     def unequip_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
         """Снять косметический предмет."""
