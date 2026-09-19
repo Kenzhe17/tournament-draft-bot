@@ -312,7 +312,7 @@ async def build_setup_embed(
             else:
                 limit_info = f" ({count}/∞)"
 
-            value = _circle_line(circle_list, elo_dict, tournament, guild_id) or "*"
+            value = _circle_line(circle_list, elo_dict, tournament, guild.id) or "*"
             embed.add_field(
                 name=f"{circle_name}{limit_info}",
                 value=value,

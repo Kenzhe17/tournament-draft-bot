@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
+
+DATA_DIR = Path("data")
+BALANCE_FILE = DATA_DIR / "user_balance.json"
 
 
 class UserBalanceStore:
@@ -14,6 +19,25 @@ class UserBalanceStore:
     def __init__(self) -> None:
         self._use_db = False
         self._balances: dict[str, int] = {}  # Key: "guild_id:user_id", Value: balance
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self.load()
+
+    def load(self) -> None:
+        """Загрузить балансы из файла."""
+        if not BALANCE_FILE.exists():
+            return
+
+        try:
+            with open(BALANCE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                self._balances = {k: int(v) for k, v in data.items()}
+        except (json.JSONDecodeError, KeyError, ValueError):
+            self._balances = {}
+
+    def save(self) -> None:
+        """Сохранить балансы в файл."""
+        with open(BALANCE_FILE, "w", encoding="utf-8") as f:
+            json.dump(self._balances, f, ensure_ascii=False, indent=2)
 
     def enable_db(self) -> None:
         """Enable database storage."""
@@ -74,6 +98,7 @@ class UserBalanceStore:
             if key not in self._balances:
                 self._balances[key] = 100
             self._balances[key] += amount
+            self.save()
             return self._balances[key]
 
     async def subtract_balance(self, guild_id: int, user_id: int, amount: int) -> int:
@@ -102,6 +127,7 @@ class UserBalanceStore:
                 return row["balance"] if row else current_balance - amount
         else:
             self._balances[key] -= amount
+            self.save()
             return self._balances[key]
 
     async def set_balance(self, guild_id: int, user_id: int, balance: int) -> int:
@@ -127,6 +153,7 @@ class UserBalanceStore:
                 return balance
         else:
             self._balances[key] = balance
+            self.save()
             return balance
 
 
