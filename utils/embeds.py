@@ -541,7 +541,7 @@ async def build_winner_embed(
             # Format name with cosmetics
             user_id = tournament.player_user_ids.get(p_name)
             if user_id:
-                formatted_name = format_player_name(guild_id, user_id, p_name)
+                formatted_name = format_player_name(guild.id, user_id, p_name)
             else:
                 formatted_name = p_name
             players.append(formatted_name)
