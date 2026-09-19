@@ -15,7 +15,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_gamepad",
             name="Геймпад",
-            description="🎮 Иконка геймпада",
+            description="",
             price=1000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
@@ -25,7 +25,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_kiss",
             name="Поцелуй",
-            description="💋 Иконка поцелуя",
+            description="",
             price=1000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
@@ -35,7 +35,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_star",
             name="Звезда",
-            description="⭐ Иконка звезды",
+            description="",
             price=1000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
@@ -46,7 +46,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_fire",
             name="Огонь",
-            description="🔥 Иконка огня",
+            description="",
             price=2500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
@@ -56,7 +56,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_wine",
             name="Вино",
-            description="🍷 Иконка вина",
+            description="",
             price=2500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
@@ -66,7 +66,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_swords",
             name="Мечи",
-            description="⚔️ Иконка мечей",
+            description="",
             price=2500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
@@ -77,7 +77,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_crown",
             name="Корона",
-            description="👑 Иконка короны",
+            description="",
             price=5000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
@@ -87,7 +87,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_diamond",
             name="Бриллиант",
-            description="💎 Иконка бриллианта",
+            description="",
             price=5000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
@@ -97,7 +97,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_chains",
             name="Цепи",
-            description="⛓️ Иконка цепей",
+            description="",
             price=5000,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
@@ -108,7 +108,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_rose",
             name="Роза",
-            description="🥀 Иконка розы",
+            description="",
             price=8500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
@@ -118,7 +118,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_dragon",
             name="Дракон",
-            description="🐉 Иконка дракона",
+            description="",
             price=8500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
@@ -128,7 +128,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="icon_wings",
             name="Крылья",
-            description="🪽 Иконка крыльев",
+            description="",
             price=8500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
@@ -143,7 +143,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_pro",
             name="[PRO]",
-            description="Тег PRO для профессионалов",
+            description="",
             price=800,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
@@ -153,7 +153,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_sweet",
             name="[SWEET]",
-            description="Тег SWEET для милых",
+            description="",
             price=800,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
@@ -163,7 +163,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_vip",
             name="[VIP]",
-            description="Тег VIP для важных",
+            description="",
             price=800,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
@@ -174,7 +174,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_mvp",
             name="[MVP]",
-            description="Тег MVP для лучших",
+            description="",
             price=2000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
@@ -184,7 +184,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_king",
             name="[KING]",
-            description="Тег KING для королей",
+            description="",
             price=2000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
@@ -194,7 +194,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_boss",
             name="[BOSS]",
-            description="Тег BOSS для боссов",
+            description="",
             price=2000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
@@ -205,7 +205,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_god",
             name="[GOD]",
-            description="Тег GOD для богов",
+            description="",
             price=4500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
@@ -215,7 +215,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_sex",
             name="[SEX]",
-            description="Тег SEX для крутых",
+            description="",
             price=4500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
@@ -225,7 +225,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_legend",
             name="[LEGEND]",
-            description="Тег LEGEND для легенд",
+            description="",
             price=4500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
@@ -236,7 +236,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_404",
             name="[404]",
-            description="Тег 404 для хакеров",
+            description="",
             price=7500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
@@ -246,7 +246,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_xxx",
             name="[XXX]",
-            description="Тег XXX для взрослых",
+            description="",
             price=7500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
@@ -256,7 +256,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="tag_ego",
             name="[EGO]",
-            description="Тег EGO для уверенных",
+            description="",
             price=7500,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,

@@ -48,7 +48,7 @@ class ShopCategoryButton(discord.ui.Button):
 
             embed.add_field(
                 name=f"{rarity_emoji} {item.name} - {item.price} 🪙",
-                value=f"{item.description}\nID: `{item.id}`",
+                value=f"ID: `{item.id}`",
                 inline=False
             )
 
