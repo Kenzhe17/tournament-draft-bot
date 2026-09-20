@@ -500,36 +500,44 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
     async def setbio(self, interaction: discord.Interaction, bio: str) -> None:
         """Установить описание профиля."""
-        # Ограничение длины
-        if len(bio) > 100:
+        try:
+            # Ограничение длины
+            if len(bio) > 100:
+                await interaction.response.send_message(
+                    "❌ Описание должно быть не более 100 символов.",
+                    ephemeral=True
+                )
+                return
+
+            from storage.player_stats_store import player_stats_store
+            from models.player_stats import PlayerStats
+
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+            if not stats:
+                # Create default stats for new players
+                stats = PlayerStats(
+                    guild_id=interaction.guild_id,
+                    user_id=interaction.user.id,
+                    name=interaction.user.display_name,
+                    bio=bio
+                )
+            else:
+                stats.bio = bio
+
+            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+
             await interaction.response.send_message(
-                "❌ Описание должно быть не более 100 символов.",
+                f"✅ Описание профиля обновлено: {bio}",
                 ephemeral=True
             )
-            return
-
-        from storage.player_stats_store import player_stats_store
-        from models.player_stats import PlayerStats
-
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-
-        if not stats:
-            # Create default stats for new players
-            stats = PlayerStats(
-                guild_id=interaction.guild_id,
-                user_id=interaction.user.id,
-                name=interaction.user.display_name,
-                bio=bio
+        except Exception as e:
+            import logging
+            logging.error(f"Error in /setbio: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка: {str(e)}",
+                ephemeral=True
             )
-        else:
-            stats.bio = bio
-
-        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
-
-        await interaction.response.send_message(
-            f"✅ Описание профиля обновлено: {bio}",
-            ephemeral=True
-        )
 
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
     @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
