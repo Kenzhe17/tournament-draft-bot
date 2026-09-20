@@ -687,7 +687,7 @@ class TournamentCog(commands.Cog):
 
                 if record_broken:
                     # Send notification to channel
-                    record_channel_id = 1549809898643001484
+                    record_channel_id = 1551167853741219880
                     channel = interaction.guild.get_channel(record_channel_id)
                     if channel:
                         if old_record:
