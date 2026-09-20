@@ -48,7 +48,7 @@ class ShopCategoryButton(discord.ui.Button):
             display_name = item.value if item.value else item.name
             label = f"{display_name} - {item.price} 🪙"
             button = ShopBuyButton(item.id, label)
-            button.row = (i // 2) + 1  # По 2 кнопки в ряд
+            # Не используем row для простоты
             view.add_item(button)
 
         await interaction.followup.send(embed=embed, view=view)

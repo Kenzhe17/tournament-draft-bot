@@ -272,8 +272,8 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title="🛒 Магазин косметики",
-            description=f"Ваш баланс: {balance} 🪙",
+            title="🛒 Магазин",
+            description=f"💰 {balance} 🪙",
             color=discord.Color.gold()
         )
 
