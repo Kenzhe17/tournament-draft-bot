@@ -673,9 +673,19 @@ class TournamentCog(commands.Cog):
 
         for record_type, record_holder, emoji in record_checks:
             if record_holder:
-                new_value = getattr(record_holder, record_type.replace("best_", ""), 0)
-                if isinstance(new_value, float):
-                    new_value = int(new_value)
+                # Map record_type to actual PlayerStats fields or computed values
+                if record_type == "max_kills":
+                    new_value = record_holder.best_match_kills
+                elif record_type == "best_win_streak":
+                    new_value = record_holder.best_win_streak
+                elif record_type == "avg_kills":
+                    new_value = int(record_holder.avg_kills)
+                elif record_type == "kd_ratio":
+                    new_value = int(record_holder.kd_ratio)
+                elif record_type == "win_rate":
+                    new_value = int(record_holder.win_rate)
+                else:
+                    continue
 
                 record_broken, old_record = check_and_update_record(
                     guild_id=interaction.guild_id,
