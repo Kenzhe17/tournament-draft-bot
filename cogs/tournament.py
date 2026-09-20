@@ -539,6 +539,48 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="history", description="История рекордов")
+    async def history(self, interaction: discord.Interaction) -> None:
+        """Показать историю исторических рекордов."""
+        from models.records import record_store
+
+        await interaction.response.defer()
+
+        all_records = record_store.get_all_records(interaction.guild_id)
+
+        if not all_records:
+            await interaction.edit_original_response(
+                content="❌ Пока нет исторических рекордов."
+            )
+            return
+
+        # Group by record type
+        record_types = {
+            "max_kills": "🔥 Наибольшее количество киллов за матч",
+            "best_win_streak": "🔥 Лучшая серия побед",
+            "avg_kills": "🎯 Наибольшее AVG Kills",
+            "kd_ratio": "⚔️ Наибольшее K/D",
+            "win_rate": "🏆 Лучший WinRate",
+        }
+
+        embed = discord.Embed(
+            title="📜 История Рекордов",
+            color=discord.Color.gold()
+        )
+
+        for record_type, title in record_types.items():
+            records = [r for r in all_records if r.record_type == record_type]
+            if records:
+                latest = records[-1]  # Most recent
+                date_str = latest.timestamp.split("T")[0] if "T" in latest.timestamp else latest.timestamp
+                embed.add_field(
+                    name=title,
+                    value=f"{latest.player_name} — {latest.value}\n📅 {date_str}",
+                    inline=False
+                )
+
+        await interaction.followup.send(embed=embed)
+
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
     @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
     async def profile(

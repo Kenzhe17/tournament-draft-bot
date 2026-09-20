@@ -344,8 +344,10 @@ def update_player_stats_from_match(
     # Update best match kills
     if kills > stats.best_match_kills:
         stats.best_match_kills = kills
-        # Check if this is a new record (to be implemented later)
-        # This will trigger record notification
+
+    # Update best win streak
+    if stats.current_streak > stats.best_win_streak:
+        stats.best_win_streak = stats.current_streak
     
     # Update total ELO change
     stats.total_elo_change += elo_change

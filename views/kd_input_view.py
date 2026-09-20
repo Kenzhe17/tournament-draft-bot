@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from models.records import record_store
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
@@ -227,35 +228,77 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             # Increment games count for this match
             updated_stats.games += 1
 
-            # Check for record break (max kills)
-            if kills > stats.best_match_kills:
-                from utils.rating_calculator import check_and_update_record
-                from models.records import Record
-                record_broken, old_record = check_and_update_record(
-                    guild_id=guild_id,
-                    user_id=user_id,
-                    player_name=player_name,
-                    record_type="max_kills",
-                    new_value=kills
-                )
+            # Check for record breaks (only for the 5 specified types)
+            record_types = [
+                ("max_kills", kills, "🔥"),
+                ("best_win_streak", updated_stats.best_win_streak, "🔥"),
+            ]
 
-                if record_broken:
-                    # Send notification to channel
-                    record_channel_id = 1549809898643001484
-                    channel = interaction.guild.get_channel(record_channel_id)
-                    if channel:
-                        if old_record:
-                            await channel.send(
-                                f"🎉 <@{user_id}> побил рекорд <@{old_record.user_id}> ({old_record.value} убийств)!\n"
-                                f"🏆 Новый рекорд: {kills} убийств!"
-                            )
-                        else:
-                            await channel.send(
-                                f"🎉 <@{user_id}> установил первый рекорд!\n"
-                                f"🏆 Рекорд: {kills} убийств!"
-                            )
+            for record_type, new_value, emoji in record_types:
+                if new_value > getattr(stats, record_type, 0):
+                    from utils.rating_calculator import check_and_update_record
+                    from models.records import Record
+                    record_broken, old_record = check_and_update_record(
+                        guild_id=guild_id,
+                        user_id=user_id,
+                        player_name=player_name,
+                        record_type=record_type,
+                        new_value=new_value
+                    )
+
+                    if record_broken:
+                        # Send notification to channel
+                        record_channel_id = 1549809898643001484
+                        channel = interaction.guild.get_channel(record_channel_id)
+                        if channel:
+                            if old_record:
+                                await channel.send(
+                                    f"🎉 <@{user_id}> побил рекорд <@{old_record.user_id}> ({old_record.value})!\n"
+                                    f"{emoji} Новый рекорд: {new_value}!"
+                                )
+                            else:
+                                await channel.send(
+                                    f"🎉 <@{user_id}> установил первый рекорд!\n"
+                                    f"{emoji} Рекорд: {new_value}!"
+                                )
 
             await player_stats_store.set(updated_stats)
+
+            # Check for avg kills, kd_ratio, win_rate records (after stats are saved)
+            from utils.rating_calculator import check_and_update_record
+            record_types_avg = [
+                ("avg_kills", updated_stats.avg_kills, "🎯"),
+                ("kd_ratio", updated_stats.kd_ratio, "⚔️"),
+                ("win_rate", updated_stats.win_rate, "🏆"),
+            ]
+
+            for record_type, new_value, emoji in record_types_avg:
+                # Get current record
+                current_record = record_store.get_record(guild_id, record_type)
+                if current_record is None or new_value > current_record.value:
+                    record_broken, old_record = check_and_update_record(
+                        guild_id=guild_id,
+                        user_id=user_id,
+                        player_name=player_name,
+                        record_type=record_type,
+                        new_value=int(new_value)
+                    )
+
+                    if record_broken:
+                        # Send notification to channel
+                        record_channel_id = 1549809898643001484
+                        channel = interaction.guild.get_channel(record_channel_id)
+                        if channel:
+                            if old_record:
+                                await channel.send(
+                                    f"🎉 <@{user_id}> побил рекорд <@{old_record.user_id}> ({old_record.value:.2f})!\n"
+                                    f"{emoji} Новый рекорд: {new_value:.2f}!"
+                                )
+                            else:
+                                await channel.send(
+                                    f"🎉 <@{user_id}> установил первый рекорд!\n"
+                                    f"{emoji} Рекорд: {new_value:.2f}!"
+                                )
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):
