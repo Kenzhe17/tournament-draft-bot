@@ -659,6 +659,48 @@ class TournamentCog(commands.Cog):
         best_avg_kills_20 = max(players_20_plus, key=lambda p: p.avg_kills) if players_20_plus else None
         best_win_streak_20 = max(players_20_plus, key=lambda p: p.best_win_streak) if players_20_plus else None
 
+        # Check for historical record breaks (compare current best with historical records)
+        from models.records import record_store
+        from utils.rating_calculator import check_and_update_record
+
+        record_checks = [
+            ("max_kills", best_match_kills, "🔥"),
+            ("best_win_streak", best_win_streak_20, "🔥"),
+            ("avg_kills", best_avg_kills_20, "🎯"),
+            ("kd_ratio", highest_kd, "⚔️"),
+            ("win_rate", highest_winrate, "🏆"),
+        ]
+
+        for record_type, record_holder, emoji in record_checks:
+            if record_holder:
+                new_value = getattr(record_holder, record_type.replace("best_", ""), 0)
+                if isinstance(new_value, float):
+                    new_value = int(new_value)
+
+                record_broken, old_record = check_and_update_record(
+                    guild_id=interaction.guild_id,
+                    user_id=record_holder.user_id,
+                    player_name=record_holder.name,
+                    record_type=record_type,
+                    new_value=new_value
+                )
+
+                if record_broken:
+                    # Send notification to channel
+                    record_channel_id = 1549809898643001484
+                    channel = interaction.guild.get_channel(record_channel_id)
+                    if channel:
+                        if old_record:
+                            await channel.send(
+                                f"🎉 <@{record_holder.user_id}> побил исторический рекорд <@{old_record.user_id}> ({old_record.value})!\n"
+                                f"{emoji} Новый исторический рекорд: {new_value}!"
+                            )
+                        else:
+                            await channel.send(
+                                f"🎉 <@{record_holder.user_id}> установил первый исторический рекорд!\n"
+                                f"{emoji} Рекорд: {new_value}!"
+                            )
+
         # New records: Most coins and Best bettor
         from storage.user_balance_store import user_balance_store
         from storage.betting_stats_store import betting_stats_store
