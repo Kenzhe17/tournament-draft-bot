@@ -695,11 +695,11 @@ class AdminConfirmView(View):
                 import logging
                 logging.error(f"Error updating tournament message: {e}", exc_info=True)
 
-            await interaction.followup.send("✅ Статистика сохранена и победитель подтверждён!")
+            await interaction.followup.send("✅ Статистика сохранена и победитель подтверждён!", ephemeral=True)
         except Exception as e:
             import logging
             logging.error(f"Error in confirm_callback: {e}", exc_info=True)
-            await interaction.followup.send("❌ Произошла ошибка при подтверждении.")
+            await interaction.followup.send("❌ Произошла ошибка при подтверждении.", ephemeral=True)
 
     async def edit_callback(self, interaction: discord.Interaction) -> None:
         # Show team selection again for editing
