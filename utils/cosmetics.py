@@ -6,7 +6,7 @@ from storage.shop_store import inventory_store, shop_store
 def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
     """Форматировать имя игрока с учётом косметики.
 
-    Формат: [TAG] Name ICON
+    Формат: **[TAG]** Name ICON (жирный тег)
     """
     # Получить экипированную косметику
     cosmetics = inventory_store.get_equipped_cosmetics(guild_id, user_id)
@@ -28,10 +28,10 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
         elif item.cosmetic_type.value == "icon":
             icon = item.value
 
-    # Форматировать: [TAG] Name ICON
+    # Форматировать: **[TAG]** Name ICON
     formatted = base_name
     if tag:
-        formatted = f"{tag} {formatted}"
+        formatted = f"**{tag}** {formatted}"
     if icon:
         formatted = f"{formatted} {icon}"
 
