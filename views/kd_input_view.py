@@ -127,6 +127,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         calculate_balanced_elo_change,
         update_player_stats_from_match,
         get_server_average_elo,
+        check_and_update_record,
     )
 
     match_type = match_info.get('match_type')
