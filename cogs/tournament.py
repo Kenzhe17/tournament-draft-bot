@@ -685,7 +685,7 @@ class TournamentCog(commands.Cog):
         for record_type, record_holder, emoji in record_checks:
             if record_holder:
                 # Skip record check if player has less than 20 games (except max_kills and best_win_streak)
-                if record_type not in ["max_kills", "best_win_streak"] and record_holder.games_played < 20:
+                if record_type not in ["max_kills", "best_win_streak"] and record_holder.games < 20:
                     continue
 
                 # Map record_type to actual PlayerStats fields or computed values
