@@ -674,6 +674,14 @@ class TournamentCog(commands.Cog):
         for record_type, record_holder, emoji in record_checks:
             if record_holder:
                 # Map record_type to actual PlayerStats fields or computed values
+                record_names = {
+                    "max_kills": "убийствам",
+                    "best_win_streak": "серии побед",
+                    "avg_kills": "средним убийствам",
+                    "kd_ratio": "K/D",
+                    "win_rate": "WinRate"
+                }
+
                 if record_type == "max_kills":
                     new_value = record_holder.best_match_kills
                 elif record_type == "best_win_streak":
@@ -681,9 +689,9 @@ class TournamentCog(commands.Cog):
                 elif record_type == "avg_kills":
                     new_value = int(record_holder.avg_kills)
                 elif record_type == "kd_ratio":
-                    new_value = int(record_holder.kd_ratio)
+                    new_value = record_holder.kd_ratio  # Keep as float
                 elif record_type == "win_rate":
-                    new_value = int(record_holder.win_rate)
+                    new_value = record_holder.win_rate  # Keep as float
                 else:
                     continue
 
@@ -700,15 +708,33 @@ class TournamentCog(commands.Cog):
                     record_channel_id = 1551167853741219880
                     channel = interaction.guild.get_channel(record_channel_id)
                     if channel:
+                        # Format value based on record type
+                        if record_type == "kd_ratio":
+                            formatted_value = f"{new_value:.2f}"
+                        elif record_type == "win_rate":
+                            formatted_value = f"{new_value:.1f}%"
+                        else:
+                            formatted_value = str(new_value)
+
+                        record_name = record_names.get(record_type, "")
+
                         if old_record:
+                            # Format old value similarly
+                            if record_type == "kd_ratio":
+                                formatted_old = f"{old_record.value:.2f}"
+                            elif record_type == "win_rate":
+                                formatted_old = f"{old_record.value:.1f}%"
+                            else:
+                                formatted_old = str(old_record.value)
+
                             await channel.send(
-                                f"🎉 <@{record_holder.user_id}> побил исторический рекорд <@{old_record.user_id}> ({old_record.value})!\n"
-                                f"{emoji} Новый исторический рекорд: {new_value}!"
+                                f"🎉 <@{record_holder.user_id}> побил исторический рекорд <@{old_record.user_id}> ({formatted_old}) по {record_name}!\n"
+                                f"{emoji} Новый исторический рекорд: {formatted_value}!"
                             )
                         else:
                             await channel.send(
-                                f"🎉 <@{record_holder.user_id}> установил первый исторический рекорд!\n"
-                                f"{emoji} Рекорд: {new_value}!"
+                                f"🎉 <@{record_holder.user_id}> установил первый исторический рекорд по {record_name}!\n"
+                                f"{emoji} Рекорд: {formatted_value}!"
                             )
 
         # New records: Most coins and Best bettor
