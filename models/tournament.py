@@ -155,6 +155,11 @@ class Tournament:
     semifinal_winners: list[int | None] = field(default_factory=list)
     semifinal_pending_winners: list[int | None] = field(default_factory=list)  # Pending confirmation
     final_teams: list[int] = field(default_factory=list)
+
+    # Данные о комнатах (ID и пароль)
+    qualifier_rooms: dict[int, dict[str, str]] = field(default_factory=dict)  # {match_index: {"id": "123", "password": "abc"}}
+    semifinal_rooms: dict[int, dict[str, str]] = field(default_factory=dict)  # {match_index: {"id": "123", "password": "abc"}}
+    final_room: dict[str, str] = field(default_factory=dict)  # {"id": "123", "password": "abc"}
     winner_team_index: int | None = None
     final_pending_winner: int | None = None  # Pending confirmation
 
@@ -684,6 +689,9 @@ class Tournament:
             "semifinal_matches": [list(m) for m in self.semifinal_matches],
             "semifinal_winners": self.semifinal_winners,
             "final_teams": self.final_teams,
+            "qualifier_rooms": self.qualifier_rooms,
+            "semifinal_rooms": self.semifinal_rooms,
+            "final_room": self.final_room,
             "winner_team_index": self.winner_team_index,
         }
 
@@ -723,6 +731,9 @@ class Tournament:
             ],
             semifinal_winners=data.get("semifinal_winners", []),
             final_teams=data.get("final_teams", []),
+            qualifier_rooms=data.get("qualifier_rooms", {}),
+            semifinal_rooms=data.get("semifinal_rooms", {}),
+            final_room=data.get("final_room", {}),
             winner_team_index=data.get("winner_team_index"),
         )
         return t

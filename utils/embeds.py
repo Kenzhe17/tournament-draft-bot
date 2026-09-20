@@ -433,9 +433,15 @@ async def build_qualifiers_embed(
         avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
         avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
+        # Get room info
+        room_data = tournament.qualifier_rooms.get(i, {})
+        room_info = ""
+        if room_data:
+            room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+
         embed.add_field(
             name=f"🔥 Отбор #{i + 1}",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
             inline=False,
         )
 
@@ -470,9 +476,15 @@ async def build_semifinals_embed(
         avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
         avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
+        # Get room info
+        room_data = tournament.semifinal_rooms.get(i, {})
+        room_info = ""
+        if room_data:
+            room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+
         embed.add_field(
             name=f"🔥 Игра #{i + 1}",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
             inline=False,
         )
 
@@ -504,13 +516,19 @@ async def build_final_embed(
     avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
     avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
+    # Get room info
+    room_data = tournament.final_room
+    room_info = ""
+    if room_data:
+        room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         color=discord.Color.gold(),  # Золотой для финала
     )
     embed.add_field(
         name="⚡ Главная битва турнира",
-        value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+        value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
         inline=False
     )
 
