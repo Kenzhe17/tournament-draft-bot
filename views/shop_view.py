@@ -41,12 +41,14 @@ class ShopCategoryButton(discord.ui.Button):
         view = discord.ui.View()
         view.add_item(ShopBackButton())
 
-        # Добавить кнопки для каждого товара
-        for item in items:
+        # Добавить кнопки для каждого товара (по 2 в ряд для мобильных)
+        for i, item in enumerate(items):
             # Показывать значок/тег вместо названия
             display_name = item.value if item.value else item.name
             label = f"{display_name} - {item.price} 🪙"
-            view.add_item(ShopBuyButton(item.id, label))
+            button = ShopBuyButton(item.id, label)
+            button.row = (i // 2) + 1  # По 2 кнопки в ряд
+            view.add_item(button)
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -73,12 +75,6 @@ class ShopBackButton(discord.ui.Button):
             title="🛒 Магазин",
             description=f"Ваш баланс: {balance} 🪙",
             color=discord.Color.gold()
-        )
-
-        embed.add_field(
-            name="📖 Как купить",
-            value="Выберите категорию ниже, затем используйте `/buy <item_id>` для покупки.",
-            inline=False
         )
 
         view = ShopMainView()

@@ -1,4 +1,4 @@
-﻿"""Slash-команды турнира."""
+"""Slash-команды турнира."""
 
 from __future__ import annotations
 
@@ -263,7 +263,7 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
-        """Показать магазин косметики."""
+        """Показать магазин."""
         from storage.user_balance_store import user_balance_store
         from views.shop_view import ShopMainView
 
