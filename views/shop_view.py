@@ -70,7 +70,7 @@ class ShopBackButton(discord.ui.Button):
 
         # Создать главное меню
         embed = discord.Embed(
-            title="🛒 Магазин косметики",
+            title="🛒 Магазин",
             description=f"Ваш баланс: {balance} 🪙",
             color=discord.Color.gold()
         )

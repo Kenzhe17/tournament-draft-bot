@@ -261,7 +261,7 @@ class TournamentCog(commands.Cog):
         # Начисляем монеты
         await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 5)
 
-    @app_commands.command(name="shop", description="Магазин косметики")
+    @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин косметики."""
         from storage.user_balance_store import user_balance_store
@@ -282,7 +282,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="inventory", description="Ваш инвентарь косметики")
+    @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь косметики."""
         from storage.shop_store import inventory_store, shop_store
