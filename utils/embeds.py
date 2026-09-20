@@ -381,6 +381,8 @@ async def build_draft_embed(
                 value=f"**➡️ <@{captain_user_id}>**",
                 inline=False,
             )
+            # Добавить @mention в описание для уведомления
+            embed.description = f"<@{captain_user_id}> - ваша очередь выбирать!"
 
     # Warning if more than 25 players available
     key = str(tournament.current_circle)
