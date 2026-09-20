@@ -374,11 +374,13 @@ async def build_draft_embed(
     picker_pos = tournament.current_picker_position()
     if picker_pos is not None:
         captain_name = tournament.captains[picker_pos]
-        embed.add_field(
-            name="👤 Сейчас выбирает",
-            value=captain_name,
-            inline=False,
-        )
+        captain_user_id = tournament.player_user_ids.get(captain_name, 0)
+        if captain_user_id:
+            embed.add_field(
+                name="👤 Сейчас выбирает",
+                value=f"**➡️ <@{captain_user_id}>**",
+                inline=False,
+            )
 
     # Warning if more than 25 players available
     key = str(tournament.current_circle)
@@ -611,9 +613,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
         else:
             rank_emoji = f"{rank}."
 
-        # Format name with cosmetics
+        # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
-        line = f"{rank_emoji} **{formatted_name}** — {int(player.elo)} ELO"
+        line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
         lines.append(line)
     
     embed.description = "\n".join(lines)
