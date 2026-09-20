@@ -11,7 +11,7 @@ class Record:
     record_type: str  # Тип рекорда (например: "max_kills", "most_coins")
     player_name: str  # Имя игрока
     user_id: int  # ID игрока
-    value: int  # Значение рекорда
+    value: float  # Значение рекорда (float для K/D и WinRate)
     guild_id: int  # ID сервера
     timestamp: str  # Время установления рекорда (ISO format)
 
@@ -33,7 +33,7 @@ class Record:
             record_type=data.get("record_type", ""),
             player_name=data.get("player_name", ""),
             user_id=data.get("user_id", 0),
-            value=data.get("value", 0),
+            value=float(data.get("value", 0)),
             guild_id=data.get("guild_id", 0),
             timestamp=data.get("timestamp", ""),
         )

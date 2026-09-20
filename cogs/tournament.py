@@ -573,9 +573,18 @@ class TournamentCog(commands.Cog):
             if records:
                 latest = records[-1]  # Most recent
                 date_str = latest.timestamp.split("T")[0] if "T" in latest.timestamp else latest.timestamp
+
+                # Format value based on record type
+                if record_type == "kd_ratio":
+                    formatted_value = f"{latest.value:.2f}"
+                elif record_type == "win_rate":
+                    formatted_value = f"{latest.value:.1f}%"
+                else:
+                    formatted_value = str(int(latest.value))
+
                 embed.add_field(
                     name=title,
-                    value=f"{latest.player_name} — {latest.value}\n📅 {date_str}",
+                    value=f"{latest.player_name} — {formatted_value}\n📅 {date_str}",
                     inline=False
                 )
 
