@@ -348,6 +348,10 @@ def update_player_stats_from_match(
     # Update best win streak
     if stats.current_streak > stats.best_win_streak:
         stats.best_win_streak = stats.current_streak
+
+    # Check for win streak bonus (3 wins = +50 coins)
+    if stats.current_streak >= 3 and stats.current_streak % 3 == 0:
+        stats.streak_bonus_coins = getattr(stats, 'streak_bonus_coins', 0) + 50
     
     # Update total ELO change
     stats.total_elo_change += elo_change

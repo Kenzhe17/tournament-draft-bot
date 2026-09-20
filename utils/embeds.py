@@ -57,7 +57,7 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
 
     embed = discord.Embed(
         title=f"📊 Статистика {user.display_name}",
-        color=discord.Color.blue()
+        color=discord.Color.dark_blue()
     )
     embed.set_thumbnail(url=user.display_avatar.url)
 
@@ -254,8 +254,8 @@ async def build_setup_embed(
     status_emoji = "🔓" if tournament.registration == RegistrationState.OPEN else "🔒"
     formation_text = "🎯 ELO" if tournament.formation_mode == FormationMode.ELO else "✋ Ручной" if tournament.formation_mode == FormationMode.MANUAL else "🎲 Случайный"
     embed = discord.Embed(
-        title=f"🏆 Турнир ({tournament.size.value} игроков) {status_emoji} | {formation_text}",
-        color=discord.Color.red(),  # Красный для настроек
+        title=f"🏆 {tournament.size.value} | {status_emoji} | {formation_text}",
+        color=discord.Color.dark_red(),
     )
 
     # Build ELO dictionary for all registered players
@@ -336,7 +336,7 @@ async def build_draft_embed(
     """Embed во время драфта."""
     embed = discord.Embed(
         title="⚔️ Порядок капитанов",
-        color=discord.Color.blue(),
+        color=discord.Color.dark_blue(),
     )
 
     # Порядок капитанов (show the shuffled order)
@@ -401,7 +401,7 @@ async def build_teams_embed(
     # since we skip the TEAMS phase now
     embed = discord.Embed(
         title="🏆 Сформированные Команды",
-        color=discord.Color.green(),
+        color=discord.Color.dark_green(),
     )
     await _add_teams_block_to_embed(embed, guild, tournament)
     return embed
@@ -413,7 +413,7 @@ async def build_qualifiers_embed(
     """Embed отборочных матчей."""
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ОТБОР",
-        color=discord.Color.dark_magenta(),  # Бронзовый для отборочных
+        color=discord.Color.dark_purple(),  # Тёмно-фиолетовый для отборочных
     )
 
     for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
