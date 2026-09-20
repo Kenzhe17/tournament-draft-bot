@@ -445,12 +445,12 @@ async def build_qualifiers_embed(
             )
             embed.add_field(
                 name="ID комнаты",
-                value=f"`{room_data['id']}`",
+                value=room_data['id'],
                 inline=True
             )
             embed.add_field(
                 name="Пароль",
-                value=f"`{room_data['password']}`",
+                value=room_data['password'],
                 inline=True
             )
         else:
@@ -503,12 +503,12 @@ async def build_semifinals_embed(
             )
             embed.add_field(
                 name="ID комнаты",
-                value=f"`{room_data['id']}`",
+                value=room_data['id'],
                 inline=True
             )
             embed.add_field(
                 name="Пароль",
-                value=f"`{room_data['password']}`",
+                value=room_data['password'],
                 inline=True
             )
         else:
@@ -561,12 +561,12 @@ async def build_final_embed(
         )
         embed.add_field(
             name="ID комнаты",
-            value=f"`{room_data['id']}`",
+            value=room_data['id'],
             inline=True
         )
         embed.add_field(
             name="Пароль",
-            value=f"`{room_data['password']}`",
+            value=room_data['password'],
             inline=True
         )
     else:

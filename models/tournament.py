@@ -168,7 +168,7 @@ class Tournament:
     temp_match_stats: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
     # Betting system
-    betting_open: bool = True
+    betting_open: bool = False
     # Store bets temporarily in tournament (persisted in database)
     # Format: match_id -> list of Bet objects
 
