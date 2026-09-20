@@ -51,7 +51,7 @@ class ShopCategoryButton(discord.ui.Button):
             # Не используем row для простоты
             view.add_item(button)
 
-        await interaction.followup.send(embed=embed, view=view)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
 class ShopBackButton(discord.ui.Button):
