@@ -21,13 +21,14 @@ class ShopCategoryButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать товары категории."""
+        await interaction.response.defer(ephemeral=True)
+
         # Получить товары категории
         items = shop_store.get_items_by_category(self.category)
 
         if not items:
-            await interaction.response.send_message(
-                "❌ Нет товаров в этой категории.",
-                ephemeral=True
+            await interaction.followup.send(
+                "❌ Нет товаров в этой категории."
             )
             return
 
@@ -50,7 +51,7 @@ class ShopCategoryButton(discord.ui.Button):
             button.row = (i // 2) + 1  # По 2 кнопки в ряд
             view.add_item(button)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view)
 
 
 class ShopBackButton(discord.ui.Button):
@@ -73,7 +74,7 @@ class ShopBackButton(discord.ui.Button):
         # Создать главное меню
         embed = discord.Embed(
             title="🛒 Магазин",
-            description=f"Ваш баланс: {balance} 🪙",
+            description=f"💰 {balance} 🪙",
             color=discord.Color.gold()
         )
 
