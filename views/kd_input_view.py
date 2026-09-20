@@ -106,7 +106,7 @@ class ProcessMatchButton(discord.ui.Button):
         self.match_info['temp_kd_data'] = tournament.temp_kd_data
 
         # Process the match result with new rating system
-        await process_match_result(self.guild_id, tournament, self.match_info)
+        await process_match_result(self.guild_id, tournament, self.match_info, interaction)
 
         # Update the tournament message
         from bot import TournamentBot
@@ -119,7 +119,7 @@ class ProcessMatchButton(discord.ui.Button):
         )
 
 
-async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict) -> None:
+async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict, interaction: discord.Interaction = None) -> None:
     """Process match result with balanced rating system (only stats, no winner setting)."""
     from storage.player_stats_store import player_stats_store
     from utils.rating_calculator import (

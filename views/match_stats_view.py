@@ -591,7 +591,7 @@ class AdminConfirmView(View):
                 "team1_index": self.team_a_index,
                 "team2_index": self.team_b_index,
                 "temp_kd_data": temp_stats
-            })
+            }, interaction)
 
             # Store tournament after stats are processed
             store.set(tournament)
