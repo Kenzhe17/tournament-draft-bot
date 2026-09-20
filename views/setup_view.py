@@ -546,14 +546,17 @@ class StartTournamentButton(discord.ui.Button):
             )
 
 
-class OpenRegistrationButton(discord.ui.Button):
-    """Кнопка для открытия регистрации."""
+class ToggleRegistrationButton(discord.ui.Button):
+    """Кнопка для переключения регистрации (открыть/закрыть)."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, is_open: bool):
+        self.is_open = is_open
+        label = "🔒 Закрыть" if is_open else "🔓 Открыть"
+        style = discord.ButtonStyle.danger if is_open else discord.ButtonStyle.primary
         super().__init__(
-            style=discord.ButtonStyle.primary,
-            label="🔓 Открыть",
-            custom_id=f"open_registration:{guild_id}",
+            style=style,
+            label=label,
+            custom_id=f"toggle_registration:{guild_id}",
         )
         self.guild_id = guild_id
 
@@ -561,7 +564,7 @@ class OpenRegistrationButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                "❌ Только организаторы (роль 'org') могут открывать регистрацию.",
+                "❌ Только организаторы (роль 'org') могут менять регистрацию.",
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -576,56 +579,17 @@ class OpenRegistrationButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        tournament.registration = RegistrationState.OPEN
+        # Переключить состояние
+        new_state = RegistrationState.CLOSED if tournament.registration == RegistrationState.OPEN else RegistrationState.OPEN
+        tournament.registration = new_state
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
+        action = "закрыта" if new_state == RegistrationState.CLOSED else "открыта"
         await interaction.response.send_message(
-            "🔓 Регистрация открыта! Игроки могут добавляться через кнопки.",
-            ephemeral=True
-        )
-
-
-class CloseRegistrationButton(discord.ui.Button):
-    """Кнопка для закрытия регистрации."""
-
-    def __init__(self, guild_id: int):
-        super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="🔒 Закрыть",
-            custom_id=f"close_registration:{guild_id}",
-        )
-        self.guild_id = guild_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "❌ Только организаторы (роль 'org') могут закрывать регистрацию.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Нет активного турнира.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        tournament.registration = RegistrationState.CLOSED
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        await interaction.response.send_message(
-            "🔒 Регистрация закрыта. Только админ может добавлять игроков.",
+            f"🔒 Регистрация {action}!",
             ephemeral=True
         )
 
@@ -662,15 +626,12 @@ class SetupView(discord.ui.View):
                 auto_distribute_button = AutoDistributeButton(tournament.guild_id)
                 self.add_item(auto_distribute_button)
 
-        # Add management buttons (Start, Open, Close)
+        # Add management buttons (Start, Toggle Registration)
         start_button = StartTournamentButton(tournament.guild_id)
         self.add_item(start_button)
 
-        open_button = OpenRegistrationButton(tournament.guild_id)
-        self.add_item(open_button)
-
-        close_button = CloseRegistrationButton(tournament.guild_id)
-        self.add_item(close_button)
+        toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
+        self.add_item(toggle_button)
 
         # Add exit button
         exit_button = ExitButton(tournament.guild_id)
