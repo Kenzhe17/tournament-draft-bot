@@ -437,13 +437,28 @@ async def build_qualifiers_embed(
         room_data = tournament.qualifier_rooms.get(i, {})
         room_info = ""
         if room_data:
-            room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
-
-        embed.add_field(
-            name=f"🔥 Отбор #{i + 1}",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
-            inline=False,
-        )
+            # Add separate fields for ID and password for easy copying
+            embed.add_field(
+                name=f"🔥 Отбор #{i + 1}",
+                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+                inline=False,
+            )
+            embed.add_field(
+                name="ID комнаты",
+                value=f"`{room_data['id']}`",
+                inline=True
+            )
+            embed.add_field(
+                name="Пароль",
+                value=f"`{room_data['password']}`",
+                inline=True
+            )
+        else:
+            embed.add_field(
+                name=f"🔥 Отбор #{i + 1}",
+                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+                inline=False,
+            )
 
     # Добавляем отображение команд снизу под отборочными
     await _add_teams_block_to_embed(embed, guild, tournament)
@@ -480,13 +495,28 @@ async def build_semifinals_embed(
         room_data = tournament.semifinal_rooms.get(i, {})
         room_info = ""
         if room_data:
-            room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
-
-        embed.add_field(
-            name=f"🔥 Игра #{i + 1}",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
-            inline=False,
-        )
+            # Add separate fields for ID and password for easy copying
+            embed.add_field(
+                name=f"🔥 Игра #{i + 1}",
+                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+                inline=False,
+            )
+            embed.add_field(
+                name="ID комнаты",
+                value=f"`{room_data['id']}`",
+                inline=True
+            )
+            embed.add_field(
+                name="Пароль",
+                value=f"`{room_data['password']}`",
+                inline=True
+            )
+        else:
+            embed.add_field(
+                name=f"🔥 Игра #{i + 1}",
+                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+                inline=False,
+            )
 
     # Добавляем отображение команд снизу под полуфиналами
     await _add_teams_block_to_embed(embed, guild, tournament)
@@ -518,19 +548,37 @@ async def build_final_embed(
 
     # Get room info
     room_data = tournament.final_room
-    room_info = ""
     if room_data:
-        room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
-
-    embed = discord.Embed(
-        title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
-        color=discord.Color.gold(),  # Золотой для финала
-    )
-    embed.add_field(
-        name="⚡ Главная битва турнира",
-        value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**{room_info}",
-        inline=False
-    )
+        # Add separate fields for ID and password for easy copying
+        embed = discord.Embed(
+            title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
+            color=discord.Color.gold(),  # Золотой для финала
+        )
+        embed.add_field(
+            name="⚡ Главная битва турнира",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+            inline=False
+        )
+        embed.add_field(
+            name="ID комнаты",
+            value=f"`{room_data['id']}`",
+            inline=True
+        )
+        embed.add_field(
+            name="Пароль",
+            value=f"`{room_data['password']}`",
+            inline=True
+        )
+    else:
+        embed = discord.Embed(
+            title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
+            color=discord.Color.gold(),  # Золотой для финала
+        )
+        embed.add_field(
+            name="⚡ Главная битва турнира",
+            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
+            inline=False
+        )
 
     # Добавляем отображение команд снизу под финалом
     await _add_teams_block_to_embed(embed, guild, tournament)

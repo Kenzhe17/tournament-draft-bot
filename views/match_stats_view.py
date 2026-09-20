@@ -560,16 +560,19 @@ class AdminConfirmView(View):
         return embed
 
     async def confirm_callback(self, interaction: discord.Interaction) -> None:
+        import logging
         from storage.json_store import store
         from views.kd_input_view import process_match_result
         from storage.player_stats_store import player_stats_store
         from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             tournament = store.get(self.guild_id)
             if not tournament:
-                await interaction.response.send_message("❌ Турнир не найден.", ephemeral=True)
+                await interaction.followup.send("❌ Турнир не найден.")
                 return
 
             match_id = f"{self.match_type}_{self.match_index}"
@@ -577,7 +580,7 @@ class AdminConfirmView(View):
 
             winning_team_index = self._get_winning_team_index()
             if winning_team_index is None:
-                await interaction.response.send_message("❌ Победитель не выбран.", ephemeral=True)
+                await interaction.followup.send("❌ Победитель не выбран.")
                 return
 
             # Process the match with statistics (this applies ELO and stats immediately)
@@ -607,7 +610,7 @@ class AdminConfirmView(View):
             # Проверка на None для финала
             if winning_team_index is None:
                 logging.error(f"Winning team index is None for match_type={self.match_type}")
-                await interaction.response.send_message("❌ Ошибка: победитель не выбран.", ephemeral=True)
+                await interaction.followup.send("❌ Ошибка: победитель не выбран.")
                 return
 
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
@@ -692,11 +695,11 @@ class AdminConfirmView(View):
                 import logging
                 logging.error(f"Error updating tournament message: {e}", exc_info=True)
 
-            await interaction.response.send_message("✅ Статистика сохранена и победитель подтверждён!", ephemeral=True)
+            await interaction.followup.send("✅ Статистика сохранена и победитель подтверждён!")
         except Exception as e:
             import logging
             logging.error(f"Error in confirm_callback: {e}", exc_info=True)
-            await interaction.response.send_message("❌ Произошла ошибка при подтверждении.", ephemeral=True)
+            await interaction.followup.send("❌ Произошла ошибка при подтверждении.")
 
     async def edit_callback(self, interaction: discord.Interaction) -> None:
         # Show team selection again for editing
