@@ -437,7 +437,7 @@ async def build_qualifiers_embed(
         room_data = tournament.qualifier_rooms.get(i, {})
         room_info = ""
         if room_data:
-            room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+            room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
 
         embed.add_field(
             name=f"🔥 Отбор #{i + 1}",
@@ -480,7 +480,7 @@ async def build_semifinals_embed(
         room_data = tournament.semifinal_rooms.get(i, {})
         room_info = ""
         if room_data:
-            room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+            room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
 
         embed.add_field(
             name=f"🔥 Игра #{i + 1}",
@@ -520,7 +520,7 @@ async def build_final_embed(
     room_data = tournament.final_room
     room_info = ""
     if room_data:
-        room_info = f"\n🏠 ID: {room_data['id']} | 🔑 Пароль: {room_data['password']}"
+        room_info = f"\nID: `{room_data['id']}` | Пароль: `{room_data['password']}`"
 
     embed = discord.Embed(
         title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",

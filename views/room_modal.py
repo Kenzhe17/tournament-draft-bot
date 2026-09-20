@@ -19,7 +19,7 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
 
     room_password = discord.ui.TextInput(
         label="Пароль",
-        placeholder="abc123",
+        placeholder="123",
         required=True,
         max_length=20
     )

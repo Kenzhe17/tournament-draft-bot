@@ -519,19 +519,17 @@ class QualifiersView(discord.ui.View):
         from views.match_stats_view import AdminFillButton
         self.add_item(AdminFillButton(guild_id, tournament))
 
-        # Add room buttons for each match
+        # Add room buttons for each match (always visible for editing)
         for i, (team_a, team_b) in enumerate(matches):
-            # Check if room is already filled
-            if i not in tournament.qualifier_rooms:
-                # Get team names
-                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                name_a = tournament.team_names.get(team_a, captain_a)
-                name_b = tournament.team_names.get(team_b, captain_b)
+            # Get team names
+            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+            name_a = tournament.team_names.get(team_a, captain_a)
+            name_b = tournament.team_names.get(team_b, captain_b)
 
-                self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b))
+            self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
 
         # Add admin rooms button
         self.add_item(AdminRoomsButton(guild_id))
@@ -583,19 +581,17 @@ class SemifinalsView(discord.ui.View):
         from views.match_stats_view import AdminFillButton
         self.add_item(AdminFillButton(guild_id, tournament))
 
-        # Add room buttons for each match
+        # Add room buttons for each match (always visible for editing)
         for i, (team_a, team_b) in enumerate(matches):
-            # Check if room is already filled
-            if i not in tournament.semifinal_rooms:
-                # Get team names
-                team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-                team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-                captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-                captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-                name_a = tournament.team_names.get(team_a, captain_a)
-                name_b = tournament.team_names.get(team_b, captain_b)
+            # Get team names
+            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+            name_a = tournament.team_names.get(team_a, captain_a)
+            name_b = tournament.team_names.get(team_b, captain_b)
 
-                self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b))
+            self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
 
         # Add admin rooms button
         self.add_item(AdminRoomsButton(guild_id))
