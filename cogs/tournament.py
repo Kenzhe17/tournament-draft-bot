@@ -684,6 +684,10 @@ class TournamentCog(commands.Cog):
 
         for record_type, record_holder, emoji in record_checks:
             if record_holder:
+                # Skip record check if player has less than 20 games (except max_kills and best_win_streak)
+                if record_type not in ["max_kills", "best_win_streak"] and record_holder.games_played < 20:
+                    continue
+
                 # Map record_type to actual PlayerStats fields or computed values
                 record_names = {
                     "max_kills": "убийствам",
@@ -731,6 +735,35 @@ class TournamentCog(commands.Cog):
 
                         record_name = record_names.get(record_type, "")
 
+                        # Get current date
+                        from datetime import datetime
+                        current_date = datetime.now().strftime("%d.%m.%Y")
+
+                        # Variadic messages by record type
+                        if record_type == "max_kills":
+                            message = f"🎯 СНАЙПЕР В ЗДАНИИ!\n"
+                            message += f"<@{record_holder.user_id}> разносит врагов!\n"
+                            message += f"🔥 {formatted_value} убийств - новый рекорд!"
+                        elif record_type == "best_win_streak":
+                            message = f"🔥 СЕРИЯ ПОБЕД НЕ ОСТАНОВИТЬ!\n"
+                            message += f"<@{record_holder.user_id}> не может проигрывать!\n"
+                            message += f"🏆 {formatted_value} побед подряд - невероятно!"
+                        elif record_type == "avg_kills":
+                            message = f"🎯 МАШИНА УБИЙСТВ!\n"
+                            message += f"<@{record_holder.user_id}> показывает мастер-класс!\n"
+                            message += f"📊 AVG: {formatted_value} - топ уровня!"
+                        elif record_type == "kd_ratio":
+                            message = f"⚔️ БОГ ВАРГА!\n"
+                            message += f"<@{record_holder.user_id}> неуязвим!\n"
+                            message += f"💀 K/D {formatted_value} - демиург статистики!"
+                        elif record_type == "win_rate":
+                            message = f"🏆 МАШИНА ПОБЕД!\n"
+                            message += f"<@{record_holder.user_id}> не проигрывает!\n"
+                            message += f"🎊 WinRate {formatted_value} - машина славы!"
+                        else:
+                            message = f"🎉 <@{record_holder.user_id}> побил исторический рекорд по {record_name}!\n"
+                            message += f"{emoji} Новый исторический рекорд: {formatted_value}!"
+
                         if old_record:
                             # Format old value similarly
                             if record_type == "kd_ratio":
@@ -742,15 +775,13 @@ class TournamentCog(commands.Cog):
                             else:
                                 formatted_old = str(old_record.value)
 
-                            await channel.send(
-                                f"🎉 <@{record_holder.user_id}> побил исторический рекорд <@{old_record.user_id}> ({formatted_old}) по {record_name}!\n"
-                                f"{emoji} Новый исторический рекорд: {formatted_value}!"
-                            )
+                            message += f"\n\n💀 Побит рекорд: <@{old_record.user_id}> ({formatted_old})"
+                            message += f"\n📅 Дата: {current_date}"
                         else:
-                            await channel.send(
-                                f"🎉 <@{record_holder.user_id}> установил первый исторический рекорд по {record_name}!\n"
-                                f"{emoji} Рекорд: {formatted_value}!"
-                            )
+                            message += f"\n\n🌟 Первый исторический рекорд!"
+                            message += f"\n📅 Дата: {current_date}"
+
+                        await channel.send(message)
 
         # New records: Most coins and Best bettor
         from storage.user_balance_store import user_balance_store
