@@ -496,6 +496,41 @@ class TournamentCog(commands.Cog):
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
+    @app_commands.command(name="setbio", description="Установить описание профиля")
+    @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
+    async def setbio(self, interaction: discord.Interaction, bio: str) -> None:
+        """Установить описание профиля."""
+        # Ограничение длины
+        if len(bio) > 100:
+            await interaction.response.send_message(
+                "❌ Описание должно быть не более 100 символов.",
+                ephemeral=True
+            )
+            return
+
+        from storage.player_stats_store import player_stats_store
+        from models.player_stats import PlayerStats
+
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+        if not stats:
+            # Create default stats for new players
+            stats = PlayerStats(
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                name=interaction.user.display_name,
+                bio=bio
+            )
+        else:
+            stats.bio = bio
+
+        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+
+        await interaction.response.send_message(
+            f"✅ Описание профиля обновлено: {bio}",
+            ephemeral=True
+        )
+
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
     @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
     async def profile(
@@ -527,6 +562,11 @@ class TournamentCog(commands.Cog):
             title=f"📊 Профиль: {formatted_name}",
             color=discord.Color.blue(),
         )
+
+        # Показать био если есть
+        if stats.bio:
+            embed.description = f"📝 {stats.bio}"
+
         embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
@@ -560,6 +600,7 @@ class TournamentCog(commands.Cog):
         most_finals = max(all_players, key=lambda p: p.finals)
         highest_elo = max(all_players, key=lambda p: p.elo)
         most_games = max(all_players, key=lambda p: p.games)
+        best_match_kills = max(all_players, key=lambda p: p.best_match_kills)  # Убрано ограничение 20 игр
 
         # Records only for players with 20+ matches
         players_20_plus = [p for p in all_players if p.games >= 20]
@@ -567,6 +608,28 @@ class TournamentCog(commands.Cog):
         highest_winrate = max(players_20_plus, key=lambda p: p.win_rate) if players_20_plus else None
         best_avg_kills_20 = max(players_20_plus, key=lambda p: p.avg_kills) if players_20_plus else None
         best_win_streak_20 = max(players_20_plus, key=lambda p: p.best_win_streak) if players_20_plus else None
+
+        # New records: Most coins and Best bettor
+        from storage.user_balance_store import user_balance_store
+        from storage.betting_stats_store import betting_stats_store
+
+        # Get all user balances
+        richest_player = None
+        max_balance = 0
+        for player in all_players:
+            balance = await user_balance_store.get_balance(interaction.guild_id, player.user_id)
+            if balance > max_balance:
+                max_balance = balance
+                richest_player = player
+
+        # Get best bettor (max single win)
+        best_bettor = None
+        max_single_win = 0
+        for player in all_players:
+            bet_stats = await betting_stats_store.get(interaction.guild_id, player.user_id)
+            if bet_stats and bet_stats.best_win > max_single_win:
+                max_single_win = bet_stats.best_win
+                best_bettor = player
         best_loss_streak_20 = max(players_20_plus, key=lambda p: p.best_loss_streak) if players_20_plus else None
         best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
 
@@ -581,10 +644,10 @@ class TournamentCog(commands.Cog):
                 value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
                 inline=False
             )
-        if best_match_kills_20:
+        if best_match_kills:
             embed.add_field(
-                name="🔥 Наибольшее количество киллов за матч (20 игр)",
-                value=f"{best_match_kills_20.name} — {best_match_kills_20.best_match_kills}",
+                name="🔥 Наибольшее количество киллов за матч",
+                value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
                 inline=False
             )
         embed.add_field(
@@ -608,6 +671,18 @@ class TournamentCog(commands.Cog):
             embed.add_field(
                 name="🔥 Лучшая серия побед (20 игр)",
                 value=f"{best_win_streak_20.name} — {best_win_streak_20.best_win_streak} подряд",
+                inline=False
+            )
+        if richest_player:
+            embed.add_field(
+                name="💰 Богатейший игрок",
+                value=f"{richest_player.name} — {max_balance} 🪙",
+                inline=False
+            )
+        if best_bettor:
+            embed.add_field(
+                name="🎲 Лучший беттор",
+                value=f"{best_bettor.name} — {max_single_win} 🪙 (за ставку)",
                 inline=False
             )
         if best_loss_streak_20:

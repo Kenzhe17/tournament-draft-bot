@@ -148,8 +148,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
             value="[PRO]",
-            category="tags",
-            ansi_color="\u001b[1;32m"  # green
+            category="tags"
         ),
         ShopItem(
             id="tag_sweet",
@@ -159,8 +158,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
             value="[SWEET]",
-            category="tags",
-            ansi_color="\u001b[1;35m"  # pink
+            category="tags"
         ),
         ShopItem(
             id="tag_vip",
@@ -170,8 +168,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.BASIC,
             value="[VIP]",
-            category="tags",
-            ansi_color="\u001b[1;36m"  # cyan
+            category="tags"
         ),
         # (1 000 монет)
         ShopItem(
@@ -182,8 +179,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
             value="[MVP]",
-            category="tags",
-            ansi_color="\u001b[1;34m"  # blue
+            category="tags"
         ),
         ShopItem(
             id="tag_king",
@@ -193,8 +189,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
             value="[KING]",
-            category="tags",
-            ansi_color="\u001b[1;33m"  # yellow
+            category="tags"
         ),
         ShopItem(
             id="tag_boss",
@@ -204,8 +199,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
             value="[BOSS]",
-            category="tags",
-            ansi_color="\u001b[1;31m"  # red
+            category="tags"
         ),
         # (2 250 монет)
         ShopItem(
@@ -216,8 +210,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
             value="[GOD]",
-            category="tags",
-            ansi_color="\u001b[1;31m"  # red
+            category="tags"
         ),
         ShopItem(
             id="tag_sex",
@@ -227,8 +220,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
             value="[SEX]",
-            category="tags",
-            ansi_color="\u001b[1;35m"  # pink
+            category="tags"
         ),
         ShopItem(
             id="tag_legend",
@@ -238,8 +230,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
             value="[LEGEND]",
-            category="tags",
-            ansi_color="\u001b[1;33m"  # yellow
+            category="tags"
         ),
         # (3 750 монет)
         ShopItem(
@@ -250,8 +241,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
             value="[404]",
-            category="tags",
-            ansi_color="\u001b[1;30m"  # gray
+            category="tags"
         ),
         ShopItem(
             id="tag_xxx",
@@ -261,8 +251,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
             value="[XXX]",
-            category="tags",
-            ansi_color="\u001b[1;31m"  # red
+            category="tags"
         ),
         ShopItem(
             id="tag_ego",
@@ -272,8 +261,7 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
             value="[EGO]",
-            category="tags",
-            ansi_color="\u001b[1;36m"  # cyan
+            category="tags"
         ),
     ]
 

@@ -18,6 +18,7 @@ class PlayerStats:
     current_streak: int = 0
     best_win_streak: int = 0
     best_loss_streak: int = 0
+    bio: str = ""  # Короткое описание профиля
 
     # New fields for detailed rating system
     total_kills: int = 0
@@ -45,6 +46,7 @@ class PlayerStats:
             "current_streak": self.current_streak,
             "best_win_streak": self.best_win_streak,
             "best_loss_streak": self.best_loss_streak,
+            "bio": self.bio,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
             "best_match_kills": self.best_match_kills,
@@ -66,6 +68,7 @@ class PlayerStats:
             current_streak=data.get("current_streak", 0),
             best_win_streak=data.get("best_win_streak", 0),
             best_loss_streak=data.get("best_loss_streak", 0),
+            bio=data.get("bio", ""),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
             best_match_kills=data.get("best_match_kills", 0),

@@ -207,6 +207,34 @@ def calculate_catch_up_bonus(current_elo: int, avg_server_elo: float) -> int:
     return 0
 
 
+def calculate_lobby_deviation_multiplier(player_elo: int, lobby_avg_elo: float) -> float:
+    """
+    Calculate ELO multiplier based on deviation from lobby average.
+
+    Protects weaker players from farming by strong players.
+
+    Args:
+        player_elo: Current player ELO
+        lobby_avg_elo: Average ELO of all players in the lobby
+
+    Returns:
+        Multiplier (1.0 = normal, <1.0 = reduced gain for high elo, >1.0 = boosted gain for low elo)
+    """
+    if lobby_avg_elo == 0:
+        return 1.0
+
+    deviation = (player_elo - lobby_avg_elo) / lobby_avg_elo
+
+    if deviation > 0:
+        # Player is above average - reduce gain
+        multiplier = 1.0 - deviation
+        return max(0.5, multiplier)  # Minimum 50% gain
+    else:
+        # Player is below average - boost gain
+        multiplier = 1.0 + abs(deviation)
+        return min(1.5, multiplier)  # Maximum 150% gain
+
+
 def calculate_balanced_elo_change(
     position: int,
     team_won: bool,
@@ -215,7 +243,8 @@ def calculate_balanced_elo_change(
     current_elo: int = 1000,
     avg_kills: float = 0.0,
     avg_deaths: float = 0.0,
-    avg_server_elo: float = 0.0
+    avg_server_elo: float = 0.0,
+    lobby_avg_elo: float = 0.0
 ) -> int:
     """
     Calculate balanced ELO change with multipliers and bonuses for weak players.
@@ -229,6 +258,7 @@ def calculate_balanced_elo_change(
         avg_kills: Player's average kills per game (default 0)
         avg_deaths: Player's average deaths per game (default 0)
         avg_server_elo: Average ELO of all players on server (default 0)
+        lobby_avg_elo: Average ELO of all players in the lobby (default 0)
 
     Returns:
         Total balanced ELO change
@@ -241,6 +271,10 @@ def calculate_balanced_elo_change(
     # Apply ELO multiplier (boost weak players, reduce top players)
     elo_multiplier = get_elo_multiplier(current_elo)
     adjusted_change = int(total_base * elo_multiplier)
+
+    # Apply lobby deviation multiplier (prevent farming on weaker players)
+    lobby_multiplier = calculate_lobby_deviation_multiplier(current_elo, lobby_avg_elo)
+    adjusted_change = int(adjusted_change * lobby_multiplier)
 
     # Apply loss reduction for weak players
     if adjusted_change < 0:

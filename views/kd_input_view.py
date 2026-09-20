@@ -140,6 +140,21 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     # Get server average ELO for catch-up mechanic
     avg_server_elo = await get_server_average_elo(guild_id)
 
+    # Calculate lobby average ELO for deviation multiplier
+    lobby_elo_sum = 0
+    lobby_player_count = 0
+    for team_index in [team1_index, team2_index]:
+        team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+        for circle in range(1, 5):
+            player_name = team_data.get(f"circle{circle}", "")
+            if player_name and player_name in tournament.player_user_ids:
+                stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
+                if stats:
+                    lobby_elo_sum += stats.elo
+                    lobby_player_count += 1
+
+    lobby_avg_elo = lobby_elo_sum / lobby_player_count if lobby_player_count > 0 else 0.0
+
     # Process each team
     for team_index in [team1_index, team2_index]:
         team_won = (team_index == winning_team_index)
@@ -196,7 +211,8 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 current_elo=current_elo,
                 avg_kills=avg_kills,
                 avg_deaths=avg_deaths,
-                avg_server_elo=avg_server_elo
+                avg_server_elo=avg_server_elo,
+                lobby_avg_elo=lobby_avg_elo
             )
 
             # Update stats
