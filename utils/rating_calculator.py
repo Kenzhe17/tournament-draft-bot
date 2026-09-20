@@ -2,6 +2,8 @@
 
 from typing import List, Tuple
 from models.player_stats import PlayerStats
+from models.records import Record, record_store
+from datetime import datetime
 
 
 def calculate_team_position(
@@ -342,6 +344,8 @@ def update_player_stats_from_match(
     # Update best match kills
     if kills > stats.best_match_kills:
         stats.best_match_kills = kills
+        # Check if this is a new record (to be implemented later)
+        # This will trigger record notification
     
     # Update total ELO change
     stats.total_elo_change += elo_change
@@ -371,5 +375,57 @@ def update_player_stats_from_match(
             stats.current_streak = -1
         if abs(stats.current_streak) > stats.best_loss_streak:
             stats.best_loss_streak = abs(stats.current_streak)
-    
+
     return stats
+
+
+def check_and_update_record(
+    guild_id: int,
+    user_id: int,
+    player_name: str,
+    record_type: str,
+    new_value: int
+) -> tuple[bool, Record | None]:
+    """
+    Check if a new value beats the current record and update if so.
+
+    Args:
+        guild_id: Server ID
+        user_id: Player ID
+        player_name: Player name
+        record_type: Type of record (e.g., "max_kills")
+        new_value: New value to check
+
+    Returns:
+        (record_broken, old_record) - True if record was broken, and the old record if it existed
+    """
+    current_record = record_store.get_record(guild_id, record_type)
+
+    if current_record is None:
+        # No record exists yet, this is the first
+        new_record = Record(
+            record_type=record_type,
+            player_name=player_name,
+            user_id=user_id,
+            value=new_value,
+            guild_id=guild_id,
+            timestamp=datetime.now().isoformat()
+        )
+        record_store.set_record(new_record)
+        return (True, None)
+
+    if new_value > current_record.value:
+        # New record!
+        old_record = current_record
+        new_record = Record(
+            record_type=record_type,
+            player_name=player_name,
+            user_id=user_id,
+            value=new_value,
+            guild_id=guild_id,
+            timestamp=datetime.now().isoformat()
+        )
+        record_store.set_record(new_record)
+        return (True, old_record)
+
+    return (False, None)

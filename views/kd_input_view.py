@@ -227,6 +227,34 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             # Increment games count for this match
             updated_stats.games += 1
 
+            # Check for record break (max kills)
+            if kills > stats.best_match_kills:
+                from utils.rating_calculator import check_and_update_record
+                from models.records import Record
+                record_broken, old_record = check_and_update_record(
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    player_name=player_name,
+                    record_type="max_kills",
+                    new_value=kills
+                )
+
+                if record_broken:
+                    # Send notification to channel
+                    record_channel_id = 1549809898643001484
+                    channel = interaction.guild.get_channel(record_channel_id)
+                    if channel:
+                        if old_record:
+                            await channel.send(
+                                f"🎉 <@{user_id}> побил рекорд <@{old_record.user_id}> ({old_record.value} убийств)!\n"
+                                f"🏆 Новый рекорд: {kills} убийств!"
+                            )
+                        else:
+                            await channel.send(
+                                f"🎉 <@{user_id}> установил первый рекорд!\n"
+                                f"🏆 Рекорд: {kills} убийств!"
+                            )
+
             await player_stats_store.set(updated_stats)
 
     # Clear temporary data

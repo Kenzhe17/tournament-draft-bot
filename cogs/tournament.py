@@ -616,20 +616,28 @@ class TournamentCog(commands.Cog):
         # Get all user balances
         richest_player = None
         max_balance = 0
-        for player in all_players:
-            balance = await user_balance_store.get_balance(interaction.guild_id, player.user_id)
-            if balance > max_balance:
-                max_balance = balance
-                richest_player = player
+        try:
+            for player in all_players:
+                balance = await user_balance_store.get_balance(interaction.guild_id, player.user_id)
+                if balance > max_balance:
+                    max_balance = balance
+                    richest_player = player
+        except Exception:
+            # If balance store fails, skip this record
+            pass
 
         # Get best bettor (max single win)
         best_bettor = None
         max_single_win = 0
-        for player in all_players:
-            bet_stats = await betting_stats_store.get(interaction.guild_id, player.user_id)
-            if bet_stats and bet_stats.best_win > max_single_win:
-                max_single_win = bet_stats.best_win
-                best_bettor = player
+        try:
+            for player in all_players:
+                bet_stats = await betting_stats_store.get(interaction.guild_id, player.user_id)
+                if bet_stats and bet_stats.best_win > max_single_win:
+                    max_single_win = bet_stats.best_win
+                    best_bettor = player
+        except Exception:
+            # If betting stats store fails, skip this record
+            pass
         best_loss_streak_20 = max(players_20_plus, key=lambda p: p.best_loss_streak) if players_20_plus else None
         best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
 
