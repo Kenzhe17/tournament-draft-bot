@@ -579,6 +579,8 @@ class TournamentCog(commands.Cog):
                     formatted_value = f"{latest.value:.2f}"
                 elif record_type == "win_rate":
                     formatted_value = f"{latest.value:.1f}%"
+                elif record_type == "avg_kills":
+                    formatted_value = f"{latest.value:.2f}"
                 else:
                     formatted_value = str(int(latest.value))
 
@@ -696,7 +698,7 @@ class TournamentCog(commands.Cog):
                 elif record_type == "best_win_streak":
                     new_value = record_holder.best_win_streak
                 elif record_type == "avg_kills":
-                    new_value = int(record_holder.avg_kills)
+                    new_value = record_holder.avg_kills  # Keep as float
                 elif record_type == "kd_ratio":
                     new_value = record_holder.kd_ratio  # Keep as float
                 elif record_type == "win_rate":
@@ -722,6 +724,8 @@ class TournamentCog(commands.Cog):
                             formatted_value = f"{new_value:.2f}"
                         elif record_type == "win_rate":
                             formatted_value = f"{new_value:.1f}%"
+                        elif record_type == "avg_kills":
+                            formatted_value = f"{new_value:.2f}"
                         else:
                             formatted_value = str(new_value)
 
@@ -733,6 +737,8 @@ class TournamentCog(commands.Cog):
                                 formatted_old = f"{old_record.value:.2f}"
                             elif record_type == "win_rate":
                                 formatted_old = f"{old_record.value:.1f}%"
+                            elif record_type == "avg_kills":
+                                formatted_old = f"{old_record.value:.2f}"
                             else:
                                 formatted_old = str(old_record.value)
 
