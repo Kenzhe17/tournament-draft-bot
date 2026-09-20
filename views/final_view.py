@@ -12,6 +12,7 @@ from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_org_check
+from views.room_buttons import RoomButton, AdminRoomsButton
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -94,6 +95,22 @@ class FinalView(discord.ui.View):
         # Add admin fill button
         from views.match_stats_view import AdminFillButton
         self.add_item(AdminFillButton(guild_id, tournament))
+
+        # Add room button for final if not filled
+        if not tournament.final_room:
+            team_a = final_teams[0]
+            team_b = final_teams[1]
+            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+            name_a = tournament.team_names.get(team_a, captain_a)
+            name_b = tournament.team_names.get(team_b, captain_b)
+
+            self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b))
+
+        # Add admin rooms button
+        self.add_item(AdminRoomsButton(guild_id))
 
         # Add captain fill buttons for pending final
         from views.match_stats_view import CaptainFillButton
