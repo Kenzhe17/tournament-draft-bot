@@ -29,12 +29,11 @@ class RoomButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Open modal for room info."""
-        from utils.permissions import is_admin_check, is_org_check
+        from utils.permissions import is_org_check
         from storage.json_store import store
 
-        # Check permissions
-        is_admin = is_admin_check(interaction.user, interaction.guild)
-        is_org = is_org_check(interaction.user, interaction.guild)
+        # Check permissions (org role has same access as admin)
+        is_admin = is_org_check(interaction.user, interaction.guild)
 
         tournament = store.get(interaction.guild_id)
         if not tournament:
@@ -62,7 +61,7 @@ class RoomButton(discord.ui.Button):
         # Check if user is in one of the teams or is admin/org
         user_in_team = interaction.user.id in team1_members or interaction.user.id in team2_members
 
-        if not (user_in_team or is_admin or is_org):
+        if not (user_in_team or is_admin):
             await interaction.response.send_message(
                 "❌ Только игроки этих команд и организаторы могут добавлять комнату.",
                 ephemeral=True
@@ -88,10 +87,10 @@ class AdminRoomsButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Show all rooms for editing."""
-        from utils.permissions import is_admin_check
-        if not is_admin_check(interaction.user, interaction.guild):
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                "❌ Только администраторы могут редактировать комнаты.",
+                "❌ Только администраторы или организаторы (роль 'org') могут редактировать комнаты.",
                 ephemeral=True
             )
             return

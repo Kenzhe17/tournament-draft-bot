@@ -5,14 +5,21 @@ from discord import app_commands
 
 
 def is_admin() -> app_commands.check:
-    """Декоратор: только администратор сервера или создатель бота."""
+    """Декоратор: только администратор сервера, роль 'org' или создатель бота."""
 
     async def predicate(interaction: discord.Interaction) -> bool:
-        # Проверяем права админа ИЛИ ваш конкретный Discord ID
+        # Проверяем права админа ИЛИ ваш конкретный Discord ID ИЛИ роль 'org'
         if interaction.user.guild_permissions.administrator or interaction.user.id == 1032544122600423427:
             return True
+
+        # Check for 'org' role
+        if interaction.guild:
+            org_role = discord.utils.get(interaction.guild.roles, name="org")
+            if org_role and org_role in interaction.user.roles:
+                return True
+
         raise app_commands.CheckFailure(
-            "❌ Эта команда доступна только администраторам сервера."
+            "❌ Эта команда доступна только администраторам или организаторам (роль 'org')."
         )
 
     return app_commands.check(predicate)
@@ -40,8 +47,16 @@ def is_org() -> app_commands.check:
 
 
 def is_admin_check(user: discord.Member, guild: discord.Guild) -> bool:
-    """Проверка: является ли пользователь администратором."""
-    return user.guild_permissions.administrator or user.id == 1032544122600423427
+    """Проверка: является ли пользователь администратором или имеет роль 'org'."""
+    if user.guild_permissions.administrator or user.id == 1032544122600423427:
+        return True
+
+    # Check for 'org' role
+    org_role = discord.utils.get(guild.roles, name="org")
+    if org_role and org_role in user.roles:
+        return True
+
+    return False
 
 
 def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
