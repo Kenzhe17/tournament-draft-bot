@@ -110,10 +110,13 @@ class Tournament:
 
     # Названия команд (индекс команды -> название)
     team_names: dict[int, str] = field(default_factory=dict)
-    team_names_changed: bool = False  # Флаг для отслеживания изменения названий
+    team_names_changed_teams: set[int] = field(default_factory=set)  # Индексы команд которые уже изменили название
 
     # Отображение имени на user_id для статистики
     player_user_ids: dict[str, int] = field(default_factory=dict)
+
+    # Сообщение драфта для пинга капитанов
+    draft_message_id: int = 0  # ID сообщения с пингом текущего капитана
 
     @property
     def captain_count(self) -> int:
@@ -194,12 +197,11 @@ class Tournament:
 
         return True
 
-    @property
-    def team_names_editable(self) -> bool:
-        """Можно ли редактировать названия команд."""
-        # Team names can only be edited in bracket phases and only once
+    def is_team_name_editable(self, team_index: int) -> bool:
+        """Можно ли редактировать название конкретной команды."""
+        # Team names can only be edited in bracket phases and only once per team
         bracket_phases = [TournamentPhase.QUALIFIERS, TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]
-        return self.phase in bracket_phases and not self.team_names_changed
+        return self.phase in bracket_phases and team_index not in self.team_names_changed_teams
 
     def circle_list(self, circle: int) -> list[str]:
         """Получить список игроков круга (display names)."""
@@ -676,8 +678,9 @@ class Tournament:
             "is_test": self.is_test,
             "circle_limits_enabled": self.circle_limits_enabled,
             "team_names": self.team_names,
-            "team_names_changed": self.team_names_changed,
+            "team_names_changed_teams": list(self.team_names_changed_teams),
             "player_user_ids": self.player_user_ids,
+            "draft_message_id": self.draft_message_id,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
@@ -714,8 +717,9 @@ class Tournament:
             is_test=data.get("is_test", False),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
-            team_names_changed=data.get("team_names_changed", False),
+            team_names_changed_teams=set(data.get("team_names_changed_teams", [])),
             player_user_ids=data.get("player_user_ids", {}),
+            draft_message_id=data.get("draft_message_id", 0),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),

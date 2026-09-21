@@ -162,9 +162,9 @@ class TeamNameButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
-        if not tournament or not tournament.team_names_editable:
+        if not tournament:
             await interaction.response.send_message(
-                "❌ Невозможно назвать команду.", ephemeral=True
+                "❌ Турнир не найден.", ephemeral=True
             )
             return
 
@@ -179,6 +179,14 @@ class TeamNameButton(discord.ui.Button):
         if team_index is None:
             await interaction.response.send_message(
                 "❌ Только капитан может назвать свою команду.",
+                ephemeral=True
+            )
+            return
+
+        # Check if this team has already changed their name
+        if not tournament.is_team_name_editable(team_index):
+            await interaction.response.send_message(
+                "❌ Ваша команда уже изменила название. Можно изменить только один раз.",
                 ephemeral=True
             )
             return
@@ -214,16 +222,16 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
 
         tournament = store.get(self.guild_id)
         if tournament:
-            # Check if team names can still be edited
-            if not tournament.team_names_editable:
+            # Check if this team can still edit their name
+            if not tournament.is_team_name_editable(self.team_index):
                 await interaction.response.send_message(
-                    "❌ Названия команд можно изменить только один раз.",
+                    "❌ Ваша команда уже изменила название. Можно изменить только один раз.",
                     ephemeral=True
                 )
                 return
 
             tournament.team_names[self.team_index] = name
-            tournament.team_names_changed = True
+            tournament.team_names_changed_teams.add(self.team_index)
             store.set(tournament)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -242,7 +250,10 @@ class TeamsView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(GenerateMatchesButton(guild_id))
 
-        self.add_item(TeamNameButton(guild_id, tournament))
+        # Add team name button if any team can still edit their name
+        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        if has_editable_team:
+            self.add_item(TeamNameButton(guild_id, tournament))
 
 
 class MatchWinnerSelectView(discord.ui.View):
@@ -506,8 +517,9 @@ class QualifiersView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
 
-        # Add team name button if editable
-        if tournament.team_names_editable:
+        # Add team name button if any team can still edit their name
+        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        if has_editable_team:
             self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
@@ -570,8 +582,9 @@ class SemifinalsView(discord.ui.View):
         # Add single winner selection button
         self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
 
-        # Add team name button if editable
-        if tournament.team_names_editable:
+        # Add team name button if any team can still edit their name
+        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        if has_editable_team:
             self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons

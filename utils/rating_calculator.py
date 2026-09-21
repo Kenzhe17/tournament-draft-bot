@@ -129,30 +129,38 @@ def get_elo_multiplier(current_elo: int) -> float:
         return 1.5  # 150% for weak players
     elif current_elo < 1400:
         return 1.3  # 130%
-    elif current_elo < 1600:
+    elif current_elo < 1500:
         return 1.1  # 110%
-    elif current_elo < 1800:
-        return 0.9  # 90%
-    else:
+    elif current_elo < 1600:
         return 0.7  # 70% for top players
+    elif current_elo < 1700:
+        return 0.6  # 60%
+    elif current_elo < 1800:
+        return 0.5  # 50%
+    else:
+        return 0.4  # 40% for very top players
 
 
 def get_loss_reduction(current_elo: int) -> float:
     """
-    Get loss reduction factor for weak players (less penalty for losses).
+    Get loss multiplier for players (more penalty for top players).
 
     Args:
         current_elo: Current player ELO
 
     Returns:
-        Reduction factor (1.0 = full penalty, <1.0 = reduced penalty)
+        Loss multiplier (1.0 = normal, >1.0 = more penalty, <1.0 = reduced penalty)
     """
     if current_elo < 1100:
         return 0.5  # Only 50% penalty for very weak players
     elif current_elo < 1300:
-        return 0.7  # 70% penalty
+        return 1.0  # Normal penalty
+    elif current_elo < 1500:
+        return 1.5  # 150% penalty
+    elif current_elo < 1700:
+        return 2.0  # 200% penalty
     else:
-        return 1.0  # Full penalty
+        return 2.5  # 250% penalty for very top players
 
 
 def calculate_personal_bonus(
@@ -267,12 +275,22 @@ def calculate_balanced_elo_change(
     """
     # Calculate base change
     base_change = get_base_elo_change(position, team_won)
-    kd_bonus = calculate_kd_bonus(kills, deaths)
+
+    # Add K/D bonus only for players <= 1500 ELO
+    if current_elo <= 1500:
+        kd_bonus = calculate_kd_bonus(kills, deaths)
+    else:
+        kd_bonus = 0
+
     total_base = base_change + kd_bonus
 
-    # Apply ELO multiplier (boost weak players, reduce top players)
-    elo_multiplier = get_elo_multiplier(current_elo)
-    adjusted_change = int(total_base * elo_multiplier)
+    # Apply ELO multiplier only for wins (reduce gain for top players)
+    if team_won:
+        elo_multiplier = get_elo_multiplier(current_elo)
+        adjusted_change = int(total_base * elo_multiplier)
+    else:
+        # For losses, use normal multiplier (loss will be multiplied by loss_reduction later)
+        adjusted_change = total_base
 
     # Apply lobby deviation multiplier (prevent farming on weaker players)
     lobby_multiplier = calculate_lobby_deviation_multiplier(current_elo, lobby_avg_elo)
@@ -283,14 +301,15 @@ def calculate_balanced_elo_change(
         loss_reduction = get_loss_reduction(current_elo)
         adjusted_change = int(adjusted_change * loss_reduction)
 
-    # Add personal bonus for playing better than average
-    if avg_kills > 0:
+    # Add personal bonus for playing better than average (only for players <= 1500 ELO)
+    if avg_kills > 0 and current_elo <= 1500:
         personal_bonus = calculate_personal_bonus(kills, deaths, avg_kills, avg_deaths)
         adjusted_change += personal_bonus
 
-    # Add catch-up bonus for players behind server average
-    catch_up_bonus = calculate_catch_up_bonus(current_elo, avg_server_elo)
-    adjusted_change += catch_up_bonus
+    # Add catch-up bonus for players behind server average (only for players <= 1500 ELO)
+    if current_elo <= 1500:
+        catch_up_bonus = calculate_catch_up_bonus(current_elo, avg_server_elo)
+        adjusted_change += catch_up_bonus
 
     # Ensure final result is int
     return int(adjusted_change)
