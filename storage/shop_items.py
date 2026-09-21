@@ -42,6 +42,56 @@ def initialize_shop_items() -> None:
             value="⭐",
             category="icons"
         ),
+        ShopItem(
+            id="icon_pizza",
+            name="Пицца",
+            description="",
+            price=500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="🍕",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_coffee",
+            name="Кофе",
+            description="",
+            price=500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="☕",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_dice",
+            name="Кубик",
+            description="",
+            price=500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="🎲",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_flower",
+            name="Цветок",
+            description="",
+            price=500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="🌺",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_snowflake",
+            name="Снежинка",
+            description="",
+            price=500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="❄️",
+            category="icons"
+        ),
         # (1 250 монет)
         ShopItem(
             id="icon_fire",
@@ -73,6 +123,56 @@ def initialize_shop_items() -> None:
             value="⚔️",
             category="icons"
         ),
+        ShopItem(
+            id="icon_wolf",
+            name="Волк",
+            description="",
+            price=1250,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="🐺",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_butterfly",
+            name="Бабочка",
+            description="",
+            price=1250,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="🦋",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_fox",
+            name="Лиса",
+            description="",
+            price=1250,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="🦊",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_lightning",
+            name="Молния",
+            description="",
+            price=1250,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="⚡",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_heart",
+            name="Сердце",
+            description="",
+            price=1250,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="❤️",
+            category="icons"
+        ),
         # (2 500 монет)
         ShopItem(
             id="icon_crown",
@@ -102,6 +202,86 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
             value="⛓️",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_eagle",
+            name="Орёл",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="🦅",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_snake",
+            name="Змея",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="🐍",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_broken_heart",
+            name="Разбитое сердце",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="💔",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_love",
+            name="Любовь",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="💘",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_beating_heart",
+            name="Пульсирующее сердце",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="💗",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_theater",
+            name="Театр",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="🎭",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_explosion",
+            name="Взрыв",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="💥",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_knife",
+            name="Нож",
+            description="",
+            price=2500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="🔪",
             category="icons"
         ),
         # (4 250 монет)
@@ -199,6 +379,66 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
             value="[BOSS]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_love",
+            name="[LOVE]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[LOVE]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_cry",
+            name="[CRY]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[CRY]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_hate",
+            name="[HATE]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[HATE]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_wow",
+            name="[WOW]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[WOW]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_oof",
+            name="[OOF]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[OOF]",
+            category="tags"
+        ),
+        ShopItem(
+            id="tag_damn",
+            name="[DAMN]",
+            description="",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[DAMN]",
             category="tags"
         ),
         # (2 250 монет)
