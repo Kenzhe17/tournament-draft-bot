@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
-from models.records import record_store
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
@@ -127,7 +126,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         calculate_balanced_elo_change,
         update_player_stats_from_match,
         get_server_average_elo,
-        check_and_update_record,
     )
 
     match_type = match_info.get('match_type')
@@ -230,39 +228,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             updated_stats.games += 1
 
             await player_stats_store.set(updated_stats)
-            record_types_avg = [
-                ("avg_kills", updated_stats.avg_kills, "🎯"),
-                ("kd_ratio", updated_stats.kd_ratio, "⚔️"),
-                ("win_rate", updated_stats.win_rate, "🏆"),
-            ]
-
-            for record_type, new_value, emoji in record_types_avg:
-                # Get current record
-                current_record = record_store.get_record(guild_id, record_type)
-                if current_record is None or new_value > current_record.value:
-                    record_broken, old_record = check_and_update_record(
-                        guild_id=guild_id,
-                        user_id=user_id,
-                        player_name=player_name,
-                        record_type=record_type,
-                        new_value=int(new_value)
-                    )
-
-                    if record_broken:
-                        # Send notification to channel
-                        record_channel_id = 1551167853741219880
-                        channel = interaction.guild.get_channel(record_channel_id)
-                        if channel:
-                            if old_record:
-                                await channel.send(
-                                    f"🎉 <@{user_id}> побил рекорд <@{old_record.user_id}> ({old_record.value:.2f})!\n"
-                                    f"{emoji} Новый рекорд: {new_value:.2f}!"
-                                )
-                            else:
-                                await channel.send(
-                                    f"🎉 <@{user_id}> установил первый рекорд!\n"
-                                    f"{emoji} Рекорд: {new_value:.2f}!"
-                                )
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):

@@ -4,7 +4,7 @@ import discord
 from storage.shop_store import shop_store
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
-from models.shop_item import PlayerCosmetic
+from models.shop_item import PlayerCosmetic, CosmeticRarity
 
 
 class ShopCategoryButton(discord.ui.Button):
@@ -20,11 +20,65 @@ class ShopCategoryButton(discord.ui.Button):
         self.category = category
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Показать товары категории."""
+        """Показать подкатегории по редкости."""
         await interaction.response.defer(ephemeral=True)
 
-        # Получить товары категории
-        items = shop_store.get_items_by_category(self.category)
+        # Создать View с кнопками редкости
+        view = discord.ui.View()
+        view.add_item(ShopBackButton())
+
+        # Добавить кнопки для каждой редкости
+        rarities = [
+            (CosmeticRarity.BASIC, "Basic", "⭐"),
+            (CosmeticRarity.PREMIUM, "Premium", "💎"),
+            (CosmeticRarity.ELITE, "Elite", "👑"),
+            (CosmeticRarity.SPECIAL, "Special", "✨"),
+        ]
+
+        for rarity, label, emoji in rarities:
+            view.add_item(RarityButton(self.category, rarity, label, emoji))
+
+        # Определить цвет embed по категории
+        embed_color = discord.Color.blue() if self.category == "icons" else discord.Color.purple()
+
+        embed = discord.Embed(
+            title=f"🛒 {self.label} - Выберите редкость",
+            description="Выберите редкость товаров для просмотра",
+            color=embed_color
+        )
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+class RarityButton(discord.ui.Button):
+    """Кнопка редкости товара."""
+
+    def __init__(self, category: str, rarity: CosmeticRarity, label: str, emoji: str):
+        # Определить стиль кнопки по редкости
+        style_map = {
+            CosmeticRarity.BASIC: discord.ButtonStyle.secondary,
+            CosmeticRarity.PREMIUM: discord.ButtonStyle.primary,
+            CosmeticRarity.ELITE: discord.ButtonStyle.success,
+            CosmeticRarity.SPECIAL: discord.ButtonStyle.danger,
+        }
+        style = style_map.get(rarity, discord.ButtonStyle.secondary)
+
+        super().__init__(
+            style=style,
+            label=label,
+            emoji=emoji,
+            custom_id=f"shop_rarity:{category}:{rarity.value}"
+        )
+        self.category = category
+        self.rarity = rarity
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Показать товары конкретной редкости."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Получить товары категории и редкости
+        all_items = shop_store.get_items_by_category(self.category)
+        items = [item for item in all_items if item.rarity == self.rarity]
 
         if not items:
             await interaction.followup.send(
@@ -32,15 +86,37 @@ class ShopCategoryButton(discord.ui.Button):
             )
             return
 
+        # Сортировать по цене (от дешёвого к дорогому)
+        items.sort(key=lambda x: x.price)
+
+        # Определить цвет embed по редкости
+        color_map = {
+            CosmeticRarity.BASIC: discord.Color.light_grey(),
+            CosmeticRarity.PREMIUM: discord.Color.gold(),
+            CosmeticRarity.ELITE: discord.Color.orange(),
+            CosmeticRarity.SPECIAL: discord.Color.purple(),
+        }
+        embed_color = color_map.get(self.rarity, discord.Color.gold())
+
+        # Определить описание редкости
+        rarity_descriptions = {
+            CosmeticRarity.BASIC: "Базовые товары для всех",
+            CosmeticRarity.PREMIUM: "Премиум товары для опытных",
+            CosmeticRarity.ELITE: "Элитные товары для топов",
+            CosmeticRarity.SPECIAL: "Специальные редкие товары",
+        }
+        description = rarity_descriptions.get(self.rarity, "")
+
         # Создать embed с товарами
         embed = discord.Embed(
             title=f"🛒 {self.label}",
-            color=discord.Color.gold()
+            description=description,
+            color=embed_color
         )
 
         # Создать View с кнопками товаров
         view = discord.ui.View()
-        view.add_item(ShopBackButton())
+        view.add_item(RarityBackButton(self.category))
 
         # Добавить кнопки для каждого товара (по 2 в ряд для мобильных)
         for i, item in enumerate(items):
@@ -54,13 +130,51 @@ class ShopCategoryButton(discord.ui.Button):
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
+class RarityBackButton(discord.ui.Button):
+    """Кнопка возврата к выбору редкости."""
+
+    def __init__(self, category: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="↩️ Назад",
+            custom_id=f"shop_rarity_back:{category}"
+        )
+        self.category = category
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Вернуться к выбору редкости."""
+        # Создать View с кнопками редкости
+        view = discord.ui.View()
+        view.add_item(ShopBackButton())
+
+        # Добавить кнопки для каждой редкости
+        rarities = [
+            (CosmeticRarity.BASIC, "Basic", "⭐"),
+            (CosmeticRarity.PREMIUM, "Premium", "💎"),
+            (CosmeticRarity.ELITE, "Elite", "👑"),
+            (CosmeticRarity.SPECIAL, "Special", "✨"),
+        ]
+
+        for rarity, label, emoji in rarities:
+            view.add_item(RarityButton(self.category, rarity, label, emoji))
+
+        # Определить название категории
+        category_label = "Значки" if self.category == "icons" else "Теги"
+        embed = discord.Embed(
+            title=f"🛒 {category_label} - Выберите редкость",
+            color=discord.Color.gold()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
 class ShopBackButton(discord.ui.Button):
     """Кнопка возврата в главное меню магазина."""
 
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="↩️ Назад",
+            label="↩️ В меню",
             custom_id="shop_back"
         )
 
