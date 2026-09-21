@@ -123,20 +123,44 @@ def get_elo_multiplier(current_elo: int) -> float:
     Returns:
         Multiplier (1.0 = normal, >1.0 = boosted, <1.0 = reduced)
     """
-    if current_elo < 1200:
+    if current_elo < 1000:
         return 1.5  # 150% for weak players
-    elif current_elo < 1400:
-        return 1.3  # 130%
     elif current_elo < 1500:
-        return 1.1  # 110%
+        return 1.0  # 100% for normal players
     elif current_elo < 1600:
-        return 0.7  # 70% for top players
+        return 0.8  # 80% for top players
     elif current_elo < 1700:
         return 0.6  # 60%
     elif current_elo < 1800:
-        return 0.5  # 50%
+        return 0.4  # 40%
+    elif current_elo < 1900:
+        return 0.3  # 30%
+    elif current_elo < 2000:
+        return 0.2  # 20%
     else:
-        return 0.4  # 40% for very top players
+        return 0.1  # 10% for very top players
+
+
+def get_elo_multiplier_by_rank(leaderboard_rank: int) -> float:
+    """
+    Get ELO multiplier based on leaderboard rank (reduce for top 15).
+
+    Args:
+        leaderboard_rank: Player's rank in leaderboard (1-based, 999 if unknown)
+
+    Returns:
+        Multiplier (1.0 = normal, <1.0 = reduced for top players)
+    """
+    if leaderboard_rank <= 3:
+        return 0.2  # Top 3: 20%
+    elif leaderboard_rank <= 5:
+        return 0.3  # Top 5: 30%
+    elif leaderboard_rank <= 10:
+        return 0.4  # Top 10: 40%
+    elif leaderboard_rank <= 15:
+        return 0.5  # Top 15: 50%
+    else:
+        return 1.0  # Normal: 100%
 
 
 def get_loss_reduction(current_elo: int) -> float:
@@ -215,32 +239,46 @@ def calculate_catch_up_bonus(current_elo: int, avg_server_elo: float) -> int:
     return 0
 
 
-def calculate_lobby_deviation_multiplier(player_elo: int, lobby_avg_elo: float) -> float:
+def calculate_lobby_deviation_multiplier(player_elo: int, lobby_avg_elo: float, team_won: bool) -> float:
     """
     Calculate ELO multiplier based on deviation from lobby average.
 
     Protects weaker players from farming by strong players.
+    Amplifies losses for top players.
 
     Args:
         player_elo: Current player ELO
         lobby_avg_elo: Average ELO of all players in the lobby
+        team_won: Whether the player's team won the match
 
     Returns:
-        Multiplier (1.0 = normal, <1.0 = reduced gain for high elo, >1.0 = boosted gain for low elo)
+        Multiplier (1.0 = normal, <1.0 = reduced gain/loss, >1.0 = amplified gain/loss)
     """
     if lobby_avg_elo == 0:
         return 1.0
 
     deviation = (player_elo - lobby_avg_elo) / lobby_avg_elo
 
-    if deviation > 0:
-        # Player is above average - reduce gain
-        multiplier = 1.0 - deviation
-        return max(0.5, multiplier)  # Minimum 50% gain
+    if team_won:
+        # For wins: reduce gain for above-average players, boost for below-average
+        if deviation > 0:
+            # Player is above average - reduce gain
+            multiplier = 1.0 - deviation
+            return max(0.5, multiplier)  # Minimum 50% gain
+        else:
+            # Player is below average - boost gain
+            multiplier = 1.0 + abs(deviation)
+            return min(1.5, multiplier)  # Maximum 150% gain
     else:
-        # Player is below average - boost gain
-        multiplier = 1.0 + abs(deviation)
-        return min(1.5, multiplier)  # Maximum 150% gain
+        # For losses: amplify loss for above-average players, reduce for below-average
+        if deviation > 0:
+            # Player is above average - amplify loss
+            multiplier = 1.0 + deviation
+            return min(2.0, multiplier)  # Maximum 200% loss
+        else:
+            # Player is below average - reduce loss
+            multiplier = 1.0 - abs(deviation)
+            return max(0.5, multiplier)  # Minimum 50% loss
 
 
 def calculate_balanced_elo_change(
@@ -252,7 +290,8 @@ def calculate_balanced_elo_change(
     avg_kills: float = 0.0,
     avg_deaths: float = 0.0,
     avg_server_elo: float = 0.0,
-    lobby_avg_elo: float = 0.0
+    lobby_avg_elo: float = 0.0,
+    leaderboard_rank: int = 999  # Player's rank in leaderboard (1-based)
 ) -> int:
     """
     Calculate balanced ELO change with multipliers and bonuses for weak players.
@@ -267,6 +306,7 @@ def calculate_balanced_elo_change(
         avg_deaths: Player's average deaths per game (default 0)
         avg_server_elo: Average ELO of all players on server (default 0)
         lobby_avg_elo: Average ELO of all players in the lobby (default 0)
+        leaderboard_rank: Player's rank in leaderboard (1-based, 999 if unknown)
 
     Returns:
         Total balanced ELO change
@@ -274,24 +314,25 @@ def calculate_balanced_elo_change(
     # Calculate base change
     base_change = get_base_elo_change(position, team_won)
 
-    # Add K/D bonus only for players <= 1500 ELO
-    if current_elo <= 1500:
-        kd_bonus = calculate_kd_bonus(kills, deaths)
+    # Add K/D bonus for all players, but disable for top 15 when losing
+    is_top_player = leaderboard_rank <= 15
+    if not team_won and is_top_player:
+        kd_bonus = 0  # No K/D bonus for top players when losing
     else:
-        kd_bonus = 0
+        kd_bonus = calculate_kd_bonus(kills, deaths)
 
     total_base = base_change + kd_bonus
 
-    # Apply ELO multiplier only for wins (reduce gain for top players)
+    # Apply ELO multiplier only for wins (reduce gain for top players by rank)
     if team_won:
-        elo_multiplier = get_elo_multiplier(current_elo)
+        elo_multiplier = get_elo_multiplier_by_rank(leaderboard_rank)
         adjusted_change = int(total_base * elo_multiplier)
     else:
         # For losses, use normal multiplier (loss will be multiplied by loss_reduction later)
         adjusted_change = total_base
 
-    # Apply lobby deviation multiplier (prevent farming on weaker players)
-    lobby_multiplier = calculate_lobby_deviation_multiplier(current_elo, lobby_avg_elo)
+    # Apply lobby deviation multiplier (different for wins and losses)
+    lobby_multiplier = calculate_lobby_deviation_multiplier(current_elo, lobby_avg_elo, team_won)
     adjusted_change = int(adjusted_change * lobby_multiplier)
 
     # Apply loss reduction for weak players
@@ -299,18 +340,24 @@ def calculate_balanced_elo_change(
         loss_reduction = get_loss_reduction(current_elo)
         adjusted_change = int(adjusted_change * loss_reduction)
 
-    # Add personal bonus for playing better than average (only for players <= 1500 ELO)
-    if avg_kills > 0 and current_elo <= 1500:
+    # Add personal bonus for playing better than average (only for non-top players)
+    if avg_kills > 0 and not is_top_player:
         personal_bonus = calculate_personal_bonus(kills, deaths, avg_kills, avg_deaths)
         adjusted_change += personal_bonus
 
-    # Add catch-up bonus for players behind server average (only for players <= 1500 ELO)
-    if current_elo <= 1500:
+    # Add catch-up bonus for players behind server average (only for non-top players)
+    if not is_top_player:
         catch_up_bonus = calculate_catch_up_bonus(current_elo, avg_server_elo)
         adjusted_change += catch_up_bonus
 
     # Ensure final result is int
-    return int(adjusted_change)
+    final_change = int(adjusted_change)
+
+    # For losses, ensure result is negative (no matter what)
+    if not team_won and final_change > 0:
+        final_change = min(-1, final_change - 1)  # Force at least -1
+
+    return final_change
 
 
 async def get_server_average_elo(guild_id: int) -> float:
@@ -332,6 +379,35 @@ async def get_server_average_elo(guild_id: int) -> float:
 
     total_elo = sum(stats.elo for stats in all_stats)
     return int(total_elo / len(all_stats))
+
+
+async def get_leaderboard_rank(guild_id: int, user_id: int) -> int:
+    """
+    Calculate player's rank in leaderboard by ELO.
+
+    Args:
+        guild_id: Discord guild ID
+        user_id: Player's user ID
+
+    Returns:
+        Rank (1-based, 999 if unknown or not found)
+    """
+    from storage.player_stats_store import player_stats_store
+
+    all_stats = await player_stats_store.get_all(guild_id)
+
+    if not all_stats:
+        return 999
+
+    # Sort by ELO descending
+    sorted_stats = sorted(all_stats, key=lambda x: x.elo, reverse=True)
+
+    # Find player's rank
+    for rank, stats in enumerate(sorted_stats, start=1):
+        if stats.user_id == user_id:
+            return rank
+
+    return 999  # Not found
 
 
 def update_player_stats_from_match(

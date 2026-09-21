@@ -202,6 +202,10 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             avg_kills = stats.avg_kills if stats.games > 0 else 0.0
             avg_deaths = stats.avg_deaths if stats.games > 0 else 0.0
 
+            # Calculate leaderboard rank
+            from utils.rating_calculator import get_leaderboard_rank
+            leaderboard_rank = await get_leaderboard_rank(guild_id, user_id)
+
             # Calculate ELO change with balanced system
             elo_change = calculate_balanced_elo_change(
                 position=position,
@@ -212,7 +216,8 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 avg_kills=avg_kills,
                 avg_deaths=avg_deaths,
                 avg_server_elo=avg_server_elo,
-                lobby_avg_elo=lobby_avg_elo
+                lobby_avg_elo=lobby_avg_elo,
+                leaderboard_rank=leaderboard_rank
             )
 
             # Update stats
