@@ -293,6 +293,11 @@ def calculate_balanced_elo_change(
         loss_multiplier = get_loss_reduction_by_rank(leaderboard_rank)
         adjusted_change = int(total_base * loss_multiplier)
 
+        # If result is positive despite loss, invert the multiplier
+        if adjusted_change > 0:
+            inverted_multiplier = 1.0 / loss_multiplier
+            adjusted_change = int(total_base * inverted_multiplier)
+
     # Add personal bonus for playing better than average (only for non-top players)
     if avg_kills > 0 and not is_top_player:
         personal_bonus = calculate_personal_bonus(kills, deaths, avg_kills, avg_deaths)
