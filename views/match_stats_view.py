@@ -633,9 +633,113 @@ class FinalConfirmView(View):
         """Final confirmation - actually confirm the winner."""
         await interaction.response.edit_message(content="⏳ Подтверждение победителя...", view=None)
 
-        # Call the actual confirm callback
-        confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats)
-        await confirm_view.confirm_callback(interaction, self.winning_team_index)
+        # Create a new interaction-like object for the confirm callback
+        # Since we can't reuse the deferred interaction, we'll call the callback directly
+        # but we need to handle the response differently
+        try:
+            # Call the actual confirm callback logic directly
+            import logging
+            from storage.json_store import store
+            from views.kd_input_view import process_match_result
+            from storage.player_stats_store import player_stats_store
+            from storage.bet_store import bet_store
+            from storage.user_balance_store import user_balance_store
+
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                await interaction.edit_original_response(content="❌ Турнир не найден.")
+                return
+
+            match_id = f"{self.match_type}_{self.match_index}"
+            temp_stats = tournament.temp_match_stats.get(match_id, {})
+
+            # Process the match with statistics
+            await process_match_result(self.guild_id, tournament, {
+                "match_type": self.match_type,
+                "match_index": self.match_index,
+                "winning_team_index": self.winning_team_index,
+                "team1_index": self.team_a_index,
+                "team2_index": self.team_b_index,
+                "temp_kd_data": temp_stats
+            }, interaction)
+
+            # Store tournament after stats are processed
+            store.set(tournament)
+
+            # Resolve betting
+            if self.match_type == "qualifier":
+                winning_team_index = tournament.qualifier_winners[self.match_index]
+            elif self.match_type == "semifinal":
+                winning_team_index = tournament.semifinal_pending_winners[self.match_index]
+            else:  # final
+                winning_team_index = tournament.final_pending_winner
+
+            logging.info(f"Confirming winner: match_type={self.match_type}, winning_team_index={winning_team_index}")
+
+            # Проверка на None для финала
+            if winning_team_index is None:
+                logging.error(f"Winning team index is None for match_type={self.match_type}")
+                await interaction.edit_original_response(content="❌ Ошибка: победитель не выбран.")
+                return
+
+            winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
+            winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
+
+            try:
+                payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+                for user_id, payout in payouts.items():
+                    await user_balance_store.add_balance(self.guild_id, user_id, payout)
+            except Exception as e:
+                logging.error(f"Error resolving bets: {e}", exc_info=True)
+
+            # Confirm winner (this may trigger phase transition)
+            if self.match_type == "qualifier":
+                tournament.confirm_qualifier_winner(self.match_index, winning_team_index)
+            elif self.match_type == "semifinal":
+                tournament.confirm_semifinal_winner(self.match_index, winning_team_index)
+            else:  # final
+                logging.info(f"Confirming final winner: team_index={winning_team_index}")
+                try:
+                    tournament.confirm_final_winner(winning_team_index)
+                    logging.info(f"Final winner confirmed, phase={tournament.phase.value}, winner_team_index={tournament.winner_team_index}")
+                except Exception as e:
+                    logging.error(f"Error confirming final winner: {e}", exc_info=True)
+                    raise
+
+                # Award coins for tournament participation based on placement
+                participation_bonus = 10  # +10 coins for participation
+                placement_bonuses = {1: 50, 2: 30, 3: 20, 4: 10}
+
+                try:
+                    for player_name, user_id in tournament.player_user_ids.items():
+                        await user_balance_store.add_balance(self.guild_id, user_id, participation_bonus)
+
+                    # Award placement bonuses based on tournament placement
+                    if self.match_type == "final":
+                        # Award placement bonuses to winner
+                        for player_name, user_id in tournament.player_user_ids.items():
+                            # Check if player is on winning team
+                            player_team = None
+                            for team_idx, team_data in enumerate(tournament.teams):
+                                if player_name in team_data.values():
+                                    player_team = team_idx
+                                    break
+
+                            if player_team == winning_team_index:
+                                await user_balance_store.add_balance(self.guild_id, user_id, placement_bonuses.get(1, 50))
+                except Exception as e:
+                    logging.error(f"Error awarding coins: {e}", exc_info=True)
+
+            # Update tournament message
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
+            await interaction.edit_original_response(content="✅ Статистика сохранена и победитель подтверждён!", embed=None, view=None)
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error in final confirm: {e}", exc_info=True)
+            await interaction.edit_original_response(content=f"❌ Произошла ошибка при подтверждении: {str(e)}", embed=None, view=None)
 
     async def _cancel(self, interaction: discord.Interaction) -> None:
         """Cancel the confirmation."""
