@@ -615,10 +615,9 @@ class TournamentCog(commands.Cog):
         from utils.cosmetics import format_player_name
         formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
 
-        embed = discord.Embed(
-            title=f"📊 Профиль: {formatted_name}",
-            color=discord.Color.blue(),
-        )
+        # Use gradient embed for profile
+        from utils.embeds import build_gradient_embed
+        embed = build_gradient_embed(f"Профиль: {formatted_name}", "blue", f"📝 {stats.bio}" if stats.bio else "")
 
         # Set avatar (custom or Discord default)
         if stats.avatar_url:
@@ -626,11 +625,10 @@ class TournamentCog(commands.Cog):
         else:
             embed.set_thumbnail(url=target_user.display_avatar.url)
 
-        # Показать био если есть
-        if stats.bio:
-            embed.description = f"📝 {stats.bio}"
+        # Dynamic icon based on ELO
+        elo_icon = "🏆" if stats.elo >= 1500 else "⭐" if stats.elo >= 1200 else "🎮"
 
-        embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
+        embed.add_field(name=f"{elo_icon} ELO", value=str(int(stats.elo)), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
