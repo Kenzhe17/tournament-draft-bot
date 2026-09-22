@@ -1,7 +1,7 @@
 """Modal form for entering room ID and password."""
 
 import discord
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
@@ -66,7 +66,7 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         )
 
 
-async def send_room_dm_notifications(bot: TournamentBot, tournament: Tournament, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
+async def send_room_dm_notifications(bot: Any, tournament: Tournament, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
     """Send DM notifications to team members about room info."""
     from storage.json_store import store
 
