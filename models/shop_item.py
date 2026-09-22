@@ -10,6 +10,7 @@ class CosmeticType(str, Enum):
     COLOR = "color"  # Цвет текста
     ICON = "icon"  # Значок (эмодзи)
     TAG = "tag"  # Текстовый тег
+    FRAME = "frame"  # Рамка вокруг аватарки
 
 
 class CosmeticRarity(str, Enum):

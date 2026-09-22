@@ -617,13 +617,18 @@ class TournamentCog(commands.Cog):
 
         # Use gradient embed for profile
         from utils.embeds import build_gradient_embed
-        embed = build_gradient_embed(f"Профиль: {formatted_name}", "blue", f"📝 {stats.bio}" if stats.bio else "")
+        frame_text = f"{stats.avatar_frame} " if stats.avatar_frame else ""
+        embed = build_gradient_embed(f"{frame_text}Профиль: {formatted_name}", "blue", f"📝 {stats.bio}" if stats.bio else "")
 
         # Set avatar (custom or Discord default)
         if stats.avatar_url:
             embed.set_thumbnail(url=stats.avatar_url)
         else:
             embed.set_thumbnail(url=target_user.display_avatar.url)
+
+        # Show frame if equipped
+        if stats.avatar_frame:
+            embed.add_field(name="🖼️ Рамка", value=stats.avatar_frame, inline=True)
 
         # Dynamic icon based on ELO
         elo_icon = "🏆" if stats.elo >= 1500 else "⭐" if stats.elo >= 1200 else "🎮"
