@@ -339,17 +339,23 @@ async def build_draft_embed(
         color=discord.Color.dark_blue(),
     )
 
-    # Show all captains in pick order
-    captain_lines = []
-    for i, captain_idx in enumerate(tournament.captain_order):
-        captain_name = tournament.captains[captain_idx]
-        captain_id = tournament.player_user_ids.get(captain_name, 0)
-        if captain_id > 0:
-            captain_lines.append(f"{i + 1}. <@{captain_id}>")
-        else:
-            captain_lines.append(f"{i + 1}. {captain_name}")
+    # Show all captains in order
+    captain_order_lines = []
+    for i, pos in enumerate(tournament.captain_order):
+        captain_name = tournament.captains[pos]
+        captain_order_lines.append(f"{i + 1}. {captain_name}")
 
-    embed.description = "\n".join(captain_lines)
+    embed.description = "\n".join(captain_order_lines)
+
+    # Get current picker
+    current_picker_pos = tournament.current_picker_position()
+    if current_picker_pos is not None:
+        current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
+        current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
+        if current_captain_id > 0:
+            embed.add_field(name="👤 Сейчас выбирает", value=f"➡️ <@{current_captain_id}>", inline=False)
+        else:
+            embed.add_field(name="👤 Сейчас выбирает", value=f"➡️ {current_captain_name}", inline=False)
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):
