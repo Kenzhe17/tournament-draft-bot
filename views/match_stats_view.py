@@ -560,45 +560,6 @@ class AdminConfirmView(View):
         return embed
 
 
-class WinnerConfirmView(View):
-    """View for confirming winner selection."""
-
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict, team_a_index: int, team_b_index: int, team_a_name: str, team_b_name: str):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.match_type = match_type
-        self.match_index = match_index
-        self.stats = stats
-        self.team_a_index = team_a_index
-        self.team_b_index = team_b_index
-
-        # Add buttons for each team
-        team_a_btn = Button(label=f"🏆 {team_a_name}", style=discord.ButtonStyle.primary)
-        team_a_btn.callback = lambda interaction: self._confirm_winner(interaction, team_a_index)
-        self.add_item(team_a_btn)
-
-        team_b_btn = Button(label=f"🏆 {team_b_name}", style=discord.ButtonStyle.primary)
-        team_b_btn.callback = lambda interaction: self._confirm_winner(interaction, team_b_index)
-        self.add_item(team_b_btn)
-
-        cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
-        cancel_btn.callback = self._cancel
-        self.add_item(cancel_btn)
-
-    async def _confirm_winner(self, interaction: discord.Interaction, winning_team_index: int) -> None:
-        """Confirm the selected winner."""
-        await interaction.response.edit_message(content="⏳ Подтверждение...", view=None)
-
-        # Call the actual confirm callback
-        confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats)
-        await confirm_view.confirm_callback(interaction, winning_team_index)
-
-    async def _cancel(self, interaction: discord.Interaction) -> None:
-        """Cancel the confirmation."""
-        await interaction.response.edit_message(content="❌ Отменено", view=None)
-
-
 class AdminConfirmView(View):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict):
@@ -691,21 +652,35 @@ class AdminConfirmView(View):
         return embed
 
     async def show_winner_confirmation(self, interaction: discord.Interaction) -> None:
-        """Show confirmation modal for selecting winner."""
+        """Show winner selection buttons (no separate confirmation)."""
         # Get team names
-        team_a_name = self.tournament.team_names.get(self.team_a_index, f"Team {self.team_a_index}")
-        team_b_name = self.tournament.team_names.get(self.team_b_index, f"Team {self.team_b_index}")
+        team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
+        team_a_name = self.tournament.team_names.get(self.team_a_index, team_a_data.get("captain", f"Team {self.team_a_index}"))
+        team_b_name = self.tournament.team_names.get(self.team_b_index, team_b_data.get("captain", f"Team {self.team_b_index}"))
 
-        # Create confirmation view
-        view = WinnerConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats, self.team_a_index, self.team_b_index, team_a_name, team_b_name)
+        # Create view with winner selection buttons
+        view = discord.ui.View()
+
+        team_a_btn = Button(label=f"🏆 {team_a_name}", style=discord.ButtonStyle.success)
+        team_a_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_a_index)
+        view.add_item(team_a_btn)
+
+        team_b_btn = Button(label=f"🏆 {team_b_name}", style=discord.ButtonStyle.success)
+        team_b_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_b_index)
+        view.add_item(team_b_btn)
+
+        cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
+        cancel_btn.callback = self.edit_callback
+        view.add_item(cancel_btn)
 
         embed = discord.Embed(
-            title="🏆 Подтверждение победителя",
-            description=f"Выберите команду-победителя для матча:\n{team_a_name} vs {team_b_name}",
+            title="🏆 Выберите победителя",
+            description=f"{team_a_name} vs {team_b_name}",
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
     async def confirm_callback(self, interaction: discord.Interaction, winning_team_index: int) -> None:
         import logging
