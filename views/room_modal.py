@@ -66,7 +66,7 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         )
 
 
-async def send_room_dm_notifications(bot: Any, tournament: Tournament, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
+async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
     """Send DM notifications to team members about room info."""
     from storage.json_store import store
 
