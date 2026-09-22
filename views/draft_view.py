@@ -72,28 +72,6 @@ class PlayerSelect(discord.ui.Select):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        # Delete old draft message if exists
-        if tournament.draft_message_id > 0:
-            try:
-                draft_channel = interaction.channel
-                old_message = await draft_channel.fetch_message(tournament.draft_message_id)
-                await old_message.delete()
-            except Exception:
-                pass  # Message might not exist or already deleted
-
-        # Send new draft message with next captain ping if draft not complete
-        if not draft_complete:
-            next_picker_pos = tournament.current_picker_position()
-            if next_picker_pos is not None:
-                next_captain_name = tournament.captains[tournament.captain_order[next_picker_pos]]
-                next_captain_id = tournament.player_user_ids.get(next_captain_name, 0)
-                if next_captain_id > 0:
-                    new_message = await interaction.channel.send(f"➡️ <@{next_captain_id}> - ваша очередь выбирать!")
-                else:
-                    new_message = await interaction.channel.send(f"➡️ {next_captain_name} - ваша очередь выбирать!")
-                tournament.draft_message_id = new_message.id
-                store.set(tournament)
-
         if draft_complete:
             await interaction.response.defer()
         else:
