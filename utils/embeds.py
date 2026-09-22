@@ -339,31 +339,17 @@ async def build_draft_embed(
         color=discord.Color.dark_blue(),
     )
 
-    # Get current picker
-    current_picker_pos = tournament.current_picker_position()
-    if current_picker_pos is not None:
-        current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
-        current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
-        if current_captain_id > 0:
-            current_line = f"🎯 Текущий: <@{current_captain_id}>"
+    # Show all captains in pick order
+    captain_lines = []
+    for i, captain_idx in enumerate(tournament.captain_order):
+        captain_name = tournament.captains[captain_idx]
+        captain_id = tournament.player_user_ids.get(captain_name, 0)
+        if captain_id > 0:
+            captain_lines.append(f"{i + 1}. <@{captain_id}>")
         else:
-            current_line = f"🎯 Текущий: {current_captain_name}"
-    else:
-        current_line = "Драфт завершён"
+            captain_lines.append(f"{i + 1}. {captain_name}")
 
-    # Show next 4 captains in order
-    next_captains = []
-    if current_picker_pos is not None:
-        for i in range(4):
-            pos = (current_picker_pos + i) % len(tournament.captain_order)
-            captain_name = tournament.captains[tournament.captain_order[pos]]
-            captain_id = tournament.player_user_ids.get(captain_name, 0)
-            if captain_id > 0:
-                next_captains.append(f"{i + 1}. <@{captain_id}>")
-            else:
-                next_captains.append(f"{i + 1}. {captain_name}")
-
-    embed.description = f"{current_line}\n\n**Очередь:**\n" + "\n".join(next_captains)
+    embed.description = "\n".join(captain_lines)
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):
