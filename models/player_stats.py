@@ -56,6 +56,10 @@ class PlayerStats:
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
             "last_elo_change": self.last_elo_change,
+            "last_20_kills": self.last_20_kills,
+            "last_20_deaths": self.last_20_deaths,
+            "last_20_wins": self.last_20_wins,
+            "last_20_games": self.last_20_games,
         }
 
     @classmethod
@@ -80,6 +84,10 @@ class PlayerStats:
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
             last_elo_change=data.get("last_elo_change", 0),
+            last_20_kills=data.get("last_20_kills", 0),
+            last_20_deaths=data.get("last_20_deaths", 0),
+            last_20_wins=data.get("last_20_wins", 0),
+            last_20_games=data.get("last_20_games", 0),
         )
 
     @property

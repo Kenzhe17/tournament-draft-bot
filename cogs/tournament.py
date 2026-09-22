@@ -601,6 +601,10 @@ class TournamentCog(commands.Cog):
             color=discord.Color.blue(),
         )
 
+        # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
+        avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
+        embed.set_thumbnail(url=avatar_url)
+
         # Показать био если есть
         if stats.bio:
             embed.description = f"📝 {stats.bio}"
