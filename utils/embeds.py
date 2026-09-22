@@ -19,6 +19,7 @@ def get_gradient_emoji(color_type: str) -> str:
         "green": "🟢💚🌿",
         "gold": "🟡💛✨",
         "purple": "🟣💜🔮",
+        "dark": "⬛⬜🌑",
         "rainbow": "🌈✨💫"
     }
     return gradients.get(color_type, "✨")
@@ -32,6 +33,7 @@ def build_gradient_embed(title: str, color_type: str = "blue", description: str 
         "green": discord.Color.green(),
         "gold": discord.Color.gold(),
         "purple": discord.Color.purple(),
+        "dark": discord.Color.dark_embed(),
         "rainbow": discord.Color.random()
     }
 

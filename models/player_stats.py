@@ -22,6 +22,7 @@ class PlayerStats:
     streak_bonus_coins: int = 0  # Монеты полученные за серии побед
     avatar_url: str = ""  # URL аватарки профиля (по умолчанию Discord аватарка)
     avatar_frame: str = ""  # Эмодзи рамки вокруг аватарки (покупная косметика)
+    theme: str = "blue"  # Персональная тема для профиля (blue, red, green, gold, purple, dark)
 
     # New fields for detailed rating system
     total_kills: int = 0
@@ -53,6 +54,7 @@ class PlayerStats:
             "streak_bonus_coins": self.streak_bonus_coins,
             "avatar_url": self.avatar_url,
             "avatar_frame": self.avatar_frame,
+            "theme": self.theme,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
             "best_match_kills": self.best_match_kills,
@@ -78,6 +80,7 @@ class PlayerStats:
             streak_bonus_coins=data.get("streak_bonus_coins", 0),
             avatar_url=data.get("avatar_url", ""),
             avatar_frame=data.get("avatar_frame", ""),
+            theme=data.get("theme", "blue"),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
             best_match_kills=data.get("best_match_kills", 0),

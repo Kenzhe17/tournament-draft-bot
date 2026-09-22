@@ -588,6 +588,57 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="settheme", description="Установить тему профиля")
+    @app_commands.describe(theme="Тема (blue, red, green, gold, purple, dark)")
+    async def settheme(self, interaction: discord.Interaction, theme: str = "blue") -> None:
+        """Установить тему профиля."""
+        valid_themes = ["blue", "red", "green", "gold", "purple", "dark"]
+
+        if theme not in valid_themes:
+            await interaction.response.send_message(
+                f"❌ Неверная тема. Доступные темы: {', '.join(valid_themes)}",
+                ephemeral=True
+            )
+            return
+
+        try:
+            from storage.player_stats_store import player_stats_store
+            from models.player_stats import PlayerStats
+
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+            if not stats:
+                # Create default stats for new players
+                stats = PlayerStats(
+                    guild_id=interaction.guild_id,
+                    user_id=interaction.user.id,
+                    name=interaction.user.display_name
+                )
+
+            stats.theme = theme
+            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+
+            theme_names = {
+                "blue": "Синяя",
+                "red": "Красная",
+                "green": "Зелёная",
+                "gold": "Золотая",
+                "purple": "Фиолетовая",
+                "dark": "Тёмная"
+            }
+
+            await interaction.response.send_message(
+                f"✅ Тема изменена на {theme_names.get(theme, theme)}",
+                ephemeral=True
+            )
+        except Exception as e:
+            import logging
+            logging.error(f"Error in /settheme: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка: {str(e)}",
+                ephemeral=True
+            )
+
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
     @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
     async def profile(
@@ -615,10 +666,10 @@ class TournamentCog(commands.Cog):
         from utils.cosmetics import format_player_name
         formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
 
-        # Use gradient embed for profile
+        # Use gradient embed for profile with user's theme
         from utils.embeds import build_gradient_embed
         frame_text = f"{stats.avatar_frame} " if stats.avatar_frame else ""
-        embed = build_gradient_embed(f"{frame_text}Профиль: {formatted_name}", "blue", f"📝 {stats.bio}" if stats.bio else "")
+        embed = build_gradient_embed(f"{frame_text}Профиль: {formatted_name}", stats.theme, f"📝 {stats.bio}" if stats.bio else "")
 
         # Set avatar (custom or Discord default)
         if stats.avatar_url:
