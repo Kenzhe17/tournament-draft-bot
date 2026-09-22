@@ -10,6 +10,7 @@ class CosmeticType(str, Enum):
     COLOR = "color"  # Цвет текста
     ICON = "icon"  # Значок (эмодзи)
     TAG = "tag"  # Текстовый тег
+    FRAME = "frame"  # Рамка профиля
 
 
 class CosmeticRarity(str, Enum):
@@ -48,12 +49,20 @@ class ShopItem:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ShopItem":
         """Десериализовать из словаря."""
+        # Handle invalid cosmetic_type values gracefully
+        cosmetic_type_str = data.get("cosmetic_type", "color")
+        try:
+            cosmetic_type = CosmeticType(cosmetic_type_str)
+        except ValueError:
+            # If the type is invalid, default to ICON
+            cosmetic_type = CosmeticType.ICON
+
         return cls(
             id=data.get("id", ""),
             name=data.get("name", ""),
             description=data.get("description", ""),
             price=data.get("price", 0),
-            cosmetic_type=CosmeticType(data.get("cosmetic_type", "color")),
+            cosmetic_type=cosmetic_type,
             rarity=CosmeticRarity(data.get("rarity", "basic")),
             value=data.get("value", ""),
             category=data.get("category", ""),
