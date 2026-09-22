@@ -71,9 +71,26 @@ class TournamentBot(commands.Bot):
         await self.tree.sync()
         logger.info("Slash-команды синхронизированы")
 
+        # Store bot instance globally for logging
+        from models.tournament import set_bot_instance
+        set_bot_instance(self)
+
         for tournament in store.all():
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
+
+        # Set up error handler for app commands
+        self.tree.on_error = self.on_app_command_error
+
+    async def on_app_command_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        """Handle app command errors."""
+        logger.error(f"App command error: {error}", exc_info=True)
+
+        # Log to Discord
+        if interaction.guild and interaction.user:
+            from utils.logging import log_command_error
+            command_name = interaction.command.name if interaction.command else "unknown"
+            await log_command_error(self, interaction.guild, interaction.user, command_name, str(error))
 
     def _view_key(self, view: discord.ui.View) -> str:
         """Уникальный ключ View по custom_id его компонентов."""
@@ -164,6 +181,11 @@ class TournamentBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
+
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        """Log when bot is added to a server."""
+        from utils.logging import log_guild_join
+        await log_guild_join(self, guild)
 
 
 def main() -> None:

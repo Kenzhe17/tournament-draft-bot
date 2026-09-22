@@ -7,6 +7,18 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+# Global bot instance for logging
+_bot_instance = None
+
+def set_bot_instance(bot):
+    """Set the global bot instance for logging."""
+    global _bot_instance
+    _bot_instance = bot
+
+def get_bot_instance():
+    """Get the global bot instance for logging."""
+    return _bot_instance
+
 
 class TournamentSize(str, Enum):
     """Размер турнира."""
@@ -104,6 +116,7 @@ class Tournament:
 
     phase: TournamentPhase = TournamentPhase.SETUP
     is_test: bool = False
+    start_time: str = ""  # ISO format timestamp when tournament started
 
     # Лимиты для кругов (True = лимит включен, False = без лимита)
     circle_limits_enabled: dict[int, bool] = field(default_factory=lambda: {2: True, 3: True, 4: True})
@@ -453,7 +466,12 @@ class Tournament:
         self.picks = {str(i): {} for i in range(self.captain_count)}
         self.current_circle = 2
         self.pick_index = 0
-        
+
+        # Record start time if not already set
+        if not self.start_time:
+            from datetime import datetime
+            self.start_time = datetime.now().isoformat()
+
         # Initialize available players for circles 2, 3, 4
         # All players from circle4 are available for draft
         self.available = {
@@ -658,6 +676,41 @@ class Tournament:
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
 
+        # Log tournament completion
+        try:
+            from utils.logging import log_tournament_completed
+            import asyncio
+
+            bot = get_bot_instance()
+            if not bot:
+                print("Bot instance not available for logging")
+                return
+
+            winner_team = self.teams[team_index] if team_index < len(self.teams) else {}
+            winner_name = self.team_names.get(team_index, winner_team.get("captain", f"Team {team_index}"))
+            participant_count = len(self.player_user_ids)
+
+            # Calculate duration
+            from datetime import datetime
+            if self.start_time:
+                start_dt = datetime.fromisoformat(self.start_time)
+                end_dt = datetime.now()
+                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+            else:
+                duration_minutes = 0
+
+            # Log asynchronously
+            asyncio.create_task(log_tournament_completed(
+                bot,
+                discord.Object(id=self.guild_id),
+                f"Турнир {self.size.value}",
+                winner_name,
+                participant_count,
+                duration_minutes
+            ))
+        except Exception as e:
+            print(f"Failed to log tournament completion: {e}")
+
     # --- Сериализация ---
 
     def to_dict(self) -> dict[str, Any]:
@@ -676,6 +729,7 @@ class Tournament:
             "players_pool": self.players_pool,
             "phase": self.phase.value,
             "is_test": self.is_test,
+            "start_time": self.start_time,
             "circle_limits_enabled": self.circle_limits_enabled,
             "team_names": self.team_names,
             "team_names_changed_teams": list(self.team_names_changed_teams),
@@ -715,6 +769,7 @@ class Tournament:
             players_pool=data.get("players_pool", []),
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
+            start_time=data.get("start_time", ""),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
             team_names_changed_teams=set(data.get("team_names_changed_teams", [])),
