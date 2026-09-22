@@ -136,13 +136,13 @@ def get_elo_multiplier_by_rank(leaderboard_rank: int) -> float:
         Multiplier (1.0 = normal, <1.0 = reduced for top players)
     """
     if leaderboard_rank <= 3:
-        return 0.2  # Top 3: 20%
+        return 0.4  # Top 3: 40%
     elif leaderboard_rank <= 6:
-        return 0.4  # Top 6: 40%
+        return 0.6  # Top 6: 60%
     elif leaderboard_rank <= 10:
-        return 0.6  # Top 10: 60%
+        return 0.8  # Top 10: 80%
     else:
-        return 1.0  # Normal: 100%
+        return 1.2  # Normal: 120%
 
 
 def get_loss_reduction(current_elo: int) -> float:

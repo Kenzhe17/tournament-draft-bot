@@ -57,7 +57,65 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
+        # Send DM notifications to team members
+        await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
+
         await interaction.response.send_message(
             f"✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}",
             ephemeral=True
         )
+
+
+async def send_room_dm_notifications(bot: TournamentBot, tournament: Tournament, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
+    """Send DM notifications to team members about room info."""
+    from storage.json_store import store
+
+    # Get team members
+    team1_members = []
+    team2_members = []
+
+    if team1_index < len(tournament.teams):
+        team1 = tournament.teams[team1_index]
+        for circle in range(1, 5):
+            player_name = team1.get(f"circle{circle}", "")
+            if player_name and player_name in tournament.player_user_ids:
+                team1_members.append(tournament.player_user_ids[player_name])
+
+    if team2_index < len(tournament.teams):
+        team2 = tournament.teams[team2_index]
+        for circle in range(1, 5):
+            player_name = team2.get(f"circle{circle}", "")
+            if player_name and player_name in tournament.player_user_ids:
+                team2_members.append(tournament.player_user_ids[player_name])
+
+    # Get team names
+    team1_data = tournament.teams[team1_index] if team1_index < len(tournament.teams) else {}
+    team2_data = tournament.teams[team2_index] if team2_index < len(tournament.teams) else {}
+    team1_name = tournament.team_names.get(team1_index, team1_data.get("captain", f"Team {team1_index}"))
+    team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
+
+    # Send DM to team1 members
+    for user_id in team1_members:
+        try:
+            user = await bot.fetch_user(user_id)
+            await user.send(
+                f"🏠 **Комната открыта!**\n\n"
+                f"Команда: {team1_name}\n"
+                f"ID: {room_id}\n"
+                f"Пароль: {room_password}"
+            )
+        except Exception:
+            pass  # User has DMs disabled
+
+    # Send DM to team2 members
+    for user_id in team2_members:
+        try:
+            user = await bot.fetch_user(user_id)
+            await user.send(
+                f"🏠 **Комната открыта!**\n\n"
+                f"Команда: {team2_name}\n"
+                f"ID: {room_id}\n"
+                f"Пароль: {room_password}"
+            )
+        except Exception:
+            pass  # User has DMs disabled
