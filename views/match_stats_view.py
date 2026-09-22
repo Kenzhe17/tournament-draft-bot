@@ -493,7 +493,7 @@ class AdminConfirmView(View):
 
         # Add confirm and edit buttons
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
-        confirm_btn.callback = self.confirm_callback
+        confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
 
         edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
@@ -559,7 +559,155 @@ class AdminConfirmView(View):
 
         return embed
 
-    async def confirm_callback(self, interaction: discord.Interaction) -> None:
+
+class WinnerConfirmView(View):
+    """View for confirming winner selection."""
+
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict, team_a_index: int, team_b_index: int, team_a_name: str, team_b_name: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.stats = stats
+        self.team_a_index = team_a_index
+        self.team_b_index = team_b_index
+
+        # Add buttons for each team
+        team_a_btn = Button(label=f"🏆 {team_a_name}", style=discord.ButtonStyle.primary)
+        team_a_btn.callback = lambda interaction: self._confirm_winner(interaction, team_a_index)
+        self.add_item(team_a_btn)
+
+        team_b_btn = Button(label=f"🏆 {team_b_name}", style=discord.ButtonStyle.primary)
+        team_b_btn.callback = lambda interaction: self._confirm_winner(interaction, team_b_index)
+        self.add_item(team_b_btn)
+
+        cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
+        cancel_btn.callback = self._cancel
+        self.add_item(cancel_btn)
+
+    async def _confirm_winner(self, interaction: discord.Interaction, winning_team_index: int) -> None:
+        """Confirm the selected winner."""
+        await interaction.response.edit_message(content="⏳ Подтверждение...", view=None)
+
+        # Call the actual confirm callback
+        confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats)
+        await confirm_view.confirm_callback(interaction, winning_team_index)
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        """Cancel the confirmation."""
+        await interaction.response.edit_message(content="❌ Отменено", view=None)
+
+
+class AdminConfirmView(View):
+
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.stats = stats
+
+        # Get match teams for display
+        if match_type == "qualifier":
+            match = tournament.qualifier_matches[match_index]
+        elif match_type == "semifinal":
+            match = tournament.semifinal_matches[match_index]
+        else:  # final
+            match = (tournament.final_teams[0], tournament.final_teams[1])
+
+        self.team_a_index, self.team_b_index = match
+
+        # Build stats display
+        self.embed = self._build_stats_embed()
+
+        # Add confirm and edit buttons
+        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
+        confirm_btn.callback = self.show_winner_confirmation
+        self.add_item(confirm_btn)
+
+        edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
+        edit_btn.callback = self.edit_callback
+        self.add_item(edit_btn)
+
+    def _build_stats_embed(self) -> discord.Embed:
+        """Build embed displaying match statistics."""
+        match_name = {
+            "qualifier": "Отборочный",
+            "semifinal": "Полуфинал",
+            "final": "Финал"
+        }.get(self.match_type, "Матч")
+
+        embed = discord.Embed(
+            title=f"📊 Статистика {match_name} #{self.match_index + 1}",
+            color=discord.Color.blue()
+        )
+
+        # Group stats by actual team
+        team_a_stats = {}
+        team_b_stats = {}
+
+        # Get team data to identify which players belong to which team
+        team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
+
+        team_a_players = set()
+        team_b_players = set()
+
+        for circle in range(1, 5):
+            player = team_a_data.get(f"circle{circle}")
+            if player:
+                team_a_players.add(player)
+            player = team_b_data.get(f"circle{circle}")
+            if player:
+                team_b_players.add(player)
+
+        # Group stats by team membership
+        for player_name, stat in self.stats.items():
+            if player_name in team_a_players:
+                team_a_stats[player_name] = stat
+            elif player_name in team_b_players:
+                team_b_stats[player_name] = stat
+
+        # Get team names
+        team_a_name = self.tournament.team_names.get(self.team_a_index, team_a_data.get("captain", f"Team {self.team_a_index}"))
+        team_b_name = self.tournament.team_names.get(self.team_b_index, team_b_data.get("captain", f"Team {self.team_b_index}"))
+
+        # Display team A stats
+        team_a_text = ""
+        for player_name, stat in team_a_stats.items():
+            team_a_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
+        if team_a_text:
+            embed.add_field(name=f"🔵 {team_a_name}", value=team_a_text or "Нет данных", inline=False)
+
+        # Display team B stats
+        team_b_text = ""
+        for player_name, stat in team_b_stats.items():
+            team_b_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
+        if team_b_text:
+            embed.add_field(name=f"🔴 {team_b_name}", value=team_b_text or "Нет данных", inline=False)
+
+        return embed
+
+    async def show_winner_confirmation(self, interaction: discord.Interaction) -> None:
+        """Show confirmation modal for selecting winner."""
+        # Get team names
+        team_a_name = self.tournament.team_names.get(self.team_a_index, f"Team {self.team_a_index}")
+        team_b_name = self.tournament.team_names.get(self.team_b_index, f"Team {self.team_b_index}")
+
+        # Create confirmation view
+        view = WinnerConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats, self.team_a_index, self.team_b_index, team_a_name, team_b_name)
+
+        embed = discord.Embed(
+            title="🏆 Подтверждение победителя",
+            description=f"Выберите команду-победителя для матча:\n{team_a_name} vs {team_b_name}",
+            color=discord.Color.gold()
+        )
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    async def confirm_callback(self, interaction: discord.Interaction, winning_team_index: int) -> None:
         import logging
         from storage.json_store import store
         from views.kd_input_view import process_match_result
@@ -577,11 +725,6 @@ class AdminConfirmView(View):
 
             match_id = f"{self.match_type}_{self.match_index}"
             temp_stats = tournament.temp_match_stats.get(match_id, {})
-
-            winning_team_index = self._get_winning_team_index()
-            if winning_team_index is None:
-                await interaction.followup.send("❌ Победитель не выбран.")
-                return
 
             # Process the match with statistics (this applies ELO and stats immediately)
             await process_match_result(self.guild_id, tournament, {

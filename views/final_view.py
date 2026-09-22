@@ -64,15 +64,8 @@ class FinalWinnerButton(discord.ui.Button):
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
-
-        # Create view with Change Winner button
-        from views.matches_view import ChangeWinnerButton, ConfirmChangeWinnerButton, CancelChangeWinnerButton
-        confirm_view = discord.ui.View()
-        confirm_view.add_item(ChangeWinnerButton(self.guild_id, 0, "final"))
-
         await interaction.response.send_message(
             f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
-            view=confirm_view,
             ephemeral=True
         )
 

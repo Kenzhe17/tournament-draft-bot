@@ -531,23 +531,19 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="setavatar", description="Установить аватарку профиля")
-    @app_commands.describe(url="URL изображения (оставьте пустым для сброса на дефолтную)")
-    async def setavatar(self, interaction: discord.Interaction, url: str = "") -> None:
-        """Установить аватарку профиля."""
-        if url:
-            # Basic URL validation
-            if not (url.startswith("http://") or url.startswith("https://")):
-                await interaction.response.send_message(
-                    "❌ URL должен начинаться с http:// или https://",
-                    ephemeral=True
-                )
-                return
-
+    @app_commands.command(name="setavatar", description="Установить аватар профиля")
+    @app_commands.describe(url="URL изображения аватара")
+    async def setavatar(self, interaction: discord.Interaction, url: str = None) -> None:
+        """Установить аватар профиля."""
         from storage.player_stats_store import player_stats_store
         from models.player_stats import PlayerStats
 
         stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+        avatar_url = url
+        if not avatar_url:
+            # Use Discord avatar by default
+            avatar_url = interaction.user.display_avatar.url
 
         if not stats:
             # Create default stats for new players
@@ -555,21 +551,21 @@ class TournamentCog(commands.Cog):
                 guild_id=interaction.guild_id,
                 user_id=interaction.user.id,
                 name=interaction.user.display_name,
-                avatar_url=url
+                avatar_url=avatar_url
             )
         else:
-            stats.avatar_url = url
+            stats.avatar_url = avatar_url
 
         await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
 
         if url:
             await interaction.response.send_message(
-                "✅ Аватарка установлена!",
+                f"✅ Аватар профиля обновлен.",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "✅ Аватарка сброшена на дефолтную (Discord)",
+                f"✅ Аватар профиля установлен по умолчанию (из Discord).",
                 ephemeral=True
             )
 
@@ -600,14 +596,10 @@ class TournamentCog(commands.Cog):
         from utils.cosmetics import format_player_name
         formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
 
-        # Use custom avatar if set, otherwise use Discord avatar
-        avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
-
         embed = discord.Embed(
             title=f"📊 Профиль: {formatted_name}",
             color=discord.Color.blue(),
         )
-        embed.set_thumbnail(url=avatar_url)
 
         # Показать био если есть
         if stats.bio:

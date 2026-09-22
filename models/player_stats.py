@@ -19,7 +19,7 @@ class PlayerStats:
     best_win_streak: int = 0
     best_loss_streak: int = 0
     bio: str = ""  # Короткое описание профиля
-    avatar_url: str = ""  # URL аватарки профиля (пустой = дефолтный Discord)
+    avatar_url: str = ""  # URL аватара профиля
     streak_bonus_coins: int = 0  # Монеты полученные за серии побед
 
     # New fields for detailed rating system
