@@ -142,8 +142,14 @@ class SemifinalWinnerButton(discord.ui.Button):
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
+
+        # Create view with Change Winner button
+        confirm_view = discord.ui.View()
+        confirm_view.add_item(ChangeWinnerButton(self.guild_id, self.match_index, "semifinal"))
+
         await interaction.response.send_message(
             f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            view=confirm_view,
             ephemeral=True
         )
 
@@ -500,9 +506,113 @@ class QualifierWinnerButton(discord.ui.Button):
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
+
+        # Create view with Change Winner button
+        from views.matches_view import ChangeWinnerButton
+        confirm_view = discord.ui.View()
+        confirm_view.add_item(ChangeWinnerButton(self.guild_id, self.match_index, "qualifier"))
+
         await interaction.response.send_message(
             f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            view=confirm_view,
             ephemeral=True
+        )
+
+
+class ChangeWinnerButton(discord.ui.Button):
+    """Button to change the winner after selection."""
+
+    def __init__(self, guild_id: int, match_index: int, match_type: str):
+        super().__init__(
+            label="🔄 Изменить победителя",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"change_winner:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.match_index = match_index
+        self.match_type = match_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут менять победителей.",
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.", ephemeral=True
+            )
+            return
+
+        # Create confirmation view
+        confirm_view = discord.ui.View()
+        confirm_view.add_item(ConfirmChangeWinnerButton(self.guild_id, self.match_index, self.match_type))
+        confirm_view.add_item(CancelChangeWinnerButton())
+
+        await interaction.response.send_message(
+            "⚠️ Вы уверены, что хотите изменить победителя?",
+            view=confirm_view,
+            ephemeral=True
+        )
+
+
+class ConfirmChangeWinnerButton(discord.ui.Button):
+    """Button to confirm changing the winner."""
+
+    def __init__(self, guild_id: int, match_index: int, match_type: str):
+        super().__init__(
+            label="✅ Да, изменить",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"confirm_change:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.match_index = match_index
+        self.match_type = match_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ Турнир не найден.", ephemeral=True
+            )
+            return
+
+        # Reset the winner for this match
+        if self.match_type == "qualifier":
+            tournament.qualifier_winners[self.match_index] = None
+        elif self.match_type == "semifinal":
+            tournament.semifinal_winners[self.match_index] = None
+        elif self.match_type == "final":
+            tournament.final_winner = None
+
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.edit_message(
+            content="✅ Победитель сброшен. Выберите нового победителя.",
+            view=None
+        )
+
+
+class CancelChangeWinnerButton(discord.ui.Button):
+    """Button to cancel changing the winner."""
+
+    def __init__(self):
+        super().__init__(
+            label="❌ Отмена",
+            style=discord.ButtonStyle.secondary,
+            custom_id="cancel_change"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            content="❌ Изменение отменено.",
+            view=None
         )
 
 

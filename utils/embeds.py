@@ -11,47 +11,6 @@ from storage.player_stats_store import player_stats_store
 from utils.cosmetics import format_player_name
 
 
-def get_gradient_emoji(color_type: str) -> str:
-    """Get gradient emoji for visual effects."""
-    gradients = {
-        "blue": "🔵🔷💙",
-        "red": "🔴🧡❤️",
-        "green": "🟢💚🌿",
-        "gold": "🟡💛✨",
-        "purple": "🟣💜🔮",
-        "dark": "⬛⬜🌑",
-        "rainbow": "🌈✨💫"
-    }
-    return gradients.get(color_type, "✨")
-
-
-def build_gradient_embed(title: str, color_type: str = "blue", description: str = "", animated: bool = False) -> discord.Embed:
-    """Build an embed with gradient visual effect."""
-    color_map = {
-        "blue": discord.Color.blue(),
-        "red": discord.Color.red(),
-        "green": discord.Color.green(),
-        "gold": discord.Color.gold(),
-        "purple": discord.Color.purple(),
-        "dark": discord.Color.dark_embed(),
-        "rainbow": discord.Color.random()
-    }
-
-    gradient_emoji = get_gradient_emoji(color_type)
-
-    # Add animated effect to title if requested
-    if animated:
-        title = f"⚡ {title} ⚡"
-
-    embed = discord.Embed(
-        title=f"{gradient_emoji} {title}",
-        description=description,
-        color=color_map.get(color_type, discord.Color.blue())
-    )
-
-    return embed
-
-
 async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
     """Рассчитать среднее ELO команды."""
     total_elo = 0

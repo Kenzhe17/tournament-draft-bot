@@ -240,29 +240,7 @@ class ShopBuyButton(discord.ui.Button):
         # Списать монеты
         await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
 
-        # Для рамок: экипировать сразу
-        if item.cosmetic_type.value == "frame":
-            from storage.player_stats_store import player_stats_store
-            from models.player_stats import PlayerStats
-
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-            if not stats:
-                stats = PlayerStats(
-                    guild_id=interaction.guild_id,
-                    user_id=interaction.user.id,
-                    name=interaction.user.display_name
-                )
-
-            stats.avatar_frame = item.value
-            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
-
-            await interaction.response.send_message(
-                f"✅ Вы купили и экипировали **{item.name}** за {item.price} 🪙!",
-                ephemeral=True
-            )
-            return
-
-        # Для остальных косметик: добавить в инвентарь
+        # Добавить в инвентарь (не экипировать автоматически)
         cosmetic = PlayerCosmetic(
             guild_id=interaction.guild_id,
             user_id=interaction.user.id,
@@ -343,4 +321,3 @@ class ShopMainView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ShopCategoryButton("icons", "Значки", "✨"))
         self.add_item(ShopCategoryButton("tags", "Теги", "🏷️"))
-        self.add_item(ShopCategoryButton("frames", "Рамки", "🖼️"))

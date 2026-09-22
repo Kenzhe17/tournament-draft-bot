@@ -500,142 +500,76 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
     async def setbio(self, interaction: discord.Interaction, bio: str) -> None:
         """Установить описание профиля."""
-        try:
-            # Ограничение длины
-            if len(bio) > 100:
-                await interaction.response.send_message(
-                    "❌ Описание должно быть не более 100 символов.",
-                    ephemeral=True
-                )
-                return
-
-            from storage.player_stats_store import player_stats_store
-            from models.player_stats import PlayerStats
-
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-
-            if not stats:
-                # Create default stats for new players
-                stats = PlayerStats(
-                    guild_id=interaction.guild_id,
-                    user_id=interaction.user.id,
-                    name=interaction.user.display_name,
-                    bio=bio
-                )
-            else:
-                stats.bio = bio
-
-            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
-
+        # Ограничение длины
+        if len(bio) > 100:
             await interaction.response.send_message(
-                f"✅ Описание профиля обновлено: {bio}",
-                ephemeral=True
-            )
-        except Exception as e:
-            import logging
-            logging.error(f"Error in /setbio: {e}", exc_info=True)
-            await interaction.response.send_message(
-                f"❌ Произошла ошибка: {str(e)}",
-                ephemeral=True
-            )
-
-    @app_commands.command(name="setavatar", description="Установить аватарку профиля")
-    @app_commands.describe(url="URL изображения (оставьте пустым для сброса на Discord аватарку)")
-    async def setavatar(self, interaction: discord.Interaction, url: str = "") -> None:
-        """Установить аватарку профиля."""
-        try:
-            from storage.player_stats_store import player_stats_store
-            from models.player_stats import PlayerStats
-
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-
-            if not stats:
-                # Create default stats for new players
-                stats = PlayerStats(
-                    guild_id=interaction.guild_id,
-                    user_id=interaction.user.id,
-                    name=interaction.user.display_name
-                )
-
-            if url:
-                # Validate URL (basic check)
-                if not url.startswith(("http://", "https://")):
-                    await interaction.response.send_message(
-                        "❌ URL должен начинаться с http:// или https://",
-                        ephemeral=True
-                    )
-                    return
-
-                stats.avatar_url = url
-                await interaction.response.send_message(
-                    f"✅ Аватарка обновлена: {url}",
-                    ephemeral=True
-                )
-            else:
-                # Reset to Discord avatar
-                stats.avatar_url = ""
-                await interaction.response.send_message(
-                    "✅ Аватарка сброшена на Discord аватарку",
-                    ephemeral=True
-                )
-
-            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
-        except Exception as e:
-            import logging
-            logging.error(f"Error in /setavatar: {e}", exc_info=True)
-            await interaction.response.send_message(
-                f"❌ Произошла ошибка: {str(e)}",
-                ephemeral=True
-            )
-
-    @app_commands.command(name="settheme", description="Установить тему профиля")
-    @app_commands.describe(theme="Тема (blue, red, green, gold, purple, dark)")
-    async def settheme(self, interaction: discord.Interaction, theme: str = "blue") -> None:
-        """Установить тему профиля."""
-        valid_themes = ["blue", "red", "green", "gold", "purple", "dark"]
-
-        if theme not in valid_themes:
-            await interaction.response.send_message(
-                f"❌ Неверная тема. Доступные темы: {', '.join(valid_themes)}",
+                "❌ Описание должно быть не более 100 символов.",
                 ephemeral=True
             )
             return
 
-        try:
-            from storage.player_stats_store import player_stats_store
-            from models.player_stats import PlayerStats
+        from storage.player_stats_store import player_stats_store
+        from models.player_stats import PlayerStats
 
-            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
-            if not stats:
-                # Create default stats for new players
-                stats = PlayerStats(
-                    guild_id=interaction.guild_id,
-                    user_id=interaction.user.id,
-                    name=interaction.user.display_name
+        if not stats:
+            # Create default stats for new players
+            stats = PlayerStats(
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                name=interaction.user.display_name,
+                bio=bio
+            )
+        else:
+            stats.bio = bio
+
+        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+
+        await interaction.response.send_message(
+            f"✅ Био установлено: {bio}",
+            ephemeral=True
+        )
+
+    @app_commands.command(name="setavatar", description="Установить аватарку профиля")
+    @app_commands.describe(url="URL изображения (оставьте пустым для сброса на дефолтную)")
+    async def setavatar(self, interaction: discord.Interaction, url: str = "") -> None:
+        """Установить аватарку профиля."""
+        if url:
+            # Basic URL validation
+            if not (url.startswith("http://") or url.startswith("https://")):
+                await interaction.response.send_message(
+                    "❌ URL должен начинаться с http:// или https://",
+                    ephemeral=True
                 )
+                return
 
-            stats.theme = theme
-            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+        from storage.player_stats_store import player_stats_store
+        from models.player_stats import PlayerStats
 
-            theme_names = {
-                "blue": "Синяя",
-                "red": "Красная",
-                "green": "Зелёная",
-                "gold": "Золотая",
-                "purple": "Фиолетовая",
-                "dark": "Тёмная"
-            }
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
+        if not stats:
+            # Create default stats for new players
+            stats = PlayerStats(
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                name=interaction.user.display_name,
+                avatar_url=url
+            )
+        else:
+            stats.avatar_url = url
+
+        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+
+        if url:
             await interaction.response.send_message(
-                f"✅ Тема изменена на {theme_names.get(theme, theme)}",
+                "✅ Аватарка установлена!",
                 ephemeral=True
             )
-        except Exception as e:
-            import logging
-            logging.error(f"Error in /settheme: {e}", exc_info=True)
+        else:
             await interaction.response.send_message(
-                f"❌ Произошла ошибка: {str(e)}",
+                "✅ Аватарка сброшена на дефолтную (Discord)",
                 ephemeral=True
             )
 
@@ -666,25 +600,20 @@ class TournamentCog(commands.Cog):
         from utils.cosmetics import format_player_name
         formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
 
-        # Use gradient embed for profile with user's theme
-        from utils.embeds import build_gradient_embed
-        frame_text = f"{stats.avatar_frame} " if stats.avatar_frame else ""
-        embed = build_gradient_embed(f"{frame_text}Профиль: {formatted_name}", stats.theme, f"📝 {stats.bio}" if stats.bio else "")
+        # Use custom avatar if set, otherwise use Discord avatar
+        avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
 
-        # Set avatar (custom or Discord default)
-        if stats.avatar_url:
-            embed.set_thumbnail(url=stats.avatar_url)
-        else:
-            embed.set_thumbnail(url=target_user.display_avatar.url)
+        embed = discord.Embed(
+            title=f"📊 Профиль: {formatted_name}",
+            color=discord.Color.blue(),
+        )
+        embed.set_thumbnail(url=avatar_url)
 
-        # Show frame if equipped
-        if stats.avatar_frame:
-            embed.add_field(name="🖼️ Рамка", value=stats.avatar_frame, inline=True)
+        # Показать био если есть
+        if stats.bio:
+            embed.description = f"📝 {stats.bio}"
 
-        # Dynamic icon based on ELO
-        elo_icon = "🏆" if stats.elo >= 1500 else "⭐" if stats.elo >= 1200 else "🎮"
-
-        embed.add_field(name=f"{elo_icon} ELO", value=str(int(stats.elo)), inline=True)
+        embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
         embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
         embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
         embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
