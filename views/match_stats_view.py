@@ -491,18 +491,18 @@ class AdminConfirmView(View):
         # Build stats display
         self.embed = self._build_stats_embed()
 
-        # Add confirm, change winner, and edit buttons
+        # Add confirm, edit, and change winner buttons
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.confirm_callback
         self.add_item(confirm_btn)
 
-        change_winner_btn = Button(label="🔄 Изменить победителя", style=discord.ButtonStyle.danger)
-        change_winner_btn.callback = self.change_winner_callback
-        self.add_item(change_winner_btn)
-
         edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         self.add_item(edit_btn)
+
+        change_winner_btn = Button(label="🔄 Изменить победителя", style=discord.ButtonStyle.danger)
+        change_winner_btn.callback = self.change_winner_callback
+        self.add_item(change_winner_btn)
 
     def _build_stats_embed(self) -> discord.Embed:
         """Build embed displaying match statistics."""
@@ -715,18 +715,19 @@ class AdminConfirmView(View):
         )
 
     async def change_winner_callback(self, interaction: discord.Interaction) -> None:
-        """Show winner selection modal with double confirmation."""
-        # Get current winner
-        current_winner = self._get_winning_team_index()
-        team_a_name = self.tournament.team_names.get(self.team_a_index, f"Команда {self.team_a_index}")
-        team_b_name = self.tournament.team_names.get(self.team_b_index, f"Команда {self.team_b_index}")
+        """Show winner selection with double confirmation."""
+        await interaction.response.defer(ephemeral=True)
 
-        # Show double confirmation
-        view = ChangeWinnerConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, current_winner)
-        await interaction.response.send_message(
-            f"⚠️ Вы уверены что хотите изменить победителя?\n\n"
-            f"Текущий победитель: {team_a_name if current_winner == self.team_a_index else team_b_name}\n"
-            f"Если продолжите, сможете выбрать другого победителя.",
+        # Get team names
+        team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
+        team_a_name = self.tournament.team_names.get(self.team_a_index, team_a_data.get("captain", f"Team {self.team_a_index}"))
+        team_b_name = self.tournament.team_names.get(self.team_b_index, team_b_data.get("captain", f"Team {self.team_b_index}"))
+
+        # Show double confirmation view
+        view = ChangeWinnerConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_a_index, self.team_b_index, team_a_name, team_b_name)
+        await interaction.followup.send(
+            f"⚠️ Вы уверены что хотите изменить победителя?\n\nТекущий победитель будет сброшен.",
             view=view,
             ephemeral=True
         )
@@ -741,63 +742,66 @@ class AdminConfirmView(View):
 
 
 class ChangeWinnerConfirmView(View):
-    """View for confirming winner change and selecting new winner."""
+    """View for double confirmation when changing winner."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, current_winner: int):
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_a_index: int, team_b_index: int, team_a_name: str, team_b_name: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
-        self.current_winner = current_winner
+        self.team_a_index = team_a_index
+        self.team_b_index = team_b_index
+        self.team_a_name = team_a_name
+        self.team_b_name = team_b_name
 
-        # Get match teams
-        if match_type == "qualifier":
-            match = tournament.qualifier_matches[match_index]
-        elif match_type == "semifinal":
-            match = tournament.semifinal_matches[match_index]
-        else:  # final
-            match = tournament.final_teams[0]
-
-        self.team_a_index, self.team_b_index = match
-        team_a_name = tournament.team_names.get(self.team_a_index, f"Команда {self.team_a_index}")
-        team_b_name = tournament.team_names.get(self.team_b_index, f"Команда {self.team_b_index}")
-
-        # Add team selection buttons
-        team_a_btn = Button(label=f"🏆 {team_a_name}", style=discord.ButtonStyle.primary)
-        team_a_btn.callback = self._create_team_callback(self.team_a_index)
+        # Add buttons for each team
+        team_a_btn = Button(label=f"🔵 {team_a_name}", style=discord.ButtonStyle.primary)
+        team_a_btn.callback = self._create_team_callback(team_a_index)
         self.add_item(team_a_btn)
 
-        team_b_btn = Button(label=f"🏆 {team_b_name}", style=discord.ButtonStyle.primary)
-        team_b_btn.callback = self._create_team_callback(self.team_b_index)
+        team_b_btn = Button(label=f"🔴 {team_b_name}", style=discord.ButtonStyle.primary)
+        team_b_btn.callback = self._create_team_callback(team_b_index)
         self.add_item(team_b_btn)
 
-        # Add cancel button
         cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
         cancel_btn.callback = self.cancel_callback
         self.add_item(cancel_btn)
 
-    def _create_team_callback(self, team_index: int):
+    def _create_team_callback(self, winning_team_index: int):
         async def callback(interaction: discord.Interaction) -> None:
-            # Change the winner
-            if self.match_type == "qualifier":
-                self.tournament.qualifier_winners[self.match_index] = team_index
-            elif self.match_type == "semifinal":
-                self.tournament.semifinal_pending_winners[self.match_index] = team_index
-            else:  # final
-                self.tournament.final_pending_winner = team_index
-
-            # Store tournament
             from storage.json_store import store
-            store.set(self.tournament)
 
-            # Update tournament message
-            from bot import TournamentBot
-            bot = interaction.client  # type: ignore[assignment]
-            await bot.update_tournament_message(interaction.guild, self.tournament)
+            await interaction.response.defer(ephemeral=True)
 
-            await interaction.followup.send("✅ Победитель изменён!", ephemeral=True)
+            try:
+                # Update winner in tournament
+                if self.match_type == "qualifier":
+                    self.tournament.qualifier_winners[self.match_index] = winning_team_index
+                elif self.match_type == "semifinal":
+                    self.tournament.semifinal_pending_winners[self.match_index] = winning_team_index
+                else:  # final
+                    self.tournament.final_pending_winner = winning_team_index
+
+                # Store tournament
+                store.set(self.tournament)
+
+                # Update tournament message
+                from bot import TournamentBot
+                bot = interaction.client  # type: ignore[assignment]
+                await bot.update_tournament_message(interaction.guild, self.tournament)
+
+                winner_name = self.team_a_name if winning_team_index == self.team_a_index else self.team_b_name
+                await interaction.followup.send(f"✅ Победитель изменён на {winner_name}!", ephemeral=True)
+            except Exception as e:
+                import logging
+                logging.error(f"Error changing winner: {e}", exc_info=True)
+                await interaction.followup.send("❌ Произошла ошибка при изменении победителя.", ephemeral=True)
+
         return callback
 
     async def cancel_callback(self, interaction: discord.Interaction) -> None:
-        await interaction.followup.send("❌ Изменение отменено.", ephemeral=True)
+        await interaction.response.edit_message(
+            content="❌ Изменение победителя отменено.",
+            view=None
+        )

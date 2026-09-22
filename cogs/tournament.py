@@ -539,6 +539,55 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="setavatar", description="Установить аватарку профиля")
+    @app_commands.describe(url="URL изображения (оставьте пустым для сброса на Discord аватарку)")
+    async def setavatar(self, interaction: discord.Interaction, url: str = "") -> None:
+        """Установить аватарку профиля."""
+        try:
+            from storage.player_stats_store import player_stats_store
+            from models.player_stats import PlayerStats
+
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+            if not stats:
+                # Create default stats for new players
+                stats = PlayerStats(
+                    guild_id=interaction.guild_id,
+                    user_id=interaction.user.id,
+                    name=interaction.user.display_name
+                )
+
+            if url:
+                # Validate URL (basic check)
+                if not url.startswith(("http://", "https://")):
+                    await interaction.response.send_message(
+                        "❌ URL должен начинаться с http:// или https://",
+                        ephemeral=True
+                    )
+                    return
+
+                stats.avatar_url = url
+                await interaction.response.send_message(
+                    f"✅ Аватарка обновлена: {url}",
+                    ephemeral=True
+                )
+            else:
+                # Reset to Discord avatar
+                stats.avatar_url = ""
+                await interaction.response.send_message(
+                    "✅ Аватарка сброшена на Discord аватарку",
+                    ephemeral=True
+                )
+
+            await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+        except Exception as e:
+            import logging
+            logging.error(f"Error in /setavatar: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка: {str(e)}",
+                ephemeral=True
+            )
+
     @app_commands.command(name="profile", description="Просмотреть статистику игрока")
     @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
     async def profile(
@@ -570,6 +619,12 @@ class TournamentCog(commands.Cog):
             title=f"📊 Профиль: {formatted_name}",
             color=discord.Color.blue(),
         )
+
+        # Set avatar (custom or Discord default)
+        if stats.avatar_url:
+            embed.set_thumbnail(url=stats.avatar_url)
+        else:
+            embed.set_thumbnail(url=target_user.display_avatar.url)
 
         # Показать био если есть
         if stats.bio:

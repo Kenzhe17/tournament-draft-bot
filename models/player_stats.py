@@ -20,6 +20,7 @@ class PlayerStats:
     best_loss_streak: int = 0
     bio: str = ""  # Короткое описание профиля
     streak_bonus_coins: int = 0  # Монеты полученные за серии побед
+    avatar_url: str = ""  # URL аватарки профиля (по умолчанию Discord аватарка)
 
     # New fields for detailed rating system
     total_kills: int = 0
@@ -49,6 +50,7 @@ class PlayerStats:
             "best_loss_streak": self.best_loss_streak,
             "bio": self.bio,
             "streak_bonus_coins": self.streak_bonus_coins,
+            "avatar_url": self.avatar_url,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
             "best_match_kills": self.best_match_kills,
@@ -72,6 +74,7 @@ class PlayerStats:
             best_loss_streak=data.get("best_loss_streak", 0),
             bio=data.get("bio", ""),
             streak_bonus_coins=data.get("streak_bonus_coins", 0),
+            avatar_url=data.get("avatar_url", ""),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
             best_match_kills=data.get("best_match_kills", 0),
