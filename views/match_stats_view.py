@@ -587,12 +587,55 @@ class WinnerConfirmView(View):
         self.add_item(cancel_btn)
 
     async def _confirm_winner(self, interaction: discord.Interaction, winning_team_index: int) -> None:
-        """Confirm the selected winner."""
-        await interaction.response.edit_message(content="⏳ Подтверждение...", view=None)
+        """Show final confirmation before confirming winner."""
+        # Get team name
+        winning_team_name = self.tournament.team_names.get(winning_team_index, f"Team {winning_team_index}")
+
+        # Create final confirmation view
+        view = FinalConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats, winning_team_index, winning_team_name)
+
+        embed = discord.Embed(
+            title="⚠️ Финальное подтверждение",
+            description=f"Вы уверены что хотите выбрать победителя: **{winning_team_name}**?\n\nЭто действие нельзя отменить!",
+            color=discord.Color.red()
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        """Cancel the confirmation."""
+        await interaction.response.edit_message(content="❌ Отменено", view=None)
+
+
+class FinalConfirmView(View):
+    """View for final confirmation before confirming winner."""
+
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict, winning_team_index: int, winning_team_name: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.stats = stats
+        self.winning_team_index = winning_team_index
+        self.winning_team_name = winning_team_name
+
+        # Add confirm and cancel buttons
+        confirm_btn = Button(label="✅ Да, подтвердить", style=discord.ButtonStyle.danger)
+        confirm_btn.callback = self._final_confirm
+        self.add_item(confirm_btn)
+
+        cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
+        cancel_btn.callback = self._cancel
+        self.add_item(cancel_btn)
+
+    async def _final_confirm(self, interaction: discord.Interaction) -> None:
+        """Final confirmation - actually confirm the winner."""
+        await interaction.response.edit_message(content="⏳ Подтверждение победителя...", view=None)
 
         # Call the actual confirm callback
         confirm_view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.stats)
-        await confirm_view.confirm_callback(interaction, winning_team_index)
+        await confirm_view.confirm_callback(interaction, self.winning_team_index)
 
     async def _cancel(self, interaction: discord.Interaction) -> None:
         """Cancel the confirmation."""
