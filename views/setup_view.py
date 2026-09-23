@@ -371,7 +371,7 @@ class DeletePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label="🗑️ Удалить игрока",
+            label="🗑️ Удалить",
             custom_id=f"delete_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -466,7 +466,7 @@ class ReplacePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🔄 Заменить игрока",
+            label="🔄 Заменить",
             custom_id=f"replace_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -504,26 +504,39 @@ class ReplacePlayerButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Show modal with user mentions
-        modal = ReplacePlayerModal(self.guild_id, players)
-        await interaction.response.send_modal(modal)
+        # Create select menu
+        select = discord.ui.Select(
+            placeholder="Выберите игрока для замены",
+            min_values=1,
+            max_values=1,
+            options=[discord.SelectOption(label=player, value=player) for player in sorted(players)]
+        )
+
+        async def select_callback(interaction: discord.Interaction):
+            old_player = select.values[0]
+            # Show modal for new player
+            modal = ReplacePlayerModal(self.guild_id, old_player)
+            await interaction.response.send_modal(modal)
+
+        select.callback = select_callback
+
+        view = discord.ui.View()
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            "Выберите игрока для замены:",
+            view=view,
+            ephemeral=True
+        )
 
 
 class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"):
     """Модальное окно для замены игрока."""
 
-    def __init__(self, guild_id: int, players: list):
+    def __init__(self, guild_id: int, old_player: str):
         super().__init__()
         self.guild_id = guild_id
-        self.players = players
-
-        self.current_player_input = discord.ui.TextInput(
-            label="Текущий игрок (@упоминание или имя)",
-            placeholder="@Player или имя",
-            required=True,
-            max_length=50,
-        )
-        self.add_item(self.current_player_input)
+        self.old_player = old_player
 
         self.new_player_input = discord.ui.TextInput(
             label="Новый игрок (@упоминание)",
@@ -544,15 +557,8 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
             return
 
         # Handle @mentions - extract display name if it's a mention
-        old_name = self.current_player_input.value.strip()
         new_name = self.new_player_input.value.strip()
-
-        # Check if current_player is a mention and extract the name
-        if old_name.startswith("<@") and old_name.endswith(">"):
-            user_id = int(old_name.strip("<@!>"))
-            member = interaction.guild.get_member(user_id)
-            if member:
-                old_name = member.display_name
+        old_name = self.old_player
 
         # Check if new_player is a mention and extract the name
         if new_name.startswith("<@") and new_name.endswith(">"):
