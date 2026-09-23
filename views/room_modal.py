@@ -40,6 +40,11 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             await interaction.response.send_message("❌ Нет активного турнира.", ephemeral=True)
             return
 
+        # Validate inputs
+        if not self.room_id.value or not self.room_password.value:
+            await interaction.response.send_message("❌ ID и пароль комнаты не могут быть пустыми.", ephemeral=True)
+            return
+
         # Store room data based on match type
         room_data = {"id": self.room_id.value, "password": self.room_password.value}
 
@@ -68,8 +73,6 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
     """Send DM notifications to team members about room info."""
-    from storage.json_store import store
-
     # Get team members
     team1_members = []
     team2_members = []
@@ -101,8 +104,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             await user.send(
                 f"🏠 **Комната открыта!**\n\n"
                 f"Команда: {team1_name}\n"
-                f"ID: {room_id}\n"
-                f"Пароль: {room_password}"
+                f"ID: `{room_id}`\n"
+                f"Пароль: `{room_password}`"
             )
         except Exception:
             pass  # User has DMs disabled
@@ -114,8 +117,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             await user.send(
                 f"🏠 **Комната открыта!**\n\n"
                 f"Команда: {team2_name}\n"
-                f"ID: {room_id}\n"
-                f"Пароль: {room_password}"
+                f"ID: `{room_id}`\n"
+                f"Пароль: `{room_password}`"
             )
         except Exception:
             pass  # User has DMs disabled
