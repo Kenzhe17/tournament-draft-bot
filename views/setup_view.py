@@ -365,6 +365,267 @@ class ExitButton(discord.ui.Button):
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
+class DeletePlayerButton(discord.ui.Button):
+    """Кнопка для удаления игрока из турнира (только для org)."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="🗑️ Удалить игрока",
+            custom_id=f"delete_player:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут удалять игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Get list of all players
+        if tournament.formation_mode == FormationMode.RANDOM:
+            players = tournament.players_pool
+        else:
+            players = tournament.all_players
+
+        if not players:
+            await interaction.response.send_message(
+                "❌ Нет зарегистрированных игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Create select menu
+        select = discord.ui.Select(
+            placeholder="Выберите игрока для удаления",
+            min_values=1,
+            max_values=1,
+            options=[discord.SelectOption(label=player, value=player) for player in sorted(players)]
+        )
+
+        async def select_callback(interaction: discord.Interaction):
+            player_name = select.values[0]
+
+            if tournament.formation_mode == FormationMode.RANDOM:
+                if player_name not in tournament.players_pool:
+                    await interaction.response.send_message(
+                        f"❌ Игрок `{player_name}` не найден.",
+                        ephemeral=True
+                    )
+                    return
+                tournament.players_pool.remove(player_name)
+                if player_name in tournament.player_user_ids:
+                    del tournament.player_user_ids[player_name]
+            else:
+                if not tournament.remove_player(player_name):
+                    await interaction.response.send_message(
+                        f"❌ Игрок `{player_name}` не найден.",
+                        ephemeral=True
+                    )
+                    return
+
+            store.set(tournament)
+
+            bot: TournamentBot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+
+            await interaction.response.send_message(
+                f"✅ Игрок `{player_name}` удален.",
+                ephemeral=True
+            )
+
+        select.callback = select_callback
+
+        view = discord.ui.View()
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            "Выберите игрока для удаления:",
+            view=view,
+            ephemeral=True
+        )
+
+
+class ReplacePlayerButton(discord.ui.Button):
+    """Кнопка для замены игрока в турнире (только для org)."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="🔄 Заменить игрока",
+            custom_id=f"replace_player:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                "❌ Только организаторы (роль 'org') могут заменять игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Get list of all players
+        if tournament.formation_mode == FormationMode.RANDOM:
+            players = tournament.players_pool
+        else:
+            players = tournament.all_players
+
+        if not players:
+            await interaction.response.send_message(
+                "❌ Нет зарегистрированных игроков.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Show modal with user mentions
+        modal = ReplacePlayerModal(self.guild_id, players)
+        await interaction.response.send_modal(modal)
+
+
+class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"):
+    """Модальное окно для замены игрока."""
+
+    def __init__(self, guild_id: int, players: list):
+        super().__init__()
+        self.guild_id = guild_id
+        self.players = players
+
+        self.current_player_input = discord.ui.TextInput(
+            label="Текущий игрок (@упоминание или имя)",
+            placeholder="@Player или имя",
+            required=True,
+            max_length=50,
+        )
+        self.add_item(self.current_player_input)
+
+        self.new_player_input = discord.ui.TextInput(
+            label="Новый игрок (@упоминание)",
+            placeholder="@NewPlayer",
+            required=True,
+            max_length=50,
+        )
+        self.add_item(self.new_player_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                "❌ Турнир не в фазе настройки.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Handle @mentions - extract display name if it's a mention
+        old_name = self.current_player_input.value.strip()
+        new_name = self.new_player_input.value.strip()
+
+        # Check if current_player is a mention and extract the name
+        if old_name.startswith("<@") and old_name.endswith(">"):
+            user_id = int(old_name.strip("<@!>"))
+            member = interaction.guild.get_member(user_id)
+            if member:
+                old_name = member.display_name
+
+        # Check if new_player is a mention and extract the name
+        if new_name.startswith("<@") and new_name.endswith(">"):
+            user_id = int(new_name.strip("<@!>"))
+            member = interaction.guild.get_member(user_id)
+            if member:
+                new_name = member.display_name
+                new_user_id = user_id
+            else:
+                await interaction.response.send_message(
+                    "❌ Новый игрок не найден на сервере.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+        else:
+            # Try to find user by name
+            new_user_id = 0
+            for member in interaction.guild.members:
+                if member.display_name == new_name:
+                    new_user_id = member.id
+                    break
+
+        # Check if old player exists
+        if tournament.formation_mode == FormationMode.RANDOM:
+            if old_name not in tournament.players_pool:
+                await interaction.response.send_message(
+                    f"❌ Игрок `{old_name}` не найден.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+
+            # Replace in pool
+            idx = tournament.players_pool.index(old_name)
+            tournament.players_pool[idx] = new_name
+            tournament.player_user_ids[new_name] = new_user_id
+            if old_name in tournament.player_user_ids:
+                del tournament.player_user_ids[old_name]
+        else:
+            if old_name not in tournament.all_players:
+                await interaction.response.send_message(
+                    f"❌ Игрок `{old_name}` не найден.",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+
+            # Replace in circles
+            for circle in range(1, 5):
+                circle_list = getattr(tournament, f"circle{circle}")
+                if old_name in circle_list:
+                    idx = circle_list.index(old_name)
+                    circle_list[idx] = new_name
+                    break
+
+            # Update player_user_ids
+            tournament.player_user_ids[new_name] = new_user_id
+            if old_name in tournament.player_user_ids:
+                del tournament.player_user_ids[old_name]
+
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.send_message(
+            f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+
 class AdminAddButton(discord.ui.Button):
     """Кнопка для админа добавления игрока в конкретный круг."""
 
@@ -644,6 +905,13 @@ class SetupView(discord.ui.View):
 
         toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
         self.add_item(toggle_button)
+
+        # Add org-only buttons
+        delete_button = DeletePlayerButton(tournament.guild_id)
+        self.add_item(delete_button)
+
+        replace_button = ReplacePlayerButton(tournament.guild_id)
+        self.add_item(replace_button)
 
         # Add exit button
         exit_button = ExitButton(tournament.guild_id)

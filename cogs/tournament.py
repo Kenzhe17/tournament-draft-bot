@@ -875,7 +875,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(f"✅ Обновлено {result} записей для {player.display_name}.", ephemeral=True)
 
-    @app_commands.command(name="replace", description="Заменить игрока")
+    async def cog_app_command_error(
     @app_commands.describe(
         current_player="Имя игрока которого нужно заменить (или @упоминание)",
         new_player="Имя нового игрока (или @упоминание)"
@@ -971,52 +971,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(
             f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
-
-    @app_commands.command(name="delete_player", description="Удалить игрока из турнира")
-    @app_commands.describe(name="Имя игрока которого нужно удалить")
-    @is_org()
-    async def delete_player(
-        self,
-        interaction: discord.Interaction,
-        name: str
-    ) -> None:
-        """Удалить игрока из турнира."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Нет активного турнира.",
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        name = name.strip()
-
-        if tournament.phase == TournamentPhase.SETUP:
-            if not tournament.remove_player(name):
-                await interaction.response.send_message(
-                    f"❌ Игрок `{name}` не найден.",
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-        else:
-            await interaction.response.send_message(
-                "❌ Можно удалять игроков только на этапе настройки.",
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        store.set(tournament)
-
-        await interaction.response.send_message(
-            f"✅ Игрок `{name}` удален.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))

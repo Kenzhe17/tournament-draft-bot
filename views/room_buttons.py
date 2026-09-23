@@ -58,10 +58,12 @@ class RoomButton(discord.ui.Button):
                 if player_name and player_name in tournament.player_user_ids:
                     team2_members.add(tournament.player_user_ids[player_name])
 
-        # Check if user is admin/org only (not team members)
-        if not is_admin:
+        # Check if user is in one of the teams or is admin/org
+        user_in_team = interaction.user.id in team1_members or interaction.user.id in team2_members
+
+        if not (user_in_team or is_admin):
             await interaction.response.send_message(
-                "❌ Только организаторы могут добавлять комнату.",
+                "❌ Только игроки этих команд и организаторы могут добавлять комнату.",
                 ephemeral=True
             )
             return
