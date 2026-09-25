@@ -725,8 +725,8 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
         rank_title = player.get_rank_title()
         line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO | Lv.{player.level} {rank_title}"
         lines.append(line)
-    
+
     embed.description = "\n".join(lines)
     embed.set_footer(text=f"Страница {page}/{total_pages}")
-    
+
     return embed

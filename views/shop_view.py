@@ -314,6 +314,125 @@ class InventoryUnequipButton(discord.ui.Button):
             )
 
 
+class RolesButton(discord.ui.Button):
+    """Кнопка для показа Discord ролей."""
+
+    def __init__(self):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Роли",
+            emoji="👑",
+            custom_id="shop_roles"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Показать все доступные роли."""
+        await interaction.response.defer(ephemeral=True)
+
+        # Получить все роли из магазина
+        all_items = shop_store.get_all_items()
+        roles = [item for item in all_items if item.item_type == "role"]
+
+        if not roles:
+            await interaction.followup.send(
+                "❌ Нет доступных ролей."
+            )
+            return
+
+        # Сортировать по цене (от дешёвого к дорогому)
+        roles.sort(key=lambda x: x.price)
+
+        # Создать embed с ролями
+        embed = discord.Embed(
+            title="👑 Discord Роли",
+            description="Купите роль для получения специальных прав",
+            color=discord.Color.gold()
+        )
+
+        # Создать View с кнопками покупки
+        view = discord.ui.View()
+        view.add_item(ShopBackButton())
+
+        for role in roles:
+            # Получить уровень игрока для проверки требования
+            from storage.player_stats_store import player_stats_store
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+            user_level = stats.level if stats else 1
+
+            # Проверить требование уровня
+            can_buy = user_level >= role.required_level
+            level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
+
+            label = f"{role.name} - {role.price} 🪙{level_req}"
+            button = RoleBuyButton(role.id, label, can_buy)
+            view.add_item(button)
+
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+
+class RoleBuyButton(discord.ui.Button):
+    """Кнопка покупки роли."""
+
+    def __init__(self, item_id: str, label: str, can_buy: bool):
+        style = discord.ButtonStyle.success if can_buy else discord.ButtonStyle.secondary
+        super().__init__(
+            style=style,
+            label=label,
+            custom_id=f"shop_buy_role:{item_id}",
+            disabled=not can_buy
+        )
+        self.item_id = item_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Купить роль."""
+        await interaction.response.defer(ephemeral=True)
+
+        item = shop_store.get_item(self.item_id)
+        if not item:
+            await interaction.followup.send("❌ Предмет не найден.")
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < item.price:
+            await interaction.followup.send(
+                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙"
+            )
+            return
+
+        # Проверить требование уровня
+        if item.required_level > 0:
+            from storage.player_stats_store import player_stats_store
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+            if not stats or stats.level < item.required_level:
+                await interaction.followup.send(
+                    f"❌ Требуется уровень {item.required_level} для покупки этой роли."
+                )
+                return
+
+        # Снять монеты
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
+
+        # Купить предмет (назначить роль)
+        success = await inventory_store.purchase_item(
+            interaction.guild_id,
+            interaction.user.id,
+            self.item_id,
+            interaction.guild
+        )
+
+        if success:
+            await interaction.followup.send(
+                f"✅ Вы купили **{item.name}** за {item.price} 🪙!"
+            )
+        else:
+            # Возврат монет при ошибке
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, item.price)
+            await interaction.followup.send(
+                "❌ Не удалось назначить роль. Монеты возвращены."
+            )
+
+
 class ShopMainView(discord.ui.View):
     """Главное меню магазина."""
 
@@ -321,3 +440,4 @@ class ShopMainView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ShopCategoryButton("icons", "Значки", "✨"))
         self.add_item(ShopCategoryButton("tags", "Теги", "🏷️"))
+        self.add_item(RolesButton())

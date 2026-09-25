@@ -177,6 +177,57 @@ class InventoryStore:
         """Включить режим базы данных."""
         self._use_db = True
 
+    async def purchase_item(self, guild_id: int, user_id: int, item_id: str, guild) -> bool:
+        """Купить предмет (косметика или роль).
+
+        Args:
+            guild_id: ID сервера
+            user_id: ID пользователя
+            item_id: ID предмета
+            guild: Discord guild object для назначения ролей
+
+        Returns:
+            True если успешно, False если ошибка
+        """
+        item = shop_store.get_item(item_id)
+        if not item:
+            return False
+
+        # Check required level
+        if item.required_level > 0:
+            from storage.player_stats_store import player_stats_store
+            stats = await player_stats_store.get(guild_id, user_id)
+            if not stats or stats.level < item.required_level:
+                return False
+
+        # Handle different item types
+        if item.item_type == "role":
+            # Assign Discord role
+            if item.role_id:
+                from utils.role_manager import apply_role
+                success = await apply_role(guild, user_id, item.role_id)
+                if success:
+                    # Add to inventory as "owned" role
+                    cosmetic = PlayerCosmetic(
+                        guild_id=guild_id,
+                        user_id=user_id,
+                        item_id=item_id,
+                        equipped=True  # Roles are always "equipped"
+                    )
+                    self.add_cosmetic(cosmetic)
+                return success
+            return False
+        else:
+            # Handle cosmetic items
+            cosmetic = PlayerCosmetic(
+                guild_id=guild_id,
+                user_id=user_id,
+                item_id=item_id,
+                equipped=False
+            )
+            self.add_cosmetic(cosmetic)
+            return True
+
 
 # Глобальные экземпляры
 shop_store = ShopStore()

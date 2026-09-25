@@ -505,8 +505,78 @@ def initialize_shop_items() -> None:
         ),
     ]
 
+    # Discord роли (Roles)
+    # NOTE: role_id должны быть заменены на реальные ID ролей из Discord
+    roles = [
+        ShopItem(
+            id="role_move",
+            name="Переместить",
+            description="Доступ к команде перемещения",
+            price=2000,
+            cosmetic_type=CosmeticType.TAG,  # Используем TAG как тип для ролей
+            rarity=CosmeticRarity.PREMIUM,
+            value="[MOVE]",
+            category="roles",
+            item_type="role",
+            role_id=123456789012345678,  # ЗАМЕНИТЬ на реальный role_id
+            required_level=10
+        ),
+        ShopItem(
+            id="role_mention",
+            name="@everyone @here",
+            description="Доступ к пингу @everyone и @here",
+            price=5000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.ELITE,
+            value="[MENTION]",
+            category="roles",
+            item_type="role",
+            role_id=123456789012345679,  # ЗАМЕНИТЬ на реальный role_id
+            required_level=15
+        ),
+        ShopItem(
+            id="role_say",
+            name="Say",
+            description="Доступ к каналу Say",
+            price=1000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.PREMIUM,
+            value="[SAY]",
+            category="roles",
+            item_type="role",
+            role_id=123456789012345680,  # ЗАМЕНИТЬ на реальный role_id
+            required_level=5
+        ),
+        ShopItem(
+            id="role_tournament_org",
+            name="Организатор Турниров",
+            description="Права на организацию турниров",
+            price=20000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.SPECIAL,
+            value="[ORG]",
+            category="roles",
+            item_type="role",
+            role_id=123456789012345681,  # ЗАМЕНИТЬ на реальный role_id
+            required_level=20
+        ),
+        ShopItem(
+            id="role_role_assign",
+            name="Выдача Ролей",
+            description="Права на выдачу ролей",
+            price=20000,
+            cosmetic_type=CosmeticType.TAG,
+            rarity=CosmeticRarity.SPECIAL,
+            value="[ADMIN]",
+            category="roles",
+            item_type="role",
+            role_id=123456789012345682,  # ЗАМЕНИТЬ на реальный role_id
+            required_level=20
+        ),
+    ]
+
     # Добавить все товары в магазин
-    for item in icons + tags:
+    for item in icons + tags + roles:
         shop_store.add_item(item)
 
 

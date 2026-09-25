@@ -176,6 +176,33 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Create cases table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS cases (
+                id SERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                case_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                price INTEGER NOT NULL,
+                drop_rates JSON,
+                is_active BOOLEAN DEFAULT TRUE,
+                UNIQUE(guild_id, case_id)
+            )
+        """)
+
+        # Create case_history table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS case_history (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                case_id TEXT NOT NULL,
+                opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                item_id TEXT NOT NULL,
+                rarity TEXT NOT NULL
+            )
+        """)
+
         # Create user_balance table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (

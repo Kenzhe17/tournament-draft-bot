@@ -54,11 +54,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0))
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0))
                 return None
         else:
             key = f"{guild_id}:{user_id}"
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0)) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0)) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -86,12 +86,12 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14, last_elo_change = $15
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14, last_elo_change = $15, xp = $16, level = $17, xp_to_next_level = $18, total_earnings = $19, tournament_participations = $20
                     """,
-                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change
+                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations
                 )
         else:
             key = f"{stats.guild_id}:{stats.user_id}"
@@ -232,6 +232,74 @@ class PlayerStatsStore:
         else:
             players_with_games = len([p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id])
             return (players_with_games + per_page - 1) // per_page
+
+    async def get_leaderboard_by_level(self, guild_id: int, page: int = 1, per_page: int = 10) -> list[PlayerStats]:
+        """Получить страницу лидерборда, отсортированную по уровню."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                offset = (page - 1) * per_page
+                rows = await conn.fetch(
+                    """
+                    SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, level, xp, total_earnings
+                    FROM player_stats
+                    WHERE guild_id = $1 AND games > 0 AND user_id > 0
+                    ORDER BY level DESC, xp DESC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    guild_id, per_page, offset
+                )
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), level=row.get("level", 1), xp=row.get("xp", 0), total_earnings=row.get("total_earnings", 0)) for row in rows]
+        else:
+            # Filter players with at least 1 game and from the same guild
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+
+            # Sort by level (descending), then XP
+            sorted_players = sorted(
+                players_with_games,
+                key=lambda p: (p.level, p.xp),
+                reverse=True
+            )
+
+            # Pagination
+            start = (page - 1) * per_page
+            end = start + per_page
+            return sorted_players[start:end]
+
+    async def get_leaderboard_by_earnings(self, guild_id: int, page: int = 1, per_page: int = 10) -> list[PlayerStats]:
+        """Получить страницу лидерборда, отсортированную по заработанным монетам."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                offset = (page - 1) * per_page
+                rows = await conn.fetch(
+                    """
+                    SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, level, xp, total_earnings
+                    FROM player_stats
+                    WHERE guild_id = $1 AND games > 0 AND user_id > 0
+                    ORDER BY total_earnings DESC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    guild_id, per_page, offset
+                )
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=row["elo"], wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), level=row.get("level", 1), xp=row.get("xp", 0), total_earnings=row.get("total_earnings", 0)) for row in rows]
+        else:
+            # Filter players with at least 1 game and from the same guild
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+
+            # Sort by total earnings (descending)
+            sorted_players = sorted(
+                players_with_games,
+                key=lambda p: p.total_earnings,
+                reverse=True
+            )
+
+            # Pagination
+            start = (page - 1) * per_page
+            end = start + per_page
+            return sorted_players[start:end]
 
     async def reset(self, guild_id: int) -> None:
         """Сбросить всю статистику сервера."""

@@ -181,14 +181,40 @@ class TournamentCog(commands.Cog):
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
-    @app_commands.command(name="leaderboard", description="Показать таблицу лидеров")
-    async def leaderboard(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="top", description="Показать таблицу лидеров")
+    @app_commands.describe(type="Тип лидерборда (level/money/elo)")
+    async def top(self, interaction: discord.Interaction, type: str = "elo") -> None:
         """Показать таблицу лидеров сервера."""
         from utils.embeds import build_leaderboard_embed
         from views.leaderboard_view import LeaderboardView
 
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1)
-        view = LeaderboardView(interaction.guild_id, page=1)
+        # Validate type
+        valid_types = ["level", "money", "elo"]
+        if type not in valid_types:
+            await interaction.response.send_message(
+                f"❌ Неверный тип. Доступные: {', '.join(valid_types)}",
+                ephemeral=True
+            )
+            return
+
+        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type=type)
+        view = LeaderboardView(interaction.guild_id, page=1, leaderboard_type=type)
+        await view.initialize()
+
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+        except discord.NotFound:
+            # Interaction expired, use followup
+            await interaction.followup.send(embed=embed, view=view)
+
+    @app_commands.command(name="leaderboard", description="Показать таблицу лидеров (ELO)")
+    async def leaderboard(self, interaction: discord.Interaction) -> None:
+        """Показать таблицу лидеров сервера (ELO)."""
+        from utils.embeds import build_leaderboard_embed
+        from views.leaderboard_view import LeaderboardView
+
+        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type="elo")
+        view = LeaderboardView(interaction.guild_id, page=1, leaderboard_type="elo")
         await view.initialize()
 
         try:
@@ -433,11 +459,45 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    @app_commands.command(name="cases", description="Показать доступные кейсы")
+    async def cases(self, interaction: discord.Interaction) -> None:
+        """Показать доступные кейсы."""
+        from storage.case_store import case_store
+        from views.case_view import CasesMainView
+
+        cases = case_store.get_all_cases()
+
+        if not cases:
+            await interaction.response.send_message(
+                "❌ Нет доступных кейсов.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="📦 Кейсы",
+            description="Откройте кейсы для получения случайных предметов!",
+            color=discord.Color.gold()
+        )
+
+        for case in cases:
+            embed.add_field(
+                name=f"{case.name} - {case.price} 🪙",
+                value=case.description,
+                inline=False
+            )
+
+        view = CasesMainView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
         from storage.player_stats_store import player_stats_store
         from storage.user_balance_store import user_balance_store
+        from storage.case_store import case_store
+        from storage.shop_store import inventory_store, shop_store
+        from utils.cosmetics import format_player_name
 
         stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -453,17 +513,34 @@ class TournamentCog(commands.Cog):
         current_xp, xp_needed = stats.get_level_progress()
         xp_progress = f"{current_xp}/{xp_needed}"
 
+        # Get case history count
+        case_history = case_store.get_case_history(interaction.guild_id, interaction.user.id)
+        cases_opened = len(case_history)
+
+        # Get equipped cosmetics
+        equipped_cosmetics = inventory_store.get_equipped_cosmetics(interaction.guild_id, interaction.user.id)
+        cosmetic_display = ""
+        if equipped_cosmetics:
+            cosmetic_items = []
+            for cosmetic in equipped_cosmetics:
+                item = shop_store.get_item(cosmetic.item_id)
+                if item:
+                    cosmetic_items.append(item.value)
+            cosmetic_display = " ".join(cosmetic_items)
+
         embed = discord.Embed(
-            title=f"🎮 {rank_title} {stats.name}",
+            title=f"🎮 {stats.name}",
             color=discord.Color.gold()
         )
 
-        # Информация об уровне
+        # Level and XP
         embed.add_field(
             name="📊 Уровень",
-            value=f"Level {stats.level} ({xp_progress} XP)",
-            inline=True
+            value=f"Level {stats.level} ({xp_progress} XP) ⭐",
+            inline=False
         )
+
+        # ELO and Money
         embed.add_field(
             name="⭐ ELO",
             value=f"{stats.elo}",
@@ -475,39 +552,49 @@ class TournamentCog(commands.Cog):
             inline=True
         )
 
-        # Статистика
+        # Stats
         embed.add_field(
             name="🏆 Победы",
-            value=f"{stats.wins} / {stats.games} ({stats.win_rate:.1f}%)",
+            value=f"{stats.wins} / Игры: {stats.games}",
             inline=True
         )
         embed.add_field(
-            name="🎭 K/D",
+            name="📈 Win Rate",
+            value=f"{stats.win_rate:.1f}%",
+            inline=True
+        )
+
+        # K/D stats
+        embed.add_field(
+            name="AVG",
+            value=f"{stats.avg_kills:.2f}",
+            inline=True
+        )
+        embed.add_field(
+            name="K/D",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
         embed.add_field(
-            name="🏅 Финалы",
-            value=str(stats.finals),
+            name="MAX",
+            value=str(stats.best_match_kills),
             inline=True
         )
 
-        # Прогресс
+        # Cases
         embed.add_field(
-            name="🔥 Текущая серия",
-            value=f"{stats.current_streak} побед подряд",
-            inline=True
+            name="� Кейсы открыто",
+            value=str(cases_opened),
+            inline=False
         )
-        embed.add_field(
-            name="👑 Лучшая серия",
-            value=f"{stats.best_win_streak} побед подряд",
-            inline=True
-        )
-        embed.add_field(
-            name="📈 Всего заработано",
-            value=f"{stats.total_earnings} 🪙",
-            inline=True
-        )
+
+        # Equipped cosmetics
+        if cosmetic_display:
+            embed.add_field(
+                name="🎨 Экипировано",
+                value=f"{stats.name} {cosmetic_display}",
+                inline=False
+            )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 

@@ -32,6 +32,9 @@ class ShopItem:
     rarity: CosmeticRarity
     value: str  # Значение (hex код цвета, эмодзи, текст тега)
     category: str  # Для группировки в магазине
+    item_type: str = "cosmetic"  # "cosmetic" или "role"
+    role_id: int | None = None  # Discord role ID (для ролей)
+    required_level: int = 0  # Требуемый уровень для покупки
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -44,6 +47,9 @@ class ShopItem:
             "rarity": self.rarity.value,
             "value": self.value,
             "category": self.category,
+            "item_type": self.item_type,
+            "role_id": self.role_id,
+            "required_level": self.required_level,
         }
 
     @classmethod
@@ -66,6 +72,9 @@ class ShopItem:
             rarity=CosmeticRarity(data.get("rarity", "basic")),
             value=data.get("value", ""),
             category=data.get("category", ""),
+            item_type=data.get("item_type", "cosmetic"),
+            role_id=data.get("role_id"),
+            required_level=data.get("required_level", 0),
         )
 
 
