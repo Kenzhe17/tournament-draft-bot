@@ -356,6 +356,27 @@ async def init_db() -> None:
             )
         """)
 
+        # Create indexes for performance
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_player_stats_guild_elo
+            ON player_stats(guild_id, elo DESC)
+        """)
+
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_player_stats_guild_level
+            ON player_stats(guild_id, level DESC, xp DESC)
+        """)
+
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_balance_guild
+            ON user_balance(guild_id, balance DESC)
+        """)
+
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_minigame_stats_guild_game
+            ON minigame_stats(guild_id, game_id)
+        """)
+
         # Initialize mini-games
         from storage.minigame_init import initialize_minigames
         await initialize_minigames()

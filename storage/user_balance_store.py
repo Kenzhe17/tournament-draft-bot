@@ -74,12 +74,19 @@ class UserBalanceStore:
         if amount < 0:
             raise ValueError("Amount must be positive")
 
+        from config import MAX_BALANCE
+
         key = f"{guild_id}:{user_id}"
 
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                # Check current balance
+                current = await self.get_balance(guild_id, user_id)
+                if current + amount > MAX_BALANCE:
+                    amount = MAX_BALANCE - current  # Cap at max balance
+
                 await conn.execute(
                     """
                     INSERT INTO user_balance (guild_id, user_id, balance)
@@ -97,7 +104,7 @@ class UserBalanceStore:
         else:
             if key not in self._balances:
                 self._balances[key] = 100
-            self._balances[key] += amount
+            self._balances[key] = min(self._balances[key] + amount, MAX_BALANCE)
             self.save()
             return self._balances[key]
 

@@ -23,6 +23,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 # Redis Cache
 REDIS_URL = os.getenv("REDIS_URL", "")
 
+# Economy limits
+MAX_BALANCE = 100000  # 100k монет максимум
+MIN_BET = 10  # Минимальная ставка
+MAX_BET = 1000  # Максимальная ставка (для обычных игр)
+
 # Лимиты турнира
 MAX_CAPTAINS = 4
 MAX_PLAYERS_PER_CIRCLE = 4

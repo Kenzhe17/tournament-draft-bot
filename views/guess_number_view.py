@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button, button
 from games.guess_number import GuessNumberGame
 from storage.redis_client import set_minigame_session, get_minigame_session, delete_minigame_session
+from utils.logger import log_game_play, log_balance_change, log_error
 
 
 class NumberBetModal(Modal, title="🎲 Угадай число"):
@@ -49,6 +50,7 @@ class NumberBetModal(Modal, title="🎲 Угадай число"):
 
         # Списать ставку
         await user_balance_store.add_balance(self.guild_id, self.user_id, -bet)
+        log_balance_change(self.guild_id, self.user_id, -bet, f"guess_number bet")
 
         # Создать игру
         game = GuessNumberGame()
@@ -70,9 +72,12 @@ class NumberBetModal(Modal, title="🎲 Угадай число"):
             if game.won:
                 winnings = int(bet * game.get_multiplier())
                 await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
+                log_balance_change(self.guild_id, self.user_id, winnings, f"guess_number win")
+                log_game_play(self.guild_id, self.user_id, "guess_number", bet, "win", winnings)
                 embed.add_field(name="Выигрыш", value=f"{winnings} 🪙", inline=False)
                 embed.set_footer(text=f"Множитель: {game.get_multiplier()}x")
             else:
+                log_game_play(self.guild_id, self.user_id, "guess_number", bet, "lose", 0)
                 embed.add_field(name="Потеряно", value=f"{bet} 🪙", inline=False)
 
             await interaction.response.send_message(embed=embed, ephemeral=True)
