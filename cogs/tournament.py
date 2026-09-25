@@ -511,6 +511,27 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(BetModal())
 
+    @app_commands.command(name="coin_flip", description="Монетка")
+    async def coin_flip(self, interaction: discord.Interaction) -> None:
+        """Игра в монетку."""
+        from views.coin_flip_view import CoinBetModal
+
+        await interaction.response.send_modal(CoinBetModal())
+
+    @app_commands.command(name="dice_roll", description="Кубик")
+    async def dice_roll(self, interaction: discord.Interaction) -> None:
+        """Игра в кубик."""
+        from views.dice_roll_view import DiceBetModal
+
+        await interaction.response.send_modal(DiceBetModal())
+
+    @app_commands.command(name="guess_color", description="Угадай цвет")
+    async def guess_color(self, interaction: discord.Interaction) -> None:
+        """Игра в угадай цвет."""
+        from views.guess_color_view import ColorBetModal
+
+        await interaction.response.send_modal(ColorBetModal())
+
     @app_commands.command(name="games", description="Показать доступные мини-игры")
     async def games(self, interaction: discord.Interaction) -> None:
         """Показать список мини-игр."""
@@ -619,10 +640,31 @@ class TournamentCog(commands.Cog):
 
         # Cases
         embed.add_field(
-            name="� Кейсы открыто",
+            name="📦 Кейсы открыто",
             value=str(cases_opened),
             inline=False
         )
+
+        # Mini-games stats
+        from storage.minigame_store import minigame_store
+        minigame_stats = await minigame_store.get_player_stats(interaction.guild_id, interaction.user.id)
+        if minigame_stats:
+            total_games_played = sum(s.get("games_played", 0) for s in minigame_stats)
+            total_games_won = sum(s.get("games_won", 0) for s in minigame_stats)
+            total_bet = sum(s.get("total_bet", 0) for s in minigame_stats)
+            total_won = sum(s.get("total_won", 0) for s in minigame_stats)
+            net_profit = sum(s.get("net_profit", 0) for s in minigame_stats)
+
+            embed.add_field(
+                name="🎮 Мини-игры",
+                value=f"Игры: {total_games_played} / Победы: {total_games_won}",
+                inline=True
+            )
+            embed.add_field(
+                name="💰 Прибыль",
+                value=f"{net_profit:+d} 🪙",
+                inline=True
+            )
 
         # Equipped cosmetics
         if cosmetic_display:

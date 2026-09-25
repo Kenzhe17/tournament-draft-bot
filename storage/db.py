@@ -364,3 +364,9 @@ async def init_db() -> None:
         # Initialize mini-games
         from storage.minigame_init import initialize_minigames
         await initialize_minigames()
+
+        # Initialize cases in database (not just JSON)
+        from storage.case_store import case_store
+        # Force initialization to ensure cases exist
+        if not case_store.get_all_cases():
+            case_store._initialize_default_cases()
