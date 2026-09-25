@@ -46,14 +46,6 @@ class LeaderboardView(discord.ui.View):
                 )
                 self.add_item(disabled_button)
 
-            # Page indicator
-            page_button = discord.ui.Button(
-                label=f"{self.page}/{self._total_pages}",
-                style=discord.ButtonStyle.primary,
-                disabled=True
-            )
-            self.add_item(page_button)
-
             # Next button
             if self.page < self._total_pages:
                 self.add_item(
