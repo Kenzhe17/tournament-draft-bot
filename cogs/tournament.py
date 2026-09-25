@@ -507,8 +507,18 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
     async def rps(self, interaction: discord.Interaction) -> None:
         """Игра в камень-ножницы-бумага."""
+        from storage.redis_client import get_cooldown, set_cooldown
         from views.rps_view import BetModal
 
+        # Check cooldown (3 seconds)
+        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps"):
+            await interaction.response.send_message(
+                "⏳ Подождите 3 секунды перед повторной игрой!",
+                ephemeral=True
+            )
+            return
+
+        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps", 3)
         await interaction.response.send_modal(BetModal())
 
     @app_commands.command(name="coin_flip", description="Монетка")
@@ -549,8 +559,18 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
     async def guess_number(self, interaction: discord.Interaction) -> None:
         """Игра в угадай число."""
+        from storage.redis_client import get_cooldown, set_cooldown
         from views.guess_number_view import NumberBetModal
 
+        # Check cooldown (3 seconds)
+        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number"):
+            await interaction.response.send_message(
+                "⏳ Подождите 3 секунды перед повторной игрой!",
+                ephemeral=True
+            )
+            return
+
+        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number", 3)
         await interaction.response.send_modal(NumberBetModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="guess_emoji", description="Угадай эмодзи по подсказкам")
@@ -563,8 +583,18 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="wheel", description="Колесо фортуны")
     async def wheel(self, interaction: discord.Interaction) -> None:
         """Игра колесо фортуны."""
+        from storage.redis_client import get_cooldown, set_cooldown
         from views.wheel_view import WheelBetModal
 
+        # Check cooldown (3 seconds)
+        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel"):
+            await interaction.response.send_message(
+                "⏳ Подождите 3 секунды перед повторной игрой!",
+                ephemeral=True
+            )
+            return
+
+        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel", 3)
         await interaction.response.send_modal(WheelBetModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="tictactoe", description="Крестики-Нолики")
