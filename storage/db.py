@@ -200,6 +200,12 @@ async def init_db() -> None:
             )
         """)
 
+        # Add command_name column to minigames if not exists
+        try:
+            await conn.execute("ALTER TABLE minigames ADD COLUMN IF NOT EXISTS command_name TEXT")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create cases table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cases (

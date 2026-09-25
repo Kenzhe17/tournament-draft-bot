@@ -13,6 +13,7 @@ async def initialize_minigames() -> None:
             # 1. Rock-Paper-Scissors
             {
                 "id": "rps",
+                "command_name": "rps",
                 "name": "Камень-Ножницы-Бумага",
                 "description": "Классическая игра. Камень бьёт ножницы, ножницы бьют бумагу, бумага бьёт камень.",
                 "category": "luck",
@@ -26,6 +27,7 @@ async def initialize_minigames() -> None:
             # 2. Guess Number
             {
                 "id": "guess_number",
+                "command_name": "guess_number",
                 "name": "Угадай число",
                 "description": "Бот загадывает число от 1 до 100. У вас есть 7 попыток.",
                 "category": "luck",
@@ -39,6 +41,7 @@ async def initialize_minigames() -> None:
             # 3. Coin Flip
             {
                 "id": "coin_flip",
+                "command_name": "coin_flip",
                 "name": "Монетка",
                 "description": "Орел или решка. Кто угадал тот и выиграл.",
                 "category": "luck",
@@ -52,6 +55,7 @@ async def initialize_minigames() -> None:
             # 4. Dice Roll
             {
                 "id": "dice_roll",
+                "command_name": "dice_roll",
                 "name": "Кубик",
                 "description": "Бросьте кубик. У кого больше выпадет тот и победил.",
                 "category": "luck",
@@ -65,6 +69,7 @@ async def initialize_minigames() -> None:
             # 5. Guess Emoji
             {
                 "id": "guess_emoji",
+                "command_name": "guess_emoji",
                 "name": "Угадай эмодзи",
                 "description": "Бот показывает скрытый эмодзи с подсказками.",
                 "category": "luck",
@@ -78,6 +83,7 @@ async def initialize_minigames() -> None:
             # 6. Wheel of Fortune
             {
                 "id": "wheel",
+                "command_name": "wheel",
                 "name": "Колесо фортуны",
                 "description": "Крутите колесо с разными множителями.",
                 "category": "luck",
@@ -91,6 +97,7 @@ async def initialize_minigames() -> None:
             # 7. Guess Color
             {
                 "id": "guess_color",
+                "command_name": "guess_color",
                 "name": "Угадай цвет",
                 "description": "Бот загадывает один из 3 цветов.",
                 "category": "luck",
@@ -104,6 +111,7 @@ async def initialize_minigames() -> None:
             # 8. Tic-Tac-Toe
             {
                 "id": "tictactoe",
+                "command_name": "tictactoe",
                 "name": "Крестики-Нолики",
                 "description": "Классическая игра 3x3. Кто первый соберёт 3 в ряд - победитель.",
                 "category": "luck",
@@ -117,6 +125,7 @@ async def initialize_minigames() -> None:
             # 9. Reflex Test
             {
                 "id": "reflex_test",
+                "command_name": "reflex_test",
                 "name": "Быстрый тест",
                 "description": "Нажмите кнопку как можно быстрее при появлении эмодзи.",
                 "category": "luck",
@@ -130,6 +139,7 @@ async def initialize_minigames() -> None:
             # 10. Spin Bottle
             {
                 "id": "spin_bottle",
+                "command_name": "spin_bottle",
                 "name": "Бутылочка",
                 "description": "Крутите бутылочку. На кого она укажет - тот выполняет вызов.",
                 "category": "luck",
@@ -144,6 +154,7 @@ async def initialize_minigames() -> None:
             # 11. Math Quiz
             {
                 "id": "math_quiz",
+                "command_name": "math_quiz",
                 "name": "Математическая викторина",
                 "description": "Решите математический пример за 30 секунд.",
                 "category": "quiz",
@@ -157,6 +168,7 @@ async def initialize_minigames() -> None:
             # 12. Word Guess
             {
                 "id": "word_guess",
+                "command_name": "word_guess",
                 "name": "Угадай слово",
                 "description": "Угадайте слово из 5 букв по подсказкам.",
                 "category": "quiz",
@@ -170,6 +182,7 @@ async def initialize_minigames() -> None:
             # 13. Riddles
             {
                 "id": "riddles",
+                "command_name": "riddles",
                 "name": "Загадки",
                 "description": "Отгадайте загадку с 3 попытками и подсказками.",
                 "category": "quiz",
@@ -183,6 +196,7 @@ async def initialize_minigames() -> None:
             # 14. Word Chain
             {
                 "id": "word_chain",
+                "command_name": "word_chain",
                 "name": "Словесные цепочки",
                 "description": "Называйте слова на заданную букву по очереди.",
                 "category": "quiz",
@@ -196,6 +210,7 @@ async def initialize_minigames() -> None:
             # 15. Millionaire
             {
                 "id": "millionaire",
+                "command_name": "millionaire",
                 "name": "Кто хочет стать миллионером",
                 "description": "Ответьте на 10 вопросов с подсказками.",
                 "category": "quiz",
@@ -209,6 +224,7 @@ async def initialize_minigames() -> None:
             # 16. Hangman
             {
                 "id": "hangman",
+                "command_name": "hangman",
                 "name": "Виселица",
                 "description": "Классическая виселица. Угадайте слово по буквам.",
                 "category": "quiz",
@@ -222,6 +238,7 @@ async def initialize_minigames() -> None:
             # 17. Trivia
             {
                 "id": "trivia",
+                "command_name": "trivia",
                 "name": "Тест на эрудицию",
                 "description": "10 вопросов из разных категорий. 7 правильных = победа.",
                 "category": "quiz",
@@ -235,6 +252,7 @@ async def initialize_minigames() -> None:
             # 18. Memory
             {
                 "id": "memory",
+                "command_name": "memory",
                 "name": "Память",
                 "description": "Запомните последовательность эмодзи и повторите её.",
                 "category": "quiz",
@@ -248,6 +266,7 @@ async def initialize_minigames() -> None:
             # 19. Logic Puzzle
             {
                 "id": "logic_puzzle",
+                "command_name": "logic_puzzle",
                 "name": "Логические задачи",
                 "description": "Решите логическую задачу с 3 попытками.",
                 "category": "quiz",
@@ -261,6 +280,7 @@ async def initialize_minigames() -> None:
             # 20. Anagrams
             {
                 "id": "anagrams",
+                "command_name": "anagrams",
                 "name": "Анаграммы",
                 "description": "Соберите слово из перемешанных букв.",
                 "category": "quiz",
@@ -276,9 +296,10 @@ async def initialize_minigames() -> None:
         for game in games:
             await conn.execute(
                 """
-                INSERT INTO minigames (id, name, description, category, difficulty, min_bet, max_bet, multiplier, is_pvp, is_pve, is_active)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)
+                INSERT INTO minigames (id, command_name, name, description, category, difficulty, min_bet, max_bet, multiplier, is_pvp, is_pve, is_active)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
                 ON CONFLICT (id) DO UPDATE SET
+                    command_name = EXCLUDED.command_name,
                     name = EXCLUDED.name,
                     description = EXCLUDED.description,
                     category = EXCLUDED.category,
@@ -291,6 +312,7 @@ async def initialize_minigames() -> None:
                     is_active = TRUE
                 """,
                 game["id"],
+                game.get("command_name", game["id"]),
                 game["name"],
                 game["description"],
                 game["category"],

@@ -2,7 +2,8 @@
 
 import random
 import discord
-from views.quiz_view import QuizBetModal
+from storage.user_balance_store import user_balance_store
+from config import MIN_BET, MAX_BET
 
 
 class MathQuizGame:
@@ -77,9 +78,6 @@ class MathQuizModal(discord.ui.Modal, title="Математическая вик
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Начать игру с указанной ставкой."""
-        from storage.user_balance_store import user_balance_store
-        from storage.minigame_store import minigame_store
-
         try:
             bet = int(self.bet.value)
         except ValueError:
@@ -103,7 +101,6 @@ class MathQuizModal(discord.ui.Modal, title="Математическая вик
             return
 
         # Проверить лимиты ставок
-        from config import MIN_BET, MAX_BET
         if bet < MIN_BET or bet > MAX_BET:
             await interaction.response.send_message(
                 f"❌ Ставка должна быть между {MIN_BET} и {MAX_BET} 🪙",

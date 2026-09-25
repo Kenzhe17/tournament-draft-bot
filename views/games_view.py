@@ -97,10 +97,11 @@ class GameLaunchSelect(discord.ui.Select):
     def __init__(self, games):
         options = []
         for game in games:
+            command_name = getattr(game, 'command_name', game.id)
             options.append(
                 discord.SelectOption(
                     label=game.name,
-                    value=game.command_name,
+                    value=command_name,
                     description=f"{game.description} ({game.min_bet}-{game.max_bet} 🪙)",
                     emoji="🎮"
                 )
@@ -117,23 +118,9 @@ class GameLaunchSelect(discord.ui.Select):
         """Запустить выбранную игру."""
         command_name = self.values[0]
 
-        # Define command mappings
-        command_map = {
-            "rps": "rps",
-            "coin_flip": "coin_flip",
-            "dice_roll": "dice_roll",
-            "guess_color": "guess_color",
-            "guess_number": "guess_number",
-            "guess_emoji": "guess_emoji",
-            "wheel": "wheel",
-            "tictactoe": "tictactoe",
-            "reflex_test": "reflex_test",
-            "spin_bottle": "spin_bottle",
-        }
-
         # Get the command
         bot = interaction.client
-        command = bot.tree.get_command(command_map.get(command_name, command_name))
+        command = bot.tree.get_command(command_name)
 
         if command:
             # Execute the command
