@@ -170,6 +170,11 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create cases table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cases (

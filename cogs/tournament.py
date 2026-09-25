@@ -698,12 +698,20 @@ class TournamentCog(commands.Cog):
             inline=True
         )
 
-        # Cases
+        # Level
         embed.add_field(
-            name="📦 Кейсы открыто",
-            value=str(cases_opened),
-            inline=False
+            name="� Уровень",
+            value=f"Level {stats.level}",
+            inline=True
         )
+
+        # Profile description
+        if stats.description:
+            embed.add_field(
+                name="📝 Описание",
+                value=stats.description,
+                inline=False
+            )
 
         # Mini-games stats
         from storage.minigame_store import minigame_store
@@ -734,7 +742,12 @@ class TournamentCog(commands.Cog):
                 inline=False
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Add edit button for profile owner
+        from views.profile_view import ProfileEditButton
+        view = discord.ui.View()
+        view.add_item(ProfileEditButton(interaction.guild_id, interaction.user.id))
+
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:

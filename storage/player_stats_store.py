@@ -98,6 +98,27 @@ class PlayerStatsStore:
             self._stats[key] = stats
             self.save()
 
+    async def update(self, guild_id: int, user_id: int, stats: PlayerStats) -> None:
+        """Обновить статистику игрока."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """UPDATE player_stats SET
+                    name = $1,
+                    description = $2
+                    WHERE guild_id = $3 AND user_id = $4""",
+                    stats.name,
+                    stats.description,
+                    guild_id,
+                    user_id
+                )
+        else:
+            key = f"{guild_id}:{user_id}"
+            self._stats[key] = stats
+            self.save()
+
     async def update_player(self, guild_id: int, user_id: int, name: str, result: str = "none", count_game: bool = False, set_elo: int | None = None) -> None:
         """Обновить статистику игрока.
         

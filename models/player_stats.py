@@ -41,6 +41,7 @@ class PlayerStats:
     xp_to_next_level: int = 100
     total_earnings: int = 0  # Total coins earned
     tournament_participations: int = 0
+    description: str = ""  # User profile description
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
@@ -72,6 +73,7 @@ class PlayerStats:
             "xp_to_next_level": self.xp_to_next_level,
             "total_earnings": self.total_earnings,
             "tournament_participations": self.tournament_participations,
+            "description": self.description,
         }
 
     @classmethod
@@ -105,6 +107,7 @@ class PlayerStats:
             xp_to_next_level=data.get("xp_to_next_level", 100),
             total_earnings=data.get("total_earnings", 0),
             tournament_participations=data.get("tournament_participations", 0),
+            description=data.get("description", ""),
         )
 
     @property
