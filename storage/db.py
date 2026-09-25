@@ -170,12 +170,6 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
-        # Add last_streak_date to bonus_cooldowns
-        try:
-            await conn.execute("ALTER TABLE bonus_cooldowns ADD COLUMN IF NOT EXISTS last_streak_date DATE")
-        except asyncpg.DuplicateColumnError:
-            pass
-
         # Create cases table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cases (
@@ -276,6 +270,7 @@ async def init_db() -> None:
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 last_claim TIMESTAMP,
+                last_streak_date DATE,
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
