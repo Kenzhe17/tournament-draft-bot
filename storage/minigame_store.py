@@ -22,27 +22,31 @@ class MinigameStore:
     async def get_available_games(self) -> List[Minigame]:
         """Get all available mini-games."""
         if self._use_db:
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT * FROM minigames WHERE is_active = TRUE ORDER BY category, name"
-                )
-                return [
-                    Minigame(
-                        id=row["id"],
-                        name=row["name"],
-                        description=row["description"],
-                        category=row["category"],
-                        difficulty=row["difficulty"],
-                        min_bet=row["min_bet"],
-                        max_bet=row["max_bet"],
-                        multiplier=row["multiplier"],
-                        is_pvp=row["is_pvp"],
-                        is_pve=row["is_pve"],
-                        is_active=row["is_active"],
+            try:
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT * FROM minigames WHERE is_active = TRUE ORDER BY category, name"
                     )
-                    for row in rows
-                ]
+                    return [
+                        Minigame(
+                            id=row["id"],
+                            name=row["name"],
+                            description=row["description"],
+                            category=row["category"],
+                            difficulty=row["difficulty"],
+                            min_bet=row["min_bet"],
+                            max_bet=row["max_bet"],
+                            multiplier=row["multiplier"],
+                            is_pvp=row["is_pvp"],
+                            is_pve=row["is_pve"],
+                            is_active=row["is_active"],
+                        )
+                        for row in rows
+                    ]
+            except Exception:
+                # If database is not available, return empty list
+                return []
         return []
 
     async def get_game(self, game_id: str) -> Optional[Minigame]:
