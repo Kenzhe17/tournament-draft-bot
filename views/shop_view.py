@@ -440,6 +440,114 @@ class ShopMainView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(ShopCategoryButton("icons", "Значки", "✨"))
-        self.add_item(ShopCategoryButton("tags", "Теги", "🏷️"))
-        self.add_item(RolesButton())
+        self.add_item(ShopCategorySelect())
+
+
+class ShopCategorySelect(discord.ui.Select):
+    """Выпадающее меню выбора категории магазина."""
+
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Значки",
+                value="icons",
+                description="Косметические значки для профиля",
+                emoji="✨"
+            ),
+            discord.SelectOption(
+                label="Теги",
+                value="tags",
+                description="Косметические теги для имени",
+                emoji="🏷️"
+            ),
+            discord.SelectOption(
+                label="Discord Роли",
+                value="roles",
+                description="Получите специальные права на сервере",
+                emoji="👑"
+            ),
+        ]
+        super().__init__(
+            placeholder="Выберите категорию магазина...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать выбор категории."""
+        category = self.values[0]
+
+        if category == "roles":
+            # Показать роли
+            await interaction.response.defer(ephemeral=True)
+
+            # Получить все роли из магазина
+            all_items = shop_store.get_all_items()
+            roles = [item for item in all_items if item.item_type == "role"]
+
+            if not roles:
+                await interaction.followup.send(
+                    "❌ Нет доступных ролей."
+                )
+                return
+
+            # Сортировать по цене (от дешёвого к дорогому)
+            roles.sort(key=lambda x: x.price)
+
+            # Создать embed с ролями
+            embed = discord.Embed(
+                title="👑 Discord Роли",
+                description="Купите роль для получения специальных прав",
+                color=discord.Color.gold()
+            )
+
+            # Создать View с кнопками покупки
+            view = discord.ui.View()
+            view.add_item(ShopBackButton())
+
+            for role in roles:
+                # Получить уровень игрока для проверки требования
+                from storage.player_stats_store import player_stats_store
+                stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+                user_level = stats.level if stats else 1
+
+                # Проверить требование уровня
+                can_buy = user_level >= role.required_level
+                level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
+
+                label = f"{role.name} - {role.price} 🪙{level_req}"
+                button = RoleBuyButton(role.id, label, can_buy)
+                view.add_item(button)
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            # Показать подкатегории по редкости
+            await interaction.response.defer(ephemeral=True)
+
+            # Создать View с кнопками редкости
+            view = discord.ui.View()
+            view.add_item(ShopBackButton())
+
+            # Добавить кнопки для каждой редкости
+            rarities = [
+                (CosmeticRarity.BASIC, "Basic", "⭐"),
+                (CosmeticRarity.PREMIUM, "Premium", "💎"),
+                (CosmeticRarity.ELITE, "Elite", "👑"),
+                (CosmeticRarity.SPECIAL, "Special", "✨"),
+            ]
+
+            for rarity, label, emoji in rarities:
+                view.add_item(RarityButton(category, rarity, label, emoji))
+
+            # Определить цвет embed по категории
+            embed_color = discord.Color.blue() if category == "icons" else discord.Color.purple()
+
+            category_label = "Значки" if category == "icons" else "Теги"
+            embed = discord.Embed(
+                title=f"🛒 {category_label} - Выберите редкость",
+                description="Выберите редкость товаров для просмотра",
+                color=embed_color
+            )
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
