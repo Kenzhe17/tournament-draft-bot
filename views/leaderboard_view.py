@@ -16,10 +16,11 @@ if TYPE_CHECKING:
 class LeaderboardView(discord.ui.View):
     """View с кнопками пагинации для лидерборда."""
 
-    def __init__(self, guild_id: int, page: int = 1):
+    def __init__(self, guild_id: int, page: int = 1, leaderboard_type: str = "elo"):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.page = page
+        self.leaderboard_type = leaderboard_type
         self.per_page = 10
         self._total_pages = 0  # Will be set asynchronously
 
@@ -31,14 +32,14 @@ class LeaderboardView(discord.ui.View):
         if self.page > 1:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page - 1, "⬅️", discord.ButtonStyle.secondary
+                    self.guild_id, self.page - 1, "⬅️", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
             )
 
         if self.page < self._total_pages:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page + 1, "➡️", discord.ButtonStyle.secondary
+                    self.guild_id, self.page + 1, "➡️", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
             )
 
@@ -46,7 +47,7 @@ class LeaderboardView(discord.ui.View):
 class LeaderboardPageButton(discord.ui.Button):
     """Кнопка для перехода на страницу лидерборда."""
 
-    def __init__(self, guild_id: int, page: int, label: str, style: discord.ButtonStyle):
+    def __init__(self, guild_id: int, page: int, label: str, style: discord.ButtonStyle, leaderboard_type: str = "elo"):
         super().__init__(
             label=label,
             style=style,
@@ -54,6 +55,7 @@ class LeaderboardPageButton(discord.ui.Button):
         )
         self.guild_id = guild_id
         self.page = page
+        self.leaderboard_type = leaderboard_type
 
     async def callback(self, interaction: discord.Interaction) -> None:
         total_pages = await player_stats_store.get_total_pages(self.guild_id, 10)
@@ -65,8 +67,8 @@ class LeaderboardPageButton(discord.ui.Button):
             )
             return
 
-        embed = await build_leaderboard_embed(self.guild_id, self.page)
-        view = LeaderboardView(self.guild_id, self.page)
+        embed = await build_leaderboard_embed(self.guild_id, self.page, self.leaderboard_type)
+        view = LeaderboardView(self.guild_id, self.page, self.leaderboard_type)
         await view.initialize()
 
         await interaction.response.edit_message(embed=embed, view=view)

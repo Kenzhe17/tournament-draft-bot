@@ -3,7 +3,7 @@
 import json
 import random
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from models.case import Case
 from storage.shop_store import shop_store
