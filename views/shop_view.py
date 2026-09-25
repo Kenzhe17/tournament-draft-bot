@@ -370,6 +370,84 @@ class RolesButton(discord.ui.Button):
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 
+class RoleSelect(discord.ui.Select):
+    """Выпадающее меню выбора роли."""
+
+    def __init__(self, roles):
+        options = []
+        for role in roles:
+            level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
+            options.append(
+                discord.SelectOption(
+                    label=role.name,
+                    value=role.id,
+                    description=f"{role.price} 🪙{level_req}",
+                    emoji="👑"
+                )
+            )
+
+        super().__init__(
+            placeholder="Выберите роль для покупки...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.roles = roles
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Купить выбранную роль."""
+        role_id = self.values[0]
+        item = shop_store.get_item(role_id)
+
+        if not item:
+            await interaction.response.send_message("❌ Предмет не найден.", ephemeral=True)
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < item.price:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙",
+                ephemeral=True
+            )
+            return
+
+        # Проверить требование уровня
+        if item.required_level > 0:
+            from storage.player_stats_store import player_stats_store
+            stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+            if not stats or stats.level < item.required_level:
+                await interaction.response.send_message(
+                    f"❌ Требуется уровень {item.required_level} для покупки этой роли.",
+                    ephemeral=True
+                )
+                return
+
+        # Снять монеты
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
+
+        # Купить предмет (назначить роль)
+        success = await inventory_store.purchase_item(
+            interaction.guild_id,
+            interaction.user.id,
+            role_id,
+            interaction.guild
+        )
+
+        if success:
+            await interaction.response.send_message(
+                f"✅ Вы купили **{item.name}** за {item.price} 🪙!",
+                ephemeral=True
+            )
+        else:
+            # Возврат монет при ошибке
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, item.price)
+            await interaction.response.send_message(
+                "❌ Не удалось назначить роль. Монеты возвращены.",
+                ephemeral=True
+            )
+
+
 class RoleBuyButton(discord.ui.Button):
     """Кнопка покупки роли."""
 
@@ -477,7 +555,7 @@ class ShopCategorySelect(discord.ui.Select):
         category = self.values[0]
 
         if category == "roles":
-            # Показать роли
+            # Показать роли через выпадающее меню
             await interaction.response.defer(ephemeral=True)
 
             # Получить все роли из магазина
@@ -500,23 +578,32 @@ class ShopCategorySelect(discord.ui.Select):
                 color=discord.Color.gold()
             )
 
-            # Создать View с кнопками покупки
+            # Создать View с выпадающим меню ролей
             view = discord.ui.View()
             view.add_item(ShopBackButton())
+            view.add_item(RoleSelect(roles))
 
-            for role in roles:
-                # Получить уровень игрока для проверки требования
-                from storage.player_stats_store import player_stats_store
-                stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-                user_level = stats.level if stats else 1
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            # Показать подкатегории по редкости
+            await interaction.response.defer(ephemeral=True)
 
-                # Проверить требование уровня
-                can_buy = user_level >= role.required_level
-                level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
+            # Создать View с выпадающим меню редкости
+            view = discord.ui.View()
+            view.add_item(ShopBackButton())
+            view.add_item(RaritySelect(category))
 
-                label = f"{role.name} - {role.price} 🪙{level_req}"
-                button = RoleBuyButton(role.id, label, can_buy)
-                view.add_item(button)
+            # Определить цвет embed по категории
+            embed_color = discord.Color.blue() if category == "icons" else discord.Color.purple()
+
+            category_label = "Значки" if category == "icons" else "Теги"
+            embed = discord.Embed(
+                title=f"🛒 {category_label} - Выберите редкость",
+                description="Выберите редкость товаров для просмотра",
+                color=embed_color
+            )
+
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         else:

@@ -28,39 +28,38 @@ class LeaderboardView(discord.ui.View):
         """Initialize total pages asynchronously."""
         self._total_pages = await player_stats_store.get_total_pages(self.guild_id, self.per_page)
 
-        # Add navigation buttons row
-        if self._total_pages > 1:
-            # Previous button
-            if self.page > 1:
-                self.add_item(
-                    LeaderboardPageButton(
-                        self.guild_id, self.page - 1, "⬅️", discord.ButtonStyle.secondary, self.leaderboard_type
-                    )
+        # Always add navigation buttons
+        # Previous button
+        if self.page > 1:
+            self.add_item(
+                LeaderboardPageButton(
+                    self.guild_id, self.page - 1, "⬅️", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
-            else:
-                # Disabled button for first page
-                disabled_button = discord.ui.Button(
-                    label="⬅️",
-                    style=discord.ButtonStyle.secondary,
-                    disabled=True
-                )
-                self.add_item(disabled_button)
+            )
+        else:
+            # Disabled button for first page
+            disabled_button = discord.ui.Button(
+                label="⬅️",
+                style=discord.ButtonStyle.secondary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
 
-            # Next button
-            if self.page < self._total_pages:
-                self.add_item(
-                    LeaderboardPageButton(
-                        self.guild_id, self.page + 1, "➡️", discord.ButtonStyle.secondary, self.leaderboard_type
-                    )
+        # Next button
+        if self.page < self._total_pages:
+            self.add_item(
+                LeaderboardPageButton(
+                    self.guild_id, self.page + 1, "➡️", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
-            else:
-                # Disabled button for last page
-                disabled_button = discord.ui.Button(
-                    label="➡️",
-                    style=discord.ButtonStyle.secondary,
-                    disabled=True
-                )
-                self.add_item(disabled_button)
+            )
+        else:
+            # Disabled button for last page
+            disabled_button = discord.ui.Button(
+                label="➡️",
+                style=discord.ButtonStyle.secondary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
 
 
 class LeaderboardPageButton(discord.ui.Button):

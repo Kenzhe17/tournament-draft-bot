@@ -993,6 +993,18 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         embed.description = "Пока нет данных. Сыграйте хотя бы один турнир!"
         return embed
 
+    # For money leaderboard, we need to sort by balance
+    if leaderboard_type == "money":
+        # Get balances for all players and sort
+        player_balances = []
+        for player in players:
+            balance = await user_balance_store.get_balance(guild_id, player.user_id)
+            player_balances.append((player, balance))
+
+        # Sort by balance (descending)
+        player_balances.sort(key=lambda x: x[1], reverse=True)
+        players = [p for p, b in player_balances]
+
     lines = []
     global_rank = (page - 1) * 10
 
@@ -1016,7 +1028,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             rank_title = player.get_rank_title()
             line = f"{rank_emoji} {formatted_name} — Lv.{player.level} {rank_title}"
         elif leaderboard_type == "money":
-            # Get current balance instead of total earnings
+            # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
             line = f"{rank_emoji} {formatted_name} — {balance} 🪙"
         else:  # elo
