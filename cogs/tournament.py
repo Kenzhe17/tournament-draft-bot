@@ -223,6 +223,20 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="help", description="Показать справку по командам")
+    async def help_command(self, interaction: discord.Interaction) -> None:
+        """Показать интерактивную справку."""
+        from views.help_view import HelpMainView
+
+        embed = discord.Embed(
+            title="📚 Справка по командам",
+            description="Выберите категорию для просмотра команд",
+            color=discord.Color.dark_blue()
+        )
+
+        view = HelpMainView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
     @app_commands.command(name="reset_leaderboard", description="Сбросить статистику лидерборда")
     @app_commands.default_permissions(administrator=True)
     @is_admin()
@@ -498,6 +512,7 @@ class TournamentCog(commands.Cog):
         from storage.case_store import case_store
         from storage.shop_store import inventory_store, shop_store
         from utils.cosmetics import format_player_name
+        from utils.embeds import create_progress_bar
 
         stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -511,7 +526,7 @@ class TournamentCog(commands.Cog):
 
         rank_title = stats.get_rank_title()
         current_xp, xp_needed = stats.get_level_progress()
-        xp_progress = f"{current_xp}/{xp_needed}"
+        xp_progress_bar = create_progress_bar(current_xp, xp_needed)
 
         # Get case history count
         case_history = case_store.get_case_history(interaction.guild_id, interaction.user.id)
@@ -530,13 +545,13 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f"🎮 {stats.name}",
-            color=discord.Color.gold()
+            color=discord.Color.dark_blue()
         )
 
-        # Level and XP
+        # Level and XP with progress bar
         embed.add_field(
             name="📊 Уровень",
-            value=f"Level {stats.level} ({xp_progress} XP) ⭐",
+            value=f"Level {stats.level} ({xp_progress_bar} XP) ⭐",
             inline=False
         )
 
@@ -602,6 +617,7 @@ class TournamentCog(commands.Cog):
     async def rank(self, interaction: discord.Interaction) -> None:
         """Показать текущий ранг и прогресс до следующего уровня."""
         from storage.player_stats_store import player_stats_store
+        from utils.embeds import create_progress_bar
 
         stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
@@ -615,24 +631,17 @@ class TournamentCog(commands.Cog):
         rank_title = stats.get_rank_title()
         current_xp, xp_needed = stats.get_level_progress()
         progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
+        progress_bar = create_progress_bar(current_xp, xp_needed)
 
         embed = discord.Embed(
             title=f"🎮 {rank_title} Level {stats.level}",
-            color=discord.Color.gold()
+            color=discord.Color.dark_blue()
         )
 
         embed.add_field(
             name="📊 Прогресс",
-            value=f"{current_xp} / {xp_needed} XP ({progress_percent}%)",
+            value=f"{progress_bar} ({progress_percent}%)",
             inline=False
-        )
-
-        # Добавить визуальный прогресс-бар
-        progress_bar = "█" * (progress_percent // 10) + "░" * (10 - progress_percent // 10)
-        embed.add_field(
-            name="⬛️",
-            value=f"{progress_bar} {progress_percent}%",
-            inline=False,
         )
 
         embed.add_field(

@@ -63,10 +63,12 @@ class RarityButton(discord.ui.Button):
         }
         style = style_map.get(rarity, discord.ButtonStyle.secondary)
 
+        # Использовать emoji в label для более красивого вида
+        label = f"{emoji} {label}"
+
         super().__init__(
             style=style,
             label=label,
-            emoji=emoji,
             custom_id=f"shop_rarity:{category}:{rarity.value}"
         )
         self.category = category

@@ -18,7 +18,7 @@ class CaseOpenButton(discord.ui.Button):
         self.case_id = case_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Открыть кейс с анимацией."""
+        """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
             await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
@@ -34,21 +34,36 @@ class CaseOpenButton(discord.ui.Button):
             return
 
         # Начать анимацию
-        await interaction.response.send_message(
+        msg = await interaction.response.send_message(
             "🎲 Вращаем...",
             ephemeral=True
         )
 
-        # Ждём 2 секунды
-        await asyncio.sleep(2)
+        # Получить сообщение для reactions
+        msg = await interaction.original_response()
 
-        # Обновить сообщение
+        # Добавить reactions для визуального эффекта
+        try:
+            await msg.add_reaction("🎲")
+            await asyncio.sleep(1)
+            await msg.add_reaction("⚡")
+            await asyncio.sleep(1)
+            await msg.remove_reaction("🎲", interaction.guild.me)
+        except Exception:
+            # Fallback если reactions не работают
+            pass
+
+        # Этап 2
         await interaction.edit_original_response(
             content="🎲 Выбираем редкость..."
         )
 
-        # Ждём ещё 1 секунду
-        await asyncio.sleep(1)
+        try:
+            await msg.add_reaction("✨")
+            await asyncio.sleep(1)
+            await msg.remove_reaction("⚡", interaction.guild.me)
+        except Exception:
+            pass
 
         # Открыть кейс
         result = await case_store.open_case(
@@ -61,17 +76,21 @@ class CaseOpenButton(discord.ui.Button):
         # Формировать результат
         if result["type"] == "nothing":
             message = "😢 Ничего не выпало!"
-            color = discord.Color.red()
+            color = discord.Color.dark_red()
+            reaction_emoji = "😢"
         elif result["type"] == "coins":
             message = f"💰 Выпало {result['value']} 🪙!"
-            color = discord.Color.gold()
+            color = discord.Color.dark_gold()
+            reaction_emoji = "💰"
         elif result["type"] == "item":
             item = result["value"]
             message = f"🎉 Выпало: **{item.name}** ({item.rarity.value})!"
-            color = discord.Color.green()
+            color = discord.Color.dark_green()
+            reaction_emoji = "🎉"
         else:
             message = "❌ Ошибка при открытии."
-            color = discord.Color.red()
+            color = discord.Color.dark_red()
+            reaction_emoji = "❌"
 
         # Показать результат
         embed = discord.Embed(
@@ -85,6 +104,12 @@ class CaseOpenButton(discord.ui.Button):
             embed=embed
         )
 
+        # Добавить reaction результата
+        try:
+            await msg.add_reaction(reaction_emoji)
+        except Exception:
+            pass
+
 
 class CasesMainView(discord.ui.View):
     """Главное меню кейсов."""
@@ -93,7 +118,7 @@ class CasesMainView(discord.ui.View):
         super().__init__(timeout=None)
         cases = case_store.get_all_cases()
         for case in cases:
-            self.add_item(CaseOpenButton(case.id, f"{case.name} - {case.price} 🪙"))
+            self.add_item(CaseOpenButton(case.id, f"🎲 {case.name} - {case.price} 🪙"))
 
 
 class OpenAgainButton(discord.ui.Button):
@@ -102,7 +127,7 @@ class OpenAgainButton(discord.ui.Button):
     def __init__(self, case_id: str):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Открыть ещё 1",
+            label="🎲 Открыть ещё 1",
             custom_id=f"case_open_again:{case_id}"
         )
         self.case_id = case_id

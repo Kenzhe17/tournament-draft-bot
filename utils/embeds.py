@@ -11,6 +11,264 @@ from storage.player_stats_store import player_stats_store
 from utils.cosmetics import format_player_name
 
 
+# Helper функции для визуальных улучшений
+def get_rarity_color(rarity: str) -> discord.Color:
+    """Получить цвет по редкости предмета."""
+    colors = {
+        "common": discord.Color.light_grey(),
+        "rare": discord.Color.blue(),
+        "epic": discord.Color.purple(),
+        "legendary": discord.Color.gold(),
+        "mythic": discord.Color.from_rgb(255, 100, 100)
+    }
+    return colors.get(rarity, discord.Color.default())
+
+
+def get_phase_color(phase: TournamentPhase) -> discord.Color:
+    """Получить цвет по фазе турнира."""
+    colors = {
+        TournamentPhase.SETUP: discord.Color.dark_purple(),
+        TournamentPhase.DRAFT: discord.Color.dark_blue(),
+        TournamentPhase.QUALIFIERS: discord.Color.dark_green(),
+        TournamentPhase.SEMIFINALS: discord.Color.dark_orange(),
+        TournamentPhase.FINAL: discord.Color.dark_red(),
+        TournamentPhase.COMPLETE: discord.Color.gold()
+    }
+    return colors.get(phase, discord.Color.default())
+
+
+def create_progress_bar(current: int, total: int, length: int = 10) -> str:
+    """Создать текстовый прогресс-бар."""
+    if total == 0:
+        progress = 0
+    else:
+        progress = int((current / total) * length)
+
+    filled = "█" * progress
+    empty = "░" * (length - progress)
+    return f"{filled}{empty} {current}/{total}"
+
+
+def build_help_category_embed(category: str) -> discord.Embed:
+    """Создать embed для категории справки."""
+    categories = {
+        "tournament": {
+            "emoji": "🏆",
+            "title": "Турниры",
+            "color": discord.Color.dark_purple(),
+            "commands": [
+                {
+                    "name": "/tournament create",
+                    "description": "Создать новый турнир",
+                    "params": "size (8/16/32), formation (manual/elo/random)",
+                    "example": "/tournament create size=16 formation=random",
+                    "access": "орг"
+                },
+                {
+                    "name": "/tournament start",
+                    "description": "Запустить турнир",
+                    "params": "нет",
+                    "example": "/tournament start",
+                    "access": "орг"
+                },
+                {
+                    "name": "/tournament close",
+                    "description": "Закрыть турнир",
+                    "params": "нет",
+                    "example": "/tournament close",
+                    "access": "орг"
+                },
+                {
+                    "name": "/tournament delete",
+                    "description": "Удалить турнир",
+                    "params": "нет",
+                    "example": "/tournament delete",
+                    "access": "орг"
+                },
+                {
+                    "name": "/top",
+                    "description": "Лидерборды",
+                    "params": "type (level/money/elo)",
+                    "example": "/top type=level",
+                    "access": "все"
+                },
+                {
+                    "name": "/leaderboard",
+                    "description": "Лидерборд ELO",
+                    "params": "нет",
+                    "example": "/leaderboard",
+                    "access": "все"
+                },
+                {
+                    "name": "/test",
+                    "description": "Тестовый запуск",
+                    "params": "нет",
+                    "example": "/test",
+                    "access": "орг"
+                }
+            ]
+        },
+        "economy": {
+            "emoji": "💰",
+            "title": "Экономика",
+            "color": discord.Color.dark_green(),
+            "commands": [
+                {
+                    "name": "/balance",
+                    "description": "Показать баланс",
+                    "params": "нет",
+                    "example": "/balance",
+                    "access": "все"
+                },
+                {
+                    "name": "/daily",
+                    "description": "Ежедневный бонус",
+                    "params": "нет",
+                    "example": "/daily",
+                    "access": "все"
+                },
+                {
+                    "name": "/moneytop",
+                    "description": "Лидерборд по монетам",
+                    "params": "page (номер страницы)",
+                    "example": "/moneytop page=1",
+                    "access": "все"
+                },
+                {
+                    "name": "/bet",
+                    "description": "Статистика ставок",
+                    "params": "нет",
+                    "example": "/bet",
+                    "access": "все"
+                }
+            ]
+        },
+        "shop": {
+            "emoji": "🛒",
+            "title": "Магазин",
+            "color": discord.Color.dark_gold(),
+            "commands": [
+                {
+                    "name": "/shop",
+                    "description": "Магазин косметики и ролей",
+                    "params": "нет",
+                    "example": "/shop",
+                    "access": "все"
+                },
+                {
+                    "name": "/inventory",
+                    "description": "Инвентарь",
+                    "params": "нет",
+                    "example": "/inventory",
+                    "access": "все"
+                },
+                {
+                    "name": "/cases",
+                    "description": "Кейсы",
+                    "params": "нет",
+                    "example": "/cases",
+                    "access": "все"
+                }
+            ]
+        },
+        "profile": {
+            "emoji": "👤",
+            "title": "Профиль",
+            "color": discord.Color.dark_blue(),
+            "commands": [
+                {
+                    "name": "/profile",
+                    "description": "Профиль игрока",
+                    "params": "player (опционально)",
+                    "example": "/profile player=@User",
+                    "access": "все"
+                },
+                {
+                    "name": "/rank",
+                    "description": "Ранг и прогресс",
+                    "params": "нет",
+                    "example": "/rank",
+                    "access": "все"
+                },
+                {
+                    "name": "/setbio",
+                    "description": "Установить описание",
+                    "params": "bio (текст)",
+                    "example": "/setbio bio=Pro player",
+                    "access": "все"
+                },
+                {
+                    "name": "/setavatar",
+                    "description": "Установить аватар",
+                    "params": "url (ссылка на изображение)",
+                    "example": "/setavatar url=https://example.com/image.png",
+                    "access": "все"
+                }
+            ]
+        },
+        "admin": {
+            "emoji": "⚙️",
+            "title": "Админ",
+            "color": discord.Color.dark_red(),
+            "commands": [
+                {
+                    "name": "/edit",
+                    "description": "Изменить ELO/монеты",
+                    "params": "player, type (elo/coins), value",
+                    "example": "/edit player=@User type=elo value=1500",
+                    "access": "админ"
+                },
+                {
+                    "name": "/replace",
+                    "description": "Заменить игрока",
+                    "params": "current_player, new_player",
+                    "example": "/replace current_player=Old new_player=New",
+                    "access": "орг"
+                },
+                {
+                    "name": "/delete_player",
+                    "description": "Удалить игрока",
+                    "params": "name",
+                    "example": "/delete_player name=PlayerName",
+                    "access": "орг"
+                },
+                {
+                    "name": "/limit",
+                    "description": "Лимиты кругов",
+                    "params": "circle (2/3/4), status (on/off)",
+                    "example": "/limit circle=2 status=on",
+                    "access": "орг"
+                },
+                {
+                    "name": "/reset_leaderboard",
+                    "description": "Сброс лидерборда",
+                    "params": "нет",
+                    "example": "/reset_leaderboard",
+                    "access": "админ"
+                }
+            ]
+        }
+    }
+
+    cat_data = categories.get(category, categories["tournament"])
+    embed = discord.Embed(
+        title=f"{cat_data['emoji']} {cat_data['title']}",
+        color=cat_data['color']
+    )
+
+    for cmd in cat_data['commands']:
+        embed.add_field(
+            name=f"**{cmd['name']}**",
+            value=f"{cmd['description']}\n"
+                   f"📝 Параметры: {cmd['params']}\n"
+                   f"💡 Пример: `{cmd['example']}`\n"
+                   f"🔒 Доступ: {cmd['access']}",
+            inline=False
+        )
+
+    return embed
+
+
 async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
     """Рассчитать среднее ELO команды."""
     total_elo = 0
@@ -673,6 +931,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     """Embed для уведомления о повышении уровня."""
     rank_title = stats.get_rank_title()
     current_xp, xp_needed = stats.get_level_progress()
+    progress_bar = create_progress_bar(current_xp, xp_needed)
 
     embed = discord.Embed(
         title="🎉 ПОВЫШЕНИЕ УРОВНЯ!",
@@ -680,7 +939,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     )
     embed.add_field(
         name=f"{rank_title} {old_level} → {new_level}",
-        value=f"XP: {current_xp}/{xp_needed}",
+        value=f"XP: {progress_bar}",
         inline=False,
     )
     embed.set_footer(text=f"Поздравляем с новым уровнем!")
@@ -688,16 +947,29 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     return embed
 
 
-async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed:
+async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo") -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
 
-    players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
+    # Get players based on type
+    if leaderboard_type == "level":
+        players = await player_stats_store.get_leaderboard_by_level(guild_id, page, per_page=10)
+        title = "🏆 Лидерборд Уровней"
+        color = discord.Color.dark_purple()
+    elif leaderboard_type == "money":
+        players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
+        title = "💰 Лидерборд Богатых"
+        color = discord.Color.dark_gold()
+    else:  # elo
+        players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
+        title = "🏆 Лидерборд ELO"
+        color = discord.Color.dark_blue()
+
     total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
     embed = discord.Embed(
-        title="🏆 Лидерборд Игроков",
-        color=discord.Color.gold(),
+        title=title,
+        color=color,
     )
 
     if not players:
@@ -722,8 +994,16 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
 
         # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
-        rank_title = player.get_rank_title()
-        line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO | Lv.{player.level} {rank_title}"
+
+        if leaderboard_type == "level":
+            rank_title = player.get_rank_title()
+            line = f"{rank_emoji} {formatted_name} — Lv.{player.level} {rank_title}"
+        elif leaderboard_type == "money":
+            line = f"{rank_emoji} {formatted_name} — {player.total_earnings} 🪙"
+        else:  # elo
+            rank_title = player.get_rank_title()
+            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO | Lv.{player.level} {rank_title}"
+
         lines.append(line)
 
     embed.description = "\n".join(lines)
