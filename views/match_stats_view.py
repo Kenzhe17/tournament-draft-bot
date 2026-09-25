@@ -758,42 +758,9 @@ class AdminConfirmView(View):
                     raise
 
                 # Award coins for tournament participation based on placement
-                from storage.user_balance_store import user_balance_store
-                from storage.player_stats_store import player_stats_store
-                participation_bonus = 10  # +10 coins for participation
-
-                # Placement bonuses
-                placement_bonuses = {1: 50, 2: 30, 3: 20, 4: 10}  # Based on tournament size
-
                 try:
-                    # Award participation bonus to all players
-                    for player_name, user_id in tournament.player_user_ids.items():
-                        await user_balance_store.add_balance(self.guild_id, user_id, participation_bonus)
-
-                    # Award placement bonus based on winner team
-                    if tournament.winner_team_index is not None and tournament.winner_team_index < len(tournament.teams):
-                        winner_team = tournament.teams[tournament.winner_team_index]
-                        for circle in range(1, 5):
-                            player_name = winner_team.get(f"circle{circle}", "")
-                            if player_name and player_name in tournament.player_user_ids:
-                                user_id = tournament.player_user_ids[player_name]
-                                await user_balance_store.add_balance(self.guild_id, user_id, placement_bonuses.get(1, 20))
-
-                                # Award streak bonus for win streak
-                                stats = await player_stats_store.get(self.guild_id, user_id)
-                                if stats and stats.current_streak >= 3 and stats.current_streak % 3 == 0:
-                                    await user_balance_store.add_balance(self.guild_id, user_id, 50)
-
-                    # Award placement bonuses to other teams (2nd, 3rd, 4th place)
-                    for i, team in enumerate(tournament.teams):
-                        if i != tournament.winner_team_index:
-                            placement = i + 1 if i < tournament.winner_team_index else i + 2
-                            bonus = placement_bonuses.get(placement, 10)
-                            for circle in range(1, 5):
-                                player_name = team.get(f"circle{circle}", "")
-                                if player_name and player_name in tournament.player_user_ids:
-                                    user_id = tournament.player_user_ids[player_name]
-                                    await user_balance_store.add_balance(self.guild_id, user_id, bonus)
+                    earnings_map = await tournament.distribute_earnings(self.guild_id)
+                    logging.info(f"Distributed tournament earnings: {earnings_map}")
                 except Exception as e:
                     import logging
                     logging.error(f"Error awarding coins: {e}", exc_info=True)

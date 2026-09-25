@@ -251,19 +251,96 @@ class TournamentCog(commands.Cog):
         from storage.user_balance_store import user_balance_store
         import datetime
 
-        # Простая логика кулдауна (в памяти)
-        # В реальном проекте нужно использовать базу данных для хранения времени последнего получения
-        key = f"daily:{interaction.guild_id}:{interaction.user.id}"
+        # Проверяем базу данных
+        from storage.db import get_pool
 
-        # Проверяем можно ли получить бонус (упрощённая логика)
-        # Для полной реализации нужно хранить время последнего получения
-        await interaction.response.send_message(
-            "🎁 Ежедневный бонус: +5 монет!\n\n(Функция кулдауна требует базы данных)",
-            ephemeral=True
-        )
+        # Проверяем базу данных
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                # Получаем последний бонус и streak
+                row = await conn.fetchrow(
+                    "SELECT last_claim, streak_days FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
 
-        # Начисляем монеты
-        await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 5)
+                now = datetime.datetime.now(datetime.timezone.utc)
+                today = now.date()
+
+                if row:
+                    last_claim = row["last_claim"]
+                    streak_days = row["streak_days"]
+
+                    # Проверяем прошло ли 24 часа
+                    if last_claim:
+                        time_diff = now - last_claim
+                        if time_diff.total_seconds() < 86400:  # 24 часа
+                            hours_left = 24 - time_diff.total_seconds() / 3600
+                            await interaction.response.send_message(
+                                f"❌ Вы уже получили бонус сегодня. Попробуйте через {int(hours_left)} часов.",
+                                ephemeral=True
+                            )
+                            return
+
+                    # Проверяем streak (пропуск дня сбрасывает)
+                    if last_claim and (now.date() - last_claim.date()).days > 1:
+                        streak_days = 0
+
+                    # Увеличиваем streak
+                    streak_days += 1
+                else:
+                    streak_days = 1
+
+                # Рассчитываем бонус: 50 + streak * 10 (максимум +100)
+                bonus = min(50 + streak_days * 10, 150)
+
+                # Добавляем монеты
+                await user_balance_store.add_balance(guild_id, user_id, bonus)
+
+                # Обновляем cooldown
+                await conn.execute(
+                    """
+                    INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, streak_days, last_streak_date)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET
+                        last_claim = $3,
+                        streak_days = $4,
+                        last_streak_date = $5
+                    """,
+                    guild_id, user_id, now, streak_days, today
+                )
+
+                # Отправляем ответ
+                embed = discord.Embed(
+                    title="🎁 Ежедневный бонус",
+                    color=discord.Color.gold()
+                )
+                embed.add_field(
+                    name="💰 Получено",
+                    value=f"{bonus} 🪙",
+                    inline=True
+                )
+                embed.add_field(
+                    name="🔥 Серия",
+                    value=f"{streak_days} дней",
+                    inline=True
+                )
+                embed.add_field(
+                    name="📅 Следующий бонус",
+                    value="Через 24 часа",
+                    inline=False
+                )
+                embed.set_footer(text=f"Максимум: 150 🪙 (15 дней streak)")
+
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"Error in daily bonus: {e}", exc_info=True)
+            await interaction.response.send_message(
+                "❌ Ошибка при получении бонуса. Требуется база данных.",
+                ephemeral=True
+            )
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
@@ -355,6 +432,131 @@ class TournamentCog(commands.Cog):
         )
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="profile", description="Показать ваш профиль")
+    async def profile(self, interaction: discord.Interaction) -> None:
+        """Показать детальный профиль игрока."""
+        from storage.player_stats_store import player_stats_store
+        from storage.user_balance_store import user_balance_store
+
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+
+        if not stats:
+            await interaction.response.send_message(
+                "❌ Сначала сыграйте хотя бы один турнир!",
+                ephemeral=True
+            )
+            return
+
+        rank_title = stats.get_rank_title()
+        current_xp, xp_needed = stats.get_level_progress()
+        xp_progress = f"{current_xp}/{xp_needed}"
+
+        embed = discord.Embed(
+            title=f"🎮 {rank_title} {stats.name}",
+            color=discord.Color.gold()
+        )
+
+        # Информация об уровне
+        embed.add_field(
+            name="📊 Уровень",
+            value=f"Level {stats.level} ({xp_progress} XP)",
+            inline=True
+        )
+        embed.add_field(
+            name="⭐ ELO",
+            value=f"{stats.elo}",
+            inline=True
+        )
+        embed.add_field(
+            name="💰 Монеты",
+            value=f"{balance} 🪙",
+            inline=True
+        )
+
+        # Статистика
+        embed.add_field(
+            name="🏆 Победы",
+            value=f"{stats.wins} / {stats.games} ({stats.win_rate:.1f}%)",
+            inline=True
+        )
+        embed.add_field(
+            name="🎭 K/D",
+            value=f"{stats.kd_ratio:.2f}",
+            inline=True
+        )
+        embed.add_field(
+            name="🏅 Финалы",
+            value=str(stats.finals),
+            inline=True
+        )
+
+        # Прогресс
+        embed.add_field(
+            name="🔥 Текущая серия",
+            value=f"{stats.current_streak} побед подряд",
+            inline=True
+        )
+        embed.add_field(
+            name="👑 Лучшая серия",
+            value=f"{stats.best_win_streak} побед подряд",
+            inline=True
+        )
+        embed.add_field(
+            name="📈 Всего заработано",
+            value=f"{stats.total_earnings} 🪙",
+            inline=True
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
+    async def rank(self, interaction: discord.Interaction) -> None:
+        """Показать текущий ранг и прогресс до следующего уровня."""
+        from storage.player_stats_store import player_stats_store
+
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+        if not stats:
+            await interaction.response.send_message(
+                "❌ Сначала сыграйте хотя бы один турнир!",
+                ephemeral=True
+            )
+            return
+
+        rank_title = stats.get_rank_title()
+        current_xp, xp_needed = stats.get_level_progress()
+        progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
+
+        embed = discord.Embed(
+            title=f"🎮 {rank_title} Level {stats.level}",
+            color=discord.Color.gold()
+        )
+
+        embed.add_field(
+            name="📊 Прогресс",
+            value=f"{current_xp} / {xp_needed} XP ({progress_percent}%)",
+            inline=False
+        )
+
+        # Добавить визуальный прогресс-бар
+        progress_bar = "█" * (progress_percent // 10) + "░" * (10 - progress_percent // 10)
+        embed.add_field(
+            name="⬛️",
+            value=f"{progress_bar} {progress_percent}%",
+            inline=False,
+        )
+
+        embed.add_field(
+            name="📈 До следующего уровня",
+            value=f"Требуется: {xp_needed - current_xp} XP",
+            inline=False,
+        )
+
+        embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:

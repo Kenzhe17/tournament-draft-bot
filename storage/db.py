@@ -170,6 +170,12 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Add last_streak_date to bonus_cooldowns
+        try:
+            await conn.execute("ALTER TABLE bonus_cooldowns ADD COLUMN IF NOT EXISTS last_streak_date DATE")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create user_balance table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (

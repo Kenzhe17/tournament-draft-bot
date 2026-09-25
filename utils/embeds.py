@@ -722,7 +722,8 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed
 
         # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
-        line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
+        rank_title = player.get_rank_title()
+        line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO | Lv.{player.level} {rank_title}"
         lines.append(line)
     
     embed.description = "\n".join(lines)

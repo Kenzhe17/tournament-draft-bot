@@ -711,6 +711,105 @@ class Tournament:
         except Exception as e:
             print(f"Failed to log tournament completion: {e}")
 
+    def calculate_earnings(self, player_name: str, position: int) -> int:
+        """Рассчитать награды за турнир по позиции."""
+        # Base rewards
+        if position == 1:  # Winner
+            return 100
+        elif position == 2:  # 2nd place
+            return 50
+        elif position == 3:  # 3rd place
+            return 30
+        elif position <= 4:  # Finalist (4th place)
+            return 20
+        else:  # Participation
+            return 20
+
+    async def distribute_earnings(self, guild_id: int) -> dict[str, int]:
+        """Распределить награды всем участникам турнира. Возвращает словарь {player_name: earnings}."""
+        from storage.user_balance_store import user_balance_store
+        from storage.player_stats_store import player_stats_store
+
+        earnings_map = {}
+
+        # Distribute to all players based on their final position
+        for player_name, user_id in self.player_user_ids.items():
+            # Determine position based on winner and teams
+            position = 5  # Default: participation
+            if self.winner_team_index is not None:
+                # Check if player is on winning team
+                winner_team = self.teams[self.winner_team_index] if self.winner_team_index < len(self.teams) else {}
+                if player_name in winner_team.values():
+                    position = 1
+                else:
+                    # Check other teams for 2nd, 3rd, 4th place
+                    for team_idx, team in enumerate(self.teams):
+                        if team_idx != self.winner_team_index and player_name in team.values():
+                            position = team_idx + 2  # 2nd, 3rd, 4th place
+                            break
+
+            # Calculate earnings
+            earnings = self.calculate_earnings(player_name, position)
+            earnings_map[player_name] = earnings
+
+            # Add to balance
+            await user_balance_store.add_balance(guild_id, user_id, earnings)
+
+            # Update player stats total earnings and XP
+            stats = await player_stats_store.get(guild_id, user_id)
+            if stats:
+                stats.total_earnings += earnings
+                stats.tournament_participations += 1
+
+                # Add XP rewards
+                xp_reward = 50  # Base XP for tournament participation
+                if position == 1:  # Winner
+                    xp_reward += 100
+                elif position <= 3:  # Top 3
+                    xp_reward += 75
+                elif position <= 4:  # Finalist
+                    xp_reward += 50
+
+                stats.add_xp(xp_reward)
+                await player_stats_store.set(stats)
+
+        return earnings_map
+
+        # Log tournament completion
+        try:
+            from utils.logging import log_tournament_completed
+            import asyncio
+
+            bot = get_bot_instance()
+            if not bot:
+                print("Bot instance not available for logging")
+                return
+
+            winner_team = self.teams[team_index] if team_index < len(self.teams) else {}
+            winner_name = self.team_names.get(team_index, winner_team.get("captain", f"Team {team_index}"))
+            participant_count = len(self.player_user_ids)
+
+            # Calculate duration
+            from datetime import datetime
+            if self.start_time:
+                start_dt = datetime.fromisoformat(self.start_time)
+                end_dt = datetime.now()
+                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+            else:
+                duration_minutes = 0
+
+            # Log asynchronously
+            asyncio.create_task(log_tournament_completed(
+                bot,
+                discord.Object(id=self.guild_id),
+                f"Турнир {self.size.value}",
+                winner_name,
+                participant_count,
+                duration_minutes
+            ))
+        except Exception as e:
+            print(f"Failed to log tournament completion: {e}")
+
     # --- Сериализация ---
 
     def to_dict(self) -> dict[str, Any]:
