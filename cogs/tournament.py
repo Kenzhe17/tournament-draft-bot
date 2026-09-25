@@ -183,7 +183,8 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="top", description="Показать таблицу лидеров")
     @app_commands.describe(type="Тип лидерборда (level/money/elo)")
-    async def top(self, interaction: discord.Interaction, type: str = "elo") -> None:
+    @app_commands.describe(page="Страница (по умолчанию 1)")
+    async def top(self, interaction: discord.Interaction, type: str = "elo", page: int = 1) -> None:
         """Показать таблицу лидеров сервера."""
         from utils.embeds import build_leaderboard_embed
         from views.leaderboard_view import LeaderboardView
@@ -197,8 +198,8 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type=type)
-        view = LeaderboardView(interaction.guild_id, page=1)
+        embed = await build_leaderboard_embed(interaction.guild_id, page=page, leaderboard_type=type)
+        view = LeaderboardView(interaction.guild_id, page=page, leaderboard_type=type)
         await view.initialize()
 
         try:
