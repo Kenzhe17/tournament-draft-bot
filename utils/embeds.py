@@ -1018,7 +1018,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             line = f"{rank_emoji} {formatted_name} — {player.total_earnings} 🪙"
         else:  # elo
             rank_title = player.get_rank_title()
-            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO | Lv.{player.level} {rank_title}"
+            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO {rank_title}"
 
         lines.append(line)
 
