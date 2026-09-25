@@ -678,6 +678,76 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(MillionaireModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="roulette", description="Рулетка")
+    async def roulette(self, interaction: discord.Interaction) -> None:
+        """Рулетка."""
+        from games.roulette import RouletteModal
+
+        await interaction.response.send_modal(RouletteModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="blackjack", description="Блэкджек")
+    async def blackjack(self, interaction: discord.Interaction) -> None:
+        """Блэкджек."""
+        from games.blackjack import BlackjackModal
+
+        await interaction.response.send_modal(BlackjackModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="slots", description="Слоты")
+    async def slots(self, interaction: discord.Interaction) -> None:
+        """Слоты."""
+        from games.slots import SlotsModal
+
+        await interaction.response.send_modal(SlotsModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="baccarat", description="Баккара")
+    async def baccarat(self, interaction: discord.Interaction) -> None:
+        """Баккара."""
+        from games.baccarat import BaccaratModal
+
+        await interaction.response.send_modal(BaccaratModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="lottery", description="Лотерея")
+    async def lottery(self, interaction: discord.Interaction) -> None:
+        """Лотерея."""
+        from games.lottery import LotteryModal
+
+        await interaction.response.send_modal(LotteryModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="highlow", description="High-Low")
+    async def highlow(self, interaction: discord.Interaction) -> None:
+        """High-Low."""
+        from games.highlow import HighLowModal
+
+        await interaction.response.send_modal(HighLowModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="dicebet", description="Dicebet")
+    async def dicebet(self, interaction: discord.Interaction) -> None:
+        """Dicebet."""
+        from games.dicebet import DicebetModal
+
+        await interaction.response.send_modal(DicebetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="craps", description="Крэпс")
+    async def craps(self, interaction: discord.Interaction) -> None:
+        """Крэпс."""
+        from games.craps import CrapsModal
+
+        await interaction.response.send_modal(CrapsModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="snap", description="Snap")
+    async def snap(self, interaction: discord.Interaction) -> None:
+        """Snap."""
+        from games.snap import SnapModal
+
+        await interaction.response.send_modal(SnapModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="poker", description="Покер")
+    async def poker(self, interaction: discord.Interaction) -> None:
+        """Покер."""
+        from games.poker import PokerModal
+
+        await interaction.response.send_modal(PokerModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
