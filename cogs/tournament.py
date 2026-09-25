@@ -546,6 +546,48 @@ class TournamentCog(commands.Cog):
         view = GamesMainView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
+    async def guess_number(self, interaction: discord.Interaction) -> None:
+        """Игра в угадай число."""
+        from views.guess_number_view import NumberBetModal
+
+        await interaction.response.send_modal(NumberBetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="guess_emoji", description="Угадай эмодзи по подсказкам")
+    async def guess_emoji(self, interaction: discord.Interaction) -> None:
+        """Игра в угадай эмодзи."""
+        from views.guess_emoji_view import EmojiBetModal
+
+        await interaction.response.send_modal(EmojiBetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="wheel", description="Колесо фортуны")
+    async def wheel(self, interaction: discord.Interaction) -> None:
+        """Игра колесо фортуны."""
+        from views.wheel_view import WheelBetModal
+
+        await interaction.response.send_modal(WheelBetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="tictactoe", description="Крестики-Нолики")
+    async def tictactoe(self, interaction: discord.Interaction) -> None:
+        """Игра крестики-нолики."""
+        from views.tictactoe_view import TicTacToeBetModal
+
+        await interaction.response.send_modal(TicTacToeBetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="reflex_test", description="Быстрый тест на реакцию")
+    async def reflex_test(self, interaction: discord.Interaction) -> None:
+        """Игра быстрый тест на реакцию."""
+        from views.reflex_test_view import ReflexTestBetModal
+
+        await interaction.response.send_modal(ReflexTestBetModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="spin_bottle", description="Бутылочка")
+    async def spin_bottle(self, interaction: discord.Interaction) -> None:
+        """Игра бутылочка."""
+        from views.spin_bottle_view import SpinBottleBetModal
+
+        await interaction.response.send_modal(SpinBottleBetModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
