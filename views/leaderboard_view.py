@@ -36,6 +36,7 @@ class LeaderboardView(discord.ui.View):
                     LeaderboardPageButton(
                         self.guild_id, self.page - 1, "⬅️", discord.ButtonStyle.secondary, self.leaderboard_type
                     )
+                )
             else:
                 # Disabled button for first page
                 disabled_button = discord.ui.Button(
@@ -59,6 +60,7 @@ class LeaderboardView(discord.ui.View):
                     LeaderboardPageButton(
                         self.guild_id, self.page + 1, "➡️", discord.ButtonStyle.secondary, self.leaderboard_type
                     )
+                )
             else:
                 # Disabled button for last page
                 disabled_button = discord.ui.Button(
