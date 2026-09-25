@@ -12,7 +12,7 @@ class BettingStatsStore:
     """Store for managing betting statistics."""
 
     def __init__(self) -> None:
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
 
     def enable_db(self) -> None:
         """Enable database storage."""

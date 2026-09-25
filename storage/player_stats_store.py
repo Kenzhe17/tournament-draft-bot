@@ -15,7 +15,7 @@ class PlayerStatsStore:
 
     def __init__(self) -> None:
         self._stats: dict[str, PlayerStats] = {}
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 

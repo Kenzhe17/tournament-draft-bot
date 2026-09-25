@@ -15,7 +15,7 @@ class BetStore:
 
     def __init__(self) -> None:
         self._bets: dict[str, list[Bet]] = {}  # match_id -> list of bets
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 

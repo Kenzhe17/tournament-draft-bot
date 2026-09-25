@@ -17,7 +17,7 @@ class UserBalanceStore:
     """Store for managing user coin balances."""
 
     def __init__(self) -> None:
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         self._balances: dict[str, int] = {}  # Key: "guild_id:user_id", Value: balance
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()

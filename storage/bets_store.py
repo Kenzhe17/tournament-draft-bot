@@ -27,7 +27,7 @@ class BetsStore:
     """Store for managing bets."""
 
     def __init__(self) -> None:
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         self._bets: list[Bet] = []
 
     def enable_db(self) -> None:

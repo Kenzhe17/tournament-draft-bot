@@ -19,7 +19,7 @@ class ShopStore:
 
     def __init__(self) -> None:
         self._items: dict[str, ShopItem] = {}  # item_id -> ShopItem
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 
@@ -72,7 +72,7 @@ class InventoryStore:
 
     def __init__(self) -> None:
         self._inventory: dict[str, list[PlayerCosmetic]] = {}  # guild_id:user_id -> list of cosmetics
-        self._use_db = False
+        self._use_db = True  # Использовать PostgreSQL
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 
