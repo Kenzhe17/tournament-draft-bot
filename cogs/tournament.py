@@ -608,6 +608,13 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(SpinBottleBetModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="math_quiz", description="Математическая викторина")
+    async def math_quiz(self, interaction: discord.Interaction) -> None:
+        """Математическая викторина."""
+        from games.math_quiz import MathQuizModal
+
+        await interaction.response.send_modal(MathQuizModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""

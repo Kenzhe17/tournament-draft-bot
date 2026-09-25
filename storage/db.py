@@ -175,6 +175,31 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Create questions table for quiz games
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS questions (
+                id TEXT PRIMARY KEY,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                category TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                hints JSON,
+                options JSON,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        """)
+
+        # Create question_history table for anti-memorization
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS question_history (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                question_id TEXT NOT NULL,
+                answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                was_correct BOOLEAN DEFAULT FALSE
+            )
+        """)
+
         # Create cases table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS cases (
