@@ -375,14 +375,20 @@ class TournamentCog(commands.Cog):
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
-        # Создать embed
+        # Создать embed с полноценным описанием
         embed = discord.Embed(
             title="🛒 Магазин",
-            description=f"💰 {balance} 🪙",
+            description=f"💰 Ваш баланс: {balance} 🪙\n\nВыберите категорию товаров для покупки:",
             color=discord.Color.gold()
         )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.add_field(
+            name="📝 Мини-гайд",
+            value="• Выберите категорию из меню\n• Выберите редкость товаров\n• Нажмите на товар для покупки\n• Экипируйте предметы в `/inventory`",
+            inline=False
+        )
 
-        # Создать View с кнопками категорий
+        # Создать View с выпадающим меню категорий
         view = ShopMainView()
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -642,34 +648,28 @@ class TournamentCog(commands.Cog):
             cosmetic_display = " ".join(cosmetic_items)
 
         embed = discord.Embed(
-            title=f"🎮 {stats.name}",
+            title=f"📊 Профиль: {stats.name} {cosmetic_display}",
+            description=f"📝 {rank_title}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
-        # Level and XP with progress bar
+        # ELO
         embed.add_field(
-            name="📊 Уровень",
-            value=f"Level {stats.level} ({xp_progress_bar} XP) ⭐",
-            inline=False
-        )
-
-        # ELO and Money
-        embed.add_field(
-            name="⭐ ELO",
+            name="🏆 ELO",
             value=f"{stats.elo}",
-            inline=True
-        )
-        embed.add_field(
-            name="💰 Монеты",
-            value=f"{balance} 🪙",
             inline=True
         )
 
         # Stats
         embed.add_field(
-            name="🏆 Победы",
-            value=f"{stats.wins} / Игры: {stats.games}",
+            name="🥇 Победы",
+            value=f"{stats.wins}",
+            inline=True
+        )
+        embed.add_field(
+            name="🎮 Игры",
+            value=f"{stats.games}",
             inline=True
         )
         embed.add_field(
@@ -677,21 +677,24 @@ class TournamentCog(commands.Cog):
             value=f"{stats.win_rate:.1f}%",
             inline=True
         )
-
-        # K/D stats
         embed.add_field(
-            name="📊 AVG",
-            value=f"{stats.avg_kills:.2f} 💀",
-            inline=True
-        )
-        embed.add_field(
-            name="⚔️ K/D",
+            name="⚔️ K/D Ratio",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
         embed.add_field(
-            name="🎯 MAX",
-            value=f"{stats.best_match_kills} 💀",
+            name="🎯 AVG Kills",
+            value=f"{stats.avg_kills:.2f}",
+            inline=True
+        )
+        embed.add_field(
+            name="🔥 Max Kills",
+            value=f"{stats.best_match_kills}",
+            inline=True
+        )
+        embed.add_field(
+            name="📊 Last ELO Change",
+            value=f"{stats.last_elo_change:+d}" if hasattr(stats, 'last_elo_change') else "0",
             inline=True
         )
 

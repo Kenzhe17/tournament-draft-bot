@@ -125,18 +125,84 @@ class RaritySelect(discord.ui.Select):
             color=embed_color
         )
 
-        # Создать View с кнопками товаров
+        # Создать View с выпадающим меню товаров
         view = discord.ui.View()
         view.add_item(RarityBackButton(self.category))
-
-        # Добавить кнопки для каждого товара
-        for item in items:
-            display_name = item.value if item.value else item.name
-            label = f"{display_name} - {item.price} 🪙"
-            button = ShopBuyButton(item.id, label)
-            view.add_item(button)
+        view.add_item(ItemSelect(items, self.category))
 
         await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ItemSelect(discord.ui.Select):
+    """Выпадающее меню выбора товара."""
+
+    def __init__(self, items, category):
+        options = []
+        for item in items:
+            display_name = item.value if item.value else item.name
+            options.append(
+                discord.SelectOption(
+                    label=display_name,
+                    value=item.id,
+                    description=f"Цена: {item.price} 🪙",
+                    emoji="🛒"
+                )
+            )
+
+        super().__init__(
+            placeholder="Выберите товар для покупки...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.items = items
+        self.category = category
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Купить выбранный товар."""
+        item_id = self.values[0]
+        item = shop_store.get_item(item_id)
+
+        if not item:
+            await interaction.response.send_message("❌ Товар не найден.", ephemeral=True)
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < item.price:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. Нужно: {item.price} 🪙, у вас: {balance} 🪙",
+                ephemeral=True
+            )
+            return
+
+        # Проверить есть ли уже
+        inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        for cosmetic in inventory:
+            if cosmetic.item_id == item_id:
+                await interaction.response.send_message(
+                    f"❌ У вас уже есть этот товар!",
+                    ephemeral=True
+                )
+                return
+
+        # Списать монеты
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, item.price)
+
+        # Добавить в инвентарь (не экипировать автоматически)
+        cosmetic = PlayerCosmetic(
+            guild_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            item_id=item_id,
+            equipped=False
+        )
+        inventory_store.add_cosmetic(cosmetic)
+
+        await interaction.response.send_message(
+            f"✅ Вы купили **{item.name}** за {item.price} 🪙!\n\n"
+            f"Используйте `/inventory` для экипировки.",
+            ephemeral=True
+        )
 
 
 class RarityBackButton(discord.ui.Button):
@@ -185,11 +251,17 @@ class ShopBackButton(discord.ui.Button):
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
-        # Создать главное меню
+        # Создать главное меню с полноценным описанием
         embed = discord.Embed(
             title="🛒 Магазин",
-            description=f"💰 {balance} 🪙",
+            description=f"💰 Ваш баланс: {balance} 🪙\n\nВыберите категорию товаров для покупки:",
             color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.add_field(
+            name="📝 Мини-гайд",
+            value="• Выберите категорию из меню\n• Выберите редкость товаров\n• Нажмите на товар для покупки\n• Экипируйте предметы в `/inventory`",
+            inline=False
         )
 
         view = ShopMainView()
@@ -634,15 +706,14 @@ class ShopCategorySelect(discord.ui.Select):
 
         if category == "roles":
             # Показать роли через выпадающее меню
-            await interaction.response.defer(ephemeral=True)
-
             # Получить все роли из магазина
             all_items = shop_store.get_all_items()
             roles = [item for item in all_items if item.item_type == "role"]
 
             if not roles:
-                await interaction.followup.send(
-                    "❌ Нет доступных ролей."
+                await interaction.response.send_message(
+                    "❌ Нет доступных ролей.",
+                    ephemeral=True
                 )
                 return
 
@@ -661,11 +732,9 @@ class ShopCategorySelect(discord.ui.Select):
             view.add_item(ShopBackButton())
             view.add_item(RoleSelect(roles))
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
         else:
             # Показать подкатегории по редкости
-            await interaction.response.defer(ephemeral=True)
-
             # Создать View с выпадающим меню редкости
             view = discord.ui.View()
             view.add_item(ShopBackButton())
@@ -681,7 +750,7 @@ class ShopCategorySelect(discord.ui.Select):
                 color=embed_color
             )
 
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
             # Определить цвет embed по категории
             embed_color = discord.Color.blue() if category == "icons" else discord.Color.purple()
