@@ -950,18 +950,34 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
 async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo") -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
+    from storage.redis_client import get_leaderboard, set_leaderboard
 
-    # Get players based on type
+    # Try to get from cache first
+    cached_data = await get_leaderboard(guild_id, leaderboard_type)
+
+    if cached_data and page == 1:  # Only cache first page for now
+        players = cached_data
+    else:
+        # Get players based on type
+        if leaderboard_type == "level":
+            players = await player_stats_store.get_leaderboard_by_level(guild_id, page, per_page=10)
+        elif leaderboard_type == "money":
+            players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
+        else:  # elo
+            players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
+
+        # Cache the result if it's the first page
+        if page == 1:
+            await set_leaderboard(guild_id, leaderboard_type, players, ttl=60)  # Cache for 1 minute
+
+    # Set title and color based on type
     if leaderboard_type == "level":
-        players = await player_stats_store.get_leaderboard_by_level(guild_id, page, per_page=10)
         title = "🏆 Лидерборд Уровней"
         color = discord.Color.dark_purple()
     elif leaderboard_type == "money":
-        players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
         title = "💰 Лидерборд Богатых"
         color = discord.Color.dark_gold()
     else:  # elo
-        players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
         title = "🏆 Лидерборд ELO"
         color = discord.Color.dark_blue()
 

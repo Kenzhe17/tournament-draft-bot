@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button, button
 from games.guess_number import GuessNumberGame
+from storage.redis_client import set_minigame_session, get_minigame_session, delete_minigame_session
 
 
 class NumberBetModal(Modal, title="🎲 Угадай число"):
@@ -51,6 +52,8 @@ class NumberBetModal(Modal, title="🎲 Угадай число"):
 
         # Создать игру
         game = GuessNumberGame()
+        # Сохранить сессию в Redis
+        await set_minigame_session(game.session_id, game.get_state())
         result, message = game.make_guess(guess)
 
         # Создать embed

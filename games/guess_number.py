@@ -1,14 +1,16 @@
 """Игра в угадай число."""
 
 import random
+import uuid
 from typing import Literal
 
 
 class GuessNumberGame:
     """Логика игры в угадай число."""
 
-    def __init__(self, secret_number: int | None = None) -> None:
+    def __init__(self, secret_number: int | None = None, session_id: str | None = None) -> None:
         """Инициализировать игру."""
+        self.session_id = session_id if session_id else str(uuid.uuid4())
         self.secret_number = secret_number if secret_number is not None else random.randint(1, 100)
         self.attempts_left = 7
         self.game_over = False

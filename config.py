@@ -20,6 +20,9 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 # PostgreSQL Database
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
+# Redis Cache
+REDIS_URL = os.getenv("REDIS_URL", "")
+
 # Лимиты турнира
 MAX_CAPTAINS = 4
 MAX_PLAYERS_PER_CIRCLE = 4
