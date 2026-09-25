@@ -728,7 +728,7 @@ class AdminConfirmView(View):
             # Проверка на None для финала
             if winning_team_index is None:
                 logging.error(f"Winning team index is None for match_type={self.match_type}")
-                await interaction.followup.send("❌ Ошибка: победитель не выбран.")
+                await interaction.followup.send("❌ Ошибка: победитель не выбран.", ephemeral=True)
                 return
 
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
