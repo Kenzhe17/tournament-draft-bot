@@ -35,6 +35,13 @@ class PlayerStats:
     last_20_wins: int = 0
     last_20_games: int = 0
 
+    # New fields for level and XP system
+    xp: int = 0
+    level: int = 1
+    xp_to_next_level: int = 100
+    total_earnings: int = 0  # Total coins earned
+    tournament_participations: int = 0
+
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
         return {
@@ -60,6 +67,11 @@ class PlayerStats:
             "last_20_deaths": self.last_20_deaths,
             "last_20_wins": self.last_20_wins,
             "last_20_games": self.last_20_games,
+            "xp": self.xp,
+            "level": self.level,
+            "xp_to_next_level": self.xp_to_next_level,
+            "total_earnings": self.total_earnings,
+            "tournament_participations": self.tournament_participations,
         }
 
     @classmethod
@@ -88,6 +100,11 @@ class PlayerStats:
             last_20_deaths=data.get("last_20_deaths", 0),
             last_20_wins=data.get("last_20_wins", 0),
             last_20_games=data.get("last_20_games", 0),
+            xp=data.get("xp", 0),
+            level=data.get("level", 1),
+            xp_to_next_level=data.get("xp_to_next_level", 100),
+            total_earnings=data.get("total_earnings", 0),
+            tournament_participations=data.get("tournament_participations", 0),
         )
 
     @property
@@ -114,3 +131,41 @@ class PlayerStats:
     def win_rate(self) -> float:
         """Процент побед."""
         return (self.wins / self.games * 100) if self.games > 0 else 0.0
+
+    def add_xp(self, amount: int) -> tuple[int, int]:
+        """Добавить XP и автоматически повысить уровень. Возвращает (новый уровень, уровень до)."""
+        self.xp += amount
+
+        levels_gained = 0
+        old_level = self.level
+
+        # Check for level ups
+        while self.xp >= self.xp_to_next_level:
+            self.xp -= self.xp_to_next_level
+            self.level += 1
+            levels_gained += 1
+            # Calculate XP needed for next level: 100 * level * (level + 1) / 2
+            self.xp_to_next_level = int(100 * self.level * (self.level + 1) / 2)
+
+        return self.level, old_level
+
+    def get_level_progress(self) -> tuple[int, int]:
+        """Получить прогресс до следующего уровня (текущий XP, максимум)."""
+        return self.xp, self.xp_to_next_level
+
+    def get_rank_title(self) -> str:
+        """Получить название ранга по уровню."""
+        if self.level >= 31:
+            return "🏆 Champion"
+        elif self.level >= 26:
+            return "💎 Master"
+        elif self.level >= 21:
+            return "💠 Diamond"
+        elif self.level >= 16:
+            return "🥇 Platinum"
+        elif self.level >= 11:
+            return "🥈 Gold"
+        elif self.level >= 6:
+            return "🥉 Silver"
+        else:
+            return "🏅 Bronze"

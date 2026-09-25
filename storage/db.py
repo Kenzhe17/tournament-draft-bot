@@ -144,6 +144,32 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Add new columns for level and XP system
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS level INTEGER DEFAULT 1")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS xp_to_next_level INTEGER DEFAULT 100")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_earnings INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS tournament_participations INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create user_balance table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (

@@ -669,6 +669,25 @@ async def build_embed_for_phase(
     return discord.Embed(title="Ошибка", color=discord.Color.red())
 
 
+def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed:
+    """Embed для уведомления о повышении уровня."""
+    rank_title = stats.get_rank_title()
+    current_xp, xp_needed = stats.get_level_progress()
+
+    embed = discord.Embed(
+        title="🎉 ПОВЫШЕНИЕ УРОВНЯ!",
+        color=discord.Color.gold(),
+    )
+    embed.add_field(
+        name=f"{rank_title} {old_level} → {new_level}",
+        value=f"XP: {current_xp}/{xp_needed}",
+        inline=False,
+    )
+    embed.set_footer(text=f"Поздравляем с новым уровнем!")
+
+    return embed
+
+
 async def build_leaderboard_embed(guild_id: int, page: int = 1) -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
