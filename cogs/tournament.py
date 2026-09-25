@@ -207,22 +207,6 @@ class TournamentCog(commands.Cog):
             # Interaction expired, use followup
             await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="leaderboard", description="Показать таблицу лидеров (ELO)")
-    async def leaderboard(self, interaction: discord.Interaction) -> None:
-        """Показать таблицу лидеров сервера (ELO)."""
-        from utils.embeds import build_leaderboard_embed
-        from views.leaderboard_view import LeaderboardView
-
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type="elo")
-        view = LeaderboardView(interaction.guild_id, page=1, leaderboard_type="elo")
-        await view.initialize()
-
-        try:
-            await interaction.response.send_message(embed=embed, view=view)
-        except discord.NotFound:
-            # Interaction expired, use followup
-            await interaction.followup.send(embed=embed, view=view)
-
     @app_commands.command(name="help", description="Показать справку по командам")
     async def help_command(self, interaction: discord.Interaction) -> None:
         """Показать интерактивную справку."""
@@ -818,32 +802,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="moneytop", description="Показать таблицу лидеров по монетам")
-    async def coins_leaderboard(self, interaction: discord.Interaction, page: int = 1) -> None:
-        """Показать таблицу лидеров по монетам."""
-        from storage.user_balance_store import user_balance_store
-        from storage.player_stats_store import player_stats_store
-
-        # Get all players with stats
-        all_stats = await player_stats_store.get_all(interaction.guild_id)
-
-        if not all_stats:
-            await interaction.response.send_message("❌ Пока нет данных для лидерборда монет.", ephemeral=True)
-            return
-
-        # Get balances for all players
-        leaderboard_data = []
-        for stats in all_stats:
-            balance = await user_balance_store.get_balance(interaction.guild_id, stats.user_id)
-            leaderboard_data.append({
-                "user_id": stats.user_id,
-                "name": stats.name,
-                "balance": balance
-            })
-
-        # Sort by balance
-        leaderboard_data.sort(key=lambda x: x["balance"], reverse=True)
-
         # Pagination
         per_page = 10
         offset = (page - 1) * per_page
@@ -1005,33 +963,6 @@ class TournamentCog(commands.Cog):
                 f"✅ Аватар профиля установлен по умолчанию (из Discord).",
                 ephemeral=True
             )
-
-    @app_commands.command(name="profile", description="Просмотреть статистику игрока")
-    @app_commands.describe(player="Игрок (оставьте пустым для просмотра своей статистики)")
-    async def profile(
-        self,
-        interaction: discord.Interaction,
-        player: discord.Member | None = None
-    ) -> None:
-        """Показать статистику игрока."""
-        await interaction.response.defer()
-
-        target_user = player if player else interaction.user
-
-        from storage.player_stats_store import player_stats_store
-        from models.player_stats import PlayerStats
-
-        stats = await player_stats_store.get(interaction.guild_id, target_user.id)
-
-        if not stats:
-            # Create default stats for new players
-            stats = PlayerStats(guild_id=interaction.guild_id, user_id=target_user.id, name=target_user.display_name)
-
-        win_rate = stats.win_rate
-
-        # Format name with cosmetics
-        from utils.cosmetics import format_player_name
-        formatted_name = format_player_name(interaction.guild_id, target_user.id, stats.name)
 
         embed = discord.Embed(
             title=f"📊 Профиль: {formatted_name}",
