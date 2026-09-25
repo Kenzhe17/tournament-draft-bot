@@ -1020,8 +1020,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
             line = f"{rank_emoji} {formatted_name} — {balance} 🪙"
         else:  # elo
-            rank_title = player.get_rank_title()
-            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO {rank_title}"
+            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
 
         lines.append(line)
 

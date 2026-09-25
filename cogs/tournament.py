@@ -645,6 +645,7 @@ class TournamentCog(commands.Cog):
             title=f"🎮 {stats.name}",
             color=discord.Color.dark_blue()
         )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
         # Level and XP with progress bar
         embed.add_field(
@@ -679,18 +680,18 @@ class TournamentCog(commands.Cog):
 
         # K/D stats
         embed.add_field(
-            name="AVG",
-            value=f"{stats.avg_kills:.2f}",
+            name="📊 AVG",
+            value=f"{stats.avg_kills:.2f} 💀",
             inline=True
         )
         embed.add_field(
-            name="K/D",
+            name="⚔️ K/D",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
         embed.add_field(
-            name="MAX",
-            value=str(stats.best_match_kills),
+            name="🎯 MAX",
+            value=f"{stats.best_match_kills} 💀",
             inline=True
         )
 
