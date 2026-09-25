@@ -309,3 +309,58 @@ async def init_db() -> None:
             VALUES ('reset_betting_stats_2024')
             ON CONFLICT (migration_name) DO NOTHING
         """)
+
+        # Create minigames table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigames (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                category TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                min_bet INTEGER NOT NULL,
+                max_bet INTEGER NOT NULL,
+                multiplier REAL NOT NULL,
+                is_pvp BOOLEAN DEFAULT FALSE,
+                is_pve BOOLEAN DEFAULT TRUE,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        """)
+
+        # Create minigame_sessions table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_sessions (
+                session_id TEXT PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                player1_id BIGINT NOT NULL,
+                player1_bet INTEGER NOT NULL,
+                player2_id BIGINT,
+                player2_bet INTEGER,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                winner_id BIGINT,
+                winnings INTEGER,
+                payout_processed BOOLEAN DEFAULT FALSE
+            )
+        """)
+
+        # Create minigame_stats table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigame_stats (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                game_id TEXT NOT NULL,
+                games_played INTEGER DEFAULT 0,
+                games_won INTEGER DEFAULT 0,
+                total_bet INTEGER DEFAULT 0,
+                total_won INTEGER DEFAULT 0,
+                net_profit INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id, game_id)
+            )
+        """)
+
+        # Initialize mini-games
+        from storage.minigame_init import initialize_minigames
+        await initialize_minigames()

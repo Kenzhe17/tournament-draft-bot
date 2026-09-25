@@ -504,6 +504,27 @@ class TournamentCog(commands.Cog):
         view = CasesMainView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
+    async def rps(self, interaction: discord.Interaction) -> None:
+        """Игра в камень-ножницы-бумага."""
+        from views.rps_view import BetModal
+
+        await interaction.response.send_modal(BetModal())
+
+    @app_commands.command(name="games", description="Показать доступные мини-игры")
+    async def games(self, interaction: discord.Interaction) -> None:
+        """Показать список мини-игр."""
+        from views.games_view import GamesMainView
+
+        embed = discord.Embed(
+            title="🎮 Мини-игры",
+            description="Выберите категорию игр и поставьте монеты!",
+            color=discord.Color.dark_blue(),
+        )
+
+        view = GamesMainView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
