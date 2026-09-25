@@ -950,6 +950,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
 async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo") -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
+    from storage.user_balance_store import user_balance_store
     from storage.redis_client import get_leaderboard, set_leaderboard
 
     # Try to get from cache first
@@ -1015,7 +1016,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             rank_title = player.get_rank_title()
             line = f"{rank_emoji} {formatted_name} — Lv.{player.level} {rank_title}"
         elif leaderboard_type == "money":
-            line = f"{rank_emoji} {formatted_name} — {player.total_earnings} 🪙"
+            # Get current balance instead of total earnings
+            balance = await user_balance_store.get_balance(guild_id, player.user_id)
+            line = f"{rank_emoji} {formatted_name} — {balance} 🪙"
         else:  # elo
             rank_title = player.get_rank_title()
             line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO {rank_title}"
