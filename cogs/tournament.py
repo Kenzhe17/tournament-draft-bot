@@ -615,6 +615,69 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(MathQuizModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="word_guess", description="Угадай слово")
+    async def word_guess(self, interaction: discord.Interaction) -> None:
+        """Угадай слово."""
+        from games.word_guess import WordGuessModal
+
+        await interaction.response.send_modal(WordGuessModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="riddles", description="Загадки")
+    async def riddles(self, interaction: discord.Interaction) -> None:
+        """Загадки."""
+        from games.riddles import RiddlesModal
+
+        await interaction.response.send_modal(RiddlesModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="hangman", description="Виселица")
+    async def hangman(self, interaction: discord.Interaction) -> None:
+        """Виселица."""
+        from games.hangman import HangmanModal
+
+        await interaction.response.send_modal(HangmanModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="memory", description="Память")
+    async def memory(self, interaction: discord.Interaction) -> None:
+        """Память."""
+        from games.memory import MemoryModal
+
+        await interaction.response.send_modal(MemoryModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="anagrams", description="Анаграммы")
+    async def anagrams(self, interaction: discord.Interaction) -> None:
+        """Анаграммы."""
+        from games.anagrams import AnagramsModal
+
+        await interaction.response.send_modal(AnagramsModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="trivia", description="Тест на эрудицию")
+    async def trivia(self, interaction: discord.Interaction) -> None:
+        """Тест на эрудицию."""
+        from games.trivia import TriviaModal
+
+        await interaction.response.send_modal(TriviaModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="logic_puzzle", description="Логические задачи")
+    async def logic_puzzle(self, interaction: discord.Interaction) -> None:
+        """Логические задачи."""
+        from games.logic_puzzle import LogicPuzzleModal
+
+        await interaction.response.send_modal(LogicPuzzleModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="word_chain", description="Словесные цепочки")
+    async def word_chain(self, interaction: discord.Interaction) -> None:
+        """Словесные цепочки."""
+        from games.word_chain import WordChainModal
+
+        await interaction.response.send_modal(WordChainModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="millionaire", description="Кто хочет стать миллионером")
+    async def millionaire(self, interaction: discord.Interaction) -> None:
+        """Кто хочет стать миллионером."""
+        from games.millionaire import MillionaireModal
+
+        await interaction.response.send_modal(MillionaireModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
