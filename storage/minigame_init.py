@@ -588,6 +588,62 @@ async def initialize_minigames() -> None:
                 "is_pvp": True,
                 "is_pve": False,
             },
+            # 42. Wordle
+            {
+                "id": "wordle",
+                "command_name": "wordle",
+                "name": "Слово дня",
+                "description": "Угадайте слово за 3 попытки.",
+                "category": "mixed",
+                "difficulty": "medium",
+                "min_bet": 25,
+                "max_bet": 500,
+                "multiplier": 5.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
+            # 43. 2048
+            {
+                "id": "game_2048",
+                "command_name": "game_2048",
+                "name": "2048",
+                "description": "Объединяйте плитки и достигните 2048.",
+                "category": "mixed",
+                "difficulty": "medium",
+                "min_bet": 30,
+                "max_bet": 600,
+                "multiplier": 3.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
+            # 44. Sudoku
+            {
+                "id": "sudoku",
+                "command_name": "sudoku",
+                "name": "Судоку",
+                "description": "Решите классическое судоку.",
+                "category": "mixed",
+                "difficulty": "hard",
+                "min_bet": 30,
+                "max_bet": 600,
+                "multiplier": 4.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
+            # 45. Minigame Tournament
+            {
+                "id": "minigame_tournament",
+                "command_name": "minigame_tournament",
+                "name": "Турнир мини-игр",
+                "description": "Турнир из 3 случайных мини-игр.",
+                "category": "pvp",
+                "difficulty": "hard",
+                "min_bet": 100,
+                "max_bet": 10000,
+                "multiplier": 10.0,
+                "is_pvp": True,
+                "is_pve": False,
+            },
         ]
 
         for game in games:

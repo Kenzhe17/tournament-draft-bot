@@ -1,4 +1,4 @@
-"""Реверси - PvE игра (упрощённая версия)."""
+"""2048 - PvE игра (упрощённая)."""
 
 import random
 import discord
@@ -6,8 +6,8 @@ from storage.user_balance_store import user_balance_store
 from config import MIN_BET, MAX_BET
 
 
-class ReversiModal(discord.ui.Modal, title="Реверси"):
-    """Модал для ставки в Реверси."""
+class Game2048Modal(discord.ui.Modal, title="2048"):
+    """Модал для ставки в 2048."""
 
     def __init__(self, guild_id: int, user_id: int):
         super().__init__()
@@ -23,7 +23,7 @@ class ReversiModal(discord.ui.Modal, title="Реверси"):
         )
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Игра Реверси требует сложный UI. Упрощённая версия: случайный результат."""
+        """Игра 2048 требует сложный UI. Упрощённая версия: случайный результат."""
         try:
             bet = int(self.bet.value)
         except ValueError:
@@ -53,29 +53,29 @@ class ReversiModal(discord.ui.Modal, title="Реверси"):
         # Списать ставку
         await user_balance_store.subtract_balance(self.guild_id, self.user_id, bet)
 
-        # Упрощённая версия: 45% шанс победы (сложная игра)
-        won = random.random() < 0.45
-        multiplier = 2.0
+        # Упрощённая версия: 50% шанс победы
+        won = random.choice([True, False])
+        multiplier = 3.0
 
         if won:
             winnings = int(bet * multiplier)
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Победа в Реверси!",
+                title="✅ Победа в 2048!",
                 description=f"**Ставка:** {bet} 🪙\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title="❌ Проигрыш в Реверси",
+                title="❌ Проигрыш в 2048",
                 description=f"**Ставка:** {bet} 🪙\n**Потеря:** {bet} 🪙",
                 color=discord.Color.red()
             )
 
         # Обновить статистику
         from storage.minigame_store import minigame_store
-        game_id = "reversi"
+        game_id = "game_2048"
         minigame_stats = await minigame_store.get_player_stats(self.guild_id, self.user_id)
         existing_stats = [s for s in minigame_stats if s.get("game_id") == game_id]
 
@@ -101,4 +101,3 @@ class ReversiModal(discord.ui.Modal, title="Реверси"):
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-

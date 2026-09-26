@@ -825,6 +825,34 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(EloBattleModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="wordle", description="Слово дня")
+    async def wordle(self, interaction: discord.Interaction) -> None:
+        """Слово дня."""
+        from games.wordle import WordleModal
+
+        await interaction.response.send_modal(WordleModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="game_2048", description="2048")
+    async def game_2048(self, interaction: discord.Interaction) -> None:
+        """2048."""
+        from games.game_2048 import Game2048Modal
+
+        await interaction.response.send_modal(Game2048Modal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="sudoku", description="Судоку")
+    async def sudoku(self, interaction: discord.Interaction) -> None:
+        """Судоку."""
+        from games.sudoku import SudokuModal
+
+        await interaction.response.send_modal(SudokuModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="minigame_tournament", description="Турнир мини-игр")
+    async def minigame_tournament(self, interaction: discord.Interaction) -> None:
+        """Турнир мини-игр."""
+        from games.minigame_tournament import MinigameTournamentModal
+
+        await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
