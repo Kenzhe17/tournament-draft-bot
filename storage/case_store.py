@@ -38,8 +38,56 @@ class CaseStore:
                 data = json.load(f)
                 for case_id, case_data in data.items():
                     self._cases[case_id] = Case.from_dict(case_data)
+            
+            # Проверить и обновить старые drop_rates
+            self._update_drop_rates_if_needed()
         except (json.JSONDecodeError, KeyError):
             self._initialize_default_cases()
+
+    def _update_drop_rates_if_needed(self) -> None:
+        """Обновить drop_rates если они старого формата."""
+        updated = False
+        
+        # Стандартные новые drop_rates
+        new_rates = {
+            "item": 0.10,
+            "nothing": 0.40,
+            "coins_tiers": [0.50, 0.25, 0.20, 0.10, 0.05]
+        }
+        
+        for case_id, case in self._cases.items():
+            # Проверить если nothing не 0.40, обновить
+            current_nothing = case.drop_rates.get("nothing", 0.0)
+            if abs(current_nothing - 0.40) > 0.01:  # Если не 40%
+                # Пересчитать drop_rates
+                item_key = None
+                nothing_key = "nothing"
+                coin_keys = []
+                
+                for key in case.drop_rates.keys():
+                    if key.startswith("item_"):
+                        item_key = key
+                    elif key.startswith("coins_"):
+                        coin_keys.append(key)
+                
+                # Новые значения
+                new_drop_rates = {}
+                if item_key:
+                    new_drop_rates[item_key] = 0.10
+                new_drop_rates[nothing_key] = 0.40
+                
+                # Распределить монеты по 5 уровням
+                if coin_keys:
+                    coin_keys.sort()
+                    for i, coin_key in enumerate(coin_keys):
+                        if i < len(new_rates["coins_tiers"]):
+                            new_drop_rates[coin_key] = new_rates["coins_tiers"][i]
+                
+                case.drop_rates = new_drop_rates
+                updated = True
+        
+        if updated:
+            self.save()
 
     def save(self) -> None:
         """Сохранить кейсы в файл."""
