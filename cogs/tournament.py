@@ -921,17 +921,14 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
+        # Био (показываем сразу после заголовка, если есть)
+        if stats.description:
+            embed.description = stats.description
+
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name="� ELO",
             value=f"{int(stats.elo)}",
-            inline=True
-        )
-
-        # Ранг
-        embed.add_field(
-            name="🌟 Ранг",
-            value=rank_title,
             inline=True
         )
 
@@ -958,7 +955,7 @@ class TournamentCog(commands.Cog):
 
         # Игровая статистика
         embed.add_field(
-            name="� Сыграно игр",
+            name="🎲 Сыграно игр",
             value=f"{total_games_played}",
             inline=True
         )

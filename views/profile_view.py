@@ -153,17 +153,14 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Always use Discord avatar
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
+        # Био (показываем сразу после заголовка, если есть)
+        if stats.description:
+            embed.description = stats.description
+
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name="� ELO",
             value=f"{int(stats.elo)}",
-            inline=True
-        )
-
-        # Ранг
-        embed.add_field(
-            name="🌟 Ранг",
-            value=rank_title,
             inline=True
         )
 
@@ -190,7 +187,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Игровая статистика
         embed.add_field(
-            name="� Сыграно игр",
+            name="🎲 Сыграно игр",
             value=f"{total_games_played}",
             inline=True
         )
