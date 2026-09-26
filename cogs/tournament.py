@@ -920,15 +920,15 @@ class TournamentCog(commands.Cog):
 
         # Ранг
         embed.add_field(
-            name="🔰 Ранг",
+            name="Ранг:",
             value=rank_title,
             inline=False
         )
 
         # Уровень
         embed.add_field(
-            name="🏆 Уровень",
-            value=f"Level {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
+            name=f"Level {stats.level} | ⭐ Опыт:",
+            value=f"{current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
             inline=False
         )
 
