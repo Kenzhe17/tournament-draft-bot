@@ -397,18 +397,13 @@ class TournamentCog(commands.Cog):
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
-        # Создать embed с полноценным описанием
+        # Создать embed в новом формате
         embed = discord.Embed(
-            title="🛒 Магазин",
-            description=f"💰 Ваш баланс: {balance} 🪙\n\nВыберите категорию товаров для покупки:",
+            title="�️ Магазин Сервера | Главный каталог",
+            description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары.",
             color=discord.Color.gold()
         )
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
-        embed.add_field(
-            name="📝 Мини-гайд",
-            value="• Выберите категорию из меню\n• Выберите редкость товаров\n• Нажмите на товар для покупки\n• Экипируйте предметы в `/inventory`",
-            inline=False
-        )
+        embed.add_field(name="� Ваш баланс", value=f"{balance} 🪙", inline=False)
 
         # Создать View с выпадающим меню категорий
         view = ShopMainView()
@@ -483,37 +478,6 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @app_commands.command(name="cases", description="Показать доступные кейсы")
-    async def cases(self, interaction: discord.Interaction) -> None:
-        """Показать доступные кейсы."""
-        from storage.case_store import case_store
-        from views.case_view import CasesMainView
-
-        cases = case_store.get_all_cases()
-
-        if not cases:
-            await interaction.response.send_message(
-                "❌ Нет доступных кейсов.",
-                ephemeral=True
-            )
-            return
-
-        embed = discord.Embed(
-            title="📦 Кейсы",
-            description="Откройте кейсы для получения случайных предметов!",
-            color=discord.Color.gold()
-        )
-
-        for case in cases:
-            embed.add_field(
-                name=f"{case.name} - {case.price} 🪙",
-                value=case.description,
-                inline=False
-            )
-
-        view = CasesMainView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
