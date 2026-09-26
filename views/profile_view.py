@@ -4,8 +4,83 @@ import discord
 from storage.player_stats_store import player_stats_store
 
 
+class ProfileView(discord.ui.View):
+    """View для профиля с кнопками."""
+
+    def __init__(self, guild_id: int, user_id: int, is_owner: bool):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.is_owner = is_owner
+
+        # Добавляем кнопки только для владельца
+        if is_owner:
+            self.add_item(InventoryButton(guild_id, user_id))
+            self.add_item(SettingsButton(guild_id, user_id))
+
+
+class InventoryButton(discord.ui.Button):
+    """Кнопка инвентаря."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="🎒 Инвентарь",
+            custom_id=f"profile_inventory:{guild_id}:{user_id}"
+        )
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Открыть инвентарь."""
+        # Проверить, что это владелец
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Вы можете просматривать только свой инвентарь.",
+                ephemeral=True
+            )
+            return
+
+        # Вызвать команду inventory
+        bot = interaction.client
+        command = bot.tree.get_command("inventory")
+        if command:
+            await command.callback(interaction)
+        else:
+            await interaction.response.send_message(
+                "❌ Команда инвентаря не найдена.",
+                ephemeral=True
+            )
+
+
+class SettingsButton(discord.ui.Button):
+    """Кнопка настроек."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="⚙️ Настройки",
+            custom_id=f"profile_settings:{guild_id}:{user_id}"
+        )
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Открыть настройки профиля."""
+        # Проверить, что это владелец
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Вы можете настраивать только свой профиль.",
+                ephemeral=True
+            )
+            return
+
+        # Показать модал редактирования
+        await interaction.response.send_modal(ProfileEditModal(self.guild_id, self.user_id))
+
+
 class ProfileEditButton(discord.ui.Button):
-    """Кнопка редактирования профиля."""
+    """Кнопка редактирования профиля (устаревшая, сохранена для совместимости)."""
 
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(

@@ -822,145 +822,148 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="profile", description="Показать ваш профиль")
-    async def profile(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(user="Пользователь (пусто = ваш профиль)")
+    async def profile(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
         """Показать детальный профиль игрока."""
         from storage.player_stats_store import player_stats_store
         from storage.user_balance_store import user_balance_store
         from storage.case_store import case_store
         from storage.shop_store import inventory_store, shop_store
+        from storage.minigame_store import minigame_store
         from utils.cosmetics import format_player_name
         from utils.embeds import create_progress_bar
+        from views.profile_view import ProfileView
 
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        # Если пользователь не указан, показываем профиль автора
+        target_user = user if user else interaction.user
+        is_owner = target_user.id == interaction.user.id
+
+        stats = await player_stats_store.get(interaction.guild_id, target_user.id)
+        balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
         if not stats:
             await interaction.response.send_message(
-                "❌ Сначала сыграйте хотя бы один турнир!",
+                "❌ Пользователь ещё не играл в турниры!",
                 ephemeral=True
             )
             return
 
+        # Ранг и уровень
         rank_title = stats.get_rank_title()
+        rank_emoji = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()
         xp_progress_bar = create_progress_bar(current_xp, xp_needed)
 
-        # Get case history count
-        case_history = case_store.get_case_history(interaction.guild_id, interaction.user.id)
-        cases_opened = len(case_history)
+        # Инвентарь
+        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, target_user.id)
+        inventory_count = len(cosmetics)
 
-        # Get equipped cosmetics
-        equipped_cosmetics = inventory_store.get_equipped_cosmetics(interaction.guild_id, interaction.user.id)
-        cosmetic_display = ""
-        if equipped_cosmetics:
-            cosmetic_items = []
-            for cosmetic in equipped_cosmetics:
-                item = shop_store.get_item(cosmetic.item_id)
-                if item:
-                    cosmetic_items.append(item.value)
-            cosmetic_display = " ".join(cosmetic_items)
+        # Статистика мини-игр
+        minigame_stats = await minigame_store.get_player_stats(interaction.guild_id, target_user.id)
+        total_games_played = 0
+        total_games_won = 0
+        favorite_game = "Нет данных"
 
-        embed = discord.Embed(
-            title=f"📊 Профиль: {stats.name} {cosmetic_display}",
-            description=f"📝 {rank_title}",
-            color=discord.Color.dark_blue()
-        )
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
-
-        # ELO
-        embed.add_field(
-            name="🏆 ELO",
-            value=f"{stats.elo}",
-            inline=True
-        )
-
-        # Stats
-        embed.add_field(
-            name="🥇 Победы",
-            value=f"{stats.wins}",
-            inline=True
-        )
-        embed.add_field(
-            name="🎮 Игры",
-            value=f"{stats.games}",
-            inline=True
-        )
-        embed.add_field(
-            name="📈 Win Rate",
-            value=f"{stats.win_rate:.1f}%",
-            inline=True
-        )
-        embed.add_field(
-            name="⚔️ K/D Ratio",
-            value=f"{stats.kd_ratio:.2f}",
-            inline=True
-        )
-        embed.add_field(
-            name="🎯 AVG Kills",
-            value=f"{stats.avg_kills:.2f}",
-            inline=True
-        )
-        embed.add_field(
-            name="🔥 Max Kills",
-            value=f"{stats.best_match_kills}",
-            inline=True
-        )
-        embed.add_field(
-            name="📊 Last ELO Change",
-            value=f"{stats.last_elo_change:+d}" if hasattr(stats, 'last_elo_change') else "0",
-            inline=True
-        )
-
-        # Level
-        embed.add_field(
-            name="� Уровень",
-            value=f"Level {stats.level}",
-            inline=True
-        )
-
-        # Profile description
-        if stats.description:
-            embed.add_field(
-                name="📝 Описание",
-                value=stats.description,
-                inline=False
-            )
-
-        # Mini-games stats
-        from storage.minigame_store import minigame_store
-        minigame_stats = await minigame_store.get_player_stats(interaction.guild_id, interaction.user.id)
         if minigame_stats:
             total_games_played = sum(s.get("games_played", 0) for s in minigame_stats)
             total_games_won = sum(s.get("games_won", 0) for s in minigame_stats)
-            total_bet = sum(s.get("total_bet", 0) for s in minigame_stats)
-            total_won = sum(s.get("total_won", 0) for s in minigame_stats)
-            net_profit = sum(s.get("net_profit", 0) for s in minigame_stats)
+            
+            # Найти любимую игру (по количеству игр)
+            if minigame_stats:
+                sorted_games = sorted(minigame_stats, key=lambda x: x.get("games_played", 0), reverse=True)
+                if sorted_games:
+                    game_id = sorted_games[0].get("game_id")
+                    game = await minigame_store.get_game(game_id)
+                    if game:
+                        favorite_game = game.name
 
-            embed.add_field(
-                name="🎮 Мини-игры",
-                value=f"Игры: {total_games_played} / Победы: {total_games_won}",
-                inline=True
-            )
-            embed.add_field(
-                name="💰 Прибыль",
-                value=f"{net_profit:+d} 🪙",
-                inline=True
-            )
+        # Винрейт
+        win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
 
-        # Equipped cosmetics
-        if cosmetic_display:
-            embed.add_field(
-                name="🎨 Экипировано",
-                value=f"{stats.name} {cosmetic_display}",
-                inline=False
-            )
+        # Дата на сервере
+        join_date = target_user.joined_at.strftime("%d.%m.%Y") if target_user.joined_at else "Неизвестно"
 
-        # Add edit button for profile owner
-        from views.profile_view import ProfileEditButton
-        view = discord.ui.View()
-        view.add_item(ProfileEditButton(interaction.guild_id, interaction.user.id))
+        # Создать embed
+        embed = discord.Embed(
+            title=f"� Профиль пользователя | @{target_user.name}",
+            color=discord.Color.dark_blue()
+        )
+        embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
+
+        # Статус и уровень
+        embed.add_field(
+            name="🔰 Статус",
+            value=f"{rank_emoji} {rank_title}",
+            inline=False
+        )
+        embed.add_field(
+            name="🏆 Уровень",
+            value=f"Level {stats.level} | ⭐ Опыт: {xp_progress_bar} {current_xp:,} / {xp_needed:,}",
+            inline=False
+        )
+
+        # Экономика
+        embed.add_field(
+            name="� ЭКОНОМИКА",
+            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
+            inline=False
+        )
+
+        # Игровая статистика
+        embed.add_field(
+            name="🎮 ИГРОВАЯ СТАТИСТИКА",
+            value=f"├ 🎲 Сыграно игр: {total_games_played} партий\n"
+                  f"├ 🏆 Побед: {total_games_won} (Винрейт: {win_rate:.1f}%)\n"
+                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
+                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
+                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
+                  f"└ 🎯 Любимая игра: {favorite_game}",
+            inline=False
+        )
+
+        # Био и дата
+        description_field = "📝 Био:\n"
+        if stats.description:
+            description_field += f" {stats.description}\n"
+        else:
+            description_field += " Не указано\n"
+        
+        description_field += f" 📅 На сервере с: {join_date}"
+        
+        embed.add_field(
+            name="ℹ️",
+            value=description_field,
+            inline=False
+        )
+
+        # Last ELO Change
+        elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+        embed.add_field(
+            name="📊 Last ELO Change",
+            value=f"{elo_change:+d}",
+            inline=True
+        )
+
+        # Кнопки только для владельца
+        view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+def get_rank_emoji(level: int) -> str:
+    """Получить эмодзи ранга по уровню."""
+    if level >= 50:
+        return "🟡"
+    elif level >= 40:
+        return "🟠"
+    elif level >= 30:
+        return "🔴"
+    elif level >= 20:
+        return "🟣"
+    elif level >= 10:
+        return "🔵"
+    else:
+        return "⚪"
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
