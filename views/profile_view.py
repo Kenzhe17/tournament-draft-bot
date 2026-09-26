@@ -151,31 +151,24 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Био (показываем сразу после заголовка, если есть)
         if stats.description:
             embed.description = stats.description
-            # Добавляем пустое поле для отступа после био
-            embed.add_field(name="", value="", inline=False)
-        else:
-            # Если био нет, добавляем пустое поле для отступа после заголовка
-            embed.add_field(name="", value="", inline=False)
 
         # Ранг и уровень на одной строке
+        rank_field_value = f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}\n"
+        if not stats.description:
+            rank_field_value = "\n" + rank_field_value
+
         embed.add_field(
             name="",
-            value=f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
+            value=rank_field_value,
             inline=False
         )
-
-        # Добавляем пустое поле для отступа между рангом и экономикой
-        embed.add_field(name="", value="", inline=False)
 
         # Экономика
         embed.add_field(
             name="💵 ЭКОНОМИКА",
-            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.",
+            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.\n",
             inline=False
         )
-
-        # Добавляем пустое поле для отступа между экономикой и статистикой
-        embed.add_field(name="", value="", inline=False)
 
         # Игровая статистика
         embed.add_field(
@@ -184,12 +177,9 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
                   f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
                   f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
                   f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"└ 🔥 Max Kills: {stats.best_match_kills}",
+                  f"└ 🔥 Max Kills: {stats.best_match_kills}\n",
             inline=False
         )
-
-        # Добавляем пустое поле для отступа между статистикой и Last ELO Change
-        embed.add_field(name="", value="", inline=False)
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
