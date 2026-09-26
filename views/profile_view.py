@@ -153,6 +153,9 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             embed.description = stats.description
             # Добавляем пустое поле для отступа после био
             embed.add_field(name="", value="", inline=False)
+        else:
+            # Если био нет, добавляем пустое поле для отступа после заголовка
+            embed.add_field(name="", value="", inline=False)
 
         # Ранг и уровень на одной строке
         embed.add_field(
@@ -184,6 +187,9 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
                   f"└ 🔥 Max Kills: {stats.best_match_kills}",
             inline=False
         )
+
+        # Добавляем пустое поле для отступа между статистикой и Last ELO Change
+        embed.add_field(name="", value="", inline=False)
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
