@@ -525,13 +525,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(DiceBetModal())
 
-    @app_commands.command(name="guess_color", description="Угадай цвет")
-    async def guess_color(self, interaction: discord.Interaction) -> None:
-        """Игра в угадай цвет."""
-        from views.guess_color_view import ColorBetModal
-
-        await interaction.response.send_modal(ColorBetModal())
-
     @app_commands.command(name="games", description="Показать доступные мини-игры")
     async def games(self, interaction: discord.Interaction) -> None:
         """Показать список мини-игр."""
@@ -594,13 +587,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(TicTacToeBetModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="reflex_test", description="Быстрый тест на реакцию")
-    async def reflex_test(self, interaction: discord.Interaction) -> None:
-        """Игра быстрый тест на реакцию."""
-        from views.reflex_test_view import ReflexTestBetModal
-
-        await interaction.response.send_modal(ReflexTestBetModal(interaction.guild_id, interaction.user.id))
-
     @app_commands.command(name="spin_bottle", description="Бутылочка")
     async def spin_bottle(self, interaction: discord.Interaction) -> None:
         """Игра бутылочка."""
@@ -649,13 +635,6 @@ class TournamentCog(commands.Cog):
         from games.anagrams import AnagramsModal
 
         await interaction.response.send_modal(AnagramsModal(interaction.guild_id, interaction.user.id))
-
-    @app_commands.command(name="trivia", description="Тест на эрудицию")
-    async def trivia(self, interaction: discord.Interaction) -> None:
-        """Тест на эрудицию."""
-        from games.trivia import TriviaModal
-
-        await interaction.response.send_modal(TriviaModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="logic_puzzle", description="Логические задачи")
     async def logic_puzzle(self, interaction: discord.Interaction) -> None:
@@ -755,13 +734,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(TripleChanceModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="sequence_memory", description="Вспомни последовательность")
-    async def sequence_memory(self, interaction: discord.Interaction) -> None:
-        """Вспомни последовательность."""
-        from games.sequence_memory import SequenceMemoryModal
-
-        await interaction.response.send_modal(SequenceMemoryModal(interaction.guild_id, interaction.user.id))
-
     @app_commands.command(name="flag_quiz", description="Угадай флаг")
     async def flag_quiz(self, interaction: discord.Interaction) -> None:
         """Угадай флаг."""
@@ -782,13 +754,6 @@ class TournamentCog(commands.Cog):
         from games.song_quiz import SongQuizModal
 
         await interaction.response.send_modal(SongQuizModal(interaction.guild_id, interaction.user.id))
-
-    @app_commands.command(name="reaction_time", description="Время реакции")
-    async def reaction_time(self, interaction: discord.Interaction) -> None:
-        """Время реакции."""
-        from games.reaction_time import ReactionTimeModal
-
-        await interaction.response.send_modal(ReactionTimeModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="checkers", description="Шашки")
     async def checkers(self, interaction: discord.Interaction) -> None:
