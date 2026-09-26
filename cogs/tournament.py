@@ -879,22 +879,14 @@ class TournamentCog(commands.Cog):
         # Винрейт
         win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
 
-        # Дата на сервере
-        join_date = target_user.joined_at.strftime("%d.%m.%Y") if target_user.joined_at else "Неизвестно"
-
         # Создать embed
         embed = discord.Embed(
-            title=f"� Профиль пользователя | @{target_user.name}",
+            title=f"{stats.name} | @{target_user.name}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Статус и уровень
-        embed.add_field(
-            name="🔰 Статус",
-            value=f"{rank_title}",
-            inline=False
-        )
+        # Уровень
         embed.add_field(
             name="🏆 Уровень",
             value=f"Level {stats.level} | ⭐ Опыт: {xp_progress_bar} {current_xp:,} / {xp_needed:,}",
@@ -903,15 +895,15 @@ class TournamentCog(commands.Cog):
 
         # Экономика
         embed.add_field(
-            name="� ЭКОНОМИКА",
+            name="💳 ЭКОНОМИКА",
             value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
             inline=False
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎮 ИГРОВАЯ СТАТИСТИКА",
-            value=f"├ 🎲 Сыграно игр: {total_games_played} партий\n"
+            name="🎮 СТАТИСТИКА",
+            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
                   f"├ 🏆 Побед: {total_games_won} (Винрейт: {win_rate:.1f}%)\n"
                   f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
                   f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
@@ -920,20 +912,13 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
-        # Био и дата
-        description_field = "📝 Био:\n"
+        # Био
         if stats.description:
-            description_field += f" {stats.description}\n"
-        else:
-            description_field += " Не указано\n"
-        
-        description_field += f" 📅 На сервере с: {join_date}"
-        
-        embed.add_field(
-            name="ℹ️",
-            value=description_field,
-            inline=False
-        )
+            embed.add_field(
+                name="📝 Био",
+                value=stats.description,
+                inline=False
+            )
 
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
@@ -952,7 +937,7 @@ class TournamentCog(commands.Cog):
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
     if level >= 100:
-        return "� GrandMaster"
+        return "� 👑 GrandMaster"
     elif level >= 93:
         return "☣️ Expert I"
     elif level >= 86:

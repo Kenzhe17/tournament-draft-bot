@@ -41,11 +41,11 @@ class InventoryButton(discord.ui.Button):
             )
             return
 
-        # Вызвать команду inventory
-        bot = interaction.client
-        command = bot.tree.get_command("inventory")
-        if command:
-            await command.callback(interaction)
+        # Вызвать команду inventory напрямую
+        from cogs.tournament import TournamentCog
+        cog = interaction.client.get_cog("TournamentCog")
+        if cog:
+            await cog.inventory(interaction)
         else:
             await interaction.response.send_message(
                 "❌ Команда инвентаря не найдена.",
