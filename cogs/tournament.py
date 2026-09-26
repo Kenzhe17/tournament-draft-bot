@@ -895,7 +895,7 @@ class TournamentCog(commands.Cog):
 
         # Экономика
         embed.add_field(
-            name="💳 ЭКОНОМИКА",
+            name="� ЭКОНОМИКА",
             value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
             inline=False
         )
