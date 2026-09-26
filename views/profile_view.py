@@ -41,11 +41,11 @@ class InventoryButton(discord.ui.Button):
             )
             return
 
-        # Вызвать команду inventory напрямую через cog
-        from cogs.tournament import TournamentCog
-        cog = interaction.client.get_cog("TournamentCog")
-        if cog:
-            await cog.inventory(interaction)
+        # Вызвать команду inventory через tree.get_command
+        bot = interaction.client
+        command = bot.tree.get_command("inventory")
+        if command:
+            await command.callback(interaction)
         else:
             await interaction.response.send_message(
                 "❌ Команда инвентаря не найдена.",
@@ -154,7 +154,91 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Save updated stats
         await player_stats_store.update(self.guild_id, self.user_id, stats)
 
-        await interaction.response.send_message(
-            "✅ Профиль успешно обновлен!",
-            ephemeral=True
+        # Regenerate profile embed with updated data
+        from cogs.tournament import TournamentCog
+        from storage.user_balance_store import user_balance_store
+        from storage.shop_store import inventory_store
+        from storage.minigame_store import minigame_store
+        from utils.cosmetics import format_player_name
+
+        balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
+        cosmetics = inventory_store.get_player_inventory(self.guild_id, self.user_id)
+        inventory_count = len(cosmetics)
+
+        # Get rank
+        from cogs.tournament import get_rank_emoji
+        rank_title = get_rank_emoji(stats.level)
+        current_xp, xp_needed = stats.get_level_progress()
+        xp_remaining = xp_needed - current_xp
+
+        # Get minigame stats
+        minigame_stats = await minigame_store.get_player_stats(self.guild_id, self.user_id)
+        total_games_played = 0
+        total_games_won = 0
+        favorite_game = "Нет данных"
+
+        if minigame_stats:
+            total_games_played = sum(s.get("games_played", 0) for s in minigame_stats)
+            total_games_won = sum(s.get("games_won", 0) for s in minigame_stats)
+            
+            if minigame_stats:
+                sorted_games = sorted(minigame_stats, key=lambda x: x.get("games_played", 0), reverse=True)
+                if sorted_games:
+                    game_id = sorted_games[0].get("game_id")
+                    game = await minigame_store.get_game(game_id)
+                    if game:
+                        favorite_game = game.name
+
+        win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
+
+        # Create new embed
+        import discord
+        embed = discord.Embed(
+            title=f"Профиль: {stats.name}",
+            color=discord.Color.dark_blue()
         )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+
+        embed.add_field(
+            name="",
+            value=f"Ранг: {rank_title}",
+            inline=False
+        )
+        embed.add_field(
+            name="",
+            value=f"Level {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
+            inline=False
+        )
+        embed.add_field(
+            name="💵 ЭКОНОМИКА",
+            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
+            inline=False
+        )
+        embed.add_field(
+            name="🎮 СТАТИСТИКА",
+            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
+                  f"├ 🏆 Побед: {total_games_won} (Винрейт: {win_rate:.1f}%)\n"
+                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
+                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
+                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
+                  f"└ 🎯 Любимая игра: {favorite_game}",
+            inline=False
+        )
+
+        # Bio - show even if empty
+        bio_text = stats.description if stats.description else "Не указано"
+        embed.add_field(
+            name="📝 Био",
+            value=bio_text,
+            inline=False
+        )
+
+        elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+        embed.add_field(
+            name="📊 Last ELO Change",
+            value=f"{elo_change:+d}",
+            inline=True
+        )
+
+        # Update the original message
+        await interaction.response.edit_message(embed=embed)
