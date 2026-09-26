@@ -952,7 +952,6 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.player_stats_store import player_stats_store
     from storage.user_balance_store import user_balance_store
     from storage.redis_client import get_leaderboard, set_leaderboard
-    from cogs.tournament import get_rank_emoji
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -974,13 +973,13 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = "⭐ ТАБЛИЦА ЛИДЕРОВ | Уровень и Опыт"
+        title = "📈 ТАБЛИЦА ЛИДЕРОВ | Level"
         color = discord.Color.dark_purple()
     elif leaderboard_type == "money":
-        title = "💰 ТАБЛИЦА ЛИДЕРОВ | Самые Богатые Игроки"
+        title = "🪙 ТАБЛИЦА ЛИДЕРОВ | Money"
         color = discord.Color.dark_gold()
     else:  # elo
-        title = "⚔️ ТАБЛИЦА ЛИДЕРОВ | ELO Рейтинг"
+        title = "⚔️ ТАБЛИЦА ЛИДЕРОВ | ELO"
         color = discord.Color.dark_blue()
 
     total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
@@ -1025,17 +1024,14 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
 
-        # Get rank emoji and title combined
-        player_rank = get_rank_emoji(player.level)
-
         if leaderboard_type == "level":
-            line = f"{rank_emoji} {formatted_name}  |  {player_rank}  •  lvl {player.level}"
+            line = f"{rank_emoji} {formatted_name}  —  lvl {player.level}"
         elif leaderboard_type == "money":
             # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
-            line = f"{rank_emoji} {formatted_name}  •  {balance:,}🪙"
+            line = f"{rank_emoji} {formatted_name}  —  {balance:,}🪙"
         else:  # elo
-            line = f"{rank_emoji} {formatted_name}  •  {int(player.elo)} ELO"
+            line = f"{rank_emoji} {formatted_name}  —  {int(player.elo)} ELO"
 
         lines.append(line)
 
