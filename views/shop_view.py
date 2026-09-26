@@ -151,7 +151,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     # Создать список ролей
     roles_list = "\n\n".join([
-        f"{item.value if item.value else '�'} **{item.name}**\n"
+        f"{item.value if item.value else '📛'} **{item.name}**\n"
         f"├ 📝 {item.description}\n"
         f"└ 💰 **Цена:** {item.price} 🪙"
         for item in roles
@@ -555,7 +555,7 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
 
     # Информация о товаре
     embed.add_field(
-        name="� **Информация о товаре:**",
+        name="📌 **Информация о товаре:**",
         value=f"├ 🏷️ **Тип:** {category_label} ({label})\n"
               f"├ 📝 **Описание:** {item.description}\n"
               f"└ 💰 **Стоимость:** {item.price} 🪙",
@@ -752,7 +752,7 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
 
     # Информация о товаре
     embed.add_field(
-        name="� **Информация о товаре:**",
+        name="📌 **Информация о товаре:**",
         value=f"├ 🏷️ **Категория:** Кейсы\n"
               f"├ 📝 **Описание:** {case.description}\n"
               f"└ 💰 **Стоимость:** {case.price} 🪙",

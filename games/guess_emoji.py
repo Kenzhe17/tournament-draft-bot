@@ -22,6 +22,6 @@ class GuessEmojiModal(discord.ui.Modal, title="Угадай эмодзи"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Показать сообщение в разработке."""
         await interaction.response.send_message(
-            "� Игра 'Угадай эмодзи' в разработке. Скоро будет доступна!",
+            "🚧 Игра 'Угадай эмодзи' в разработке. Скоро будет доступна!",
             ephemeral=True
         )
