@@ -392,18 +392,51 @@ class TournamentCog(commands.Cog):
     async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин."""
         from storage.user_balance_store import user_balance_store
+        from storage.shop_store import inventory_store
+        from storage.player_stats_store import player_stats_store
         from views.shop_view import ShopMainView
+        from models.player_stats import PlayerStats
 
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
+        # Получить инвентарь
+        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        inventory_count = len(cosmetics)
+        max_inventory = 20
+
+        # Получить ранг
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        rank = "Без ранга"
+        if stats:
+            from cogs.tournament import get_rank_emoji
+            rank = get_rank_emoji(stats.level)
+
         # Создать embed в новом формате
         embed = discord.Embed(
-            title="�️ Магазин Сервера | Главный каталог",
-            description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары.",
+            title="🛍️ МАГАЗИН СЕРВЕРА | Главное меню",
             color=discord.Color.gold()
         )
-        embed.add_field(name="� Ваш баланс", value=f"{balance} 🪙", inline=False)
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.description = (
+            "Добро пожаловать в игровой магазин!\n"
+            "Выберите нужный раздел в выпадающем меню ниже,\n"
+            "чтобы посмотреть доступные товары."
+        )
+
+        # Профиль пользователя
+        embed.add_field(
+            name="💳 ВАШ ПРОФИЛЬ",
+            value=f"├ 👛 Баланс: {balance:,} 🪙  |  ⚙️ Ранг: {rank}\n"
+                  f"└ 🎒 Мест в инвентаре: {inventory_count}/{max_inventory}",
+            inline=False
+        )
+
+        embed.add_field(
+            name="💡 Для навигации используйте компоненты ниже",
+            value="",
+            inline=False
+        )
 
         # Создать View с выпадающим меню категорий
         view = ShopMainView()

@@ -29,11 +29,11 @@ class InventoryButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь."""
-        # Trigger inventory command
-        bot = interaction.client
-        command = bot.tree.get_command("inventory")
-        if command:
-            await command.callback(interaction)
+        # Вызвать команду inventory напрямую
+        from cogs.tournament import TournamentCog
+        cog = interaction.client.get_cog("TournamentCog")
+        if cog:
+            await cog.inventory(interaction)
         else:
             await interaction.response.send_message(
                 "❌ Команда инвентаря не найдена.",
@@ -481,6 +481,7 @@ class ItemCardView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(BuyButton(item_id, price))
         self.add_item(ShopBackButton())
+        self.add_item(InventoryButton())
 
 
 class CaseCardView(discord.ui.View):
@@ -490,6 +491,7 @@ class CaseCardView(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(BuyCaseButton(case_id, price))
         self.add_item(ShopBackButton())
+        self.add_item(InventoryButton())
 
 
 class BuyButton(discord.ui.Button):
@@ -629,11 +631,12 @@ class BuyCaseButton(discord.ui.Button):
 
 
 class ShopBackView(discord.ui.View):
-    """View с кнопкой назад."""
+    """View с кнопкой назад и инвентарем."""
 
     def __init__(self):
         super().__init__(timeout=180)
         self.add_item(ShopBackButton())
+        self.add_item(InventoryButton())
 
 
 class ShopBackButton(discord.ui.Button):
