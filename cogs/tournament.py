@@ -1303,10 +1303,10 @@ def get_rank_emoji(level: int) -> str:
 
     #     await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="booyah", description="Рекорды турнира")
-    async def booyah(self, interaction: discord.Interaction) -> None:
-        """Показать рекорды турнира."""
-        await interaction.response.defer()
+        @app_commands.command(name="booyah", description="Рекорды турнира")
+        async def booyah(self, interaction: discord.Interaction) -> None:
+            """Показать рекорды турнира."""
+            await interaction.response.defer()
 
         from storage.player_stats_store import player_stats_store
 
@@ -1441,91 +1441,91 @@ def get_rank_emoji(level: int) -> str:
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-    @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
-    @app_commands.describe(
-        player="Игрок",
-        type="Тип изменения: elo или money",
-        amount="Новое значение (для ELO) или количество монет (для money)",
-        operation="Операция: set (установить), add (добавить), remove (убрать)"
-    )
-    async def edit_player(
-        self,
-        interaction: discord.Interaction,
-        player: discord.Member,
-        type: str,
-        amount: int,
-        operation: str = "set"
-    ) -> None:
-        """Изменить ELO или монеты игрока."""
-        # Только владелец бота может использовать эту команду
-        bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
-        if interaction.user.id != bot_owner_id:
-            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
-            return
+        @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
+        @app_commands.describe(
+            player="Игрок",
+            type="Тип изменения: elo или money",
+            amount="Новое значение (для ELO) или количество монет (для money)",
+            operation="Операция: set (установить), add (добавить), remove (убрать)"
+        )
+        async def edit_player(
+            self,
+            interaction: discord.Interaction,
+            player: discord.Member,
+            type: str,
+            amount: int,
+            operation: str = "set"
+        ) -> None:
+            """Изменить ELO или монеты игрока."""
+            # Только владелец бота может использовать эту команду
+            bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
+            if interaction.user.id != bot_owner_id:
+                await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
+                return
 
-        if type not in ["elo", "money"]:
-            await interaction.response.send_message(
-                "❌ Тип должен быть 'elo' или 'money'.",
-                ephemeral=True
-            )
-            return
+            if type not in ["elo", "money"]:
+                await interaction.response.send_message(
+                    "❌ Тип должен быть 'elo' или 'money'.",
+                    ephemeral=True
+                )
+                return
 
-        if operation not in ["set", "add", "remove"]:
-            await interaction.response.send_message(
-                "❌ Операция должна быть 'set', 'add' или 'remove'.",
-                ephemeral=True
-            )
-            return
+            if operation not in ["set", "add", "remove"]:
+                await interaction.response.send_message(
+                    "❌ Операция должна быть 'set', 'add' или 'remove'.",
+                    ephemeral=True
+                )
+                return
 
-        if type == "elo":
-            from storage.player_stats_store import player_stats_store
+            if type == "elo":
+                from storage.player_stats_store import player_stats_store
 
-            stats = await player_stats_store.get(interaction.guild_id, player.id)
-            current_elo = stats.elo if stats else 1000
+                stats = await player_stats_store.get(interaction.guild_id, player.id)
+                current_elo = stats.elo if stats else 1000
 
-            if operation == "set":
-                new_elo = amount
-            elif operation == "add":
-                new_elo = current_elo + amount
-            else:  # remove
-                new_elo = current_elo - amount
+                if operation == "set":
+                    new_elo = amount
+                elif operation == "add":
+                    new_elo = current_elo + amount
+                else:  # remove
+                    new_elo = current_elo - amount
 
-            await player_stats_store.update_player(
-                interaction.guild_id,
-                player.id,
-                player.display_name,
-                result="none",
-                set_elo=new_elo
-            )
+                await player_stats_store.update_player(
+                    interaction.guild_id,
+                    player.id,
+                    player.display_name,
+                    result="none",
+                    set_elo=new_elo
+                )
 
-            await interaction.response.send_message(
-                f"✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}",
-                ephemeral=True
-            )
-        else:  # money
-            from storage.user_balance_store import user_balance_store
+                await interaction.response.send_message(
+                    f"✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}",
+                    ephemeral=True
+                )
+            else:  # money
+                from storage.user_balance_store import user_balance_store
 
-            current_balance = await user_balance_store.get_balance(interaction.guild_id, player.id)
+                current_balance = await user_balance_store.get_balance(interaction.guild_id, player.id)
 
-            if operation == "set":
-                new_balance = amount
-                # Calculate difference to add/remove
-                diff = new_balance - current_balance
-                if diff > 0:
-                    await user_balance_store.add_balance(interaction.guild_id, player.id, diff)
-                elif diff < 0:
-                    await user_balance_store.remove_balance(interaction.guild_id, player.id, abs(diff))
-            elif operation == "add":
-                new_balance = current_balance + amount
-                await user_balance_store.add_balance(interaction.guild_id, player.id, amount)
-            else:  # remove
-                new_balance = current_balance - amount
-                await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
+                if operation == "set":
+                    new_balance = amount
+                    # Calculate difference to add/remove
+                    diff = new_balance - current_balance
+                    if diff > 0:
+                        await user_balance_store.add_balance(interaction.guild_id, player.id, diff)
+                    elif diff < 0:
+                        await user_balance_store.remove_balance(interaction.guild_id, player.id, abs(diff))
+                elif operation == "add":
+                    new_balance = current_balance + amount
+                    await user_balance_store.add_balance(interaction.guild_id, player.id, amount)
+                else:  # remove
+                    new_balance = current_balance - amount
+                    await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
 
-            await interaction.response.send_message(
-                f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
-                ephemeral=True
-            )
+                await interaction.response.send_message(
+                    f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
+                    ephemeral=True
+                )
 
     @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
     @app_commands.default_permissions(administrator=True)
