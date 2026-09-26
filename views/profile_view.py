@@ -112,19 +112,9 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         self.guild_id = guild_id
         self.user_id = user_id
 
-        # Get current stats to pre-fill fields
-        stats = await player_stats_store.get(guild_id, user_id)
-        if stats:
-            default_name = stats.name
-            default_description = stats.description if hasattr(stats, 'description') else ''
-        else:
-            default_name = ""
-            default_description = ""
-
         self.nickname = discord.ui.TextInput(
             label="Никнейм",
             placeholder="Введите ваш никнейм",
-            default=default_name,
             max_length=32,
             required=False
         )
@@ -132,7 +122,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         self.description = discord.ui.TextInput(
             label="Описание",
             placeholder="Введите описание профиля",
-            default=default_description,
             max_length=256,
             style=discord.TextStyle.paragraph,
             required=False
