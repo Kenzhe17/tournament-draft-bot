@@ -1026,28 +1026,19 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
         if leaderboard_type == "level":
             rank_title = player.get_rank_title()
-            if rank <= 3:
-                line = f"{rank_emoji} {rank}. {formatted_name}\n└ {rank_title}  •  `Lvl {player.level}`"
-            else:
-                line = f"{rank_emoji} {formatted_name}  •  {rank_title}   •  `Lvl {player.level}`"
+            line = f"{rank_emoji} {formatted_name}  {rank_title}  •  lvl {player.level}"
         elif leaderboard_type == "money":
             # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
             if rank <= 3:
-                line = f"{rank_emoji} {rank}. {formatted_name}\n└ 💎 `{balance:,} 🪙`"
+                line = f"{rank_emoji} {formatted_name}   💎{balance:,}🪙"
             else:
-                line = f"{rank_emoji} {formatted_name}  •  💸 `{balance:,} 🪙`"
+                line = f"{rank_emoji} {formatted_name}  •  💸{balance:,}🪙"
         else:  # elo
-            if rank <= 3:
-                line = f"{rank_emoji} {rank}. {formatted_name}\n •  `{int(player.elo)} ELO`"
-            else:
-                line = f"{rank_emoji} {formatted_name}  •  `{int(player.elo)} ELO`"
+            rank_title = player.get_rank_title()
+            line = f"{rank_emoji} {formatted_name}  {rank_title}  •  {int(player.elo)} ELO"
 
         lines.append(line)
-
-    # Add separator after top 3 if we have more than 3 players
-    if len(lines) > 3:
-        lines.insert(3, "──────────────────────────────────────────────────────")
 
     embed.description = "\n".join(lines)
     embed.set_footer(text=f"Страница {page}/{total_pages}")
