@@ -531,346 +531,346 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
-    async def rps(self, interaction: discord.Interaction) -> None:
-        """Игра в камень-ножницы-бумага."""
-        from storage.redis_client import get_cooldown, set_cooldown
-        from views.rps_view import BetModal
-
-        # Check cooldown (3 seconds)
-        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps"):
-            await interaction.response.send_message(
-                "⏳ Подождите 3 секунды перед повторной игрой!",
-                ephemeral=True
-            )
-            return
-
-        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps", 3)
-        await interaction.response.send_modal(BetModal())
-
-    @app_commands.command(name="coin_flip", description="Монетка")
-    async def coin_flip(self, interaction: discord.Interaction) -> None:
-        """Игра в монетку."""
-        from views.coin_flip_view import CoinBetModal
-
-        await interaction.response.send_modal(CoinBetModal())
-
-    @app_commands.command(name="dice_roll", description="Кубик")
-    async def dice_roll(self, interaction: discord.Interaction) -> None:
-        """Игра в кубик."""
-        from views.dice_roll_view import DiceBetModal
-
-        await interaction.response.send_modal(DiceBetModal())
-
-    @app_commands.command(name="games", description="Показать доступные мини-игры")
-    async def games(self, interaction: discord.Interaction) -> None:
-        """Показать список мини-игр."""
-        from views.games_view import GamesMainView
-
-        embed = discord.Embed(
-            title="🎮 Мини-игры",
-            description="Выберите категорию игр и поставьте монеты!",
-            color=discord.Color.dark_blue(),
-        )
-
-        view = GamesMainView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @app_commands.command(name="play", description="Запустить мини-игру")
-    @app_commands.describe(game="Выберите игру для запуска")
-    @app_commands.autocomplete(game=game_autocomplete)
-    async def play(self, interaction: discord.Interaction, game: str) -> None:
-        """Запустить выбранную игру."""
-        # Get the command
-        command = self.bot.tree.get_command(game)
-
-        if command:
-            # Execute the command
-            await command.callback(interaction)
-        else:
-            await interaction.response.send_message(
-                f"❌ Игра '{game}' не найдена.",
-                ephemeral=True
-            )
-
-    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
-    async def guess_number(self, interaction: discord.Interaction) -> None:
-        """Игра в угадай число."""
-        from storage.redis_client import get_cooldown, set_cooldown
-        from views.guess_number_view import NumberBetModal
-
-        # Check cooldown (3 seconds)
-        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number"):
-            await interaction.response.send_message(
-                "⏳ Подождите 3 секунды перед повторной игрой!",
-                ephemeral=True
-            )
-            return
-
-        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number", 3)
-        await interaction.response.send_modal(NumberBetModal(interaction.guild_id, interaction.user.id))
-
-    @app_commands.command(name="guess_emoji", description="Угадай эмодзи по подсказкам")
-    async def guess_emoji(self, interaction: discord.Interaction) -> None:
-        """Игра в угадай эмодзи."""
-        from views.guess_emoji_view import EmojiBetModal
-
-        await interaction.response.send_modal(EmojiBetModal(interaction.guild_id, interaction.user.id))
-
-    @app_commands.command(name="wheel", description="Колесо фортуны")
-    async def wheel(self, interaction: discord.Interaction) -> None:
-        """Игра колесо фортуны."""
-        from storage.redis_client import get_cooldown, set_cooldown
-        from views.wheel_view import WheelBetModal
-
-        # Check cooldown (3 seconds)
-        if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel"):
-            await interaction.response.send_message(
-                "⏳ Подождите 3 секунды перед повторной игрой!",
-                ephemeral=True
-            )
-            return
-
-        await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel", 3)
-        await interaction.response.send_modal(WheelBetModal(interaction.guild_id, interaction.user.id))
+    # @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
+    # async def rps(self, interaction: discord.Interaction) -> None:
+    #     """Игра в камень-ножницы-бумага."""
+    #     from storage.redis_client import get_cooldown, set_cooldown
+    #     from views.rps_view import BetModal
+
+    #     # Check cooldown (3 seconds)
+    #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps"):
+    #         await interaction.response.send_message(
+    #             "⏳ Подождите 3 секунды перед повторной игрой!",
+    #             ephemeral=True
+    #         )
+    #         return
+
+    #     await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_rps", 3)
+    #     await interaction.response.send_modal(BetModal())
+
+    # @app_commands.command(name="coin_flip", description="Монетка")
+    # async def coin_flip(self, interaction: discord.Interaction) -> None:
+    #     """Игра в монетку."""
+    #     from views.coin_flip_view import CoinBetModal
+
+    #     await interaction.response.send_modal(CoinBetModal())
+
+    # @app_commands.command(name="dice_roll", description="Кубик")
+    # async def dice_roll(self, interaction: discord.Interaction) -> None:
+    #     """Игра в кубик."""
+    #     from views.dice_roll_view import DiceBetModal
+
+    #     await interaction.response.send_modal(DiceBetModal())
+
+    # @app_commands.command(name="games", description="Показать доступные мини-игры")
+    # async def games(self, interaction: discord.Interaction) -> None:
+    #     """Показать список мини-игр."""
+    #     from views.games_view import GamesMainView
+
+    #     embed = discord.Embed(
+    #         title="🎮 Мини-игры",
+    #         description="Выберите категорию игр и поставьте монеты!",
+    #         color=discord.Color.dark_blue(),
+    #     )
+
+    #     view = GamesMainView()
+    #     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    # @app_commands.command(name="play", description="Запустить мини-игру")
+    # @app_commands.describe(game="Выберите игру для запуска")
+    # @app_commands.autocomplete(game=game_autocomplete)
+    # async def play(self, interaction: discord.Interaction, game: str) -> None:
+    #     """Запустить выбранную игру."""
+    #     # Get the command
+    #     command = self.bot.tree.get_command(game)
+
+    #     if command:
+    #         # Execute the command
+    #         await command.callback(interaction)
+    #     else:
+    #         await interaction.response.send_message(
+    #             f"❌ Игра '{game}' не найдена.",
+    #             ephemeral=True
+    #         )
+
+    # @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
+    # async def guess_number(self, interaction: discord.Interaction) -> None:
+    #     """Игра в угадай число."""
+    #     from storage.redis_client import get_cooldown, set_cooldown
+    #     from views.guess_number_view import NumberBetModal
+
+    #     # Check cooldown (3 seconds)
+    #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number"):
+    #         await interaction.response.send_message(
+    #             "⏳ Подождите 3 секунды перед повторной игрой!",
+    #             ephemeral=True
+    #         )
+    #         return
+
+    #     await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_guess_number", 3)
+    #     await interaction.response.send_modal(NumberBetModal(interaction.guild_id, interaction.user.id))
+
+    # @app_commands.command(name="guess_emoji", description="Угадай эмодзи по подсказкам")
+    # async def guess_emoji(self, interaction: discord.Interaction) -> None:
+    #     """Игра в угадай эмодзи."""
+    #     from views.guess_emoji_view import EmojiBetModal
+
+    #     await interaction.response.send_modal(EmojiBetModal(interaction.guild_id, interaction.user.id))
+
+    # @app_commands.command(name="wheel", description="Колесо фортуны")
+    # async def wheel(self, interaction: discord.Interaction) -> None:
+    #     """Игра колесо фортуны."""
+    #     from storage.redis_client import get_cooldown, set_cooldown
+    #     from views.wheel_view import WheelBetModal
+
+    #     # Check cooldown (3 seconds)
+    #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel"):
+    #         await interaction.response.send_message(
+    #             "⏳ Подождите 3 секунды перед повторной игрой!",
+    #             ephemeral=True
+    #         )
+    #         return
+
+    #     await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel", 3)
+    #     await interaction.response.send_modal(WheelBetModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="tictactoe", description="Крестики-Нолики")
-    async def tictactoe(self, interaction: discord.Interaction) -> None:
-        """Игра крестики-нолики."""
-        from views.tictactoe_view import TicTacToeBetModal
+    # @app_commands.command(name="tictactoe", description="Крестики-Нолики")
+    # async def tictactoe(self, interaction: discord.Interaction) -> None:
+    #     """Игра крестики-нолики."""
+    #     from views.tictactoe_view import TicTacToeBetModal
 
-        await interaction.response.send_modal(TicTacToeBetModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(TicTacToeBetModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="spin_bottle", description="Бутылочка")
-    async def spin_bottle(self, interaction: discord.Interaction) -> None:
-        """Игра бутылочка."""
-        from views.spin_bottle_view import SpinBottleBetModal
+    # @app_commands.command(name="spin_bottle", description="Бутылочка")
+    # async def spin_bottle(self, interaction: discord.Interaction) -> None:
+    #     """Игра бутылочка."""
+    #     from views.spin_bottle_view import SpinBottleBetModal
 
-        await interaction.response.send_modal(SpinBottleBetModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(SpinBottleBetModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="math_quiz", description="Математическая викторина")
-    async def math_quiz(self, interaction: discord.Interaction) -> None:
-        """Математическая викторина."""
-        from games.math_quiz import MathQuizModal
+    # @app_commands.command(name="math_quiz", description="Математическая викторина")
+    # async def math_quiz(self, interaction: discord.Interaction) -> None:
+    #     """Математическая викторина."""
+    #     from games.math_quiz import MathQuizModal
 
-        await interaction.response.send_modal(MathQuizModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(MathQuizModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="word_guess", description="Угадай слово")
-    async def word_guess(self, interaction: discord.Interaction) -> None:
-        """Угадай слово."""
-        from games.word_guess import WordGuessModal
+    # @app_commands.command(name="word_guess", description="Угадай слово")
+    # async def word_guess(self, interaction: discord.Interaction) -> None:
+    #     """Угадай слово."""
+    #     from games.word_guess import WordGuessModal
 
-        await interaction.response.send_modal(WordGuessModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(WordGuessModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="riddles", description="Загадки")
-    async def riddles(self, interaction: discord.Interaction) -> None:
-        """Загадки."""
-        from games.riddles import RiddlesModal
+    # @app_commands.command(name="riddles", description="Загадки")
+    # async def riddles(self, interaction: discord.Interaction) -> None:
+    #     """Загадки."""
+    #     from games.riddles import RiddlesModal
 
-        await interaction.response.send_modal(RiddlesModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(RiddlesModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="hangman", description="Виселица")
-    async def hangman(self, interaction: discord.Interaction) -> None:
-        """Виселица."""
-        from games.hangman import HangmanModal
+    # @app_commands.command(name="hangman", description="Виселица")
+    # async def hangman(self, interaction: discord.Interaction) -> None:
+    #     """Виселица."""
+    #     from games.hangman import HangmanModal
 
-        await interaction.response.send_modal(HangmanModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(HangmanModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="memory", description="Память")
-    async def memory(self, interaction: discord.Interaction) -> None:
-        """Память."""
-        from games.memory import MemoryModal
+    # @app_commands.command(name="memory", description="Память")
+    # async def memory(self, interaction: discord.Interaction) -> None:
+    #     """Память."""
+    #     from games.memory import MemoryModal
 
-        await interaction.response.send_modal(MemoryModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(MemoryModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="anagrams", description="Анаграммы")
-    async def anagrams(self, interaction: discord.Interaction) -> None:
-        """Анаграммы."""
-        from games.anagrams import AnagramsModal
+    # @app_commands.command(name="anagrams", description="Анаграммы")
+    # async def anagrams(self, interaction: discord.Interaction) -> None:
+    #     """Анаграммы."""
+    #     from games.anagrams import AnagramsModal
 
-        await interaction.response.send_modal(AnagramsModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(AnagramsModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="logic_puzzle", description="Логические задачи")
-    async def logic_puzzle(self, interaction: discord.Interaction) -> None:
-        """Логические задачи."""
-        from games.logic_puzzle import LogicPuzzleModal
+    # @app_commands.command(name="logic_puzzle", description="Логические задачи")
+    # async def logic_puzzle(self, interaction: discord.Interaction) -> None:
+    #     """Логические задачи."""
+    #     from games.logic_puzzle import LogicPuzzleModal
 
-        await interaction.response.send_modal(LogicPuzzleModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(LogicPuzzleModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="word_chain", description="Словесные цепочки")
-    async def word_chain(self, interaction: discord.Interaction) -> None:
-        """Словесные цепочки."""
-        from games.word_chain import WordChainModal
+    # @app_commands.command(name="word_chain", description="Словесные цепочки")
+    # async def word_chain(self, interaction: discord.Interaction) -> None:
+    #     """Словесные цепочки."""
+    #     from games.word_chain import WordChainModal
 
-        await interaction.response.send_modal(WordChainModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(WordChainModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="millionaire", description="Кто хочет стать миллионером")
-    async def millionaire(self, interaction: discord.Interaction) -> None:
-        """Кто хочет стать миллионером."""
-        from games.millionaire import MillionaireModal
+    # @app_commands.command(name="millionaire", description="Кто хочет стать миллионером")
+    # async def millionaire(self, interaction: discord.Interaction) -> None:
+    #     """Кто хочет стать миллионером."""
+    #     from games.millionaire import MillionaireModal
 
-        await interaction.response.send_modal(MillionaireModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(MillionaireModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="roulette", description="Рулетка")
-    async def roulette(self, interaction: discord.Interaction) -> None:
-        """Рулетка."""
-        from games.roulette import RouletteModal
+    # @app_commands.command(name="roulette", description="Рулетка")
+    # async def roulette(self, interaction: discord.Interaction) -> None:
+    #     """Рулетка."""
+    #     from games.roulette import RouletteModal
 
-        await interaction.response.send_modal(RouletteModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(RouletteModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="blackjack", description="Блэкджек")
-    async def blackjack(self, interaction: discord.Interaction) -> None:
-        """Блэкджек."""
-        from games.blackjack import BlackjackModal
+    # @app_commands.command(name="blackjack", description="Блэкджек")
+    # async def blackjack(self, interaction: discord.Interaction) -> None:
+    #     """Блэкджек."""
+    #     from games.blackjack import BlackjackModal
 
-        await interaction.response.send_modal(BlackjackModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(BlackjackModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="slots", description="Слоты")
-    async def slots(self, interaction: discord.Interaction) -> None:
-        """Слоты."""
-        from games.slots import SlotsModal
+    # @app_commands.command(name="slots", description="Слоты")
+    # async def slots(self, interaction: discord.Interaction) -> None:
+    #     """Слоты."""
+    #     from games.slots import SlotsModal
 
-        await interaction.response.send_modal(SlotsModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(SlotsModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="baccarat", description="Баккара")
-    async def baccarat(self, interaction: discord.Interaction) -> None:
-        """Баккара."""
-        from games.baccarat import BaccaratModal
+    # @app_commands.command(name="baccarat", description="Баккара")
+    # async def baccarat(self, interaction: discord.Interaction) -> None:
+    #     """Баккара."""
+    #     from games.baccarat import BaccaratModal
 
-        await interaction.response.send_modal(BaccaratModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(BaccaratModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="lottery", description="Лотерея")
-    async def lottery(self, interaction: discord.Interaction) -> None:
-        """Лотерея."""
-        from games.lottery import LotteryModal
+    # @app_commands.command(name="lottery", description="Лотерея")
+    # async def lottery(self, interaction: discord.Interaction) -> None:
+    #     """Лотерея."""
+    #     from games.lottery import LotteryModal
 
-        await interaction.response.send_modal(LotteryModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(LotteryModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="highlow", description="High-Low")
-    async def highlow(self, interaction: discord.Interaction) -> None:
-        """High-Low."""
-        from games.highlow import HighLowModal
+    # @app_commands.command(name="highlow", description="High-Low")
+    # async def highlow(self, interaction: discord.Interaction) -> None:
+    #     """High-Low."""
+    #     from games.highlow import HighLowModal
 
-        await interaction.response.send_modal(HighLowModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(HighLowModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="dicebet", description="Dicebet")
-    async def dicebet(self, interaction: discord.Interaction) -> None:
-        """Dicebet."""
-        from games.dicebet import DicebetModal
+    # @app_commands.command(name="dicebet", description="Dicebet")
+    # async def dicebet(self, interaction: discord.Interaction) -> None:
+    #     """Dicebet."""
+    #     from games.dicebet import DicebetModal
 
-        await interaction.response.send_modal(DicebetModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(DicebetModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="craps", description="Крэпс")
-    async def craps(self, interaction: discord.Interaction) -> None:
-        """Крэпс."""
-        from games.craps import CrapsModal
+    # @app_commands.command(name="craps", description="Крэпс")
+    # async def craps(self, interaction: discord.Interaction) -> None:
+    #     """Крэпс."""
+    #     from games.craps import CrapsModal
 
-        await interaction.response.send_modal(CrapsModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(CrapsModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="snap", description="Snap")
-    async def snap(self, interaction: discord.Interaction) -> None:
-        """Snap."""
-        from games.snap import SnapModal
+    # @app_commands.command(name="snap", description="Snap")
+    # async def snap(self, interaction: discord.Interaction) -> None:
+    #     """Snap."""
+    #     from games.snap import SnapModal
 
-        await interaction.response.send_modal(SnapModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(SnapModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="poker", description="Покер")
-    async def poker(self, interaction: discord.Interaction) -> None:
-        """Покер."""
-        from games.poker import PokerModal
+    # @app_commands.command(name="poker", description="Покер")
+    # async def poker(self, interaction: discord.Interaction) -> None:
+    #     """Покер."""
+    #     from games.poker import PokerModal
 
-        await interaction.response.send_modal(PokerModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(PokerModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="triple_chance", description="Тройной шанс")
-    async def triple_chance(self, interaction: discord.Interaction) -> None:
-        """Тройной шанс."""
-        from games.triple_chance import TripleChanceModal
+    # @app_commands.command(name="triple_chance", description="Тройной шанс")
+    # async def triple_chance(self, interaction: discord.Interaction) -> None:
+    #     """Тройной шанс."""
+    #     from games.triple_chance import TripleChanceModal
 
-        await interaction.response.send_modal(TripleChanceModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(TripleChanceModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="flag_quiz", description="Угадай флаг")
-    async def flag_quiz(self, interaction: discord.Interaction) -> None:
-        """Угадай флаг."""
-        from games.flag_quiz import FlagQuizModal
+    # @app_commands.command(name="flag_quiz", description="Угадай флаг")
+    # async def flag_quiz(self, interaction: discord.Interaction) -> None:
+    #     """Угадай флаг."""
+    #     from games.flag_quiz import FlagQuizModal
 
-        await interaction.response.send_modal(FlagQuizModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(FlagQuizModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="movie_quiz", description="Угадай фильм")
-    async def movie_quiz(self, interaction: discord.Interaction) -> None:
-        """Угадай фильм."""
-        from games.movie_quiz import MovieQuizModal
+    # @app_commands.command(name="movie_quiz", description="Угадай фильм")
+    # async def movie_quiz(self, interaction: discord.Interaction) -> None:
+    #     """Угадай фильм."""
+    #     from games.movie_quiz import MovieQuizModal
 
-        await interaction.response.send_modal(MovieQuizModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(MovieQuizModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="song_quiz", description="Угадай песню")
-    async def song_quiz(self, interaction: discord.Interaction) -> None:
-        """Угадай песню."""
-        from games.song_quiz import SongQuizModal
+    # @app_commands.command(name="song_quiz", description="Угадай песню")
+    # async def song_quiz(self, interaction: discord.Interaction) -> None:
+    #     """Угадай песню."""
+    #     from games.song_quiz import SongQuizModal
 
-        await interaction.response.send_modal(SongQuizModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(SongQuizModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="checkers", description="Шашки")
-    async def checkers(self, interaction: discord.Interaction) -> None:
-        """Шашки."""
-        from games.checkers import CheckersModal
+    # @app_commands.command(name="checkers", description="Шашки")
+    # async def checkers(self, interaction: discord.Interaction) -> None:
+    #     """Шашки."""
+    #     from games.checkers import CheckersModal
 
-        await interaction.response.send_modal(CheckersModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(CheckersModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="reversi", description="Реверси")
-    async def reversi(self, interaction: discord.Interaction) -> None:
-        """Реверси."""
-        from games.reversi import ReversiModal
+    # @app_commands.command(name="reversi", description="Реверси")
+    # async def reversi(self, interaction: discord.Interaction) -> None:
+    #     """Реверси."""
+    #     from games.reversi import ReversiModal
 
-        await interaction.response.send_modal(ReversiModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(ReversiModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="chess", description="Шахматы")
-    async def chess(self, interaction: discord.Interaction) -> None:
-        """Шахматы."""
-        from games.chess import ChessModal
+    # @app_commands.command(name="chess", description="Шахматы")
+    # async def chess(self, interaction: discord.Interaction) -> None:
+    #     """Шахматы."""
+    #     from games.chess import ChessModal
 
-        await interaction.response.send_modal(ChessModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(ChessModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="koth", description="Король горы")
-    async def koth(self, interaction: discord.Interaction) -> None:
-        """Король горы."""
-        from games.koth import KothModal
+    # @app_commands.command(name="koth", description="Король горы")
+    # async def koth(self, interaction: discord.Interaction) -> None:
+    #     """Король горы."""
+    #     from games.koth import KothModal
 
-        await interaction.response.send_modal(KothModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(KothModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="elo_battle", description="Битва ELO")
-    async def elo_battle(self, interaction: discord.Interaction) -> None:
-        """Битва ELO."""
-        from games.elo_battle import EloBattleModal
+    # @app_commands.command(name="elo_battle", description="Битва ELO")
+    # async def elo_battle(self, interaction: discord.Interaction) -> None:
+    #     """Битва ELO."""
+    #     from games.elo_battle import EloBattleModal
 
-        await interaction.response.send_modal(EloBattleModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(EloBattleModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="wordle", description="Слово дня")
-    async def wordle(self, interaction: discord.Interaction) -> None:
-        """Слово дня."""
-        from games.wordle import WordleModal
+    # @app_commands.command(name="wordle", description="Слово дня")
+    # async def wordle(self, interaction: discord.Interaction) -> None:
+    #     """Слово дня."""
+    #     from games.wordle import WordleModal
 
-        await interaction.response.send_modal(WordleModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(WordleModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="game_2048", description="2048")
-    async def game_2048(self, interaction: discord.Interaction) -> None:
-        """2048."""
-        from games.game_2048 import Game2048Modal
+    # @app_commands.command(name="game_2048", description="2048")
+    # async def game_2048(self, interaction: discord.Interaction) -> None:
+    #     """2048."""
+    #     from games.game_2048 import Game2048Modal
 
-        await interaction.response.send_modal(Game2048Modal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(Game2048Modal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="sudoku", description="Судоку")
-    async def sudoku(self, interaction: discord.Interaction) -> None:
-        """Судоку."""
-        from games.sudoku import SudokuModal
+    # @app_commands.command(name="sudoku", description="Судоку")
+    # async def sudoku(self, interaction: discord.Interaction) -> None:
+    #     """Судоку."""
+    #     from games.sudoku import SudokuModal
 
-        await interaction.response.send_modal(SudokuModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(SudokuModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="minigame_tournament", description="Турнир мини-игр")
-    async def minigame_tournament(self, interaction: discord.Interaction) -> None:
-        """Турнир мини-игр."""
-        from games.minigame_tournament import MinigameTournamentModal
+    # @app_commands.command(name="minigame_tournament", description="Турнир мини-игр")
+    # async def minigame_tournament(self, interaction: discord.Interaction) -> None:
+    #     """Турнир мини-игр."""
+    #     from games.minigame_tournament import MinigameTournamentModal
 
-        await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
+    #     await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="profile", description="Показать ваш профиль")
     @app_commands.describe(user="Пользователь (пусто = ваш профиль)")
