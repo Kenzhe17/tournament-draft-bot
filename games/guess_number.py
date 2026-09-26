@@ -1,55 +1,27 @@
-"""Игра в угадай число."""
+"""Угадай число - PvE игра (в разработке)."""
 
-import random
-import uuid
-from typing import Literal
+import discord
 
 
-class GuessNumberGame:
-    """Логика игры в угадай число."""
+class GuessNumberModal(discord.ui.Modal, title="Угадай число"):
+    """Модал для игры Угадай число."""
 
-    def __init__(self, secret_number: int | None = None, session_id: str | None = None) -> None:
-        """Инициализировать игру."""
-        self.session_id = session_id if session_id else str(uuid.uuid4())
-        self.secret_number = secret_number if secret_number is not None else random.randint(1, 100)
-        self.attempts_left = 7
-        self.game_over = False
-        self.won = False
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.user_id = user_id
 
-    def make_guess(self, guess: int) -> tuple[Literal["correct", "too_high", "too_low", "game_over"], str]:
-        """Сделать попытку угадать число.
+        self.bet = discord.ui.TextInput(
+            label="Ставка (🪙)",
+            placeholder="Введите сумму ставки",
+            min_length=1,
+            max_length=10,
+            required=True
+        )
 
-        Returns:
-            (result, message) - результат и сообщение для игрока
-        """
-        if self.game_over:
-            return "game_over", "Игра уже завершена!"
-
-        self.attempts_left -= 1
-
-        if guess == self.secret_number:
-            self.game_over = True
-            self.won = True
-            return "correct", f"🎉 Поздравляем! Вы угадали число {self.secret_number}!"
-
-        if self.attempts_left <= 0:
-            self.game_over = True
-            return "game_over", f"😢 Игра окончена! Загаданное число было {self.secret_number}."
-
-        if guess < self.secret_number:
-            return "too_low", f"📈 Больше! Попыток осталось: {self.attempts_left}"
-        else:
-            return "too_high", f"📉 Меньше! Попыток осталось: {self.attempts_left}"
-
-    def get_multiplier(self) -> float:
-        """Получить множитель выигрыша."""
-        return 5.0  # 5x множитель как в плане
-
-    def get_state(self) -> dict:
-        """Получить текущее состояние игры."""
-        return {
-            "secret_number": self.secret_number,
-            "attempts_left": self.attempts_left,
-            "game_over": self.game_over,
-            "won": self.won,
-        }
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Показать сообщение в разработке."""
+        await interaction.response.send_message(
+            "🚧 Игра 'Угадай число' в разработке. Скоро будет доступна!",
+            ephemeral=True
+        )

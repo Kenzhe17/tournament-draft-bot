@@ -1,67 +1,27 @@
-"""Игра бутылочка."""
+"""Бутылочка - PvP игра (в разработке)."""
 
-import random
-from typing import Literal
+import discord
 
 
-class SpinBottleGame:
-    """Логика игры бутылочка."""
+class SpinBottleModal(discord.ui.Modal, title="Бутылочка"):
+    """Модал для игры Бутылочка."""
 
-    DARES = [
-        "Сделать 10 приседаний",
-        "Сказать комплимент случайному участнику",
-        "Сказать правду о себе",
-        "Изобразить животное",
-        "Сделать смешное лицо",
-        "Сказать что-то на иностранном языке",
-        "Сделать 5 отжиманий",
-        "Покажите свою любимую эмодзи",
-        "Скажите что вы любите больше всего",
-        "Сделайте смешный звук",
-    ]
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.user_id = user_id
 
-    def __init__(self) -> None:
-        """Инициализировать игру."""
-        self.game_over = False
-        self.won = False
-        self.result = None
-        self.dare = None
+        self.bet = discord.ui.TextInput(
+            label="Ставка (🪙)",
+            placeholder="Введите сумму ставки",
+            min_length=1,
+            max_length=10,
+            required=True
+        )
 
-    def spin(self) -> dict:
-        """Крутить бутылочку.
-
-        Returns:
-            Словарь с результатом вращения
-        """
-        if self.game_over:
-            return {"error": "Игра уже завершена!"}
-
-        # Случайный результат: указывает на игрока или на воздух
-        # 60% шанс что укажет на игрока (победа)
-        self.result = random.choice(["player", "miss", "player", "miss", "player", "player"])
-        self.dare = random.choice(self.DARES)
-        self.game_over = True
-
-        if self.result == "player":
-            self.won = True
-        else:
-            self.won = False
-
-        return {
-            "result": self.result,
-            "dare": self.dare,
-            "won": self.won,
-        }
-
-    def get_multiplier(self) -> float:
-        """Получить множитель выигрыша."""
-        return 2.0  # 2x множитель как в плане
-
-    def get_state(self) -> dict:
-        """Получить текущее состояние игры."""
-        return {
-            "game_over": self.game_over,
-            "won": self.won,
-            "result": self.result,
-            "dare": self.dare,
-        }
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Показать сообщение в разработке."""
+        await interaction.response.send_message(
+            "🚧 Игра 'Бутылочка' в разработке. Скоро будет доступна!",
+            ephemeral=True
+        )
