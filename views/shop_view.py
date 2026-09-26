@@ -1344,6 +1344,86 @@ class ShopBuyButton(discord.ui.Button):
         )
 
 
+class InventoryEquipSelect(discord.ui.Select):
+    """Select menu для экипировки предмета."""
+
+    def __init__(self, items):
+        options = []
+        for item_id, item_name in items:
+            options.append(
+                discord.SelectOption(
+                    label=f"Экипировать {item_name}",
+                    value=item_id,
+                    emoji="✅"
+                )
+            )
+
+        super().__init__(
+            placeholder="Выберите предмет для экипировки...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.items = items
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Экипировать предмет."""
+        item_id = self.values[0]
+        success = inventory_store.equip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
+        if success:
+            item = shop_store.get_item(item_id)
+            item_name = item.name if item else item_id
+            await interaction.response.send_message(
+                f"✅ **{item_name}** экипирован!",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось экипировать предмет.",
+                ephemeral=True
+            )
+
+
+class InventoryUnequipSelect(discord.ui.Select):
+    """Select menu для снятия предмета."""
+
+    def __init__(self, items):
+        options = []
+        for item_id, item_name in items:
+            options.append(
+                discord.SelectOption(
+                    label=f"Снять {item_name}",
+                    value=item_id,
+                    emoji="❌"
+                )
+            )
+
+        super().__init__(
+            placeholder="Выберите предмет для снятия...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.items = items
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Снять предмет."""
+        item_id = self.values[0]
+        success = inventory_store.unequip_cosmetic(interaction.guild_id, interaction.user.id, item_id)
+        if success:
+            item = shop_store.get_item(item_id)
+            item_name = item.name if item else item_id
+            await interaction.response.send_message(
+                f"✅ **{item_name}** снят.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                "❌ Не удалось снять предмет.",
+                ephemeral=True
+            )
+
+
 class InventoryEquipButton(discord.ui.Button):
     """Кнопка экипировки предмета."""
 

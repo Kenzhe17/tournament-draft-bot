@@ -458,7 +458,7 @@ class TournamentCog(commands.Cog):
     async def inventory(self, interaction: discord.Interaction) -> None:
         """Показать инвентарь косметики."""
         from storage.shop_store import inventory_store, shop_store
-        from views.shop_view import InventoryEquipButton, InventoryUnequipButton
+        from views.shop_view import InventoryEquipSelect, InventoryUnequipSelect
 
         # Получить инвентарь
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
@@ -476,12 +476,14 @@ class TournamentCog(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # Создать View с кнопками
+        # Создать View с select menu
         view = discord.ui.View()
 
         # Сгруппировать по типам
         equipped_text = []
         unequipped_text = []
+        equipped_items = []
+        unequipped_items = []
 
         for cosmetic in cosmetics:
             item = shop_store.get_item(cosmetic.item_id)
@@ -493,12 +495,10 @@ class TournamentCog(commands.Cog):
 
             if cosmetic.equipped:
                 equipped_text.append(item_text)
-                # Добавить кнопку снятия
-                view.add_item(InventoryUnequipButton(cosmetic.item_id, f"Снять {item.name}"))
+                equipped_items.append((cosmetic.item_id, item.name))
             else:
                 unequipped_text.append(item_text)
-                # Добавить кнопку экипировки
-                view.add_item(InventoryEquipButton(cosmetic.item_id, f"Экипировать {item.name}"))
+                unequipped_items.append((cosmetic.item_id, item.name))
 
         if equipped_text:
             embed.add_field(
@@ -517,10 +517,17 @@ class TournamentCog(commands.Cog):
         # Добавить инструкции
         embed.add_field(
             name="📖 Управление",
-            value="Используйте кнопки ниже для экипировки/снятия.\n"
+            value="Используйте выпадающие меню ниже для экипировки/снятия.\n"
                    "Максимум 1 тег и 1 иконка одновременно.",
             inline=False
         )
+
+        # Добавить select menu для экипировки и снятия
+        if unequipped_items:
+            view.add_item(InventoryEquipSelect(unequipped_items))
+        
+        if equipped_items:
+            view.add_item(InventoryUnequipSelect(equipped_items))
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
