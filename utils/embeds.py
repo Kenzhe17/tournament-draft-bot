@@ -952,6 +952,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.player_stats_store import player_stats_store
     from storage.user_balance_store import user_balance_store
     from storage.redis_client import get_leaderboard, set_leaderboard
+    from cogs.tournament import get_rank_emoji
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -1024,19 +1025,18 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
 
+        # Get rank emoji and title
+        player_rank_emoji = get_rank_emoji(player.level)
+        rank_title = player.get_rank_title()
+
         if leaderboard_type == "level":
-            rank_title = player.get_rank_title()
-            line = f"{rank_emoji} {formatted_name}  {rank_title}  •  lvl {player.level}"
+            line = f"{rank_emoji} {formatted_name}  |  {player_rank_emoji} {rank_title}  •  lvl {player.level}"
         elif leaderboard_type == "money":
             # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
-            if rank <= 3:
-                line = f"{rank_emoji} {formatted_name}   💎{balance:,}🪙"
-            else:
-                line = f"{rank_emoji} {formatted_name}  •  💸{balance:,}🪙"
+            line = f"{rank_emoji} {formatted_name}  •  {balance:,}🪙"
         else:  # elo
-            rank_title = player.get_rank_title()
-            line = f"{rank_emoji} {formatted_name}  {rank_title}  •  {int(player.elo)} ELO"
+            line = f"{rank_emoji} {formatted_name}  |  {player_rank_emoji} {rank_title}  •  {int(player.elo)} ELO"
 
         lines.append(line)
 
