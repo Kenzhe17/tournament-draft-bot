@@ -1284,24 +1284,24 @@ def get_rank_emoji(level: int) -> str:
 
     #     # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
     #     avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
-        embed.set_thumbnail(url=avatar_url)
+    #     embed.set_thumbnail(url=avatar_url)
 
-        # Показать био если есть
-        if stats.bio:
-            embed.description = f"📝 {stats.bio}"
+    #     # Показать био если есть
+    #     if stats.bio:
+    #         embed.description = f"📝 {stats.bio}"
 
-        embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
-        embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
-        embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
-        embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
-        embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
+    #     embed.add_field(name="🏆 ELO", value=str(int(stats.elo)), inline=True)
+    #     embed.add_field(name="🥇 Победы", value=str(stats.wins), inline=True)
+    #     embed.add_field(name="🎮 Игры", value=str(stats.games), inline=True)
+    #     embed.add_field(name="📈 Win Rate", value=f"{win_rate:.0f}%", inline=True)
+    #     embed.add_field(name="⚔️ K/D Ratio", value=f"{stats.kd_ratio:.2f}", inline=True)
 
-        # Additional stats
-        embed.add_field(name="🎯 AVG Kills", value=f"{stats.avg_kills:.2f}", inline=True)
-        embed.add_field(name="🔥 Max Kills", value=str(stats.best_match_kills), inline=True)
-        embed.add_field(name="📊 Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
+    #     # Additional stats
+    #     embed.add_field(name="🎯 AVG Kills", value=f"{stats.avg_kills:.2f}", inline=True)
+    #     embed.add_field(name="🔥 Max Kills", value=str(stats.best_match_kills), inline=True)
+    #     embed.add_field(name="📊 Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
 
-        await interaction.followup.send(embed=embed)
+    #     await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:
