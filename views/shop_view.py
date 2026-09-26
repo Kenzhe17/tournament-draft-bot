@@ -759,16 +759,12 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
         inline=False
     )
 
-    # Шансы выпадения
-    coins_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("coins_"))
-    item_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("item_"))
-    nothing_chance = case.drop_rates.get("nothing", 0.0)
-
+    # Шансы выпадения (зафиксированы стандартные значения)
     embed.add_field(
         name="🎲 **Шансы выпадения:**",
-        value=f"├ 🪙 **Монеты:** {coins_chance * 100:.0f}%\n"
-              f"├ 🎁 **Предмет:** {item_chance * 100:.0f}%\n"
-              f"└ ❌ **Ничего:** {nothing_chance * 100:.0f}%",
+        value=f"├ 🪙 **Монеты:** 50%\n"
+              f"├ 🎁 **Предмет:** 10%\n"
+              f"└ ❌ **Ничего:** 40%",
         inline=False
     )
 
