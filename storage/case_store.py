@@ -56,7 +56,7 @@ class CaseStore:
             "basic": Case(
                 id="basic",
                 name="📦 Basic Case",
-                description="Базовый кейс с обычными предметами",
+                description="Базовые предметы",
                 price=200,
                 drop_rates={
                     "item_basic": 0.10,
@@ -71,7 +71,7 @@ class CaseStore:
             "premium": Case(
                 id="premium",
                 name="🎁 Premium Case",
-                description="Премиум кейс с редкими предметами",
+                description="Редкие предметы",
                 price=500,
                 drop_rates={
                     "item_premium": 0.10,
@@ -86,7 +86,7 @@ class CaseStore:
             "elite": Case(
                 id="elite",
                 name="💎 Elite Case",
-                description="Элитный кейс с легендарными предметами",
+                description="Легендарные предметы",
                 price=1000,
                 drop_rates={
                     "item_elite": 0.10,
@@ -101,7 +101,7 @@ class CaseStore:
             "special": Case(
                 id="special",
                 name="✨ Special Case",
-                description="Специальный кейс с эксклюзивными предметами",
+                description="Эксклюзивные предметы",
                 price=2000,
                 drop_rates={
                     "item_special": 0.10,

@@ -936,7 +936,7 @@ class BuyCaseButton(discord.ui.Button):
         await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
 
         # Открыть кейс
-        result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id)
+        result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
 
         if result:
             await interaction.response.send_message(
@@ -968,6 +968,59 @@ class ShopBackButton(discord.ui.Button):
             label="◀ Назад в главное меню",
             custom_id="shop_back"
         )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Вернуться в главное меню магазина."""
+        from storage.user_balance_store import user_balance_store
+        from storage.shop_store import inventory_store
+        from storage.player_stats_store import player_stats_store
+        from cogs.tournament import get_rank_emoji
+
+        # Получить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+
+        # Получить инвентарь
+        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        inventory_count = len(cosmetics)
+        max_inventory = 20
+
+        # Получить ранг
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        rank = "Без ранга"
+        if stats:
+            rank = get_rank_emoji(stats.level)
+
+        # Создать embed в новом формате
+        embed = discord.Embed(
+            title="🛍️ МАГАЗИН СЕРВЕРА | Главное меню",
+            color=discord.Color.gold()
+        )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.description = (
+            "Добро пожаловать в игровой магазин!\n"
+            "Выберите нужный раздел в выпадающем меню ниже,\n"
+            "чтобы посмотреть доступные товары."
+        )
+
+        # Профиль пользователя
+        embed.add_field(
+            name="💳 ВАШ ПРОФИЛЬ",
+            value=f"├ 👛 Баланс: {balance:,} 🪙\n"
+                  f"├ 🏆 Ранг: {rank}\n"
+                  f"└ 🎒 Мест в инвентаре: {inventory_count}/{max_inventory}",
+            inline=False
+        )
+
+        embed.add_field(
+            name="💡 Для навигации используйте компоненты ниже",
+            value="",
+            inline=False
+        )
+
+        # Создать View с выпадающим меню категорий
+        view = ShopMainView()
+
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class ShopBackToListButton(discord.ui.Button):

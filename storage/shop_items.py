@@ -511,7 +511,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="role_move",
             name="Переместить",
-            description="Доступ к команде перемещения",
+            description="Перемещение",
             price=2000,
             cosmetic_type=CosmeticType.TAG,  # Используем TAG как тип для ролей
             rarity=CosmeticRarity.PREMIUM,
@@ -524,7 +524,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="role_mention",
             name="@everyone @here",
-            description="Доступ к пингу @everyone и @here",
+            description="Пинг @everyone",
             price=5000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.ELITE,
@@ -537,7 +537,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="role_say",
             name="Say",
-            description="Доступ к каналу Say",
+            description="Канал Say",
             price=1000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.PREMIUM,
@@ -550,7 +550,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="role_tournament_org",
             name="Организатор Турниров",
-            description="Права на организацию турниров",
+            description="Организация турниров",
             price=20000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
@@ -563,7 +563,7 @@ def initialize_shop_items() -> None:
         ShopItem(
             id="role_role_assign",
             name="Выдача Ролей",
-            description="Права на выдачу ролей",
+            description="Выдача ролей",
             price=20000,
             cosmetic_type=CosmeticType.TAG,
             rarity=CosmeticRarity.SPECIAL,
