@@ -60,12 +60,12 @@ class CaseStore:
                 price=200,
                 drop_rates={
                     "item_basic": 0.10,
-                    "coins_100": 0.40,
+                    "coins_100": 0.50,
                     "coins_200": 0.25,
                     "coins_300": 0.20,
                     "coins_400": 0.10,
                     "coins_500": 0.05,
-                    "nothing": 0.10,
+                    "nothing": 0.40,
                 },
                 is_active=True
             ),
@@ -76,12 +76,12 @@ class CaseStore:
                 price=500,
                 drop_rates={
                     "item_premium": 0.10,
-                    "coins_250": 0.40,
+                    "coins_250": 0.50,
                     "coins_500": 0.25,
                     "coins_750": 0.20,
                     "coins_1000": 0.10,
                     "coins_1250": 0.05,
-                    "nothing": 0.20,
+                    "nothing": 0.40,
                 },
                 is_active=True
             ),
@@ -92,12 +92,12 @@ class CaseStore:
                 price=1000,
                 drop_rates={
                     "item_elite": 0.10,
-                    "coins_500": 0.40,
+                    "coins_500": 0.50,
                     "coins_1000": 0.25,
                     "coins_1500": 0.20,
                     "coins_2000": 0.10,
                     "coins_2500": 0.05,
-                    "nothing": 0.20,
+                    "nothing": 0.40,
                 },
                 is_active=True
             ),
@@ -108,12 +108,12 @@ class CaseStore:
                 price=2000,
                 drop_rates={
                     "item_special": 0.10,
-                    "coins_1000": 0.40,
+                    "coins_1000": 0.50,
                     "coins_2000": 0.25,
                     "coins_3000": 0.20,
                     "coins_4000": 0.10,
                     "coins_5000": 0.05,
-                    "nothing": 0.10,
+                    "nothing": 0.40,
                 },
                 is_active=True
             ),
