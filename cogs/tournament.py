@@ -27,6 +27,28 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def game_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    """Autocomplete for game selection."""
+    from storage.minigame_store import minigame_store
+
+    games = await minigame_store.get_available_games()
+
+    # Filter games by current input
+    filtered = [
+        game for game in games
+        if current.lower() in game.name.lower() or current.lower() in game.command_name.lower()
+    ]
+
+    # Return up to 25 choices
+    return [
+        app_commands.Choice(name=f"{game.name} ({game.command_name})", value=game.command_name)
+        for game in filtered[:25]
+    ]
+
+
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
     """Удалить ephemeral-ответ через указанное время."""
     await asyncio.sleep(delay)
@@ -538,6 +560,23 @@ class TournamentCog(commands.Cog):
 
         view = GamesMainView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="play", description="Запустить мини-игру")
+    @app_commands.describe(game="Выберите игру для запуска")
+    @app_commands.autocomplete(game=game_autocomplete)
+    async def play(self, interaction: discord.Interaction, game: str) -> None:
+        """Запустить выбранную игру."""
+        # Get the command
+        command = self.bot.tree.get_command(game)
+
+        if command:
+            # Execute the command
+            await command.callback(interaction)
+        else:
+            await interaction.response.send_message(
+                f"❌ Игра '{game}' не найдена.",
+                ephemeral=True
+            )
 
     @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
     async def guess_number(self, interaction: discord.Interaction) -> None:
