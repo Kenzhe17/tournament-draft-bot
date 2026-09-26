@@ -1006,7 +1006,7 @@ def get_rank_emoji(level: int) -> str:
     elif level >= 2:
         return "🥉 Bronze II"
     else:
-        return "� Bronze III"
+        return "🥉 Bronze III"
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
