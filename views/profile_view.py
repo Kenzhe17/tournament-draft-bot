@@ -70,7 +70,7 @@ class ProfileEditButton(discord.ui.Button):
 
 
 class ProfileEditModal(discord.ui.Modal, title="Редактирование профиля"):
-    """Модал для редактирования ника, описания и аватара."""
+    """Модал для редактирования ника и описания."""
 
     def __init__(self, guild_id: int, user_id: int):
         super().__init__()
@@ -92,23 +92,14 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             required=False
         )
 
-        self.avatar_url = discord.ui.TextInput(
-            label="URL аватара",
-            placeholder="Введите URL изображения (пусто = Discord аватар)",
-            max_length=512,
-            required=False
-        )
-
         # Add items to modal
         self.add_item(self.nickname)
         self.add_item(self.description)
-        self.add_item(self.avatar_url)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Сохранить изменения профиля."""
         nickname = self.nickname.value
         description = self.description.value
-        avatar_url = self.avatar_url.value
 
         # Get current stats
         stats = await player_stats_store.get(self.guild_id, self.user_id)
@@ -125,11 +116,8 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             stats.name = nickname
         stats.description = description  # Always save description (even if empty)
         
-        # Set avatar URL (use Discord avatar if empty)
-        if avatar_url:
-            stats.avatar_url = avatar_url
-        else:
-            stats.avatar_url = None  # Reset to Discord avatar
+        # Reset avatar to Discord avatar
+        stats.avatar_url = None
 
         # Save updated stats
         await player_stats_store.update(self.guild_id, self.user_id, stats)
@@ -158,45 +146,77 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed
         import discord
         embed = discord.Embed(
-            title=f"Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name}",
             color=discord.Color.dark_blue()
         )
         
-        # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
-        display_avatar_url = stats.avatar_url if stats.avatar_url else interaction.user.avatar.url
-        embed.set_thumbnail(url=display_avatar_url)
+        # Always use Discord avatar
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
-        # Био (показываем сразу после заголовка, если есть)
-        if stats.description:
-            embed.description = stats.description
-
-        # Ранг и уровень на одной строке
-        rank_field_value = f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}\n"
-        if not stats.description:
-            rank_field_value = "\n" + rank_field_value
-
+        # ELO
         embed.add_field(
-            name="",
-            value=rank_field_value,
-            inline=False
+            name="🏆 ELO",
+            value=f"{int(stats.elo)}",
+            inline=True
+        )
+
+        # Ранг
+        embed.add_field(
+            name="🌟 Ранг",
+            value=rank_title,
+            inline=True
+        )
+
+        # Уровень и опыт
+        embed.add_field(
+            name="📈 Level",
+            value=f"{stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
+            inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 ЭКОНОМИКА",
-            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.\n",
-            inline=False
+            name="💵 Баланс",
+            value=f"{balance:,} 🪙",
+            inline=True
+        )
+
+        # Инвентарь
+        embed.add_field(
+            name="🎒 Предметов",
+            value=f"{inventory_count} шт.",
+            inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎮 СТАТИСТИКА",
-            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
-                  f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
-                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
-                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"└ 🔥 Max Kills: {stats.best_match_kills}\n",
-            inline=False
+            name="� Сыграно игр",
+            value=f"{total_games_played}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🏆 Побед",
+            value=f"{total_games_won} ({win_rate:.1f}%)",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🎯 AVG Kills",
+            value=f"{stats.avg_kills:.2f}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="⚔️ K/D Ratio",
+            value=f"{stats.kd_ratio:.2f}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🔥 Max Kills",
+            value=str(stats.best_match_kills),
+            inline=True
         )
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0

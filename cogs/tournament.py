@@ -916,42 +916,75 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Био (показываем сразу после заголовка, если есть)
-        if stats.description:
-            embed.description = stats.description
-
-        # Ранг и уровень на одной строке
-        rank_field_value = f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}\n"
-        if not stats.description:
-            rank_field_value = "\n" + rank_field_value
-
+        # ELO
         embed.add_field(
-            name="",
-            value=rank_field_value,
-            inline=False
+            name="🏆 ELO",
+            value=f"{int(stats.elo)}",
+            inline=True
+        )
+
+        # Ранг
+        embed.add_field(
+            name="🌟 Ранг",
+            value=rank_title,
+            inline=True
+        )
+
+        # Уровень и опыт
+        embed.add_field(
+            name="📈 Level",
+            value=f"{stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
+            inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 ЭКОНОМИКА",
-            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.\n",
-            inline=False
+            name="💵 Баланс",
+            value=f"{balance:,} 🪙",
+            inline=True
+        )
+
+        # Инвентарь
+        embed.add_field(
+            name="🎒 Предметов",
+            value=f"{inventory_count} шт.",
+            inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎮 СТАТИСТИКА",
-            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
-                  f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
-                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
-                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"└ 🔥 Max Kills: {stats.best_match_kills}\n",
-            inline=False
+            name="� Сыграно игр",
+            value=f"{total_games_played}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🏆 Побед",
+            value=f"{total_games_won} ({win_rate:.1f}%)",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🎯 AVG Kills",
+            value=f"{stats.avg_kills:.2f}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="⚔️ K/D Ratio",
+            value=f"{stats.kd_ratio:.2f}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="🔥 Max Kills",
+            value=str(stats.best_match_kills),
+            inline=True
         )
 
         # Last ELO Change
