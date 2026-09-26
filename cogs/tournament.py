@@ -864,7 +864,6 @@ class TournamentCog(commands.Cog):
         from storage.shop_store import inventory_store, shop_store
         from storage.minigame_store import minigame_store
         from utils.cosmetics import format_player_name
-        from utils.embeds import create_progress_bar
         from views.profile_view import ProfileView
 
         # Если пользователь не указан, показываем профиль автора
@@ -884,7 +883,7 @@ class TournamentCog(commands.Cog):
         # Ранг и уровень
         rank_title = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()
-        xp_progress_bar = create_progress_bar(current_xp, xp_needed)
+        xp_remaining = xp_needed - current_xp
 
         # Инвентарь
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, target_user.id)
@@ -914,21 +913,28 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{stats.name} | @{target_user.name}",
+            title=f"Профиль: {stats.name}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
+        # Ранг
+        embed.add_field(
+            name="🔰 Ранг",
+            value=rank_title,
+            inline=False
+        )
+
         # Уровень
         embed.add_field(
             name="🏆 Уровень",
-            value=f"Level {stats.level} | ⭐ Опыт: {xp_progress_bar} {current_xp:,} / {xp_needed:,}",
+            value=f"Level {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
             inline=False
         )
 
         # Экономика
         embed.add_field(
-            name="� ЭКОНОМИКА",
+            name="💵 ЭКОНОМИКА",
             value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
             inline=False
         )

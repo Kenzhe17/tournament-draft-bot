@@ -245,7 +245,7 @@ class RaritySelect(discord.ui.Select):
 
         # Создать список товаров
         items_list = "\n".join([
-            f"{idx + 1}. {get_item_emoji(item.category)} **{get_item_emoji(item.category)} {item.name}**\n"
+            f"{idx + 1}. {item.value} **{item.value} {item.name}**\n"
             f"   ├ 📝 {item.description}\n"
             f"   └ 💰 {item.price} 🪙"
             for idx, item in enumerate(items)
