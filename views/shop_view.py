@@ -69,8 +69,10 @@ class ShopCategorySelect(discord.ui.Select):
 
 
 async def show_cases_category(interaction: discord.Interaction) -> None:
-    """Показать категорию кейсов."""
-    from storage.case_store import case_store
+    """Показать категорию кейсов с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
 
     # Получить все кейсы
     cases = case_store.get_all_cases()
@@ -84,21 +86,44 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
     # Создать список кейсов
     cases_list = "\n".join([
-        f"{idx + 1}. 📦 **{case.name}**\n"
-        f"   ├ 📝 {case.description}\n"
-        f"   └ 💰 {case.price} 🪙"
-        for idx, case in enumerate(cases)
+        f"⭐ **{case.name}**\n"
+        f"├ 📝 {case.description}\n"
+        f"└ 💰 **Цена:** {case.price} 🪙"
+        for case in cases
     ])
 
-    # Получить баланс
+    # Получить данные профиля
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
 
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Создать embed
     embed = discord.Embed(
-        title="📦 Кейсы | Магазин",
-        description=f"Выберите кейс для открытия из списка ниже:\n\n{cases_list}",
+        title="📦 КАТАЛОГ | Кейсы",
+        description=f"Выберите кейс из списка ниже для открытия:\n\n{cases_list}",
         color=discord.Color.orange()
     )
-    embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Выберите кейс в выпадающем меню для открытия",
+        value="",
+        inline=False
+    )
 
     view = ShopBackView()
     view.add_item(CaseSelect(cases))
@@ -106,7 +131,11 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
 
 async def show_roles_list(interaction: discord.Interaction) -> None:
-    """Показать список ролей."""
+    """Показать список ролей с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
     all_items = shop_store.get_all_items()
     roles = [item for item in all_items if item.item_type == "role"]
 
@@ -122,21 +151,44 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     # Создать список ролей
     roles_list = "\n".join([
-        f"{idx + 1}. 👑 **{role.name}**\n"
-        f"   ├ 📝 {role.description}\n"
-        f"   └ 💰 {role.price} 🪙"
-        for idx, role in enumerate(roles)
+        f"{item.value if item.value else '�'} **{item.name}**\n"
+        f"├ 📝 {item.description}\n"
+        f"└ 💰 **Цена:** {item.price} 🪙"
+        for item in roles
     ])
 
-    # Получить баланс
+    # Получить данные профиля
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
 
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Создать embed
     embed = discord.Embed(
-        title="👑 Discord Роли | Магазин",
-        description=f"Выберите роль для покупки из списка ниже:\n\n{roles_list}",
+        title="👑 КАТАЛОГ | Discord Роли",
+        description=f"Выберите роль из списка ниже для покупки:\n\n{roles_list}",
         color=discord.Color.gold()
     )
-    embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Выберите роль в выпадающем меню для покупки",
+        value="",
+        inline=False
+    )
 
     view = ShopBackView()
     view.add_item(RoleSelect(roles))
@@ -144,18 +196,60 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
 
 async def show_rarity_selection(interaction: discord.Interaction, category: str) -> None:
-    """Показать выбор редкости."""
-    view = discord.ui.View()
-    view.add_item(ShopBackButton())
-    view.add_item(RaritySelect(category))
+    """Показать выбор редкости с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
 
     category_label = "Значки" if category == "icons" else "Теги"
+    category_emoji = "✨" if category == "icons" else "🏷️"
+
+    # Получить данные профиля
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Создать embed
     embed = discord.Embed(
-        title=f"✨ {category_label} - Выберите редкость",
-        description="Выберите редкость товаров для просмотра из списка ниже",
+        title=f"{category_emoji} КАТАЛОГ | {category_label}",
+        description="Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:",
         color=discord.Color.purple()
     )
 
+    # Список уровней
+    embed.add_field(
+        name="",
+        value="⭐ **Basic**    • Базовые товары для всех\n"
+              "💎 **Premium**  • Премиум товары для опытных\n"
+              "👑 **Elite**    • Элитные товары для топов\n"
+              "✨ **Special**  • Специальные редкие товары",
+        inline=False
+    )
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Для перехода выберите подкатегорию в меню",
+        value="",
+        inline=False
+    )
+
+    view = discord.ui.View()
+    view.add_item(ShopBackButton())
+    view.add_item(RaritySelect(category))
     await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -186,7 +280,7 @@ class RaritySelect(discord.ui.Select):
             ),
         ]
         super().__init__(
-            placeholder="Выберите редкость...",
+            placeholder="Выберите подкатегорию...",
             min_values=1,
             max_values=1,
             options=options
@@ -194,7 +288,11 @@ class RaritySelect(discord.ui.Select):
         self.category = category
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Показать товары конкретной редкости."""
+        """Показать товары конкретной редкости с новым шаблоном."""
+        from storage.player_stats_store import player_stats_store
+        from storage.shop_store import inventory_store
+        from cogs.tournament import get_rank_emoji
+
         rarity_value = self.values[0]
         rarity_map = {
             "basic": CosmeticRarity.BASIC,
@@ -219,15 +317,25 @@ class RaritySelect(discord.ui.Select):
         items.sort(key=lambda x: x.price)
 
         # Создать список товаров
+        category_label = "Значки" if self.category == "icons" else "Теги"
+        category_emoji = "✨" if self.category == "icons" else "🏷️"
+        
         items_list = "\n".join([
-            f"{idx + 1}. {item.value} **{item.value} {item.name}**\n"
-            f"   ├ 📝 {item.description}\n"
-            f"   └ 💰 {item.price} 🪙"
-            for idx, item in enumerate(items)
+            f"{item.value} **{item.name}**\n"
+            f"└ 💰 **Цена:** {item.price} 🪙"
+            for item in items
         ])
 
-        # Получить баланс
+        # Получить данные профиля
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        inventory_count = len(cosmetics)
+        max_inventory = 20
+
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        rank = "Без ранга"
+        if stats:
+            rank = get_rank_emoji(stats.level)
 
         # Цвет по редкости
         color_map = {
@@ -238,13 +346,27 @@ class RaritySelect(discord.ui.Select):
         }
         embed_color = color_map.get(rarity, discord.Color.gold())
 
-        category_label = "Значки" if self.category == "icons" else "Теги"
+        # Создать embed
         embed = discord.Embed(
-            title=f"✨ {category_label} - {rarity_value.capitalize()} | Магазин",
-            description=f"\n{items_list}",
+            title=f"{category_emoji} КАТАЛОГ | {category_label} — {rarity_value.capitalize()}",
+            description=f"Выберите {category_label.lower()} из списка ниже для покупки:\n\n{items_list}",
             color=embed_color
         )
-        embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
+
+        # Профиль
+        embed.add_field(
+            name="💳 ВАШ ПРОФИЛЬ",
+            value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+                  f"├ 🏆 **Ранг:** {rank}\n"
+                  f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+            inline=False
+        )
+
+        embed.add_field(
+            name="💡 Выберите предмет в выпадающем меню для покупки",
+            value="",
+            inline=False
+        )
 
         view = ShopBackView()
         view.add_item(CosmeticSelect(items))
@@ -277,7 +399,7 @@ class CosmeticSelect(discord.ui.Select):
             )
 
         super().__init__(
-            placeholder="Выберите товар...",
+            placeholder="Выберите значок для покупки...",
             min_values=1,
             max_values=1,
             options=options
@@ -293,7 +415,11 @@ class CosmeticSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Товар не найден.", ephemeral=True)
             return
 
-        await show_item_card(interaction, item)
+        # Для тегов используем отдельный шаблон
+        if item.category == "tags":
+            await show_tag_card(interaction, item)
+        else:
+            await show_item_card(interaction, item)
 
 
 class CaseSelect(discord.ui.Select):
@@ -348,7 +474,7 @@ class RoleSelect(discord.ui.Select):
             )
 
         super().__init__(
-            placeholder="Выберите роль...",
+            placeholder="Выберите роль для покупки...",
             min_values=1,
             max_values=1,
             options=options
@@ -364,13 +490,25 @@ class RoleSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Роль не найдена.", ephemeral=True)
             return
 
-        await show_item_card(interaction, item)
+        await show_role_card(interaction, item)
 
 
 async def show_item_card(interaction: discord.Interaction, item) -> None:
-    """Показать карточку товара."""
+    """Показать карточку товара (эмодзи) с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
     # Получить баланс
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
 
     # Редкость
     rarity_emoji = {
@@ -380,14 +518,14 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
         CosmeticRarity.SPECIAL: "✨",
     }
     rarity_label = {
-        CosmeticRarity.BASIC: "Обычный",
-        CosmeticRarity.PREMIUM: "Премиум",
-        CosmeticRarity.ELITE: "Элитный",
-        CosmeticRarity.SPECIAL: "Специальный",
+        CosmeticRarity.BASIC: "Basic",
+        CosmeticRarity.PREMIUM: "Premium",
+        CosmeticRarity.ELITE: "Elite",
+        CosmeticRarity.SPECIAL: "Special",
     }
 
-    emoji = rarity_emoji.get(item.rarity, "🛒")
-    label = rarity_label.get(item.rarity, "Обычный")
+    emoji = rarity_emoji.get(item.rarity, "⭐")
+    label = rarity_label.get(item.rarity, "Basic")
 
     # Цвет по редкости
     color_map = {
@@ -398,52 +536,245 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     }
     embed_color = color_map.get(item.rarity, discord.Color.gold())
 
-    # Количество игроков
-    if item.item_type == "role":
-        player_count = "Все участники сервера"
-    else:
-        player_count = "Персональный предмет"
+    # Категория
+    category_label = "Значки" if item.category == "icons" else "Теги"
 
-    # Имя с эмодзи
-    item_emoji = get_item_emoji(item.category) if item.category != "role" else "👑"
-    display_name = f"{item_emoji} {item.name}"
-
+    # Создать embed
     embed = discord.Embed(
-        title=f"{emoji} Товар: {display_name}",
-        description=f"📝 Описание:\n{item.description}",
+        title=f"{emoji} ПОКУПКА ЭМОДЗИ | {item.name}",
+        description="Вы действительно хотите приобрести данный предмет?",
         color=embed_color
     )
 
-    embed.add_field(name="📊 Характеристики", value=f"⏳ Срок: Навсегда\n👥 Тип: {player_count}", inline=False)
-    embed.add_field(name="🏷️ Редкость", value=f"{emoji} {label}", inline=True)
-    embed.add_field(name="💰 Стоимость", value=f"{item.price} 🪙", inline=True)
-    embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=True)
+    # Информация о товаре
+    embed.add_field(
+        name="� **Информация о товаре:**",
+        value=f"├ 🏷️ **Тип:** {category_label} ({label})\n"
+              f"├ 📝 **Описание:** {item.description}\n"
+              f"└ 💰 **Стоимость:** {item.price} 🪙",
+        inline=False
+    )
 
-    # Требование уровня
-    if item.required_level > 0:
-        embed.add_field(name="📊 Требование", value=f"Уровень {item.required_level}+", inline=False)
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
 
-    embed.add_field(name="💡", value="Для покупки нажмите кнопку ниже", inline=False)
+    embed.add_field(
+        name="💡 Подтвердите покупку кнопкой ниже",
+        value="",
+        inline=False
+    )
 
-    view = ItemCardView(item.id, item.price)
+    view = ItemCardView(item.id, item.price, "icon")
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+async def show_tag_card(interaction: discord.Interaction, item) -> None:
+    """Показать карточку тега с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
+    # Получить баланс
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Редкость
+    rarity_emoji = {
+        CosmeticRarity.BASIC: "⭐",
+        CosmeticRarity.PREMIUM: "💎",
+        CosmeticRarity.ELITE: "👑",
+        CosmeticRarity.SPECIAL: "✨",
+    }
+    rarity_label = {
+        CosmeticRarity.BASIC: "Basic",
+        CosmeticRarity.PREMIUM: "Premium",
+        CosmeticRarity.ELITE: "Elite",
+        CosmeticRarity.SPECIAL: "Special",
+    }
+
+    emoji = rarity_emoji.get(item.rarity, "⭐")
+    label = rarity_label.get(item.rarity, "Basic")
+
+    # Цвет по редкости
+    color_map = {
+        CosmeticRarity.BASIC: discord.Color.light_grey(),
+        CosmeticRarity.PREMIUM: discord.Color.gold(),
+        CosmeticRarity.ELITE: discord.Color.orange(),
+        CosmeticRarity.SPECIAL: discord.Color.purple(),
+    }
+    embed_color = color_map.get(item.rarity, discord.Color.gold())
+
+    # Создать embed
+    embed = discord.Embed(
+        title=f"🏷️ ПОКУПКА ТЕГА | {item.name}",
+        description="Вы действительно хотите приобрести данный тег?",
+        color=embed_color
+    )
+
+    # Информация о товаре
+    embed.add_field(
+        name="📌 **Информация о товаре:**",
+        value=f"├ 🏷️ **Категория:** Теги ({label})\n"
+              f"├ 📝 **Описание:** {item.description}\n"
+              f"└ 💰 **Стоимость:** {item.price} 🪙",
+        inline=False
+    )
+
+    # Предпросмотр
+    embed.add_field(
+        name="👁️ **Предпросмотр в чате:**",
+        value=f"└ 💬 `{item.value} Username`: \"Всем привет!\"",
+        inline=False
+    )
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Подтвердите покупку кнопкой ниже",
+        value="",
+        inline=False
+    )
+
+    view = ItemCardView(item.id, item.price, "tag")
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+async def show_role_card(interaction: discord.Interaction, item) -> None:
+    """Показать карточку роли с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
+    # Получить баланс
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Создать embed
+    embed = discord.Embed(
+        title=f"👑 ПОКУПКА РОЛИ | {item.name}",
+        description="Вы действительно хотите приобрести эту роль?",
+        color=discord.Color.gold()
+    )
+
+    # Информация о товаре
+    embed.add_field(
+        name="📌 **Информация о товаре:**",
+        value=f"├ 🏷️ **Категория:** Discord Роли\n"
+              f"├ 📝 **Описание:** {item.description}\n"
+              f"├ ⚡ **Привилегии:** {item.description}\n"
+              f"└ 💰 **Стоимость:** {item.price} 🪙",
+        inline=False
+    )
+
+    # Отображение в профиле
+    embed.add_field(
+        name="🎨 **Отображение в профиле:**",
+        value=f"└ 🏷️ Роль: <@&{item.role_id}>",
+        inline=False
+    )
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Подтвердите покупку кнопкой ниже",
+        value="",
+        inline=False
+    )
+
+    view = ItemCardView(item.id, item.price, "role")
     await interaction.response.edit_message(embed=embed, view=view)
 
 
 async def show_case_card(interaction: discord.Interaction, case) -> None:
-    """Показать карточку кейса."""
+    """Показать карточку кейса с новым шаблоном."""
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
     # Получить баланс
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
 
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
+    # Создать embed
     embed = discord.Embed(
-        title=f"📦 Кейс: {case.name}",
-        description=f"📝 Описание:\n{case.description}\n\n🎲 Шанс получить редкий предмет!",
+        title=f"📦 ПОКУПКА КЕЙСА | {case.name}",
+        description="Вы действительно хотите открыть этот кейс?",
         color=discord.Color.orange()
     )
 
-    embed.add_field(name="📊 Характеристики", value=f"⏳ Тип: Случайный приз\n🎲 Шанс легендарного: {case.legendary_chance}%", inline=False)
-    embed.add_field(name="💰 Стоимость", value=f"{case.price} 🪙", inline=True)
-    embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=True)
-    embed.add_field(name="💡", value="Для покупки нажмите кнопку ниже", inline=False)
+    # Информация о товаре
+    embed.add_field(
+        name="� **Информация о товаре:**",
+        value=f"├ 🏷️ **Категория:** Кейсы\n"
+              f"├ 📝 **Описание:** {case.description}\n"
+              f"└ 💰 **Стоимость:** {case.price} 🪙",
+        inline=False
+    )
+
+    # Шансы выпадения
+    embed.add_field(
+        name="🎲 **Шансы выпадения:**",
+        value=f"├ 🪙 **Монеты:** {100 - case.legendary_chance}%\n"
+              f"├ 🎁 **Предмет (Легендарный):** {case.legendary_chance}%\n"
+              f"└ ❌ **Ничего:** 0%",
+        inline=False
+    )
+
+    # Профиль
+    embed.add_field(
+        name="💳 ВАШ ПРОФИЛЬ",
+        value=f"├ 👛 **Баланс:** {balance:,} 🪙\n"
+              f"├ 🏆 **Ранг:** {rank}\n"
+              f"└ 🎒 **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💡 Подтвердите покупку и открытие кнопкой ниже",
+        value="",
+        inline=False
+    )
 
     view = CaseCardView(case.id, case.price)
     await interaction.response.edit_message(embed=embed, view=view)
@@ -452,10 +783,10 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
 class ItemCardView(discord.ui.View):
     """View с кнопками для карточки товара."""
 
-    def __init__(self, item_id: str, price: int):
+    def __init__(self, item_id: str, price: int, item_type: str = "icon"):
         super().__init__(timeout=180)
-        self.add_item(BuyButton(item_id, price))
-        self.add_item(ShopBackButton())
+        self.add_item(BuyButton(item_id, price, item_type))
+        self.add_item(ShopBackToListButton())
 
 
 class CaseCardView(discord.ui.View):
@@ -464,16 +795,22 @@ class CaseCardView(discord.ui.View):
     def __init__(self, case_id: str, price: int):
         super().__init__(timeout=180)
         self.add_item(BuyCaseButton(case_id, price))
-        self.add_item(ShopBackButton())
+        self.add_item(ShopBackToListButton())
 
 
 class BuyButton(discord.ui.Button):
     """Кнопка покупки товара."""
 
-    def __init__(self, item_id: str, price: int):
+    def __init__(self, item_id: str, price: int, item_type: str = "icon"):
+        label_text = f"✅ Купить за {price} 🪙"
+        if item_type == "tag":
+            label_text = f"✅ Примерить и купить за {price} 🪙"
+        elif item_type == "role":
+            label_text = f"✅ Купить роль за {price} 🪙"
+        
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"🛒 Купить за {price} 🪙",
+            label=label_text,
             custom_id=f"buy_{item_id}"
         )
         self.item_id = item_id
@@ -560,7 +897,7 @@ class BuyCaseButton(discord.ui.Button):
     def __init__(self, case_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"🛒 Купить за {price} 🪙",
+            label=f"🎲 Открыть кейс за {price} 🪙",
             custom_id=f"buy_case_{case_id}"
         )
         self.case_id = case_id
@@ -617,9 +954,31 @@ class ShopBackButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="◀ Назад в меню",
+            label="◀ Назад в главное меню",
             custom_id="shop_back"
         )
+
+
+class ShopBackToListButton(discord.ui.Button):
+    """Кнопка возврата к списку товаров."""
+
+    def __init__(self):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="◀ Назад к списку",
+            custom_id="shop_back_list"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Вернуться к списку товаров (заглушка)."""
+        # Для простоты - вернуться в главное меню
+        # В будущем можно реализовать возврат к категории
+        from storage.user_balance_store import user_balance_store
+        from cogs.tournament import TournamentCog
+
+        cog = interaction.client.get_cog("TournamentCog")
+        if cog:
+            await cog.shop(interaction)
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Вернуться в главное меню магазина."""
