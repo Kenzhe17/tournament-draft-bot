@@ -158,17 +158,47 @@ class PlayerStats:
 
     def get_rank_title(self) -> str:
         """Получить название ранга по уровню."""
-        if self.level >= 31:
-            return "🏆 Champion"
-        elif self.level >= 26:
-            return "💎 Master"
-        elif self.level >= 21:
-            return "💠 Diamond"
-        elif self.level >= 16:
-            return "🥇 Platinum"
-        elif self.level >= 11:
-            return "🥈 Gold"
+        if self.level >= 100:
+            return "GrandMaster"
+        elif self.level >= 93:
+            return "Expert I"
+        elif self.level >= 86:
+            return "Expert II"
+        elif self.level >= 80:
+            return "Expert III"
+        elif self.level >= 73:
+            return "Master I"
+        elif self.level >= 66:
+            return "Master II"
+        elif self.level >= 60:
+            return "Master III"
+        elif self.level >= 54:
+            return "Diamond I"
+        elif self.level >= 48:
+            return "Diamond II"
+        elif self.level >= 42:
+            return "Diamond III"
+        elif self.level >= 37:
+            return "Platinum I"
+        elif self.level >= 32:
+            return "Platinum II"
+        elif self.level >= 27:
+            return "Platinum III"
+        elif self.level >= 23:
+            return "Gold I"
+        elif self.level >= 19:
+            return "Gold II"
+        elif self.level >= 15:
+            return "Gold III"
+        elif self.level >= 12:
+            return "Silver I"
+        elif self.level >= 9:
+            return "Silver II"
         elif self.level >= 6:
-            return "🥉 Silver"
+            return "Silver III"
+        elif self.level >= 4:
+            return "Bronze I"
+        elif self.level >= 2:
+            return "Bronze II"
         else:
-            return "🏅 Bronze"
+            return "Bronze III"

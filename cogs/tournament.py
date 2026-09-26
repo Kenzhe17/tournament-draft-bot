@@ -849,8 +849,7 @@ class TournamentCog(commands.Cog):
             return
 
         # Ранг и уровень
-        rank_title = stats.get_rank_title()
-        rank_emoji = get_rank_emoji(stats.level)
+        rank_title = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()
         xp_progress_bar = create_progress_bar(current_xp, xp_needed)
 
@@ -893,7 +892,7 @@ class TournamentCog(commands.Cog):
         # Статус и уровень
         embed.add_field(
             name="🔰 Статус",
-            value=f"{rank_emoji} {rank_title}",
+            value=f"{rank_title}",
             inline=False
         )
         embed.add_field(
@@ -952,20 +951,50 @@ class TournamentCog(commands.Cog):
 
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
-    if level >= 50:
-        return "🟡 GrandMaster"
-    elif level >= 40:
-        return "🟠 Expert"
-    elif level >= 30:
-        return "🔴 Master"
-    elif level >= 20:
-        return "🟣 Diamond"
-    elif level >= 10:
-        return "🔵 Platinum"
-    elif level >= 5:
-        return "⚪ Silver"
+    if level >= 100:
+        return "� GrandMaster"
+    elif level >= 93:
+        return "☣️ Expert I"
+    elif level >= 86:
+        return "☣️ Expert II"
+    elif level >= 80:
+        return "☣️ Expert III"
+    elif level >= 73:
+        return "🔴 Master I"
+    elif level >= 66:
+        return "🔴 Master II"
+    elif level >= 60:
+        return "🔴 Master III"
+    elif level >= 54:
+        return "💎 Diamond I"
+    elif level >= 48:
+        return "💎 Diamond II"
+    elif level >= 42:
+        return "� Diamond III"
+    elif level >= 37:
+        return "💠 Platinum I"
+    elif level >= 32:
+        return "💠 Platinum II"
+    elif level >= 27:
+        return "� Platinum III"
+    elif level >= 23:
+        return "🥇 Gold I"
+    elif level >= 19:
+        return "🥇 Gold II"
+    elif level >= 15:
+        return "🥇 Gold III"
+    elif level >= 12:
+        return "🥈 Silver I"
+    elif level >= 9:
+        return "🥈 Silver II"
+    elif level >= 6:
+        return "🥈 Silver III"
+    elif level >= 4:
+        return "🥉 Bronze I"
+    elif level >= 2:
+        return "🥉 Bronze II"
     else:
-        return "🟤 Bronze"
+        return "🪵 Bronze III"
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
@@ -982,7 +1011,7 @@ def get_rank_emoji(level: int) -> str:
             )
             return
 
-        rank_title = stats.get_rank_title()
+        rank_title = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()
         progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
         progress_bar = create_progress_bar(current_xp, xp_needed)
