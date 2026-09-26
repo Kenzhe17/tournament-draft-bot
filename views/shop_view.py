@@ -877,10 +877,18 @@ class BuyButton(discord.ui.Button):
                 interaction.guild
             )
             if success:
-                await interaction.response.send_message(
-                    f"✅ Вы купили **{item.name}** за {self.price} 🪙!",
-                    ephemeral=True
+                embed = discord.Embed(
+                    title=f"👑 ПОКУПКА РОЛИ | {item.name}",
+                    color=discord.Color.gold()
                 )
+                embed.add_field(
+                    name="📌 **ТОВАР:**",
+                    value=f"├ 🏷️ **Роль:** {item.name}\n"
+                          f"├ ⭐ **Права:** {item.description}\n"
+                          f"└ 💰 **Цена:** {self.price} 🪙",
+                    inline=False
+                )
+                await interaction.response.send_message(embed=embed)
             else:
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
                 await interaction.response.send_message(
@@ -896,10 +904,42 @@ class BuyButton(discord.ui.Button):
                 equipped=False
             )
             inventory_store.add_cosmetic(cosmetic)
-            await interaction.response.send_message(
-                f"✅ Вы купили **{item.name}** за {self.price} 🪙!\n\nИспользуйте `/inventory` для экипировки.",
-                ephemeral=True
-            )
+
+            # Определить тип для отображения
+            rarity_map = {
+                "basic": "⭐ Basic",
+                "premium": "💎 Premium",
+                "elite": "👑 Elite",
+                "special": "✨ Special",
+            }
+            rarity_display = rarity_map.get(item.rarity.value, "⭐ Basic")
+
+            if item.category == "tags":
+                embed = discord.Embed(
+                    title=f"🏷️ ПОКУПКА ТЕГА | {item.name}",
+                    color=discord.Color.purple()
+                )
+                embed.add_field(
+                    name="📌 **ТОВАР:**",
+                    value=f"├ 🏷️ **Префикс:** {item.value}\n"
+                          f"├ ⭐ **Превью:** {item.value} {interaction.user.display_name}\n"
+                          f"└ 💰 **Цена:** {self.price} 🪙",
+                    inline=False
+                )
+            else:
+                embed = discord.Embed(
+                    title=f"✨ ПОКУПКА ЗНАЧКА | {item.name}",
+                    color=discord.Color.blue()
+                )
+                embed.add_field(
+                    name="📌 **ТОВАР:**",
+                    value=f"├ 🏷️ **Предмет:** {item.value}\n"
+                          f"├ ⭐ **Редкость:** {rarity_display}\n"
+                          f"└ 💰 **Цена:** {self.price} 🪙",
+                    inline=False
+                )
+
+            await interaction.response.send_message(embed=embed)
 
 
 class BuyCaseButton(discord.ui.Button):
@@ -939,10 +979,35 @@ class BuyCaseButton(discord.ui.Button):
         result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
 
         if result:
-            await interaction.response.send_message(
-                f"✅ Вы открыли кейс **{case.name}** и получили:\n{result}",
-                ephemeral=True
+            # Определить иконку и текст результата
+            if result["type"] == "coins":
+                status_icon = "💰"
+                result_text = f"{result['value']} 🪙"
+                # Рассчитать шанс монет
+                coins_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("coins_"))
+                chance_text = f"{coins_chance * 100:.0f}%"
+            elif result["type"] == "item":
+                status_icon = "🎁"
+                result_text = f"{result['value'].name}"
+                # Рассчитать шанс предмета
+                item_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("item_"))
+                chance_text = f"{item_chance * 100:.0f}%"
+            else:
+                status_icon = "❌"
+                result_text = "Ничего"
+                chance_text = f"{case.drop_rates.get('nothing', 0) * 100:.0f}%"
+
+            embed = discord.Embed(
+                title=f"📦 ОТКРЫТИЕ КЕЙСА | {case.name}",
+                color=discord.Color.orange()
             )
+            embed.add_field(
+                name=f"{status_icon} **НАГРАДА:**",
+                value=f"├ 🏷️ **Выигрыш:** {result_text}\n"
+                      f"└ ⭐ **С Шансом:** {chance_text}",
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed)
         else:
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
             await interaction.response.send_message(
