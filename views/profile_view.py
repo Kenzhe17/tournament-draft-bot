@@ -70,7 +70,7 @@ class ProfileEditButton(discord.ui.Button):
 
 
 class ProfileEditModal(discord.ui.Modal, title="Редактирование профиля"):
-    """Модал для редактирования ника и описания."""
+    """Модал для редактирования ника, описания и аватара."""
 
     def __init__(self, guild_id: int, user_id: int):
         super().__init__()
@@ -92,14 +92,23 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             required=False
         )
 
+        self.avatar_url = discord.ui.TextInput(
+            label="URL аватара",
+            placeholder="Введите URL изображения (пусто = Discord аватар)",
+            max_length=512,
+            required=False
+        )
+
         # Add items to modal
         self.add_item(self.nickname)
         self.add_item(self.description)
+        self.add_item(self.avatar_url)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Сохранить изменения профиля."""
         nickname = self.nickname.value
         description = self.description.value
+        avatar_url = self.avatar_url.value
 
         # Get current stats
         stats = await player_stats_store.get(self.guild_id, self.user_id)
@@ -115,6 +124,12 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         if nickname:
             stats.name = nickname
         stats.description = description  # Always save description (even if empty)
+        
+        # Set avatar URL (use Discord avatar if empty)
+        if avatar_url:
+            stats.avatar_url = avatar_url
+        else:
+            stats.avatar_url = None  # Reset to Discord avatar
 
         # Save updated stats
         await player_stats_store.update(self.guild_id, self.user_id, stats)
@@ -146,7 +161,10 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             title=f"Профиль: {stats.name}",
             color=discord.Color.dark_blue()
         )
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        
+        # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
+        display_avatar_url = stats.avatar_url if stats.avatar_url else interaction.user.avatar.url
+        embed.set_thumbnail(url=display_avatar_url)
 
         # Био (показываем сразу после заголовка, если есть)
         if stats.description:

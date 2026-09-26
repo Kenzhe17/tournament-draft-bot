@@ -1174,86 +1174,86 @@ def get_rank_emoji(level: int) -> str:
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
-    @app_commands.command(name="setbio", description="Установить описание профиля")
-    @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
-    async def setbio(self, interaction: discord.Interaction, bio: str) -> None:
-        """Установить описание профиля."""
-        # Ограничение длины
-        if len(bio) > 100:
-            await interaction.response.send_message(
-                "❌ Описание должно быть не более 100 символов.",
-                ephemeral=True
-            )
-            return
+    # @app_commands.command(name="setbio", description="Установить описание профиля")
+    # @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
+    # async def setbio(self, interaction: discord.Interaction, bio: str) -> None:
+    #     """Установить описание профиля."""
+    #     # Ограничение длины
+    #     if len(bio) > 100:
+    #         await interaction.response.send_message(
+    #             "❌ Описание должно быть не более 100 символов.",
+    #             ephemeral=True
+    #         )
+    #         return
 
-        from storage.player_stats_store import player_stats_store
-        from models.player_stats import PlayerStats
+    #     from storage.player_stats_store import player_stats_store
+    #     from models.player_stats import PlayerStats
 
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    #     stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
-        if not stats:
-            # Create default stats for new players
-            stats = PlayerStats(
-                guild_id=interaction.guild_id,
-                user_id=interaction.user.id,
-                name=interaction.user.display_name,
-                bio=bio
-            )
-        else:
-            stats.bio = bio
+    #     if not stats:
+    #         # Create default stats for new players
+    #         stats = PlayerStats(
+    #             guild_id=interaction.guild_id,
+    #             user_id=interaction.user.id,
+    #             name=interaction.user.display_name,
+    #             bio=bio
+    #         )
+    #     else:
+    #         stats.bio = bio
 
-        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+    #     await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
 
-        await interaction.response.send_message(
-            f"✅ Био установлено: {bio}",
-            ephemeral=True
-        )
+    #     await interaction.response.send_message(
+    #         f"✅ Био установлено: {bio}",
+    #         ephemeral=True
+    #     )
 
-    @app_commands.command(name="setavatar", description="Установить аватар профиля")
-    @app_commands.describe(url="URL изображения аватара")
-    async def setavatar(self, interaction: discord.Interaction, url: str = None) -> None:
-        """Установить аватар профиля."""
-        from storage.player_stats_store import player_stats_store
-        from models.player_stats import PlayerStats
+    # @app_commands.command(name="setavatar", description="Установить аватар профиля")
+    # @app_commands.describe(url="URL изображения аватара")
+    # async def setavatar(self, interaction: discord.Interaction, url: str = None) -> None:
+    #     """Установить аватар профиля."""
+    #     from storage.player_stats_store import player_stats_store
+    #     from models.player_stats import PlayerStats
 
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    #     stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
-        avatar_url = url
-        if not avatar_url:
-            # Use Discord avatar by default
-            avatar_url = interaction.user.display_avatar.url
+    #     avatar_url = url
+    #     if not avatar_url:
+    #         # Use Discord avatar by default
+    #         avatar_url = interaction.user.display_avatar.url
 
-        if not stats:
-            # Create default stats for new players
-            stats = PlayerStats(
-                guild_id=interaction.guild_id,
-                user_id=interaction.user.id,
-                name=interaction.user.display_name,
-                avatar_url=avatar_url
-            )
-        else:
-            stats.avatar_url = avatar_url
+    #     if not stats:
+    #         # Create default stats for new players
+    #         stats = PlayerStats(
+    #             guild_id=interaction.guild_id,
+    #             user_id=interaction.user.id,
+    #             name=interaction.user.display_name,
+    #             avatar_url=avatar_url
+    #         )
+    #     else:
+    #         stats.avatar_url = avatar_url
 
-        await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
+    #     await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
 
-        if url:
-            await interaction.response.send_message(
-                f"✅ Аватар профиля обновлен.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"✅ Аватар профиля установлен по умолчанию (из Discord).",
-                ephemeral=True
-            )
+    #     if url:
+    #         await interaction.response.send_message(
+    #             f"✅ Аватар профиля обновлен.",
+    #             ephemeral=True
+    #         )
+    #     else:
+    #         await interaction.response.send_message(
+    #             f"✅ Аватар профиля установлен по умолчанию (из Discord).",
+    #             ephemeral=True
+    #         )
 
-        embed = discord.Embed(
-            title=f"📊 Профиль: {formatted_name}",
-            color=discord.Color.blue(),
-        )
+    #     embed = discord.Embed(
+    #         title=f"📊 Профиль: {formatted_name}",
+    #         color=discord.Color.blue(),
+    #     )
 
-        # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
-        avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
+    #     # Show avatar (use custom avatar_url if set, otherwise Discord avatar)
+    #     avatar_url = stats.avatar_url if stats.avatar_url else target_user.display_avatar.url
         embed.set_thumbnail(url=avatar_url)
 
         # Показать био если есть
@@ -1538,153 +1538,153 @@ def get_rank_emoji(level: int) -> str:
 
         await interaction.response.send_message(f"✅ Обновлено {result} записей для {player.display_name}.", ephemeral=True)
 
-    @app_commands.command(name="replace", description="Заменить игрока")
-    @app_commands.describe(
-        current_player="Имя игрока которого нужно заменить (или @упоминание)",
-        new_player="Имя нового игрока (или @упоминание)"
-    )
-    @is_org()
-    async def replace_player(
-        self,
-        interaction: discord.Interaction,
-        current_player: str,
-        new_player: str
-    ) -> None:
-        """Заменить игрока в турнире."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Нет активного турнира.",
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+    # @app_commands.command(name="replace", description="Заменить игрока")
+    # @app_commands.describe(
+    #     current_player="Имя игрока которого нужно заменить (или @упоминание)",
+    #     new_player="Имя нового игрока (или @упоминание)"
+    # )
+    # @is_org()
+    # async def replace_player(
+    #     self,
+    #     interaction: discord.Interaction,
+    #     current_player: str,
+    #     new_player: str
+    # ) -> None:
+    #     """Заменить игрока в турнире."""
+    #     tournament = store.get(interaction.guild_id)
+    #     if not tournament:
+    #         await interaction.response.send_message(
+    #             "❌ Нет активного турнира.",
+    #             ephemeral=True,
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
 
-        # Handle @mentions - extract display name if it's a mention
-        old_name = current_player.strip()
-        new_name = new_player.strip()
+    #     # Handle @mentions - extract display name if it's a mention
+    #     old_name = current_player.strip()
+    #     new_name = new_player.strip()
 
-        # Check if current_player is a mention and extract the name
-        if old_name.startswith("<@") and old_name.endswith(">"):
-            user_id = int(old_name.strip("<@!>"))
-            member = interaction.guild.get_member(user_id)
-            if member:
-                old_name = member.display_name
+    #     # Check if current_player is a mention and extract the name
+    #     if old_name.startswith("<@") and old_name.endswith(">"):
+    #         user_id = int(old_name.strip("<@!>"))
+    #         member = interaction.guild.get_member(user_id)
+    #         if member:
+    #             old_name = member.display_name
 
-        # Check if new_player is a mention and extract the name
-        if new_name.startswith("<@") and new_name.endswith(">"):
-            user_id = int(new_player.strip("<@!>"))
-            member = interaction.guild.get_member(user_id)
-            if member:
-                new_name = member.display_name
+    #     # Check if new_player is a mention and extract the name
+    #     if new_name.startswith("<@") and new_name.endswith(">"):
+    #         user_id = int(new_player.strip("<@!>"))
+    #         member = interaction.guild.get_member(user_id)
+    #         if member:
+    #             new_name = member.display_name
 
-        if tournament.phase == TournamentPhase.SETUP or tournament.phase == TournamentPhase.DRAFT:
-            # Replace in circles
-            if old_name not in tournament.all_players:
-                await interaction.response.send_message(
-                    f"❌ Игрок `{old_name}` не найден.",
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
+    #     if tournament.phase == TournamentPhase.SETUP or tournament.phase == TournamentPhase.DRAFT:
+    #         # Replace in circles
+    #         if old_name not in tournament.all_players:
+    #             await interaction.response.send_message(
+    #                 f"❌ Игрок `{old_name}` не найден.",
+    #                 ephemeral=True,
+    #             )
+    #             asyncio.create_task(_delete_ephemeral_later(interaction))
+    #             return
 
-            for circle in range(1, 5):
-                circle_list = getattr(tournament, f"circle{circle}")
-                if old_name in circle_list:
-                    idx = circle_list.index(old_name)
-                    circle_list[idx] = new_name
-                    break
-        elif tournament.phase == TournamentPhase.FINAL:
-            # Replace in final teams
-            found = False
-            for team_idx in range(len(tournament.final_teams)):
-                if tournament.final_teams[team_idx] == old_name:
-                    tournament.final_teams[team_idx] = new_name
-                    found = True
-                    break
+    #         for circle in range(1, 5):
+    #             circle_list = getattr(tournament, f"circle{circle}")
+    #             if old_name in circle_list:
+    #                 idx = circle_list.index(old_name)
+    #                 circle_list[idx] = new_name
+    #                 break
+    #     elif tournament.phase == TournamentPhase.FINAL:
+    #         # Replace in final teams
+    #         found = False
+    #         for team_idx in range(len(tournament.final_teams)):
+    #             if tournament.final_teams[team_idx] == old_name:
+    #                 tournament.final_teams[team_idx] = new_name
+    #                 found = True
+    #                 break
 
-            if not found:
-                await interaction.response.send_message(
-                    f"❌ Игрок `{old_name}` не найден в финальных командах.",
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-        else:
-            # Replace in teams (TEAMS, QUALIFIERS, SEMIFINALS)
-            found = False
-            for team in tournament.teams:
-                for key, value in team.items():
-                    if value == old_name:
-                        team[key] = new_name
-                        found = True
-                        break
-                if found:
-                    break
+    #         if not found:
+    #             await interaction.response.send_message(
+    #                 f"❌ Игрок `{old_name}` не найден в финальных командах.",
+    #                 ephemeral=True,
+    #             )
+    #             asyncio.create_task(_delete_ephemeral_later(interaction))
+    #             return
+    #     else:
+    #         # Replace in teams (TEAMS, QUALIFIERS, SEMIFINALS)
+    #         found = False
+    #         for team in tournament.teams:
+    #             for key, value in team.items():
+    #                 if value == old_name:
+    #                     team[key] = new_name
+    #                     found = True
+    #                     break
+    #             if found:
+    #                 break
 
-            if not found:
-                await interaction.response.send_message(
-                    f"❌ Игрок `{old_name}` не найден в командах.",
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
+    #         if not found:
+    #             await interaction.response.send_message(
+    #                 f"❌ Игрок `{old_name}` не найден в командах.",
+    #                 ephemeral=True,
+    #             )
+    #             asyncio.create_task(_delete_ephemeral_later(interaction))
+    #             return
 
-        store.set(tournament)
+    #     store.set(tournament)
 
-        await interaction.response.send_message(
-            f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+    #     await interaction.response.send_message(
+    #         f"✅ Игрок `{old_name}` заменен на `{new_name}`.",
+    #         ephemeral=True
+    #     )
+    #     asyncio.create_task(_delete_ephemeral_later(interaction))
 
-        await self.bot.update_tournament_message(interaction.guild, tournament)
+    #     await self.bot.update_tournament_message(interaction.guild, tournament)
 
-    @app_commands.command(name="delete_player", description="Удалить игрока из турнира")
-    @app_commands.describe(name="Имя игрока которого нужно удалить")
-    @is_org()
-    async def delete_player(
-        self,
-        interaction: discord.Interaction,
-        name: str
-    ) -> None:
-        """Удалить игрока из турнира."""
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ Нет активного турнира.",
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+    # @app_commands.command(name="delete_player", description="Удалить игрока из турнира")
+    # @app_commands.describe(name="Имя игрока которого нужно удалить")
+    # @is_org()
+    # async def delete_player(
+    #     self,
+    #     interaction: discord.Interaction,
+    #     name: str
+    # ) -> None:
+    #     """Удалить игрока из турнира."""
+    #     tournament = store.get(interaction.guild_id)
+    #     if not tournament:
+    #         await interaction.response.send_message(
+    #             "❌ Нет активного турнира.",
+    #             ephemeral=True,
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
 
-        name = name.strip()
+    #     name = name.strip()
 
-        if tournament.phase == TournamentPhase.SETUP:
-            if not tournament.remove_player(name):
-                await interaction.response.send_message(
-                    f"❌ Игрок `{name}` не найден.",
-                    ephemeral=True,
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-        else:
-            await interaction.response.send_message(
-                "❌ Можно удалять игроков только на этапе настройки.",
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
+    #     if tournament.phase == TournamentPhase.SETUP:
+    #         if not tournament.remove_player(name):
+    #             await interaction.response.send_message(
+    #                 f"❌ Игрок `{name}` не найден.",
+    #                 ephemeral=True,
+    #             )
+    #             asyncio.create_task(_delete_ephemeral_later(interaction))
+    #             return
+    #     else:
+    #         await interaction.response.send_message(
+    #             "❌ Можно удалять игроков только на этапе настройки.",
+    #             ephemeral=True,
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
 
-        store.set(tournament)
+    #     store.set(tournament)
 
-        await interaction.response.send_message(
-            f"✅ Игрок `{name}` удален.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+    #     await interaction.response.send_message(
+    #         f"✅ Игрок `{name}` удален.",
+    #         ephemeral=True
+    #     )
+    #     asyncio.create_task(_delete_ephemeral_later(interaction))
 
-        await self.bot.update_tournament_message(interaction.guild, tournament)
+    #     await self.bot.update_tournament_message(interaction.guild, tournament)
 
     async def cog_app_command_error(
         self,
