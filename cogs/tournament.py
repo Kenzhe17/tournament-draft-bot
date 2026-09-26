@@ -918,46 +918,36 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Ранг
-        embed.add_field(
-            name="",
-            value=f"Ранг: {rank_title}",
-            inline=False
-        )
+        # Био (показываем сразу после заголовка, если есть)
+        if stats.description:
+            embed.description = stats.description
 
-        # Уровень
+        # Ранг и уровень на одной строке
         embed.add_field(
             name="",
-            value=f"Level {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
+            value=f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
             inline=False
         )
 
         # Экономика
         embed.add_field(
             name="💵 ЭКОНОМИКА",
-            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
+            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.",
             inline=False
         )
 
         # Игровая статистика
+        favorite_game_display = favorite_game if favorite_game != "Нет данных" else ""
         embed.add_field(
             name="🎮 СТАТИСТИКА",
             value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
-                  f"├ 🏆 Побед: {total_games_won} (Винрейт: {win_rate:.1f}%)\n"
+                  f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
                   f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
                   f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
                   f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
-                  f"└ 🎯 Любимая игра: {favorite_game}",
+                  f"└ 🎯 Любимая игра: {favorite_game_display}",
             inline=False
         )
-
-        # Био
-        if stats.description:
-            embed.add_field(
-                name="📝 Био",
-                value=stats.description,
-                inline=False
-            )
 
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0

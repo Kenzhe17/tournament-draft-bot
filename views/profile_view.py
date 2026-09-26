@@ -164,37 +164,34 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         )
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
+        # Био (показываем сразу после заголовка, если есть)
+        if stats.description:
+            embed.description = stats.description
+
+        # Ранг и уровень на одной строке
         embed.add_field(
             name="",
-            value=f"Ранг: {rank_title}",
-            inline=False
-        )
-        embed.add_field(
-            name="",
-            value=f"Level {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,} (осталось {xp_remaining:,})",
-            inline=False
-        )
-        embed.add_field(
-            name="💵 ЭКОНОМИКА",
-            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов в инвентаре: {inventory_count} шт.",
-            inline=False
-        )
-        embed.add_field(
-            name="🎮 СТАТИСТИКА",
-            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
-                  f"├ 🏆 Побед: {total_games_won} (Винрейт: {win_rate:.1f}%)\n"
-                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
-                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
-                  f"└ 🎯 Любимая игра: {favorite_game}",
+            value=f"Ранг: {rank_title}\nLevel {stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
             inline=False
         )
 
-        # Bio - show even if empty
-        bio_text = stats.description if stats.description else "Не указано"
+        # Экономика
         embed.add_field(
-            name="📝 Био",
-            value=bio_text,
+            name="💵 ЭКОНОМИКА",
+            value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.",
+            inline=False
+        )
+
+        # Игровая статистика
+        favorite_game_display = favorite_game if favorite_game != "Нет данных" else ""
+        embed.add_field(
+            name="🎮 СТАТИСТИКА",
+            value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
+                  f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
+                  f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
+                  f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
+                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
+                  f"└ 🎯 Любимая игра: {favorite_game_display}",
             inline=False
         )
 
