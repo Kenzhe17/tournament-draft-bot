@@ -888,6 +888,11 @@ class BuyButton(discord.ui.Button):
                           f"└ 💰 **Цена:** {self.price} 🪙",
                     inline=False
                 )
+                embed.add_field(
+                    name="👤 **ПОКУПАТЕЛЬ:**",
+                    value=f"{interaction.user.mention} купил за {self.price} 🪙",
+                    inline=False
+                )
                 await interaction.response.send_message(embed=embed)
             else:
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
@@ -926,6 +931,11 @@ class BuyButton(discord.ui.Button):
                           f"└ 💰 **Цена:** {self.price} 🪙",
                     inline=False
                 )
+                embed.add_field(
+                    name="👤 **ПОКУПАТЕЛЬ:**",
+                    value=f"{interaction.user.mention} купил за {self.price} 🪙",
+                    inline=False
+                )
             else:
                 embed = discord.Embed(
                     title=f"✨ ПОКУПКА ЗНАЧКА | {item.name}",
@@ -936,6 +946,11 @@ class BuyButton(discord.ui.Button):
                     value=f"├ 🏷️ **Предмет:** {item.value}\n"
                           f"├ ⭐ **Редкость:** {rarity_display}\n"
                           f"└ 💰 **Цена:** {self.price} 🪙",
+                    inline=False
+                )
+                embed.add_field(
+                    name="👤 **ПОКУПАТЕЛЬ:**",
+                    value=f"{interaction.user.mention} купил за {self.price} 🪙",
                     inline=False
                 )
 
@@ -1005,6 +1020,11 @@ class BuyCaseButton(discord.ui.Button):
                 name=f"{status_icon} **НАГРАДА:**",
                 value=f"├ 🏷️ **Выигрыш:** {result_text}\n"
                       f"└ ⭐ **С Шансом:** {chance_text}",
+                inline=False
+            )
+            embed.add_field(
+                name="👤 **ОТКРЫЛ:**",
+                value=f"{interaction.user.mention} открыл за {self.price} 🪙",
                 inline=False
             )
             await interaction.response.send_message(embed=embed)
