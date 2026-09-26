@@ -240,11 +240,11 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
 
             await player_stats_store.set(updated_stats)
 
-            # Send level up notification if leveled up
-            if new_level > old_level and interaction:
-                from utils.embeds import build_level_up_embed
-                embed = build_level_up_embed(updated_stats, old_level, new_level)
-                await interaction.followup.send(embed=embed, ephemeral=True)
+            # Level up notifications disabled
+            # if new_level > old_level and interaction:
+            #     from utils.embeds import build_level_up_embed
+            #     embed = build_level_up_embed(updated_stats, old_level, new_level)
+            #     await interaction.followup.send(embed=embed, ephemeral=True)
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):

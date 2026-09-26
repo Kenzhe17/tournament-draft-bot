@@ -970,7 +970,7 @@ class TournamentCog(commands.Cog):
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view)
 
 
 def get_rank_emoji(level: int) -> str:
