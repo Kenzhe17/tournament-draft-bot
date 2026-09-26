@@ -137,7 +137,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Используем статистику турниров вместо мини-игр
         total_games_played = stats.games
         total_games_won = stats.wins
-        favorite_game = "Турниры"
 
         win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
 
@@ -168,15 +167,13 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         )
 
         # Игровая статистика
-        favorite_game_display = favorite_game if favorite_game != "Нет данных" else ""
         embed.add_field(
             name="🎮 СТАТИСТИКА",
             value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
                   f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
                   f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
                   f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
-                  f"└ 🎯 Любимая игра: {favorite_game_display}",
+                  f"└ 🔥 Max Kills: {stats.best_match_kills}",
             inline=False
         )
 

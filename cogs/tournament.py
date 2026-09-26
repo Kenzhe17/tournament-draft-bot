@@ -134,6 +134,16 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
+        # Удалить сообщение турнира если есть
+        if existing.message_id:
+            try:
+                channel = interaction.guild.get_channel(existing.channel_id)
+                if channel:
+                    message = await channel.fetch_message(existing.message_id)
+                    await message.delete()
+            except Exception as e:
+                logger.warning(f"Не удалось удалить сообщение турнира: {e}")
+
         store.delete(interaction.guild_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
@@ -892,7 +902,6 @@ class TournamentCog(commands.Cog):
         # Используем статистику турниров вместо мини-игр
         total_games_played = stats.games
         total_games_won = stats.wins
-        favorite_game = "Турниры"
 
         # Винрейт
         win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
@@ -923,15 +932,13 @@ class TournamentCog(commands.Cog):
         )
 
         # Игровая статистика
-        favorite_game_display = favorite_game if favorite_game != "Нет данных" else ""
         embed.add_field(
             name="🎮 СТАТИСТИКА",
             value=f"├ 🎲 Сыграно игр: {total_games_played}\n"
                   f"├ 🏆 Побед: {total_games_won} ({win_rate:.1f}%)\n"
                   f"├ 🎯 AVG Kills: {stats.avg_kills:.2f}\n"
                   f"├ ⚔️ K/D Ratio: {stats.kd_ratio:.2f}\n"
-                  f"├ 🔥 Max Kills: {stats.best_match_kills}\n"
-                  f"└ 🎯 Любимая игра: {favorite_game_display}",
+                  f"└ 🔥 Max Kills: {stats.best_match_kills}",
             inline=False
         )
 

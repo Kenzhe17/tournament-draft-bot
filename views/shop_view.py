@@ -24,25 +24,25 @@ class ShopCategorySelect(discord.ui.Select):
             discord.SelectOption(
                 label="✨ Значки",
                 value="icons",
-                description="Косметические значки для профиля",
+                description="Косметические иконы профиля",
                 emoji="✨"
             ),
             discord.SelectOption(
                 label="🏷️ Теги",
                 value="tags",
-                description="Косметические теги для имени",
+                description="Префиксы для никнейма в чате",
                 emoji="🏷️"
             ),
             discord.SelectOption(
-                label="👑 Discord Роли",
+                label="👑 Discord Роли & Доступы",
                 value="roles",
-                description="Получите специальные права на сервере",
+                description="Роли и права",
                 emoji="👑"
             ),
             discord.SelectOption(
                 label="📦 Кейсы",
                 value="cases",
-                description="Случайные призы и бонусы",
+                description="Награды и удача",
                 emoji="📦"
             ),
         ]
