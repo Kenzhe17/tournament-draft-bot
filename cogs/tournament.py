@@ -1274,9 +1274,17 @@ def get_rank_emoji(level: int) -> str:
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
-    @is_org()
     async def booyah(self, interaction: discord.Interaction) -> None:
         """Показать рекорды турнира."""
+        # Проверка прав внутри команды
+        if not (interaction.user.guild_permissions.administrator or interaction.user.id == 1032544122600423427):
+            org_role = discord.utils.get(interaction.guild.roles, name="org") if interaction.guild else None
+            if not (org_role and org_role in interaction.user.roles):
+                await interaction.response.send_message(
+                    "❌ Эта команда доступна только организаторам (роль 'org') или администраторам.",
+                    ephemeral=True
+                )
+                return
         await interaction.response.defer()
 
         from storage.player_stats_store import player_stats_store
@@ -1419,7 +1427,6 @@ def get_rank_emoji(level: int) -> str:
         amount="Новое значение (для ELO) или количество монет (для money)",
         operation="Операция: set (установить), add (добавить), remove (убрать)"
     )
-    @is_org()
     async def edit_player(
         self,
         interaction: discord.Interaction,
@@ -1429,6 +1436,15 @@ def get_rank_emoji(level: int) -> str:
         operation: str = "set"
     ) -> None:
         """Изменить ELO или монеты игрока."""
+        # Проверка прав внутри команды
+        if not (interaction.user.guild_permissions.administrator or interaction.user.id == 1032544122600423427):
+            org_role = discord.utils.get(interaction.guild.roles, name="org") if interaction.guild else None
+            if not (org_role and org_role in interaction.user.roles):
+                await interaction.response.send_message(
+                    "❌ Эта команда доступна только организаторам (роль 'org') или администраторам.",
+                    ephemeral=True
+                )
+                return
         # Только владелец бота может использовать эту команду
         bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
         if interaction.user.id != bot_owner_id:
