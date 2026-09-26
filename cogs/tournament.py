@@ -916,6 +916,8 @@ class TournamentCog(commands.Cog):
         # Био (показываем сразу после заголовка, если есть)
         if stats.description:
             embed.description = stats.description
+            # Добавляем пустое поле для отступа после био
+            embed.add_field(name="", value="", inline=False)
 
         # Ранг и уровень на одной строке
         embed.add_field(
@@ -924,12 +926,18 @@ class TournamentCog(commands.Cog):
             inline=False
         )
 
+        # Добавляем пустое поле для отступа между рангом и экономикой
+        embed.add_field(name="", value="", inline=False)
+
         # Экономика
         embed.add_field(
             name="💵 ЭКОНОМИКА",
             value=f"├ 👛 Кошелек: {balance:,} 🪙\n└ 🎒 Предметов: {inventory_count} шт.",
             inline=False
         )
+
+        # Добавляем пустое поле для отступа между экономикой и статистикой
+        embed.add_field(name="", value="", inline=False)
 
         # Игровая статистика
         embed.add_field(
