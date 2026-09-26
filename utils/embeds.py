@@ -973,13 +973,13 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = "🏆 Лидерборд Уровней"
+        title = "⭐ ТАБЛИЦА ЛИДЕРОВ | Уровень и Опыт"
         color = discord.Color.dark_purple()
     elif leaderboard_type == "money":
-        title = "💰 Лидерборд Богатых"
+        title = "💰 ТАБЛИЦА ЛИДЕРОВ | Самые Богатые Игроки"
         color = discord.Color.dark_gold()
     else:  # elo
-        title = "🏆 Лидерборд ELO"
+        title = "⚔️ ТАБЛИЦА ЛИДЕРОВ | ELO Рейтинг"
         color = discord.Color.dark_blue()
 
     total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
@@ -1026,15 +1026,28 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
         if leaderboard_type == "level":
             rank_title = player.get_rank_title()
-            line = f"{rank_emoji} {formatted_name} — Lv.{player.level} {rank_title}"
+            if rank <= 3:
+                line = f"{rank_emoji} {rank}. {formatted_name}\n└ {rank_title}  •  `Lvl {player.level}`"
+            else:
+                line = f"{rank_emoji} {formatted_name}  •  {rank_title}   •  `Lvl {player.level}`"
         elif leaderboard_type == "money":
             # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
-            line = f"{rank_emoji} {formatted_name} — {balance} 🪙"
+            if rank <= 3:
+                line = f"{rank_emoji} {rank}. {formatted_name}\n└ 💎 `{balance:,} 🪙`"
+            else:
+                line = f"{rank_emoji} {formatted_name}  •  💸 `{balance:,} 🪙`"
         else:  # elo
-            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
+            if rank <= 3:
+                line = f"{rank_emoji} {rank}. {formatted_name}\n •  `{int(player.elo)} ELO`"
+            else:
+                line = f"{rank_emoji} {formatted_name}  •  `{int(player.elo)} ELO`"
 
         lines.append(line)
+
+    # Add separator after top 3 if we have more than 3 players
+    if len(lines) > 3:
+        lines.insert(3, "──────────────────────────────────────────────────────")
 
     embed.description = "\n".join(lines)
     embed.set_footer(text=f"Страница {page}/{total_pages}")
