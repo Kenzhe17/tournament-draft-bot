@@ -748,6 +748,27 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(PokerModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="triple_chance", description="Тройной шанс")
+    async def triple_chance(self, interaction: discord.Interaction) -> None:
+        """Тройной шанс."""
+        from games.triple_chance import TripleChanceModal
+
+        await interaction.response.send_modal(TripleChanceModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="sequence_memory", description="Вспомни последовательность")
+    async def sequence_memory(self, interaction: discord.Interaction) -> None:
+        """Вспомни последовательность."""
+        from games.sequence_memory import SequenceMemoryModal
+
+        await interaction.response.send_modal(SequenceMemoryModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="flag_quiz", description="Угадай флаг")
+    async def flag_quiz(self, interaction: discord.Interaction) -> None:
+        """Угадай флаг."""
+        from games.flag_quiz import FlagQuizModal
+
+        await interaction.response.send_modal(FlagQuizModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""

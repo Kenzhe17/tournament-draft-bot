@@ -432,6 +432,49 @@ async def initialize_minigames() -> None:
                 "is_pvp": False,
                 "is_pve": True,
             },
+            # Mixed games (Priority 5)
+            # 31. Triple Chance
+            {
+                "id": "triple_chance",
+                "command_name": "triple_chance",
+                "name": "Тройной шанс",
+                "description": "Угадайте число от 1 до 3. Шанс победы 33.3%.",
+                "category": "mixed",
+                "difficulty": "easy",
+                "min_bet": 10,
+                "max_bet": 200,
+                "multiplier": 3.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
+            # 32. Sequence Memory
+            {
+                "id": "sequence_memory",
+                "command_name": "sequence_memory",
+                "name": "Вспомни последовательность",
+                "description": "Запомните последовательность эмодзи и повторите её.",
+                "category": "mixed",
+                "difficulty": "medium",
+                "min_bet": 15,
+                "max_bet": 300,
+                "multiplier": 2.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
+            # 33. Flag Quiz
+            {
+                "id": "flag_quiz",
+                "command_name": "flag_quiz",
+                "name": "Угадай флаг",
+                "description": "Угадайте страну по флагу.",
+                "category": "mixed",
+                "difficulty": "medium",
+                "min_bet": 20,
+                "max_bet": 400,
+                "multiplier": 3.0,
+                "is_pvp": False,
+                "is_pve": True,
+            },
         ]
 
         for game in games:
