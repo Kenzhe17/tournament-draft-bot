@@ -41,11 +41,11 @@ class InventoryButton(discord.ui.Button):
             )
             return
 
-        # Вызвать команду inventory напрямую
-        from cogs.tournament import TournamentCog
-        cog = interaction.client.get_cog("TournamentCog")
-        if cog:
-            await cog.inventory(interaction)
+        # Вызвать команду inventory напрямую через callback
+        bot = interaction.client
+        command = bot.tree.get_command("inventory")
+        if command:
+            await command.callback(interaction)
         else:
             await interaction.response.send_message(
                 "❌ Команда инвентаря не найдена.",
@@ -126,6 +126,10 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             style=discord.TextStyle.paragraph,
             required=False
         )
+
+        # Add items to modal
+        self.add_item(self.nickname)
+        self.add_item(self.description)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Сохранить изменения профиля."""
