@@ -47,10 +47,22 @@ class ShopCategorySelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(
-                label="🎨 Кастомизация и Роли",
-                value="customization",
-                description="Значки, теги и Discord роли",
-                emoji="🎨"
+                label="✨ Значки",
+                value="icons",
+                description="Косметические значки для профиля",
+                emoji="✨"
+            ),
+            discord.SelectOption(
+                label="🏷️ Теги",
+                value="tags",
+                description="Косметические теги для имени",
+                emoji="🏷️"
+            ),
+            discord.SelectOption(
+                label="👑 Discord Роли",
+                value="roles",
+                description="Получите специальные права на сервере",
+                emoji="👑"
             ),
             discord.SelectOption(
                 label="📦 Кейсы",
@@ -73,9 +85,12 @@ class ShopCategorySelect(discord.ui.Select):
         if category == "cases":
             # Показать кейсы
             await show_cases_category(interaction)
+        elif category == "roles":
+            # Показать роли
+            await show_roles_list(interaction)
         else:
-            # Показать кастомизацию
-            await show_customization_category(interaction)
+            # Показать редкость для значков/тегов
+            await show_rarity_selection(interaction, category)
 
 
 async def show_cases_category(interaction: discord.Interaction) -> None:
@@ -105,7 +120,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
     embed = discord.Embed(
         title="📦 Кейсы | Магазин",
-        description=f"\n{cases_list}",
+        description=f"Выберите кейс для открытия из списка ниже:\n\n{cases_list}",
         color=discord.Color.orange()
     )
     embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
@@ -113,63 +128,6 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     view = ShopBackView()
     view.add_item(CaseSelect(cases))
     await interaction.response.edit_message(embed=embed, view=view)
-
-
-async def show_customization_category(interaction: discord.Interaction) -> None:
-    """Показать категорию кастомизации."""
-    # Показать подкатегории по редкости
-    view = discord.ui.View()
-    view.add_item(ShopBackButton())
-    view.add_item(CustomizationSelect())
-
-    embed = discord.Embed(
-        title="🎨 Кастомизация и Роли | Магазин",
-        description="Выберите подкатегорию товаров",
-        color=discord.Color.purple()
-    )
-
-    await interaction.response.edit_message(embed=embed, view=view)
-
-
-class CustomizationSelect(discord.ui.Select):
-    """Выпадающее меню выбора подкатегории кастомизации."""
-
-    def __init__(self):
-        options = [
-            discord.SelectOption(
-                label="✨ Значки",
-                value="icons",
-                description="Косметические значки для профиля",
-                emoji="✨"
-            ),
-            discord.SelectOption(
-                label="🏷️ Теги",
-                value="tags",
-                description="Косметические теги для имени",
-                emoji="🏷️"
-            ),
-            discord.SelectOption(
-                label="👑 Discord Роли",
-                value="roles",
-                description="Получите специальные права на сервере",
-                emoji="👑"
-            ),
-        ]
-        super().__init__(
-            placeholder="Выберите подкатегорию...",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Обработать выбор подкатегории."""
-        subcategory = self.values[0]
-
-        if subcategory == "roles":
-            await show_roles_list(interaction)
-        else:
-            await show_rarity_selection(interaction, subcategory)
 
 
 async def show_roles_list(interaction: discord.Interaction) -> None:
@@ -200,7 +158,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     embed = discord.Embed(
         title="👑 Discord Роли | Магазин",
-        description=f"\n{roles_list}",
+        description=f"Выберите роль для покупки из списка ниже:\n\n{roles_list}",
         color=discord.Color.gold()
     )
     embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
@@ -219,7 +177,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     category_label = "Значки" if category == "icons" else "Теги"
     embed = discord.Embed(
         title=f"✨ {category_label} - Выберите редкость",
-        description="Выберите редкость товаров для просмотра",
+        description="Выберите редкость товаров для просмотра из списка ниже",
         color=discord.Color.purple()
     )
 
@@ -287,7 +245,7 @@ class RaritySelect(discord.ui.Select):
 
         # Создать список товаров
         items_list = "\n".join([
-            f"{idx + 1}. {get_item_emoji(item.category)} **{item.name}**\n"
+            f"{idx + 1}. {get_item_emoji(item.category)} **{get_item_emoji(item.category)} {item.name}**\n"
             f"   ├ 📝 {item.description}\n"
             f"   └ 💰 {item.price} 🪙"
             for idx, item in enumerate(items)
@@ -471,8 +429,12 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     else:
         player_count = "Персональный предмет"
 
+    # Имя с эмодзи
+    item_emoji = get_item_emoji(item.category) if item.category != "role" else "👑"
+    display_name = f"{item_emoji} {item.name}"
+
     embed = discord.Embed(
-        title=f"{emoji} Товар: {item.name}",
+        title=f"{emoji} Товар: {display_name}",
         description=f"📝 Описание:\n{item.description}",
         color=embed_color
     )
@@ -499,7 +461,7 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
 
     embed = discord.Embed(
         title=f"📦 Кейс: {case.name}",
-        description=f"📝 Описание:\n{case.description}",
+        description=f"📝 Описание:\n{case.description}\n\n🎲 Шанс получить редкий предмет!",
         color=discord.Color.orange()
     )
 
@@ -694,7 +656,7 @@ class ShopBackButton(discord.ui.Button):
         # Создать главное меню
         embed = discord.Embed(
             title="🛍️ Магазин Сервера | Главный каталог",
-            description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары.",
+            description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.",
             color=discord.Color.gold()
         )
         embed.add_field(name="💳 Ваш баланс", value=f"{balance} 🪙", inline=False)
