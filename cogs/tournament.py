@@ -889,24 +889,10 @@ class TournamentCog(commands.Cog):
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, target_user.id)
         inventory_count = len(cosmetics)
 
-        # Статистика мини-игр
-        minigame_stats = await minigame_store.get_player_stats(interaction.guild_id, target_user.id)
-        total_games_played = 0
-        total_games_won = 0
-        favorite_game = "Нет данных"
-
-        if minigame_stats:
-            total_games_played = sum(s.get("games_played", 0) for s in minigame_stats)
-            total_games_won = sum(s.get("games_won", 0) for s in minigame_stats)
-            
-            # Найти любимую игру (по количеству игр)
-            if minigame_stats:
-                sorted_games = sorted(minigame_stats, key=lambda x: x.get("games_played", 0), reverse=True)
-                if sorted_games:
-                    game_id = sorted_games[0].get("game_id")
-                    game = await minigame_store.get_game(game_id)
-                    if game:
-                        favorite_game = game.name
+        # Используем статистику турниров вместо мини-игр
+        total_games_played = stats.games
+        total_games_won = stats.wins
+        favorite_game = "Турниры"
 
         # Винрейт
         win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
