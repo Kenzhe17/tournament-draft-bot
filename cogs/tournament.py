@@ -769,6 +769,62 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_modal(FlagQuizModal(interaction.guild_id, interaction.user.id))
 
+    @app_commands.command(name="movie_quiz", description="Угадай фильм")
+    async def movie_quiz(self, interaction: discord.Interaction) -> None:
+        """Угадай фильм."""
+        from games.movie_quiz import MovieQuizModal
+
+        await interaction.response.send_modal(MovieQuizModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="song_quiz", description="Угадай песню")
+    async def song_quiz(self, interaction: discord.Interaction) -> None:
+        """Угадай песню."""
+        from games.song_quiz import SongQuizModal
+
+        await interaction.response.send_modal(SongQuizModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="reaction_time", description="Время реакции")
+    async def reaction_time(self, interaction: discord.Interaction) -> None:
+        """Время реакции."""
+        from games.reaction_time import ReactionTimeModal
+
+        await interaction.response.send_modal(ReactionTimeModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="checkers", description="Шашки")
+    async def checkers(self, interaction: discord.Interaction) -> None:
+        """Шашки."""
+        from games.checkers import CheckersModal
+
+        await interaction.response.send_modal(CheckersModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="reversi", description="Реверси")
+    async def reversi(self, interaction: discord.Interaction) -> None:
+        """Реверси."""
+        from games.reversi import ReversiModal
+
+        await interaction.response.send_modal(ReversiModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="chess", description="Шахматы")
+    async def chess(self, interaction: discord.Interaction) -> None:
+        """Шахматы."""
+        from games.chess import ChessModal
+
+        await interaction.response.send_modal(ChessModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="koth", description="Король горы")
+    async def koth(self, interaction: discord.Interaction) -> None:
+        """Король горы."""
+        from games.koth import KothModal
+
+        await interaction.response.send_modal(KothModal(interaction.guild_id, interaction.user.id))
+
+    @app_commands.command(name="elo_battle", description="Битва ELO")
+    async def elo_battle(self, interaction: discord.Interaction) -> None:
+        """Битва ELO."""
+        from games.elo_battle import EloBattleModal
+
+        await interaction.response.send_modal(EloBattleModal(interaction.guild_id, interaction.user.id))
+
     @app_commands.command(name="profile", description="Показать ваш профиль")
     async def profile(self, interaction: discord.Interaction) -> None:
         """Показать детальный профиль игрока."""
