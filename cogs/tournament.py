@@ -964,31 +964,31 @@ class TournamentCog(commands.Cog):
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
     if level >= 100:
-        return "� 👑 GrandMaster"
+        return "👑 GrandMaster"
     elif level >= 93:
-        return "☣️ Expert I"
+        return "🔱 Expert I"
     elif level >= 86:
-        return "☣️ Expert II"
+        return "🔱 Expert II"
     elif level >= 80:
-        return "☣️ Expert III"
+        return "🔱 Expert III"
     elif level >= 73:
-        return "🔴 Master I"
+        return "🎯 Master I"
     elif level >= 66:
-        return "🔴 Master II"
+        return "🎯 Master II"
     elif level >= 60:
-        return "🔴 Master III"
+        return "🎯 Master III"
     elif level >= 54:
         return "💎 Diamond I"
     elif level >= 48:
         return "💎 Diamond II"
     elif level >= 42:
-        return "� Diamond III"
+        return "💎 Diamond III"
     elif level >= 37:
-        return "💠 Platinum I"
+        return "🌪️ Platinum I"
     elif level >= 32:
-        return "💠 Platinum II"
+        return "🌪️ Platinum II"
     elif level >= 27:
-        return "� Platinum III"
+        return "🌪️ Platinum III"
     elif level >= 23:
         return "🥇 Gold I"
     elif level >= 19:
@@ -1006,7 +1006,7 @@ def get_rank_emoji(level: int) -> str:
     elif level >= 2:
         return "🥉 Bronze II"
     else:
-        return "🪵 Bronze III"
+        return "� Bronze III"
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
