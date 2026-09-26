@@ -85,7 +85,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
         return
 
     # Создать список кейсов
-    cases_list = "\n".join([
+    cases_list = "\n\n".join([
         f"⭐ **{case.name}**\n"
         f"├ 📝 {case.description}\n"
         f"└ 💰 **Цена:** {case.price} 🪙"
@@ -150,7 +150,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     roles.sort(key=lambda x: x.price)
 
     # Создать список ролей
-    roles_list = "\n".join([
+    roles_list = "\n\n".join([
         f"{item.value if item.value else '�'} **{item.name}**\n"
         f"├ 📝 {item.description}\n"
         f"└ 💰 **Цена:** {item.price} 🪙"
@@ -320,11 +320,18 @@ class RaritySelect(discord.ui.Select):
         category_label = "Значки" if self.category == "icons" else "Теги"
         category_emoji = "✨" if self.category == "icons" else "🏷️"
         
-        items_list = "\n".join([
-            f"{item.value} **{item.name}**\n"
-            f"└ 💰 **Цена:** {item.price} 🪙"
-            for item in items
-        ])
+        if self.category == "tags":
+            items_list = "\n\n".join([
+                f"🏷️ -  {item.value}\n"
+                f"└ 💰 **Цена:** {item.price} 🪙"
+                for item in items
+            ])
+        else:
+            items_list = "\n\n".join([
+                f"{item.value} **{item.name}**\n"
+                f"└ 💰 **Цена:** {item.price} 🪙"
+                for item in items
+            ])
 
         # Получить данные профиля
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -635,8 +642,8 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
 
     # Предпросмотр
     embed.add_field(
-        name="👁️ **Предпросмотр в чате:**",
-        value=f"└ 💬 `{item.value} Username`: \"Всем привет!\"",
+        name="👁️ **Предпросмотр:**",
+        value=f"└ **{item.value}** {interaction.user.display_name}",
         inline=False
     )
 

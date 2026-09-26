@@ -437,7 +437,8 @@ class TournamentCog(commands.Cog):
         # Профиль пользователя
         embed.add_field(
             name="💳 ВАШ ПРОФИЛЬ",
-            value=f"├ 👛 Баланс: {balance:,} 🪙  |  ⚙️ Ранг: {rank}\n"
+            value=f"├ 👛 Баланс: {balance:,} 🪙\n"
+                  f"├ 🏆 Ранг: {rank}\n"
                   f"└ 🎒 Мест в инвентаре: {inventory_count}/{max_inventory}",
             inline=False
         )
