@@ -921,9 +921,9 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Ранг отдельным полем
+        # Ранг отдельным полем без названия
         embed.add_field(
-            name="🥉 Ранг",
+            name="",
             value=rank_title,
             inline=False
         )
