@@ -41,20 +41,33 @@ class GameState(Enum):
 
 class Move(Enum):
     """Move enum with emoji mapping."""
-    ROCK = ("rock", "🪨", "Камень")
-    PAPER = ("paper", "📜", "Бумага")
-    SCISSORS = ("scissors", "✂️", "Ножницы")
+    ROCK = "rock"
+    PAPER = "paper"
+    SCISSORS = "scissors"
     
-    def __init__(self, code: str, emoji: str, name: str):
-        self.code = code
-        self.emoji = emoji
-        self.name = name
+    @property
+    def emoji(self) -> str:
+        """Get emoji for this move."""
+        return {
+            Move.ROCK: "🪨",
+            Move.PAPER: "📜",
+            Move.SCISSORS: "✂️"
+        }[self]
+    
+    @property
+    def name(self) -> str:
+        """Get Russian name for this move."""
+        return {
+            Move.ROCK: "Камень",
+            Move.PAPER: "Бумага",
+            Move.SCISSORS: "Ножницы"
+        }[self]
     
     @classmethod
     def from_code(cls, code: str) -> Optional["Move"]:
         """Get Move from code string."""
         for move in cls:
-            if move.code == code:
+            if move.value == code:
                 return move
         return None
     
