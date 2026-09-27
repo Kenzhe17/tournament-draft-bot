@@ -30,12 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Add games directory to Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-games_dir = os.path.join(current_dir, "games")
-if games_dir not in sys.path:
-    sys.path.insert(0, games_dir)
-
 
 class TournamentBot(commands.Bot):
     """Основной класс бота."""
@@ -74,7 +68,7 @@ class TournamentBot(commands.Bot):
                 
                 # Sync games from config to database
                 try:
-                    from games.games_config import sync_games_to_db
+                    from games_config import sync_games_to_db
                     synced = await sync_games_to_db(0)  # guild_id not needed for sync
                     logger.info(f"Synced {synced} games from config to database")
                 except Exception as e:

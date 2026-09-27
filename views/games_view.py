@@ -4,7 +4,7 @@ import discord
 from discord.ui import Button, View, Select
 from typing import Optional
 
-from games.games_config import (
+from games_config import (
     CATEGORIES,
     get_game_by_id,
     get_games_by_category,
