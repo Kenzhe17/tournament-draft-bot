@@ -994,14 +994,16 @@ class BuyCaseButton(discord.ui.Button):
             if result["type"] == "coins":
                 status_icon = "💰"
                 result_text = f"{result['value']} 🪙"
-                # Рассчитать шанс монет
-                coins_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("coins_"))
-                chance_text = f"{coins_chance * 100:.0f}%"
+                # Показать шанс конкретного типа монет
+                specific_coin_type = f"coins_{result['value']}"
+                specific_chance = case.drop_rates.get(specific_coin_type, 0.0)
+                chance_text = f"{specific_chance * 100:.0f}%"
             elif result["type"] == "item":
                 status_icon = "🎁"
                 result_text = f"{result['value'].name}"
-                # Рассчитать шанс предмета
-                item_chance = sum(rate for drop_type, rate in case.drop_rates.items() if drop_type.startswith("item_"))
+                # Показать шанс предмета
+                item_type = f"item_{result['value'].rarity}"
+                item_chance = case.drop_rates.get(item_type, 0.0)
                 chance_text = f"{item_chance * 100:.0f}%"
             else:
                 status_icon = "❌"

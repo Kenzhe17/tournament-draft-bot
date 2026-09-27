@@ -216,7 +216,7 @@ class CaseStore:
         elif drop_type.startswith("coins_"):
             coins_amount = int(drop_type.split("_")[1])
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
-            result = {"type": "coins", "value": coins_amount, "rarity": "common"}
+            result = {"type": "coins", "value": coins_amount, "rarity": "common", "coin_type": drop_type}
         elif drop_type.startswith("item_"):
             # Выбрать случайный предмет из категории
             category = drop_type.replace("item_", "")
