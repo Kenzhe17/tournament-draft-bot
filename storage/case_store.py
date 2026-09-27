@@ -229,8 +229,18 @@ class CaseStore:
             }
             rarity = rarity_map.get(rarity_str)
             if rarity:
+                # Ensure shop items are loaded
+                if not shop_store._items:
+                    from storage.shop_items import initialize_shop_items
+                    initialize_shop_items()
+
                 items = shop_store.get_items_by_rarity(rarity)
-                if items:
+                # Fallback to coins if no items of this rarity
+                if not items:
+                    fallback_coins = case.price // 2
+                    await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
+                    result = {"type": "coins", "value": fallback_coins, "rarity": "common"}
+                else:
                     item = random.choice(items)
                     # Проверить есть ли уже этот предмет в инвентаре
                     player_inventory = inventory_store.get_player_inventory(guild_id, user_id)
@@ -251,11 +261,6 @@ class CaseStore:
                         )
                         inventory_store.add_cosmetic(cosmetic)
                         result = {"type": "item", "value": item, "rarity": item.rarity.value}
-                else:
-                    # Если нет предметов этой редкости, выдать монеты
-                    fallback_coins = case.price // 2
-                    await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
-                    result = {"type": "coins", "value": fallback_coins, "rarity": "common"}
             else:
                 result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         else:
