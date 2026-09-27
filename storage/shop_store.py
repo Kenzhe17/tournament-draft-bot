@@ -58,8 +58,8 @@ class ShopStore:
         return [item for item in self._items.values() if item.category == category]
 
     def get_items_by_rarity(self, rarity) -> list[ShopItem]:
-        """Получить товары по редкости."""
-        items = [item for item in self._items.values() if item.rarity == rarity]
+        """Получить товары по редкости (только icons и tags, без roles)."""
+        items = [item for item in self._items.values() if item.rarity == rarity and item.category in ["icons", "tags"]]
         return items
 
     def add_item(self, item: ShopItem) -> None:
