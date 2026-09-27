@@ -3,18 +3,13 @@
 import asyncio
 import logging
 import random
-import sys
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Optional
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-
-# Add project root to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from storage.economy import (
     check_balance,
@@ -88,6 +83,8 @@ class GameSession:
     opponent_move: Optional[Move] = None
     message_id: Optional[int] = None
     channel_id: Optional[int] = None
+    p1_message_id: Optional[int] = None
+    p2_message_id: Optional[int] = None
 
 
 # Active games tracking
