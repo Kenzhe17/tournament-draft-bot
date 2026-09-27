@@ -153,11 +153,11 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Always use Discord avatar
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
-        # Ранг
+        # Ранг отдельным полем
         embed.add_field(
             name="🥉 Ранг",
             value=rank_title,
-            inline=True
+            inline=False
         )
 
         # ELO

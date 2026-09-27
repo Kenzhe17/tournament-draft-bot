@@ -921,11 +921,11 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Ранг
+        # Ранг отдельным полем
         embed.add_field(
             name="🥉 Ранг",
             value=rank_title,
-            inline=True
+            inline=False
         )
 
         # ELO
@@ -1452,27 +1452,22 @@ def get_rank_emoji(level: int) -> str:
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-    @app_commands.command(name="проверка", description="Тестовая команда")
-    async def test_check(self, interaction: discord.Interaction) -> None:
-        """Тестовая команда для проверки."""
-        await interaction.response.send_message("✅ Команда работает!", ephemeral=True)
-
-    @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
-    @app_commands.describe(
-        player="Игрок",
-        type="Тип изменения: elo или money",
-        amount="Новое значение (для ELO) или количество монет (для money)",
-        operation="Операция: set (установить), add (добавить), remove (убрать)"
-    )
-    async def admin_player(
-        self,
-        interaction: discord.Interaction,
-        player: discord.Member,
-        type: str,
-        amount: int,
-        operation: str = "set"
-    ) -> None:
-        """Изменить ELO или монеты игрока."""
+        @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
+        @app_commands.describe(
+            player="Игрок",
+            type="Тип изменения: elo или money",
+            amount="Новое значение (для ELO) или количество монет (для money)",
+            operation="Операция: set (установить), add (добавить), remove (убрать)"
+        )
+        async def admin_player(
+            self,
+            interaction: discord.Interaction,
+            player: discord.Member,
+            type: str,
+            amount: int,
+            operation: str = "set"
+        ) -> None:
+            """Изменить ELO или монеты игрока."""
             # Только владелец бота может использовать эту команду
             bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
             if interaction.user.id != bot_owner_id:
@@ -1542,6 +1537,11 @@ def get_rank_emoji(level: int) -> str:
                     f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
                     ephemeral=True
                 )
+
+    @app_commands.command(name="проверка", description="Тестовая команда")
+    async def проверка(self, interaction: discord.Interaction) -> None:
+        """Тестовая команда для проверки регистрации."""
+        await interaction.response.send_message("✅ Команда работает!", ephemeral=True)
 
     @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
     @app_commands.default_permissions(administrator=True)
