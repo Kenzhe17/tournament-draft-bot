@@ -567,7 +567,7 @@ class TournamentCog(commands.Cog):
         """Показать список мини-игр."""
         from views.games_view import GamesMainView
         from storage.user_balance_store import user_balance_store
-        from storage.games_config import CATEGORIES, get_games_by_category
+        from storage.games_config import CATEGORIES, get_games_by_category, get_all_games
 
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -576,21 +576,25 @@ class TournamentCog(commands.Cog):
         categories_text = ""
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
-            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `[{len(games)} игр]`\n└ *{cat_info['description']}*\n\n"
+            # Короткие описания для минимализма
+            short_desc = {
+                "luck": "Монетка, Кубик, КНБ, Бутылочка, Эмодзи...",
+                "quiz": "Математика, Словесные цепочки...",
+                "casino": "Рулетка, Слоты, Лотерея, Баккара, High-Low..."
+            }
+            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `({len(games)})`\n> *{short_desc.get(cat_id, cat_info['description'])}*\n\n"
         
         embed = discord.Embed(
-            title="🎮 ─── ИГРОВОЙ ЦЕНТР ─── 🎮",
-            description=f"""� **Добро пожаловать!**
-Испытайте удачу, участвуйте в викторинах или крутите казино.
+            title="🎮︱Игровой Центр",
+            description=f"""┌ 👋 **Приветствуем в игровом хабе!**
+├ 💵 **Баланс:** {balance:,} монет
+└ 🎯 **Доступно игр:** {len(get_all_games())}
 
-💵 **Ваш баланс:** {balance:,} монет
-━━━━━━━━━━━━━━━━━━━━━━━━━
+─── 📁 **КАТЕГОРИИ** ───
 
-**📁 КАТЕГОРИИ ИГР:**
-
-{categories_text}━━━━━━━━━━━━━━━━━━━━━━━━━
-*👇 Выберите категорию в меню ниже, чтобы открыть список игр:*""",
-            color=discord.Color.dark_blue(),
+{categories_text}────────────────────────
+*Выберите категорию в меню ниже, чтобы начать играть.*""",
+            color=0x2F3136,  # Тёмно-фиолетовый
         )
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)

@@ -43,7 +43,7 @@ class CloseButton(Button):
 
     def __init__(self):
         super().__init__(
-            label="❌ Закрыть",
+            label="✖ Закрыть",
             style=discord.ButtonStyle.danger,
             custom_id="close_menu"
         )
@@ -68,9 +68,8 @@ class GameCategorySelect(Select):
             emoji = emoji_map.get(cat_id, "🎮")
             options.append(
                 discord.SelectOption(
-                    label=f"{cat_info['name']} ({len(games)} игр)",
+                    label=f"{cat_info['name']} ({len(games)})",
                     value=cat_id,
-                    description=cat_info['description'][:100],
                     emoji=emoji
                 )
             )
@@ -317,28 +316,35 @@ class BackToMainMenuButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Вернуться в главное меню."""
+        from storage.games_config import get_all_games
+        
         # Получить баланс для главного экрана
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
+        total_games = len(get_all_games())
         
         # Создать описание категорий
         categories_text = ""
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
-            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `[{len(games)} игр]`\n└ *{cat_info['description']}*\n\n"
+            # Короткие описания для минимализма
+            short_desc = {
+                "luck": "Монетка, Кубик, КНБ, Бутылочка, Эмодзи...",
+                "quiz": "Математика, Словесные цепочки...",
+                "casino": "Рулетка, Слоты, Лотерея, Баккара, High-Low..."
+            }
+            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `({len(games)})`\n> *{short_desc.get(cat_id, cat_info['description'])}*\n\n"
         
         embed = discord.Embed(
-            title="🎮 ─── ИГРОВОЙ ЦЕНТР ─── 🎮",
-            description=f"""� **Добро пожаловать!**
-Испытайте удачу, участвуйте в викторинах или крутите казино.
+            title="🎮︱Игровой Центр",
+            description=f"""┌ 👋 **Приветствуем в игровом хабе!**
+├ 💵 **Баланс:** {balance:,} монет
+└ 🎯 **Доступно игр:** {total_games}
 
-💵 **Ваш баланс:** {balance:,} монет
-━━━━━━━━━━━━━━━━━━━━━━━━━
+─── 📁 **КАТЕГОРИИ** ───
 
-**📁 КАТЕГОРИИ ИГР:**
-
-{categories_text}━━━━━━━━━━━━━━━━━━━━━━━━━
-*👇 Выберите категорию в меню ниже, чтобы открыть список игр:*""",
-            color=discord.Color.dark_blue(),
+{categories_text}────────────────────────
+*Выберите категорию в меню ниже, чтобы начать играть.*""",
+            color=0x2F3136,  # Тёмно-фиолетовый
         )
 
         view = GamesMainView(self.user_id, self.guild_id)
