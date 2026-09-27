@@ -416,51 +416,16 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
     # Check if betting is open for this phase
     is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
     
-    if not is_open:
+    if is_open:
+        embed.add_field(
+            name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
+            value="� СТАВКИ ОТКРЫТЫ",
+            inline=False,
+        )
+    else:
         embed.add_field(
             name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
             value="🔒 СТАВКИ ЗАКРЫТЫ",
-            inline=False,
-        )
-        return
-
-    betting_text = []
-    for i, (team_a, team_b) in enumerate(matches):
-        match_id = f"{match_type}_{i}"
-        bets = await bet_store.get_bets_by_match(match_id)
-        
-        # Calculate team totals
-        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-        captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-        captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-        name_a = tournament.team_names.get(team_a, captain_a)
-        name_b = tournament.team_names.get(team_b, captain_b)
-        
-        # Calculate bets per team
-        team_a_amount = sum(b.amount for b in bets if b.team_name == name_a)
-        team_b_amount = sum(b.amount for b in bets if b.team_name == name_b)
-        total_bank = team_a_amount + team_b_amount
-        
-        # Calculate percentages
-        team_a_pct = (team_a_amount / total_bank * 100) if total_bank > 0 else 0
-        team_b_pct = (team_b_amount / total_bank * 100) if total_bank > 0 else 0
-        
-        match_text = f"🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n💰 Банк: {total_bank} 🪙\n\n"
-        
-        if total_bank > 0:
-            match_text += f"1️⃣ {name_a}\n┗ {team_a_amount} 🪙 ({team_a_pct:.0f}%)\n\n"
-            match_text += f"2️⃣ {name_b}\n┗ {team_b_amount} 🪙 ({team_b_pct:.0f}%)\n"
-        else:
-            match_text += f"1️⃣ {name_a}\n┗ 0 🪙 (0%)\n\n"
-            match_text += f"2️⃣ {name_b}\n┗ 0 🪙 (0%)\n"
-        
-        betting_text.append(match_text)
-    
-    if betting_text:
-        embed.add_field(
-            name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
-            value="\n".join(betting_text),
             inline=False,
         )
 
