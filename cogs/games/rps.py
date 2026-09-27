@@ -127,8 +127,12 @@ class PvEChoiceView(RPSView):
             await interaction.response.send_message("❌ Игра недоступна.", ephemeral=True)
             return
         
+        # Access Control: PvE mode - only creator can click
         if interaction.user.id != game.initiator_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message(
+                "⚠️ Это не ваша игра! Запустите свою с помощью команды /rps",
+                ephemeral=True
+            )
             return
         
         # Check if game already resolved (prevent double-click)
@@ -202,10 +206,10 @@ class PvEChoiceView(RPSView):
 class PvPChallengeView(RPSView):
     """View for PvP challenge acceptance."""
     
-    def __init__(self, game_id: str, initiator_id: int, opponent_id: int, bet: int):
+    def __init__(self, game_id: str, initiator_id: int, opponent_id: Optional[int], bet: int):
         super().__init__(game_id, timeout=60)
         self.initiator_id = initiator_id
-        self.opponent_id = opponent_id
+        self.opponent_id = opponent_id  # Can be None for open challenges
         self.bet = bet
     
     @discord.ui.button(label="Принять", emoji="⚔️", style=discord.ButtonStyle.success, custom_id="rps:accept")
@@ -223,14 +227,49 @@ class PvPChallengeView(RPSView):
             await interaction.response.send_message("❌ Вызов недоступен.", ephemeral=True)
             return
         
-        if interaction.user.id != self.opponent_id:
-            await interaction.response.send_message("❌ Этот вызов не для вас.", ephemeral=True)
+        # Access Control: Anyone except creator can accept
+        if interaction.user.id == self.initiator_id:
+            await interaction.response.send_message(
+                "⚠️ Вы не можете принять свой собственный вызов!",
+                ephemeral=True
+            )
             return
         
-        # Check if opponent is already in a game
-        if self.opponent_id in active_users:
+        # Check if user is already in a game
+        if interaction.user.id in active_users:
             await interaction.response.send_message("❌ Вы уже участвуете в игре.", ephemeral=True)
             return
+        
+        # Update opponent to whoever accepted (open challenge)
+        new_opponent_id = interaction.user.id
+        new_opponent = interaction.guild.get_member(new_opponent_id)
+        
+        if not new_opponent:
+            await interaction.response.send_message("❌ Не удалось найти пользователя.", ephemeral=True)
+            return
+        
+        if new_opponent.bot:
+            await interaction.response.send_message("❌ Нельзя играть против ботов.", ephemeral=True)
+            return
+        
+        # Hold escrow for new opponent
+        escrow_success = await hold_escrow(new_opponent_id, game.guild_id, self.bet)
+        if not escrow_success:
+            await interaction.response.send_message("❌ Недостаточно баланса для ставки.", ephemeral=True)
+            return
+        
+        # Update game state with new opponent
+        game.state = GameState.PVP_CHOICE
+        game.opponent_id = new_opponent_id
+        active_users.add(new_opponent_id)
+        
+        # Disable buttons
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+        
+        # Send choice views to both players
+        await self.send_choice_views(interaction, game)
         
         # Hold escrow for opponent
         escrow_success = await hold_escrow(self.opponent_id, game.guild_id, self.bet)
@@ -261,8 +300,12 @@ class PvPChallengeView(RPSView):
         if not game:
             return
         
-        if interaction.user.id != self.opponent_id:
-            await interaction.response.send_message("❌ Этот вызов не для вас.", ephemeral=True)
+        # Access Control: Only creator can cancel the challenge
+        if interaction.user.id != self.initiator_id:
+            await interaction.response.send_message(
+                "⚠️ Только создатель вызова может его отменить!",
+                ephemeral=True
+            )
             return
         
         # Refund initiator
@@ -345,8 +388,20 @@ class PvPChoiceView(RPSView):
             await interaction.response.send_message("❌ Игра недоступна.", ephemeral=True)
             return
         
+        # Access Control: Only registered participants can click
+        if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "⚠️ Вы не являетесь участником этой дуэли!",
+                ephemeral=True
+            )
+            return
+        
+        # Each player can only click their own buttons
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message(
+                "⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода.",
+                ephemeral=True
+            )
             return
         
         # Disable buttons
@@ -479,7 +534,7 @@ class RPSCog(commands.Cog):
         
         # Determine mode
         if opponent:
-            # PvP mode
+            # PvP mode - direct challenge
             if opponent.id == user_id:
                 await interaction.followup.send("❌ Нельзя играть против себя.", ephemeral=False)
                 return
@@ -493,9 +548,11 @@ class RPSCog(commands.Cog):
                 return
             
             mode = GameMode.PVP
+            opponent_id = opponent.id
         else:
             # PvE mode
             mode = GameMode.PVE
+            opponent_id = None
         
         # Hold escrow
         escrow_success = await hold_escrow(user_id, guild_id, bet)
@@ -512,7 +569,7 @@ class RPSCog(commands.Cog):
             initiator_id=user_id,
             guild_id=guild_id,
             bet=bet,
-            opponent_id=opponent.id if opponent else None
+            opponent_id=opponent_id
         )
         active_games[game_id] = game
         active_users.add(user_id)
@@ -532,31 +589,47 @@ class RPSCog(commands.Cog):
             else:
                 # PvP mode
                 game.state = GameState.WAITING_PVP
-                active_users.add(opponent.id)
                 
-                # Hold escrow for opponent (they need to accept first)
-                opponent_escrow = await hold_escrow(opponent.id, guild_id, bet)
-                if not opponent_escrow:
-                    await release_escrow(user_id, guild_id, bet)
-                    active_users.discard(user_id)
-                    active_users.discard(opponent.id)
-                    del active_games[game_id]
-                    await interaction.followup.send("❌ У соперника недостаточно баланса.", ephemeral=True)
-                    return
-                
-                view = PvPChallengeView(game_id, user_id, opponent.id, bet)
-                total_pot = bet * 2 * 0.95
-                embed = discord.Embed(
-                    title="⚔️ Вызов на дуэль: Камень-Ножницы-Бумага",
-                    description=f"<@{user_id}> вызывает <@{opponent.id}> на дуэль!\n\n"
-                                  f"💰 Ставка: {bet} 🪙\n"
-                                  f"🏆 Призовой фонд: {total_pot} 🪙 (комиссия 5%)\n\n"
-                                  f"<@{opponent.id}>, примите вызов в течение 60 секунд.",
-                    color=discord.Color.gold()
-                )
-                msg = await interaction.followup.send(embed=embed, view=view)
-                game.message_id = msg.id
-                game.channel_id = interaction.channel.id
+                if opponent_id:
+                    # Direct challenge - hold escrow for opponent immediately
+                    active_users.add(opponent_id)
+                    opponent_escrow = await hold_escrow(opponent_id, guild_id, bet)
+                    if not opponent_escrow:
+                        await release_escrow(user_id, guild_id, bet)
+                        active_users.discard(user_id)
+                        active_users.discard(opponent_id)
+                        del active_games[game_id]
+                        await interaction.followup.send("❌ У соперника недостаточно баланса.", ephemeral=True)
+                        return
+                    
+                    view = PvPChallengeView(game_id, user_id, opponent_id, bet)
+                    total_pot = bet * 2 * 0.95
+                    embed = discord.Embed(
+                        title="⚔️ Вызов на дуэль: Камень-Ножницы-Бумага",
+                        description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
+                                      f"💰 Ставка: {bet} 🪙\n"
+                                      f"🏆 Призовой фонд: {total_pot} 🪙 (комиссия 5%)\n\n"
+                                      f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
+                        color=discord.Color.gold()
+                    )
+                    msg = await interaction.followup.send(embed=embed, view=view)
+                    game.message_id = msg.id
+                    game.channel_id = interaction.channel.id
+                else:
+                    # Open challenge - anyone can accept
+                    view = PvPChallengeView(game_id, user_id, None, bet)
+                    total_pot = bet * 2 * 0.95
+                    embed = discord.Embed(
+                        title="⚔️ Открытый вызов: Камень-Ножницы-Бумага",
+                        description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
+                                      f"💰 Ставка: {bet} 🪙\n"
+                                      f"🏆 Призовой фонд: {total_pot} 🪙 (комиссия 5%)\n\n"
+                                      f"Нажмите «Принять» чтобы принять вызов в течение 60 секунд.",
+                        color=discord.Color.gold()
+                    )
+                    msg = await interaction.followup.send(embed=embed, view=view)
+                    game.message_id = msg.id
+                    game.channel_id = interaction.channel.id
         
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)

@@ -296,8 +296,8 @@ class PlayButton(Button):
                             )
                             
                             opponent = discord.ui.TextInput(
-                                label="Соперник (только для PvP)",
-                                placeholder="Упомяните игрока (@user)",
+                                label="Соперник (необязательно для PvP)",
+                                placeholder="Упомяните игрока (@user) или оставьте пустым для открытого вызова",
                                 required=False,
                                 min_length=0,
                                 max_length=50
@@ -308,10 +308,8 @@ class PlayButton(Button):
                                 self.game = game
                                 self.guild_id = guild_id
                                 self.pve_mode = pve_mode
-                                if pve_mode:
-                                    self.opponent.required = False
-                                else:
-                                    self.opponent.required = True
+                                # Opponent is optional for PvP (open challenge)
+                                self.opponent.required = False
                             
                             async def on_submit(self, interaction: discord.Interaction):
                                 """Handle modal submission."""
