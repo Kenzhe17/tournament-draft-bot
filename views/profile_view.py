@@ -146,19 +146,12 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed
         import discord
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name} | {rank_title}",
             color=discord.Color.dark_blue()
         )
         
         # Always use Discord avatar
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
-
-        # Ранг отдельным полем без названия, жирным
-        embed.add_field(
-            name="",
-            value=f"**{rank_title}**",
-            inline=False
-        )
 
         # ELO
         embed.add_field(
@@ -170,7 +163,13 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Уровень и опыт
         embed.add_field(
             name="📈 Level",
-            value=f"{stats.level}\n⭐ {current_xp:,} / {xp_needed:,}",
+            value=f"{stats.level}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="⭐",
+            value=f"{current_xp:,} / {xp_needed:,}",
             inline=True
         )
 

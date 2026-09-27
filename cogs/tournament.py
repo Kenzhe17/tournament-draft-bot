@@ -916,17 +916,10 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name} | {rank_title}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
-
-        # Ранг отдельным полем без названия, жирным
-        embed.add_field(
-            name="",
-            value=f"**{rank_title}**",
-            inline=False
-        )
 
         # ELO
         embed.add_field(
@@ -938,7 +931,13 @@ class TournamentCog(commands.Cog):
         # Уровень и опыт
         embed.add_field(
             name="📈 Level",
-            value=f"{stats.level}\n⭐ {current_xp:,} / {xp_needed:,}",
+            value=f"{stats.level}",
+            inline=True
+        )
+
+        embed.add_field(
+            name="⭐",
+            value=f"{current_xp:,} / {xp_needed:,}",
             inline=True
         )
 
