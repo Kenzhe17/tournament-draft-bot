@@ -41,33 +41,20 @@ class GameState(Enum):
 
 class Move(Enum):
     """Move enum with emoji mapping."""
-    ROCK = "rock"
-    PAPER = "paper"
-    SCISSORS = "scissors"
+    ROCK = ("rock", "🪨", "Камень")
+    PAPER = ("paper", "📜", "Бумага")
+    SCISSORS = ("scissors", "✂️", "Ножницы")
     
-    @property
-    def emoji(self) -> str:
-        """Get emoji for this move."""
-        return {
-            Move.ROCK: "🪨",
-            Move.PAPER: "📜",
-            Move.SCISSORS: "✂️"
-        }[self]
-    
-    @property
-    def name(self) -> str:
-        """Get Russian name for this move."""
-        return {
-            Move.ROCK: "Камень",
-            Move.PAPER: "Бумага",
-            Move.SCISSORS: "Ножницы"
-        }[self]
+    def __init__(self, code: str, emoji: str, display_name: str):
+        self.code = code
+        self.emoji = emoji
+        self.display_name = display_name
     
     @classmethod
     def from_code(cls, code: str) -> Optional["Move"]:
         """Get Move from code string."""
         for move in cls:
-            if move.value == code:
+            if move.code == code:
                 return move
         return None
     
@@ -180,8 +167,8 @@ class PvEChoiceView(RPSView):
         # Build result embed
         embed = discord.Embed(
             title=title,
-            description=f"Ваш ход: {move.emoji} {move.name}\n"
-                       f"Ход ИИ: {bot_move.emoji} {bot_move.name}\n\n"
+            description=f"Ваш ход: {move.emoji} {move.display_name}\n"
+                       f"Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
                        f"💰 Изменение баланса: {balance_change}",
             color=discord.Color.blue()
         )
@@ -397,15 +384,15 @@ class PvPChoiceView(RPSView):
         
         # Build result embed
         if result == "draw":
-            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.name}\n"
-                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.name}\n\n"
+            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
+                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"🤝 Ничья! Оба игрока получают возврат ставки.\n"
                           f"💰 <@{game.initiator_id}>: {balance_change_p1}\n"
                           f"💰 <@{game.opponent_id}>: {balance_change_p2}")
         else:
             winner_name = f"<@{winner_id}>"
-            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.name}\n"
-                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.name}\n\n"
+            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
+                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"🏆 Победитель: {winner_name}!\n"
                           f"💰 Выигрыш: {winner_payout} 🪙 (комиссия 5%)")
         
