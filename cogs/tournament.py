@@ -916,70 +916,72 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name} | {rank_title}",
+            title=f"👤 Профиль: {stats.name}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Био (показываем сразу после заголовка, если есть)
+        # Био и ранг
         if stats.description:
-            embed.description = stats.description
+            embed.description = f"{stats.description}\n{rank_title}"
+        else:
+            embed.description = rank_title
 
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name="🏆",
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт
         embed.add_field(
-            name="📈 Level",
-            value=f"{stats.level} | ⭐ Опыт: {current_xp:,} / {xp_needed:,}",
+            name="📈",
+            value=f"{stats.level} | {current_xp:,}/{xp_needed:,}",
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 Баланс",
+            name="💵",
             value=f"{balance:,} 🪙",
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="🎒 Предметов",
+            name="🎒",
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲 Сыграно игр",
+            name="🎲",
             value=f"{total_games_played}",
             inline=True
         )
 
         embed.add_field(
-            name="🏆 Побед",
+            name="🏆",
             value=f"{total_games_won} ({win_rate:.1f}%)",
             inline=True
         )
 
         embed.add_field(
-            name="🎯 AVG Kills",
+            name="🎯",
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️ K/D Ratio",
+            name="⚔️",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥 Max Kills",
+            name="🔥",
             value=str(stats.best_match_kills),
             inline=True
         )
@@ -987,7 +989,7 @@ class TournamentCog(commands.Cog):
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊 Last ELO Change",
+            name="📊",
             value=f"{elo_change:+d}",
             inline=True
         )
