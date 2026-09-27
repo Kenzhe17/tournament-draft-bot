@@ -408,10 +408,11 @@ class BackButton(Button):
             page_games = games[start_idx:end_idx]
             
             games_list = []
-            for idx, game in enumerate(page_games, start=start_idx + 1):
+            for game in page_games:
                 mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-                games_list.append(f"{idx}️⃣ {game.emoji} **{game.name}** (`{game.command}`) • [{mode}]")
+                games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
                 games_list.append(f"└ *{game.short_description}*")
+                games_list.append("")  # Пустая строка между играми
             
             games_text = "\n".join(games_list)
             
@@ -470,10 +471,11 @@ class ForwardButton(Button):
             page_games = games[start_idx:end_idx]
             
             games_list = []
-            for idx, game in enumerate(page_games, start=start_idx + 1):
+            for game in page_games:
                 mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-                games_list.append(f"{idx}️⃣ {game.emoji} **{game.name}** (`{game.command}`) • [{mode}]")
+                games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
                 games_list.append(f"└ *{game.short_description}*")
+                games_list.append("")  # Пустая строка между играми
             
             games_text = "\n".join(games_list)
             
