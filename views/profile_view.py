@@ -153,77 +153,86 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Always use Discord avatar
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
-        # Био и ранг в description
-        if stats.description:
-            embed.description = f"{stats.description}\n{rank_title}"
-        else:
-            embed.description = rank_title
+        # Ранг
+        embed.add_field(
+            name="🥉 Ранг",
+            value=rank_title,
+            inline=True
+        )
 
         # ELO
         embed.add_field(
-            name="🏆",
+            name="🏆 ELO",
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт
         embed.add_field(
-            name="📈",
-            value=f"{stats.level} | {current_xp:,}/{xp_needed:,}",
+            name="📈 Level",
+            value=f"{stats.level} | ⭐ {current_xp:,} / {xp_needed:,}",
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵",
+            name="💵 Баланс",
             value=f"{balance:,} 🪙",
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="🎒",
+            name="🎒 Предметов",
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲",
+            name="🎲 Сыграно игр",
             value=f"{total_games_played}",
             inline=True
         )
 
         embed.add_field(
-            name="🏆",
+            name="🏆 Побед",
             value=f"{total_games_won} ({win_rate:.1f}%)",
             inline=True
         )
 
         embed.add_field(
-            name="🎯",
+            name="🎯 AVG Kills",
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️",
+            name="⚔️ K/D Ratio",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥",
+            name="🔥 Max Kills",
             value=str(stats.best_match_kills),
             inline=True
         )
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊",
+            name="📊 Last ELO Change",
             value=f"{elo_change:+d}",
             inline=True
         )
+
+        # Био в отдельном поле в самом низу
+        if stats.description:
+            embed.add_field(
+                name="📝 О себе",
+                value=f"**{stats.description}**",
+                inline=False
+            )
 
         # Update the original message
         await interaction.response.edit_message(embed=embed)
