@@ -251,10 +251,12 @@ class TournamentBot(commands.Bot):
                     # Check if time has expired
                     remaining_time = tournament.get_draft_pick_remaining_time()
                     if remaining_time > 0:
-                        # Update message to show countdown
-                        await self.update_tournament_message(guild, tournament)
+                        # Update message to show countdown (only every 5 seconds to reduce API calls)
+                        if remaining_time % 5 == 0 or remaining_time <= 5:
+                            await self.update_tournament_message(guild, tournament)
                     else:
                         # Time expired - make random pick
+                        logger.info(f"Draft timer expired for guild {guild.id}, making random pick")
                         random_pick = tournament.pick_random_player()
                         if random_pick:
                             picker_pos, player = random_pick

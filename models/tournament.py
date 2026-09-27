@@ -131,7 +131,7 @@ class Tournament:
     # Сообщение драфта для пинга капитанов
     draft_message_id: int = 0  # ID сообщения с пингом текущего капитана
     draft_pick_start_time: str = ""  # ISO format timestamp when current pick started
-    draft_pick_duration: int = 60  # Seconds for each pick
+    draft_pick_duration: int = 60  # Seconds for each pick (default 60s)
 
     @property
     def captain_count(self) -> int:
@@ -521,13 +521,17 @@ class Tournament:
 
     def get_draft_pick_remaining_time(self) -> int:
         """Получить оставшееся время для текущего выбора в секундах."""
-        if not self.draft_pick_start_time:
-            return self.draft_pick_duration
+        # Handle old tournaments without the field
+        draft_pick_start_time = getattr(self, 'draft_pick_start_time', '')
+        draft_pick_duration = getattr(self, 'draft_pick_duration', 60)
+        
+        if not draft_pick_start_time:
+            return draft_pick_duration
         
         from datetime import datetime
-        start = datetime.fromisoformat(self.draft_pick_start_time)
+        start = datetime.fromisoformat(draft_pick_start_time)
         elapsed = (datetime.now() - start).total_seconds()
-        remaining = int(self.draft_pick_duration - elapsed)
+        remaining = int(draft_pick_duration - elapsed)
         return max(0, remaining)
 
     def pick_random_player(self) -> tuple[int, str] | None:
