@@ -916,7 +916,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name} | {rank_title}",
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
@@ -927,7 +927,7 @@ class TournamentCog(commands.Cog):
 
         # ELO
         embed.add_field(
-            name="� ELO",
+            name="🏆 ELO",
             value=f"{int(stats.elo)}",
             inline=True
         )

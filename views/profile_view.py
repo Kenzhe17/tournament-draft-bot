@@ -146,7 +146,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed
         import discord
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=f"👤 Профиль: {stats.name} | {rank_title}",
             color=discord.Color.dark_blue()
         )
         
@@ -159,7 +159,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # ELO
         embed.add_field(
-            name="� ELO",
+            name="🏆 ELO",
             value=f"{int(stats.elo)}",
             inline=True
         )
