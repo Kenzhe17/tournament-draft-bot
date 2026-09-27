@@ -238,7 +238,11 @@ class PvPChallengeView(RPSView):
                     description=f"Вызов истёк и был автоматически отменён.",
                     color=discord.Color.orange()
                 )
-                await msg.edit(embed=embed, view=None)
+                try:
+                    await msg.edit(embed=embed, view=None)
+                except discord.errors.NotFound:
+                    # Message was already deleted
+                    pass
         except Exception as e:
             logger.error(f"Error editing timeout message: {e}")
         
@@ -265,28 +269,40 @@ class PvPChallengeView(RPSView):
         """Handle challenge acceptance."""
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.WAITING_PVP:
-            await interaction.response.send_message("❌ Вызов недоступен.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Вызов недоступен.", ephemeral=True)
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Access Control: Anyone except creator can accept
         if interaction.user.id == self.initiator_id:
-            await interaction.response.send_message(
-                "⚠️ Вы не можете принять свой собственный вызов!",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Вы не можете принять свой собственный вызов!",
+                    ephemeral=True
+                )
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # If it's a direct challenge, only the invited opponent can accept
         if self.opponent_id and interaction.user.id != self.opponent_id:
-            await interaction.response.send_message(
-                "⚠️ Этот вызов предназначен для другого игрока!",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Этот вызов предназначен для другого игрока!",
+                    ephemeral=True
+                )
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Check if user is already in a game
         if interaction.user.id in active_users:
-            await interaction.response.send_message("❌ Вы уже участвуете в игре.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Вы уже участвуете в игре.", ephemeral=True)
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Update opponent to whoever accepted (open challenge)
@@ -294,17 +310,26 @@ class PvPChallengeView(RPSView):
         new_opponent = interaction.guild.get_member(new_opponent_id)
         
         if not new_opponent:
-            await interaction.response.send_message("❌ Не удалось найти пользователя.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Не удалось найти пользователя.", ephemeral=True)
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         if new_opponent.bot:
-            await interaction.response.send_message("❌ Нельзя играть против ботов.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Нельзя играть против ботов.", ephemeral=True)
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Hold escrow for new opponent
         escrow_success = await hold_escrow(new_opponent_id, game.guild_id, self.bet)
         if not escrow_success:
-            await interaction.response.send_message("❌ Недостаточно баланса для ставки.", ephemeral=True)
+            try:
+                await interaction.response.send_message("❌ Недостаточно баланса для ставки.", ephemeral=True)
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Update game state with new opponent
@@ -315,7 +340,10 @@ class PvPChallengeView(RPSView):
         # Disable buttons
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(view=self)
+        try:
+            await interaction.response.edit_message(view=self)
+        except discord.errors.InteractionResponded:
+            pass
         
         # Send choice views to both players
         await self.send_choice_views(interaction, game)
@@ -351,18 +379,24 @@ class PvPChallengeView(RPSView):
         
         # Access Control: Only the challenged opponent can decline
         if self.opponent_id and interaction.user.id != self.opponent_id:
-            await interaction.response.send_message(
-                "⚠️ Только вызванный игрок может отклонить вызов!",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Только вызванный игрок может отклонить вызов!",
+                    ephemeral=True
+                )
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # For open challenges, anyone except creator can decline
         if not self.opponent_id and interaction.user.id == self.initiator_id:
-            await interaction.response.send_message(
-                "⚠️ Создатель не может отклонить свой вызов. Используйте отмену!",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Создатель не может отклонить свой вызов. Используйте отмену!",
+                    ephemeral=True
+                )
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Refund initiator and opponent if escrow held
@@ -379,7 +413,10 @@ class PvPChallengeView(RPSView):
         
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except discord.errors.InteractionResponded:
+            pass
         
         # Cleanup
         active_users.discard(self.initiator_id)
@@ -396,10 +433,13 @@ class PvPChallengeView(RPSView):
         
         # Access Control: Only creator can cancel
         if interaction.user.id != self.initiator_id:
-            await interaction.response.send_message(
-                "⚠️ Только создатель вызова может его отменить!",
-                ephemeral=True
-            )
+            try:
+                await interaction.response.send_message(
+                    "⚠️ Только создатель вызова может его отменить!",
+                    ephemeral=True
+                )
+            except discord.errors.InteractionResponded:
+                pass
             return
         
         # Refund initiator and opponent if escrow held
@@ -416,7 +456,10 @@ class PvPChallengeView(RPSView):
         
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(embed=embed, view=self)
+        try:
+            await interaction.response.edit_message(embed=embed, view=self)
+        except discord.errors.InteractionResponded:
+            pass
         
         # Cleanup
         active_users.discard(self.initiator_id)
