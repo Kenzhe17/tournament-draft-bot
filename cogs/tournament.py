@@ -1765,7 +1765,7 @@ def get_rank_emoji(level: int) -> str:
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
-    @app_commands.guild_only()
+    @app_commands.default_permissions(send_messages=True)
     async def daily(self, interaction: discord.Interaction) -> None:
         """Получить ежедневный бонус."""
         from storage.db import get_pool
@@ -1823,7 +1823,7 @@ def get_rank_emoji(level: int) -> str:
             )
 
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
-    @app_commands.guild_only()
+    @app_commands.default_permissions(send_messages=True)
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
