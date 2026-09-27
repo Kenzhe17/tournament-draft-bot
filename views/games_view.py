@@ -104,7 +104,7 @@ class GameCategorySelect(Select):
         view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
         
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GamesCategoryView(View):
@@ -203,7 +203,7 @@ class GameSelect(Select):
         )
 
         view = GameCardView(self.user_id, self.guild_id, game, game.category, self.page)
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GameCardView(View):
@@ -325,7 +325,7 @@ class BackToCategoryButton(Button):
         view.add_item(BackButton(self.user_id, self.guild_id, self.category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, page, total_pages))
         
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class BackToMainMenuButton(Button):
@@ -365,7 +365,7 @@ class BackToMainMenuButton(Button):
         )
 
         view = GamesMainView(self.user_id, self.guild_id)
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class BackButton(Button):
@@ -427,7 +427,7 @@ class BackButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
-            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
 
 class ForwardButton(Button):
@@ -489,4 +489,4 @@ class ForwardButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
-            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
