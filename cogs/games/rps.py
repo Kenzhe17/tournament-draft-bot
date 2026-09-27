@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
@@ -143,9 +144,16 @@ class PvEChoiceView(RPSView):
             item.disabled = True
         await interaction.response.edit_message(view=self)
         
-        # Generate bot move (truly random)
+        # Generate bot move (truly random with time-based seed)
+        # Use secrets for cryptographically secure random choice
+        import secrets
+        # Combine time and secrets for maximum randomness
+        seed = int(time.time() * 1000) + secrets.randbelow(1000)
+        random.seed(seed)
         bot_move = random.choice(list(Move))
-        logger.info(f"RPS PvE: Player chose {move.display_name}, Bot chose {bot_move.display_name}")
+        # Reset seed to avoid affecting other random operations
+        random.seed()
+        logger.info(f"RPS PvE: Player chose {move.display_name}, Bot chose {bot_move.display_name}, Seed: {seed}")
         
         # Determine result
         if move == bot_move:
