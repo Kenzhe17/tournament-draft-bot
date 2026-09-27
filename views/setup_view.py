@@ -819,11 +819,6 @@ class StartTournamentButton(discord.ui.Button):
                 tournament.draft_message_id = draft_message.id
                 store.set(tournament)
 
-            await interaction.followup.send(
-                "✅ Драфт завершён!",
-                ephemeral=True
-            )
-
 
 class ToggleRegistrationButton(discord.ui.Button):
     """Кнопка для переключения регистрации (открыть/закрыть)."""

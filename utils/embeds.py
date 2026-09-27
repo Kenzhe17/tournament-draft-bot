@@ -629,6 +629,14 @@ async def build_draft_embed(
     timer_text = f"\n⏱️ Время на выбор: {remaining_time}с"
     
     embed.description = f"{current_line}\n\n**Очередь:**\n" + "\n".join(next_captains) + timer_text
+    
+    # Add timer as a separate field for visibility
+    if current_picker_pos is not None:
+        embed.add_field(
+            name="⏱️ Таймер",
+            value=f"{remaining_time} секунд",
+            inline=False
+        )
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):
