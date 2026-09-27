@@ -567,18 +567,25 @@ class TournamentCog(commands.Cog):
         """Показать список мини-игр."""
         from views.games_view import GamesMainView
         from storage.user_balance_store import user_balance_store
+        from storage.games_config import CATEGORIES, get_games_by_category
 
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
+        # Создать описание категорий
+        categories_text = ""
+        for cat_id, cat_info in CATEGORIES.items():
+            games = get_games_by_category(cat_id)
+            categories_text += f"  - {cat_info['emoji']} {cat_info['name']} ({len(games)} игр) — {cat_info['description']}\n"
+        
         embed = discord.Embed(
-            title="🎮 Мини-игры",
-            description=f"Выберите категорию игр и поставьте монеты!\n\n💰 Ваш баланс: {balance:,} 🪙",
+            title="🎮 Игровой Центр",
+            description=f"👋 Добро пожаловать в игровой раздел! Здесь вы можете испытывать удачу, участвовать в викторинах и крутить казино.\n\n� Ваш баланс: {balance:,} монет\n\n📁 Категории игр:\n{categories_text}",
             color=discord.Color.dark_blue(),
         )
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view)
 
     # @app_commands.command(name="play", description="Запустить мини-игру")
     # @app_commands.describe(game="Выберите игру для запуска")
