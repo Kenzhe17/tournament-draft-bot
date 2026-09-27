@@ -168,16 +168,10 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             inline=True
         )
 
-        # Уровень и опыт
+        # Уровень и опыт в одном поле
         embed.add_field(
             name=f"📈 Level {stats.level}",
-            value="",
-            inline=True
-        )
-
-        embed.add_field(
-            name="⭐",
-            value=f"{current_xp:,} / {xp_needed:,}",
+            value=f"{current_xp:,} / {xp_needed:,} ⭐",
             inline=True
         )
 
