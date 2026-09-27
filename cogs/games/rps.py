@@ -488,46 +488,37 @@ class PvPChallengeView(RPSView):
             del active_games[self.game_id]
     
     async def send_choice_views(self, interaction: discord.Interaction, game: GameSession):
-        """Send choice views to both players."""
-        channel = interaction.channel
-        
-        # View for initiator
-        view_p1 = PvPChoiceView(self.game_id, self.initiator_id, self.opponent_id, self.bet, is_initiator=True)
-        embed_p1 = discord.Embed(
+        """Update main message to show choice phase."""
+        # Instead of sending new messages, update the main challenge message
+        view = PvPChoiceView(self.game_id, self.initiator_id, self.opponent_id, self.bet, is_initiator=None, is_main=True)
+        embed = discord.Embed(
             title="⚔️ Выберите ваш ход",
-            description=f"Ваша ставка: {self.bet} 🪙\n"
-                          f"Соперник: <@{self.opponent_id}>\n"
-                          f"Сделайте выбор. Результат будет опубликован в чате!",
+            description=f"<@{self.initiator_id}> vs <@{self.opponent_id}>\n\n"
+                          f"💰 Ставка: {self.bet} 🪙\n"
+                          f"⏱️ У вас есть 40 секунд чтобы сделать выбор!\n\n"
+                          f"Сделайте выбор. Результат будет опубликован здесь!",
             color=discord.Color.blue()
         )
-        msg_p1 = await channel.send(f"<@{self.initiator_id}>", embed=embed_p1, view=view_p1)
-        game.p1_message_id = msg_p1.id
         
-        # View for opponent
-        view_p2 = PvPChoiceView(self.game_id, self.opponent_id, self.initiator_id, self.bet, is_initiator=False)
-        embed_p2 = discord.Embed(
-            title="⚔️ Выберите ваш ход",
-            description=f"Ваша ставка: {self.bet} 🪙\n"
-                          f"Соперник: <@{self.initiator_id}>\n"
-                          f"Сделайте выбор. Результат будет опубликован в чате!",
-            color=discord.Color.blue()
-        )
-        msg_p2 = await channel.send(f"<@{self.opponent_id}>", embed=embed_p2, view=view_p2)
-        game.p2_message_id = msg_p2.id
-        
-        # Update game with message IDs
-        game.channel_id = channel.id
+        try:
+            channel = self.bot.get_channel(self.channel_id)
+            if channel and self.message_id:
+                msg = await channel.fetch_message(self.message_id)
+                await msg.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating main message: {e}")
 
 
 class PvPChoiceView(RPSView):
     """View for PvP move selection."""
     
-    def __init__(self, game_id: str, user_id: int, opponent_id: int, bet: int, is_initiator: bool):
+    def __init__(self, game_id: str, user_id: int, opponent_id: int, bet: int, is_initiator: Optional[bool] = None, is_main: bool = False):
         super().__init__(game_id, timeout=40)
         self.user_id = user_id
         self.opponent_id = opponent_id
         self.bet = bet
         self.is_initiator = is_initiator
+        self.is_main = is_main  # If True, this is the main message with buttons for both
     
     @discord.ui.button(label="Камень", emoji="🪨", style=discord.ButtonStyle.primary, custom_id="rps:rock")
     async def btn_rock(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -549,35 +540,62 @@ class PvPChoiceView(RPSView):
             return
         
         # Access Control: Only registered participants can click
-        if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
-            await interaction.response.send_message(
-                "⚠️ Вы не являетесь участником этой дуэли!",
-                ephemeral=True
-            )
-            return
-        
-        # Each player can only click their own buttons
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message(
-                "⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода.",
-                ephemeral=True
-            )
-            return
+        if self.is_main:
+            # Main message mode - both can click, but only their own choice
+            if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
+                await interaction.response.send_message(
+                    "⚠️ Вы не являетесь участником этой дуэли!",
+                    ephemeral=True
+                )
+                return
+        else:
+            # Individual message mode - only the owner can click
+            if interaction.user.id != self.user_id:
+                await interaction.response.send_message(
+                    "⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода.",
+                    ephemeral=True
+                )
+                return
         
         # Disable buttons
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(view=self)
         
         # Record move
-        if self.is_initiator:
-            game.initiator_move = move
+        if self.is_main:
+            # Main message mode - need to determine which player made the move
+            if interaction.user.id == self.user_id:
+                game.initiator_move = move
+            else:
+                game.opponent_move = move
+            
+            # Check if both players have chosen
+            if game.initiator_move and game.opponent_move:
+                await self.resolve_game(interaction, game)
+            else:
+                # Update message to show waiting for other player
+                waiting_for = self.opponent_id if interaction.user.id == self.user_id else self.user_id
+                embed = discord.Embed(
+                    title="⚔️ Ожидание выбора...",
+                    description=f"<@{waiting_for}> делает свой выбор...",
+                    color=discord.Color.yellow()
+                )
+                try:
+                    await interaction.response.edit_message(embed=embed, view=self)
+                except discord.errors.InteractionResponded:
+                    pass
         else:
-            game.opponent_move = move
-        
-        # Check if both players have chosen
-        if game.initiator_move and game.opponent_move:
-            await self.resolve_game(interaction, game)
+            # Individual message mode (deprecated but kept for compatibility)
+            await interaction.response.edit_message(view=self)
+            
+            if self.is_initiator:
+                game.initiator_move = move
+            else:
+                game.opponent_move = move
+            
+            # Check if both players have chosen
+            if game.initiator_move and game.opponent_move:
+                await self.resolve_game(interaction, game)
     
     async def resolve_game(self, interaction: discord.Interaction, game: GameSession):
         """Resolve PvP game."""
@@ -635,20 +653,15 @@ class PvPChoiceView(RPSView):
             color=discord.Color.gold()
         )
         
-        # Delete choice messages
-        try:
-            channel = interaction.channel
-            if game.p1_message_id:
-                msg = await channel.fetch_message(game.p1_message_id)
-                await msg.delete()
-            if game.p2_message_id:
-                msg = await channel.fetch_message(game.p2_message_id)
-                await msg.delete()
-        except Exception as e:
-            logger.error(f"Error deleting choice messages: {e}")
-        
-        # Edit challenge message with result
+        # Update main message with result (no need to delete messages anymore)
         if game.message_id:
+            try:
+                channel = self.bot.get_channel(game.channel_id)
+                if channel:
+                    msg = await channel.fetch_message(game.message_id)
+                    await msg.edit(embed=embed, view=None)
+            except Exception as e:
+                logger.error(f"Error editing main message with result: {e}")
             try:
                 msg = await channel.fetch_message(game.message_id)
                 await msg.edit(embed=embed, view=None)
