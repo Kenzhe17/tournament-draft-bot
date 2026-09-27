@@ -1701,8 +1701,6 @@ class TournamentCog(commands.Cog):
             embed.add_field(name="💰 Сумма:", value=f"{result['amount']:,} 🪙", inline=True)
             embed.add_field(name="📊 Комиссия:", value=f"{result['fee']:,} 🪙 (10%)", inline=True)
             embed.add_field(name="💳 Всего списано:", value=f"{result['total_deducted']:,} 🪙", inline=True)
-            embed.add_field(name="📉 Баланс отправителя:", value=f"{result['from_balance']:,} 🪙", inline=True)
-            embed.add_field(name="📈 Баланс получателя:", value=f"{result['to_balance']:,} 🪙", inline=True)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
