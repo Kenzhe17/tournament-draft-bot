@@ -273,17 +273,17 @@ class PlayButton(Button):
         
         embed.add_field(
             name="🤖 Игра с ботом (PvE)",
-            value=f"Скопируйте и отправьте команду:\n{pve_command}",
+            value=pve_command,
             inline=False
         )
         
         embed.add_field(
             name="⚔️ Дуэль с игроком (PvP)",
-            value=f"Скопируйте и укажите юзернейм соперника:\n{pvp_command}",
+            value=pvp_command,
             inline=False
         )
         
-        embed.set_footer(text="💡 Нажмите на команду, чтобы скопировать её.")
+        embed.set_footer(text="💡 Скопируйте команду и отправьте её в чат.")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
