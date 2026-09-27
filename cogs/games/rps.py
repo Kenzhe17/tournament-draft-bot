@@ -224,6 +224,10 @@ class PvPChallengeView(RPSView):
         # Refund initiator
         await release_escrow(self.initiator_id, game.guild_id, self.bet)
         
+        # Refund opponent if they accepted (escrow held)
+        if self.opponent_id and self.opponent_id in active_users:
+            await release_escrow(self.opponent_id, game.guild_id, self.bet)
+        
         # Update message
         try:
             channel = self.bot.get_channel(self.channel_id)
@@ -704,16 +708,15 @@ class RPSCog(commands.Cog):
                 game.state = GameState.WAITING_PVP
                 
                 if opponent_id:
-                    # Direct challenge - hold escrow for opponent immediately
-                    active_users.add(opponent_id)
+                    # Direct challenge - hold escrow for opponent immediately to check balance
                     opponent_escrow = await hold_escrow(opponent_id, guild_id, bet)
                     if not opponent_escrow:
                         await release_escrow(user_id, guild_id, bet)
                         active_users.discard(user_id)
-                        active_users.discard(opponent_id)
                         del active_games[game_id]
                         await interaction.followup.send("❌ У соперника недостаточно баланса.", ephemeral=True)
                         return
+                    # Opponent is not added to active_users yet (only when they accept)
                     
                     view = PvPChallengeView(game_id, user_id, opponent_id, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
