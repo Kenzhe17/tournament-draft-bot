@@ -565,7 +565,7 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="games", description="Показать доступные мини-игры")
     async def games(self, interaction: discord.Interaction) -> None:
         """Показать список мини-игр."""
-        from views.games_view_new import GamesMainView
+        from views.games_view import GamesMainView
         from storage.user_balance_store import user_balance_store
 
         # Получить баланс
