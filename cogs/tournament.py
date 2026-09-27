@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
+    """Удалить ephemeral-ответ через указанное время."""
+    await asyncio.sleep(delay)
+    try:
+        await interaction.delete_original_response()
+    except discord.HTTPException:
+        pass
 
 
 class GameCog(commands.Cog):
