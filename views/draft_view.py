@@ -47,7 +47,7 @@ class PlayerSelect(discord.ui.Select):
 
         # Check if it's the captain's turn (by nickname)
         expected_captain_name = tournament.captains[tournament.captain_order[picker_pos]]
-        user_name = interaction.user.name
+        user_name = interaction.user.display_name
         
         # In test mode, allow anyone to pick
         if not tournament.is_test and user_name != expected_captain_name:

@@ -71,8 +71,16 @@ class CircleSelectButton(discord.ui.Button):
                     )
                     return
 
-            # Get user's username (not display_name to prevent emoji abuse)
-            user_name = interaction.user.name
+            # Get user's nickname
+            user_name = interaction.user.display_name
+
+            # Prevent using Discord username (to prevent emoji abuse in nicks)
+            if user_name == interaction.user.name:
+                await interaction.response.send_message(
+                    "❌ Нельзя использовать глобальный username Discord. Пожалуйста, измените никнейм на сервере.",
+                    ephemeral=True
+                )
+                return
 
             # Check if user already in tournament - if so, move them to new circle
             was_moved = False
@@ -166,8 +174,16 @@ class JoinPoolButton(discord.ui.Button):
                 )
                 return
 
-            # Get user's username (not display_name to prevent emoji abuse)
-            user_name = interaction.user.name
+            # Get user's nickname
+            user_name = interaction.user.display_name
+
+            # Prevent using Discord username (to prevent emoji abuse in nicks)
+            if user_name == interaction.user.name:
+                await interaction.response.send_message(
+                    "❌ Нельзя использовать глобальный username Discord. Пожалуйста, измените никнейм на сервере.",
+                    ephemeral=True
+                )
+                return
 
             # Check if user already in pool
             if user_name in tournament.players_pool:
