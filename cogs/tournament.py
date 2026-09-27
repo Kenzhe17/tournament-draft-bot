@@ -562,10 +562,10 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(DiceBetModal())
 
-    # @app_commands.command(name="games", description="Показать доступные мини-игры")
-    # async def games(self, interaction: discord.Interaction) -> None:
-    #     """Показать список мини-игр."""
-    #     from views.games_view import GamesMainView
+    @app_commands.command(name="games", description="Показать доступные мини-игры")
+    async def games(self, interaction: discord.Interaction) -> None:
+        """Показать список мини-игр."""
+        from views.games_view import GamesMainView
 
     #     embed = discord.Embed(
     #         title="🎮 Мини-игры",
@@ -1008,6 +1008,47 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view)
 
+    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
+    async def rank(self, interaction: discord.Interaction) -> None:
+        """Показать текущий ранг и прогресс до следующего уровня."""
+        from storage.player_stats_store import player_stats_store
+        from utils.embeds import create_progress_bar
+
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+
+        if not stats:
+            await interaction.response.send_message(
+                "❌ Сначала сыграйте хотя бы один турнир!",
+                ephemeral=True
+            )
+            return
+
+        rank_title = get_rank_emoji(stats.level)
+        current_xp, xp_needed = stats.get_level_progress()
+        progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
+        progress_bar = create_progress_bar(current_xp, xp_needed)
+
+        embed = discord.Embed(
+            title=f"🎮 {rank_title} Level {stats.level}",
+            color=discord.Color.dark_blue()
+        )
+
+        embed.add_field(
+            name="📊 Прогресс",
+            value=f"{progress_bar} ({progress_percent}%)",
+            inline=False
+        )
+
+        embed.add_field(
+            name="📈 До следующего уровня",
+            value=f"Требуется: {xp_needed - current_xp} XP",
+            inline=False,
+        )
+
+        embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
@@ -1055,47 +1096,6 @@ def get_rank_emoji(level: int) -> str:
         return "🥉 Bronze II"
     else:
         return "🥉 Bronze III"
-
-    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
-    async def rank(self, interaction: discord.Interaction) -> None:
-        """Показать текущий ранг и прогресс до следующего уровня."""
-        from storage.player_stats_store import player_stats_store
-        from utils.embeds import create_progress_bar
-
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
-
-        if not stats:
-            await interaction.response.send_message(
-                "❌ Сначала сыграйте хотя бы один турнир!",
-                ephemeral=True
-            )
-            return
-
-        rank_title = get_rank_emoji(stats.level)
-        current_xp, xp_needed = stats.get_level_progress()
-        progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
-        progress_bar = create_progress_bar(current_xp, xp_needed)
-
-        embed = discord.Embed(
-            title=f"🎮 {rank_title} Level {stats.level}",
-            color=discord.Color.dark_blue()
-        )
-
-        embed.add_field(
-            name="📊 Прогресс",
-            value=f"{progress_bar} ({progress_percent}%)",
-            inline=False
-        )
-
-        embed.add_field(
-            name="📈 До следующего уровня",
-            value=f"Требуется: {xp_needed - current_xp} XP",
-            inline=False,
-        )
-
-        embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
