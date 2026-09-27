@@ -71,8 +71,19 @@ class CircleSelectButton(discord.ui.Button):
                     )
                     return
 
-            # Get user's nickname
+            # Get user's nickname and clean it from emojis
             user_name = interaction.user.display_name
+            from utils.cosmetics import clean_nickname
+            cleaned_name = clean_nickname(user_name)
+            
+            # Automatically update user's nickname if it contains emojis
+            if cleaned_name != user_name:
+                try:
+                    await interaction.user.edit(nick=cleaned_name)
+                    user_name = cleaned_name
+                except discord.Forbidden:
+                    # Bot doesn't have permission to edit nickname, use cleaned name anyway
+                    user_name = cleaned_name
 
             # Check if user already in tournament - if so, move them to new circle
             was_moved = False
@@ -166,8 +177,19 @@ class JoinPoolButton(discord.ui.Button):
                 )
                 return
 
-            # Get user's nickname
+            # Get user's nickname and clean it from emojis
             user_name = interaction.user.display_name
+            from utils.cosmetics import clean_nickname
+            cleaned_name = clean_nickname(user_name)
+            
+            # Automatically update user's nickname if it contains emojis
+            if cleaned_name != user_name:
+                try:
+                    await interaction.user.edit(nick=cleaned_name)
+                    user_name = cleaned_name
+                except discord.Forbidden:
+                    # Bot doesn't have permission to edit nickname, use cleaned name anyway
+                    user_name = cleaned_name
 
             # Check if user already in pool
             if user_name in tournament.players_pool:

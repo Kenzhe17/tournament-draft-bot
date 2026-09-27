@@ -48,9 +48,21 @@ class PlayerSelect(discord.ui.Select):
         # Check if it's the captain's turn (by nickname)
         expected_captain_name = tournament.captains[tournament.captain_order[picker_pos]]
         user_name = interaction.user.display_name
+        from utils.cosmetics import clean_nickname
+        cleaned_name = clean_nickname(user_name)
+        cleaned_captain_name = clean_nickname(expected_captain_name)
+        
+        # Automatically update user's nickname if it contains emojis
+        if cleaned_name != user_name:
+            try:
+                await interaction.user.edit(nick=cleaned_name)
+                user_name = cleaned_name
+            except discord.Forbidden:
+                # Bot doesn't have permission to edit nickname, use cleaned name anyway
+                user_name = cleaned_name
         
         # In test mode, allow anyone to pick
-        if not tournament.is_test and user_name != expected_captain_name:
+        if not tournament.is_test and user_name != cleaned_captain_name:
             await interaction.response.send_message(
                 f"❌ Сейчас выбирает {expected_captain_name}",
                 ephemeral=True,
