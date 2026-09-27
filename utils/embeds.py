@@ -624,7 +624,11 @@ async def build_draft_embed(
             else:
                 next_captains.append(f"{i + 1}. {captain_name}")
 
-    embed.description = f"{current_line}\n\n**Очередь:**\n" + "\n".join(next_captains)
+    # Add draft timer to description
+    remaining_time = tournament.get_draft_pick_remaining_time()
+    timer_text = f"\n⏱️ Время на выбор: {remaining_time}с"
+    
+    embed.description = f"{current_line}\n\n**Очередь:**\n" + "\n".join(next_captains) + timer_text
 
     # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
     for circle in range(2, 5):

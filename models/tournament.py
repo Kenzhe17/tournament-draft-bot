@@ -130,6 +130,8 @@ class Tournament:
 
     # Сообщение драфта для пинга капитанов
     draft_message_id: int = 0  # ID сообщения с пингом текущего капитана
+    draft_pick_start_time: str = ""  # ISO format timestamp when current pick started
+    draft_pick_duration: int = 60  # Seconds for each pick
 
     @property
     def captain_count(self) -> int:
@@ -510,6 +512,40 @@ class Tournament:
         }
 
         self.phase = TournamentPhase.DRAFT
+        self.reset_pick_timer()
+
+    def reset_pick_timer(self) -> None:
+        """Сбросить таймер текущего выбора."""
+        from datetime import datetime
+        self.draft_pick_start_time = datetime.now().isoformat()
+
+    def get_draft_pick_remaining_time(self) -> int:
+        """Получить оставшееся время для текущего выбора в секундах."""
+        if not self.draft_pick_start_time:
+            return self.draft_pick_duration
+        
+        from datetime import datetime
+        start = datetime.fromisoformat(self.draft_pick_start_time)
+        elapsed = (datetime.now() - start).total_seconds()
+        remaining = int(self.draft_pick_duration - elapsed)
+        return max(0, remaining)
+
+    def pick_random_player(self) -> tuple[int, str] | None:
+        """Случайно выбрать игрока для текущего капитана.
+        Возвращает (position, player_name) или None если нет доступных игроков.
+        """
+        picker_pos = self.current_picker_position()
+        if picker_pos is None:
+            return None
+        
+        key = str(self.current_circle)
+        available = self.available.get(key, [])
+        if not available:
+            return None
+        
+        # Randomly select a player
+        player = random.choice(available)
+        return (picker_pos, player)
 
     def current_picker_position(self) -> int | None:
         """Позиция капитана, который сейчас выбирает."""
@@ -535,6 +571,7 @@ class Tournament:
         # Store picks by position in captain_order
         self.picks[str(position)][key] = player
         self.available[key].remove(player)
+        self.reset_pick_timer()  # Reset timer for next pick
 
     def advance_after_pick(self) -> bool:
         """

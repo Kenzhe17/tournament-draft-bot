@@ -49,6 +49,8 @@ class TournamentBot(commands.Bot):
         """Синхронизация slash-команд и восстановление View."""
         # Start betting timer background task
         self.loop.create_task(self.betting_timer_loop())
+        # Start draft timer background task
+        self.loop.create_task(self.draft_timer_loop())
         
         # Initialize shop items
         try:
@@ -222,6 +224,76 @@ class TournamentBot(commands.Bot):
                             updated_after_close.add(tournament_key)
             except Exception as e:
                 logger.error(f"Error in betting timer loop: {e}", exc_info=True)
+
+    async def draft_timer_loop(self) -> None:
+        """Background task to handle draft pick timer and auto-random picks."""
+        import asyncio
+        
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(1)  # Check every second
+                
+                # Get all guilds with active tournaments
+                for guild in self.guilds:
+                    tournament = store.get(guild.id)
+                    if not tournament:
+                        continue
+                    
+                    # Only process if in draft phase
+                    if tournament.phase != TournamentPhase.DRAFT:
+                        continue
+                    
+                    # Check if current picker exists
+                    picker_pos = tournament.current_picker_position()
+                    if picker_pos is None:
+                        continue
+                    
+                    # Check if time has expired
+                    remaining_time = tournament.get_draft_pick_remaining_time()
+                    if remaining_time > 0:
+                        # Update message to show countdown
+                        await self.update_tournament_message(guild, tournament)
+                    else:
+                        # Time expired - make random pick
+                        random_pick = tournament.pick_random_player()
+                        if random_pick:
+                            picker_pos, player = random_pick
+                            tournament.pick_player(picker_pos, player)
+                            draft_complete = tournament.advance_after_pick()
+                            store.set(tournament)
+                            
+                            # Update tournament message
+                            await self.update_tournament_message(guild, tournament)
+                            
+                            # Delete old draft message if exists
+                            if tournament.draft_message_id > 0:
+                                try:
+                                    channel = guild.get_channel(tournament.channel_id)
+                                    if channel:
+                                        old_message = await channel.fetch_message(tournament.draft_message_id)
+                                        await old_message.delete()
+                                except Exception:
+                                    pass
+                            
+                            # Send new draft message with next captain ping if draft not complete
+                            if not draft_complete:
+                                next_picker_pos = tournament.current_picker_position()
+                                if next_picker_pos is not None:
+                                    next_captain_name = tournament.captains[tournament.captain_order[next_picker_pos]]
+                                    next_captain_id = tournament.player_user_ids.get(next_captain_name, 0)
+                                    channel = guild.get_channel(tournament.channel_id)
+                                    if channel:
+                                        if next_captain_id > 0:
+                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n➡️ <@{next_captain_id}> - ваша очередь выбирать!")
+                                        else:
+                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n➡️ {next_captain_name} - ваша очередь выбирать!")
+                                        tournament.draft_message_id = new_message.id
+                                        store.set(tournament)
+                            else:
+                                # Draft complete
+                                logger.info(f"Draft completed automatically for guild {guild.id}")
+            except Exception as e:
+                logger.error(f"Error in draft timer loop: {e}", exc_info=True)
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
