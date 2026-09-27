@@ -1023,25 +1023,36 @@ class TournamentCog(commands.Cog):
         progress_bar = create_progress_bar(current_xp, xp_needed)
 
         embed = discord.Embed(
-            title=f"🎮 {rank_title} Level {stats.level}",
             color=discord.Color.dark_blue()
         )
 
         embed.add_field(
-            name="📊 Прогресс",
-            value=f"{progress_bar} ({progress_percent}%)",
+            name="📈 Level",
+            value=f"{stats.level}",
             inline=False
         )
 
         embed.add_field(
-            name="📈 До следующего уровня",
-            value=f"Требуется: {xp_needed - current_xp} XP",
+            name="",
+            value=f"**{rank_title}**",
+            inline=False
+        )
+
+        embed.add_field(
+            name="📊 Прогресс",
+            value=f"{progress_bar} {current_xp}/{xp_needed} ({progress_percent}%)",
+            inline=False
+        )
+
+        embed.add_field(
+            name="До следующего уровня",
+            value=f"{xp_needed - current_xp} XP",
             inline=False,
         )
 
-        embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
+        embed.set_footer(text="Накопить XP можно через участие в турнирах и победы")
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
