@@ -234,11 +234,11 @@ class PlayButton(Button):
         command = bot.tree.get_command(self.game.command)
 
         if command:
-            # Execute the command
+            # Execute the command (public message)
             await command.callback(interaction)
         else:
             await interaction.response.send_message(
-                f"🚧 Игра '{self.game.command}' пока в разработке",
+                f"🚧 Игра '{self.game.name}' пока в разработке",
                 ephemeral=True
             )
 

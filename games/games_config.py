@@ -349,6 +349,14 @@ def get_game_by_id(game_id: str) -> Optional[GameConfig]:
     return None
 
 
+def get_game_by_command(command: str) -> Optional[GameConfig]:
+    """Получить игру по команде."""
+    for game in ALL_GAMES:
+        if game.command == command:
+            return game
+    return None
+
+
 def get_games_by_category(category: str) -> List[GameConfig]:
     """Получить игры по категории."""
     return [game for game in ALL_GAMES if game.category == category]
@@ -357,3 +365,64 @@ def get_games_by_category(category: str) -> List[GameConfig]:
 def get_all_games() -> List[GameConfig]:
     """Получить все игры."""
     return ALL_GAMES
+
+
+async def sync_games_to_db(guild_id: int) -> int:
+    """Синхронизировать игры из конфига в базу данных.
+    
+    Args:
+        guild_id: ID сервера (для логов)
+    
+    Returns:
+        Количество синхронизированных игр
+    """
+    from storage.db import get_pool
+    
+    synced_count = 0
+    
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            for game in ALL_GAMES:
+                # Проверить существует ли игра
+                existing = await conn.fetchrow(
+                    "SELECT id FROM minigames WHERE id = $1",
+                    game.id
+                )
+                
+                if existing:
+                    # Обновить существующую игру
+                    await conn.execute(
+                        """
+                        UPDATE minigames
+                        SET name = $2, description = $3, category = $4, difficulty = $5,
+                            min_bet = $6, max_bet = $7, multiplier = $8,
+                            is_pvp = $9, is_pve = $10, is_active = $11,
+                            command_name = $12
+                        WHERE id = $1
+                        """,
+                        game.id, game.name, game.description, game.category,
+                        game.difficulty, game.min_bet, game.max_bet,
+                        game.multiplier, game.is_pvp, game.is_pve,
+                        game.status == "available", game.command
+                    )
+                else:
+                    # Создать новую игру
+                    await conn.execute(
+                        """
+                        INSERT INTO minigames
+                        (id, name, description, category, difficulty, min_bet, max_bet, multiplier,
+                         is_pvp, is_pve, is_active, command_name)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        """,
+                        game.id, game.name, game.description, game.category,
+                        game.difficulty, game.min_bet, game.max_bet,
+                        game.multiplier, game.is_pvp, game.is_pve,
+                        game.status == "available", game.command
+                    )
+                
+                synced_count += 1
+    except Exception as e:
+        print(f"Error syncing games to database: {e}")
+    
+    return synced_count
