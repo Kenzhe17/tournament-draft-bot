@@ -81,17 +81,18 @@ class GameCategorySelect(Select):
         end_idx = start_idx + per_page
         page_games = games[start_idx:end_idx]
 
-        # Создать список игр с нумерацией
+        # Создать список игр
         games_list = []
-        for idx, game in enumerate(page_games, start=start_idx + 1):
+        for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{idx}️⃣ {game.emoji} **{game.name}** (`{game.command}`) • [{mode}]")
+            games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
             games_list.append(f"└ *{game.short_description}*")
+            games_list.append("")  # Пустая строка между играми
         
         games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=f"{category_info['emoji']}︱{category_info['name']} ({category})",
+            title=f"{category_info['emoji']}︱{category_info['name']}",
             description=f"""📝 *{category_info['description']}*
 ────────────────────────
 📌 **Информация о категории:**
@@ -191,16 +192,16 @@ class GameSelect(Select):
             mode_text = "PvE"
 
         embed = discord.Embed(
-            title=f"{game.emoji}︱{game.name} ({game.command})",
+            title=f"{game.emoji}︱{game.name}",
             description=f"""📝 *{game.short_description}*
 ────────────────────────
 📌 **Информация об игре:**
 • **Режим:** [{mode_text}]
-• **Команда:** `/play {game.command}`
+• **Команда:** /play {game.command}
 • **Категория:** {category_info['emoji']} {category_info['name']}
-• **Множитель:** `{game.multiplier}`
-• **Мин. ставка:** `{game.min_bet} 🪙`
-• **Макс. ставка:** `{game.max_bet} 🪙`
+• **Множитель:** {game.multiplier}
+• **Мин. ставка:** {game.min_bet} 🪙
+• **Макс. ставка:** {game.max_bet} 🪙
 • **Статус:** {status_text} *В разработке*
 
 ────────────────────────
@@ -302,17 +303,18 @@ class BackToCategoryButton(Button):
         end_idx = start_idx + per_page
         page_games = games[start_idx:end_idx]
 
-        # Создать список игр с нумерацией
+        # Создать список игр
         games_list = []
-        for idx, game in enumerate(page_games, start=start_idx + 1):
+        for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{idx}️⃣ {game.emoji} **{game.name}** (`{game.command}`) • [{mode}]")
+            games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
             games_list.append(f"└ *{game.short_description}*")
+            games_list.append("")  # Пустая строка между играми
         
         games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
+            title=f"{category_info['emoji']}︱{category_info['name']}",
             description=f"""📝 *{category_info['description']}*
 ────────────────────────
 📌 **Информация о категории:**
@@ -357,7 +359,7 @@ class BackToMainMenuButton(Button):
         embed = discord.Embed(
             title="🎯 МИНИ-ИГРЫ| Главное меню",
             description=f"""👋 **Добро пожаловать, {interaction.user.display_name}!**
-💳 **Ваш Баланс:** {balance:,} 🪙 
+💳 **Ваш Баланс:** {balance:,} 🪙
 
 📂 **КАТЕГОРИИ**
 🎲 **Игры на удачу** 
@@ -414,7 +416,7 @@ class BackButton(Button):
             games_text = "\n".join(games_list)
             
             embed = discord.Embed(
-                title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
+                title=f"{category_info['emoji']}︱{category_info['name']}",
                 description=f"""📝 *{category_info['description']}*
 ────────────────────────
 📌 **Информация о категории:**
@@ -476,7 +478,7 @@ class ForwardButton(Button):
             games_text = "\n".join(games_list)
             
             embed = discord.Embed(
-                title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
+                title=f"{category_info['emoji']}︱{category_info['name']}",
                 description=f"""📝 *{category_info['description']}*
 ────────────────────────
 📌 **Информация о категории:**
