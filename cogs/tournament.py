@@ -576,29 +576,30 @@ class TournamentCog(commands.Cog):
         categories_text = ""
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
-            # Короткие описания для минимализма
+            # Короткие описания
             short_desc = {
-                "luck": "Монетка, Кубик, КНБ, Бутылочка, Эмодзи...",
-                "quiz": "Математика, Словесные цепочки...",
-                "casino": "Рулетка, Слоты, Лотерея, Баккара, High-Low..."
+                "luck": "Быстрые игры на риск: монетка, кубики, угадай число и др.",
+                "quiz": "Интеллектуальные состязания, викторины и слова.",
+                "casino": "Слоты, рулетка, баккара, лотерея и высокие ставки."
             }
-            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `({len(games)})`\n> *{short_desc.get(cat_id, cat_info['description'])}*\n\n"
+            categories_text += f"• {cat_info['emoji']} **{cat_info['name']}**\n└ *{short_desc.get(cat_id, cat_info['description'])}*\n"
         
         embed = discord.Embed(
-            title="🎮︱Игровой Центр",
-            description=f"""👋 **Приветствуем в игровом хабе!**
-💵 **Баланс:** {balance:,} 🪙
-🎯 **Доступно игр:** {len(get_all_games())}
-
-📁 **КАТЕГОРИИ**
-
-{categories_text}────────────────────────
-*Выберите категорию в меню ниже, чтобы начать играть.*""",
+            title="🎯ИГРЫ СЕРВЕРА | Главное меню (main_menu)",
+            description=f"""👋 Добро пожаловать, {interaction.user.display_name}!
+> 💳 **Ваш Баланс:** {balance:,} 🪙 
+>
+> **Всего категорий:** `3`
+>  **Всего игр:** `19`
+>
+> 📂 **КАТЕГОРИИ:**
+{categories_text}> ────────────────────────
+> ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
             color=0x2F3136,  # Тёмно-фиолетовый
         )
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     # @app_commands.command(name="play", description="Запустить мини-игру")
     # @app_commands.describe(game="Выберите игру для запуска")

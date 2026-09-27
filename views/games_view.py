@@ -21,7 +21,6 @@ class GamesMainView(View):
         self.user_id = user_id
         self.guild_id = guild_id
         self.add_item(GameCategorySelect(user_id, guild_id))
-        self.add_item(CloseButton())
 
     async def get_balance(self) -> int:
         """Получить баланс пользователя."""
@@ -36,21 +35,6 @@ class GamesMainView(View):
             )
             return False
         return True
-
-
-class CloseButton(Button):
-    """Кнопка закрытия меню."""
-
-    def __init__(self):
-        super().__init__(
-            label="❌ Закрыть",
-            style=discord.ButtonStyle.secondary,
-            custom_id="close_menu"
-        )
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Закрыть меню (удалить сообщение)."""
-        await interaction.response.delete_message()
 
 
 class GameCategorySelect(Select):
@@ -120,7 +104,7 @@ class GameCategorySelect(Select):
         view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
         
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class GamesCategoryView(View):
@@ -219,7 +203,7 @@ class GameSelect(Select):
         )
 
         view = GameCardView(self.user_id, self.guild_id, game, game.category, self.page)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class GameCardView(View):
@@ -341,7 +325,7 @@ class BackToCategoryButton(Button):
         view.add_item(BackButton(self.user_id, self.guild_id, self.category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, page, total_pages))
         
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class BackToMainMenuButton(Button):
@@ -377,22 +361,21 @@ class BackToMainMenuButton(Button):
             categories_text += f"• {cat_info['emoji']} **{cat_info['name']}**\n└ *{short_desc.get(cat_id, cat_info['description'])}*\n"
         
         embed = discord.Embed(
-            title="🎮︱Игровой Центр (main_menu)",
-            description=f"""> � *Центральный хаб развлечений.*
+            title="�ИГРЫ СЕРВЕРА | Главное меню (main_menu)",
+            description=f"""👋 Добро пожаловать, {interaction.user.display_name}!
+> � **Ваш Баланс:** {balance:,} 🪙 
 >
-> 📌 **Информация о системе:**
->  **Баланс:** {balance:,} 🪙 
->  **Всего категорий:** {len(CATEGORIES)}
->  **Всего игр:** {total_games}
+> **Всего категорий:** `3`
+>  **Всего игр:** `19`
 >
-> � **Доступные категории:**
+> 📂 **КАТЕГОРИИ:**
 {categories_text}> ────────────────────────
 > ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
             color=0x2F3136,  # Тёмно-фиолетовый
         )
 
         view = GamesMainView(self.user_id, self.guild_id)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class BackButton(Button):
@@ -454,7 +437,7 @@ class BackButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class ForwardButton(Button):
@@ -516,4 +499,4 @@ class ForwardButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
