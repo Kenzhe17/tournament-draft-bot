@@ -484,22 +484,22 @@ class TournamentCog(commands.Cog):
         view = GamesMainView(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    # @app_commands.command(name="play", description="Запустить мини-игру")
-    # @app_commands.describe(game="Выберите игру для запуска")
-    # @app_commands.autocomplete(game=game_autocomplete)
-    # async def play(self, interaction: discord.Interaction, game: str) -> None:
-    #     """Запустить выбранную игру."""
-    #     # Get the command
-    #     command = self.bot.tree.get_command(game)
+    @app_commands.command(name="play", description="Запустить мини-игру")
+    @app_commands.describe(game="Выберите игру для запуска")
+    @app_commands.autocomplete(game=game_autocomplete)
+    async def play(self, interaction: discord.Interaction, game: str) -> None:
+        """Запустить выбранную игру."""
+        # Get the command
+        command = self.bot.tree.get_command(game)
 
-    #     if command:
-    #         # Execute the command
-    #         await command.callback(interaction)
-    #     else:
-    #         await interaction.response.send_message(
-    #             f"❌ Игра '{game}' не найдена.",
-    #             ephemeral=True
-    #         )
+        if command:
+            # Execute the command
+            await command.callback(interaction)
+        else:
+            await interaction.response.send_message(
+                f"❌ Игра '{game}' не найдена.",
+                ephemeral=True
+            )
 
     # @app_commands.command(name="guess_number", description="Угадай число от 1 до 100")
     # async def guess_number(self, interaction: discord.Interaction) -> None:
