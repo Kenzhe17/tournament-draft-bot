@@ -983,9 +983,6 @@ class BuyCaseButton(discord.ui.Button):
             )
             return
 
-        # Списать монеты
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
-
         # Открыть кейс
         result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
 
