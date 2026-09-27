@@ -491,7 +491,7 @@ class TournamentCog(commands.Cog):
                 continue
 
             status = "✅" if cosmetic.equipped else "❌"
-            item_text = f"{status} **{item.name}** ({item.rarity.value})"
+            item_text = f"{status} **{item.name}** (ID: `{item.id}`) ({item.rarity.value})"
 
             if cosmetic.equipped:
                 equipped_text.append(item_text)
@@ -1664,6 +1664,8 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(user="Игрок", amount="Сумма")
     async def pay(self, interaction: discord.Interaction, user: discord.User, amount: int) -> None:
         """Передать монеты с комиссией 10%."""
+        from storage.user_balance_store import user_balance_store
+        
         if amount < 100:
             await interaction.response.send_message("❌ Минимальная сумма: 100 🪙", ephemeral=True)
             return
@@ -1699,6 +1701,9 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(user="Игрок", item_id="ID предмета")
     async def gift(self, interaction: discord.Interaction, user: discord.User, item_id: str) -> None:
         """Передать предмет с комиссией 10% от стоимости."""
+        from storage.user_balance_store import user_balance_store
+        from storage.shop_store import inventory_store, shop_store
+        
         if user.id == interaction.user.id:
             await interaction.response.send_message("❌ Нельзя подарить самому себе", ephemeral=True)
             return
