@@ -419,7 +419,7 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
     if not is_open:
         embed.add_field(
             name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
-            value="🔒 Ставки закрыты",
+            value="🔒 СТАВКИ ЗАКРЫТЫ",
             inline=False,
         )
         return
@@ -748,7 +748,7 @@ async def build_qualifiers_embed(
     await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifier")
     
     # Add betting timer to footer if betting is open
-    if tournament.is_betting_open() and tournament.betting_phase == "qualifier":
+    if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
         remaining = tournament.get_betting_remaining_time()
         embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
     
@@ -811,7 +811,7 @@ async def build_semifinals_embed(
     await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinal")
     
     # Add betting timer to footer if betting is open
-    if tournament.is_betting_open() and tournament.betting_phase == "semifinal":
+    if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
         remaining = tournament.get_betting_remaining_time()
         embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
     
