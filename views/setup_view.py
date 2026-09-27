@@ -820,7 +820,7 @@ class StartTournamentButton(discord.ui.Button):
                 store.set(tournament)
 
             await interaction.followup.send(
-                "🎲 Драфт запущен! Игроки перераспределены в кругах.",
+                "✅ Драфт завершён!",
                 ephemeral=True
             )
 

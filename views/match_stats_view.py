@@ -325,12 +325,9 @@ class AdminTeamSelectView(View):
 
     def _create_confirm_callback(self):
         async def callback(interaction: discord.Interaction) -> None:
-            match_id = f"{self.match_type}_{self.match_index}"
-            temp_stats = self.tournament.temp_match_stats.get(match_id, {})
-            view = AdminConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, temp_stats)
+            # Remove this callback - winner selection will be done in a separate step
             await interaction.response.send_message(
-                "Проверьте статистику перед подтверждением:",
-                view=view,
+                "✅ Статистика команды сохранена.",
                 ephemeral=True
             )
         return callback
@@ -462,7 +459,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             # Other team not filled, ask to fill it
             other_team_name = tournament.team_names.get(other_team_index, f"Team {other_team_index}")
             await interaction.response.send_message(
-                f"✅ Статистика команды сохранена.\n\nХотите заполнить статистику для команды {other_team_name}?",
+                f"✅ Статистика команды сохранена.",
                 ephemeral=True
             )
 
@@ -652,7 +649,31 @@ class AdminConfirmView(View):
         return embed
 
     async def show_winner_confirmation(self, interaction: discord.Interaction) -> None:
-        """Show winner selection buttons (no separate confirmation)."""
+        """Show stats for confirmation first, then winner selection."""
+        # Show stats for confirmation
+        await interaction.response.send_message(
+            "Проверьте статистику перед подтверждением:",
+            embed=self.embed,
+            view=self._create_confirm_view(),
+            ephemeral=True
+        )
+
+    def _create_confirm_view(self) -> discord.ui.View:
+        """Create view with confirm button that shows winner selection."""
+        view = discord.ui.View()
+        
+        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
+        confirm_btn.callback = self._show_winner_selection
+        view.add_item(confirm_btn)
+        
+        edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
+        edit_btn.callback = self.edit_callback
+        view.add_item(edit_btn)
+        
+        return view
+
+    async def _show_winner_selection(self, interaction: discord.Interaction) -> None:
+        """Show winner selection buttons after confirmation."""
         # Get team names
         team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
         team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
