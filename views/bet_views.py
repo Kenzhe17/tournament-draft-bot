@@ -236,10 +236,13 @@ class BetButton(Button):
     """Button to open betting flow."""
     
     def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
+        # Check if betting is open for this phase
+        is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
             label="💰 Сделать ставку",
             style=discord.ButtonStyle.success,
-            custom_id="place_bet"
+            custom_id="place_bet",
+            disabled=not is_open
         )
         self.guild_id = guild_id
         self.tournament = tournament
@@ -248,7 +251,7 @@ class BetButton(Button):
     
     async def callback(self, interaction: discord.Interaction):
         """Open match selection view."""
-        if not self.tournament.betting_open:
+        if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
             await interaction.response.send_message(
                 "❌ Ставки закрыты.",
                 ephemeral=True

@@ -183,7 +183,12 @@ class Tournament:
     # Format: match_id -> {player_name: {"kills": int, "deaths": int, "circle": int}}
     temp_match_stats: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
-    # Betting system
+    # Betting system - new timer-based system
+    betting_phase_start_time: float | None = None  # When betting started for current phase
+    betting_phase: str | None = None  # "qualifiers", "semifinals", "final"
+    betting_duration: int = 180  # 3 minutes in seconds
+    
+    # Legacy betting_open field (kept for backward compatibility)
     betting_open: bool = False
     # Store bets temporarily in tournament (persisted in database)
     # Format: match_id -> list of Bet objects
@@ -215,6 +220,30 @@ class Tournament:
         # Team names can only be edited in bracket phases and only once per team
         bracket_phases = [TournamentPhase.QUALIFIERS, TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]
         return self.phase in bracket_phases and team_index not in self.team_names_changed_teams
+
+    def start_betting_phase(self, phase: str) -> None:
+        """Start betting for a specific phase (qualifiers/semifinals/final)."""
+        import time
+        self.betting_phase = phase
+        self.betting_phase_start_time = time.time()
+        self.betting_open = True  # Legacy field for backward compatibility
+
+    def is_betting_open(self) -> bool:
+        """Check if betting is currently open (within 3-minute window)."""
+        import time
+        if self.betting_phase_start_time is None:
+            return False
+        elapsed = time.time() - self.betting_phase_start_time
+        return elapsed < self.betting_duration
+
+    def get_betting_remaining_time(self) -> int:
+        """Get remaining betting time in seconds."""
+        import time
+        if self.betting_phase_start_time is None:
+            return 0
+        elapsed = time.time() - self.betting_phase_start_time
+        remaining = max(0, self.betting_duration - int(elapsed))
+        return remaining
 
     def circle_list(self, circle: int) -> list[str]:
         """Получить список игроков круга (display names)."""
@@ -579,6 +608,8 @@ class Tournament:
             self.final_teams = [0, 1]  # First two teams
             self.phase = TournamentPhase.FINAL
             logger.info(f"generate_bracket: set phase to FINAL")
+            # Start betting phase for final
+            self.start_betting_phase("final")
         elif self.size == TournamentSize.SIXTEEN:
             # 16 players: semifinals + final
             self.generate_semifinals()
@@ -595,6 +626,8 @@ class Tournament:
         self.qualifier_matches = [(0, 1), (2, 3), (4, 5), (6, 7)]
         self.qualifier_winners = [None, None, None, None]
         self.phase = TournamentPhase.QUALIFIERS
+        # Start betting phase for qualifiers
+        self.start_betting_phase("qualifiers")
 
     def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
         """
@@ -630,6 +663,8 @@ class Tournament:
         self.semifinal_winners = [None, None]
         self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
+        # Start betting phase for semifinals
+        self.start_betting_phase("semifinals")
 
     def generate_semifinals(self) -> None:
         """Случайно сгенерировать пары полуфиналов."""
@@ -638,6 +673,8 @@ class Tournament:
         self.semifinal_winners = [None, None]
         self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
+        # Start betting phase for semifinals
+        self.start_betting_phase("semifinals")
 
     def set_semifinal_winner(self, match_index: int, team_index: int) -> bool:
         """
@@ -663,6 +700,8 @@ class Tournament:
         if all(w is not None for w in self.semifinal_winners):
             self.final_teams = list(self.semifinal_winners)  # type: ignore[arg-type]
             self.phase = TournamentPhase.FINAL
+            # Start betting phase for final
+            self.start_betting_phase("final")
             return True
         return False
 

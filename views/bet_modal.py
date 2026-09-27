@@ -46,8 +46,8 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             return
         
         try:
-            # Check if betting is open
-            if not self.tournament.betting_open:
+            # Check if betting is open for this phase
+            if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
                 await interaction.response.send_message(
                     "❌ Ставки закрыты.",
                     ephemeral=True

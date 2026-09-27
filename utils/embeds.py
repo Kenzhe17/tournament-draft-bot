@@ -413,10 +413,13 @@ def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tou
 
 async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tournament, matches: list[tuple[int, int]], match_type: str) -> None:
     """Добавить секцию ставок в embed."""
-    if not tournament.betting_open:
+    # Check if betting is open for this phase
+    is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
+    
+    if not is_open:
         embed.add_field(
             name="━━━━━━━━━━━━━━\n\n💰 СТАВКИ",
-            value="🔒 СТАВКИ ЗАКРЫТЫ",
+            value="🔒 Ставки закрыты",
             inline=False,
         )
         return
@@ -744,6 +747,11 @@ async def build_qualifiers_embed(
     # Добавляем секцию ставок
     await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifier")
     
+    # Add betting timer to footer if betting is open
+    if tournament.is_betting_open() and tournament.betting_phase == "qualifier":
+        remaining = tournament.get_betting_remaining_time()
+        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
+    
     return embed
 
 
@@ -801,6 +809,11 @@ async def build_semifinals_embed(
     
     # Добавляем секцию ставок
     await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinal")
+    
+    # Add betting timer to footer if betting is open
+    if tournament.is_betting_open() and tournament.betting_phase == "semifinal":
+        remaining = tournament.get_betting_remaining_time()
+        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
     
     return embed
 
@@ -864,6 +877,11 @@ async def build_final_embed(
     # Добавляем секцию ставок для финала
     final_matches = [(tournament.final_teams[0], tournament.final_teams[1])]
     await _add_betting_section_to_embed(embed, tournament, final_matches, "final")
+    
+    # Add betting timer to footer if betting is open
+    if tournament.is_betting_open() and tournament.betting_phase == "final":
+        remaining = tournament.get_betting_remaining_time()
+        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
     
     return embed
 

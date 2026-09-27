@@ -525,7 +525,6 @@ class QualifiersView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifier"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifier"))
-        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
 
         # Add admin fill button
         from views.match_stats_view import AdminFillButton
@@ -590,7 +589,6 @@ class SemifinalsView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
-        self.add_item(ToggleBettingButton(guild_id, tournament.betting_open))
 
         # Add admin fill button
         from views.match_stats_view import AdminFillButton

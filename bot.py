@@ -47,6 +47,9 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Start betting timer background task
+        self.loop.create_task(self.betting_timer_loop())
+        
         # Initialize shop items
         try:
             from storage.shop_items import initialize_shop_items
@@ -187,6 +190,22 @@ class TournamentBot(commands.Bot):
             await message.edit(embed=embed, view=view)
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
+
+    async def betting_timer_loop(self) -> None:
+        """Background task to update betting timer in tournament messages."""
+        import asyncio
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(1)  # Update every second
+                
+                # Get all guilds with active tournaments
+                for guild in self.guilds:
+                    tournament = store.get(guild.id)
+                    if tournament and tournament.is_betting_open():
+                        # Update message to show countdown
+                        await self.update_tournament_message(guild, tournament)
+            except Exception as e:
+                logger.error(f"Error in betting timer loop: {e}", exc_info=True)
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
