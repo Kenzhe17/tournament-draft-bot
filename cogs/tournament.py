@@ -576,11 +576,20 @@ class TournamentCog(commands.Cog):
         categories_text = ""
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
-            categories_text += f"  - {cat_info['emoji']} {cat_info['name']} ({len(games)} игр) — {cat_info['description']}\n"
+            categories_text += f"{cat_info['emoji']} **{cat_info['name']}** `[{len(games)} игр]`\n└ *{cat_info['description']}*\n\n"
         
         embed = discord.Embed(
-            title="🎮 Игровой Центр",
-            description=f"👋 Добро пожаловать в игровой раздел! Здесь вы можете испытывать удачу, участвовать в викторинах и крутить казино.\n\n� Ваш баланс: {balance:,} монет\n\n📁 Категории игр:\n{categories_text}",
+            title="🎮 ─── ИГРОВОЙ ЦЕНТР ─── 🎮",
+            description=f"""� **Добро пожаловать!**
+Испытайте удачу, участвуйте в викторинах или крутите казино.
+
+💵 **Ваш баланс:** {balance:,} монет
+━━━━━━━━━━━━━━━━━━━━━━━━━
+
+**📁 КАТЕГОРИИ ИГР:**
+
+{categories_text}━━━━━━━━━━━━━━━━━━━━━━━━━
+*👇 Выберите категорию в меню ниже, чтобы открыть список игр:*""",
             color=discord.Color.dark_blue(),
         )
 
