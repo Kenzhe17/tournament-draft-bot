@@ -92,7 +92,16 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f"{category_info['emoji']}︱{category_info['name']} ({category})",
-            description=f"> 📝 *{category_info['description']}*\n> ────────────────────────\n> 📌 **Информация о категории:**\n> **Страница:** {page} из {total_pages}\n> **Игр в категории:** {len(games)}\n>\n> 🎮 **Игры на странице:**\n{games_text}\n>\n> ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*",
+            description=f"📝 *{category_info['description']}*
+────────────────────────
+📌 **Информация о категории:**
+**Страница:** {page} из {total_pages}
+**Игр в категории:** {len(games)}
+
+🎮 **Игры на странице:**
+{games_text}
+
+ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*",
             color=category_info['color'],
         )
 
@@ -183,22 +192,22 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f"{game.emoji}︱{game.name} ({game.command})",
-            description=f"""> 📝 *{game.short_description}*
-> ────────────────────────
-> � **Информация об игре:**
-> • **Режим:** [{mode_text}]
-> • **Команда:** `/play {game.command}`
-> • **Категория:** {category_info['emoji']} {category_info['name']}
-> • **Множитель:** `{game.multiplier}`
-> • **Мин. ставка:** `{game.min_bet} 🪙`
-> • **Макс. ставка:** `{game.max_bet} 🪙`
-> • **Статус:** {status_text} *В разработке*
->
-> ────────────────────────
-> 📖 **Правила и особенности:**
-> {game.how_to_play}
-> ────────────────────────
-> ℹ️ *Нажмите кнопку ниже для запуска игры или вернитесь в меню*""",
+            description=f"""📝 *{game.short_description}*
+────────────────────────
+📌 **Информация об игре:**
+• **Режим:** [{mode_text}]
+• **Команда:** `/play {game.command}`
+• **Категория:** {category_info['emoji']} {category_info['name']}
+• **Множитель:** `{game.multiplier}`
+• **Мин. ставка:** `{game.min_bet} 🪙`
+• **Макс. ставка:** `{game.max_bet} 🪙`
+• **Статус:** {status_text} *В разработке*
+
+────────────────────────
+📖 **Правила и особенности:**
+{game.how_to_play}
+────────────────────────
+ℹ️ *Нажмите кнопку ниже для запуска игры или вернитесь в меню*""",
             color=status_color,
         )
 
@@ -304,16 +313,16 @@ class BackToCategoryButton(Button):
 
         embed = discord.Embed(
             title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
-            description=f"""> 📝 *{category_info['description']}*
-> ────────────────────────
-> 📌 **Информация о категории:**
-> **Страница:** {page} из {total_pages}
-> **Игр в категории:** {len(games)}
->
-> 🎮 **Игры на странице:**
+            description=f"""📝 *{category_info['description']}*
+────────────────────────
+📌 **Информация о категории:**
+**Страница:** {page} из {total_pages}
+**Игр в категории:** {len(games)}
+
+🎮 **Игры на странице:**
 {games_text}
->
-> ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+
+ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
             color=category_info['color'],
         )
 
@@ -406,16 +415,16 @@ class BackButton(Button):
             
             embed = discord.Embed(
                 title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
-                description=f"""> 📝 *{category_info['description']}*
-> ────────────────────────
-> 📌 **Информация о категории:**
-> **Страница:** {new_page} из {self.total_pages}
-> **Игр в категории:** {len(games)}
->
-> 🎮 **Игры на странице:**
+                description=f"""📝 *{category_info['description']}*
+────────────────────────
+📌 **Информация о категории:**
+**Страница:** {new_page} из {self.total_pages}
+**Игр в категории:** {len(games)}
+
+🎮 **Игры на странице:**
 {games_text}
->
-> ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+
+ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
                 color=category_info['color'],
             )
             
@@ -468,16 +477,16 @@ class ForwardButton(Button):
             
             embed = discord.Embed(
                 title=f"{category_info['emoji']}︱{category_info['name']} ({self.category})",
-                description=f"""> 📝 *{category_info['description']}*
-> ────────────────────────
-> 📌 **Информация о категории:**
-> **Страница:** {new_page} из {self.total_pages}
-> **Игр в категории:** {len(games)}
->
-> 🎮 **Игры на странице:**
+                description=f"""📝 *{category_info['description']}*
+────────────────────────
+📌 **Информация о категории:**
+**Страница:** {new_page} из {self.total_pages}
+**Игр в категории:** {len(games)}
+
+🎮 **Игры на странице:**
 {games_text}
->
-> ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+
+ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
                 color=category_info['color'],
             )
             
