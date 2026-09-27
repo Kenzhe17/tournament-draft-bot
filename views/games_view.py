@@ -265,8 +265,15 @@ class PlayButton(Button):
         command = bot.tree.get_command(self.game.command)
 
         if command:
-            # Execute the command (public message)
-            await command.callback(interaction)
+            # Show instructions for using the slash command
+            embed = discord.Embed(
+                title=f"🎮 {self.game.name}",
+                description=f"Для запуска игры используйте команду:\n"
+                            f"**/{self.game.command}**\n\n"
+                            f"ℹ️ Эта игра может требовать дополнительные параметры (например, ставку).",
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
                 f"🚧 Игра '{self.game.name}' пока в разработке",
