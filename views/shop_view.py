@@ -994,21 +994,18 @@ class BuyCaseButton(discord.ui.Button):
             if result["type"] == "coins":
                 status_icon = "💰"
                 result_text = f"{result['value']} 🪙"
-                # Показать шанс конкретного типа монет
-                specific_coin_type = f"coins_{result['value']}"
-                specific_chance = case.drop_rates.get(specific_coin_type, 0.0)
-                chance_text = f"{specific_chance * 100:.0f}%"
+                # Показать стандартный шанс монет из описания
+                chance_text = "50%"
             elif result["type"] == "item":
                 status_icon = "🎁"
                 result_text = f"{result['value'].name}"
-                # Показать шанс предмета
-                item_type = f"item_{result['value'].rarity}"
-                item_chance = case.drop_rates.get(item_type, 0.0)
-                chance_text = f"{item_chance * 100:.0f}%"
+                # Показать стандартный шанс предмета из описания
+                chance_text = "20%"
             else:
                 status_icon = "❌"
                 result_text = "Ничего"
-                chance_text = f"{case.drop_rates.get('nothing', 0) * 100:.0f}%"
+                # Показать стандартный шанс ничего из описания
+                chance_text = "30%"
 
             embed = discord.Embed(
                 title=f"📦 ОТКРЫТИЕ КЕЙСА | {case.name}",
