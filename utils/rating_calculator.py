@@ -136,11 +136,11 @@ def get_elo_multiplier_by_rank(leaderboard_rank: int) -> float:
         Multiplier (1.0 = normal, <1.0 = reduced for top players)
     """
     if leaderboard_rank <= 3:
-        return 0.4  # Top 3: 40%
+        return 0.5  # Top 3: 50%
     elif leaderboard_rank <= 6:
         return 0.6  # Top 6: 60%
     elif leaderboard_rank <= 10:
-        return 0.8  # Top 10: 80%
+        return 0.7  # Top 10: 70%
     else:
         return 1.2  # Normal: 120%
 
@@ -267,18 +267,19 @@ def calculate_balanced_elo_change(
         Total balanced ELO change
 
     Top 10 players (by leaderboard rank) have reduced gains and amplified losses:
-    - 1-3: 0.2x multiplier on wins, 2.0x on losses
-    - 4-6: 0.4x multiplier on wins, 1.5x on losses
-    - 7-10: 0.6x multiplier on wins, 1.3x on losses
-    - No K/D bonus when losing (top 7)
+    - 1-3: 0.5x multiplier on wins, 2.0x on losses
+    - 4-6: 0.6x multiplier on wins, 1.5x on losses
+    - 7-10: 0.7x multiplier on wins, 1.3x on losses
+    - No K/D bonus when losing (top 3)
+    - No personal bonuses when losing (top 3)
     """
     # Calculate base change
     base_change = get_base_elo_change(position, team_won)
 
-    # Add K/D bonus for all players, but disable for top 7 when losing
-    is_top_player = leaderboard_rank <= 7
+    # Add K/D bonus for all players, but disable for top 3 when losing
+    is_top_player = leaderboard_rank <= 3
     if not team_won and is_top_player:
-        kd_bonus = 0  # No K/D bonus for top players when losing
+        kd_bonus = 0  # No K/D bonus for top 3 players when losing
     else:
         kd_bonus = calculate_kd_bonus(kills, deaths)
 
