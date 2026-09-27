@@ -1454,13 +1454,13 @@ async def rank(self, interaction: discord.Interaction) -> None:
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
     @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
-        @app_commands.describe(
-            player="Игрок",
-            type="Тип изменения: elo или money",
-            amount="Новое значение (для ELO) или количество монет (для money)",
-            operation="Операция: set (установить), add (добавить), remove (убрать)"
-        )
-        async def admin_player(
+    @app_commands.describe(
+        player="Игрок",
+        type="Тип изменения: elo или money",
+        amount="Новое значение (для ELO) или количество монет (для money)",
+        operation="Операция: set (установить), add (добавить), remove (убрать)"
+    )
+    async def admin_player(
             self,
             interaction: discord.Interaction,
             player: discord.Member,
