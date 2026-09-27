@@ -1308,7 +1308,6 @@ class TournamentCog(commands.Cog):
 
         # Find records (all players)
         most_wins = max(all_players, key=lambda p: p.wins)
-        most_finals = max(all_players, key=lambda p: p.finals)
         highest_elo = max(all_players, key=lambda p: p.elo)
         most_games = max(all_players, key=lambda p: p.games)
         best_match_kills = max(all_players, key=lambda p: p.best_match_kills)  # Убрано ограничение 20 игр
@@ -1361,11 +1360,6 @@ class TournamentCog(commands.Cog):
         embed.add_field(
             name="🏆 Наибольшее количество побед",
             value=f"{most_wins.name} — {most_wins.wins} побед",
-            inline=False
-        )
-        embed.add_field(
-            name="🥇 Наибольшее количество финалов",
-            value=f"{most_finals.name} — {most_finals.finals} финалов",
             inline=False
         )
         embed.add_field(
