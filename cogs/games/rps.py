@@ -457,39 +457,39 @@ class RPSCog(commands.Cog):
     @app_commands.describe(bet="Ставка в монетах", opponent="Соперник (для PvP)")
     async def rps(self, interaction: discord.Interaction, bet: int, opponent: Optional[discord.Member] = None):
         """Start RPS game."""
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=False)
         
         user_id = interaction.user.id
         guild_id = interaction.guild_id
         
         # Validate bet
         if bet <= 0:
-            await interaction.followup.send("❌ Ставка должна быть больше 0.", ephemeral=True)
+            await interaction.followup.send("❌ Ставка должна быть больше 0.", ephemeral=False)
             return
         
         # Check if user is already in a game
         if user_id in active_users:
-            await interaction.followup.send("❌ Вы уже участвуете в игре.", ephemeral=True)
+            await interaction.followup.send("❌ Вы уже участвуете в игре.", ephemeral=False)
             return
         
         # Check balance
         if not await check_balance(user_id, guild_id, bet):
-            await interaction.followup.send("❌ Недостаточно баланса.", ephemeral=True)
+            await interaction.followup.send("❌ Недостаточно баланса.", ephemeral=False)
             return
         
         # Determine mode
         if opponent:
             # PvP mode
             if opponent.id == user_id:
-                await interaction.followup.send("❌ Нельзя играть против себя.", ephemeral=True)
+                await interaction.followup.send("❌ Нельзя играть против себя.", ephemeral=False)
                 return
             
             if opponent.bot:
-                await interaction.followup.send("❌ Нельзя играть против ботов.", ephemeral=True)
+                await interaction.followup.send("❌ Нельзя играть против ботов.", ephemeral=False)
                 return
             
             if opponent.id in active_users:
-                await interaction.followup.send("❌ Соперник уже участвует в игре.", ephemeral=True)
+                await interaction.followup.send("❌ Соперник уже участвует в игре.", ephemeral=False)
                 return
             
             mode = GameMode.PVP
