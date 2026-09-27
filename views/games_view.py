@@ -49,8 +49,8 @@ class CloseButton(Button):
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Закрыть меню."""
-        await interaction.response.edit_message(view=None)
+        """Закрыть меню (удалить сообщение)."""
+        await interaction.response.delete_message()
 
 
 class GameCategorySelect(Select):
@@ -336,11 +336,11 @@ class BackToMainMenuButton(Button):
         
         embed = discord.Embed(
             title="🎮︱Игровой Центр",
-            description=f"""┌ 👋 **Приветствуем в игровом хабе!**
-├ 💵 **Баланс:** {balance:,} монет
-└ 🎯 **Доступно игр:** {total_games}
+            description=f"""👋 **Приветствуем в игровом хабе!**
+💵 **Баланс:** {balance:,} 🪙
+🎯 **Доступно игр:** {total_games}
 
-─── 📁 **КАТЕГОРИИ** ───
+📁 **КАТЕГОРИИ**
 
 {categories_text}────────────────────────
 *Выберите категорию в меню ниже, чтобы начать играть.*""",
