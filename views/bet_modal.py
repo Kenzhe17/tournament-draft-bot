@@ -25,7 +25,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
         self.team_index = team_index
         self.team_name = team_name
         self.match_type = match_type
-        self.amount.label = f"Сумма ставки на {team_name}"
+        # Don't modify label - use default
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Handle modal submission."""

@@ -115,12 +115,10 @@ class GameCategorySelect(Select):
         view = GamesCategoryView(self.user_id, self.guild_id, category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, category, page))
         
-        # Кнопки навигации (всегда показываем 3 кнопки)
-        row = discord.ui.ActionRow()
-        row.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
-        row.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
-        row.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
-        view.add_item(row)
+        # Кнопки навигации (всегда показываем 3 кнопки) - добавляем напрямую без ActionRow
+        view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
+        view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
+        view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
         
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -338,12 +336,10 @@ class BackToCategoryButton(Button):
         view = GamesCategoryView(self.user_id, self.guild_id, self.category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, page))
         
-        # Кнопки навигации (всегда показываем 3 кнопки)
-        row = discord.ui.ActionRow()
-        row.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
-        row.add_item(BackButton(self.user_id, self.guild_id, self.category, page, total_pages))
-        row.add_item(ForwardButton(self.user_id, self.guild_id, self.category, page, total_pages))
-        view.add_item(row)
+        # Кнопки навигации (всегда показываем 3 кнопки) - добавляем напрямую без ActionRow
+        view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
+        view.add_item(BackButton(self.user_id, self.guild_id, self.category, page, total_pages))
+        view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, page, total_pages))
         
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -453,11 +449,10 @@ class BackButton(Button):
             view = GamesCategoryView(self.user_id, self.guild_id, self.category, new_page)
             view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, new_page))
             
-            row = discord.ui.ActionRow()
-            row.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
-            row.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            row.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            view.add_item(row)
+            # Кнопки навигации - добавляем напрямую без ActionRow
+            view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
+            view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
+            view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
             await interaction.response.edit_message(embed=embed, view=view)
 
@@ -516,10 +511,9 @@ class ForwardButton(Button):
             view = GamesCategoryView(self.user_id, self.guild_id, self.category, new_page)
             view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, new_page))
             
-            row = discord.ui.ActionRow()
-            row.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
-            row.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            row.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            view.add_item(row)
+            # Кнопки навигации - добавляем напрямую без ActionRow
+            view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
+            view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
+            view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             
             await interaction.response.edit_message(embed=embed, view=view)
