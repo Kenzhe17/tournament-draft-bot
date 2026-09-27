@@ -574,7 +574,7 @@ class TournamentCog(commands.Cog):
         )
 
         view = GamesMainView()
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     # @app_commands.command(name="play", description="Запустить мини-игру")
     # @app_commands.describe(game="Выберите игру для запуска")

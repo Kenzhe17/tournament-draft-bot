@@ -76,7 +76,8 @@ class GameCategorySelect(discord.ui.Select):
 
         if not category_games:
             await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке"
+                f"🚧 Категория '{title}' в разработке",
+                ephemeral=True
             )
             return
 
@@ -94,7 +95,7 @@ class GameCategorySelect(discord.ui.Select):
 
         view = GamesBackView(category)
         view.add_item(GameLaunchSelect(category_games))
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class GameLaunchSelect(discord.ui.Select):
@@ -128,10 +129,19 @@ class GameLaunchSelect(discord.ui.Select):
         games = await minigame_store.get_available_games()
         game = next((g for g in games if g.command_name == command_name), None)
 
+        # Always show game card, even if game not in development
         if not game:
-            await interaction.response.send_message(
-                f"🚧 Игра пока в разработке"
+            # Show placeholder card for games in development
+            game_name = command_name.replace("_", " ").title()
+            embed = discord.Embed(
+                title=f"{game_name}",
+                description="Игра в разработке",
+                color=discord.Color.grey()
             )
+            embed.add_field(name="📌 Команда", value=f"`/{command_name}`", inline=True)
+            embed.add_field(name="📊 Статус", value="🚧 В разработке", inline=True)
+            view = GameCardView(command_name, "mixed")
+            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
             return
 
         # Category colors
@@ -167,7 +177,7 @@ class GameLaunchSelect(discord.ui.Select):
 
         # Add play button
         view = GameCardView(command_name, game.category)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class GameCardView(View):
@@ -203,7 +213,8 @@ class PlayButton(discord.ui.Button):
             await command.callback(interaction)
         else:
             await interaction.response.send_message(
-                f"🚧 Игра '{self.command_name}' пока в разработке"
+                f"🚧 Игра '{self.command_name}' пока в разработке",
+                ephemeral=True
             )
 
 
@@ -237,7 +248,8 @@ class BackToGamesListButton(discord.ui.Button):
 
         if not category_games:
             await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке"
+                f"🚧 Категория '{title}' в разработке",
+                ephemeral=True
             )
             return
 
@@ -255,7 +267,7 @@ class BackToGamesListButton(discord.ui.Button):
 
         view = GamesBackView(category)
         view.add_item(GameLaunchSelect(category_games))
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class BackToMainMenuButton(discord.ui.Button):
@@ -277,7 +289,7 @@ class BackToMainMenuButton(discord.ui.Button):
         )
 
         view = GamesMainView()
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
 
 
 class GamesBackView(View):
@@ -298,4 +310,4 @@ class GamesBackView(View):
         )
 
         view = GamesMainView()
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
