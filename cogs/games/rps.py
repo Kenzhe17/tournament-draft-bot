@@ -206,11 +206,44 @@ class PvEChoiceView(RPSView):
 class PvPChallengeView(RPSView):
     """View for PvP challenge acceptance."""
     
-    def __init__(self, game_id: str, initiator_id: int, opponent_id: Optional[int], bet: int):
+    def __init__(self, game_id: str, initiator_id: int, opponent_id: Optional[int], bet: int, channel_id: int, message_id: int, bot: commands.Bot):
         super().__init__(game_id, timeout=60)
         self.initiator_id = initiator_id
         self.opponent_id = opponent_id  # Can be None for open challenges
         self.bet = bet
+        self.channel_id = channel_id
+        self.message_id = message_id
+        self.bot = bot
+    
+    async def on_timeout(self) -> None:
+        """Handle timeout - auto-decline the challenge."""
+        game = active_games.get(self.game_id)
+        if not game:
+            return
+        
+        # Refund initiator
+        await release_escrow(self.initiator_id, game.guild_id, self.bet)
+        
+        # Update message
+        try:
+            channel = self.bot.get_channel(self.channel_id)
+            if channel:
+                msg = await channel.fetch_message(self.message_id)
+                embed = discord.Embed(
+                    title="⏰ Время истекло",
+                    description=f"Вызов истёк и был автоматически отменён.",
+                    color=discord.Color.orange()
+                )
+                await msg.edit(embed=embed, view=None)
+        except Exception as e:
+            logger.error(f"Error editing timeout message: {e}")
+        
+        # Cleanup
+        active_users.discard(self.initiator_id)
+        if self.opponent_id:
+            active_users.discard(self.opponent_id)
+        if self.game_id in active_games:
+            del active_games[self.game_id]
     
     @discord.ui.button(label="Принять", emoji="⚔️", style=discord.ButtonStyle.success, custom_id="rps:accept")
     async def btn_accept(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -219,6 +252,10 @@ class PvPChallengeView(RPSView):
     @discord.ui.button(label="Отклонить", emoji="❌", style=discord.ButtonStyle.danger, custom_id="rps:decline")
     async def btn_decline(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_decline(interaction)
+    
+    @discord.ui.button(label="Отменить", emoji="🚫", style=discord.ButtonStyle.secondary, custom_id="rps:cancel")
+    async def btn_cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_cancel(interaction)
     
     async def handle_accept(self, interaction: discord.Interaction):
         """Handle challenge acceptance."""
@@ -231,6 +268,14 @@ class PvPChallengeView(RPSView):
         if interaction.user.id == self.initiator_id:
             await interaction.response.send_message(
                 "⚠️ Вы не можете принять свой собственный вызов!",
+                ephemeral=True
+            )
+            return
+        
+        # If it's a direct challenge, only the invited opponent can accept
+        if self.opponent_id and interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "⚠️ Этот вызов предназначен для другого игрока!",
                 ephemeral=True
             )
             return
@@ -300,13 +345,81 @@ class PvPChallengeView(RPSView):
         if not game:
             return
         
-        # Access Control: Only creator can cancel the challenge
+        # Access Control: Only the challenged opponent can decline
+        if self.opponent_id and interaction.user.id != self.opponent_id:
+            await interaction.response.send_message(
+                "⚠️ Только вызванный игрок может отклонить вызов!",
+                ephemeral=True
+            )
+            return
+        
+        # For open challenges, anyone except creator can decline
+        if not self.opponent_id and interaction.user.id == self.initiator_id:
+            await interaction.response.send_message(
+                "⚠️ Создатель не может отклонить свой вызов. Используйте отмену!",
+                ephemeral=True
+            )
+            return
+        
+        # Refund initiator and opponent if escrow held
+        await release_escrow(self.initiator_id, game.guild_id, self.bet)
+        if self.opponent_id:
+            await release_escrow(self.opponent_id, game.guild_id, self.bet)
+        
+        # Update message
+        embed = discord.Embed(
+            title="❌ Вызов отклонён",
+            description=f"<@{interaction.user.id}> отклонил вызов от <@{self.initiator_id}>.",
+            color=discord.Color.red()
+        )
+        
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(embed=embed, view=self)
+        
+        # Cleanup
+        active_users.discard(self.initiator_id)
+        if self.opponent_id:
+            active_users.discard(self.opponent_id)
+        if self.game_id in active_games:
+            del active_games[self.game_id]
+    
+    async def handle_cancel(self, interaction: discord.Interaction):
+        """Handle challenge cancellation by creator."""
+        game = active_games.get(self.game_id)
+        if not game:
+            return
+        
+        # Access Control: Only creator can cancel
         if interaction.user.id != self.initiator_id:
             await interaction.response.send_message(
                 "⚠️ Только создатель вызова может его отменить!",
                 ephemeral=True
             )
             return
+        
+        # Refund initiator and opponent if escrow held
+        await release_escrow(self.initiator_id, game.guild_id, self.bet)
+        if self.opponent_id:
+            await release_escrow(self.opponent_id, game.guild_id, self.bet)
+        
+        # Update message
+        embed = discord.Embed(
+            title="🚫 Вызов отменён",
+            description=f"<@{self.initiator_id}> отменил свой вызов.",
+            color=discord.Color.orange()
+        )
+        
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(embed=embed, view=self)
+        
+        # Cleanup
+        active_users.discard(self.initiator_id)
+        if self.opponent_id:
+            active_users.discard(self.opponent_id)
+        if self.game_id in active_games:
+            del active_games[self.game_id]
         
         # Refund initiator
         await release_escrow(self.initiator_id, game.guild_id, self.bet)
@@ -602,7 +715,7 @@ class RPSCog(commands.Cog):
                         await interaction.followup.send("❌ У соперника недостаточно баланса.", ephemeral=True)
                         return
                     
-                    view = PvPChallengeView(game_id, user_id, opponent_id, bet)
+                    view = PvPChallengeView(game_id, user_id, opponent_id, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
                     embed = discord.Embed(
                         title="⚔️ Вызов на дуэль: Камень-Ножницы-Бумага",
@@ -615,9 +728,11 @@ class RPSCog(commands.Cog):
                     msg = await interaction.followup.send(embed=embed, view=view)
                     game.message_id = msg.id
                     game.channel_id = interaction.channel.id
+                    # Update view with message_id after sending
+                    view.message_id = msg.id
                 else:
                     # Open challenge - anyone can accept
-                    view = PvPChallengeView(game_id, user_id, None, bet)
+                    view = PvPChallengeView(game_id, user_id, None, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
                     embed = discord.Embed(
                         title="⚔️ Открытый вызов: Камень-Ножницы-Бумага",
@@ -630,6 +745,8 @@ class RPSCog(commands.Cog):
                     msg = await interaction.followup.send(embed=embed, view=view)
                     game.message_id = msg.id
                     game.channel_id = interaction.channel.id
+                    # Update view with message_id after sending
+                    view.message_id = msg.id
         
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)
