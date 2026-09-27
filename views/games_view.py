@@ -92,7 +92,7 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f"{category_info['emoji']}︱{category_info['name']} ({category})",
-            description=f"📝 *{category_info['description']}*
+            description=f"""📝 *{category_info['description']}*
 ────────────────────────
 📌 **Информация о категории:**
 **Страница:** {page} из {total_pages}
@@ -101,7 +101,7 @@ class GameCategorySelect(Select):
 🎮 **Игры на странице:**
 {games_text}
 
-ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*",
+ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
             color=category_info['color'],
         )
 
