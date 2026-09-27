@@ -763,8 +763,8 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     embed.add_field(
         name="🎲 **Шансы выпадения:**",
         value=f"├ 🪙 **Монеты:** 50%\n"
-              f"├ 🎁 **Предмет:** 10%\n"
-              f"└ ❌ **Ничего:** 40%",
+              f"├ 🎁 **Предмет:** 20%\n"
+              f"└ ❌ **Ничего:** 30%",
         inline=False
     )
 

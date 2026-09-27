@@ -49,9 +49,9 @@ class CaseStore:
         updated = False
         
         for case_id, case in self._cases.items():
-            # Проверить если nothing не 0.40, обновить
+            # Проверить если nothing не 0.30, обновить
             current_nothing = case.drop_rates.get("nothing", 0.0)
-            if abs(current_nothing - 0.40) > 0.01:  # Если не 40%
+            if abs(current_nothing - 0.30) > 0.01:  # Если не 30%
                 # Пересчитать drop_rates
                 item_key = None
                 nothing_key = "nothing"
@@ -63,11 +63,11 @@ class CaseStore:
                     elif key.startswith("coins_"):
                         coin_keys.append(key)
                 
-                # Новые значения: Item 10%, Nothing 40%, Coins 50%
+                # Новые значения: Item 20%, Nothing 30%, Coins 50%
                 new_drop_rates = {}
                 if item_key:
-                    new_drop_rates[item_key] = 0.10
-                new_drop_rates[nothing_key] = 0.40
+                    new_drop_rates[item_key] = 0.20
+                new_drop_rates[nothing_key] = 0.30
                 
                 # Распределить монеты по 5 уровням: 20% + 12% + 8% + 6% + 4% = 50%
                 if coin_keys:
@@ -101,13 +101,13 @@ class CaseStore:
                 description="Базовые предметы",
                 price=200,
                 drop_rates={
-                    "item_basic": 0.10,
+                    "item_basic": 0.20,
                     "coins_100": 0.20,
                     "coins_200": 0.12,
                     "coins_300": 0.08,
                     "coins_400": 0.06,
                     "coins_500": 0.04,
-                    "nothing": 0.40,
+                    "nothing": 0.30,
                 },
                 is_active=True
             ),
@@ -117,13 +117,13 @@ class CaseStore:
                 description="Редкие предметы",
                 price=500,
                 drop_rates={
-                    "item_premium": 0.10,
+                    "item_premium": 0.20,
                     "coins_250": 0.20,
                     "coins_500": 0.12,
                     "coins_750": 0.08,
                     "coins_1000": 0.06,
                     "coins_1250": 0.04,
-                    "nothing": 0.40,
+                    "nothing": 0.30,
                 },
                 is_active=True
             ),
@@ -133,13 +133,13 @@ class CaseStore:
                 description="Легендарные предметы",
                 price=1000,
                 drop_rates={
-                    "item_elite": 0.10,
+                    "item_elite": 0.20,
                     "coins_500": 0.20,
                     "coins_1000": 0.12,
                     "coins_1500": 0.08,
                     "coins_2000": 0.06,
                     "coins_2500": 0.04,
-                    "nothing": 0.40,
+                    "nothing": 0.30,
                 },
                 is_active=True
             ),
@@ -149,13 +149,13 @@ class CaseStore:
                 description="Эксклюзивные предметы",
                 price=2000,
                 drop_rates={
-                    "item_special": 0.10,
+                    "item_special": 0.20,
                     "coins_1000": 0.20,
                     "coins_2000": 0.12,
                     "coins_3000": 0.08,
                     "coins_4000": 0.06,
                     "coins_5000": 0.04,
-                    "nothing": 0.40,
+                    "nothing": 0.30,
                 },
                 is_active=True
             ),
