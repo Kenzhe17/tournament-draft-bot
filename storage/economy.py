@@ -17,7 +17,6 @@ async def check_balance(user_id: int, guild_id: int, amount: int) -> bool:
     Returns:
         True if balance >= amount, False otherwise
     """
-    from storage.db import get_pool
     from storage.user_balance_store import user_balance_store
     
     balance = await user_balance_store.get_balance(guild_id, user_id)
@@ -35,15 +34,14 @@ async def hold_escrow(user_id: int, guild_id: int, amount: int) -> bool:
     Returns:
         True if successful, False if insufficient balance
     """
-    from storage.db import get_pool
+    from storage.user_balance_store import user_balance_store
     
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            "UPDATE user_balance SET balance = balance - $1 WHERE guild_id = $2 AND user_id = $3 AND balance >= $1",
-            amount, guild_id, user_id
-        )
-        return result == 1
+    # Use subtract_balance which checks balance internally
+    try:
+        await user_balance_store.subtract_balance(guild_id, user_id, amount)
+        return True
+    except ValueError:
+        return False
 
 
 async def release_escrow(user_id: int, guild_id: int, amount: int) -> None:
@@ -54,15 +52,9 @@ async def release_escrow(user_id: int, guild_id: int, amount: int) -> None:
         guild_id: Discord guild ID
         amount: Amount to refund
     """
-    from storage.db import get_pool
     from storage.user_balance_store import user_balance_store
     
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE user_balance SET balance = balance + $1 WHERE guild_id = $2 AND user_id = $3",
-            amount, guild_id, user_id
-        )
+    await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
 async def payout_winner(user_id: int, guild_id: int, amount: int) -> None:
@@ -73,14 +65,9 @@ async def payout_winner(user_id: int, guild_id: int, amount: int) -> None:
         guild_id: Discord guild ID
         amount: Amount to add (already includes escrow if needed)
     """
-    from storage.db import get_pool
+    from storage.user_balance_store import user_balance_store
     
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE user_balance SET balance = balance + $1 WHERE guild_id = $2 AND user_id = $3",
-            amount, guild_id, user_id
-        )
+    await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
 async def get_balance(user_id: int, guild_id: int) -> int:

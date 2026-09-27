@@ -16,7 +16,7 @@ from discord.ext import commands
 # Add project root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-from database.economy import (
+from storage.economy import (
     check_balance,
     get_balance,
     hold_escrow,
