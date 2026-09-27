@@ -970,19 +970,19 @@ class TournamentCog(commands.Cog):
         )
 
         embed.add_field(
-            name="🎯",
+            name="🎯 AVG Kills",
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️",
+            name="⚔️ K/D Ratio",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥",
+            name="🔥 Max Kills",
             value=str(stats.best_match_kills),
             inline=True
         )
@@ -990,7 +990,7 @@ class TournamentCog(commands.Cog):
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊",
+            name="📊 Last ELO Change",
             value=f"{elo_change:+d}",
             inline=True
         )
