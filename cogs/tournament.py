@@ -921,45 +921,45 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
 
-        # Ранг отдельным полем без названия
+        # Ранг отдельным полем без названия, жирным
         embed.add_field(
             name="",
-            value=rank_title,
+            value=f"**{rank_title}**",
             inline=False
         )
 
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name="🏆",
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт
         embed.add_field(
-            name="📈 Level",
-            value=f"{stats.level} | ⭐ {current_xp:,} / {xp_needed:,}",
+            name="📈",
+            value=f"{stats.level}\n⭐ {current_xp:,} / {xp_needed:,}",
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 Баланс",
+            name="💵",
             value=f"{balance:,} 🪙",
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="🎒 Предметов",
+            name="�️",
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲 Сыграно игр",
-            value=f"{total_games_played}",
+            name="🎲",
+            value=f"Сыграно\n{total_games_played} игр",
             inline=True
         )
 
