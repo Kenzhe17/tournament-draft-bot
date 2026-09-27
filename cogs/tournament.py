@@ -1056,46 +1056,47 @@ def get_rank_emoji(level: int) -> str:
     else:
         return "🥉 Bronze III"
 
-    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
-    async def rank(self, interaction: discord.Interaction) -> None:
-        """Показать текущий ранг и прогресс до следующего уровня."""
-        from storage.player_stats_store import player_stats_store
-        from utils.embeds import create_progress_bar
 
-        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+@app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
+async def rank(self, interaction: discord.Interaction) -> None:
+    """Показать текущий ранг и прогресс до следующего уровня."""
+    from storage.player_stats_store import player_stats_store
+    from utils.embeds import create_progress_bar
 
-        if not stats:
-            await interaction.response.send_message(
-                "❌ Сначала сыграйте хотя бы один турнир!",
-                ephemeral=True
-            )
-            return
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
-        rank_title = get_rank_emoji(stats.level)
-        current_xp, xp_needed = stats.get_level_progress()
-        progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
-        progress_bar = create_progress_bar(current_xp, xp_needed)
-
-        embed = discord.Embed(
-            title=f"🎮 {rank_title} Level {stats.level}",
-            color=discord.Color.dark_blue()
+    if not stats:
+        await interaction.response.send_message(
+            "❌ Сначала сыграйте хотя бы один турнир!",
+            ephemeral=True
         )
+        return
 
-        embed.add_field(
-            name="📊 Прогресс",
-            value=f"{progress_bar} ({progress_percent}%)",
-            inline=False
-        )
+    rank_title = get_rank_emoji(stats.level)
+    current_xp, xp_needed = stats.get_level_progress()
+    progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
+    progress_bar = create_progress_bar(current_xp, xp_needed)
 
-        embed.add_field(
-            name="📈 До следующего уровня",
-            value=f"Требуется: {xp_needed - current_xp} XP",
-            inline=False,
-        )
+    embed = discord.Embed(
+        title=f"🎮 {rank_title} Level {stats.level}",
+        color=discord.Color.dark_blue()
+    )
 
-        embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
+    embed.add_field(
+        name="📊 Прогресс",
+        value=f"{progress_bar} ({progress_percent}%)",
+        inline=False
+    )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    embed.add_field(
+        name="📈 До следующего уровня",
+        value=f"Требуется: {xp_needed - current_xp} XP",
+        inline=False,
+    )
+
+    embed.set_footer(text=f"Накопить XP можно через участие в турнирах и победы")
+
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
@@ -1460,83 +1461,83 @@ def get_rank_emoji(level: int) -> str:
         operation="Операция: set (установить), add (добавить), remove (убрать)"
     )
     async def admin_player(
-            self,
-            interaction: discord.Interaction,
-            player: discord.Member,
-            type: str,
-            amount: int,
-            operation: str = "set"
-        ) -> None:
-            """Изменить ELO или монеты игрока."""
-            # Только владелец бота может использовать эту команду
-            bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
-            if interaction.user.id != bot_owner_id:
-                await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
-                return
+        self,
+        interaction: discord.Interaction,
+        player: discord.Member,
+        type: str,
+        amount: int,
+        operation: str = "set"
+    ) -> None:
+        """Изменить ELO или монеты игрока."""
+        # Только владелец бота может использовать эту команду
+        bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
+        if interaction.user.id != bot_owner_id:
+            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
+            return
 
-            if type not in ["elo", "money"]:
-                await interaction.response.send_message(
-                    "❌ Тип должен быть 'elo' или 'money'.",
-                    ephemeral=True
-                )
-                return
+        if type not in ["elo", "money"]:
+            await interaction.response.send_message(
+                "❌ Тип должен быть 'elo' или 'money'.",
+                ephemeral=True
+            )
+            return
 
-            if operation not in ["set", "add", "remove"]:
-                await interaction.response.send_message(
-                    "❌ Операция должна быть 'set', 'add' или 'remove'.",
-                    ephemeral=True
-                )
-                return
+        if operation not in ["set", "add", "remove"]:
+            await interaction.response.send_message(
+                "❌ Операция должна быть 'set', 'add' или 'remove'.",
+                ephemeral=True
+            )
+            return
 
-            if type == "elo":
-                from storage.player_stats_store import player_stats_store
+        if type == "elo":
+            from storage.player_stats_store import player_stats_store
 
-                stats = await player_stats_store.get(interaction.guild_id, player.id)
-                current_elo = stats.elo if stats else 1000
+            stats = await player_stats_store.get(interaction.guild_id, player.id)
+            current_elo = stats.elo if stats else 1000
 
-                if operation == "set":
-                    new_elo = amount
-                elif operation == "add":
-                    new_elo = current_elo + amount
-                else:  # remove
-                    new_elo = current_elo - amount
+            if operation == "set":
+                new_elo = amount
+            elif operation == "add":
+                new_elo = current_elo + amount
+            else:  # remove
+                new_elo = current_elo - amount
 
-                await player_stats_store.update_player(
-                    interaction.guild_id,
-                    player.id,
-                    player.display_name,
-                    result="none",
-                    set_elo=new_elo
-                )
+            await player_stats_store.update_player(
+                interaction.guild_id,
+                player.id,
+                player.display_name,
+                result="none",
+                set_elo=new_elo
+            )
 
-                await interaction.response.send_message(
-                    f"✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}",
-                    ephemeral=True
-                )
-            else:  # money
-                from storage.user_balance_store import user_balance_store
+            await interaction.response.send_message(
+                f"✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}",
+                ephemeral=True
+            )
+        else:  # money
+            from storage.user_balance_store import user_balance_store
 
-                current_balance = await user_balance_store.get_balance(interaction.guild_id, player.id)
+            current_balance = await user_balance_store.get_balance(interaction.guild_id, player.id)
 
-                if operation == "set":
-                    new_balance = amount
-                    # Calculate difference to add/remove
-                    diff = new_balance - current_balance
-                    if diff > 0:
-                        await user_balance_store.add_balance(interaction.guild_id, player.id, diff)
-                    elif diff < 0:
-                        await user_balance_store.remove_balance(interaction.guild_id, player.id, abs(diff))
-                elif operation == "add":
-                    new_balance = current_balance + amount
-                    await user_balance_store.add_balance(interaction.guild_id, player.id, amount)
-                else:  # remove
-                    new_balance = current_balance - amount
-                    await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
+            if operation == "set":
+                new_balance = amount
+                # Calculate difference to add/remove
+                diff = new_balance - current_balance
+                if diff > 0:
+                    await user_balance_store.add_balance(interaction.guild_id, player.id, diff)
+                elif diff < 0:
+                    await user_balance_store.remove_balance(interaction.guild_id, player.id, abs(diff))
+            elif operation == "add":
+                new_balance = current_balance + amount
+                await user_balance_store.add_balance(interaction.guild_id, player.id, amount)
+            else:  # remove
+                new_balance = current_balance - amount
+                await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
 
-                await interaction.response.send_message(
-                    f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
-                    ephemeral=True
-                )
+            await interaction.response.send_message(
+                f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
+                ephemeral=True
+            )
 
     @app_commands.command(name="проверка", description="Тестовая команда")
     async def проверка(self, interaction: discord.Interaction) -> None:
