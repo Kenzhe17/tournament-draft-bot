@@ -145,8 +145,7 @@ class GameSelect(Select):
                 discord.SelectOption(
                     label=f"{status_emoji} {game.name}",
                     value=game.id,
-                    description=game.short_description[:100],
-                    emoji=game.emoji
+                    description=game.short_description[:100]
                 )
             )
 
