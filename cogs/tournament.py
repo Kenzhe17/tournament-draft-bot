@@ -1056,54 +1056,6 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
-def get_rank_emoji(level: int) -> str:
-    """Получить эмодзи и название ранга по уровню."""
-    if level >= 100:
-        return "👑 GrandMaster"
-    elif level >= 93:
-        return "🔱 Expert I"
-    elif level >= 86:
-        return "🔱 Expert II"
-    elif level >= 80:
-        return "🔱 Expert III"
-    elif level >= 73:
-        return "🎯 Master I"
-    elif level >= 66:
-        return "🎯 Master II"
-    elif level >= 60:
-        return "🎯 Master III"
-    elif level >= 54:
-        return "💎 Diamond I"
-    elif level >= 48:
-        return "💎 Diamond II"
-    elif level >= 42:
-        return "💎 Diamond III"
-    elif level >= 37:
-        return "🌪️ Platinum I"
-    elif level >= 32:
-        return "🌪️ Platinum II"
-    elif level >= 27:
-        return "🌪️ Platinum III"
-    elif level >= 23:
-        return "🥇 Gold I"
-    elif level >= 19:
-        return "🥇 Gold II"
-    elif level >= 15:
-        return "🥇 Gold III"
-    elif level >= 12:
-        return "🥈 Silver I"
-    elif level >= 9:
-        return "🥈 Silver II"
-    elif level >= 6:
-        return "🥈 Silver III"
-    elif level >= 4:
-        return "🥉 Bronze I"
-    elif level >= 2:
-        return "🥉 Bronze II"
-    else:
-        return "🥉 Bronze III"
-
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
         """Показать статистику ставок пользователя."""
@@ -1751,6 +1703,54 @@ def get_rank_emoji(level: int) -> str:
         except discord.NotFound:
             # Interaction expired, can't respond
             pass
+
+
+def get_rank_emoji(level: int) -> str:
+    """Получить эмодзи и название ранга по уровню."""
+    if level >= 100:
+        return "👑 GrandMaster"
+    elif level >= 93:
+        return "🔱 Expert I"
+    elif level >= 86:
+        return "🔱 Expert II"
+    elif level >= 80:
+        return "🔱 Expert III"
+    elif level >= 73:
+        return "🎯 Master I"
+    elif level >= 66:
+        return "🎯 Master II"
+    elif level >= 60:
+        return "🎯 Master III"
+    elif level >= 54:
+        return "💎 Diamond I"
+    elif level >= 48:
+        return "💎 Diamond II"
+    elif level >= 42:
+        return "💎 Diamond III"
+    elif level >= 37:
+        return "🌪️ Platinum I"
+    elif level >= 32:
+        return "🌪️ Platinum II"
+    elif level >= 27:
+        return "🌪️ Platinum III"
+    elif level >= 23:
+        return "🥇 Gold I"
+    elif level >= 19:
+        return "🥇 Gold II"
+    elif level >= 15:
+        return "🥇 Gold III"
+    elif level >= 12:
+        return "🥈 Silver I"
+    elif level >= 9:
+        return "🥈 Silver II"
+    elif level >= 6:
+        return "🥈 Silver III"
+    elif level >= 4:
+        return "🥉 Bronze I"
+    elif level >= 2:
+        return "🥉 Bronze II"
+    else:
+        return "🥉 Bronze III"
 
 
 async def setup(bot: TournamentBot) -> None:
