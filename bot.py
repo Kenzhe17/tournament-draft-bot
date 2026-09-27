@@ -68,7 +68,7 @@ class TournamentBot(commands.Bot):
                 
                 # Sync games from config to database
                 try:
-                    from games_config import sync_games_to_db
+                    from storage.games_config import sync_games_to_db
                     synced = await sync_games_to_db(0)  # guild_id not needed for sync
                     logger.info(f"Synced {synced} games from config to database")
                 except Exception as e:
