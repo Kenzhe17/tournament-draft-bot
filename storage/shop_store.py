@@ -185,6 +185,101 @@ class InventoryStore:
         inventory = self.get_player_inventory(guild_id, user_id)
         return [cosmetic for cosmetic in inventory if cosmetic.equipped]
 
+    def remove_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
+        """Удалить косметический предмет из инвентаря."""
+        key = self._get_key(guild_id, user_id)
+        if key not in self._inventory:
+            return False
+
+        for i, cosmetic in enumerate(self._inventory[key]):
+            if cosmetic.item_id == item_id:
+                self._inventory[key].pop(i)
+                self.save()
+                return True
+
+        return False
+
+    def transfer_cosmetic(self, from_guild: int, from_user: int, to_guild: int, to_user: int, item_id: str) -> dict:
+        """Перенести предмет от одного игрока к другому.
+        
+        Args:
+            from_guild: Sender's guild ID
+            from_user: Sender's user ID
+            to_guild: Receiver's guild ID
+            to_user: Receiver's user ID
+            item_id: Item ID to transfer
+            
+        Returns:
+            Dict with transfer details: {
+                'success': bool,
+                'compensated': bool,
+                'compensation_amount': int,
+                'item_name': str,
+                'item_price': int
+            }
+        """
+        item = shop_store.get_item(item_id)
+        if not item:
+            return {
+                'success': False,
+                'compensated': False,
+                'compensation_amount': 0,
+                'item_name': '',
+                'item_price': 0
+            }
+
+        # Remove from sender
+        removed = self.remove_cosmetic(from_guild, from_user, item_id)
+        if not removed:
+            return {
+                'success': False,
+                'compensated': False,
+                'compensation_amount': 0,
+                'item_name': item.name,
+                'item_price': item.price
+            }
+
+        # Check if receiver already has this item
+        receiver_inventory = self.get_player_inventory(to_guild, to_user)
+        has_item = any(cosmetic.item_id == item_id for cosmetic in receiver_inventory)
+
+        if has_item:
+            # Receiver already has item - compensate sender
+            compensation = item.price
+            from models.shop_item import PlayerCosmetic
+            cosmetic = PlayerCosmetic(
+                guild_id=from_guild,
+                user_id=from_user,
+                item_id=item_id,
+                equipped=False
+            )
+            self.add_cosmetic(cosmetic)  # Return item to sender
+            return {
+                'success': False,
+                'compensated': True,
+                'compensation_amount': compensation,
+                'item_name': item.name,
+                'item_price': item.price
+            }
+
+        # Add to receiver
+        from models.shop_item import PlayerCosmetic
+        cosmetic = PlayerCosmetic(
+            guild_id=to_guild,
+            user_id=to_user,
+            item_id=item_id,
+            equipped=False
+        )
+        self.add_cosmetic(cosmetic)
+
+        return {
+            'success': True,
+            'compensated': False,
+            'compensation_amount': 0,
+            'item_name': item.name,
+            'item_price': item.price
+        }
+
     def enable_db(self) -> None:
         """Включить режим базы данных."""
         self._use_db = True

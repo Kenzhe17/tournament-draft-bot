@@ -163,5 +163,57 @@ class UserBalanceStore:
             self.save()
             return balance
 
+    async def transfer_balance(self, from_guild: int, from_user: int, to_guild: int, to_user: int, amount: int, fee_percent: float = 0.1) -> dict:
+        """Transfer coins from one user to another with fee.
+        
+        Args:
+            from_guild: Sender's guild ID
+            from_user: Sender's user ID
+            to_guild: Receiver's guild ID
+            to_user: Receiver's user ID
+            amount: Amount to transfer (before fee)
+            fee_percent: Fee percentage (default 0.1 = 10%)
+            
+        Returns:
+            Dict with transfer details: {
+                'amount': amount,
+                'fee': fee_amount,
+                'total_deducted': total,
+                'from_balance': sender_new_balance,
+                'to_balance': receiver_new_balance
+            }
+        """
+        if amount < 0:
+            raise ValueError("Amount must be positive")
+        
+        if from_user == to_user:
+            raise ValueError("Cannot transfer to yourself")
+        
+        fee = int(amount * fee_percent)
+        total = amount + fee
+        
+        # Check sender has enough balance
+        sender_balance = await self.get_balance(from_guild, from_user)
+        if sender_balance < total:
+            raise ValueError(f"Insufficient balance. Need {total} but have {sender_balance}")
+        
+        # Deduct from sender
+        await self.subtract_balance(from_guild, from_user, total)
+        
+        # Add to receiver
+        await self.add_balance(to_guild, to_user, amount)
+        
+        # Get new balances
+        sender_new_balance = await self.get_balance(from_guild, from_user)
+        receiver_new_balance = await self.get_balance(to_guild, to_user)
+        
+        return {
+            'amount': amount,
+            'fee': fee,
+            'total_deducted': total,
+            'from_balance': sender_new_balance,
+            'to_balance': receiver_new_balance
+        }
+
 
 user_balance_store = UserBalanceStore()

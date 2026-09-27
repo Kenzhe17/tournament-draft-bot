@@ -1660,6 +1660,121 @@ class TournamentCog(commands.Cog):
 
     #     await self.bot.update_tournament_message(interaction.guild, tournament)
 
+    @app_commands.command(name="pay", description="Передать монеты другому игроку")
+    @app_commands.describe(user="Игрок", amount="Сумма")
+    async def pay(self, interaction: discord.Interaction, user: discord.User, amount: int) -> None:
+        """Передать монеты с комиссией 10%."""
+        if amount < 100:
+            await interaction.response.send_message("❌ Минимальная сумма: 100 🪙", ephemeral=True)
+            return
+        
+        if user.id == interaction.user.id:
+            await interaction.response.send_message("❌ Нельзя передать самому себе", ephemeral=True)
+            return
+        
+        try:
+            result = await user_balance_store.transfer_balance(
+                interaction.guild_id, interaction.user.id,
+                interaction.guild_id, user.id,
+                amount, 0.1
+            )
+            
+            embed = discord.Embed(
+                title="💸 Передача монет",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
+            embed.add_field(name="👤 Получил:", value=user.mention, inline=True)
+            embed.add_field(name="💰 Сумма:", value=f"{result['amount']:,} 🪙", inline=True)
+            embed.add_field(name="📊 Комиссия:", value=f"{result['fee']:,} 🪙 (10%)", inline=True)
+            embed.add_field(name="💳 Всего списано:", value=f"{result['total_deducted']:,} 🪙", inline=True)
+            embed.add_field(name="📉 Баланс отправителя:", value=f"{result['from_balance']:,} 🪙", inline=True)
+            embed.add_field(name="📈 Баланс получателя:", value=f"{result['to_balance']:,} 🪙", inline=True)
+            
+            await interaction.response.send_message(embed=embed)
+        except ValueError as e:
+            await interaction.response.send_message(f"❌ {str(e)}", ephemeral=True)
+
+    @app_commands.command(name="gift", description="Передать предмет другому игроку")
+    @app_commands.describe(user="Игрок", item_id="ID предмета")
+    async def gift(self, interaction: discord.Interaction, user: discord.User, item_id: str) -> None:
+        """Передать предмет с комиссией 10% от стоимости."""
+        if user.id == interaction.user.id:
+            await interaction.response.send_message("❌ Нельзя подарить самому себе", ephemeral=True)
+            return
+        
+        # Get item info
+        item = shop_store.get_item(item_id)
+        if not item:
+            await interaction.response.send_message("❌ Предмет не найден", ephemeral=True)
+            return
+        
+        # Check if sender has the item
+        sender_inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+        has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)
+        
+        if not has_item:
+            await interaction.response.send_message("❌ У вас нет этого предмета", ephemeral=True)
+            return
+        
+        # Calculate fee
+        fee = int(item.price * 0.1)  # 10% комиссия
+        
+        # Check sender has enough balance for fee
+        sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if sender_balance < fee:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет для комиссии. Нужно: {fee} 🪙, есть: {sender_balance} 🪙",
+                ephemeral=True
+            )
+            return
+        
+        # Deduct fee
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, fee)
+        
+        # Transfer item
+        result = inventory_store.transfer_cosmetic(
+            interaction.guild_id, interaction.user.id,
+            interaction.guild_id, user.id,
+            item_id
+        )
+        
+        if result['success']:
+            embed = discord.Embed(
+                title="🎁 Подарок предмета",
+                color=discord.Color.gold()
+            )
+            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
+            embed.add_field(name="👤 Получил:", value=user.mention, inline=True)
+            embed.add_field(name="🎁 Предмет:", value=result['item_name'], inline=True)
+            embed.add_field(name="💰 Стоимость:", value=f"{result['item_price']:,} 🪙", inline=True)
+            embed.add_field(name="📊 Комиссия:", value=f"{fee:,} 🪙 (10%)", inline=True)
+            
+            await interaction.response.send_message(embed=embed)
+        elif result['compensated']:
+            # Return fee since transfer failed
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
+            
+            embed = discord.Embed(
+                title="❌ Подарок не удался",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
+            embed.add_field(name="👤 Получатель:", value=user.mention, inline=True)
+            embed.add_field(name="🎁 Предмет:", value=result['item_name'], inline=True)
+            embed.add_field(name="❌ Причина:", value="У получателя уже есть этот предмет", inline=False)
+            embed.add_field(name="💰 Компенсация:", value=f"{result['compensation_amount']:,} 🪙 (предмет возвращён)", inline=True)
+            
+            await interaction.response.send_message(embed=embed)
+        else:
+            # Return fee since transfer failed
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
+            
+            await interaction.response.send_message(
+                f"❌ Не удалось передать предмет: {result['item_name']}",
+                ephemeral=True
+            )
+
     async def cog_app_command_error(
         self,
         interaction: discord.Interaction,
