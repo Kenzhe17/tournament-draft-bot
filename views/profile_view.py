@@ -146,12 +146,20 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed
         import discord
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name} | {rank_title}",
+            title=f"👤 Профиль: {stats.name}",
+            description=rank_title,
             color=discord.Color.dark_blue()
         )
         
         # Always use Discord avatar
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+
+        # Пустая строка для отступа
+        embed.add_field(
+            name="",
+            value="",
+            inline=False
+        )
 
         # ELO
         embed.add_field(

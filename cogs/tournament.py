@@ -916,10 +916,18 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name} | {rank_title}",
+            title=f"👤 Профиль: {stats.name}",
+            description=rank_title,
             color=discord.Color.dark_blue()
         )
         embed.set_thumbnail(url=target_user.avatar.url if target_user.avatar else target_user.default_avatar.url)
+
+        # Пустая строка для отступа
+        embed.add_field(
+            name="",
+            value="",
+            inline=False
+        )
 
         # ELO
         embed.add_field(
