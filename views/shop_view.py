@@ -995,7 +995,7 @@ class BuyCaseButton(discord.ui.Button):
                 chance_text = "50%"
             elif result["type"] == "item":
                 status_icon = "🎁"
-                result_text = f"{result['value'].name}"
+                result_text = result['value']  # Now it's just the name string
                 # Показать стандартный шанс предмета из описания
                 chance_text = "20%"
             else:

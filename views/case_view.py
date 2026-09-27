@@ -83,8 +83,9 @@ class CaseOpenButton(discord.ui.Button):
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":
-            item = result["value"]
-            message = f"🎉 Выпало: **{item.name}** ({item.rarity.value})!"
+            item_name = result['value']
+            item_rarity = result.get('rarity', 'common')
+            message = f"🎉 Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.dark_green()
             reaction_emoji = "🎉"
         else:
@@ -211,8 +212,9 @@ class CaseSelect(discord.ui.Select):
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":
-            item = result["value"]
-            message = f"🎉 Выпало: **{item.name}** ({item.rarity.value})!"
+            item_name = result['value']
+            item_rarity = result.get('rarity', 'common')
+            message = f"🎉 Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.dark_green()
             reaction_emoji = "🎉"
         else:

@@ -260,7 +260,7 @@ class CaseStore:
                             equipped=False
                         )
                         inventory_store.add_cosmetic(cosmetic)
-                        result = {"type": "item", "value": item, "rarity": item.rarity.value}
+                        result = {"type": "item", "value": item.name, "rarity": item.rarity.value, "item_id": item.id}
             else:
                 result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         else:
