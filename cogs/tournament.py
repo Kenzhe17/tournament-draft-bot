@@ -1873,6 +1873,23 @@ def get_rank_emoji(level: int) -> str:
         return "🥉 Bronze III"
 
 
+    @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
+    async def whoami(self, interaction: discord.Interaction) -> None:
+        """Узнать кто ты на самом деле."""
+        import random
+        from storage.whoami_responses import WHOAMI_RESPONSES
+
+        response = random.choice(WHOAMI_RESPONSES)
+
+        embed = discord.Embed(
+            title="✨ Кто ты?",
+            description=response,
+            color=discord.Color.random()
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+
 async def setup(bot: TournamentBot) -> None:
     """Загрузить ког."""
     await bot.add_cog(TournamentCog(bot))
