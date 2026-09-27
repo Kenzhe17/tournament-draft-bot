@@ -92,7 +92,7 @@ class GameCategorySelect(discord.ui.Select):
             color=color,
         )
 
-        view = GamesBackView()
+        view = GamesBackView(category)
         view.add_item(GameLaunchSelect(category_games))
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -165,18 +165,20 @@ class GameLaunchSelect(discord.ui.Select):
         embed.add_field(name="📊 Сложность", value=game.difficulty.capitalize(), inline=True)
 
         # Add play button
-        view = GameCardView(command_name)
+        view = GameCardView(command_name, game.category)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GameCardView(View):
     """View with play button for game card."""
 
-    def __init__(self, command_name: str):
+    def __init__(self, command_name: str, category: str):
         super().__init__(timeout=180)
         self.command_name = command_name
+        self.category = category
         self.add_item(PlayButton(command_name))
-        self.add_item(BackButton())
+        self.add_item(BackToGamesListButton(category))
+        self.add_item(BackToMainMenuButton())
 
 
 class PlayButton(discord.ui.Button):
@@ -205,14 +207,65 @@ class PlayButton(discord.ui.Button):
             )
 
 
-class BackButton(discord.ui.Button):
-    """Button to go back to game list."""
+class BackToGamesListButton(discord.ui.Button):
+    """Button to go back to games list in category."""
 
-    def __init__(self):
+    def __init__(self, category: str):
         super().__init__(
             label="🔙 Назад",
             style=discord.ButtonStyle.secondary,
-            custom_id="card_back"
+            custom_id=f"back_to_list_{category}"
+        )
+        self.category = category
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Go back to games list in category."""
+        category = self.category
+        games = await minigame_store.get_available_games()
+        category_games = [g for g in games if g.category == category]
+
+        # Define category info with colors
+        category_info = {
+            "luck": ("🎲 Игры на удачу", "Игры на удачу с механикой ставок", discord.Color.dark_blue()),
+            "quiz": ("🧠 Викторины", "Викторины и головоломки", discord.Color.dark_purple()),
+            "casino": ("🎰 Казино", "Казино и ставки", discord.Color.gold()),
+            "mixed": ("🎮 Смешанные", "Разные игровые механики", discord.Color.green()),
+            "pvp": ("⚔️ PvP игры", "Игры против других игроков", discord.Color.red()),
+        }
+
+        title, description, color = category_info.get(category, ("Игры", "", discord.Color.blue()))
+
+        if not category_games:
+            await interaction.response.send_message(
+                f"🚧 Категория '{title}' в разработке", ephemeral=True
+            )
+            return
+
+        # Create games list without descriptions
+        games_list = "\n".join([
+            f"• **{game.name}** - `/{game.command_name}`" 
+            for game in category_games
+        ])
+
+        embed = discord.Embed(
+            title=title,
+            description=f"{description}\n\n{games_list}",
+            color=color,
+        )
+
+        view = GamesBackView(category)
+        view.add_item(GameLaunchSelect(category_games))
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BackToMainMenuButton(discord.ui.Button):
+    """Button to go back to main menu."""
+
+    def __init__(self):
+        super().__init__(
+            label="🏠 Главное меню",
+            style=discord.ButtonStyle.secondary,
+            custom_id="back_to_main"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -228,10 +281,12 @@ class BackButton(discord.ui.Button):
 
 
 class GamesBackView(View):
-    """View with back button."""
+    """View with back button to main menu."""
 
-    def __init__(self):
+    def __init__(self, category: str):
         super().__init__(timeout=180)
+        self.category = category
+        self.add_item(BackToMainMenuButton())
 
     @discord.ui.button(label="🔙 Назад", style=discord.ButtonStyle.secondary, custom_id="games_back")
     async def back_button(self, interaction: discord.Interaction, button: Button) -> None:

@@ -21,6 +21,7 @@ class Minigame:
     is_pvp: bool
     is_pve: bool
     is_active: bool = True
+    command_name: str = ""  # Команда для запуска игры
 
 
 @dataclass

@@ -41,6 +41,7 @@ class MinigameStore:
                             is_pvp=row["is_pvp"],
                             is_pve=row["is_pve"],
                             is_active=row["is_active"],
+                            command_name=row.get("command_name", row["id"]),  # Fallback to id if column doesn't exist
                         )
                         for row in rows
                     ]
@@ -73,6 +74,7 @@ class MinigameStore:
                         is_pvp=row["is_pvp"],
                         is_pve=row["is_pve"],
                         is_active=row["is_active"],
+                        command_name=row.get("command_name", row["id"]),
                     )
                     self._cache[game_id] = game
                     return game

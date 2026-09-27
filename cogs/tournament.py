@@ -567,14 +567,14 @@ class TournamentCog(commands.Cog):
         """Показать список мини-игр."""
         from views.games_view import GamesMainView
 
-    #     embed = discord.Embed(
-    #         title="🎮 Мини-игры",
-    #         description="Выберите категорию игр и поставьте монеты!",
-    #         color=discord.Color.dark_blue(),
-    #     )
+        embed = discord.Embed(
+            title="🎮 Мини-игры",
+            description="Выберите категорию игр и поставьте монеты!",
+            color=discord.Color.dark_blue(),
+        )
 
-    #     view = GamesMainView()
-    #     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view = GamesMainView()
+        await interaction.response.send_message(embed=embed, view=view)
 
     # @app_commands.command(name="play", description="Запустить мини-игру")
     # @app_commands.describe(game="Выберите игру для запуска")
