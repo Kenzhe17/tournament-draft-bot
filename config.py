@@ -17,6 +17,9 @@ DATA_FILE = DATA_DIR / "tournaments.json"
 # Токен Discord-бота
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 
+# ID владельца бота (для команды /reset)
+BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
+
 # PostgreSQL Database
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 

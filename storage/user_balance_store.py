@@ -215,5 +215,21 @@ class UserBalanceStore:
             'to_balance': receiver_new_balance
         }
 
+    async def reset_user(self, guild_id: int, user_id: int) -> None:
+        """Reset user balance to default (100 coins)."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM user_balance WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+        else:
+            key = f"{guild_id}:{user_id}"
+            if key in self._balances:
+                del self._balances[key]
+                self.save()
+
 
 user_balance_store = UserBalanceStore()

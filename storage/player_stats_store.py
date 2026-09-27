@@ -346,6 +346,19 @@ class PlayerStatsStore:
             self._stats = {}
             self.save()
 
+    async def reset_player(self, guild_id: int, user_id: int) -> None:
+        """Сбросить статистику конкретного игрока."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM player_stats WHERE guild_id = $1 AND user_id = $2", guild_id, user_id)
+        else:
+            key = f"{guild_id}:{user_id}"
+            if key in self._stats:
+                del self._stats[key]
+                self.save()
+
     def enable_db(self) -> None:
         """Enable database mode."""
         self._use_db = True

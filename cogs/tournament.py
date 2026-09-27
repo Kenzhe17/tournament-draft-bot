@@ -18,8 +18,12 @@ from models.tournament import (
     TournamentSize,
 )
 from storage.json_store import store
+from storage.player_stats_store import player_stats_store
+from storage.user_balance_store import user_balance_store
+from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org
+from config import BOT_OWNER_ID
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -1927,6 +1931,44 @@ def get_rank_emoji(level: int) -> str:
         )
 
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
+    @app_commands.describe(user="Пользователь для сброса статистики")
+    async def reset(self, interaction: discord.Interaction, user: discord.User) -> None:
+        """Сбросить статистику игрока (только для владельца бота)."""
+        # Check if user is bot owner
+        if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Эта команда доступна только владельцу бота.",
+                ephemeral=True
+            )
+            return
+
+        guild_id = interaction.guild_id
+        user_id = user.id
+        user_name = user.display_name
+
+        try:
+            # Reset player stats
+            await player_stats_store.reset_player(guild_id, user_id)
+            
+            # Reset user balance
+            await user_balance_store.reset_user(guild_id, user_id)
+            
+            # Reset betting stats
+            await betting_stats_store.reset_user(guild_id, user_id)
+            
+            await interaction.response.send_message(
+                f"✅ Статистика пользователя {user_name} успешно сброшена!",
+                ephemeral=True
+            )
+            logger.info(f"Reset stats for user {user_name} (ID: {user_id}) in guild {guild_id}")
+        except Exception as e:
+            logger.error(f"Error resetting user stats: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Произошла ошибка при сбросе статистики: {e}",
+                ephemeral=True
+            )
 
 
 async def setup(bot: TournamentBot) -> None:

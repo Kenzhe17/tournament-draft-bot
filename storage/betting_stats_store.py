@@ -131,5 +131,16 @@ class BettingStatsStore:
         else:
             return []
 
+    async def reset_user(self, guild_id: int, user_id: int) -> None:
+        """Reset betting statistics for a specific user."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM betting_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+
 
 betting_stats_store = BettingStatsStore()
