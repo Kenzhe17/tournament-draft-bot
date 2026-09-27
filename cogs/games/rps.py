@@ -211,7 +211,7 @@ class PvPChallengeView(RPSView):
         self.bet = bet
         self.channel_id = channel_id
         self.message_id = message_id
-        self.bot = bot
+        self.bot_instance = bot  # Store bot instance for timeout handler
     
     async def on_timeout(self) -> None:
         """Handle timeout - auto-decline the challenge."""
@@ -228,7 +228,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         try:
-            channel = self.bot.get_channel(self.channel_id)
+            channel = self.bot_instance.get_channel(self.channel_id)
             if channel:
                 msg = await channel.fetch_message(self.message_id)
                 embed = discord.Embed(
@@ -488,7 +488,7 @@ class PvPChallengeView(RPSView):
     async def send_choice_views(self, interaction: discord.Interaction, game: GameSession):
         """Update main message to show choice phase."""
         # Instead of sending new messages, update the main challenge message
-        view = PvPChoiceView(self.game_id, self.initiator_id, self.opponent_id, self.bet, is_initiator=None, is_main=True)
+        view = PvPChoiceView(self.game_id, self.initiator_id, self.opponent_id, self.bet, is_initiator=None, is_main=True, bot=self.bot_instance)
         embed = discord.Embed(
             title="⚔️ Выберите ваш ход",
             description=f"<@{self.initiator_id}> vs <@{self.opponent_id}>\n\n"
@@ -499,7 +499,7 @@ class PvPChallengeView(RPSView):
         )
         
         try:
-            channel = self.bot.get_channel(self.channel_id)
+            channel = self.bot_instance.get_channel(self.channel_id)
             if channel and self.message_id:
                 msg = await channel.fetch_message(self.message_id)
                 await msg.edit(embed=embed, view=view)
@@ -510,13 +510,14 @@ class PvPChallengeView(RPSView):
 class PvPChoiceView(RPSView):
     """View for PvP move selection."""
     
-    def __init__(self, game_id: str, user_id: int, opponent_id: int, bet: int, is_initiator: Optional[bool] = None, is_main: bool = False):
+    def __init__(self, game_id: str, user_id: int, opponent_id: int, bet: int, is_initiator: Optional[bool] = None, is_main: bool = False, bot: Optional[commands.Bot] = None):
         super().__init__(game_id, timeout=40)
         self.user_id = user_id
         self.opponent_id = opponent_id
         self.bet = bet
         self.is_initiator = is_initiator
         self.is_main = is_main  # If True, this is the main message with buttons for both
+        self.bot_instance = bot  # Store bot instance for message access
     
     @discord.ui.button(label="Камень", emoji="🪨", style=discord.ButtonStyle.primary, custom_id="rps:rock")
     async def btn_rock(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -654,7 +655,8 @@ class PvPChoiceView(RPSView):
         # Update main message with result (no need to delete messages anymore)
         if game.message_id:
             try:
-                channel = self.bot.get_channel(game.channel_id)
+                # Get bot instance from the view
+                channel = interaction.client.get_channel(game.channel_id)
                 if channel:
                     msg = await channel.fetch_message(game.message_id)
                     await msg.edit(embed=embed, view=None)
