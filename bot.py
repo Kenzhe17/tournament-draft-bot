@@ -64,6 +64,14 @@ class TournamentBot(commands.Bot):
                 bet_store.enable_db()
                 betting_stats_store.enable_db()
                 logger.info("Database initialized and enabled")
+                
+                # Sync games from config to database
+                try:
+                    from games.games_config import sync_games_to_db
+                    synced = await sync_games_to_db(0)  # guild_id not needed for sync
+                    logger.info(f"Synced {synced} games from config to database")
+                except Exception as e:
+                    logger.error(f"Failed to sync games from config: {e}")
             except Exception as e:
                 logger.error("Failed to initialize database: %s", e)
 
