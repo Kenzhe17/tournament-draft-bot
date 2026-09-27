@@ -493,8 +493,13 @@ class TournamentCog(commands.Cog):
         command = self.bot.tree.get_command(game)
 
         if command:
-            # Execute the command
-            await command.callback(interaction)
+            # Show instructions on how to use the command with parameters
+            await interaction.response.send_message(
+                f"🎮 Для запуска игры используйте команду:\n"
+                f"**/{game}**\n\n"
+                f"ℹ️ Эта игра может требовать дополнительные параметры (например, ставку или соперника).",
+                ephemeral=True
+            )
         else:
             await interaction.response.send_message(
                 f"❌ Игра '{game}' не найдена.",
