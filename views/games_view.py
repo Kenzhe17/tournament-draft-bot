@@ -76,7 +76,7 @@ class GameCategorySelect(discord.ui.Select):
 
         if not category_games:
             await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке", ephemeral=True
+                f"🚧 Категория '{title}' в разработке"
             )
             return
 
@@ -104,6 +104,8 @@ class GameLaunchSelect(discord.ui.Select):
         options = []
         for game in games:
             command_name = getattr(game, 'command_name', game.id)
+            if not command_name:
+                command_name = game.id  # Fallback to id if command_name is empty
             options.append(
                 discord.SelectOption(
                     label=game.name,
@@ -128,8 +130,7 @@ class GameLaunchSelect(discord.ui.Select):
 
         if not game:
             await interaction.response.send_message(
-                f"❌ Игра не найдена.",
-                ephemeral=True
+                f"🚧 Игра пока в разработке"
             )
             return
 
@@ -202,8 +203,7 @@ class PlayButton(discord.ui.Button):
             await command.callback(interaction)
         else:
             await interaction.response.send_message(
-                f"❌ Команда '{self.command_name}' не найдена.",
-                ephemeral=True
+                f"🚧 Игра '{self.command_name}' пока в разработке"
             )
 
 
@@ -237,7 +237,7 @@ class BackToGamesListButton(discord.ui.Button):
 
         if not category_games:
             await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке", ephemeral=True
+                f"🚧 Категория '{title}' в разработке"
             )
             return
 
