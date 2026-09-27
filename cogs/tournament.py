@@ -1763,6 +1763,65 @@ def get_rank_emoji(level: int) -> str:
 
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
+    @app_commands.guild_only()
+    async def daily(self, interaction: discord.Interaction) -> None:
+        """Получить ежедневный бонус."""
+        from storage.db import get_pool
+        from storage.user_balance_store import user_balance_store
+        from datetime import datetime, timedelta
+
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Get last claim time
+            record = await conn.fetchrow(
+                "SELECT last_claim FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                guild_id, user_id
+            )
+
+            now = datetime.now()
+            cooldown_hours = 12
+
+            if record and record["last_claim"]:
+                last_claim = record["last_claim"]
+                time_passed = now - last_claim
+                
+                if time_passed < timedelta(hours=cooldown_hours):
+                    # Calculate remaining time
+                    remaining = timedelta(hours=cooldown_hours) - time_passed
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    
+                    await interaction.response.send_message(
+                        f"⏰ Вы уже получили бонус!\n"
+                        f"Следующий бонус через: {hours}ч {minutes}мин",
+                        ephemeral=True
+                    )
+                    return
+
+            # Give the bonus
+            await user_balance_store.add_balance(guild_id, user_id, 100)
+
+            # Update last claim time
+            await conn.execute(
+                """
+                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, last_streak_date)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, user_id) 
+                DO UPDATE SET last_claim = $3, last_streak_date = $4
+                """,
+                guild_id, user_id, now, now.date()
+            )
+
+            await interaction.response.send_message(
+                "✅ Вы получили 100 🪙 ежедневного бонуса!\n"
+                f"Следующий бонус будет доступен через 12 часов.",
+                ephemeral=False
+            )
+
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
     @app_commands.guild_only()
