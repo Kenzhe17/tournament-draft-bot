@@ -32,6 +32,21 @@ logger = logging.getLogger(__name__)
 
 
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
+
+
+class GameCog(commands.Cog):
+    """Ког с командами игр."""
+    
+    def __init__(self, bot: TournamentBot):
+        self.bot = bot
+    
+    @app_commands.command(name="сыграть", description="Сыграть в игру")
+    async def play(self, interaction: discord.Interaction):
+        """Автоматически показать команду для запуска игры."""
+        await interaction.response.send_message(
+            "🎮 `/rps`",
+            ephemeral=True
+        )
     """Удалить ephemeral-ответ через указанное время."""
     await asyncio.sleep(delay)
     try:
@@ -1806,6 +1821,7 @@ def get_rank_emoji(level: int) -> str:
 async def setup(bot: TournamentBot) -> None:
     """Загрузить ког."""
     await bot.add_cog(TournamentCog(bot))
+    await bot.add_cog(GameCog(bot))
 
 
 
