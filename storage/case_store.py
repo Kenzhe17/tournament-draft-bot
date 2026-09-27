@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from models.case import Case
+from models.shop_item import CosmeticRarity
 from storage.shop_store import shop_store
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
@@ -218,26 +219,36 @@ class CaseStore:
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common"}
         elif drop_type.startswith("item_"):
-            # Выбрать случайный предмет из категории
-            category = drop_type.replace("item_", "")
-            items = shop_store.get_items_by_category(category)
-            if items:
-                item = random.choice(items)
-                # Добавить в инвентарь
-                from models.shop_item import PlayerCosmetic
-                cosmetic = PlayerCosmetic(
-                    guild_id=guild_id,
-                    user_id=user_id,
-                    item_id=item.id,
-                    equipped=False
-                )
-                inventory_store.add_cosmetic(cosmetic)
-                result = {"type": "item", "value": item, "rarity": item.rarity.value}
+            # Выбрать случайный предмет по редкости
+            rarity_str = drop_type.replace("item_", "")
+            rarity_map = {
+                "basic": CosmeticRarity.BASIC,
+                "premium": CosmeticRarity.PREMIUM,
+                "elite": CosmeticRarity.ELITE,
+                "special": CosmeticRarity.SPECIAL,
+            }
+            rarity = rarity_map.get(rarity_str)
+            if rarity:
+                items = shop_store.get_items_by_rarity(rarity)
+                if items:
+                    item = random.choice(items)
+                    # Добавить в инвентарь
+                    from models.shop_item import PlayerCosmetic
+                    cosmetic = PlayerCosmetic(
+                        guild_id=guild_id,
+                        user_id=user_id,
+                        item_id=item.id,
+                        equipped=False
+                    )
+                    inventory_store.add_cosmetic(cosmetic)
+                    result = {"type": "item", "value": item, "rarity": item.rarity.value}
+                else:
+                    # Если нет предметов этой редкости, выдать монеты
+                    fallback_coins = case.price // 2
+                    await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
+                    result = {"type": "coins", "value": fallback_coins, "rarity": "common"}
             else:
-                # Если нет предметов в категории, выдать монеты
-                fallback_coins = case.price // 2
-                await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
-                result = {"type": "coins", "value": fallback_coins, "rarity": "common"}
+                result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         else:
             result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
 

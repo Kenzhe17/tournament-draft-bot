@@ -57,6 +57,10 @@ class ShopStore:
         """Получить товары по категории."""
         return [item for item in self._items.values() if item.category == category]
 
+    def get_items_by_rarity(self, rarity) -> list[ShopItem]:
+        """Получить товары по редкости."""
+        return [item for item in self._items.values() if item.rarity == rarity]
+
     def add_item(self, item: ShopItem) -> None:
         """Добавить товар."""
         self._items[item.id] = item
