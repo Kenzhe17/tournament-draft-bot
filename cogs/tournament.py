@@ -1801,7 +1801,6 @@ def get_rank_emoji(level: int) -> str:
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="Пользователь для сброса статистики")
     async def reset(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Сбросить статистику игрока (только для владельца бота)."""
