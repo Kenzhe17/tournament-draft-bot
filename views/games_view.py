@@ -265,73 +265,100 @@ class PlayButton(Button):
         command = bot.tree.get_command(self.game.command)
 
         if command:
-            # For RPS, show a modal to collect bet and opponent
+            # For RPS, show mode selection view
             if self.game.command == "rps":
-                # Create modal inline
-                class RPSBetModal(discord.ui.Modal, title="Камень-Ножницы-Бумага"):
-                    bet = discord.ui.TextInput(
-                        label="Ставка (монеты)",
-                        placeholder="Введите ставку (например: 100)",
-                        required=True,
-                        min_length=1,
-                        max_length=10
-                    )
-                    
-                    opponent = discord.ui.TextInput(
-                        label="Соперник (необязательно)",
-                        placeholder="Пусто = игра против бота",
-                        required=False,
-                        min_length=0,
-                        max_length=50
-                    )
-                    
+                # Show mode selection (PvE or PvP)
+                class GameModeSelectView(discord.ui.View):
                     def __init__(self, game, guild_id: int):
-                        super().__init__()
+                        super().__init__(timeout=60)
                         self.game = game
                         self.guild_id = guild_id
                     
-                    async def on_submit(self, interaction: discord.Interaction):
-                        """Handle modal submission."""
-                        try:
-                            bet = int(self.bet.value)
-                            if bet <= 0:
-                                await interaction.response.send_message("❌ Ставка должна быть больше 0.", ephemeral=True)
-                                return
-                        except ValueError:
-                            await interaction.response.send_message("❌ Неверный формат ставки. Введите число.", ephemeral=True)
-                            return
-                        
-                        opponent = None
-                        if self.opponent.value.strip():
-                            # Try to find user by mention or ID
-                            opponent_str = self.opponent.value.strip()
-                            if opponent_str.startswith("<@") and opponent_str.endswith(">"):
-                                # Mention format
-                                opponent_id = int(opponent_str.strip("<@!>"))
-                                # Try to get member from guild
+                    @discord.ui.button(label="🤖 Против бота (PvE)", style=discord.ButtonStyle.primary)
+                    async def btn_pve(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        """Show modal for PvE mode."""
+                        await self.show_bet_modal(interaction, pve_mode=True)
+                    
+                    @discord.ui.button(label="⚔️ Против игрока (PvP)", style=discord.ButtonStyle.success)
+                    async def btn_pvp(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        """Show modal for PvP mode."""
+                        await self.show_bet_modal(interaction, pve_mode=False)
+                    
+                    async def show_bet_modal(self, interaction: discord.Interaction, pve_mode: bool):
+                        """Show bet modal."""
+                        class BetModal(discord.ui.Modal, title="Ставка"):
+                            bet = discord.ui.TextInput(
+                                label="Ставка (монеты)",
+                                placeholder="Введите ставку (например: 100)",
+                                required=True,
+                                min_length=1,
+                                max_length=10
+                            )
+                            
+                            opponent = discord.ui.TextInput(
+                                label="Соперник (только для PvP)",
+                                placeholder="Упомяните игрока (@user)",
+                                required=False,
+                                min_length=0,
+                                max_length=50
+                            )
+                            
+                            def __init__(self, game, guild_id: int, pve_mode: bool):
+                                super().__init__()
+                                self.game = game
+                                self.guild_id = guild_id
+                                self.pve_mode = pve_mode
+                                if pve_mode:
+                                    self.opponent.required = False
+                                else:
+                                    self.opponent.required = True
+                            
+                            async def on_submit(self, interaction: discord.Interaction):
+                                """Handle modal submission."""
                                 try:
-                                    guild = interaction.guild
-                                    opponent = guild.get_member(opponent_id)
-                                except:
-                                    pass
-                            else:
-                                # Try as ID
-                                try:
-                                    opponent_id = int(opponent_str)
-                                    guild = interaction.guild
-                                    opponent = guild.get_member(opponent_id)
-                                except:
-                                    pass
+                                    bet = int(self.bet.value)
+                                    if bet <= 0:
+                                        await interaction.response.send_message("❌ Ставка должна быть больше 0.", ephemeral=True)
+                                        return
+                                except ValueError:
+                                    await interaction.response.send_message("❌ Неверный формат ставки. Введите число.", ephemeral=True)
+                                    return
+                                
+                                opponent = None
+                                if not self.pve_mode and self.opponent.value.strip():
+                                    # Try to find user by mention or ID
+                                    opponent_str = self.opponent.value.strip()
+                                    if opponent_str.startswith("<@") and opponent_str.endswith(">"):
+                                        opponent_id = int(opponent_str.strip("<@!>"))
+                                        try:
+                                            guild = interaction.guild
+                                            opponent = guild.get_member(opponent_id)
+                                        except:
+                                            pass
+                                    else:
+                                        try:
+                                            opponent_id = int(opponent_str)
+                                            guild = interaction.guild
+                                            opponent = guild.get_member(opponent_id)
+                                        except:
+                                            pass
+                                
+                                # Get the RPS cog and call the command directly
+                                bot = interaction.client
+                                cog = bot.get_cog("RPSCog")
+                                if cog:
+                                    await cog.rps(interaction, bet, opponent)
+                                else:
+                                    await interaction.response.send_message("❌ Команда RPS не найдена.", ephemeral=True)
                         
-                        # Get the RPS cog and call the command directly
-                        bot = interaction.client
-                        cog = bot.get_cog("RPSCog")
-                        if cog:
-                            await cog.rps(interaction, bet, opponent)
-                        else:
-                            await interaction.response.send_message("❌ Команда RPS не найдена.", ephemeral=True)
+                        await interaction.response.send_modal(BetModal(self.game, self.guild_id, pve_mode))
                 
-                await interaction.response.send_modal(RPSBetModal(self.game, self.guild_id))
+                embed = discord.Embed(
+                    title=f"🎮 {self.game.name}",
+                    description="Выберите режим игры:",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.send_message(embed=embed, view=GameModeSelectView(self.game, self.guild_id), ephemeral=False)
             else:
                 # For other games, show instructions
                 embed = discord.Embed(
