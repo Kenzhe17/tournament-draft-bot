@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import os
 
 import discord
 from discord.ext import commands
@@ -28,6 +29,12 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
+# Add games directory to Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+games_dir = os.path.join(current_dir, "games")
+if games_dir not in sys.path:
+    sys.path.insert(0, games_dir)
 
 
 class TournamentBot(commands.Bot):
