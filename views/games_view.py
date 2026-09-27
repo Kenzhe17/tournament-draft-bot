@@ -261,9 +261,9 @@ class PlayButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать гайд как играть."""
-        # Build guide message
-        pve_command = f"/{self.game.command} 100"
-        pvp_command = f"/{self.game.command} 100 @username"
+        # Build guide message with parameter attributes
+        pve_command = f"/{self.game.command} bet:100"
+        pvp_command = f"/{self.game.command} bet:100 opponent:@"
         
         embed = discord.Embed(
             title=f"📖 Как начать игру {self.game.name}",
@@ -283,7 +283,7 @@ class PlayButton(Button):
             inline=False
         )
         
-        embed.set_footer(text="💡 Скопируйте команду и отправьте её в чат.")
+        embed.set_footer(text="💡 Скопируйте команду, замените значения и отправьте её в чат.")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
