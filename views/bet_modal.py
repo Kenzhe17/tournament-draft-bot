@@ -109,9 +109,9 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
     def _get_user_team_index(self, user_id: int) -> int | None:
         """Get the team index if user is participating in this match, or None otherwise."""
         # Get teams in this match
-        if self.match_type == "qualifier":
+        if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinal":
+        elif self.match_type == "semifinals":
             match = self.tournament.semifinal_matches[self.match_index]
         elif self.match_type == "final":
             match = self.tournament.final_teams

@@ -745,7 +745,7 @@ async def build_qualifiers_embed(
     await _add_teams_block_to_embed(embed, guild, tournament)
     
     # Добавляем секцию ставок
-    await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifier")
+    await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifiers")
     
     # Add betting timer to footer if betting is open
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
@@ -808,7 +808,7 @@ async def build_semifinals_embed(
     await _add_teams_block_to_embed(embed, guild, tournament)
     
     # Добавляем секцию ставок
-    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinal")
+    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinals")
     
     # Add betting timer to footer if betting is open
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
