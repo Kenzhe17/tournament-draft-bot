@@ -232,16 +232,25 @@ class CaseStore:
                 items = shop_store.get_items_by_rarity(rarity)
                 if items:
                     item = random.choice(items)
-                    # Добавить в инвентарь
-                    from models.shop_item import PlayerCosmetic
-                    cosmetic = PlayerCosmetic(
-                        guild_id=guild_id,
-                        user_id=user_id,
-                        item_id=item.id,
-                        equipped=False
-                    )
-                    inventory_store.add_cosmetic(cosmetic)
-                    result = {"type": "item", "value": item, "rarity": item.rarity.value}
+                    # Проверить есть ли уже этот предмет в инвентаре
+                    player_inventory = inventory_store.get_player_inventory(guild_id, user_id)
+                    has_item = any(cosmetic.item_id == item.id for cosmetic in player_inventory)
+
+                    if has_item:
+                        # Предмет уже есть - выдать полную стоимость
+                        await user_balance_store.add_balance(guild_id, user_id, item.price)
+                        result = {"type": "coins", "value": item.price, "rarity": "common"}
+                    else:
+                        # Добавить в инвентарь
+                        from models.shop_item import PlayerCosmetic
+                        cosmetic = PlayerCosmetic(
+                            guild_id=guild_id,
+                            user_id=user_id,
+                            item_id=item.id,
+                            equipped=False
+                        )
+                        inventory_store.add_cosmetic(cosmetic)
+                        result = {"type": "item", "value": item, "rarity": item.rarity.value}
                 else:
                     # Если нет предметов этой редкости, выдать монеты
                     fallback_coins = case.price // 2
