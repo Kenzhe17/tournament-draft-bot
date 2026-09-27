@@ -67,6 +67,13 @@ class ShopStore:
         self._items[item.id] = item
         self.save()
 
+    def clear_all(self) -> None:
+        """Очистить все товары."""
+        self._items = {}
+        if SHOP_FILE.exists():
+            SHOP_FILE.unlink()
+        self.save()
+
     def enable_db(self) -> None:
         """Включить режим базы данных."""
         self._use_db = True

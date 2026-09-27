@@ -7,6 +7,9 @@ from storage.shop_store import shop_store
 def initialize_shop_items() -> None:
     """Инициализировать товары в магазине."""
 
+    # Очистить существующие товары перед инициализацией
+    shop_store.clear_all()
+
     # Цвета удалены (Discord не поддерживает цветной текст в embed'ах)
 
     # Графические значки (Icons & Emblems)
