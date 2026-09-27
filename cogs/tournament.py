@@ -565,15 +565,19 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="games", description="Показать доступные мини-игры")
     async def games(self, interaction: discord.Interaction) -> None:
         """Показать список мини-игр."""
-        from views.games_view import GamesMainView
+        from views.games_view_new import GamesMainView
+        from storage.user_balance_store import user_balance_store
+
+        # Получить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
         embed = discord.Embed(
             title="🎮 Мини-игры",
-            description="Выберите категорию игр и поставьте монеты!",
+            description=f"Выберите категорию игр и поставьте монеты!\n\n💰 Ваш баланс: {balance:,} 🪙",
             color=discord.Color.dark_blue(),
         )
 
-        view = GamesMainView()
+        view = GamesMainView(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
     # @app_commands.command(name="play", description="Запустить мини-игру")

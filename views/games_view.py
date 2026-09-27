@@ -1,55 +1,60 @@
-"""Main view for mini-games menu."""
+"""Enhanced view for mini-games menu with categories and game cards."""
 
 import discord
-from discord.ui import Button, View
+from discord.ui import Button, View, Select
+from typing import Optional
 
-from storage.minigame_store import minigame_store
+from games.games_config import (
+    CATEGORIES,
+    get_game_by_id,
+    get_games_by_category,
+    get_all_games,
+)
+from storage.user_balance_store import user_balance_store
 
 
 class GamesMainView(View):
-    """Main view for mini-games menu."""
+    """Main view for mini-games menu with user balance."""
 
-    def __init__(self):
-        super().__init__(timeout=180)
-        self.add_item(GameCategorySelect())
+    def __init__(self, user_id: int, guild_id: int):
+        super().__init__(timeout=180)  # 3 минуты
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.add_item(GameCategorySelect(user_id, guild_id))
+
+    async def get_balance(self) -> int:
+        """Получить баланс пользователя."""
+        return await user_balance_store.get_balance(self.guild_id, self.user_id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Проверка: только пользователь который вызвал /games может нажимать."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Это меню может использовать только тот, кто его вызвал.",
+                ephemeral=True
+            )
+            return False
+        return True
 
 
-class GameCategorySelect(discord.ui.Select):
+class GameCategorySelect(Select):
     """Выпадающее меню выбора категории игр."""
 
-    def __init__(self):
-        options = [
-            discord.SelectOption(
-                label="🎲 Игры на удачу",
-                value="luck",
-                description="Игры на удачу с механикой ставок",
-                emoji="🎲"
-            ),
-            discord.SelectOption(
-                label="🧠 Викторины",
-                value="quiz",
-                description="Викторины и головоломки",
-                emoji="🧠"
-            ),
-            discord.SelectOption(
-                label="🎰 Казино",
-                value="casino",
-                description="Казино и ставки",
-                emoji="🎰"
-            ),
-            discord.SelectOption(
-                label="🎮 Смешанные",
-                value="mixed",
-                description="Разные игровые механики",
-                emoji="🎮"
-            ),
-            discord.SelectOption(
-                label="⚔️ PvP",
-                value="pvp",
-                description="Игры против других игроков",
-                emoji="⚔️"
-            ),
-        ]
+    def __init__(self, user_id: int, guild_id: int):
+        self.user_id = user_id
+        self.guild_id = guild_id
+        
+        options = []
+        for cat_id, cat_info in CATEGORIES.items():
+            options.append(
+                discord.SelectOption(
+                    label=cat_info["name"],
+                    value=cat_id,
+                    description=cat_info["description"],
+                    emoji=cat_info["emoji"]
+                )
+            )
+        
         super().__init__(
             placeholder="Выберите категорию игр...",
             min_values=1,
@@ -60,64 +65,72 @@ class GameCategorySelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать выбор категории."""
         category = self.values[0]
-        games = await minigame_store.get_available_games()
-        category_games = [g for g in games if g.category == category]
+        category_info = CATEGORIES[category]
+        games = get_games_by_category(category)
 
-        # Define category info with colors
-        category_info = {
-            "luck": ("🎲 Игры на удачу", "Игры на удачу с механикой ставок", discord.Color.dark_blue()),
-            "quiz": ("🧠 Викторины", "Викторины и головоломки", discord.Color.dark_purple()),
-            "casino": ("🎰 Казино", "Казино и ставки", discord.Color.gold()),
-            "mixed": ("🎮 Смешанные", "Разные игровые механики", discord.Color.green()),
-            "pvp": ("⚔️ PvP игры", "Игры против других игроков", discord.Color.red()),
-        }
-
-        title, description, color = category_info.get(category, ("Игры", "", discord.Color.blue()))
-
-        if not category_games:
-            await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке",
-                ephemeral=True
-            )
-            return
-
-        # Create games list without descriptions
-        games_list = "\n".join([
-            f"• **{game.name}** - `/{game.command_name}`" 
-            for game in category_games
-        ])
+        # Создать список игр со статусами
+        games_list = []
+        for game in games:
+            status_emoji = "🟢" if game.status == "available" else "🚧"
+            status_text = "Доступна" if game.status == "available" else "В разработке"
+            games_list.append(f"{status_emoji} **{game.name}** - {status_text}")
+            games_list.append(f"   └ {game.short_description}")
+        
+        games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=title,
-            description=f"{description}\n\n{games_list}",
-            color=color,
+            title=f"{category_info['emoji']} {category_info['name']}",
+            description=f"{category_info['description']}\n\n{games_text}",
+            color=category_info['color'],
         )
 
-        view = GamesBackView(category)
-        view.add_item(GameLaunchSelect(category_games))
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        view = GamesCategoryView(self.user_id, self.guild_id, category)
+        view.add_item(GameSelect(games, self.user_id, self.guild_id))
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
-class GameLaunchSelect(discord.ui.Select):
-    """Выпадающее меню для запуска игры."""
+class GamesCategoryView(View):
+    """View для экрана категории."""
 
-    def __init__(self, games):
+    def __init__(self, user_id: int, guild_id: int, category: str):
+        super().__init__(timeout=180)
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.category = category
+        self.add_item(BackToMainMenuButton(user_id, guild_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Проверка: только пользователь который вызвал /games может нажимать."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Это меню может использовать только тот, кто его вызвал.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+
+class GameSelect(Select):
+    """Выпадающее меню для выбора игры."""
+
+    def __init__(self, games, user_id: int, guild_id: int):
+        self.user_id = user_id
+        self.guild_id = guild_id
+        
         options = []
         for game in games:
-            command_name = getattr(game, 'command_name', game.id)
-            if not command_name:
-                command_name = game.id  # Fallback to id if command_name is empty
+            status_emoji = "🟢" if game.status == "available" else "🚧"
             options.append(
                 discord.SelectOption(
-                    label=game.name,
-                    value=command_name,
-                    description=f"Ставка: {game.min_bet}-{game.max_bet} 🪙",
-                    emoji="🎮"
+                    label=f"{status_emoji} {game.name}",
+                    value=game.id,
+                    description=game.short_description,
+                    emoji=game.emoji
                 )
             )
 
         super().__init__(
-            placeholder="Выберите игру для запуска...",
+            placeholder="Выберите игру для просмотра...",
             min_values=1,
             max_values=1,
             options=options
@@ -125,37 +138,28 @@ class GameLaunchSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать карточку игры."""
-        command_name = self.values[0]
-        games = await minigame_store.get_available_games()
-        game = next((g for g in games if g.command_name == command_name), None)
+        game_id = self.values[0]
+        game = get_game_by_id(game_id)
 
-        # Always show game card, even if game not in development
         if not game:
-            # Show placeholder card for games in development
-            game_name = command_name.replace("_", " ").title()
-            embed = discord.Embed(
-                title=f"{game_name}",
-                description="Игра в разработке",
-                color=discord.Color.grey()
+            await interaction.response.send_message(
+                "❌ Игра не найдена",
+                ephemeral=True
             )
-            embed.add_field(name="📌 Команда", value=f"`/{command_name}`", inline=True)
-            embed.add_field(name="📊 Статус", value="🚧 В разработке", inline=True)
-            view = GameCardView(command_name, "mixed")
-            await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
             return
 
-        # Category colors
-        category_colors = {
-            "luck": discord.Color.dark_blue(),
-            "quiz": discord.Color.dark_purple(),
-            "casino": discord.Color.gold(),
-            "mixed": discord.Color.green(),
-            "pvp": discord.Color.red(),
-        }
+        # Создать карточку игры
+        category_info = CATEGORIES.get(game.category, {"color": discord.Color.blue()})
+        
+        # Статус игры
+        if game.status == "available":
+            status_text = "🟢 Доступна"
+            status_color = discord.Color.green()
+        else:
+            status_text = "🚧 В разработке"
+            status_color = discord.Color.orange()
 
-        color = category_colors.get(game.category, discord.Color.blue())
-
-        # Player count display
+        # Количество игроков
         if game.is_pvp and game.is_pve:
             player_count = "1-2 игрока"
         elif game.is_pvp:
@@ -164,150 +168,142 @@ class GameLaunchSelect(discord.ui.Select):
             player_count = "1 игрок"
 
         embed = discord.Embed(
-            title=f"{game.name}",
+            title=f"{game.emoji} {game.name}",
             description=game.description,
-            color=color,
+            color=status_color,
         )
 
-        embed.add_field(name="💰 Ставка", value=f"{game.min_bet}-{game.max_bet} 🪙", inline=True)
-        embed.add_field(name="🎲 Множитель", value=f"{game.multiplier}x", inline=True)
+        embed.add_field(name="📊 Статус", value=status_text, inline=True)
         embed.add_field(name="👥 Игроки", value=player_count, inline=True)
-        embed.add_field(name="📌 Команда", value=f"`/{game.command_name}`", inline=True)
         embed.add_field(name="📊 Сложность", value=game.difficulty.capitalize(), inline=True)
+        embed.add_field(name="💰 Мин. ставка", value=f"{game.min_bet} 🪙", inline=True)
+        embed.add_field(name="💰 Макс. ставка", value=f"{game.max_bet} 🪙", inline=True)
+        embed.add_field(name="🎲 Множитель", value=f"{game.multiplier}x", inline=True)
 
-        # Add play button
-        view = GameCardView(command_name, game.category)
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        embed.add_field(name="📌 Команда", value=f"`/{game.command}`", inline=False)
+        embed.add_field(name="📖 Как играть", value=game.how_to_play, inline=False)
+
+        view = GameCardView(self.user_id, self.guild_id, game, game.category)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GameCardView(View):
-    """View with play button for game card."""
+    """View с кнопками для карточки игры."""
 
-    def __init__(self, command_name: str, category: str):
+    def __init__(self, user_id: int, guild_id: int, game, category: str):
         super().__init__(timeout=180)
-        self.command_name = command_name
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.game = game
         self.category = category
-        self.add_item(PlayButton(command_name))
-        self.add_item(BackToGamesListButton(category))
-        self.add_item(BackToMainMenuButton())
+        
+        # Кнопка запуска (только если игра доступна)
+        if game.status == "available":
+            self.add_item(PlayButton(game, user_id, guild_id))
+        
+        self.add_item(BackToCategoryButton(user_id, guild_id, category))
+        self.add_item(BackToMainMenuButton(user_id, guild_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Проверка: только пользователь который вызвал /games может нажимать."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "❌ Это меню может использовать только тот, кто его вызвал.",
+                ephemeral=True
+            )
+            return False
+        return True
 
 
-class PlayButton(discord.ui.Button):
-    """Button to play the game."""
+class PlayButton(Button):
+    """Кнопка запуска игры."""
 
-    def __init__(self, command_name: str):
+    def __init__(self, game, user_id: int, guild_id: int):
         super().__init__(
-            label="▶️ Играть",
+            label="▶️ Запустить",
             style=discord.ButtonStyle.primary,
-            custom_id=f"play_{command_name}"
+            custom_id=f"play_{game.id}"
         )
-        self.command_name = command_name
+        self.game = game
+        self.user_id = user_id
+        self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Execute the game command."""
+        """Запустить игру."""
         bot = interaction.client
-        command = bot.tree.get_command(self.command_name)
+        command = bot.tree.get_command(self.game.command)
 
         if command:
             # Execute the command
             await command.callback(interaction)
         else:
             await interaction.response.send_message(
-                f"🚧 Игра '{self.command_name}' пока в разработке",
+                f"🚧 Игра '{self.game.command}' пока в разработке",
                 ephemeral=True
             )
 
 
-class BackToGamesListButton(discord.ui.Button):
-    """Button to go back to games list in category."""
+class BackToCategoryButton(Button):
+    """Кнопка возврата к списку игр в категории."""
 
-    def __init__(self, category: str):
+    def __init__(self, user_id: int, guild_id: int, category: str):
         super().__init__(
-            label="🔙 Назад",
+            label="◀️ Назад",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"back_to_list_{category}"
+            custom_id=f"back_to_category_{category}"
         )
+        self.user_id = user_id
+        self.guild_id = guild_id
         self.category = category
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Go back to games list in category."""
-        category = self.category
-        games = await minigame_store.get_available_games()
-        category_games = [g for g in games if g.category == category]
+        """Вернуться к списку игр в категории."""
+        category_info = CATEGORIES[self.category]
+        games = get_games_by_category(self.category)
 
-        # Define category info with colors
-        category_info = {
-            "luck": ("🎲 Игры на удачу", "Игры на удачу с механикой ставок", discord.Color.dark_blue()),
-            "quiz": ("🧠 Викторины", "Викторины и головоломки", discord.Color.dark_purple()),
-            "casino": ("🎰 Казино", "Казино и ставки", discord.Color.gold()),
-            "mixed": ("🎮 Смешанные", "Разные игровые механики", discord.Color.green()),
-            "pvp": ("⚔️ PvP игры", "Игры против других игроков", discord.Color.red()),
-        }
-
-        title, description, color = category_info.get(category, ("Игры", "", discord.Color.blue()))
-
-        if not category_games:
-            await interaction.response.send_message(
-                f"🚧 Категория '{title}' в разработке",
-                ephemeral=True
-            )
-            return
-
-        # Create games list without descriptions
-        games_list = "\n".join([
-            f"• **{game.name}** - `/{game.command_name}`" 
-            for game in category_games
-        ])
+        # Создать список игр со статусами
+        games_list = []
+        for game in games:
+            status_emoji = "🟢" if game.status == "available" else "🚧"
+            status_text = "Доступна" if game.status == "available" else "В разработке"
+            games_list.append(f"{status_emoji} **{game.name}** - {status_text}")
+            games_list.append(f"   └ {game.short_description}")
+        
+        games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=title,
-            description=f"{description}\n\n{games_list}",
-            color=color,
+            title=f"{category_info['emoji']} {category_info['name']}",
+            description=f"{category_info['description']}\n\n{games_text}",
+            color=category_info['color'],
         )
 
-        view = GamesBackView(category)
-        view.add_item(GameLaunchSelect(category_games))
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        view = GamesCategoryView(self.user_id, self.guild_id, self.category)
+        view.add_item(GameSelect(games, self.user_id, self.guild_id))
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
-class BackToMainMenuButton(discord.ui.Button):
-    """Button to go back to main menu."""
+class BackToMainMenuButton(Button):
+    """Кнопка возврата в главное меню."""
 
-    def __init__(self):
+    def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label="🏠 Главное меню",
+            label="🏠 В главное меню",
             style=discord.ButtonStyle.secondary,
             custom_id="back_to_main"
         )
+        self.user_id = user_id
+        self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Go back to main menu."""
+        """Вернуться в главное меню."""
+        # Получить баланс для главного экрана
+        balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
+        
         embed = discord.Embed(
             title="🎮 Мини-игры",
-            description="Выберите категорию игр и поставьте монеты!",
+            description=f"Выберите категорию игр и поставьте монеты!\n\n💰 Ваш баланс: {balance:,} 🪙",
             color=discord.Color.dark_blue(),
         )
 
-        view = GamesMainView()
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
-
-
-class GamesBackView(View):
-    """View with back button to main menu."""
-
-    def __init__(self, category: str):
-        super().__init__(timeout=180)
-        self.category = category
-        self.add_item(BackToMainMenuButton())
-
-    @discord.ui.button(label="🔙 Назад", style=discord.ButtonStyle.secondary, custom_id="games_back")
-    async def back_button(self, interaction: discord.Interaction, button: Button) -> None:
-        """Go back to main menu."""
-        embed = discord.Embed(
-            title="🎮 Мини-игры",
-            description="Выберите категорию игр и поставьте монеты!",
-            color=discord.Color.dark_blue(),
-        )
-
-        view = GamesMainView()
-        await interaction.response.edit_message(embed=embed, view=view, ephemeral=True)
+        view = GamesMainView(self.user_id, self.guild_id)
+        await interaction.response.edit_message(embed=embed, view=view)
