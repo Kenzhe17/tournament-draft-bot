@@ -257,35 +257,6 @@ class TournamentCog(commands.Cog):
         view = HelpMainView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="reset_leaderboard", description="Сбросить статистику лидерборда")
-    @app_commands.default_permissions(administrator=True)
-    @is_admin()
-    async def reset_leaderboard(self, interaction: discord.Interaction) -> None:
-        """Сбросить всю статистику лидерборда сервера."""
-        # Только владелец бота может использовать эту команду
-        if interaction.user.id != interaction.application_owner.id:
-            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
-            return
-
-        from storage.player_stats_store import player_stats_store
-        from storage.db import get_pool
-
-        if not player_stats_store._use_db:
-            await interaction.response.send_message("❌ База данных не включена.", ephemeral=True)
-            return
-
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            result = await conn.execute(
-                "DELETE FROM player_stats WHERE guild_id = $1",
-                interaction.guild_id
-            )
-
-        await interaction.response.send_message(
-            f"✅ Статистика лидерборда сброшена. Удалено {result} записей.",
-            ephemeral=True
-        )
-
     @app_commands.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
         """Показать баланс пользователя."""
@@ -304,103 +275,6 @@ class TournamentCog(commands.Cog):
         )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="daily", description="Получить ежедневный бонус")
-    async def daily_bonus(self, interaction: discord.Interaction) -> None:
-        """Получить ежедневный бонус монет."""
-        from storage.user_balance_store import user_balance_store
-        import datetime
-
-        # Проверяем базу данных
-        from storage.db import get_pool
-
-        # Проверяем базу данных
-        try:
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                # Получаем последний бонус и streak
-                row = await conn.fetchrow(
-                    "SELECT last_claim, streak_days FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
-                    guild_id, user_id
-                )
-
-                now = datetime.datetime.now(datetime.timezone.utc)
-                today = now.date()
-
-                if row:
-                    last_claim = row["last_claim"]
-                    streak_days = row["streak_days"]
-
-                    # Проверяем прошло ли 24 часа
-                    if last_claim:
-                        time_diff = now - last_claim
-                        if time_diff.total_seconds() < 86400:  # 24 часа
-                            hours_left = 24 - time_diff.total_seconds() / 3600
-                            await interaction.response.send_message(
-                                f"❌ Вы уже получили бонус сегодня. Попробуйте через {int(hours_left)} часов.",
-                                ephemeral=True
-                            )
-                            return
-
-                    # Проверяем streak (пропуск дня сбрасывает)
-                    if last_claim and (now.date() - last_claim.date()).days > 1:
-                        streak_days = 0
-
-                    # Увеличиваем streak
-                    streak_days += 1
-                else:
-                    streak_days = 1
-
-                # Рассчитываем бонус: 50 + streak * 10 (максимум +100)
-                bonus = min(50 + streak_days * 10, 150)
-
-                # Добавляем монеты
-                await user_balance_store.add_balance(guild_id, user_id, bonus)
-
-                # Обновляем cooldown
-                await conn.execute(
-                    """
-                    INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, streak_days, last_streak_date)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET
-                        last_claim = $3,
-                        streak_days = $4,
-                        last_streak_date = $5
-                    """,
-                    guild_id, user_id, now, streak_days, today
-                )
-
-                # Отправляем ответ
-                embed = discord.Embed(
-                    title="🎁 Ежедневный бонус",
-                    color=discord.Color.gold()
-                )
-                embed.add_field(
-                    name="💰 Получено",
-                    value=f"{bonus} 🪙",
-                    inline=True
-                )
-                embed.add_field(
-                    name="🔥 Серия",
-                    value=f"{streak_days} дней",
-                    inline=True
-                )
-                embed.add_field(
-                    name="📅 Следующий бонус",
-                    value="Через 24 часа",
-                    inline=False
-                )
-                embed.set_footer(text=f"Максимум: 150 🪙 (15 дней streak)")
-
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        except Exception as e:
-            logger.error(f"Error in daily bonus: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Ошибка при получении бонуса. Требуется база данных.",
-                ephemeral=True
-            )
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
@@ -1305,8 +1179,8 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="records", description="Рекорды турнира")
-    async def records(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="booyah", description="Рекорды турнира")
+    async def booyah(self, interaction: discord.Interaction) -> None:
         """Показать рекорды турнира."""
         await interaction.response.defer()
 
@@ -1456,14 +1330,14 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-    @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
+    @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",
         amount="Новое значение (для ELO) или количество монет (для money)",
         operation="Операция: set (установить), add (добавить), remove (убрать)"
     )
-    async def admin_player(
+    async def edit_player(
         self,
         interaction: discord.Interaction,
         player: discord.Member,
@@ -1473,8 +1347,7 @@ class TournamentCog(commands.Cog):
     ) -> None:
         """Изменить ELO или монеты игрока."""
         # Только владелец бота может использовать эту команду
-        bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
-        if interaction.user.id != bot_owner_id:
+        if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
             return
 
@@ -1541,11 +1414,6 @@ class TournamentCog(commands.Cog):
                 f"✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",
                 ephemeral=True
             )
-
-    @app_commands.command(name="проверка", description="Тестовая команда")
-    async def проверка(self, interaction: discord.Interaction) -> None:
-        """Тестовая команда для проверки регистрации."""
-        await interaction.response.send_message("✅ Команда работает!", ephemeral=True)
 
     @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
     @app_commands.default_permissions(administrator=True)
@@ -1933,6 +1801,7 @@ def get_rank_emoji(level: int) -> str:
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="Пользователь для сброса статистики")
     async def reset(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Сбросить статистику игрока (только для владельца бота)."""
