@@ -1357,57 +1357,82 @@ class TournamentCog(commands.Cog):
             color=discord.Color.gold(),
         )
 
-        if best_avg_kills_20:
-            embed.add_field(
-                name="🎯 Наибольшее AVG Kills (20 игр)",
-                value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
-                inline=False
-            )
-        if best_match_kills:
-            embed.add_field(
-                name="🔥 Наибольшее количество киллов за матч",
-                value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
-                inline=False
-            )
+        # Рекорды для всех игроков (без ограничения 20 игр)
+        embed.add_field(
+            name="🏆 Наибольшее количество побед",
+            value=f"{most_wins.name} — {most_wins.wins} побед",
+            inline=False
+        )
+        embed.add_field(
+            name="🥇 Наибольшее количество финалов",
+            value=f"{most_finals.name} — {most_finals.finals} финалов",
+            inline=False
+        )
+        embed.add_field(
+            name="🎮 Наибольшее количество игр",
+            value=f"{most_games.name} — {most_games.games} игр",
+            inline=False
+        )
+        embed.add_field(
+            name="🔥 Наибольшее количество киллов за матч",
+            value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
+            inline=False
+        )
         embed.add_field(
             name="📈 Самый высокий ELO",
             value=f"{highest_elo.name} — {highest_elo.elo} ELO",
             inline=False
         )
+        
+        # Рекорды для игроков с 20+ играми
+        if best_avg_kills_20:
+            embed.add_field(
+                name="🎯 Наибольшее AVG Kills (20+ игр)",
+                value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
+                inline=False
+            )
         if highest_kd:
             embed.add_field(
-                name="⚔️ Наибольшее K/D (20 игр)",
+                name="⚔️ Наибольшее K/D (20+ игр)",
                 value=f"{highest_kd.name} — {highest_kd.kd_ratio:.2f}",
                 inline=False
             )
         if highest_winrate:
             embed.add_field(
-                name="🏆 Лучший WinRate (20 игр)",
+                name="📊 Лучший WinRate (20+ игр)",
                 value=f"{highest_winrate.name} — {highest_winrate.win_rate:.1f}%",
                 inline=False
             )
         if best_win_streak_20:
             embed.add_field(
-                name="🔥 Лучшая серия побед (20 игр)",
+                name="🔥 Лучшая серия побед (20+ игр)",
                 value=f"{best_win_streak_20.name} — {best_win_streak_20.best_win_streak} подряд",
                 inline=False
             )
+        if best_loss_streak_20:
+            embed.add_field(
+                name="❄️ Худшая серия поражений (20+ игр)",
+                value=f"{best_loss_streak_20.name} — {best_loss_streak_20.best_loss_streak} подряд",
+                inline=False
+            )
+        if best_match_kills_20:
+            embed.add_field(
+                name="💀 Наибольшее киллов за матч (20+ игр)",
+                value=f"{best_match_kills_20.name} — {best_match_kills_20.best_match_kills}",
+                inline=False
+            )
+        
+        # Экономические рекорды
         if richest_player:
             embed.add_field(
                 name="💰 Богатейший игрок",
-                value=f"{richest_player.name} — {max_balance} 🪙",
+                value=f"{richest_player.name} — {max_balance:,} 🪙",
                 inline=False
             )
         if best_bettor:
             embed.add_field(
                 name="🎲 Лучший беттор",
-                value=f"{best_bettor.name} — {max_single_win} 🪙 (за ставку)",
-                inline=False
-            )
-        if best_loss_streak_20:
-            embed.add_field(
-                name="❄️ Худшая серия поражений (20 игр)",
-                value=f"{best_loss_streak_20.name} — {best_loss_streak_20.best_loss_streak} подряд",
+                value=f"{best_bettor.name} — {max_single_win:,} 🪙 (за ставку)",
                 inline=False
             )
 
