@@ -162,36 +162,36 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # ELO
         embed.add_field(
-            name="🏆",
+            name="🏆 ELO",
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт
         embed.add_field(
-            name="📈",
+            name="📈 Level",
             value=f"{stats.level}\n⭐ {current_xp:,} / {xp_needed:,}",
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵",
+            name="💵 Баланс",
             value=f"{balance:,} 🪙",
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="�️",
+            name="🏷️ Предметов",
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲",
-            value=f"Сыграно\n{total_games_played} игр",
+            name="🎲 Сыграно",
+            value=f"{total_games_played} игр",
             inline=True
         )
 
@@ -202,26 +202,26 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         )
 
         embed.add_field(
-            name="🎯 AVG Kills",
+            name="🎯",
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️ K/D Ratio",
+            name="⚔️",
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥 Max Kills",
+            name="🔥",
             value=str(stats.best_match_kills),
             inline=True
         )
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊 Last ELO Change",
+            name="📊",
             value=f"{elo_change:+d}",
             inline=True
         )
