@@ -1314,10 +1314,10 @@ def get_rank_emoji(level: int) -> str:
 
     #     await interaction.followup.send(embed=embed)
 
-        @app_commands.command(name="records", description="Рекорды турнира")
-        async def records(self, interaction: discord.Interaction) -> None:
-            """Показать рекорды турнира."""
-            await interaction.response.defer()
+    @app_commands.command(name="records", description="Рекорды турнира")
+    async def records(self, interaction: discord.Interaction) -> None:
+        """Показать рекорды турнира."""
+        await interaction.response.defer()
 
         from storage.player_stats_store import player_stats_store
 
@@ -1452,7 +1452,7 @@ def get_rank_emoji(level: int) -> str:
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-        @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
+    @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
         @app_commands.describe(
             player="Игрок",
             type="Тип изменения: elo или money",
