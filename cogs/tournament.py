@@ -1452,22 +1452,27 @@ def get_rank_emoji(level: int) -> str:
 
         await ctx.send(f"✅ ELO игрока {player.display_name} изменен на {elo}.", delete_after=10)
 
-        @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
-        @app_commands.describe(
-            player="Игрок",
-            type="Тип изменения: elo или money",
-            amount="Новое значение (для ELO) или количество монет (для money)",
-            operation="Операция: set (установить), add (добавить), remove (убрать)"
-        )
-        async def admin_player(
-            self,
-            interaction: discord.Interaction,
-            player: discord.Member,
-            type: str,
-            amount: int,
-            operation: str = "set"
-        ) -> None:
-            """Изменить ELO или монеты игрока."""
+    @app_commands.command(name="проверка", description="Тестовая команда")
+    async def test_check(self, interaction: discord.Interaction) -> None:
+        """Тестовая команда для проверки."""
+        await interaction.response.send_message("✅ Команда работает!", ephemeral=True)
+
+    @app_commands.command(name="admin", description="Изменить ELO или монеты игрока")
+    @app_commands.describe(
+        player="Игрок",
+        type="Тип изменения: elo или money",
+        amount="Новое значение (для ELO) или количество монет (для money)",
+        operation="Операция: set (установить), add (добавить), remove (убрать)"
+    )
+    async def admin_player(
+        self,
+        interaction: discord.Interaction,
+        player: discord.Member,
+        type: str,
+        amount: int,
+        operation: str = "set"
+    ) -> None:
+        """Изменить ELO или монеты игрока."""
             # Только владелец бота может использовать эту команду
             bot_owner_id = interaction.client.owner_id if interaction.client.owner_id else interaction.client.application.owner.id
             if interaction.user.id != bot_owner_id:
