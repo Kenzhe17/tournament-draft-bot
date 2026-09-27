@@ -130,13 +130,22 @@ class PvEChoiceView(RPSView):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
         
+        # Check if game already resolved (prevent double-click)
+        if game.state != GameState.WAITING_PVE:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            return
+        
+        # Update state to prevent multiple submissions
+        game.state = GameState.RESOLVED_PVE
+        
         # Disable all buttons
         for item in self.children:
             item.disabled = True
         await interaction.response.edit_message(view=self)
         
-        # Generate bot move
+        # Generate bot move (truly random)
         bot_move = random.choice(list(Move))
+        logger.info(f"RPS PvE: Player chose {move.display_name}, Bot chose {bot_move.display_name}")
         
         # Determine result
         if move == bot_move:
@@ -173,6 +182,7 @@ class PvEChoiceView(RPSView):
             color=discord.Color.blue()
         )
         
+        # Send public result message (not ephemeral)
         await interaction.edit_original_response(embed=embed, view=None)
         
         # Cleanup
@@ -510,7 +520,7 @@ class RPSCog(commands.Cog):
                                   f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                     color=discord.Color.blue()
                 )
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                await interaction.followup.send(embed=embed, view=view, ephemeral=False)
             else:
                 # PvP mode
                 game.state = GameState.WAITING_PVP
