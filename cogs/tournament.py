@@ -938,8 +938,8 @@ class TournamentCog(commands.Cog):
 
         # Уровень и опыт
         embed.add_field(
-            name="📈 Level",
-            value=f"{stats.level}",
+            name=f"📈 Level {stats.level}",
+            value="",
             inline=True
         )
 

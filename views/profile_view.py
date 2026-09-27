@@ -170,8 +170,8 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Уровень и опыт
         embed.add_field(
-            name="📈 Level",
-            value=f"{stats.level}",
+            name=f"📈 Level {stats.level}",
+            value="",
             inline=True
         )
 
