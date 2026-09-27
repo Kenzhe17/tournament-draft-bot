@@ -84,8 +84,6 @@ class GameSession:
     opponent_move: Optional[Move] = None
     message_id: Optional[int] = None
     channel_id: Optional[int] = None
-    p1_message_id: Optional[int] = None
-    p2_message_id: Optional[int] = None
 
 
 # Active games tracking
