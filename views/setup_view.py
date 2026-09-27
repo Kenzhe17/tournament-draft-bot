@@ -71,8 +71,8 @@ class CircleSelectButton(discord.ui.Button):
                     )
                     return
 
-            # Get user's nickname
-            user_name = interaction.user.display_name
+            # Get user's username (not display_name to prevent emoji abuse)
+            user_name = interaction.user.name
 
             # Check if user already in tournament - if so, move them to new circle
             was_moved = False
@@ -166,8 +166,8 @@ class JoinPoolButton(discord.ui.Button):
                 )
                 return
 
-            # Get user's nickname
-            user_name = interaction.user.display_name
+            # Get user's username (not display_name to prevent emoji abuse)
+            user_name = interaction.user.name
 
             # Check if user already in pool
             if user_name in tournament.players_pool:
@@ -316,7 +316,7 @@ class ExitButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        user_name = interaction.user.display_name
+        user_name = interaction.user.name
 
         # Handle different modes
         if tournament.formation_mode == FormationMode.RANDOM:
