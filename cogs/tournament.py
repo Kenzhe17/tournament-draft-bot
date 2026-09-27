@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import discord
@@ -1769,10 +1770,9 @@ def get_rank_emoji(level: int) -> str:
         """Получить ежедневный бонус."""
         from storage.db import get_pool
         from storage.user_balance_store import user_balance_store
-        from datetime import datetime, timedelta
 
         guild_id = interaction.guild_id
-        user_id = interaction.user.id
+        user_id = interaction.user_id
 
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -1822,6 +1822,33 @@ def get_rank_emoji(level: int) -> str:
                 ephemeral=False
             )
 
+    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
+    @app_commands.guild_only()
+    async def welcome(self, interaction: discord.Interaction) -> None:
+        """Показать приветственное сообщение с гайдом."""
+        embed = discord.Embed(
+            title="🎮 TOURNAMENT DRAFT BOT",
+            description=(
+                "Путеводитель по возможностям бота.\n\n"
+                "📌 **НАВИГАЦИЯ ПО КАНАЛАМ:**\n\n"
+                "📸 Снимки - Делитесь вашими яркими моментами\n"
+                "💭 Общение - Основное общение и чат\n"
+                "🎯 Турниры - Анонсы и проведение турниров\n"
+                "🗑️ Спам - Канал для команд бота и быстрых игр\n"
+                "🎧 Треки - Заказ треков и управление ботом\n"
+                "💻 Обмен - Обмен файлами и документами\n\n"
+                "> 💡 **Подсказка:** Чтобы попробовать мини-игры, используйте `/games`\n\n"
+                "👇 **Воспользуйтесь выпадающим меню ниже для подробного гайда:**"
+            ),
+            color=discord.Color.from_rgb(168, 85, 247)
+        )
+        
+        embed.set_author(name="Tournament Server")
+        embed.set_footer(text="Для справки используйте /games или /profile")
+        
+        view = GuideView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
     @app_commands.guild_only()
@@ -1860,6 +1887,132 @@ def get_rank_emoji(level: int) -> str:
                 f"❌ Произошла ошибка при сбросе статистики: {e}",
                 ephemeral=True
             )
+
+
+class GuideSelectMenu(discord.ui.Select):
+    """Выпадающее меню для гайда."""
+    
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Список игр, правила и команды",
+                description="Все 19 игр, правила PvE/PvP и основные команды",
+                emoji="🎮",
+                value="games"
+            ),
+            discord.SelectOption(
+                label="Экономика и Магазин",
+                description="Профиль, баланс, магазин и передача предметов",
+                emoji="💰",
+                value="economy"
+            ),
+            discord.SelectOption(
+                label="Система прогрессии, уровни и ELO",
+                description="Прогресс XP, уровни и тиры (Bronze -> GrandMaster)",
+                emoji="📊",
+                value="ranks"
+            ),
+            discord.SelectOption(
+                label="Важно знать",
+                description="Защита, комиссия, эскроу и бонусы",
+                emoji="⚠️",
+                value="important"
+            ),
+            discord.SelectOption(
+                label="Быстрый старт",
+                description="Пошаговая инструкция для новичков",
+                emoji="⚡",
+                value="start"
+            )
+        ]
+        super().__init__(
+            placeholder="🔽 Выберите нужный раздел гайда...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        """Обработка выбора пункта меню."""
+        if self.values[0] == "games":
+            embed = discord.Embed(
+                title="🎮 Список игр, правила и команды",
+                description=(
+                    "**📃 Каталог игр:**\n"
+                    "• `/games` — Вызывает меню всех 19 игр с описанием.\n\n"
+                    "**🎲 Пример игры (Камень-Ножницы-Бумага):**\n"
+                    "• `/rps bet:100` — Против бота\n"
+                    "• `/rps bet:100 opponent:@user` — Вызов игроку\n"
+                    "*(Множитель: 2x | Комиссия: 0% PvE / 5% PvP)*\n\n"
+                    "> 📜 **Правила:** Вызовы активны 60 секунд. Принять/отклонить вызов может только приглашенный игрок."
+                ),
+                color=discord.Color.from_rgb(168, 85, 247)
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        elif self.values[0] == "economy":
+            embed = discord.Embed(
+                title="💰 Экономика и Магазин",
+                description=(
+                    "• `/profile` — Ваш профиль, ELO, баланс и инвентарь\n"
+                    "• `/shop` — Магазин (иконки, цветные теги, кейсы)\n"
+                    "• `/top` — Таблицы лидеров по ELO и монетам\n"
+                    "• `/pay amount:100 @user` — Перевести монеты игроку\n"
+                    "• `/gift item_id:1 @user` — Подарить предмет из инвентаря"
+                ),
+                color=discord.Color.from_rgb(168, 85, 247)
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        elif self.values[0] == "ranks":
+            embed = discord.Embed(
+                title="📊 Система прогрессии, уровни и ELO-тиры",
+                description=(
+                    "**📈 Уровни:** XP зачисляется за игры и турниры.\n\n"
+                    "**🏅 Ранги ELO:**\n"
+                    "⚪ **Bronze I-III** (0 – 1200 ELO)\n"
+                    "⚪ **Silver I-III** (1200 – 1600 ELO)\n"
+                    "⚪ **Gold I-III** (1600 – 2000 ELO)\n"
+                    "⚪ **Platinum I-III** (2000 – 2400 ELO)\n"
+                    "⚪ **Diamond I-III** (2400 – 2800 ELO)\n"
+                    "👑 **GrandMaster** (2800+ ELO)"
+                ),
+                color=discord.Color.from_rgb(168, 85, 247)
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        elif self.values[0] == "important":
+            embed = discord.Embed(
+                title="⚠️ Важно знать",
+                description=(
+                    "• Начальный баланс и ежедневный бонус: **100 монет**\n"
+                    "• **Эскроу система:** ставки удерживаются до результата\n"
+                    "• **Защита:** Anti-spam cooldowns на мини-игры\n"
+                    "• Все игровые сообщения **публичные** (видны всем)"
+                ),
+                color=discord.Color.from_rgb(168, 85, 247)
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        elif self.values[0] == "start":
+            embed = discord.Embed(
+                title="⚡ Быстрый старт",
+                color=discord.Color.from_rgb(168, 85, 247)
+            )
+            embed.description = (
+                "1️⃣ Перейдите в канал для игр\n"
+                "2️⃣ Напишите `/games` ➔ выберите игру\n"
+                "3️⃣ Получите ежедневный бонус `/daily` и повышайте ELO!"
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+class GuideView(discord.ui.View):
+    """View для гайда с выпадающим меню."""
+    
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(GuideSelectMenu())
 
 
 async def setup(bot: TournamentBot) -> None:
