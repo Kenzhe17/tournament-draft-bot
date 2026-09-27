@@ -346,31 +346,23 @@ class BackToMainMenuButton(Button):
         
         # Получить баланс для главного экрана
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
-        total_games = len(get_all_games())
-        
-        # Создать описание категорий
-        categories_text = ""
-        for cat_id, cat_info in CATEGORIES.items():
-            games = get_games_by_category(cat_id)
-            # Короткие описания
-            short_desc = {
-                "luck": "Быстрые игры на риск: монетка, кубики, угадай число и др.",
-                "quiz": "Интеллектуальные состязания, викторины и слова.",
-                "casino": "Слоты, рулетка, баккара, лотерея и высокие ставки."
-            }
-            categories_text += f"• {cat_info['emoji']} **{cat_info['name']}**\n└ *{short_desc.get(cat_id, cat_info['description'])}*\n"
         
         embed = discord.Embed(
-            title="�ИГРЫ СЕРВЕРА | Главное меню (main_menu)",
-            description=f"""👋 Добро пожаловать, {interaction.user.display_name}!
-> � **Ваш Баланс:** {balance:,} 🪙 
->
-> **Всего категорий:** `3`
->  **Всего игр:** `19`
->
-> 📂 **КАТЕГОРИИ:**
-{categories_text}> ────────────────────────
-> ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
+            title="🎯ИГРЫ СЕРВЕРА | Главное меню",
+            description=f"""👋 **Добро пожаловать, {interaction.user.display_name}!**
+ 💳 **Ваш Баланс:** {balance:,} 🪙 
+|
+ 📂 **КАТЕГОРИИ**
+ 🎲 **Игры на удачу** 
+  └ *Быстрые игры на риск: монетка, кубики, угадай число и др.*
+|
+ 🧠 **Викторины и головоломки**
+ └ *Интеллектуальные состязания, викторины и слова.*
+|
+ 🎰 **Казино и ставки** 
+ └ *Слоты, рулетка, баккара, лотерея и высокие ставки.*
+|
+ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
             color=0x2F3136,  # Тёмно-фиолетовый
         )
 
