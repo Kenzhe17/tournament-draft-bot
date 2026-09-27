@@ -265,15 +265,83 @@ class PlayButton(Button):
         command = bot.tree.get_command(self.game.command)
 
         if command:
-            # Show instructions for using the slash command
-            embed = discord.Embed(
-                title=f"🎮 {self.game.name}",
-                description=f"Для запуска игры используйте команду:\n"
-                            f"**/{self.game.command}**\n\n"
-                            f"ℹ️ Эта игра может требовать дополнительные параметры (например, ставку).",
-                color=discord.Color.blue()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            # For RPS, show a modal to collect bet and opponent
+            if self.game.command == "rps":
+                # Create modal inline
+                class RPSBetModal(discord.ui.Modal, title="Камень-Ножницы-Бумага"):
+                    bet = discord.ui.TextInput(
+                        label="Ставка (монеты)",
+                        placeholder="Введите ставку (например: 100)",
+                        required=True,
+                        min_length=1,
+                        max_length=10
+                    )
+                    
+                    opponent = discord.ui.TextInput(
+                        label="Соперник (необязательно)",
+                        placeholder="Пусто = игра против бота",
+                        required=False,
+                        min_length=0,
+                        max_length=50
+                    )
+                    
+                    def __init__(self, game, guild_id: int):
+                        super().__init__()
+                        self.game = game
+                        self.guild_id = guild_id
+                    
+                    async def on_submit(self, interaction: discord.Interaction):
+                        """Handle modal submission."""
+                        try:
+                            bet = int(self.bet.value)
+                            if bet <= 0:
+                                await interaction.response.send_message("❌ Ставка должна быть больше 0.", ephemeral=True)
+                                return
+                        except ValueError:
+                            await interaction.response.send_message("❌ Неверный формат ставки. Введите число.", ephemeral=True)
+                            return
+                        
+                        opponent = None
+                        if self.opponent.value.strip():
+                            # Try to find user by mention or ID
+                            opponent_str = self.opponent.value.strip()
+                            if opponent_str.startswith("<@") and opponent_str.endswith(">"):
+                                # Mention format
+                                opponent_id = int(opponent_str.strip("<@!>"))
+                                # Try to get member from guild
+                                try:
+                                    guild = interaction.guild
+                                    opponent = guild.get_member(opponent_id)
+                                except:
+                                    pass
+                            else:
+                                # Try as ID
+                                try:
+                                    opponent_id = int(opponent_str)
+                                    guild = interaction.guild
+                                    opponent = guild.get_member(opponent_id)
+                                except:
+                                    pass
+                        
+                        # Get the RPS cog and call the command directly
+                        bot = interaction.client
+                        cog = bot.get_cog("RPSCog")
+                        if cog:
+                            await cog.rps(interaction, bet, opponent)
+                        else:
+                            await interaction.response.send_message("❌ Команда RPS не найдена.", ephemeral=True)
+                
+                await interaction.response.send_modal(RPSBetModal(self.game, self.guild_id))
+            else:
+                # For other games, show instructions
+                embed = discord.Embed(
+                    title=f"🎮 {self.game.name}",
+                    description=f"Для запуска игры используйте команду:\n"
+                                f"**/{self.game.command}**\n\n"
+                                f"ℹ️ Эта игра может требовать дополнительные параметры (например, ставку).",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
                 f"🚧 Игра '{self.game.name}' пока в разработке",
