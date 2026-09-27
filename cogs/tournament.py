@@ -1056,8 +1056,9 @@ def get_rank_emoji(level: int) -> str:
     else:
         return "🥉 Bronze III"
 
-    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
-    async def rank(self, interaction: discord.Interaction) -> None:
+
+@app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
+async def rank(self, interaction: discord.Interaction) -> None:
         """Показать текущий ранг и прогресс до следующего уровня."""
         from storage.player_stats_store import player_stats_store
         from utils.embeds import create_progress_bar
