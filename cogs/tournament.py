@@ -1702,50 +1702,51 @@ class TournamentCog(commands.Cog):
 
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
+    # Note: Replace <:Name:ID> with actual custom emoji IDs from your server
     if level >= 100:
-        return "👑 GrandMaster"
+        return "<:Radiant:ID> Radiant"
     elif level >= 93:
-        return "🔱 Expert I"
+        return "<:Immortal:ID> Immortal I"
     elif level >= 86:
-        return "🔱 Expert II"
+        return "<:Immortal:ID> Immortal II"
     elif level >= 80:
-        return "🔱 Expert III"
+        return "<:Immortal:ID> Immortal III"
     elif level >= 73:
-        return "🎯 Master I"
+        return "<:Ascendant:ID> Ascendant I"
     elif level >= 66:
-        return "🎯 Master II"
+        return "<:Ascendant:ID> Ascendant II"
     elif level >= 60:
-        return "🎯 Master III"
+        return "<:Ascendant:ID> Ascendant III"
     elif level >= 54:
-        return "💎 Diamond I"
+        return "<:Diamond:ID> Diamond I"
     elif level >= 48:
-        return "💎 Diamond II"
+        return "<:Diamond:ID> Diamond II"
     elif level >= 42:
-        return "💎 Diamond III"
+        return "<:Diamond:ID> Diamond III"
     elif level >= 37:
-        return "🌪️ Platinum I"
+        return "<:Platinum:ID> Platinum I"
     elif level >= 32:
-        return "🌪️ Platinum II"
+        return "<:Platinum:ID> Platinum II"
     elif level >= 27:
-        return "🌪️ Platinum III"
+        return "<:Platinum:ID> Platinum III"
     elif level >= 23:
-        return "🥇 Gold I"
+        return "<:Gold:ID> Gold I"
     elif level >= 19:
-        return "🥇 Gold II"
+        return "<:Gold:ID> Gold II"
     elif level >= 15:
-        return "🥇 Gold III"
+        return "<:Gold:ID> Gold III"
     elif level >= 12:
-        return "🥈 Silver I"
+        return "<:Silver:ID> Silver I"
     elif level >= 9:
-        return "🥈 Silver II"
+        return "<:Silver:ID> Silver II"
     elif level >= 6:
-        return "🥈 Silver III"
+        return "<:Silver:ID> Silver III"
     elif level >= 4:
-        return "🥉 Bronze I"
+        return "<:Bronze:ID> Bronze I"
     elif level >= 2:
-        return "🥉 Bronze II"
+        return "<:Bronze:ID> Bronze II"
     else:
-        return "🥉 Bronze III"
+        return "<:Bronze:ID> Bronze III"
 
 
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
@@ -1963,16 +1964,39 @@ class GuideSelectMenu(discord.ui.Select):
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
-                title="📊 Система прогрессии, уровни и ELO-тиры",
+                title="📊 Система прогрессии и рангов",
                 description=(
                     "**📈 Уровни:** XP зачисляется за игры и турниры.\n\n"
-                    "**🏅 Ранги ELO:**\n"
-                    "⚪ **Bronze I-III** (0 – 1200 ELO)\n"
-                    "⚪ **Silver I-III** (1200 – 1600 ELO)\n"
-                    "⚪ **Gold I-III** (1600 – 2000 ELO)\n"
-                    "⚪ **Platinum I-III** (2000 – 2400 ELO)\n"
-                    "⚪ **Diamond I-III** (2400 – 2800 ELO)\n"
-                    "👑 **GrandMaster** (2800+ ELO)"
+                    "**🏅 Ранги по уровням:**\n"
+                    "<:Radiant:ID> **Radiant** (100+)\n"
+                    "<:Immortal:ID> **Immortal Tier** (80-99)\n"
+                    "   ├─ Immortal I (93-99)\n"
+                    "   ├─ Immortal II (86-92)\n"
+                    "   └─ Immortal III (80-85)\n"
+                    "<:Ascendant:ID> **Ascendant Tier** (60-79)\n"
+                    "   ├─ Ascendant I (73-79)\n"
+                    "   ├─ Ascendant II (66-72)\n"
+                    "   └─ Ascendant III (60-65)\n"
+                    "<:Diamond:ID> **Diamond Tier** (42-59)\n"
+                    "   ├─ Diamond I (54-59)\n"
+                    "   ├─ Diamond II (48-53)\n"
+                    "   └─ Diamond III (42-47)\n"
+                    "<:Platinum:ID> **Platinum Tier** (27-41)\n"
+                    "   ├─ Platinum I (37-41)\n"
+                    "   ├─ Platinum II (32-36)\n"
+                    "   └─ Platinum III (27-31)\n"
+                    "<:Gold:ID> **Gold Tier** (15-26)\n"
+                    "   ├─ Gold I (23-26)\n"
+                    "   ├─ Gold II (19-22)\n"
+                    "   └─ Gold III (15-18)\n"
+                    "<:Silver:ID> **Silver Tier** (6-14)\n"
+                    "   ├─ Silver I (12-14)\n"
+                    "   ├─ Silver II (9-11)\n"
+                    "   └─ Silver III (6-8)\n"
+                    "<:Bronze:ID> **Bronze Tier** (0-5)\n"
+                    "   ├─ Bronze I (4-5)\n"
+                    "   ├─ Bronze II (2-3)\n"
+                    "   └─ Bronze III (0-1)"
                 ),
                 color=discord.Color.from_rgb(168, 85, 247)
             )
