@@ -1,4 +1,6 @@
 """Инициализация товаров магазина."""
+from config import replace_emojis
+
 
 from models.shop_item import ShopItem, CosmeticType, CosmeticRarity
 from storage.shop_store import shop_store
