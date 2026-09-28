@@ -160,9 +160,9 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     # Создать список ролей
     roles_list = "\n\n".join([
-        f"{item.value if item.value else replace_emojis('📛')} **{item.name}**\n"
-        f"├ {replace_emojis('📝')} {item.description}\n"
-        f"└ {replace_emojis('💰')} **Цена:** {item.price} {replace_emojis('🪙')}"
+        f"{item.value if item.value else ''} **{item.name}**\n"
+        f"{replace_emojis('sub_middle')} {item.description}\n"
+        f"{replace_emojis('sub_directory')} **Цена:** {item.price} {replace_emojis('money')}"
         for item in roles
     ])
 
@@ -179,10 +179,11 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     # Создать embed
     embed = discord.Embed(
-        title=replace_emojis("👑 КАТАЛОГ | Discord Роли"),
+        title=replace_emojis("КАТАЛОГ | Discord Роли"),
         description=f"Выберите роль из списка ниже для покупки:\n\n{roles_list}",
-        color=discord.Color.gold()
+        color=discord.Color.from_rgb(69, 69, 69)
     )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     # Профиль
     embed.add_field(
@@ -194,7 +195,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     )
 
     embed.add_field(
-        name=replace_emojis("💡 Выберите роль в выпадающем меню для покупки"),
+        name=replace_emojis("a_dot_smaller Выберите роль в выпадающем меню для покупки"),
         value="",
         inline=False
     )
@@ -226,8 +227,8 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{category_emoji} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
+        title=f"{replace_emojis(category_emoji)} КАТАЛОГ | {category_label}",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('sub_middle')} **Basic** • Базовые товары\n{replace_emojis('sub_middle')} **Premium** • Премиум товары\n{replace_emojis('sub_middle')} **Elite** • Элитные товары\n{replace_emojis('sub_directory')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
