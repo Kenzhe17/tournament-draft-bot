@@ -1683,7 +1683,7 @@ class TournamentCog(commands.Cog):
         for rank, emoji_id in RANK_EMOJIS.items():
             emoji = get_emoji(rank)
             status = "✅" if emoji_id else "❌"
-            rank_text += f"{status} {rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
+            rank_text += f"{status} {rank}: ID={emoji_id or 'Empty'} → `{emoji}`\n"
         
         embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
         
@@ -1692,7 +1692,7 @@ class TournamentCog(commands.Cog):
         for name, emoji_id in GAME_EMOJIS.items():
             emoji = get_emoji(name)
             status = "✅" if emoji_id else "❌"
-            game_text += f"{status} {name}: ID={emoji_id or 'Empty'} → {emoji}\n"
+            game_text += f"{status} {name}: ID={emoji_id or 'Empty'} → `{emoji}`\n"
         
         if game_text:
             embed.add_field(name="🎮 Игровые эмодзи (все)", value=game_text, inline=False)
@@ -1711,7 +1711,7 @@ class TournamentCog(commands.Cog):
         
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
-        embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
+        embed.add_field(name="🧪 Тест (Radiant)", value=f"`{test_emoji}`", inline=False)
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
