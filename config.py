@@ -112,6 +112,8 @@ GAME_EMOJIS = {
     "tag": os.getenv("EMOJI_TAG", ""),
     "settings": os.getenv("EMOJI_SETTINGS", ""),
     "eye": os.getenv("EMOJI_EYE", ""),
+    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
+    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
 
     # Numbers
     "num_1": os.getenv("EMOJI_NUM_1", ""),
@@ -205,7 +207,9 @@ STANDARD_EMOJIS = {
     "money": "💰",
     "shop": "🛍️",
     "gift": "🎁",
-    
+    "arrow_left": "⬅️",
+    "arrow_right": "➡️",
+
     # Interface
     "success": "✅",
     "error": "❌",
@@ -245,6 +249,8 @@ STANDARD_EMOJIS = {
     "sub_middle": "",
     "room": "",
     "white_arrow": "",
+    "arrow_left": "",
+    "arrow_right": "",
     "a_sparkle": "",
     "a_star": "",
     "a_triple_dots": "",
@@ -407,6 +413,7 @@ def replace_emojis(text: str) -> str:
         # Additional symbols for replacement
         "⚪": "white_dot",
         "➡️": "white_arrow",
+        "⬅️": "arrow_left",
         "✨": "a_sparkle",
         "⭐": "a_star",
         "⋯": "a_triple_dots",
@@ -437,6 +444,7 @@ def replace_emojis(text: str) -> str:
         "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
         "check", "cross",
         "medal_gold", "medal_silver", "medal_bronze",
+        "arrow_left", "arrow_right",
     ]
 
     result = text

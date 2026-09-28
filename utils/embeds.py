@@ -621,7 +621,7 @@ async def build_draft_embed(
 
         status = ""
         if circle == tournament.current_circle:
-            status = " ⬅"
+            status = " arrow_left"
         embed.add_field(
             name=f"⚔️ Круг {circle}:{status}",
             value="\n".join(lines),
@@ -636,7 +636,7 @@ async def build_draft_embed(
         if captain_user_id:
             embed.add_field(
                 name="👤 Сейчас выбирает",
-                value=f"**➡️ <@{captain_user_id}>**",
+                value=f"**{replace_emojis('arrow_right')} <@{captain_user_id}>**",
                 inline=False,
             )
             # Добавить @mention в описание для уведомления
