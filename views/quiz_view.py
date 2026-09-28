@@ -27,7 +27,7 @@ class QuizBetModal(discord.ui.Modal):
             bet = int(self.bet.value)
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Ставка должна быть числом!",
+                replace_emojis("❌ Ставка должна быть числом!",),
                 ephemeral=True
             )
             return
@@ -36,7 +36,7 @@ class QuizBetModal(discord.ui.Modal):
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. У вас: {balance} 🪙",
+                replace_emojis("❌ Недостаточно монет. У вас: {balance} 🪙",),
                 ephemeral=True
             )
             return
@@ -44,7 +44,7 @@ class QuizBetModal(discord.ui.Modal):
         # Проверить лимиты ставок
         if bet < MIN_BET or bet > MAX_BET:
             await interaction.response.send_message(
-                replace_emojis("❌ Ставка должна быть между {MIN_BET} и {MAX_BET} 🪙",
+                replace_emojis("❌ Ставка должна быть между {MIN_BET} и {MAX_BET} 🪙",),
                 ephemeral=True
             )
             return
@@ -54,6 +54,6 @@ class QuizBetModal(discord.ui.Modal):
 
         # Вернуть ставку для использования в конкретной игре
         await interaction.response.send_message(
-            replace_emojis("✅ Ставка {bet} 🪙 принята!",
+            replace_emojis("✅ Ставка {bet} 🪙 принята!",),
             ephemeral=True
         )

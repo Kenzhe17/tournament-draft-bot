@@ -90,7 +90,7 @@ class MatchButton(discord.ui.Button):
         team_view = TeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🎯 Выберите команду",
+            title=replace_emojis("🎯 Выберите команду",),
             description=f"{teams[0][1]} vs {teams[1][1]}",
             color=discord.Color.gold()
         )
@@ -199,7 +199,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         )
 
         await interaction.response.send_message(
-            replace_emojis("✅ Ставка {amount} 🪙 на {self.team_name} принята!",
+            replace_emojis("✅ Ставка {amount} 🪙 на {self.team_name} принята!",),
             ephemeral=True
         )
 
@@ -232,7 +232,7 @@ class BettingButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label=replace_emojis("💰 Сделать ставку",
+            label=replace_emojis("💰 Сделать ставку",),
             style=discord.ButtonStyle.primary,
             custom_id=f"betting_main:{guild_id}"
         )
@@ -244,7 +244,7 @@ class BettingButton(discord.ui.Button):
         match_view = MatchSelectView(self.guild_id, self.tournament)
 
         embed = discord.Embed(
-            title=replace_emojis("💰 Ставки на турнир",
+            title=replace_emojis("💰 Ставки на турнир",),
             description="Выберите матч для ставки:",
             color=discord.Color.gold()
         )

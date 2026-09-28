@@ -48,7 +48,7 @@ class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
         # Создать embed
         embed = discord.Embed(
             title="⚡ Быстрый тест",
-            description=replace_emojis("🎯 Нажмите кнопку чтобы начать! После задержки появится эмодзи - нажмите быстро!",
+            description=replace_emojis("🎯 Нажмите кнопку чтобы начать! После задержки появится эмодзи - нажмите быстро!",),
             color=discord.Color.blue()
         )
         embed.add_field(name="Ставка", value=f"{bet} 🪙", inline=True)
@@ -98,7 +98,7 @@ class ReflexTestGameView(View):
 
         embed = discord.Embed(
             title="⚡ Быстрый тест",
-            description=replace_emojis("🎯 НАЖМИТЕ! {target_emoji}",
+            description=replace_emojis("🎯 НАЖМИТЕ! {target_emoji}",),
             color=discord.Color.red()
         )
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)
@@ -145,7 +145,7 @@ class ReflexTestReactionView(View):
             title = "😢 Медленно!"
         else:
             color = discord.Color.orange()
-            title = replace_emojis("❌ Ошибка!"
+            title = replace_emojis("❌ Ошибка!"),
 
         embed = discord.Embed(
             title=title,

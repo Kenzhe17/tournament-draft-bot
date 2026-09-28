@@ -38,7 +38,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
             view = DiceRollGameView(session)
             embed = discord.Embed(
-                title=replace_emojis("🎲 Кубик",
+                title=replace_emojis("🎲 Кубик",),
                 description=f"Ставка: {bet} 🪙\nНажмите чтобы бросить кубик!",
                 color=discord.Color.blue(),
             )
@@ -83,7 +83,7 @@ class DiceRollGameView(View):
             color = discord.Color.yellow()
 
         embed = discord.Embed(
-            title=replace_emojis("🎲 Кубик",
+            title=replace_emojis("🎲 Кубик",),
             description=f"Ваш бросок: {player_roll}\nБот бросок: {bot_roll}\n\n{result}",
             color=color,
         )

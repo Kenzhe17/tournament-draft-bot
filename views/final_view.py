@@ -38,7 +38,7 @@ class FinalWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты.",
+                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
                 ephemeral=True,
             )
             return
@@ -71,8 +71,8 @@ class FinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
-            ephemeral=True
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
+            ephemeral=True,
         )
 
 

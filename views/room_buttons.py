@@ -64,7 +64,7 @@ class RoomButton(discord.ui.Button):
 
         if not (user_in_team or is_admin):
             await interaction.response.send_message(
-                replace_emojis("❌ Только игроки этих команд и организаторы могут добавлять комнату.",
+                replace_emojis("❌ Только игроки этих команд и организаторы могут добавлять комнату.",),
                 ephemeral=True
             )
             return

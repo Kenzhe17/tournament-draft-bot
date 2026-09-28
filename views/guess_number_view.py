@@ -61,7 +61,7 @@ class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число")
 
         # Создать embed
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",),
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )
@@ -109,7 +109,7 @@ class GuessNumberGameView(View):
         """Сдаться и потерять ставку."""
         self.game.game_over = True
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",),
             description=f"😢 Вы сдались! Загаданное число было {self.game.secret_number}.",
             color=discord.Color.red()
         )
@@ -148,7 +148,7 @@ class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попы
 
         # Создать embed
         embed = discord.Embed(
-            title=replace_emojis("🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",),
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )
