@@ -106,7 +106,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
             sparkle = f" {replace_emojis('a_star')}"
 
         cases_parts.append(
-            f"{replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
+            f"{replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}{sparkle}"
         )
         cases_parts.append(
             f"{replace_emojis('└')} {replace_emojis(rare_emoji)} {case.description}"
