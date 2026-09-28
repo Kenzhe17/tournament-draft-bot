@@ -219,28 +219,10 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{category_emoji} КАТАЛОГ | {category_label}",
-        description="Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:",
-        color=discord.Color.purple()
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('✨')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Для перехода выберите подкатегорию в меню",
+        color=discord.Color.from_rgb(69, 69, 69)
     )
-
-    # Список уровней
-    embed.add_field(
-        name="",
-        value=f"{replace_emojis('⭐')} **Basic**    • Базовые товары для всех\n"
-              f"{replace_emojis('💎')} **Premium**  • Премиум товары для опытных\n"
-              f"{replace_emojis('👑')} **Elite**    • Элитные товары для топов\n"
-              f"{replace_emojis('✨')} **Special**  • Специальные редкие товары",
-        inline=False
-    )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     embed.add_field(
         name=replace_emojis("💡 Для перехода выберите подкатегорию в меню"),
