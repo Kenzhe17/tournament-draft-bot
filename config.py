@@ -110,10 +110,10 @@ GAME_EMOJIS = {
     
     # Shop & UI
     "tag": os.getenv("EMOJI_TAG", ""),
-    "settings": os.getenv("EMOJI_SETTINGS", ""),
+
     "eye": os.getenv("EMOJI_EYE", ""),
-    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
-    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
+
+
     "room": os.getenv("EMOJI_ROOM", ""),
     "winner": os.getenv("EMOJI_WINNER", ""),
 
@@ -201,6 +201,9 @@ STANDARD_EMOJIS = {
     "gift": "🎁",
     "arrow_left": "⬅️",
     "arrow_right": "➡️",
+    "check": "✅",
+    "cross": "❌",
+    "settings": "⚙️",
 
     # Interface
     "success": "✅",
@@ -221,7 +224,6 @@ STANDARD_EMOJIS = {
     "check": "✅",
     "cross": "❌",
     "tag": "🏷️",
-    "settings": "⚙️",
     "eye": "👁️",
     "arrow_left": "⬅️",
     "arrow_right": "➡️",
@@ -345,8 +347,6 @@ def replace_emojis(text: str) -> str:
         # Navigation
         "🔄": "refresh",
         "🔙": "back",
-        "➡️": "white_arrow",
-        "⬅️": "arrow_left",
         "🔽": "dropdown",
         "🆕": "new",
 
@@ -355,7 +355,6 @@ def replace_emojis(text: str) -> str:
         "👥": "team",
         "📌": "pin",
         "📢": "announce",
-        "⚙️": "settings",
         "👁️": "eye",
         "🏷️": "tag",
         "🚪": "room",
@@ -395,7 +394,6 @@ def replace_emojis(text: str) -> str:
         "🏷️": "tag",
         "👑": "winner",
         "📦": "gift",
-        "⚙️": "settings",
         "👁️": "eye",
 
         # Special
@@ -407,7 +405,6 @@ def replace_emojis(text: str) -> str:
         "⚪": "white_dot",
         "➡️": "white_arrow",
         "⬅️": "arrow_left",
-        "⚙️": "settings",
         "✨": "a_sparkle",
         "⭐": "a_star",
         "⋯": "a_triple_dots",
@@ -438,8 +435,6 @@ def replace_emojis(text: str) -> str:
         "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
         "check", "cross",
         "medal_gold", "medal_silver", "medal_bronze",
-        "arrow_left", "arrow_right",
-        "settings",
         "room",
         "winner",
     ]
