@@ -865,7 +865,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ | {target_user.display_name}",
+            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {target_user.display_name}",
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
