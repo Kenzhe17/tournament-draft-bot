@@ -127,7 +127,6 @@ GAME_EMOJIS = {
     "a_star": os.getenv("EMOJI_A_STAR", ""),
     "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
     "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
-    "a_small_dot": os.getenv("EMOJI_A_SMALL_DOT", ""),
 
     # Case emojis
     "case_basic": os.getenv("EMOJI_CASE_BASIC", ""),
@@ -245,8 +244,6 @@ STANDARD_EMOJIS = {
     "a_star": "",
     "a_triple_dots": "",
     "a_dot_smaller": "",
-    "a_small_dot": "⚪",
-    "a_small_dot": "⚪",
 
     # Case emojis
     "case_basic": "",
