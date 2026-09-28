@@ -290,15 +290,15 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.description = (
-            f"Добро пожаловать в игровой магазин {replace_emojis('✨')}\n"
-            f"Выберите нужный раздел в выпадающем меню ниже {replace_emojis('⋯')}\n"
+            f"Добро пожаловать в игровой магазин {replace_emojis('a_sparkle')}\n"
+            f"Выберите нужный раздел в выпадающем меню ниже {replace_emojis('a_triple_dots')}\n"
             "чтобы посмотреть доступные товары."
         )
 
         # Профиль пользователя
         embed.add_field(
             name=replace_emojis("⚪ Ваш профиль:"),
-            value=f"{replace_emojis('└')} Баланс: {balance:,} {replace_emojis('🪙')}\n"
+            value=f"{replace_emojis('└')} Баланс: {balance:,} {replace_emojis('money')}\n"
                   f"{replace_emojis('└')} Ранг: {rank}\n"
                   f"{replace_emojis('└')} Инвентарь: {inventory_count}/{max_inventory}",
             inline=False
@@ -1580,8 +1580,8 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('🪙')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {replace_emojis('🪙')}"
-            embed.add_field(name="Пользователь", value=f"{replace_emojis('➡️')} {user.mention} **получил** — {result['amount']:,} {replace_emojis('🪙')}", inline=False)
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {replace_emojis('money')}"
+            embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {replace_emojis('money')}", inline=False)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:

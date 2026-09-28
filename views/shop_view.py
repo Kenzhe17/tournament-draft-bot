@@ -224,13 +224,13 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{category_emoji} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('✨')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Для перехода выберите подкатегорию в меню",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_sparkle')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('money')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     embed.add_field(
-        name=replace_emojis("💡 Для перехода выберите подкатегорию в меню"),
+        name=replace_emojis("⚪ Для перехода выберите подкатегорию в меню"),
         value="",
         inline=False
     )
