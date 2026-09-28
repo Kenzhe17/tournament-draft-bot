@@ -290,7 +290,7 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.description = (
-            f"Добро пожаловать в игровой магазин {replace_emojis('a_sparkle_2')}\n"
+            f"Добро пожаловать в игровой магазин {replace_emojis('a_star')}\n"
             f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
         )
 

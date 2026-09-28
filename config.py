@@ -128,7 +128,7 @@ GAME_EMOJIS = {
     "room": os.getenv("EMOJI_ROOM", ""),
     "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
     "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
-    "a_sparkle_2": os.getenv("EMOJI_A_SPARKLE_2", ""),
+    "a_star": os.getenv("EMOJI_A_STAR", ""),
     "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
     "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
 
@@ -224,7 +224,7 @@ STANDARD_EMOJIS = {
     "room": "",
     "white_arrow": "",
     "a_sparkle": "",
-    "a_sparkle_2": "",
+    "a_star": "",
     "a_triple_dots": "",
     "a_dot_smaller": "",
 
@@ -368,6 +368,7 @@ def replace_emojis(text: str) -> str:
         "⚪": "white_dot",
         "➡️": "white_arrow",
         "✨": "a_sparkle",
+        "⭐": "a_star",
         "⋯": "a_triple_dots",
 
         # Case emojis
@@ -376,7 +377,6 @@ def replace_emojis(text: str) -> str:
         "👑": "case_elite",
 
         # Rare emojis
-        "⭐": "rare_basic",
         "💫": "rare_premium",
         "🌟": "rare_elite",
     }
@@ -384,7 +384,7 @@ def replace_emojis(text: str) -> str:
     # Direct emoji name mapping for custom emoji names passed directly
     direct_emoji_names = [
         "money", "white_dot", "sub_directory", "sub_middle", "room", "white_arrow",
-        "a_sparkle", "a_sparkle_2", "a_triple_dots", "a_dot_smaller",
+        "a_sparkle", "a_star", "a_triple_dots", "a_dot_smaller",
         "case_basic", "case_premium", "case_elite", "case_special",
         "rare_basic", "rare_premium", "rare_elite", "rare_special",
     ]

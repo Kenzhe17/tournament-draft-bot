@@ -103,7 +103,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
         elif "Special" in case.name:
             case_emoji = "case_special"
             rare_emoji = "rare_special"
-            sparkle = f" {replace_emojis('a_sparkle')}"
+            sparkle = f" {replace_emojis('a_star')}"
 
         cases_parts.append(
             f"{replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')}{sparkle}"
@@ -227,7 +227,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{category_emoji} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_sparkle')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
