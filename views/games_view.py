@@ -327,7 +327,7 @@ class BackToMainMenuButton(Button):
 
     def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label=replace_emojis("🏠 В главное меню"),
+            label=replace_emojis("room В главное меню"),
             style=discord.ButtonStyle.secondary,
             custom_id="back_to_main"
         )
