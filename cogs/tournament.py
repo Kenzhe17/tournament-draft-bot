@@ -1668,96 +1668,6 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
-    async def cog_app_command_error(
-        self,
-        interaction: discord.Interaction,
-        error: app_commands.AppCommandError,
-    ) -> None:
-        """Обработка ошибок slash-команд."""
-        if isinstance(error, app_commands.CheckFailure):
-            msg = str(error) or "❌ Недостаточно прав."
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(msg, ephemeral=True)
-                else:
-                    await interaction.response.send_message(msg, ephemeral=True)
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-            except discord.NotFound:
-                # Interaction expired, can't respond
-                pass
-            return
-
-        logger.exception("Ошибка команды: %s", error)
-        msg = "❌ Произошла ошибка при выполнении команды."
-        try:
-            if interaction.response.is_done():
-                await interaction.followup.send(msg, ephemeral=True)
-            else:
-                await interaction.response.send_message(msg, ephemeral=True)
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-        except discord.NotFound:
-            # Interaction expired, can't respond
-            pass
-
-
-def get_rank_emoji(level: int) -> str:
-    """Получить эмодзи и название ранга по уровню."""
-    from config import get_emoji
-    
-    # Get rank name based on level
-    if level >= 100:
-        rank_name = "Radiant"
-    elif level >= 93:
-        rank_name = "Immortal I"
-    elif level >= 86:
-        rank_name = "Immortal II"
-    elif level >= 80:
-        rank_name = "Immortal III"
-    elif level >= 73:
-        rank_name = "Ascendant I"
-    elif level >= 66:
-        rank_name = "Ascendant II"
-    elif level >= 60:
-        rank_name = "Ascendant III"
-    elif level >= 54:
-        rank_name = "Diamond I"
-    elif level >= 48:
-        rank_name = "Diamond II"
-    elif level >= 42:
-        rank_name = "Diamond III"
-    elif level >= 37:
-        rank_name = "Platinum I"
-    elif level >= 32:
-        rank_name = "Platinum II"
-    elif level >= 27:
-        rank_name = "Platinum III"
-    elif level >= 23:
-        rank_name = "Gold I"
-    elif level >= 19:
-        rank_name = "Gold II"
-    elif level >= 15:
-        rank_name = "Gold III"
-    elif level >= 12:
-        rank_name = "Silver I"
-    elif level >= 9:
-        rank_name = "Silver II"
-    elif level >= 6:
-        rank_name = "Silver III"
-    elif level >= 4:
-        rank_name = "Bronze I"
-    elif level >= 2:
-        rank_name = "Bronze II"
-    else:
-        rank_name = "Bronze III"
-    
-    # Get the base rank name (without tier) for emoji lookup
-    base_rank = rank_name.split()[0] if " " in rank_name else rank_name
-    
-    # Get custom or standard emoji
-    emoji = get_emoji(base_rank)
-    
-    return f"{emoji} {rank_name}"
-
     @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
     async def debug_emoji(self, interaction: discord.Interaction) -> None:
         """Проверить какие эмодзи загружены."""
@@ -1781,7 +1691,6 @@ def get_rank_emoji(level: int) -> str:
         embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
 
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
@@ -1919,6 +1828,96 @@ def get_rank_emoji(level: int) -> str:
                 f"❌ Произошла ошибка при сбросе статистики: {e}",
                 ephemeral=True
             )
+
+    async def cog_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        """Обработка ошибок slash-команд."""
+        if isinstance(error, app_commands.CheckFailure):
+            msg = str(error) or "❌ Недостаточно прав."
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+            except discord.NotFound:
+                # Interaction expired, can't respond
+                pass
+            return
+
+        logger.exception("Ошибка команды: %s", error)
+        msg = "❌ Произошла ошибка при выполнении команды."
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.response.send_message(msg, ephemeral=True)
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+        except discord.NotFound:
+            # Interaction expired, can't respond
+            pass
+
+
+def get_rank_emoji(level: int) -> str:
+    """Получить эмодзи и название ранга по уровню."""
+    from config import get_emoji
+    
+    # Get rank name based on level
+    if level >= 100:
+        rank_name = "Radiant"
+    elif level >= 93:
+        rank_name = "Immortal I"
+    elif level >= 86:
+        rank_name = "Immortal II"
+    elif level >= 80:
+        rank_name = "Immortal III"
+    elif level >= 73:
+        rank_name = "Ascendant I"
+    elif level >= 66:
+        rank_name = "Ascendant II"
+    elif level >= 60:
+        rank_name = "Ascendant III"
+    elif level >= 54:
+        rank_name = "Diamond I"
+    elif level >= 48:
+        rank_name = "Diamond II"
+    elif level >= 42:
+        rank_name = "Diamond III"
+    elif level >= 37:
+        rank_name = "Platinum I"
+    elif level >= 32:
+        rank_name = "Platinum II"
+    elif level >= 27:
+        rank_name = "Platinum III"
+    elif level >= 23:
+        rank_name = "Gold I"
+    elif level >= 19:
+        rank_name = "Gold II"
+    elif level >= 15:
+        rank_name = "Gold III"
+    elif level >= 12:
+        rank_name = "Silver I"
+    elif level >= 9:
+        rank_name = "Silver II"
+    elif level >= 6:
+        rank_name = "Silver III"
+    elif level >= 4:
+        rank_name = "Bronze I"
+    elif level >= 2:
+        rank_name = "Bronze II"
+    else:
+        rank_name = "Bronze III"
+    
+    # Get the base rank name (without tier) for emoji lookup
+    base_rank = rank_name.split()[0] if " " in rank_name else rank_name
+    
+    # Get custom or standard emoji
+    emoji = get_emoji(base_rank)
+    
+    return f"{emoji} {rank_name}"
 
 
 class GuideSelectMenu(discord.ui.Select):
