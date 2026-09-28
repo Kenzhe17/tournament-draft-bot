@@ -16,499 +16,124 @@ def initialize_shop_items() -> None:
 
     # Графические значки (Icons & Emblems)
     icons = [
-        # (500 монет)
+        # Basic (700 монет)
         ShopItem(
-            id="icon_gamepad",
-            name="Геймпад",
+            id="icon_w",
+            name="WW",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="🎮",
+            value="WW",
             category="icons"
         ),
         ShopItem(
-            id="icon_kiss",
-            name="Поцелуй",
+            id="icon_paw",
+            name="Лапка",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="💋",
+            value="Лапка",
             category="icons"
         ),
         ShopItem(
-            id="icon_star",
-            name="Звезда",
+            id="icon_bluestacks",
+            name="Bluestacks",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="⭐",
+            value="Bluestacks",
             category="icons"
         ),
+        # Elite (700 монет)
         ShopItem(
-            id="icon_pizza",
-            name="Пицца",
+            id="icon_teacup",
+            name="Чашка чая",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.BASIC,
-            value="🍕",
+            rarity=CosmeticRarity.ELITE,
+            value="Чашка чая",
             category="icons"
         ),
         ShopItem(
-            id="icon_coffee",
-            name="Кофе",
+            id="icon_ribbon",
+            name="Бантик",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.BASIC,
-            value="☕",
+            rarity=CosmeticRarity.ELITE,
+            value="Бантик",
             category="icons"
         ),
         ShopItem(
-            id="icon_dice",
-            name="Кубик",
+            id="icon_18plus",
+            name="18+",
             description="",
             price=700,
             cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.BASIC,
-            value="🎲",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_flower",
-            name="Цветок",
-            description="",
-            price=700,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.BASIC,
-            value="🌺",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_snowflake",
-            name="Снежинка",
-            description="",
-            price=700,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.BASIC,
-            value="❄️",
-            category="icons"
-        ),
-        # (1 250 монет)
-        ShopItem(
-            id="icon_fire",
-            name="Огонь",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="🔥",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_wine",
-            name="Вино",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="🍷",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_swords",
-            name="Мечи",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="⚔️",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_wolf",
-            name="Волк",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="🐺",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_butterfly",
-            name="Бабочка",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="🦋",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_fox",
-            name="Лиса",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="🦊",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_lightning",
-            name="Молния",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.PREMIUM,
-            value="⚡",
+            rarity=CosmeticRarity.ELITE,
+            value="18+",
             category="icons"
         ),
         ShopItem(
             id="icon_heart",
-            name="Сердце",
+            name="Сердечко",
             description="",
-            price=1750,
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="Сердечко",
+            category="icons"
+        ),
+        # Premium (700 монет)
+        ShopItem(
+            id="icon_v_badge",
+            name="Галочка",
+            description="",
+            price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
-            value="❤️",
+            value="Галочка",
             category="icons"
         ),
-        # (2 500 монет)
         ShopItem(
-            id="icon_crown",
-            name="Корона",
+            id="icon_cards",
+            name="Карты",
             description="",
-            price=3500,
+            price=700,
             cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="👑",
+            rarity=CosmeticRarity.PREMIUM,
+            value="Карты",
             category="icons"
         ),
         ShopItem(
-            id="icon_diamond",
-            name="Бриллиант",
+            id="icon_cat_ears",
+            name="Кошачьи ушки",
             description="",
-            price=3500,
+            price=700,
             cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="💎",
+            rarity=CosmeticRarity.PREMIUM,
+            value="Кошачьи ушки",
             category="icons"
         ),
+        # Special (700 монет)
         ShopItem(
-            id="icon_chains",
-            name="Цепи",
+            id="icon_wing",
+            name="Голубое крыло",
             description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="⛓️",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_eagle",
-            name="Орёл",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="🦅",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_snake",
-            name="Змея",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="🐍",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_broken_heart",
-            name="Разбитое сердце",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="💔",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_love",
-            name="Любовь",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="💘",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_beating_heart",
-            name="Пульсирующее сердце",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="💗",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_theater",
-            name="Театр",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="🎭",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_explosion",
-            name="Взрыв",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="💥",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_knife",
-            name="Нож",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.ELITE,
-            value="🔪",
-            category="icons"
-        ),
-        # (4 250 монет)
-        ShopItem(
-            id="icon_rose",
-            name="Роза",
-            description="",
-            price=5950,
+            price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
-            value="🥀",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_dragon",
-            name="Дракон",
-            description="",
-            price=5950,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.SPECIAL,
-            value="🐉",
-            category="icons"
-        ),
-        ShopItem(
-            id="icon_wings",
-            name="Крылья",
-            description="",
-            price=5950,
-            cosmetic_type=CosmeticType.ICON,
-            rarity=CosmeticRarity.SPECIAL,
-            value="🪽",
+            value="Голубое крыло",
             category="icons"
         ),
     ]
 
     # Текстовые теги и титулы (Titles & Badges)
-    tags = [
-        # (400 монет)
-        ShopItem(
-            id="tag_pro",
-            name="[PRO]",
-            description="",
-            price=700,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.BASIC,
-            value="[PRO]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_sweet",
-            name="[SWEET]",
-            description="",
-            price=700,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.BASIC,
-            value="[SWEET]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_vip",
-            name="[VIP]",
-            description="",
-            price=700,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.BASIC,
-            value="[VIP]",
-            category="tags"
-        ),
-        # (1 000 монет)
-        ShopItem(
-            id="tag_mvp",
-            name="[MVP]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[MVP]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_king",
-            name="[KING]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[KING]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_boss",
-            name="[BOSS]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[BOSS]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_love",
-            name="[LOVE]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[LOVE]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_cry",
-            name="[CRY]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[CRY]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_hate",
-            name="[HATE]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[HATE]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_wow",
-            name="[WOW]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[WOW]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_oof",
-            name="[OOF]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[OOF]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_damn",
-            name="[DAMN]",
-            description="",
-            price=1750,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.PREMIUM,
-            value="[DAMN]",
-            category="tags"
-        ),
-        # (2 250 монет)
-        ShopItem(
-            id="tag_god",
-            name="[GOD]",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.ELITE,
-            value="[GOD]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_sex",
-            name="[SEX]",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.ELITE,
-            value="[SEX]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_legend",
-            name="[LEGEND]",
-            description="",
-            price=3500,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.ELITE,
-            value="[LEGEND]",
-            category="tags"
-        ),
-        # (3 750 монет)
-        ShopItem(
-            id="tag_404",
-            name="[404]",
-            description="",
-            price=5950,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.SPECIAL,
-            value="[404]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_xxx",
-            name="[XXX]",
-            description="",
-            price=5950,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.SPECIAL,
-            value="[XXX]",
-            category="tags"
-        ),
-        ShopItem(
-            id="tag_ego",
-            name="[EGO]",
-            description="",
-            price=5950,
-            cosmetic_type=CosmeticType.TAG,
-            rarity=CosmeticRarity.SPECIAL,
-            value="[EGO]",
-            category="tags"
-        ),
-    ]
+    tags = []
 
     # Добавить все товары в магазин
     for item in icons + tags:
