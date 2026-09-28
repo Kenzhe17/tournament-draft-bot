@@ -230,10 +230,12 @@ class TournamentCog(commands.Cog):
     async def help_command(self, interaction: discord.Interaction) -> None:
         """Показать интерактивную справку."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ТУРНИРЫ  {replace_emojis('a_star')}",
-            description=f"{replace_emojis('white_arrow')} **Информация и статистика турнирной системы**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/top` — Таблица лучших игроков `(level / money / elo)`\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/booyah` — Зал славы, рекорды и история прошлых турниров\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+            title=f"{replace_emojis('a_star')}  СПРАВКА ПО КОМАНДАМ  {replace_emojis('a_star')}",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/top` — Таблица лучших игроков `(level / money / elo)`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/booyah` — Зал славы, рекорды и история прошлых турниров\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы\n",
             color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
+        embed.set_footer(text="DISCORD SERVER r1z3")
         view = HelpGuideView(current="tournaments")
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
@@ -1759,24 +1761,17 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
-        # First embed: only banner
-        banner_embed = discord.Embed(
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        banner_embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
-
-        # Second embed: content with menu
-        content_embed = discord.Embed(
+        embed = discord.Embed(
             title=f"{replace_emojis('a_star')}  DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ  {replace_emojis('a_star')}",
-            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_dot_smaller')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_dot_smaller')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_dot_smaller')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('a_dot_smaller')}  Выберите категорию в меню ниже, чтобы открыть список команд ",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')}  📌 **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_dot_smaller')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_dot_smaller')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_dot_smaller')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('a_dot_smaller')}  Выберите категорию в меню ниже, чтобы открыть список команд\n",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        content_embed.set_footer(text="DISCORD SERVER r1z3")
+        embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GuideView()
 
-        await interaction.response.send_message(embed=banner_embed, ephemeral=False)
-        await interaction.followup.send(embed=content_embed, view=view, ephemeral=False)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")

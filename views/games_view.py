@@ -93,7 +93,7 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
-            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -306,7 +306,7 @@ class BackToCategoryButton(Button):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
-            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('a_dot_smaller')} Игр в категории: {len(games)}\n\n{replace_emojis('white_dot')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -341,7 +341,7 @@ class BackToMainMenuButton(Button):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_directory')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Категории:**\n{replace_emojis('sub_middle')} **Игры на удачу**\n{replace_emojis('sub_middle')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('sub_middle')} **Викторины и головоломки**\n{replace_emojis('sub_middle')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('sub_middle')} **Казино и ставки**\n{replace_emojis('sub_directory')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -389,7 +389,7 @@ class BackButton(Button):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -444,7 +444,7 @@ class ForwardButton(Button):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)

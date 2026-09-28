@@ -204,6 +204,7 @@ STANDARD_EMOJIS = {
     "check": "✅",
     "cross": "❌",
     "settings": "⚙️",
+    "room": "🚪",
 
     # Interface
     "success": "✅",
