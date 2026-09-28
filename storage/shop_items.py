@@ -24,7 +24,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="WW",
+            value="🎮",
             category="icons"
         ),
         ShopItem(
@@ -34,7 +34,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="Лапка",
+            value="🐾",
             category="icons"
         ),
         ShopItem(
@@ -44,7 +44,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="Bluestacks",
+            value="🔵",
             category="icons"
         ),
         # Elite (3500 монет)
@@ -55,7 +55,7 @@ def initialize_shop_items() -> None:
             price=3500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
-            value="Чашка чая",
+            value="☕",
             category="icons"
         ),
         ShopItem(
@@ -65,7 +65,7 @@ def initialize_shop_items() -> None:
             price=3500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
-            value="Бантик",
+            value="🎀",
             category="icons"
         ),
         ShopItem(
@@ -75,7 +75,7 @@ def initialize_shop_items() -> None:
             price=3500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
-            value="18+",
+            value="🔞",
             category="icons"
         ),
         ShopItem(
@@ -85,7 +85,7 @@ def initialize_shop_items() -> None:
             price=3500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
-            value="Сердечко",
+            value="❤️",
             category="icons"
         ),
         # Premium (1750 монет)
@@ -96,7 +96,7 @@ def initialize_shop_items() -> None:
             price=1750,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
-            value="Галочка",
+            value="✅",
             category="icons"
         ),
         ShopItem(
@@ -106,7 +106,7 @@ def initialize_shop_items() -> None:
             price=1750,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
-            value="Карты",
+            value="🃏",
             category="icons"
         ),
         ShopItem(
@@ -116,7 +116,7 @@ def initialize_shop_items() -> None:
             price=1750,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.PREMIUM,
-            value="Кошачьи ушки",
+            value="🐱",
             category="icons"
         ),
         # Special (5950 монет)
@@ -127,7 +127,7 @@ def initialize_shop_items() -> None:
             price=5950,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
-            value="Голубое крыло",
+            value="🪽",
             category="icons"
         ),
     ]

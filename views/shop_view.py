@@ -346,19 +346,19 @@ class RaritySelect(discord.ui.Select):
         # Цвет по редкости
         embed_color = discord.Color.from_rgb(69, 69, 69)
 
-        # Маппинг icon эмодзи по значению
+        # Маппинг icon эмодзи по значению (используем стандартные эмодзи, replace_emojis заменит их на кастомные)
         icon_map = {
-            "WW": "icon_w",
-            "Лапка": "icon_paw",
-            "Bluestacks": "icon_bluestacks",
-            "Чашка чая": "icon_teacup",
-            "Бантик": "icon_ribbon",
-            "18+": "icon_18plus",
-            "Сердечко": "icon_heart",
-            "Галочка": "icon_v_badge",
-            "Карты": "icon_cards",
-            "Кошачьи ушки": "icon_cat_ears",
-            "Голубое крыло": "icon_wing",
+            "🎮": "icon_w",
+            "🐾": "icon_paw",
+            "🔵": "icon_bluestacks",
+            "☕": "icon_teacup",
+            "🎀": "icon_ribbon",
+            "🔞": "icon_18plus",
+            "❤️": "icon_heart",
+            "✅": "icon_v_badge",
+            "🃏": "icon_cards",
+            "🐱": "icon_cat_ears",
+            "🪽": "icon_wing",
         }
 
         # Маппинг rare эмодзи по редкости
@@ -841,17 +841,17 @@ class BuyButton(discord.ui.Button):
 
             # Icon map
             icon_map = {
-                "WW": "icon_w",
-                "Лапка": "icon_paw",
-                "Bluestacks": "icon_bluestacks",
-                "Чашка чая": "icon_teacup",
-                "Бантик": "icon_ribbon",
-                "18+": "icon_18plus",
-                "Сердечко": "icon_heart",
-                "Галочка": "icon_v_badge",
-                "Карты": "icon_cards",
-                "Кошачьи ушки": "icon_cat_ears",
-                "Голубое крыло": "icon_wing",
+                "🎮": "icon_w",
+                "🐾": "icon_paw",
+                "🔵": "icon_bluestacks",
+                "☕": "icon_teacup",
+                "🎀": "icon_ribbon",
+                "🔞": "icon_18plus",
+                "❤️": "icon_heart",
+                "✅": "icon_v_badge",
+                "🃏": "icon_cards",
+                "🐱": "icon_cat_ears",
+                "🪽": "icon_wing",
             }
             icon_emoji = icon_map.get(item.value, "")
 
