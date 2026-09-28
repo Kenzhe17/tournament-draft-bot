@@ -1682,21 +1682,32 @@ class TournamentCog(commands.Cog):
         rank_text = ""
         for rank, emoji_id in RANK_EMOJIS.items():
             emoji = get_emoji(rank)
-            rank_text += f"{rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
+            status = "✅" if emoji_id else "❌"
+            rank_text += f"{status} {rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
         
         embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
         
-        # Game emojis
+        # Game emojis - show ALL configured emojis
         game_text = ""
         for name, emoji_id in GAME_EMOJIS.items():
-            if emoji_id:  # Only show if ID is set
-                emoji = get_emoji(name)
-                game_text += f"{name}: ID={emoji_id} → {emoji}\n"
+            emoji = get_emoji(name)
+            status = "✅" if emoji_id else "❌"
+            game_text += f"{status} {name}: ID={emoji_id or 'Empty'} → {emoji}\n"
         
         if game_text:
-            embed.add_field(name="🎮 Игровые эмодзи", value=game_text, inline=False)
+            embed.add_field(name="🎮 Игровые эмодзи (все)", value=game_text, inline=False)
         else:
-            embed.add_field(name="🎮 Игровые эмодзи", value="Нет загруженных ID", inline=False)
+            embed.add_field(name="🎮 Игровые эмодзи", value="Нет сконфигурированных эмодзи", inline=False)
+        
+        # Count loaded emojis
+        loaded_ranks = sum(1 for v in RANK_EMOJIS.values() if v)
+        loaded_games = sum(1 for v in GAME_EMOJIS.values() if v)
+        
+        embed.add_field(
+            name="📊 Статистика",
+            value=f"Рангов загружено: {loaded_ranks}/{len(RANK_EMOJIS)}\nИгровых загружено: {loaded_games}/{len(GAME_EMOJIS)}",
+            inline=False
+        )
         
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
