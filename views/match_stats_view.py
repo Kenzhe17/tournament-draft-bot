@@ -686,11 +686,11 @@ class AdminConfirmView(View):
         # Create view with winner selection buttons
         view = discord.ui.View()
 
-        team_a_btn = Button(label=replace_emojis("🏆 {team_a_name}", style=discord.ButtonStyle.success)
+        team_a_btn = Button(label=replace_emojis(f"🏆 {team_a_name}"), style=discord.ButtonStyle.success)
         team_a_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_a_index)
         view.add_item(team_a_btn)
 
-        team_b_btn = Button(label=replace_emojis("🏆 {team_b_name}", style=discord.ButtonStyle.success)
+        team_b_btn = Button(label=replace_emojis(f"🏆 {team_b_name}"), style=discord.ButtonStyle.success)
         team_b_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_b_index)
         view.add_item(team_b_btn)
 
