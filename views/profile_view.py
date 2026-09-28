@@ -122,7 +122,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         await player_stats_store.update(self.guild_id, self.user_id, stats)
 
         # Regenerate profile embed with updated data
-        from cogs.tournament import TournamentCog
+        from cogs.tournament import TournamentCog, get_rank_emoji
         from storage.user_balance_store import user_balance_store
         from storage.shop_store import inventory_store
         from utils.cosmetics import format_player_name
@@ -132,7 +132,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         inventory_count = len(cosmetics)
 
         # Get rank
-        from cogs.tournament import get_rank_emoji
         rank_title = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()
 
@@ -140,92 +139,52 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         total_games_played = stats.games
         total_games_won = stats.wins
 
+        # Винрейт
         win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
 
-        # Create new embed
-        import discord
-        embed = discord.Embed(
-            title=replace_emojis(f"👤 Профиль: {stats.name}"),
-            description=f"**{rank_title}**",
-            color=discord.Color.dark_blue()
-        )
-        
-        # Always use Discord avatar
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        # Last ELO Change
+        elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
 
-        # ELO
-        embed.add_field(
-            name=replace_emojis("🏆 ELO"),
-            value=f"{int(stats.elo)}",
-            inline=True
-        )
+        # Build description (new style)
+        description_parts = ["Основная информация и статистика игрока:\n"]
 
-        # Уровень и опыт в одном поле
-        embed.add_field(
-            name=replace_emojis(f"📈 Level {stats.level}"),
-            value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
-            inline=True
-        )
+        # Игровой профиль
+        description_parts.append(f"{replace_emojis('⚪')} **Игровой профиль:**")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Ранг: {rank_title}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append("")
 
         # Экономика
-        embed.add_field(
-            name=replace_emojis("💵 Баланс"),
-            value=replace_emojis(f"{balance:,} 🪙"),
-            inline=True
-        )
+        description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} {replace_emojis('money')}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Предметов: {inventory_count} шт.")
+        description_parts.append("")
 
-        # Инвентарь
-        embed.add_field(
-            name=replace_emojis("🏷️ Предметов"),
-            value=f"{inventory_count} шт.",
-            inline=True
-        )
+        # Статистика игр
+        description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats.kd_ratio:.2f}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats.avg_kills:.2f}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {stats.best_match_kills}")
+        description_parts.append("")
 
-        # Игровая статистика
-        embed.add_field(
-            name=replace_emojis("🎲 Сыграно"),
-            value=f"{total_games_played} игр",
-            inline=True
-        )
-
-        embed.add_field(
-            name=replace_emojis("🏆 Побед"),
-            value=f"{total_games_won} ({win_rate:.1f}%)",
-            inline=True
-        )
-
-        embed.add_field(
-            name=replace_emojis("🎯 AVG Kills"),
-            value=f"{stats.avg_kills:.2f}",
-            inline=True
-        )
-
-        embed.add_field(
-            name=replace_emojis("⚔️ K/D Ratio"),
-            value=f"{stats.kd_ratio:.2f}",
-            inline=True
-        )
-
-        embed.add_field(
-            name=replace_emojis("🔥 Max Kills"),
-            value=str(stats.best_match_kills),
-            inline=True
-        )
-
-        elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
-        embed.add_field(
-            name=replace_emojis("📊 Last ELO Change"),
-            value=f"{elo_change:+d}",
-            inline=True
-        )
-
-        # Био в отдельном поле в самом низу
+        # Био
         if stats.description:
-            embed.add_field(
-                name=replace_emojis("📝 О себе"),
-                value=f"**{stats.description}**",
-                inline=False
-            )
+            description_parts.append(f"{replace_emojis('⚪')} **О себе:**")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} {stats.description}")
+            description_parts.append("")
+
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")
+
+        # Create new embed (new style)
+        import discord
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
+            description="\n".join(description_parts),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
         # Update the original message
         await interaction.response.edit_message(embed=embed)
