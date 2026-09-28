@@ -97,7 +97,7 @@ class ProcessMatchButton(discord.ui.Button):
         missing_players = [p for p in all_players if p not in tournament.temp_kd_data]
         if missing_players:
             await interaction.response.send_message(
-                replace_emojis("❌ Отсутствует статистика для: {', '.join(missing_players)}"),
+                replace_emojis(f"❌ Отсутствует статистика для: {', '.join(missing_players)}"),
                 ephemeral=True
             )
             return

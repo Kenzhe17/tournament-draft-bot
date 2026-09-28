@@ -175,7 +175,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         # Check user balance
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if balance < amount:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True
+            await interaction.response.send_message(replace_emojis(f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True
             return
 
         # Check if user is in the match and betting against themselves

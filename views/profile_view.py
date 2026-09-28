@@ -164,7 +164,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Уровень и опыт в одном поле
         embed.add_field(
-            name=replace_emojis("📈 Level {stats.level}"),
+            name=replace_emojis(f"📈 Level {stats.level}"),
             value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
             inline=True
         )

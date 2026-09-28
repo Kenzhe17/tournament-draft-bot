@@ -135,7 +135,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                         deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                     except (ValueError, IndexError):
                         await interaction.response.send_message(
-                            replace_emojis("❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
+                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                             ephemeral=True
                         )
                         return
@@ -401,7 +401,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                     deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        replace_emojis("❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
+                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                         ephemeral=True
                     )
                     return

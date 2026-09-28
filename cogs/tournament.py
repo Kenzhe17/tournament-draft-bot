@@ -211,7 +211,7 @@ class TournamentCog(commands.Cog):
         valid_types = ["level", "money", "elo"]
         if type not in valid_types:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный тип. Доступные: {', '.join(valid_types)}"),
+                replace_emojis(f"❌ Неверный тип. Доступные: {', '.join(valid_types)}"),
                 ephemeral=True
             )
             return
@@ -807,7 +807,7 @@ class TournamentCog(commands.Cog):
 
         # Уровень и опыт в одном поле
         embed.add_field(
-            name=replace_emojis("📈 Level {stats.level}"),
+            name=replace_emojis(f"📈 Level {stats.level}"),
             value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
             inline=True
         )
@@ -1404,7 +1404,7 @@ class TournamentCog(commands.Cog):
                 player.id, interaction.guild_id, player.display_name
             )
 
-        await interaction.response.send_message(replace_emojis("✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True
+        await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True
 
     # @app_commands.command(name="replace", description="Заменить игрока")
     # @app_commands.describe(

@@ -65,7 +65,7 @@ class GenerateMatchesButton(discord.ui.Button):
 
             if tournament.phase != TournamentPhase.TEAMS:
                 await interaction.edit_original_response(
-                    content=replace_emojis("❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"),
+                    content=replace_emojis(f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"),
                 )
                 return
 
@@ -92,7 +92,7 @@ class GenerateMatchesButton(discord.ui.Button):
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
             await interaction.edit_original_response(
-                content=replace_emojis("❌ Ошибка при генерации матчей: {str(e)}")
+                content=replace_emojis(f"❌ Ошибка при генерации матчей: {str(e)}")
             )
 
 
