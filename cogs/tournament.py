@@ -1795,13 +1795,13 @@ class TournamentCog(commands.Cog):
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
-            title=replace_emojis("🎮 TOURNAMENT DRAFT BOT",),
-            description=(
+            title=replace_emojis("🎮 TOURNAMENT DRAFT BOT"),
+            description=replace_emojis(
                 "Путеводитель по возможностям бота.\n\n"
                 "📌 **НАВИГАЦИЯ ПО КАНАЛАМ:**\n\n"
                 "📸 Снимки - Делитесь вашими яркими моментами\n"
                 "💭 Общение - Основное общение и чат\n"
-                replace_emojis("🎯 Турниры - Анонсы и проведение турниров\n"),
+                "🎯 Турниры - Анонсы и проведение турниров\n"
                 "🗑️ Спам - Канал для команд бота и быстрых игр\n"
                 "🎧 Треки - Заказ треков и управление ботом\n"
                 "💻 Обмен - Обмен файлами и документами\n\n"
