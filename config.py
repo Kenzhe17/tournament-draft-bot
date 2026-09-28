@@ -58,11 +58,15 @@ GAME_EMOJIS = {
     "slots": os.getenv("EMOJI_SLOTS", ""),
     "roulette": os.getenv("EMOJI_ROULETTE", ""),
     "rps": os.getenv("EMOJI_RPS", ""),
+    "brain": os.getenv("EMOJI_BRAIN", ""),
     
     # Tournaments
     "winner": os.getenv("EMOJI_WINNER", ""),
     "target": os.getenv("EMOJI_TARGET", ""),
     "sword": os.getenv("EMOJI_SWORD", ""),
+    "gold_medal": os.getenv("EMOJI_GOLD_MEDAL", ""),
+    "silver_medal": os.getenv("EMOJI_SILVER_MEDAL", ""),
+    "bronze_medal": os.getenv("EMOJI_BRONZE_MEDAL", ""),
     
     # Stats
     "grow": os.getenv("EMOJI_GROW", ""),
@@ -194,4 +198,83 @@ def get_emoji(emoji_name: str) -> str:
     # Fallback to standard emoji
     result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
     logger.info(f"get_emoji: {emoji_name} -> final fallback to {result}")
+    return result
+
+
+def replace_emojis(text: str) -> str:
+    """Replace all standard emojis in text with custom emojis if IDs are available."""
+    if not text:
+        return text
+    
+    # Emoji mapping: standard emoji -> custom emoji name
+    emoji_map = {
+        # Profile & User
+        "👤": "profile",
+        
+        # Economy
+        "💰": "money",
+        "🪙": "money",
+        "💵": "money",
+        "🛍️": "shop",
+        "🎁": "gift",
+        
+        # Status
+        "✅": "success",
+        "❌": "error",
+        "⚠️": "warning",
+        "🗑️": "delete",
+        "🚫": "block",
+        
+        # Navigation
+        "🔄": "refresh",
+        "🔙": "back",
+        "➡️": "forward",
+        "🔽": "dropdown",
+        "🆕": "new",
+        
+        # Communication
+        "💬": "comment",
+        "👥": "team",
+        "📌": "pin",
+        "📢": "announce",
+        
+        # Emotions
+        "🔥": "fire",
+        "❄️": "ice",
+        
+        # Tournaments
+        "🏆": "winner",
+        "🥇": "gold_medal",
+        "🥈": "silver_medal",
+        "🥉": "bronze_medal",
+        "🎯": "target",
+        "⚔️": "sword",
+        
+        # Stats
+        "📊": "kill_death",
+        "📈": "grow",
+        "⭐": "star",
+        "📝": "notes",
+        
+        # System
+        "⏰": "clock",
+        "📖": "book",
+        "💡": "light_bulb",
+        "⚡": "flash",
+        
+        # Games
+        "🎮": "game",
+        "🎲": "dice",
+        "🎰": "slots",
+        "🧠": "brain",
+    }
+    
+    result = text
+    for standard, custom_name in emoji_map.items():
+        if standard in result:
+            custom_emoji = get_emoji(custom_name)
+            # Only replace if custom emoji is different from standard
+            if custom_emoji != standard:
+                result = result.replace(standard, custom_emoji)
+    
     return result

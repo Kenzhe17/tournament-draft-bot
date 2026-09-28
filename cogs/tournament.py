@@ -24,7 +24,7 @@ from storage.user_balance_store import user_balance_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org
-from config import BOT_OWNER_ID
+from config import BOT_OWNER_ID, replace_emojis
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -228,7 +228,7 @@ class TournamentCog(commands.Cog):
         from views.help_view import HelpMainView
 
         embed = discord.Embed(
-            title="📚 Справка по командам",
+            title=replace_emojis("📚 Справка по командам"),
             description="Выберите категорию для просмотра команд",
             color=discord.Color.dark_blue()
         )
@@ -244,7 +244,7 @@ class TournamentCog(commands.Cog):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
         embed = discord.Embed(
-            title="💰 Ваш баланс",
+            title=replace_emojis("💰 Ваш баланс"),
             color=discord.Color.gold()
         )
         embed.add_field(
@@ -281,7 +281,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed в новом формате
         embed = discord.Embed(
-            title="🛍️ МАГАЗИН СЕРВЕРА | Главное меню",
+            title=replace_emojis("🛍️ МАГАЗИН СЕРВЕРА | Главное меню"),
             color=discord.Color.gold()
         )
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
@@ -293,15 +293,15 @@ class TournamentCog(commands.Cog):
 
         # Профиль пользователя
         embed.add_field(
-            name="💳 ВАШ ПРОФИЛЬ",
-            value=f"├ 👛 Баланс: {balance:,} 🪙\n"
-                  f"├ 🏆 Ранг: {rank}\n"
-                  f"└ 🎒 Мест в инвентаре: {inventory_count}/{max_inventory}",
+            name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
+            value=f"├ {replace_emojis('👛')} Баланс: {balance:,} {replace_emojis('🪙')}\n"
+                  f"├ {replace_emojis('🏆')} Ранг: {rank}\n"
+                  f"└ {replace_emojis('🎒')} Мест в инвентаре: {inventory_count}/{max_inventory}",
             inline=False
         )
 
         embed.add_field(
-            name="💡 Для навигации используйте компоненты ниже",
+            name=replace_emojis("💡 Для навигации используйте компоненты ниже"),
             value="",
             inline=False
         )
@@ -329,7 +329,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title="🎒 Ваш инвентарь",
+            title=replace_emojis("🎒 Ваш инвентарь"),
             color=discord.Color.blue()
         )
 
@@ -359,21 +359,21 @@ class TournamentCog(commands.Cog):
 
         if equipped_text:
             embed.add_field(
-                name="👑 Экипировано",
+                name=replace_emojis("👑 Экипировано"),
                 value="\n".join(equipped_text),
                 inline=False
             )
 
         if unequipped_text:
             embed.add_field(
-                name="📦 В инвентаре",
+                name=replace_emojis("📦 В инвентаре"),
                 value="\n".join(unequipped_text),
                 inline=False
             )
 
         # Добавить инструкции
         embed.add_field(
-            name="📖 Управление",
+            name=replace_emojis("📖 Управление"),
             value="Используйте выпадающие меню ниже для экипировки/снятия.\n"
                    "Максимум 1 тег и 1 иконка одновременно.",
             inline=False
@@ -442,18 +442,18 @@ class TournamentCog(commands.Cog):
             categories_text += f"• {cat_info['emoji']} **{cat_info['name']}**\n└ *{short_desc.get(cat_id, cat_info['description'])}*\n"
         
         embed = discord.Embed(
-            title="🎯 МИНИ-ИГРЫ| Главное меню",
-            description=f"""👋 **Добро пожаловать, {interaction.user.display_name}!**
-💳 **Ваш Баланс:** {balance:,} 🪙 
+            title=replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
+            description=f"""{replace_emojis('👋')} **Добро пожаловать, {interaction.user.display_name}!**
+{replace_emojis('💳')} **Ваш Баланс:** {balance:,} 🪙
 
-📂 **КАТЕГОРИИ**
-🎲 **Игры на удачу** 
+{replace_emojis('📂')} **КАТЕГОРИИ**
+{replace_emojis('🎲')} **Игры на удачу**
 └ *Быстрые игры на риск: монетка, кубики, угадай число и др.*
 
-🧠 **Викторины и головоломки**
+{replace_emojis('🧠')} **Викторины и головоломки**
 └ *Интеллектуальные состязания, викторины и слова.*
 
-🎰 **Казино и ставки** 
+{replace_emojis('🎰')} **Казино и ставки**
 └ *Слоты, рулетка, баккара, лотерея и высокие ставки.*
 
 ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
@@ -788,7 +788,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=replace_emojis(f"👤 Профиль: {stats.name}"),
             description=f"**{rank_title}**",
             color=discord.Color.dark_blue()
         )
@@ -796,59 +796,59 @@ class TournamentCog(commands.Cog):
 
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name=replace_emojis("🏆 ELO"),
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт в одном поле
         embed.add_field(
-            name=f"📈 Level {stats.level}",
-            value=f"{current_xp:,} / {xp_needed:,} ⭐",
+            name=replace_emojis(f"📈 Level {stats.level}"),
+            value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 Баланс",
+            name=replace_emojis("💵 Баланс"),
             value=f"{balance:,} 🪙",
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="🏷️ Предметов",
+            name=replace_emojis("🏷️ Предметов"),
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲 Сыграно",
+            name=replace_emojis("🎲 Сыграно"),
             value=f"{total_games_played} игр",
             inline=True
         )
 
         embed.add_field(
-            name="🏆 Побед",
+            name=replace_emojis("🏆 Побед"),
             value=f"{total_games_won} ({win_rate:.1f}%)",
             inline=True
         )
 
         embed.add_field(
-            name="🎯 AVG Kills",
+            name=replace_emojis("🎯 AVG Kills"),
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️ K/D Ratio",
+            name=replace_emojis("⚔️ K/D Ratio"),
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥 Max Kills",
+            name=replace_emojis("🔥 Max Kills"),
             value=str(stats.best_match_kills),
             inline=True
         )
@@ -856,7 +856,7 @@ class TournamentCog(commands.Cog):
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊 Last ELO Change",
+            name=replace_emojis("📊 Last ELO Change"),
             value=f"{elo_change:+d}",
             inline=True
         )
@@ -864,7 +864,7 @@ class TournamentCog(commands.Cog):
         # Био в отдельном поле в самом низу
         if stats.description:
             embed.add_field(
-                name="📝 О себе",
+                name=replace_emojis("📝 О себе"),
                 value=f"**{stats.description}**",
                 inline=False
             )
@@ -899,7 +899,7 @@ class TournamentCog(commands.Cog):
         )
 
         embed.add_field(
-            name="📈 Level",
+            name=replace_emojis("📈 Level"),
             value=f"{stats.level}",
             inline=False
         )
@@ -911,7 +911,7 @@ class TournamentCog(commands.Cog):
         )
 
         embed.add_field(
-            name="📊 Прогресс",
+            name=replace_emojis("📊 Прогресс"),
             value=f"{progress_bar} {current_xp}/{xp_needed} ({progress_percent}%)",
             inline=False
         )
@@ -943,7 +943,7 @@ class TournamentCog(commands.Cog):
         accuracy = stats["success_rate"]
 
         embed = discord.Embed(
-            title="💰 Ставки",
+            title=replace_emojis("💰 Ставки"),
             color=discord.Color.gold()
         )
         embed.add_field(name="Всего ставок", value=str(stats["total_bets"]), inline=True)
@@ -965,7 +965,7 @@ class TournamentCog(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="💰 Лидерборд монет",
+            title=replace_emojis("💰 Лидерборд монет"),
             color=discord.Color.gold()
         )
 
@@ -1203,23 +1203,23 @@ class TournamentCog(commands.Cog):
         best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
 
         embed = discord.Embed(
-            title="🏆 Рекорды Турнира",
+            title=replace_emojis("🏆 Рекорды Турнира"),
             color=discord.Color.gold(),
         )
 
         # Рекорды для всех игроков (без ограничения 20 игр)
         embed.add_field(
-            name="🏆 Наибольшее количество побед",
+            name=replace_emojis("🏆 Наибольшее количество побед"),
             value=f"{most_wins.name} — {most_wins.wins} побед",
             inline=False
         )
         embed.add_field(
-            name="🔥 Наибольшее количество киллов за матч",
+            name=replace_emojis("🔥 Наибольшее количество киллов за матч"),
             value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
             inline=False
         )
         embed.add_field(
-            name="📈 Самый высокий ELO",
+            name=replace_emojis("📈 Самый высокий ELO"),
             value=f"{highest_elo.name} — {highest_elo.elo} ELO",
             inline=False
         )
@@ -1227,37 +1227,37 @@ class TournamentCog(commands.Cog):
         # Рекорды для игроков с 20+ играми
         if best_avg_kills_20:
             embed.add_field(
-                name="🎯 Наибольшее AVG Kills (20+ игр)",
+                name=replace_emojis("🎯 Наибольшее AVG Kills (20+ игр)"),
                 value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
                 inline=False
             )
         if highest_kd:
             embed.add_field(
-                name="⚔️ Наибольшее K/D (20+ игр)",
+                name=replace_emojis("⚔️ Наибольшее K/D (20+ игр)"),
                 value=f"{highest_kd.name} — {highest_kd.kd_ratio:.2f}",
                 inline=False
             )
         if highest_winrate:
             embed.add_field(
-                name="📊 Лучший WinRate (20+ игр)",
+                name=replace_emojis("📊 Лучший WinRate (20+ игр)"),
                 value=f"{highest_winrate.name} — {highest_winrate.win_rate:.1f}%",
                 inline=False
             )
         if best_win_streak_20:
             embed.add_field(
-                name="🔥 Лучшая серия побед (20+ игр)",
+                name=replace_emojis("🔥 Лучшая серия побед (20+ игр)"),
                 value=f"{best_win_streak_20.name} — {best_win_streak_20.best_win_streak} подряд",
                 inline=False
             )
         if best_loss_streak_20:
             embed.add_field(
-                name="❄️ Худшая серия поражений (20+ игр)",
+                name=replace_emojis("❄️ Худшая серия поражений (20+ игр)"),
                 value=f"{best_loss_streak_20.name} — {best_loss_streak_20.best_loss_streak} подряд",
                 inline=False
             )
         if best_match_kills_20:
             embed.add_field(
-                name="💀 Наибольшее киллов за матч (20+ игр)",
+                name=replace_emojis("💀 Наибольшее киллов за матч (20+ игр)"),
                 value=f"{best_match_kills_20.name} — {best_match_kills_20.best_match_kills}",
                 inline=False
             )
@@ -1265,13 +1265,13 @@ class TournamentCog(commands.Cog):
         # Экономические рекорды
         if richest_player:
             embed.add_field(
-                name="💰 Богатейший игрок",
+                name=replace_emojis("💰 Богатейший игрок"),
                 value=f"{richest_player.name} — {max_balance:,} 🪙",
                 inline=False
             )
         if best_bettor:
             embed.add_field(
-                name="🎲 Лучший беттор",
+                name=replace_emojis("🎲 Лучший беттор"),
                 value=f"{best_bettor.name} — {max_single_win:,} 🪙 (за ставку)",
                 inline=False
             )
@@ -1572,14 +1572,14 @@ class TournamentCog(commands.Cog):
             )
             
             embed = discord.Embed(
-                title="💸 Передача монет",
+                title=replace_emojis("💸 Передача монет"),
                 color=discord.Color.green()
             )
-            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
-            embed.add_field(name="👤 Получил:", value=user.mention, inline=True)
-            embed.add_field(name="💰 Сумма:", value=f"{result['amount']:,} 🪙", inline=True)
-            embed.add_field(name="📊 Комиссия:", value=f"{result['fee']:,} 🪙 (10%)", inline=True)
-            embed.add_field(name="💳 Всего списано:", value=f"{result['total_deducted']:,} 🪙", inline=True)
+            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
+            embed.add_field(name=replace_emojis("👤 Получил:"), value=user.mention, inline=True)
+            embed.add_field(name=replace_emojis("💰 Сумма:"), value=replace_emojis(f"{result['amount']:,} 🪙"), inline=True)
+            embed.add_field(name=replace_emojis("📊 Комиссия:"), value=replace_emojis(f"{result['fee']:,} 🪙 (10%)"), inline=True)
+            embed.add_field(name=replace_emojis("💳 Всего списано:"), value=replace_emojis(f"{result['total_deducted']:,} 🪙"), inline=True)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
@@ -1634,14 +1634,14 @@ class TournamentCog(commands.Cog):
         
         if result['success']:
             embed = discord.Embed(
-                title="🎁 Подарок предмета",
+                title=replace_emojis("🎁 Подарок предмета"),
                 color=discord.Color.gold()
             )
-            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
-            embed.add_field(name="👤 Получил:", value=user.mention, inline=True)
-            embed.add_field(name="🎁 Предмет:", value=result['item_name'], inline=True)
-            embed.add_field(name="💰 Стоимость:", value=f"{result['item_price']:,} 🪙", inline=True)
-            embed.add_field(name="📊 Комиссия:", value=f"{fee:,} 🪙 (10%)", inline=True)
+            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
+            embed.add_field(name=replace_emojis("👤 Получил:"), value=user.mention, inline=True)
+            embed.add_field(name=replace_emojis("🎁 Предмет:"), value=result['item_name'], inline=True)
+            embed.add_field(name=replace_emojis("💰 Стоимость:"), value=replace_emojis(f"{result['item_price']:,} 🪙"), inline=True)
+            embed.add_field(name=replace_emojis("📊 Комиссия:"), value=replace_emojis(f"{fee:,} 🪙 (10%)"), inline=True)
             
             await interaction.response.send_message(embed=embed)
         elif result['compensated']:
@@ -1649,14 +1649,14 @@ class TournamentCog(commands.Cog):
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
             
             embed = discord.Embed(
-                title="❌ Подарок не удался",
+                title=replace_emojis("❌ Подарок не удался"),
                 color=discord.Color.red()
             )
-            embed.add_field(name="👤 Отправил:", value=interaction.user.mention, inline=True)
-            embed.add_field(name="👤 Получатель:", value=user.mention, inline=True)
-            embed.add_field(name="🎁 Предмет:", value=result['item_name'], inline=True)
-            embed.add_field(name="❌ Причина:", value="У получателя уже есть этот предмет", inline=False)
-            embed.add_field(name="💰 Компенсация:", value=f"{result['compensation_amount']:,} 🪙 (предмет возвращён)", inline=True)
+            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
+            embed.add_field(name=replace_emojis("👤 Получатель:"), value=user.mention, inline=True)
+            embed.add_field(name=replace_emojis("🎁 Предмет:"), value=result['item_name'], inline=True)
+            embed.add_field(name=replace_emojis("❌ Причина:"), value="У получателя уже есть этот предмет", inline=False)
+            embed.add_field(name=replace_emojis("💰 Компенсация:"), value=replace_emojis(f"{result['compensation_amount']:,} 🪙 (предмет возвращён)"), inline=True)
             
             await interaction.response.send_message(embed=embed)
         else:
@@ -1674,7 +1674,7 @@ class TournamentCog(commands.Cog):
         from config import RANK_EMOJIS, GAME_EMOJIS, get_emoji
         
         embed = discord.Embed(
-            title="🔍 Debug: Конфигурация эмодзи",
+            title=replace_emojis("🔍 Debug: Конфигурация эмодзи"),
             color=discord.Color.blue()
         )
         
@@ -1685,7 +1685,7 @@ class TournamentCog(commands.Cog):
             status = "✅" if emoji_id else "❌"
             rank_text += f"{status} {rank}: ID={emoji_id or 'Empty'} → `{emoji}`\n"
         
-        embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
+        embed.add_field(name=replace_emojis("🏆 Ранги"), value=rank_text or "Нет данных", inline=False)
         
         # Game emojis - show ALL configured emojis
         game_text = ""
@@ -1695,23 +1695,23 @@ class TournamentCog(commands.Cog):
             game_text += f"{status} {name}: ID={emoji_id or 'Empty'} → `{emoji}`\n"
         
         if game_text:
-            embed.add_field(name="🎮 Игровые эмодзи (все)", value=game_text, inline=False)
+            embed.add_field(name=replace_emojis("🎮 Игровые эмодзи (все)"), value=game_text, inline=False)
         else:
-            embed.add_field(name="🎮 Игровые эмодзи", value="Нет сконфигурированных эмодзи", inline=False)
+            embed.add_field(name=replace_emojis("🎮 Игровые эмодзи"), value="Нет сконфигурированных эмодзи", inline=False)
         
         # Count loaded emojis
         loaded_ranks = sum(1 for v in RANK_EMOJIS.values() if v)
         loaded_games = sum(1 for v in GAME_EMOJIS.values() if v)
         
         embed.add_field(
-            name="📊 Статистика",
+            name=replace_emojis("📊 Статистика"),
             value=f"Рангов загружено: {loaded_ranks}/{len(RANK_EMOJIS)}\nИгровых загружено: {loaded_games}/{len(GAME_EMOJIS)}",
             inline=False
         )
         
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
-        embed.add_field(name="🧪 Тест (Radiant)", value=f"`{test_emoji}`", inline=False)
+        embed.add_field(name=replace_emojis("🧪 Тест (Radiant)"), value=f"`{test_emoji}`", inline=False)
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -1724,7 +1724,7 @@ class TournamentCog(commands.Cog):
         response = random.choice(WHOAMI_RESPONSES)
 
         embed = discord.Embed(
-            title="✨ Кто ты?",
+            title=replace_emojis("✨ Кто ты?"),
             description=response,
             color=discord.Color.random()
         )
@@ -1762,8 +1762,8 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
                     
                     await interaction.response.send_message(
-                        f"⏰ Вы уже получили бонус!\n"
-                        f"Следующий бонус через: {hours}ч {minutes}мин",
+                        replace_emojis(f"⏰ Вы уже получили бонус!\n"
+                        f"Следующий бонус через: {hours}ч {minutes}мин"),
                         ephemeral=True
                     )
                     return
