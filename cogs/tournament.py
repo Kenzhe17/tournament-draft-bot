@@ -1146,78 +1146,51 @@ class TournamentCog(commands.Cog):
         best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Рекорды Турнира"),
-            color=discord.Color.gold(),
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} РЕКОРДЫ ТУРНИРА (/booyah) ✨ {replace_emojis('a_star')}",
+            description=f"{replace_emojis('white_arrow')} **Зал славы и абсолютные рекорды сервера r1z3**\n\n{replace_emojis('white_dot')} **🏆 Боевые достижения:**",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        # Рекорды для всех игроков (без ограничения 20 игр)
-        embed.add_field(
-            name=replace_emojis("🏆 Наибольшее количество побед"),
-            value=f"{most_wins.name} — {most_wins.wins} побед",
-            inline=False
-        )
-        embed.add_field(
-            name=replace_emojis("🔥 Наибольшее количество киллов за матч"),
-            value=f"{best_match_kills.name} — {best_match_kills.best_match_kills}",
-            inline=False
-        )
-        embed.add_field(
-            name=replace_emojis("📈 Самый высокий ELO"),
-            value=f"{highest_elo.name} — {highest_elo.elo} ELO",
-            inline=False
-        )
-        
-        # Рекорды для игроков с 20+ играми
+        # Build description with all records
+        desc = embed.description
+
+        # AVG Kills (20+ games)
         if best_avg_kills_20:
-            embed.add_field(
-                name=replace_emojis("🎯 Наибольшее AVG Kills (20+ игр)"),
-                value=f"{best_avg_kills_20.name} — {best_avg_kills_20.avg_kills:.2f}",
-                inline=False
-            )
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Наибольшее AVG Kills:** <@{best_avg_kills_20.user_id}> `({best_avg_kills_20.avg_kills:.2f} / {best_avg_kills_20.games} игр)`"
+
+        # Best match kills (all players)
+        desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Рекорд киллов за матч:** <@{best_match_kills.user_id}> `({best_match_kills.best_match_kills} kills)`"
+
+        # K/D (20+ games)
         if highest_kd:
-            embed.add_field(
-                name=replace_emojis("⚔️ Наибольшее K/D (20+ игр)"),
-                value=f"{highest_kd.name} — {highest_kd.kd_ratio:.2f}",
-                inline=False
-            )
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Наибольшее K/D:** <@{highest_kd.user_id}> `({highest_kd.kd_ratio:.2f} K/D / {highest_kd.games} игр)`"
+
+        # WinRate (20+ games)
         if highest_winrate:
-            embed.add_field(
-                name=replace_emojis("📊 Лучший WinRate (20+ игр)"),
-                value=f"{highest_winrate.name} — {highest_winrate.win_rate:.1f}%",
-                inline=False
-            )
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Лучший WinRate:** <@{highest_winrate.user_id}> `({highest_winrate.win_rate:.1f}% / {highest_winrate.games} игр)`"
+
+        # Highest ELO (all players)
+        desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Самый высокий ELO:** <@{highest_elo.user_id}> `({highest_elo.elo:,} ELO)`"
+
+        # Win/Loss streaks (20+ games)
+        desc += f"\n\n{replace_emojis('white_dot')} **🔥 Серии побед и поражений:**"
         if best_win_streak_20:
-            embed.add_field(
-                name=replace_emojis("🔥 Лучшая серия побед (20+ игр)"),
-                value=f"{best_win_streak_20.name} — {best_win_streak_20.best_win_streak} подряд",
-                inline=False
-            )
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Лучшая серия побед:** <@{best_win_streak_20.user_id}> `({best_win_streak_20.best_win_streak} подряд)`"
         if best_loss_streak_20:
-            embed.add_field(
-                name=replace_emojis("❄️ Худшая серия поражений (20+ игр)"),
-                value=f"{best_loss_streak_20.name} — {best_loss_streak_20.best_loss_streak} подряд",
-                inline=False
-            )
-        if best_match_kills_20:
-            embed.add_field(
-                name=replace_emojis("💀 Наибольшее киллов за матч (20+ игр)"),
-                value=f"{best_match_kills_20.name} — {best_match_kills_20.best_match_kills}",
-                inline=False
-            )
-        
-        # Экономические рекорды
+            desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Худшая серия поражений:** <@{best_loss_streak_20.user_id}> `({best_loss_streak_20.best_loss_streak} подряд)`"
+
+        # Financial records
+        desc += f"\n\n{replace_emojis('white_dot')} **💰 Финансовые рекорды:**"
         if richest_player:
-            embed.add_field(
-                name=replace_emojis("💰 Богатейший игрок"),
-                value=f"{richest_player.name} — {max_balance:,} 🪙",
-                inline=False
-            )
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Богатейший игрок:** <@{richest_player.user_id}> `({max_balance:,}` {replace_emojis('money')}`)`"
         if best_bettor:
-            embed.add_field(
-                name=replace_emojis("🎲 Лучший беттор"),
-                value=f"{best_bettor.name} — {max_single_win:,} 🪙 (за ставку)",
-                inline=False
-            )
+            bet_stats = await betting_stats_store.get(interaction.guild_id, best_bettor.user_id)
+            bet_winrate = f"{(bet_stats.bets_won / bet_stats.total_bets * 100):.1f}%" if bet_stats and bet_stats.total_bets > 0 else "0%"
+            desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Лучший беттер:** <@{best_bettor.user_id}> `({max_single_win:,}` {replace_emojis('money')} ` / {bet_winrate}%)`"
+
+        desc += f"\n\n{replace_emojis('a_dot_smaller')} Статистика обновляется автоматически после каждого турнирного матча ✨"
+
+        embed.description = desc
 
         await interaction.edit_original_response(embed=embed)
 
@@ -1790,24 +1763,12 @@ class TournamentCog(commands.Cog):
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
-            title=replace_emojis("🎮 TOURNAMENT DRAFT BOT"),
-            description=replace_emojis(
-                "Путеводитель по возможностям бота.\n\n"
-                "📌 **НАВИГАЦИЯ ПО КАНАЛАМ:**\n\n"
-                "📸 Снимки - Делитесь вашими яркими моментами\n"
-                "💭 Общение - Основное общение и чат\n"
-                "🎯 Турниры - Анонсы и проведение турниров\n"
-                "🗑️ Спам - Канал для команд бота и быстрых игр\n"
-                "🎧 Треки - Заказ треков и управление ботом\n"
-                "💻 Обмен - Обмен файлами и документами\n\n"
-                "> 💡 **Подсказка:** Чтобы попробовать мини-игры, используйте `/games`\n\n"
-                "👇 **Воспользуйтесь выпадающим меню ниже для подробного гайда:**"
-            ),
-            color=discord.Color.from_rgb(168, 85, 247)
+            title=f"{replace_emojis('a_star')} ✨ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✨ {replace_emojis('a_star')}",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('sub_middle')} � <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('sub_middle')} � <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('sub_middle')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('sub_middle')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('sub_middle')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('sub_directory')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('sub_middle')} {replace_emojis('Radiant')} **Radiant:** `100+ lvl`\n{replace_emojis('sub_middle')} {replace_emojis('Immortal')} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('sub_middle')} {replace_emojis('Ascendant')} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('sub_middle')} {replace_emojis('Diamond')} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('sub_middle')} {replace_emojis('Platinum')} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('sub_middle')} {replace_emojis('Gold')} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('sub_middle')} {replace_emojis('Silver')} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('sub_directory')} {replace_emojis('Bronze')} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
         
-        embed.set_author(name="Tournament Server")
-        embed.set_footer(text="Для справки используйте /games или /profile")
+        embed.set_footer(text="DISCORD SERVER r1z3")
         
         view = GuideView()
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
@@ -1938,41 +1899,54 @@ def get_rank_emoji(level: int) -> str:
 class GuideSelectMenu(discord.ui.Select):
     """Выпадающее меню для гайда."""
     
-    def __init__(self):
+    def __init__(self, current=None):
+        self.current = current
         options = [
             discord.SelectOption(
-                label="Список игр, правила и команды",
-                description="Все 19 игр, правила PvE/PvP и основные команды",
-                emoji="🎮",
-                value="games"
+                label="Главный экран",
+                description="Вернуться на главную страницу",
+                value="main"
             ),
             discord.SelectOption(
-                label="Экономика и Магазин",
-                description="Профиль, баланс, магазин и передача предметов",
-                emoji="💰",
+                label="Турниры",
+                description="Сетка, топ ELO и статистика турниров",
+                value="tournaments"
+            ),
+            discord.SelectOption(
+                label="Профиль",
+                description="Карточка игрока и текущий ранг",
+                value="profile"
+            ),
+            discord.SelectOption(
+                label="Экономика",
+                description="Баланс, переводы, подарки и ставки",
                 value="economy"
             ),
             discord.SelectOption(
-                label="Система прогрессии, уровни и ELO",
-                description="Прогресс XP, уровни и тиры (Bronze -> GrandMaster)",
-                emoji="📊",
-                value="ranks"
+                label="Магазин",
+                description="Покупка ролей и инвентарь",
+                value="shop"
             ),
             discord.SelectOption(
-                label="Важно знать",
-                description="Защита, комиссия, эскроу и бонусы",
-                emoji="⚠️",
-                value="important"
+                label="Мини-игры",
+                description="Казино, викторины и дуэли",
+                value="games"
             ),
             discord.SelectOption(
-                label="Быстрый старт",
-                description="Пошаговая инструкция для новичков",
-                emoji="⚡",
-                value="start"
+                label="Организаторам",
+                description="Создание турниров и управление кругами",
+                value="organizers"
             )
         ]
+        
+        # Set default option
+        for opt in options:
+            if opt.value == current:
+                opt.default = True
+                break
+        
         super().__init__(
-            placeholder="🔽 Выберите нужный раздел гайда...",
+            placeholder="Выберите категорию...",
             min_values=1,
             max_values=1,
             options=options
@@ -1980,138 +1954,77 @@ class GuideSelectMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора пункта меню."""
-        if self.values[0] == "games":
+        if self.values[0] == "main":
             embed = discord.Embed(
-                title=replace_emojis("🎮 Список игр, правила и команды"),
-                description=(
-                    "**📃 Каталог игр:**\n"
-                    "• `/games` — Вызывает меню всех 19 игр с описанием.\n\n"
-                    "**🎲 Пример игры (Камень-Ножницы-Бумага):**\n"
-                    "• `/rps bet:100` — Против бота\n"
-                    "• `/rps bet:100 opponent:@user` — Вызов игроку\n"
-                    "*(Множитель: 2x | Комиссия: 0% PvE / 5% PvP)*\n\n"
-                    "> 📜 **Правила:** Вызовы активны 60 секунд. Принять/отклонить вызов может только приглашенный игрок."
-                ),
-                color=discord.Color.from_rgb(168, 85, 247)
+                title=f"{replace_emojis('a_star')} ✨ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('sub_middle')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('sub_middle')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('sub_middle')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('sub_middle')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('sub_middle')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('sub_directory')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('sub_middle')} {replace_emojis('Radiant')} **Radiant:** `100+ lvl`\n{replace_emojis('sub_middle')} {replace_emojis('Immortal')} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('sub_middle')} {replace_emojis('Ascendant')} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('sub_middle')} {replace_emojis('Diamond')} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('sub_middle')} {replace_emojis('Platinum')} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('sub_middle')} {replace_emojis('Gold')} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('sub_middle')} {replace_emojis('Silver')} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('sub_directory')} {replace_emojis('Bronze')} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed.set_footer(text="DISCORD SERVER r1z3")
+            view = GuideView(current="main")
+            await interaction.response.edit_message(embed=embed, view=view)
+
+        elif self.values[0] == "tournaments":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: ТУРНИРЫ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Информация и статистика турнирной системы**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/top` — Таблица лучших игроков `(level / money / elo)`\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/booyah` — Зал славы, рекорды и история прошлых турниров\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = GuideView(current="tournaments")
+            await interaction.response.edit_message(embed=embed, view=view)
+
+        elif self.values[0] == "profile":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: ПРОФИЛЬ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Управление персональным аккаунтом**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = GuideView(current="profile")
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
-                title=replace_emojis("💰 Экономика и Магазин"),
-                description=(
-                    "• `/profile` — Ваш профиль, ELO, баланс и инвентарь\n"
-                    "• `/shop` — Магазин (иконки, цветные теги, кейсы)\n"
-                    "• `/top` — Таблицы лидеров по ELO и монетам\n"
-                    "• `/pay amount:100 @user` — Перевести монеты игроку\n"
-                    "• `/gift item_id:1 @user` — Подарить предмет из инвентаря"
-                ),
-                color=discord.Color.from_rgb(168, 85, 247)
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: ЭКОНОМИКА ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Управление финансами, подарками и ставками**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/daily` — Получить ежедневный бонус `(серия до 10 дней)`\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/pay` — Перевести монеты другому пользователю\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/bet` — Личная статистика и история активных ставок\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            view = GuideView(current="economy")
+            await interaction.response.edit_message(embed=embed, view=view)
 
-        elif self.values[0] == "ranks":
-            from config import RANK_EMOJIS
-            
-            # Standard emojis as fallback
-            standard_emojis = {
-                "Radiant": "👑",
-                "Immortal": "🔱",
-                "Ascendant": "🎯",
-                "Diamond": "💎",
-                "Platinum": "🌪️",
-                "Gold": "🥇",
-                "Silver": "🥈",
-                "Bronze": "🥉",
-            }
-            
-            def format_emoji(name, value):
-                if value.isdigit():
-                    return f"<:{name}:{value}>"
-                elif value.startswith("<:") and value.endswith(">"):
-                    return value  # Already formatted
-                return value  # Use as-is (standard emoji)
-            
-            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
-            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
-            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
-            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
-            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
-            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
-            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
-            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
-            
+        elif self.values[0] == "shop":
             embed = discord.Embed(
-                title=replace_emojis("📊 Система прогрессии и рангов"),
-                description=(
-                    "**📈 Уровни:** XP зачисляется за игры и турниры.\n\n"
-                    "**🏅 Ранги по уровням:**\n"
-                    f"{radiant} **Radiant** (100+)\n"
-                    f"{immortal} **Immortal Tier** (80-99)\n"
-                    "   ├─ Immortal I (93-99)\n"
-                    "   ├─ Immortal II (86-92)\n"
-                    "   └─ Immortal III (80-85)\n"
-                    f"{ascendant} **Ascendant Tier** (60-79)\n"
-                    "   ├─ Ascendant I (73-79)\n"
-                    "   ├─ Ascendant II (66-72)\n"
-                    "   └─ Ascendant III (60-65)\n"
-                    f"{diamond} **Diamond Tier** (42-59)\n"
-                    "   ├─ Diamond I (54-59)\n"
-                    "   ├─ Diamond II (48-53)\n"
-                    "   └─ Diamond III (42-47)\n"
-                    f"{platinum} **Platinum Tier** (27-41)\n"
-                    "   ├─ Platinum I (37-41)\n"
-                    "   ├─ Platinum II (32-36)\n"
-                    "   └─ Platinum III (27-31)\n"
-                    f"{gold} **Gold Tier** (15-26)\n"
-                    "   ├─ Gold I (23-26)\n"
-                    "   ├─ Gold II (19-22)\n"
-                    "   └─ Gold III (15-18)\n"
-                    f"{silver} **Silver Tier** (6-14)\n"
-                    "   ├─ Silver I (12-14)\n"
-                    "   ├─ Silver II (9-11)\n"
-                    "   └─ Silver III (6-8)\n"
-                    f"{bronze} **Bronze Tier** (0-5)\n"
-                    "   ├─ Bronze I (4-5)\n"
-                    "   ├─ Bronze II (2-3)\n"
-                    "   └─ Bronze III (0-1)"
-                ),
-                color=discord.Color.from_rgb(168, 85, 247)
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: МАГАЗИН ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Покупка товаров и инвентарь**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n{replace_emojis('white_dot')} **Редкости предметов:**\n{replace_emojis('sub_middle')} Basic {replace_emojis('white_arrow')} `700` {replace_emojis('money')}\n{replace_emojis('sub_middle')} Premium {replace_emojis('white_arrow')} `1,750` {replace_emojis('money')}\n{replace_emojis('sub_middle')} Elite {replace_emojis('white_arrow')} `3,500` {replace_emojis('money')}\n{replace_emojis('sub_directory')} Special {replace_emojis('white_arrow')} `5,950` {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            view = GuideView(current="shop")
+            await interaction.response.edit_message(embed=embed, view=view)
 
-        elif self.values[0] == "important":
+        elif self.values[0] == "games":
             embed = discord.Embed(
-                title=replace_emojis("⚠️ Важно знать"),
-                description=(
-                    "• Начальный баланс и ежедневный бонус: **100 монет**\n"
-                    "• **Эскроу система:** ставки удерживаются до результата\n"
-                    "• **Защита:** Anti-spam cooldowns на мини-игры\n"
-                    "• Все игровые сообщения **публичные** (видны всем)"
-                ),
-                color=discord.Color.from_rgb(168, 85, 247)
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: МИНИ-ИГРЫ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Развлечения и быстрые игры**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/games` — Единое интерактивное меню всех доступных игр\n\n{replace_emojis('white_dot')} **Категории игр в меню:**\n{replace_emojis('sub_middle')} 🎰 Игры на удачу и слот-машины\n{replace_emojis('sub_middle')} 🧠 Викторины, головоломки и виселица\n{replace_emojis('sub_directory')} 🎲 Дуэли, камень-ножницы-бумага и казино\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            view = GuideView(current="games")
+            await interaction.response.edit_message(embed=embed, view=view)
 
-        elif self.values[0] == "start":
+        elif self.values[0] == "organizers":
             embed = discord.Embed(
-                title="⚡ Быстрый старт",
-                color=discord.Color.from_rgb(168, 85, 247)
+                title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: ОРГАНИЗАТОРАМ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Инструменты проведения турниров (только для оргов)**\n\n{replace_emojis('white_dot')} **Команды управления:**\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: elo/random`\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                color=discord.Color.from_rgb(100, 38, 56)
             )
-            embed.description = (
-                "1️⃣ Перейдите в канал для игр\n"
-                "2️⃣ Напишите `/games` ➔ выберите игру\n"
-                "3️⃣ Получите ежедневный бонус `/daily` и повышайте ELO!"
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            view = GuideView(current="organizers")
+            await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GuideView(discord.ui.View):
     """View для гайда с выпадающим меню."""
     
-    def __init__(self):
+    def __init__(self, current=None):
         super().__init__(timeout=None)
-        self.add_item(GuideSelectMenu())
+        self.add_item(GuideSelectMenu(current=current))
 
 
 async def setup(bot: TournamentBot) -> None:
