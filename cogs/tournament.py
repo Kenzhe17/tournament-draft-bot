@@ -978,25 +978,22 @@ class TournamentCog(commands.Cog):
 
         if not stats or stats["total_bets"] == 0:
             await interaction.response.send_message(
-                replace_emojis("❌ У вас пока нет статистики ставок."),
+                replace_emojis("⚪ У вас пока нет статистики ставок."),
                 ephemeral=True
             )
             return
 
         accuracy = stats["success_rate"]
+        lost_bets = stats["total_bets"] - stats["successful_bets"]
 
         embed = discord.Embed(
-            title=replace_emojis("💰 Ставки"),
-            color=discord.Color.gold()
+            title=f"{replace_emojis('a_star')} СТАТИСТИКА СТАВОК | /bets",
+            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.add_field(name="Всего ставок", value=str(stats["total_bets"]), inline=True)
-        embed.add_field(name="Выигрышных", value=str(stats["successful_bets"]), inline=True)
-        embed.add_field(name="Проигрышных", value=str(stats["total_bets"] - stats["successful_bets"]), inline=True)
-        embed.add_field(name="Точность", value=f"{accuracy:.1f}%", inline=True)
-        embed.add_field(name="Выиграно", value=f"+{stats['total_won']}", inline=True)
-        embed.add_field(name="Проиграно", value=f"-{stats['total_lost']}", inline=True)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
         # Pagination
         per_page = 10
@@ -1713,7 +1710,7 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=False)
         elif result['compensated']:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
@@ -1725,7 +1722,7 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, ephemeral=False)
         else:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
