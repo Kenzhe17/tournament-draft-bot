@@ -103,7 +103,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             import logging
             logging.error(f"Error placing bet: {e}", exc_info=True)
             await interaction.response.send_message(
-                replace_emojis("❌ Ошибка при создании ставки: {str(e)}",
+                replace_emojis("❌ Ошибка при создании ставки: {str(e)}"),
                 ephemeral=True
             )
     

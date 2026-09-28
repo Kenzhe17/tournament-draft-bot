@@ -152,7 +152,7 @@ class TeamKDInputModal(discord.ui.Modal):
                     }
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        replace_emojis("❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
+                        replace_emojis("❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)"),
                         ephemeral=True
                     )
                     return

@@ -211,7 +211,7 @@ class TournamentCog(commands.Cog):
         valid_types = ["level", "money", "elo"]
         if type not in valid_types:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный тип. Доступные: {', '.join(valid_types)}",
+                replace_emojis("❌ Неверный тип. Доступные: {', '.join(valid_types)}"),
                 ephemeral=True
             )
             return

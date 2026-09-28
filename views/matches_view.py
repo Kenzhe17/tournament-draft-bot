@@ -37,7 +37,7 @@ class GenerateMatchesButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут генерировать матчи.",
+                replace_emojis("❌ Только организаторы (роль 'org') могут генерировать матчи."),
                 ephemeral=True
             )
             return
@@ -388,7 +388,7 @@ class TeamWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей.",
+                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей."),
                 ephemeral=True
             )
             return

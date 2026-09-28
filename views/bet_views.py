@@ -188,7 +188,7 @@ class ToggleBettingButton(Button):
             # Check if user is org
             if not is_org_check(interaction.user, interaction.guild):
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут менять статус ставок.",
+                    replace_emojis("❌ Только организаторы (роль 'org') могут менять статус ставок."),
                     ephemeral=True
                 )
                 return
@@ -221,12 +221,12 @@ class ToggleBettingButton(Button):
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
+                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}"),
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
+                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}"),
                         ephemeral=True
                     )
             except:
