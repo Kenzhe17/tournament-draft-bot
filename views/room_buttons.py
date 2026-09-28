@@ -38,7 +38,7 @@ class RoomButton(discord.ui.Button):
 
         tournament = store.get(interaction.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
         # Get team members
@@ -99,7 +99,7 @@ class AdminRoomsButton(discord.ui.Button):
         from storage.json_store import store
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
         # Create view with edit buttons for each room
