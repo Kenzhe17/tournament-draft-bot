@@ -1704,21 +1704,23 @@ def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
     from config import RANK_EMOJIS
     
-    # Get emoji IDs from config, fallback to name if not set
-    radiant = RANK_EMOJIS.get("Radiant", "Radiant")
-    immortal = RANK_EMOJIS.get("Immortal", "Immortal")
-    ascendant = RANK_EMOJIS.get("Ascendant", "Ascendant")
-    diamond = RANK_EMOJIS.get("Diamond", "Diamond")
-    platinum = RANK_EMOJIS.get("Platinum", "Platinum")
-    gold = RANK_EMOJIS.get("Gold", "Gold")
-    silver = RANK_EMOJIS.get("Silver", "Silver")
-    bronze = RANK_EMOJIS.get("Bronze", "Bronze")
+    # Get emoji IDs from config, fallback to standard emojis if not set
+    radiant = RANK_EMOJIS.get("Radiant", "👑")
+    immortal = RANK_EMOJIS.get("Immortal", "🔱")
+    ascendant = RANK_EMOJIS.get("Ascendant", "🎯")
+    diamond = RANK_EMOJIS.get("Diamond", "💎")
+    platinum = RANK_EMOJIS.get("Platinum", "🌪️")
+    gold = RANK_EMOJIS.get("Gold", "🥇")
+    silver = RANK_EMOJIS.get("Silver", "🥈")
+    bronze = RANK_EMOJIS.get("Bronze", "🥉")
     
-    # Format as custom emoji if it looks like an ID (number), otherwise just use the name
+    # Format as custom emoji if it looks like an ID (number), otherwise use the emoji directly
     def format_emoji(name, value):
-        if value.isdigit() or (value.startswith("<:") and value.endswith(">")):
+        if value.isdigit():
             return f"<:{name}:{value}>"
-        return value
+        elif value.startswith("<:") and value.endswith(">"):
+            return value  # Already formatted
+        return value  # Use as-is (standard emoji)
     
     if level >= 100:
         return f"{format_emoji('Radiant', radiant)} Radiant"
@@ -1983,18 +1985,20 @@ class GuideSelectMenu(discord.ui.Select):
             from config import RANK_EMOJIS
             
             def format_emoji(name, value):
-                if value.isdigit() or (value.startswith("<:") and value.endswith(">")):
+                if value.isdigit():
                     return f"<:{name}:{value}>"
-                return value
+                elif value.startswith("<:") and value.endswith(">"):
+                    return value  # Already formatted
+                return value  # Use as-is (standard emoji)
             
-            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "Radiant"))
-            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "Immortal"))
-            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "Ascendant"))
-            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "Diamond"))
-            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "Platinum"))
-            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "Gold"))
-            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "Silver"))
-            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "Bronze"))
+            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "👑"))
+            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "🔱"))
+            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "🎯"))
+            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "💎"))
+            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "🌪️"))
+            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "🥇"))
+            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "🥈"))
+            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "🥉"))
             
             embed = discord.Embed(
                 title="📊 Система прогрессии и рангов",
