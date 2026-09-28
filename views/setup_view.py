@@ -255,7 +255,6 @@ class AdminAddModal(discord.ui.Modal):
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
                 replace_emojis("❌ Турнир не в фазе настройки."), ephemeral=True)
-            )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
