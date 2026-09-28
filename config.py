@@ -387,6 +387,7 @@ def replace_emojis(text: str) -> str:
         "a_sparkle", "a_star", "a_triple_dots", "a_dot_smaller",
         "case_basic", "case_premium", "case_elite", "case_special",
         "rare_basic", "rare_premium", "rare_elite", "rare_special",
+        "tag",
     ]
 
     result = text
