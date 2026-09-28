@@ -23,7 +23,7 @@ from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
-from utils.permissions import is_admin, is_org
+from utils.permissions import is_admin, is_org, is_bot_owner
 from config import BOT_OWNER_ID, replace_emojis
 
 if TYPE_CHECKING:
@@ -140,7 +140,7 @@ class TournamentCog(commands.Cog):
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
     @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
-    @is_org()
+    @is_bot_owner()
     async def test_start(self, interaction: discord.Interaction) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
         tournament = store.get(interaction.guild_id)
@@ -1247,6 +1247,7 @@ class TournamentCog(commands.Cog):
         amount="Новое значение (для ELO) или количество монет (для money)",
         operation="Операция: set (установить), add (добавить), remove (убрать)"
     )
+    @is_bot_owner()
     async def edit_player(
         self,
         interaction: discord.Interaction,
@@ -1256,10 +1257,6 @@ class TournamentCog(commands.Cog):
         operation: str = "set"
     ) -> None:
         """Изменить ELO или монеты игрока."""
-        # Только владелец бота может использовать эту команду
-        if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
-            await interaction.response.send_message(replace_emojis("❌ Только владелец бота может использовать эту команду."), ephemeral=True)
-            return
 
         if type not in ["elo", "money"]:
             await interaction.response.send_message(
@@ -1328,7 +1325,7 @@ class TournamentCog(commands.Cog):
     @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(player="Игрок")
-    @is_org()
+    @is_bot_owner()
     async def fix_userid(self, interaction: discord.Interaction, player: discord.Member) -> None:
         """Исправить user_id игрока в базе данных."""
         from storage.player_stats_store import player_stats_store
@@ -1820,15 +1817,9 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
+    @is_bot_owner()
     async def reset(self, interaction: discord.Interaction, user: discord.Member) -> None:
         """Сбросить статистику игрока (только для владельца бота)."""
-        # Check if user is bot owner
-        if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
-            await interaction.response.send_message(
-                replace_emojis("❌ Эта команда доступна только владельцу бота."),
-                ephemeral=True
-            )
-            return
 
         guild_id = interaction.guild_id
         user_id = user.id

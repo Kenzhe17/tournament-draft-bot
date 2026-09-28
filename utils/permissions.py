@@ -70,3 +70,18 @@ def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
         return True
 
     return False
+
+
+def is_bot_owner() -> app_commands.check:
+    """Декоратор: только владелец бота."""
+
+    async def predicate(interaction: discord.Interaction) -> bool:
+        # Проверяем конкретный Discord ID владельца бота
+        if interaction.user.id == 1032544122600423427:
+            return True
+
+        raise app_commands.CheckFailure(
+            "❌ Эта команда доступна только владельцу бота."
+        )
+
+    return app_commands.check(predicate)
