@@ -492,7 +492,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить", style=discord.ButtonStyle.success)
+        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
 
@@ -584,7 +584,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить", style=discord.ButtonStyle.success)
+        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
 
@@ -665,7 +665,7 @@ class AdminConfirmView(View):
         """Create view with confirm button that shows winner selection."""
         view = discord.ui.View()
         
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить", style=discord.ButtonStyle.success)
+        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
         confirm_btn.callback = self._show_winner_selection
         view.add_item(confirm_btn)
         
