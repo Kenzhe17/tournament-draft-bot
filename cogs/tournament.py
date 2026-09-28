@@ -461,41 +461,16 @@ class TournamentCog(commands.Cog):
         """Показать список мини-игр."""
         from views.games_view import GamesMainView
         from storage.user_balance_store import user_balance_store
-        from storage.games_config import CATEGORIES, get_games_by_category, get_all_games
 
         # Получить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
-        # Создать описание категорий
-        categories_text = ""
-        for cat_id, cat_info in CATEGORIES.items():
-            games = get_games_by_category(cat_id)
-            # Короткие описания
-            short_desc = {
-                "luck": "Быстрые игры на риск: монетка, кубики, угадай число и др.",
-                "quiz": "Интеллектуальные состязания, викторины и слова.",
-                "casino": "Слоты, рулетка, баккара, лотерея и высокие ставки."
-            }
-            categories_text += f"• {cat_info['emoji']} **{cat_info['name']}**\n└ *{short_desc.get(cat_id, cat_info['description'])}*\n"
-        
         embed = discord.Embed(
-            title=replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
-            description=f"""{replace_emojis('👋')} **Добро пожаловать, {interaction.user.display_name}!**
-{replace_emojis('💳')} **Ваш Баланс:** {balance:,} 🪙
-
-{replace_emojis('📂')} **КАТЕГОРИИ**
-{replace_emojis('🎲')} **Игры на удачу**
-└ *Быстрые игры на риск: монетка, кубики, угадай число и др.*
-
-{replace_emojis('🧠')} **Викторины и головоломки**
-└ *Интеллектуальные состязания, викторины и слова.*
-
-{replace_emojis('🎰')} **Казино и ставки**
-└ *Слоты, рулетка, баккара, лотерея и высокие ставки.*
-
-ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
-            color=0x2F3136,  # Тёмно-фиолетовый
+            title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
