@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для лидерборда с пагинацией."""
 
 from __future__ import annotations

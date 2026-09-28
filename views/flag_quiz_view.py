@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для Угадай флаг."""
 
 import discord

@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для системы кейсов."""
 
 import asyncio
@@ -21,14 +22,14 @@ class CaseOpenButton(discord.ui.Button):
         """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True
             return
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                freplace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
+                replace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
                 ephemeral=True
             )
             return
@@ -79,7 +80,7 @@ class CaseOpenButton(discord.ui.Button):
             color = discord.Color.dark_red()
             reaction_emoji = "😢"
         elif result["type"] == "coins":
-            message = freplace_emojis("💰 Выпало {result['value']} 🪙!"
+            message = replace_emojis("💰 Выпало {result['value']} 🪙!"
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":
@@ -150,14 +151,14 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True
             return
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                freplace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
+                replace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
                 ephemeral=True
             )
             return
@@ -208,7 +209,7 @@ class CaseSelect(discord.ui.Select):
             color = discord.Color.dark_red()
             reaction_emoji = "😢"
         elif result["type"] == "coins":
-            message = freplace_emojis("💰 Выпало {result['value']} 🪙!"
+            message = replace_emojis("💰 Выпало {result['value']} 🪙!"
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":

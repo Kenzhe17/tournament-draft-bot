@@ -1,3 +1,4 @@
+from config import replace_emojis
 """Views for betting system."""
 
 import discord
@@ -136,7 +137,7 @@ class ViewBetsButton(Button):
             name_a = self.tournament.team_names.get(team_a, captain_a)
             name_b = self.tournament.team_names.get(team_b, captain_b)
             
-            match_text = freplace_emojis("🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n"
+            match_text = replace_emojis("🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n"
             
             # Group bets by team
             team_a_bets = [b for b in bets if b.team_name == name_a]
@@ -206,7 +207,7 @@ class ToggleBettingButton(Button):
             store.set(tournament)
             
             await interaction.response.send_message(
-                freplace_emojis("✅ Ставки {status}.",
+                replace_emojis("✅ Ставки {status}.",
                 ephemeral=True
             )
             
@@ -220,12 +221,12 @@ class ToggleBettingButton(Button):
             try:
                 if interaction.response.is_done():
                     await interaction.followup.send(
-                        freplace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
+                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        freplace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
+                        replace_emojis("❌ Ошибка при изменении статуса ставок: {str(e)}",
                         ephemeral=True
                     )
             except:

@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для Тест на эрудицию."""
 
 import discord

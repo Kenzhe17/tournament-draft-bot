@@ -771,7 +771,7 @@ class RPSCog(commands.Cog):
                         await release_escrow(user_id, guild_id, bet)
                         active_users.discard(user_id)
                         del active_games[game_id]
-                        await interaction.followup.send(replace_emojis("❌ У соперника недостаточно баланса.", ephemeral=True)
+                        await interaction.followup.send(replace_emojis("❌ У соперника недостаточно баланса."), ephemeral=True
                         return
                     # Opponent is not added to active_users yet (only when they accept)
                     
@@ -819,7 +819,7 @@ class RPSCog(commands.Cog):
                 active_users.discard(opponent.id)
             if game_id in active_games:
                 del active_games[game_id]
-            await interaction.followup.send(replace_emojis("❌ Произошла ошибка при запуске игры.", ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Произошла ошибка при запуске игры."), ephemeral=True
 
 
 async def setup(bot: commands.Bot):

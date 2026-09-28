@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для финала — кнопки победителя."""
 
 from __future__ import annotations
@@ -43,19 +44,22 @@ class FinalWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.FINAL:
             await interaction.response.send_message(
-                replace_emojis("❌ Финал не активен.", ephemeral=True
+                replace_emojis("❌ Финал не активен."),
+                ephemeral=True,
             )
             return
 
         if self.team_index not in tournament.final_teams:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда.", ephemeral=True
+                replace_emojis("❌ Неверная команда."),
+                ephemeral=True,
             )
             return
 
         if tournament.final_pending_winner is not None:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат финала уже выбран. Ожидается заполнение статистики.", ephemeral=True
+                replace_emojis("❌ Результат финала уже выбран. Ожидается заполнение статистики."),
+                ephemeral=True,
             )
             return
 
@@ -65,7 +69,7 @@ class FinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            freplace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
         )
 

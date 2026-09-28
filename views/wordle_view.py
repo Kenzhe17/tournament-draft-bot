@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для Слово дня."""
 
 import discord

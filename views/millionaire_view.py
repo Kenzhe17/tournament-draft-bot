@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для Кто хочет стать миллионером."""
 
 import discord

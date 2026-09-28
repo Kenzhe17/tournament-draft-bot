@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для драфта — Select Menu выбора игрока."""
 
 from __future__ import annotations
@@ -34,14 +35,16 @@ class PlayerSelect(discord.ui.Select):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.DRAFT:
             await interaction.response.send_message(
-                replace_emojis("❌ Драфт не активен.", ephemeral=True
+                replace_emojis("❌ Драфт не активен."),
+                ephemeral=True,
             )
             return
 
         picker_pos = tournament.current_picker_position()
         if picker_pos is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Сейчас не ваш ход.", ephemeral=True
+                replace_emojis("❌ Сейчас не ваш ход."),
+                ephemeral=True,
             )
             return
 
@@ -64,7 +67,7 @@ class PlayerSelect(discord.ui.Select):
         # In test mode, allow anyone to pick
         if not tournament.is_test and user_name != cleaned_captain_name:
             await interaction.response.send_message(
-                freplace_emojis("❌ Сейчас выбирает {expected_captain_name}",
+                replace_emojis(f"❌ Сейчас выбирает {expected_captain_name}"),
                 ephemeral=True,
             )
             return
@@ -73,7 +76,8 @@ class PlayerSelect(discord.ui.Select):
         key = str(tournament.current_circle)
         if player not in tournament.available.get(key, []):
             await interaction.response.send_message(
-                replace_emojis("❌ Этот игрок уже выбран.", ephemeral=True
+                replace_emojis("❌ Этот игрок уже выбран."),
+                ephemeral=True,
             )
             return
 
@@ -124,7 +128,7 @@ class DraftView(discord.ui.View):
             self.add_item(PlayerSelect(guild_id, options))
         # Add warning if more than 25 players available
         if len(available_players) > 25:
-            self._warning = freplace_emojis("⚠️ Показано 25 из {len(available_players)} игроков"
+            self._warning = replace_emojis(f"⚠️ Показано 25 из {len(available_players)} игроков")
 
 
 def build_draft_view(tournament: Tournament) -> DraftView | None:

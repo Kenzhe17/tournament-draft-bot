@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View for managing K/D input for match teams."""
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ class TeamKDButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
         super().__init__(
-            label=freplace_emojis("📊 {team_name} K/D",
+            label=replace_emojis("📊 {team_name} K/D",
             style=discord.ButtonStyle.primary,
             custom_id=f"team_kd:{guild_id}:{team_number}"
         )
@@ -94,7 +95,7 @@ class ProcessMatchButton(discord.ui.Button):
         missing_players = [p for p in all_players if p not in tournament.temp_kd_data]
         if missing_players:
             await interaction.response.send_message(
-                freplace_emojis("❌ Отсутствует статистика для: {', '.join(missing_players)}",
+                replace_emojis("❌ Отсутствует статистика для: {', '.join(missing_players)}",
                 ephemeral=True
             )
             return

@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для игры быстрый тест на реакцию."""
 
 import asyncio
@@ -25,20 +26,20 @@ class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
         try:
             bet = int(self.bet.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Введите корректную ставку!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Введите корректную ставку!"), ephemeral=True
             return
 
         if bet < 10:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 10 🪙", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 10 🪙"), ephemeral=True
             return
 
         if bet > 200:
-            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 200 🪙", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 200 🪙"), ephemeral=True
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!"), ephemeral=True
             return
 
         # Списать ставку
@@ -73,7 +74,7 @@ class ReflexTestGameView(View):
     async def start_game(self, interaction: discord.Interaction, button: Button) -> None:
         """Начать игру."""
         if self.started:
-            await interaction.response.send_message(replace_emojis("❌ Игра уже началась!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра уже началась!"), ephemeral=True
             return
 
         self.started = True
@@ -97,7 +98,7 @@ class ReflexTestGameView(View):
 
         embed = discord.Embed(
             title="⚡ Быстрый тест",
-            description=freplace_emojis("🎯 НАЖМИТЕ! {target_emoji}",
+            description=replace_emojis("🎯 НАЖМИТЕ! {target_emoji}",
             color=discord.Color.red()
         )
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)

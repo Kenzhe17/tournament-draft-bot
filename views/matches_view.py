@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для полуфиналов — кнопки победителей и генерации матчей."""
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ class GenerateMatchesButton(discord.ui.Button):
 
             if tournament.phase != TournamentPhase.TEAMS:
                 await interaction.edit_original_response(
-                    content=freplace_emojis("❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
+                    content=replace_emojis("❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"
                 )
                 return
 
@@ -89,7 +90,7 @@ class GenerateMatchesButton(discord.ui.Button):
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
             await interaction.edit_original_response(
-                content=freplace_emojis("❌ Ошибка при генерации матчей: {str(e)}"
+                content=replace_emojis("❌ Ошибка при генерации матчей: {str(e)}"
             )
 
 
@@ -117,7 +118,8 @@ class SemifinalWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SEMIFINALS:
             await interaction.response.send_message(
-                replace_emojis("❌ Полуфиналы не активны.", ephemeral=True
+                replace_emojis("❌ Полуфиналы не активны."),
+                ephemeral=True,
             )
             return
 
@@ -125,13 +127,15 @@ class SemifinalWinnerButton(discord.ui.Button):
         match = tournament.semifinal_matches[self.match_index]
         if self.team_index not in match:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда для этого матча.", ephemeral=True
+                replace_emojis("❌ Неверная команда для этого матча."),
+                ephemeral=True,
             )
             return
 
         if tournament.semifinal_pending_winners[self.match_index] is not None:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
+                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики."),
+                ephemeral=True,
             )
             return
 
@@ -143,7 +147,7 @@ class SemifinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            freplace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
         )
 
@@ -164,7 +168,8 @@ class TeamNameButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден.", ephemeral=True
+                replace_emojis("❌ Турнир не найден."),
+                ephemeral=True,
             )
             return
 
@@ -238,7 +243,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            freplace_emojis("✅ Название команды изменено на '{name}'.",
+            replace_emojis("✅ Название команды изменено на '{name}'.",
             ephemeral=True
         )
 
@@ -313,7 +318,7 @@ class MatchWinnerButton(discord.ui.Button):
         elif self.match_type == "final":
             match = self.tournament.final_teams
         else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True
             return
 
         # Get team names
@@ -388,7 +393,7 @@ class TeamWinnerButton(discord.ui.Button):
 
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True
             return
 
         # Call the appropriate winner setter based on match type
@@ -412,7 +417,7 @@ class TeamWinnerButton(discord.ui.Button):
             logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
 
         await interaction.response.send_message(
-            freplace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
         )
 
@@ -475,7 +480,8 @@ class QualifierWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.QUALIFIERS:
             await interaction.response.send_message(
-                replace_emojis("❌ Отборочные матчи не активны.", ephemeral=True
+                replace_emojis("❌ Отборочные матчи не активны."),
+                ephemeral=True,
             )
             return
 
@@ -483,13 +489,15 @@ class QualifierWinnerButton(discord.ui.Button):
         match = tournament.qualifier_matches[self.match_index]
         if self.team_index not in match:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда для этого матча.", ephemeral=True
+                replace_emojis("❌ Неверная команда для этого матча."),
+                ephemeral=True,
             )
             return
 
         if tournament.qualifier_winners[self.match_index] is not None:
             await interaction.response.send_message(
-                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики.", ephemeral=True
+                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики."),
+                ephemeral=True,
             )
             return
 
@@ -501,7 +509,7 @@ class QualifierWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            freplace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
         )
 

@@ -1,3 +1,4 @@
+from config import replace_emojis
 """Dice roll game view."""
 
 import discord
@@ -19,7 +20,8 @@ class DiceBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Минимальная ставка: 10 монет", ephemeral=True
+                    replace_emojis("❌ Минимальная ставка: 10 монет"),
+                ephemeral=True,
                 )
                 return
 
@@ -29,7 +31,8 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно монет", ephemeral=True
+                    replace_emojis("❌ Недостаточно монет"),
+                ephemeral=True,
                 )
                 return
 
@@ -43,7 +46,8 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Введите корректное число", ephemeral=True
+                replace_emojis("❌ Введите корректное число"),
+                ephemeral=True,
             )
 
 

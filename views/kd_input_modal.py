@@ -1,3 +1,4 @@
+from config import replace_emojis
 """Modal for inputting K/D statistics for match players."""
 
 from __future__ import annotations
@@ -71,7 +72,7 @@ class KDInputModal(discord.ui.Modal):
             store.set(tournament)
 
         await interaction.response.send_message(
-            freplace_emojis("✅ Статистика для {self.player_name}: {kills}/{deaths}",
+            replace_emojis("✅ Статистика для {self.player_name}: {kills}/{deaths}",
             ephemeral=True
         )
 
@@ -149,7 +150,7 @@ class TeamKDInputModal(discord.ui.Modal):
                     }
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        freplace_emojis("❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
+                        replace_emojis("❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
                         ephemeral=True
                     )
                     return
@@ -157,6 +158,6 @@ class TeamKDInputModal(discord.ui.Modal):
         store.set(tournament)
 
         await interaction.response.send_message(
-            freplace_emojis("✅ Статистика команды сохранена!",
+            replace_emojis("✅ Статистика команды сохранена!",
             ephemeral=True
         )

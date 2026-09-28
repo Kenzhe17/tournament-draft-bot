@@ -36,7 +36,7 @@ class SettingsButton(discord.ui.Button):
         # Проверить, что это владелец
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis(replace_emojis("❌ Вы можете настраивать только свой профиль."),
+                replace_emojis("❌ Вы можете настраивать только свой профиль."),
                 ephemeral=True
             )
             return
@@ -62,7 +62,7 @@ class ProfileEditButton(discord.ui.Button):
         # Проверить, что это владелец профиля
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis(replace_emojis("❌ Вы можете редактировать только свой профиль."),
+                replace_emojis("❌ Вы можете редактировать только свой профиль."),
                 ephemeral=True
             )
             return
@@ -107,7 +107,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         if not stats:
             await interaction.response.send_message(
-                replace_emojis(replace_emojis("❌ Профиль не найден. Сначала сыграйте турнир."),
+                replace_emojis("❌ Профиль не найден. Сначала сыграйте турнир."),
                 ephemeral=True
             )
             return
@@ -157,14 +157,14 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # ELO
         embed.add_field(
-            name=replace_emojis(replace_emojis("🏆 ELO"),
+            name=replace_emojis("🏆 ELO"),
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт в одном поле
         embed.add_field(
-            name=replace_emojis(freplace_emojis("📈 Level {stats.level}"),
+            name=replace_emojis("📈 Level {stats.level}"),
             value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
             inline=True
         )
@@ -185,38 +185,38 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Игровая статистика
         embed.add_field(
-            name=replace_emojis(replace_emojis("🎲 Сыграно"),
+            name=replace_emojis("🎲 Сыграно"),
             value=f"{total_games_played} игр",
             inline=True
         )
 
         embed.add_field(
-            name=replace_emojis(replace_emojis("🏆 Побед"),
+            name=replace_emojis("🏆 Побед"),
             value=f"{total_games_won} ({win_rate:.1f}%)",
             inline=True
         )
 
         embed.add_field(
-            name=replace_emojis(replace_emojis("🎯 AVG Kills"),
+            name=replace_emojis("🎯 AVG Kills"),
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name=replace_emojis(replace_emojis("⚔️ K/D Ratio"),
+            name=replace_emojis("⚔️ K/D Ratio"),
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name=replace_emojis(replace_emojis("🔥 Max Kills"),
+            name=replace_emojis("🔥 Max Kills"),
             value=str(stats.best_match_kills),
             inline=True
         )
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name=replace_emojis(replace_emojis("📊 Last ELO Change"),
+            name=replace_emojis("📊 Last ELO Change"),
             value=f"{elo_change:+d}",
             inline=True
         )

@@ -1,3 +1,4 @@
+from config import replace_emojis
 """View для интерактивной справки по командам."""
 
 import discord
