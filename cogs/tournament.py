@@ -1759,36 +1759,6 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
-        from config import RANK_EMOJIS
-
-        # Standard emojis as fallback
-        standard_emojis = {
-            "Radiant": "👑",
-            "Immortal": "🔱",
-            "Ascendant": "🎯",
-            "Diamond": "💎",
-            "Platinum": "🌪️",
-            "Gold": "🥇",
-            "Silver": "🥈",
-            "Bronze": "🥉",
-        }
-
-        def format_emoji(name, value):
-            if value.isdigit():
-                return f"<:{name}:{value}>"
-            elif value.startswith("<:") and value.endswith(">"):
-                return value  # Already formatted
-            return value  # Use as-is (standard emoji)
-
-        radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
-        immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
-        ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
-        diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
-        platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
-        gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
-        silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
-        bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
-
         # First embed: only banner
         banner_embed = discord.Embed(
             color=discord.Color.from_rgb(69, 69, 69)
@@ -1798,7 +1768,7 @@ class TournamentCog(commands.Cog):
         # Second embed: content with menu
         content_embed = discord.Embed(
             title=f"{replace_emojis('a_star')} ✨ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✨ {replace_emojis('a_star')}",
-            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_small_dot')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_small_dot')} {immortal} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('a_small_dot')} {ascendant} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('a_small_dot')} {diamond} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('a_small_dot')} {platinum} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('a_small_dot')} {gold} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('a_small_dot')} {silver} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('a_small_dot')} {bronze} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         content_embed.set_footer(text="DISCORD SERVER r1z3")
@@ -1968,6 +1938,11 @@ class GuideSelectMenu(discord.ui.Select):
                 value="games"
             ),
             discord.SelectOption(
+                label="Система рангов",
+                description="Информация о рангах и уровнях",
+                value="ranks"
+            ),
+            discord.SelectOption(
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
@@ -2022,7 +1997,7 @@ class GuideSelectMenu(discord.ui.Select):
         if self.values[0] == "main":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ✨ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✨ {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_small_dot')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_small_dot')} {immortal} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('a_small_dot')} {ascendant} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('a_small_dot')} {diamond} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('a_small_dot')} {platinum} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('a_small_dot')} {gold} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('a_small_dot')} {silver} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('a_small_dot')} {bronze} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
+                description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_footer(text="DISCORD SERVER r1z3")
@@ -2072,6 +2047,15 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="games")
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        elif self.values[0] == "ranks":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} ✨ СИСТЕМА РАНГОВ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_dot_smaller')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_dot_smaller')} {immortal} **Immortal:** `80+ lvl` {replace_emojis('white_arrow')} I `(93+)` | II `(86+)` | III `(80+)`\n{replace_emojis('a_dot_smaller')} {ascendant} **Ascendant:** `60+ lvl` {replace_emojis('white_arrow')} I `(73+)` | II `(66+)` | III `(60+)`\n{replace_emojis('a_dot_smaller')} {diamond} **Diamond:** `42+ lvl` {replace_emojis('white_arrow')} I `(54+)` | II `(48+)` | III `(42+)`\n{replace_emojis('a_dot_smaller')} {platinum} **Platinum:** `27+ lvl` {replace_emojis('white_arrow')} I `(37+)` | II `(32+)` | III `(27+)`\n{replace_emojis('a_dot_smaller')} {gold} **Gold:** `15+ lvl` {replace_emojis('white_arrow')} I `(23+)` | II `(19+)` | III `(15+)`\n{replace_emojis('a_dot_smaller')} {silver} **Silver:** `6+ lvl` {replace_emojis('white_arrow')} I `(12+)` | II `(9+)` | III `(6+)`\n{replace_emojis('a_dot_smaller')} {bronze} **Bronze:** `0+ lvl` {replace_emojis('white_arrow')} I `(4+)` | II `(2+)` | III `(0+)`",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = GuideView(current="ranks")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
@@ -2124,6 +2108,11 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 value="games"
             ),
             discord.SelectOption(
+                label="Система рангов",
+                description="Информация о рангах и уровнях",
+                value="ranks"
+            ),
+            discord.SelectOption(
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
@@ -2145,6 +2134,36 @@ class HelpGuideSelectMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора пункта меню."""
+        from config import RANK_EMOJIS
+
+        # Standard emojis as fallback
+        standard_emojis = {
+            "Radiant": "👑",
+            "Immortal": "🔱",
+            "Ascendant": "🎯",
+            "Diamond": "💎",
+            "Platinum": "🌪️",
+            "Gold": "🥇",
+            "Silver": "🥈",
+            "Bronze": "🥉",
+        }
+
+        def format_emoji(name, value):
+            if value.isdigit():
+                return f"<:{name}:{value}>"
+            elif value.startswith("<:") and value.endswith(">"):
+                return value  # Already formatted
+            return value  # Use as-is (standard emoji)
+
+        radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
+        immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
+        ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
+        diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
+        platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
+        gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
+        silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
+        bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
+
         if self.values[0] == "tournaments":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: ТУРНИРЫ ✨ {replace_emojis('a_star')}",
@@ -2188,6 +2207,15 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="games")
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        elif self.values[0] == "ranks":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} ✨ СИСТЕМА РАНГОВ ✨ {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_dot_smaller')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_dot_smaller')} {immortal} **Immortal:** `80+ lvl` {replace_emojis('white_arrow')} I `(93+)` | II `(86+)` | III `(80+)`\n{replace_emojis('a_dot_smaller')} {ascendant} **Ascendant:** `60+ lvl` {replace_emojis('white_arrow')} I `(73+)` | II `(66+)` | III `(60+)`\n{replace_emojis('a_dot_smaller')} {diamond} **Diamond:** `42+ lvl` {replace_emojis('white_arrow')} I `(54+)` | II `(48+)` | III `(42+)`\n{replace_emojis('a_dot_smaller')} {platinum} **Platinum:** `27+ lvl` {replace_emojis('white_arrow')} I `(37+)` | II `(32+)` | III `(27+)`\n{replace_emojis('a_dot_smaller')} {gold} **Gold:** `15+ lvl` {replace_emojis('white_arrow')} I `(23+)` | II `(19+)` | III `(15+)`\n{replace_emojis('a_dot_smaller')} {silver} **Silver:** `6+ lvl` {replace_emojis('white_arrow')} I `(12+)` | II `(9+)` | III `(6+)`\n{replace_emojis('a_dot_smaller')} {bronze} **Bronze:** `0+ lvl` {replace_emojis('white_arrow')} I `(4+)` | II `(2+)` | III `(0+)`",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = HelpGuideView(current="ranks")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
