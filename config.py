@@ -101,7 +101,9 @@ GAME_EMOJIS = {
     "profile": os.getenv("EMOJI_PROFILE", ""),
     "pin": os.getenv("EMOJI_PIN", ""),
     "announce": os.getenv("EMOJI_ANNOUNCE", ""),
-    
+    "check": os.getenv("EMOJI_CHECK", ""),
+    "cross": os.getenv("EMOJI_CROSS", ""),
+
     # Emotions
     "fire": os.getenv("EMOJI_FIRE", ""),
     "ice": os.getenv("EMOJI_ICE", ""),
@@ -215,6 +217,8 @@ STANDARD_EMOJIS = {
     "profile": "👤",
     "pin": "📌",
     "announce": "📢",
+    "check": "✅",
+    "cross": "❌",
     
     # Emotions
     "fire": "🔥",
@@ -318,8 +322,8 @@ def replace_emojis(text: str) -> str:
         "🎁": "gift",
 
         # Status
-        "✅": "success",
-        "❌": "error",
+        "✅": "check",
+        "❌": "cross",
         "⚠️": "warning",
         "🗑️": "delete",
         "🚫": "block",
@@ -416,6 +420,7 @@ def replace_emojis(text: str) -> str:
         "tag",
         "icon_w", "icon_paw", "icon_bluestacks", "icon_teacup", "icon_ribbon",
         "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
+        "check", "cross",
     ]
 
     result = text
