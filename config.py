@@ -272,13 +272,13 @@ def replace_emojis(text: str) -> str:
     """Replace all standard emojis in text with custom emojis if IDs are available."""
     if not text:
         return text
-    
+
     # Emoji mapping: standard emoji -> custom emoji name
     emoji_map = {
         # Profile & User
         "👤": "profile",
         "👛": "money",
-        
+
         # Economy
         "💰": "money",
         "🪙": "money",
@@ -286,31 +286,31 @@ def replace_emojis(text: str) -> str:
         "💳": "profile",
         "🛍️": "shop",
         "🎁": "gift",
-        
+
         # Status
         "✅": "success",
         "❌": "error",
         "⚠️": "warning",
         "🗑️": "delete",
         "🚫": "block",
-        
+
         # Navigation
         "🔄": "refresh",
         "🔙": "back",
         "➡️": "forward",
         "🔽": "dropdown",
         "🆕": "new",
-        
+
         # Communication
         "💬": "comment",
         "👥": "team",
         "📌": "pin",
         "📢": "announce",
-        
+
         # Emotions
         "🔥": "fire",
         "❄️": "ice",
-        
+
         # Tournaments
         "🏆": "winner",
         "🥇": "gold_medal",
@@ -318,25 +318,25 @@ def replace_emojis(text: str) -> str:
         "🥉": "bronze_medal",
         "🎯": "target",
         "⚔️": "sword",
-        
+
         # Stats
         "📊": "kill_death",
         "📈": "grow",
         "⭐": "star",
         "📝": "notes",
-        
+
         # System
         "⏰": "clock",
         "📖": "book",
         "💡": "light_bulb",
         "⚡": "flash",
-        
+
         # Games
         "🎮": "game",
         "🎲": "dice",
         "🎰": "slots",
         "🧠": "brain",
-        
+
         # Shop & UI
         "✨": "star",
         "🏷️": "tag",
@@ -376,13 +376,29 @@ def replace_emojis(text: str) -> str:
         "💫": "rare_premium",
         "🌟": "rare_elite",
     }
-    
+
+    # Direct emoji name mapping for custom emoji names passed directly
+    direct_emoji_names = [
+        "money", "white_dot", "sub_directory", "room", "white_arrow",
+        "a_sparkle", "a_triple_dots", "a_dot_smaller",
+        "case_basic", "case_premium", "case_elite", "case_special",
+        "rare_basic", "rare_premium", "rare_elite", "rare_special",
+    ]
+
     result = text
+
+    # First, replace direct emoji names
+    for emoji_name in direct_emoji_names:
+        if emoji_name in result:
+            custom_emoji = get_emoji(emoji_name)
+            result = result.replace(emoji_name, custom_emoji)
+
+    # Then, replace standard emojis
     for standard, custom_name in emoji_map.items():
         if standard in result:
             custom_emoji = get_emoji(custom_name)
             # Only replace if custom emoji is different from standard
             if custom_emoji != standard:
                 result = result.replace(standard, custom_emoji)
-    
+
     return result
