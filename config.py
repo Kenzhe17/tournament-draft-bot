@@ -114,6 +114,8 @@ GAME_EMOJIS = {
     "eye": os.getenv("EMOJI_EYE", ""),
     "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
     "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
+    "room": os.getenv("EMOJI_ROOM", ""),
+    "winner": os.getenv("EMOJI_WINNER", ""),
 
     # Numbers
     "num_1": os.getenv("EMOJI_NUM_1", ""),
@@ -257,6 +259,7 @@ STANDARD_EMOJIS = {
     "arrow_left": "",
     "arrow_right": "",
     "settings": "",
+    "winner": "",
     "a_sparkle": "",
     "a_star": "",
     "a_triple_dots": "",
@@ -296,6 +299,10 @@ STANDARD_EMOJIS = {
     "tag": "",
     "settings": "",
     "eye": "",
+    "arrow_left": "",
+    "arrow_right": "",
+    "room": "",
+    "winner": "",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -371,6 +378,7 @@ def replace_emojis(text: str) -> str:
         "⚙️": "settings",
         "👁️": "eye",
         "🏷️": "tag",
+        "🚪": "room",
 
         # Emotions
         "🔥": "fire",
@@ -462,6 +470,8 @@ def replace_emojis(text: str) -> str:
         "medal_gold", "medal_silver", "medal_bronze",
         "arrow_left", "arrow_right",
         "settings",
+        "room",
+        "winner",
     ]
 
     result = text
