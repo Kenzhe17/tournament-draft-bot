@@ -1704,15 +1704,27 @@ def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
     from config import RANK_EMOJIS
     
-    # Get emoji IDs from config, fallback to standard emojis if not set
-    radiant = RANK_EMOJIS.get("Radiant", "👑")
-    immortal = RANK_EMOJIS.get("Immortal", "🔱")
-    ascendant = RANK_EMOJIS.get("Ascendant", "🎯")
-    diamond = RANK_EMOJIS.get("Diamond", "💎")
-    platinum = RANK_EMOJIS.get("Platinum", "🌪️")
-    gold = RANK_EMOJIS.get("Gold", "🥇")
-    silver = RANK_EMOJIS.get("Silver", "🥈")
-    bronze = RANK_EMOJIS.get("Bronze", "🥉")
+    # Standard emojis as fallback
+    standard_emojis = {
+        "Radiant": "👑",
+        "Immortal": "🔱",
+        "Ascendant": "🎯",
+        "Diamond": "💎",
+        "Platinum": "🌪️",
+        "Gold": "🥇",
+        "Silver": "🥈",
+        "Bronze": "🥉",
+    }
+    
+    # Get emoji IDs from config, fallback to standard emojis if not set or empty
+    radiant = RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"]
+    immortal = RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"]
+    ascendant = RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"]
+    diamond = RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"]
+    platinum = RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"]
+    gold = RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"]
+    silver = RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"]
+    bronze = RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"]
     
     # Format as custom emoji if it looks like an ID (number), otherwise use the emoji directly
     def format_emoji(name, value):
@@ -1984,6 +1996,18 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "ranks":
             from config import RANK_EMOJIS
             
+            # Standard emojis as fallback
+            standard_emojis = {
+                "Radiant": "👑",
+                "Immortal": "🔱",
+                "Ascendant": "🎯",
+                "Diamond": "💎",
+                "Platinum": "🌪️",
+                "Gold": "🥇",
+                "Silver": "🥈",
+                "Bronze": "🥉",
+            }
+            
             def format_emoji(name, value):
                 if value.isdigit():
                     return f"<:{name}:{value}>"
@@ -1991,14 +2015,14 @@ class GuideSelectMenu(discord.ui.Select):
                     return value  # Already formatted
                 return value  # Use as-is (standard emoji)
             
-            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "👑"))
-            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "🔱"))
-            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "🎯"))
-            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "💎"))
-            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "🌪️"))
-            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "🥇"))
-            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "🥈"))
-            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "🥉"))
+            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
+            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
+            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
+            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
+            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
+            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
+            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
+            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
             
             embed = discord.Embed(
                 title="📊 Система прогрессии и рангов",
