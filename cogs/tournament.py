@@ -248,16 +248,13 @@ class TournamentCog(commands.Cog):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
 
         embed = discord.Embed(
-            title=replace_emojis("💰 Ваш баланс"),
-            color=discord.Color.gold()
+            title=f"{replace_emojis('a_star')} БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Текущие средства:**\n{replace_emojis('sub_directory')} Монеты: **{balance:,}** {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Используйте /daily для получения ежедневной награды или перейдите в магазин",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.add_field(
-            name="Монеты",
-            value=f"{balance} 🪙",
-            inline=False
-        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=False)
 
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
