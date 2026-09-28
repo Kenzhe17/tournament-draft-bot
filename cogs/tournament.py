@@ -1756,7 +1756,8 @@ class TournamentCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 
-    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
+    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте (только для владельца)")
+    @is_bot_owner()
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
