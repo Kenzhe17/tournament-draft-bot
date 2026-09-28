@@ -22,7 +22,7 @@ class CaseOpenButton(discord.ui.Button):
         """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -151,7 +151,7 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс

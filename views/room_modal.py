@@ -38,12 +38,12 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
 
         tournament = store.get(interaction.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
         # Validate inputs
         if not self.room_id.value or not self.room_password.value:
-            await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
             return
 
         # Store room data based on match type

@@ -35,28 +35,28 @@ class CaptainFillButton(Button):
         from storage.json_store import store
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
 
         # Check if user is captain of this team
         user_name = interaction.user.display_name
         team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         if team.get("captain") != user_name:
-            await interaction.response.send_message(replace_emojis("❌ Только капитан может заполнять статистику."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Только капитан может заполнять статистику."), ephemeral=True)
             return
 
         # Check if match has pending winner
         if self.match_type == "qualifier":
             if tournament.qualifier_winners[self.match_index] is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True
+                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
                 return
         elif self.match_type == "semifinal":
             if tournament.semifinal_pending_winners[self.match_index] is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True
+                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
                 return
         elif self.match_type == "final":
             if tournament.final_pending_winner is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True
+                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
                 return
 
         # Check if this team already filled stats
@@ -69,7 +69,7 @@ class CaptainFillButton(Button):
                     team_filled = True
                     break
             if team_filled:
-                await interaction.response.send_message(replace_emojis("❌ Статистика вашей команды уже заполнена."), ephemeral=True
+                await interaction.response.send_message(replace_emojis("❌ Статистика вашей команды уже заполнена."), ephemeral=True)
                 return
 
         # Open modal for captain to fill stats
@@ -149,7 +149,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             # Store in tournament temp stats
             tournament = store.get(self.guild_id)
             if not tournament:
-                await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True
+                await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return
 
             if match_id not in tournament.temp_match_stats:
@@ -171,7 +171,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
         except Exception as e:
             import logging
             logging.error(f"Error in CaptainStatsModal.on_submit: {e}", exc_info=True)
-            await interaction.response.send_message(replace_emojis("❌ Произошла ошибка при сохранении статистики."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Произошла ошибка при сохранении статистики."), ephemeral=True)
 
 
 class AdminFillButton(Button):
@@ -415,7 +415,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         # Store in tournament temp stats
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
 
         # Merge with existing stats (admin fills one team at a time)
@@ -752,7 +752,7 @@ class AdminConfirmView(View):
             # Проверка на None для финала
             if winning_team_index is None:
                 logging.error(f"Winning team index is None for match_type={self.match_type}")
-                await interaction.followup.send(replace_emojis("❌ Ошибка: победитель не выбран."), ephemeral=True
+                await interaction.followup.send(replace_emojis("❌ Ошибка: победитель не выбран."), ephemeral=True)
                 return
 
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
@@ -804,11 +804,11 @@ class AdminConfirmView(View):
                 import logging
                 logging.error(f"Error updating tournament message: {e}", exc_info=True)
 
-            await interaction.followup.send(replace_emojis("✅ Статистика сохранена и победитель подтверждён!"), ephemeral=True
+            await interaction.followup.send(replace_emojis("✅ Статистика сохранена и победитель подтверждён!"), ephemeral=True)
         except Exception as e:
             import logging
             logging.error(f"Error in confirm_callback: {e}", exc_info=True)
-            await interaction.followup.send(replace_emojis("❌ Произошла ошибка при подтверждении."), ephemeral=True
+            await interaction.followup.send(replace_emojis("❌ Произошла ошибка при подтверждении."), ephemeral=True)
 
     async def edit_callback(self, interaction: discord.Interaction) -> None:
         # Show team selection again for editing

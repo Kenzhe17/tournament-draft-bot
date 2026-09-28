@@ -75,7 +75,7 @@ class MatchButton(discord.ui.Button):
         elif self.match_type == "final":
             match = self.tournament.final_teams
         else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
             return
 
         # Get team names
@@ -165,23 +165,23 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         try:
             amount = int(self.amount_input.value)
         except ValueError:
-            await interaction.response.send_message(replace_emojis("❌ Неверная сумма. Введите число."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Неверная сумма. Введите число."), ephemeral=True)
             return
 
         if amount < 20:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка 20 🪙"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка 20 🪙"), ephemeral=True)
             return
 
         # Check user balance
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if balance < amount:
-            await interaction.response.send_message(replace_emojis(f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True
+            await interaction.response.send_message(replace_emojis(f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙"), ephemeral=True)
             return
 
         # Check if user is in the match and betting against themselves
         user_team_index = self._get_user_team_index(interaction.user.id)
         if user_team_index is not None and user_team_index != self.team_index:
-            await interaction.response.send_message(replace_emojis("❌ Вы не можете ставить против своей команды."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Вы не можете ставить против своей команды."), ephemeral=True)
             return
 
         # Deduct balance
