@@ -29,14 +29,14 @@ class CaseOpenButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙"),
+                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {replace_emojis('money')}"),
                 ephemeral=True
             )
             return
 
         # Начать анимацию
         msg = await interaction.response.send_message(
-            replace_emojis("🎲 Вращаем..."),
+            replace_emojis("dice Вращаем..."),
             ephemeral=True
         )
 
@@ -45,24 +45,24 @@ class CaseOpenButton(discord.ui.Button):
 
         # Добавить reactions для визуального эффекта
         try:
-            await msg.add_reaction("🎲")
+            await msg.add_reaction(replace_emojis("dice"))
             await asyncio.sleep(1)
-            await msg.add_reaction("⚡")
+            await msg.add_reaction(replace_emojis("flash"))
             await asyncio.sleep(1)
-            await msg.remove_reaction("🎲", interaction.guild.me)
+            await msg.remove_reaction(replace_emojis("dice"), interaction.guild.me)
         except Exception:
             # Fallback если reactions не работают
             pass
 
         # Этап 2
         await interaction.edit_original_response(
-            content=replace_emojis("🎲 Выбираем редкость..."),
+            content=replace_emojis("dice Выбираем редкость..."),
         )
 
         try:
-            await msg.add_reaction("✨")
+            await msg.add_reaction(replace_emojis("a_sparkle"))
             await asyncio.sleep(1)
-            await msg.remove_reaction("⚡", interaction.guild.me)
+            await msg.remove_reaction(replace_emojis("flash"), interaction.guild.me)
         except Exception:
             pass
 
@@ -78,25 +78,25 @@ class CaseOpenButton(discord.ui.Button):
         if result["type"] == "nothing":
             message = "😢 Ничего не выпало!"
             color = discord.Color.dark_red()
-            reaction_emoji = "😢"
+            reaction_emoji = "cross"
         elif result["type"] == "coins":
-            message = replace_emojis(f"💰 Выпало {result['value']} 🪙!"),
+            message = f"{replace_emojis('money')} Выпало {result['value']} {replace_emojis('money')}!",
             color = discord.Color.dark_gold()
-            reaction_emoji = "💰"
+            reaction_emoji = "money"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
-            message = f"🎉 Выпало: **{item_name}** ({item_rarity})!"
+            message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.dark_green()
-            reaction_emoji = "🎉"
+            reaction_emoji = "a_star"
         else:
-            message = replace_emojis("❌ Ошибка при открытии."),
+            message = replace_emojis("cross Ошибка при открытии."),
             color = discord.Color.dark_red()
-            reaction_emoji = "❌"
+            reaction_emoji = "cross"
 
         # Показать результат
         embed = discord.Embed(
-            title=f"🎉 Результат открытия {case.name}",
+            title=f"{replace_emojis('a_star')} Результат открытия {case.name}",
             description=message,
             color=color
         )
@@ -133,7 +133,7 @@ class CaseSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=case.name,
                     value=case.id,
-                    description=f"Цена: {case.price} 🪙 - {case.description}",
+                    description=f"Цена: {case.price} {replace_emojis('money')} - {case.description}",
                     emoji="🎲"
                 )
             )
@@ -158,14 +158,14 @@ class CaseSelect(discord.ui.Select):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙"),
+                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {replace_emojis('money')}"),
                 ephemeral=True
             )
             return
 
         # Начать анимацию
         msg = await interaction.response.send_message(
-            replace_emojis("🎲 Вращаем..."),
+            replace_emojis("dice Вращаем..."),
             ephemeral=True
         )
 
@@ -174,24 +174,24 @@ class CaseSelect(discord.ui.Select):
 
         # Добавить reactions для визуального эффекта
         try:
-            await msg.add_reaction("🎲")
+            await msg.add_reaction(replace_emojis("dice"))
             await asyncio.sleep(1)
-            await msg.add_reaction("⚡")
+            await msg.add_reaction(replace_emojis("flash"))
             await asyncio.sleep(1)
-            await msg.remove_reaction("🎲", interaction.guild.me)
+            await msg.remove_reaction(replace_emojis("dice"), interaction.guild.me)
         except Exception:
             # Fallback если reactions не работают
             pass
 
         # Этап 2
         await interaction.edit_original_response(
-            content=replace_emojis("🎲 Выбираем редкость..."),
+            content=replace_emojis("dice Выбираем редкость..."),
         )
 
         try:
-            await msg.add_reaction("✨")
+            await msg.add_reaction(replace_emojis("a_sparkle"))
             await asyncio.sleep(1)
-            await msg.remove_reaction("⚡", interaction.guild.me)
+            await msg.remove_reaction(replace_emojis("flash"), interaction.guild.me)
         except Exception:
             pass
 
@@ -207,25 +207,25 @@ class CaseSelect(discord.ui.Select):
         if result["type"] == "nothing":
             message = "😢 Ничего не выпало!"
             color = discord.Color.dark_red()
-            reaction_emoji = "😢"
+            reaction_emoji = "cross"
         elif result["type"] == "coins":
-            message = replace_emojis(f"💰 Выпало {result['value']} 🪙!"),
+            message = f"{replace_emojis('money')} Выпало {result['value']} {replace_emojis('money')}!",
             color = discord.Color.dark_gold()
-            reaction_emoji = "💰"
+            reaction_emoji = "money"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
-            message = f"🎉 Выпало: **{item_name}** ({item_rarity})!"
+            message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.dark_green()
-            reaction_emoji = "🎉"
+            reaction_emoji = "a_star"
         else:
-            message = replace_emojis("❌ Ошибка при открытии."),
+            message = replace_emojis("cross Ошибка при открытии."),
             color = discord.Color.dark_red()
-            reaction_emoji = "❌"
+            reaction_emoji = "cross"
 
         # Показать результат
         embed = discord.Embed(
-            title=f"🎉 Результат открытия {case.name}",
+            title=f"{replace_emojis('a_star')} Результат открытия {case.name}",
             description=message,
             color=color
         )

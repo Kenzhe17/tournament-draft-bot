@@ -23,28 +23,24 @@ class ShopCategorySelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(
-                label=replace_emojis("✨ Значки"),
+                label=replace_emojis("a_star Значки"),
                 value="icons",
-                description="Косметические иконы профиля",
-                emoji="✨"
+                description="Косметические иконы профиля"
             ),
             discord.SelectOption(
-                label=replace_emojis("🏷️ Теги"),
+                label=replace_emojis("tag Теги"),
                 value="tags",
-                description="Префиксы для никнейма в чате",
-                emoji="🏷️"
+                description="Префиксы для никнейма в чате"
             ),
             discord.SelectOption(
-                label=replace_emojis("👑 Discord Роли & Доступы"),
+                label=replace_emojis("Radiant Discord Роли & Доступы"),
                 value="roles",
-                description="Роли и права",
-                emoji="👑"
+                description="Роли и права"
             ),
             discord.SelectOption(
-                label=replace_emojis("📦 Кейсы"),
+                label=replace_emojis("case_basic Кейсы"),
                 value="cases",
-                description="Награды и удача",
-                emoji="📦"
+                description="Награды и удача"
             ),
         ]
         super().__init__(
@@ -305,7 +301,7 @@ class RaritySelect(discord.ui.Select):
 
         # Создать список товаров
         category_label = "Значки" if self.category == "icons" else "Теги"
-        category_emoji = replace_emojis("✨") if self.category == "icons" else replace_emojis("🏷️")
+        category_emoji = replace_emojis("a_star") if self.category == "icons" else replace_emojis("tag")
 
         if self.category == "tags":
             # Маппинг rare эмодзи по редкости
@@ -398,10 +394,10 @@ class RaritySelect(discord.ui.Select):
 def get_item_emoji(category: str) -> str:
     """Получить эмодзи для категории товара."""
     emoji_map = {
-        "icons": replace_emojis("✨"),
-        "tags": replace_emojis("🏷️"),
+        "icons": replace_emojis("a_star"),
+        "tags": replace_emojis("tag"),
     }
-    return emoji_map.get(category, replace_emojis("🛒"))
+    return emoji_map.get(category, replace_emojis("shop"))
 
 
 class CosmeticSelect(discord.ui.Select):
@@ -454,8 +450,7 @@ class CaseSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=case.name,
                     value=case.id,
-                    description=f"Цена: {case.price} 🪙",
-                    emoji="📦"
+                    description=f"Цена: {case.price} {replace_emojis('money')}"
                 )
             )
 

@@ -98,7 +98,7 @@ class CaseStore:
         self._cases = {
             "basic": Case(
                 id="basic",
-                name="📦 Basic Case",
+                name="Basic Case",
                 description="Базовые предметы",
                 price=200,
                 drop_rates={
@@ -114,7 +114,7 @@ class CaseStore:
             ),
             "premium": Case(
                 id="premium",
-                name="🎁 Premium Case",
+                name="Premium Case",
                 description="Редкие предметы",
                 price=500,
                 drop_rates={
@@ -130,7 +130,7 @@ class CaseStore:
             ),
             "elite": Case(
                 id="elite",
-                name="💎 Elite Case",
+                name="Elite Case",
                 description="Легендарные предметы",
                 price=1000,
                 drop_rates={
@@ -146,7 +146,7 @@ class CaseStore:
             ),
             "special": Case(
                 id="special",
-                name="✨ Special Case",
+                name="Special Case",
                 description="Эксклюзивные предметы",
                 price=2000,
                 drop_rates={
