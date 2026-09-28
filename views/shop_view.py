@@ -88,8 +88,8 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     # Создать список кейсов
     cases_parts = []
     for case in cases:
-        case_emoji = "📦"  # default
-        rare_emoji = "⭐"  # default
+        case_emoji = "case_basic"  # default
+        rare_emoji = "rare_basic"  # default
         if "Basic" in case.name:
             case_emoji = "case_basic"
             rare_emoji = "rare_basic"
@@ -107,7 +107,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
             f"{replace_emojis('└')} {replace_emojis(case_emoji)} **{case.name}**"
         )
         cases_parts.append(
-            f"└ {replace_emojis(rare_emoji)} {case.description} • **Цена:** {case.price} {replace_emojis('🪙')}"
+            f"{replace_emojis('└')} {replace_emojis(rare_emoji)} {case.description} • **Цена:** {case.price} {replace_emojis('money')}"
         )
 
     cases_list = "\n".join(cases_parts)
@@ -126,7 +126,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     # Создать embed
     embed = discord.Embed(
         title=replace_emojis("КАТАЛОГ | Кейсы"),
-        description=f"Выберите кейс из списка ниже для открытия:\n\n{replace_emojis('⚪')} **Доступные кейсы:**\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Выберите кейс в выпадающем меню для открытия",
+        description=f"Выберите кейс из списка ниже для открытия:\n\n{replace_emojis('⚪')} **Доступные кейсы:**\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('money')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Выберите кейс в выпадающем меню для открытия",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
