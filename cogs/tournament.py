@@ -290,17 +290,16 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.description = (
-            f"Добро пожаловать в игровой магазин {replace_emojis('a_sparkle')}\n"
-            f"Выберите нужный раздел в выпадающем меню ниже {replace_emojis('a_triple_dots')}\n"
-            "чтобы посмотреть доступные товары."
+            f"Добро пожаловать в игровой магазин {replace_emojis('a_sparkle_2')}\n"
+            f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
         )
 
         # Профиль пользователя
         embed.add_field(
             name=replace_emojis("⚪ Ваш профиль:"),
-            value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-                  f"Ранг: {rank}\n"
-                  f"Инвентарь: {inventory_count}/{max_inventory}",
+            value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+                  f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+                  f"{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}",
             inline=False
         )
 

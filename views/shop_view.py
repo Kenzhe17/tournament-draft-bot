@@ -129,7 +129,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     # Создать embed
     embed = discord.Embed(
         title=replace_emojis("КАТАЛОГ | Кейсы"),
-        description=f"Выберите кейс из списка ниже для открытия:\n\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\nБаланс: {balance:,} {replace_emojis('money')}\nРанг: {rank}\nИнвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите кейс в меню ниже",
+        description=f"Выберите кейс из списка ниже для открытия:\n\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите кейс в меню ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -187,9 +187,9 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"Ранг: {rank}\n"
-              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -227,7 +227,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{category_emoji} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_sparkle')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\nБаланс: {balance:,} {replace_emojis('money')}\nРанг: {rank}\nИнвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('└')} **Basic** • Базовые товары\n{replace_emojis('└')} **Premium** • Премиум товары\n{replace_emojis('└')} **Elite** • Элитные товары\n{replace_emojis('└')} **Special** • Специальные редкие товары {replace_emojis('a_sparkle')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -550,9 +550,9 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"Ранг: {rank}\n"
-              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -635,9 +635,9 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"Ранг: {rank}\n"
-              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -695,9 +695,9 @@ async def show_role_card(interaction: discord.Interaction, item) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"Ранг: {rank}\n"
-              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -756,9 +756,9 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"Ранг: {rank}\n"
-              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -1067,9 +1067,9 @@ class ShopBackButton(discord.ui.Button):
         # Профиль пользователя
         embed.add_field(
             name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-            value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
-                  f"Ранг: {rank}\n"
-                  f"Мест в инвентаре: {inventory_count}/{max_inventory}",
+            value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+                  f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
+                  f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
             inline=False
         )
 
