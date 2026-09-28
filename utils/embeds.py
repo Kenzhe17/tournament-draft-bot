@@ -207,7 +207,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "admin": {
-            "emoji": "⚙️",
+            "emoji": replace_emojis("settings"),
             "title": "Админ",
             "color": discord.Color.dark_red(),
             "commands": [

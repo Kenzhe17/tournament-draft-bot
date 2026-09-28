@@ -228,6 +228,11 @@ STANDARD_EMOJIS = {
     "announce": "📢",
     "check": "✅",
     "cross": "❌",
+    "tag": "🏷️",
+    "settings": "⚙️",
+    "eye": "👁️",
+    "arrow_left": "⬅️",
+    "arrow_right": "➡️",
     
     # Emotions
     "fire": "🔥",
@@ -251,6 +256,7 @@ STANDARD_EMOJIS = {
     "white_arrow": "",
     "arrow_left": "",
     "arrow_right": "",
+    "settings": "",
     "a_sparkle": "",
     "a_star": "",
     "a_triple_dots": "",
@@ -285,6 +291,11 @@ STANDARD_EMOJIS = {
     "medal_gold": "",
     "medal_silver": "",
     "medal_bronze": "",
+
+    # Shop & UI
+    "tag": "",
+    "settings": "",
+    "eye": "",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -347,7 +358,8 @@ def replace_emojis(text: str) -> str:
         # Navigation
         "🔄": "refresh",
         "🔙": "back",
-        "➡️": "forward",
+        "➡️": "white_arrow",
+        "⬅️": "arrow_left",
         "🔽": "dropdown",
         "🆕": "new",
 
@@ -356,6 +368,9 @@ def replace_emojis(text: str) -> str:
         "👥": "team",
         "📌": "pin",
         "📢": "announce",
+        "⚙️": "settings",
+        "👁️": "eye",
+        "🏷️": "tag",
 
         # Emotions
         "🔥": "fire",
@@ -414,6 +429,7 @@ def replace_emojis(text: str) -> str:
         "⚪": "white_dot",
         "➡️": "white_arrow",
         "⬅️": "arrow_left",
+        "⚙️": "settings",
         "✨": "a_sparkle",
         "⭐": "a_star",
         "⋯": "a_triple_dots",
@@ -445,6 +461,7 @@ def replace_emojis(text: str) -> str:
         "check", "cross",
         "medal_gold", "medal_silver", "medal_bronze",
         "arrow_left", "arrow_right",
+        "settings",
     ]
 
     result = text

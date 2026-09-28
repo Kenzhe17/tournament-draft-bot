@@ -74,4 +74,4 @@ class HelpMainView(discord.ui.View):
         self.add_item(HelpCategoryButton("economy", replace_emojis("💰 Экономика"))
         self.add_item(HelpCategoryButton("shop", "🛒 Магазин"))
         self.add_item(HelpCategoryButton("profile", "👤 Профиль"))
-        self.add_item(HelpCategoryButton("admin", "⚙️ Админ"))
+        self.add_item(HelpCategoryButton("admin", replace_emojis("settings") + " Админ"))

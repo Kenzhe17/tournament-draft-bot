@@ -25,7 +25,7 @@ class SettingsButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("⚙️ Настройки"),
+            label=replace_emojis("settings Настройки"),
             custom_id=f"profile_settings:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
