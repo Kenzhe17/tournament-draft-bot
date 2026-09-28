@@ -1703,59 +1703,94 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
     async def daily(self, interaction: discord.Interaction) -> None:
-        """Получить ежедневный бонус."""
+        """Получить ежедневный бонус с серией."""
         from storage.db import get_pool
         from storage.user_balance_store import user_balance_store
 
         guild_id = interaction.guild_id
-        user_id = interaction.user_id
+        user_id = interaction.user.id
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Get last claim time
+            # Get last claim time and streak
             record = await conn.fetchrow(
-                "SELECT last_claim FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                "SELECT last_claim, last_streak_date, streak FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
                 guild_id, user_id
             )
 
             now = datetime.now()
-            cooldown_hours = 12
+            cooldown_hours = 24
+            today = now.date()
 
             if record and record["last_claim"]:
                 last_claim = record["last_claim"]
                 time_passed = now - last_claim
-                
+
                 if time_passed < timedelta(hours=cooldown_hours):
                     # Calculate remaining time
                     remaining = timedelta(hours=cooldown_hours) - time_passed
                     hours = int(remaining.total_seconds() // 3600)
                     minutes = int((remaining.total_seconds() % 3600) // 60)
-                    
+
                     await interaction.response.send_message(
-                        replace_emojis(f"⏰ Вы уже получили бонус!\nСледующий бонус через: {hours}ч {minutes}мин"),
+                        replace_emojis(f"⚪ Вы уже получили бонус!\nСледующий бонус через: {hours}ч {minutes}мин"),
                         ephemeral=True
                     )
                     return
 
-            # Give the bonus
-            await user_balance_store.add_balance(guild_id, user_id, 100)
+            # Calculate streak
+            streak = 1
+            if record and record["last_streak_date"]:
+                last_streak_date = record["last_streak_date"]
+                last_claim_date = record["last_claim"].date()
 
-            # Update last claim time
+                # If claimed yesterday, increment streak
+                if (today - last_streak_date).days == 1:
+                    streak = (record["streak"] or 0) + 1
+                # If claimed today but it's been 24+ hours, don't increment
+                elif last_claim_date == today:
+                    streak = record["streak"] or 1
+                # If streak was broken, reset to 1
+                else:
+                    streak = 1
+
+            # Cap streak at 10
+            streak = min(streak, 10)
+
+            # Calculate reward: 100 on day 1, 200 on day 10, linear interpolation
+            if streak == 1:
+                reward = 100
+            elif streak >= 10:
+                reward = 200
+            else:
+                # Linear: 100 + (streak - 1) * (100 / 9)
+                reward = int(100 + (streak - 1) * (100 / 9))
+
+            # Give the bonus
+            await user_balance_store.add_balance(guild_id, user_id, reward)
+
+            # Update last claim time and streak
             await conn.execute(
                 """
-                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, last_streak_date)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (guild_id, user_id) 
-                DO UPDATE SET last_claim = $3, last_streak_date = $4
+                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, last_streak_date, streak)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (guild_id, user_id)
+                DO UPDATE SET last_claim = $3, last_streak_date = $4, streak = $5
                 """,
-                guild_id, user_id, now, now.date()
+                guild_id, user_id, now, today, streak
             )
 
-            await interaction.response.send_message(
-                replace_emojis("✅ Вы получили 100 🪙 ежедневного бонуса!\n"),
-                f"Следующий бонус будет доступен через 12 часов.",
-                ephemeral=False
+            # Fire emoji for streaks
+            fire_emoji = "🔥" if streak >= 3 else ""
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
+                description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь завтра, чтобы получить следующую награду!",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+            await interaction.response.send_message(embed=embed, ephemeral=False)
 
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
     async def welcome(self, interaction: discord.Interaction) -> None:

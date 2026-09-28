@@ -307,9 +307,20 @@ async def init_db() -> None:
                 user_id BIGINT NOT NULL,
                 last_claim TIMESTAMP,
                 last_streak_date DATE,
+                streak INTEGER DEFAULT 1,
                 PRIMARY KEY (guild_id, user_id)
             )
         """)
+
+        # Add streak column if it doesn't exist (migration)
+        column_exists = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'bonus_cooldowns' AND column_name = 'streak'
+            )
+        """)
+        if not column_exists:
+            await conn.execute("ALTER TABLE bonus_cooldowns ADD COLUMN streak INTEGER DEFAULT 1")
 
         # Reset betting statistics (migration)
         migration_run = await conn.fetchval(
