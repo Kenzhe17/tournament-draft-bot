@@ -1702,51 +1702,68 @@ class TournamentCog(commands.Cog):
 
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
-    # Note: Replace <:Name:ID> with actual custom emoji IDs from your server
+    from config import RANK_EMOJIS
+    
+    # Get emoji IDs from config, fallback to name if not set
+    radiant = RANK_EMOJIS.get("Radiant", "Radiant")
+    immortal = RANK_EMOJIS.get("Immortal", "Immortal")
+    ascendant = RANK_EMOJIS.get("Ascendant", "Ascendant")
+    diamond = RANK_EMOJIS.get("Diamond", "Diamond")
+    platinum = RANK_EMOJIS.get("Platinum", "Platinum")
+    gold = RANK_EMOJIS.get("Gold", "Gold")
+    silver = RANK_EMOJIS.get("Silver", "Silver")
+    bronze = RANK_EMOJIS.get("Bronze", "Bronze")
+    
+    # Format as custom emoji if it looks like an ID (number), otherwise just use the name
+    def format_emoji(name, value):
+        if value.isdigit() or (value.startswith("<:") and value.endswith(">")):
+            return f"<:{name}:{value}>"
+        return value
+    
     if level >= 100:
-        return "<:Radiant:ID> Radiant"
+        return f"{format_emoji('Radiant', radiant)} Radiant"
     elif level >= 93:
-        return "<:Immortal:ID> Immortal I"
+        return f"{format_emoji('Immortal', immortal)} Immortal I"
     elif level >= 86:
-        return "<:Immortal:ID> Immortal II"
+        return f"{format_emoji('Immortal', immortal)} Immortal II"
     elif level >= 80:
-        return "<:Immortal:ID> Immortal III"
+        return f"{format_emoji('Immortal', immortal)} Immortal III"
     elif level >= 73:
-        return "<:Ascendant:ID> Ascendant I"
+        return f"{format_emoji('Ascendant', ascendant)} Ascendant I"
     elif level >= 66:
-        return "<:Ascendant:ID> Ascendant II"
+        return f"{format_emoji('Ascendant', ascendant)} Ascendant II"
     elif level >= 60:
-        return "<:Ascendant:ID> Ascendant III"
+        return f"{format_emoji('Ascendant', ascendant)} Ascendant III"
     elif level >= 54:
-        return "<:Diamond:ID> Diamond I"
+        return f"{format_emoji('Diamond', diamond)} Diamond I"
     elif level >= 48:
-        return "<:Diamond:ID> Diamond II"
+        return f"{format_emoji('Diamond', diamond)} Diamond II"
     elif level >= 42:
-        return "<:Diamond:ID> Diamond III"
+        return f"{format_emoji('Diamond', diamond)} Diamond III"
     elif level >= 37:
-        return "<:Platinum:ID> Platinum I"
+        return f"{format_emoji('Platinum', platinum)} Platinum I"
     elif level >= 32:
-        return "<:Platinum:ID> Platinum II"
+        return f"{format_emoji('Platinum', platinum)} Platinum II"
     elif level >= 27:
-        return "<:Platinum:ID> Platinum III"
+        return f"{format_emoji('Platinum', platinum)} Platinum III"
     elif level >= 23:
-        return "<:Gold:ID> Gold I"
+        return f"{format_emoji('Gold', gold)} Gold I"
     elif level >= 19:
-        return "<:Gold:ID> Gold II"
+        return f"{format_emoji('Gold', gold)} Gold II"
     elif level >= 15:
-        return "<:Gold:ID> Gold III"
+        return f"{format_emoji('Gold', gold)} Gold III"
     elif level >= 12:
-        return "<:Silver:ID> Silver I"
+        return f"{format_emoji('Silver', silver)} Silver I"
     elif level >= 9:
-        return "<:Silver:ID> Silver II"
+        return f"{format_emoji('Silver', silver)} Silver II"
     elif level >= 6:
-        return "<:Silver:ID> Silver III"
+        return f"{format_emoji('Silver', silver)} Silver III"
     elif level >= 4:
-        return "<:Bronze:ID> Bronze I"
+        return f"{format_emoji('Bronze', bronze)} Bronze I"
     elif level >= 2:
-        return "<:Bronze:ID> Bronze II"
+        return f"{format_emoji('Bronze', bronze)} Bronze II"
     else:
-        return "<:Bronze:ID> Bronze III"
+        return f"{format_emoji('Bronze', bronze)} Bronze III"
 
 
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
@@ -1963,37 +1980,53 @@ class GuideSelectMenu(discord.ui.Select):
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         elif self.values[0] == "ranks":
+            from config import RANK_EMOJIS
+            
+            def format_emoji(name, value):
+                if value.isdigit() or (value.startswith("<:") and value.endswith(">")):
+                    return f"<:{name}:{value}>"
+                return value
+            
+            radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "Radiant"))
+            immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "Immortal"))
+            ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "Ascendant"))
+            diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "Diamond"))
+            platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "Platinum"))
+            gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "Gold"))
+            silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "Silver"))
+            bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "Bronze"))
+            
             embed = discord.Embed(
                 title="📊 Система прогрессии и рангов",
                 description=(
                     "**📈 Уровни:** XP зачисляется за игры и турниры.\n\n"
                     "**🏅 Ранги по уровням:**\n"
-                    "<:Radiant:ID> **Radiant** (100+)\n"
-                    "<:Immortal:ID> **Immortal Tier** (80-99)\n"
+                    f"{radiant} **Radiant** (100+)\n"
+                    f"{immortal} **Immortal Tier** (80-99)\n"
                     "   ├─ Immortal I (93-99)\n"
                     "   ├─ Immortal II (86-92)\n"
                     "   └─ Immortal III (80-85)\n"
-                    "<:Ascendant:ID> **Ascendant Tier** (60-79)\n"
+                    f"{ascendant} **Ascendant Tier** (60-79)\n"
                     "   ├─ Ascendant I (73-79)\n"
                     "   ├─ Ascendant II (66-72)\n"
                     "   └─ Ascendant III (60-65)\n"
-                    "<:Diamond:ID> **Diamond Tier** (42-59)\n"
+                    f"{diamond} **Diamond Tier** (42-59)\n"
                     "   ├─ Diamond I (54-59)\n"
                     "   ├─ Diamond II (48-53)\n"
                     "   └─ Diamond III (42-47)\n"
-                    "<:Platinum:ID> **Platinum Tier** (27-41)\n"
+                    f"{platinum} **Platinum Tier** (27-41)\n"
                     "   ├─ Platinum I (37-41)\n"
                     "   ├─ Platinum II (32-36)\n"
                     "   └─ Platinum III (27-31)\n"
-                    "<:Gold:ID> **Gold Tier** (15-26)\n"
+                    f"{gold} **Gold Tier** (15-26)\n"
                     "   ├─ Gold I (23-26)\n"
                     "   ├─ Gold II (19-22)\n"
                     "   └─ Gold III (15-18)\n"
-                    "<:Silver:ID> **Silver Tier** (6-14)\n"
+                    f"{silver} **Silver Tier** (6-14)\n"
                     "   ├─ Silver I (12-14)\n"
                     "   ├─ Silver II (9-11)\n"
                     "   └─ Silver III (6-8)\n"
-                    "<:Bronze:ID> **Bronze Tier** (0-5)\n"
+                    f"{bronze} **Bronze Tier** (0-5)\n"
                     "   ├─ Bronze I (4-5)\n"
                     "   ├─ Bronze II (2-3)\n"
                     "   └─ Bronze III (0-1)"

@@ -35,3 +35,15 @@ MAX_BET = 1000  # Максимальная ставка (для обычных �
 MAX_CAPTAINS = 4
 MAX_PLAYERS_PER_CIRCLE = 4
 CIRCLES = (2, 3, 4)
+
+# Custom emoji IDs for ranks (replace with actual IDs from your server)
+RANK_EMOJIS = {
+    "Radiant": os.getenv("EMOJI_RADIANT", "Radiant"),
+    "Immortal": os.getenv("EMOJI_IMMORTAL", "Immortal"),
+    "Ascendant": os.getenv("EMOJI_ASCENDANT", "Ascendant"),
+    "Diamond": os.getenv("EMOJI_DIAMOND", "Diamond"),
+    "Platinum": os.getenv("EMOJI_PLATINUM", "Platinum"),
+    "Gold": os.getenv("EMOJI_GOLD", "Gold"),
+    "Silver": os.getenv("EMOJI_SILVER", "Silver"),
+    "Bronze": os.getenv("EMOJI_BRONZE", "Bronze"),
+}
