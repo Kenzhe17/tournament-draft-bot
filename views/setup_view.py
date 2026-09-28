@@ -339,7 +339,10 @@ class ExitButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        user_name = interaction.user.name
+        user_name = interaction.user.display_name
+        from utils.cosmetics import clean_nickname
+        cleaned_name = clean_nickname(user_name)
+        user_name = cleaned_name
 
         # Handle different modes
         if tournament.formation_mode == FormationMode.RANDOM:
