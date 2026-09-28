@@ -144,7 +144,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "shop": {
-            "emoji": "🛒",
+            "emoji": replace_emojis("shop"),
             "title": "Магазин",
             "color": discord.Color.dark_gold(),
             "commands": [

@@ -324,7 +324,7 @@ class RaritySelect(discord.ui.Select):
         else:
             items_list = "\n\n".join([
                 f"{item.value} **{item.name}**\n"
-                f"└ {replace_emojis('💰')} **Цена:** {item.price} {replace_emojis('🪙')}"
+                f"└ {replace_emojis('money')} **Цена:** {item.price} {replace_emojis('money')}"
                 for item in items
             ])
 
@@ -728,11 +728,11 @@ class BuyButton(discord.ui.Button):
     """Кнопка покупки товара."""
 
     def __init__(self, item_id: str, price: int, item_type: str = "icon"):
-        label_text = f"{replace_emojis('✅')} Купить за {price} {replace_emojis('🪙')}"
+        label_text = f"{replace_emojis('check')} Купить за {price} {replace_emojis('money')}"
         if item_type == "tag":
-            label_text = f"{replace_emojis('✅')} Примерить и купить за {price} {replace_emojis('🪙')}"
+            label_text = f"{replace_emojis('check')} Примерить и купить за {price} {replace_emojis('money')}"
         elif item_type == "role":
-            label_text = f"{replace_emojis('✅')} Купить роль за {price} {replace_emojis('🪙')}"
+            label_text = f"{replace_emojis('check')} Купить роль за {price} {replace_emojis('money')}"
         
         super().__init__(
             style=discord.ButtonStyle.success,
@@ -753,7 +753,7 @@ class BuyButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < self.price:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно монет. Нужно: {self.price} {replace_emojis('🪙')}, у вас: {balance} {replace_emojis('🪙')}",
+                f"{replace_emojis('cross')} Недостаточно монет. Нужно: {self.price} {replace_emojis('money')}, у вас: {balance} {replace_emojis('money')}",
                 ephemeral=True
             )
             return
@@ -872,7 +872,7 @@ class BuyCaseButton(discord.ui.Button):
     def __init__(self, case_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"{replace_emojis('🎲')} Открыть кейс за {price} {replace_emojis('🪙')}",
+            label=f"{replace_emojis('dice')} Открыть кейс за {price} {replace_emojis('money')}",
             custom_id=f"buy_case_{case_id}"
         )
         self.case_id = case_id
@@ -1078,7 +1078,7 @@ class ShopCategoryButton(discord.ui.Button):
 
         category_label = "Значки" if self.category == "icons" else "Теги"
         embed = discord.Embed(
-            title=f"{replace_emojis('🛒')} {category_label} - Выберите редкость",
+            title=f"{replace_emojis('shop')} {category_label} - Выберите редкость",
             description="Выберите редкость товаров для просмотра",
             color=embed_color
         )
@@ -1123,7 +1123,7 @@ class ItemSelect(discord.ui.Select):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < item.price:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно монет. Нужно: {item.price} {replace_emojis('🪙')}, у вас: {balance} {replace_emojis('🪙')}",
+                f"{replace_emojis('cross')} Недостаточно монет. Нужно: {item.price} {replace_emojis('money')}, у вас: {balance} {replace_emojis('money')}",
                 ephemeral=True
             )
             return
@@ -1151,7 +1151,7 @@ class ItemSelect(discord.ui.Select):
         inventory_store.add_cosmetic(cosmetic)
 
         await interaction.response.send_message(
-            f"{replace_emojis('✅')} Вы купили **{item.name}** за {item.price} {replace_emojis('🪙')}!\n\n"
+            f"{replace_emojis('check')} Вы купили **{item.name}** за {item.price} {replace_emojis('money')}!\n\n"
             f"Используйте `/inventory` для экипировки.",
             ephemeral=True
         )
@@ -1178,7 +1178,7 @@ class RarityBackButton(discord.ui.Button):
         # Определить название категории
         category_label = "Значки" if self.category == "icons" else "Теги"
         embed = discord.Embed(
-            title=f"{replace_emojis('🛒')} {category_label} - Выберите редкость",
+            title=f"{replace_emojis('shop')} {category_label} - Выберите редкость",
             description="Выберите редкость товаров для просмотра",
             color=discord.Color.gold()
         )
@@ -1212,7 +1212,7 @@ class ShopBuyButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < item.price:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно монет. Нужно: {item.price} {replace_emojis('🪙')}, у вас: {balance} {replace_emojis('🪙')}",
+                f"{replace_emojis('cross')} Недостаточно монет. Нужно: {item.price} {replace_emojis('money')}, у вас: {balance} {replace_emojis('money')}",
                 ephemeral=True
             )
             return
@@ -1240,7 +1240,7 @@ class ShopBuyButton(discord.ui.Button):
         inventory_store.add_cosmetic(cosmetic)
 
         await interaction.response.send_message(
-            f"{replace_emojis('✅')} Вы купили **{item.name}** за {item.price} {replace_emojis('🪙')}!\n\n"
+            f"{replace_emojis('check')} Вы купили **{item.name}** за {item.price} {replace_emojis('money')}!\n\n"
             f"Используйте `/inventory` для экипировки.",
             ephemeral=True
         )
@@ -1430,7 +1430,7 @@ class RolesButton(discord.ui.Button):
             can_buy = user_level >= role.required_level
             level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
 
-            label = f"{role.name} - {role.price} {replace_emojis('🪙')}{level_req}"
+            label = f"{role.name} - {role.price} {replace_emojis('money')}{level_req}"
             button = RoleBuyButton(role.id, label, can_buy)
             view.add_item(button)
 
@@ -1463,7 +1463,7 @@ class RoleBuyButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < item.price:
             await interaction.followup.send(
-                f"{replace_emojis('❌')} Недостаточно монет. Нужно: {item.price} {replace_emojis('🪙')}, у вас: {balance} {replace_emojis('🪙')}"
+                f"{replace_emojis('cross')} Недостаточно монет. Нужно: {item.price} {replace_emojis('money')}, у вас: {balance} {replace_emojis('money')}"
             )
             return
 
@@ -1490,7 +1490,7 @@ class RoleBuyButton(discord.ui.Button):
 
         if success:
             await interaction.followup.send(
-                f"{replace_emojis('✅')} Вы купили **{item.name}** за {item.price} {replace_emojis('🪙')}!"
+                f"{replace_emojis('check')} Вы купили **{item.name}** за {item.price} {replace_emojis('money')}!"
             )
         else:
             # Возврат монет при ошибке
