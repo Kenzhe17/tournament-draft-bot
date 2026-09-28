@@ -477,12 +477,13 @@ async def build_setup_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed настройки турнира."""
-    status_emoji = "🔓" if tournament.registration == RegistrationState.OPEN else "🔒"
-    formation_text = "🎯 ELO" if tournament.formation_mode == FormationMode.ELO else "✋ Ручной" if tournament.formation_mode == FormationMode.MANUAL else "🎲 Случайный"
-    embed = discord.Embed(
-        title=f"🏆 {tournament.size.value} | {status_emoji} | {formation_text}",
-        color=discord.Color.dark_red(),
-    )
+    status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
+    formation_text = "ELO" if tournament.formation_mode == FormationMode.ELO else "Ручной" if tournament.formation_mode == FormationMode.MANUAL else "RANDOM"
+    status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
+
+    # Get organizer info
+    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     # Build ELO dictionary for all registered players
     elo_dict = {}
@@ -491,7 +492,7 @@ async def build_setup_embed(
         if stats:
             elo_dict[player_name] = int(stats.elo)
 
-    # Show different content based on formation mode
+    # Build description based on formation mode
     if tournament.formation_mode == FormationMode.RANDOM:
         # RANDOM mode: show players pool
         current = len(tournament.players_pool)
@@ -508,25 +509,31 @@ async def build_setup_embed(
                 formatted_name = player_name
 
             if player_name in elo_dict:
-                player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])})")
+                player_strings.append(f"{formatted_name} `({int(elo_dict[player_name])} ELO)`")
             else:
                 player_strings.append(formatted_name)
 
-        players_text = " ".join(player_strings) if player_strings else "*"
+        players_text = ", ".join(player_strings) if player_strings else "*"
 
-        embed.add_field(
-            name=f"Игроки ({current}/{limit})",
-            value=players_text,
-            inline=False,
+        description = (
+            f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+            f"{replace_emojis('sub_middle')} Размер: {tournament.size.value}\n"
+            f"{replace_emojis('sub_middle')} Режим формирования: {formation_text}\n"
+            f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
+            f"{replace_emojis('white_dot')} **Пул игроков:**\n"
+            f"{replace_emojis('white_arrow')} {players_text}\n\n"
+            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации"
         )
     else:
         # MANUAL/ELO modes: show circles
         circle_counts = tournament.get_circle_counts()
 
-        # Show all 4 circles with dynamic limits and counts
+        # Build circle sections
+        circle_sections = []
         for circle in range(1, 5):
             circle_list = getattr(tournament, f"circle{circle}")
-            circle_name = "Капитан" if circle == 1 else f"Круг {circle}"
+            circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
             limit = tournament.circle_limit(circle)
             limit_enabled = tournament.circle_limits_enabled.get(circle, True) if circle != 1 else True
             count = circle_counts[circle]
@@ -539,19 +546,34 @@ async def build_setup_embed(
                 limit_info = f" ({count}/∞)"
 
             value = _circle_line(circle_list, elo_dict, tournament, guild.id) or "*"
-            embed.add_field(
-                name=f"{circle_name}{limit_info}",
-                value=value,
-                inline=False,
-            )
+            circle_sections.append(f"{replace_emojis('white_dot')} **{circle_name}{limit_info}:**\n{replace_emojis('white_arrow')} {value}")
 
-    # Add info about registration
-    status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
-    embed.add_field(
-        name="\u200b",
-        value=status_text,
-        inline=False,
+        description = (
+            f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+            f"{replace_emojis('sub_middle')} Размер: {tournament.size.value}\n"
+            f"{replace_emojis('sub_middle')} Режим формирования: {formation_text}\n"
+            f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
+            + "\n\n".join(circle_sections) + "\n\n"
+            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации или управления капитанами"
+        )
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} {tournament.size.value} | {status_text} | {formation_text}",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add organizer avatar if available
+    if organizer_id:
+        try:
+            organizer_member = guild.get_member(organizer_id)
+            if organizer_member:
+                embed.set_thumbnail(url=organizer_member.display_avatar.url)
+        except:
+            pass
+
+    return embed
 
     return embed
 
@@ -560,20 +582,19 @@ async def build_draft_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed во время драфта."""
-    embed = discord.Embed(
-        title="⚔️ Порядок капитанов",
-        color=discord.Color.dark_blue(),
-    )
-
     # Get current picker
     current_picker_pos = tournament.current_picker_position()
+    current_line = ""
+    current_captain_id = 0
+    remaining_time = tournament.get_draft_pick_remaining_time()
+
     if current_picker_pos is not None:
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
         current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         if current_captain_id > 0:
-            current_line = f"🎯 Текущий: <@{current_captain_id}>"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** <@{current_captain_id}> `(Осталось: {remaining_time} сек)`"
         else:
-            current_line = f"🎯 Текущий: {current_captain_name}"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** {current_captain_name} `(Осталось: {remaining_time} сек)`"
     else:
         current_line = "Драфт завершён"
 
@@ -585,25 +606,12 @@ async def build_draft_embed(
             captain_name = tournament.captains[tournament.captain_order[pos]]
             captain_id = tournament.player_user_ids.get(captain_name, 0)
             if captain_id > 0:
-                next_captains.append(f"{i + 1}. <@{captain_id}>")
+                next_captains.append(f"<@{captain_id}>")
             else:
-                next_captains.append(f"{i + 1}. {captain_name}")
+                next_captains.append(captain_name)
 
-    # Add draft timer to description
-    remaining_time = tournament.get_draft_pick_remaining_time()
-    timer_text = f"\n⏱️ Время на выбор: {remaining_time}с"
-    
-    embed.description = f"{current_line}\n\n**Очередь:**\n" + "\n".join(next_captains) + timer_text
-    
-    # Add timer as a separate field for visibility
-    if current_picker_pos is not None:
-        embed.add_field(
-            name="⏱️ Таймер",
-            value=f"{remaining_time} секунд",
-            inline=False
-        )
-
-    # Таблица выборов по текущему и пройденным кругам (всегда круги 2, 3, 4)
+    # Build picks table
+    picks_sections = []
     for circle in range(2, 5):
         lines = []
         # Get pick order for this circle
@@ -614,43 +622,58 @@ async def build_draft_embed(
 
         for pos in pick_order:
             captain_name = tournament.captains[pos]
+            captain_id = tournament.player_user_ids.get(captain_name, 0)
             pick = tournament.picks.get(str(pos), {}).get(str(circle))
+            captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
+
             if circle > tournament.current_circle or not pick:
-                pick = "-"
-            lines.append(f"{captain_name} → {pick}")
+                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ `[Ожидание]`")
+            elif circle == tournament.current_circle and pick:
+                pick_id = tournament.player_user_ids.get(pick, 0)
+                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
+                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ {pick_mention}")
+            elif circle < tournament.current_circle:
+                pick_id = tournament.player_user_ids.get(pick, 0)
+                pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
+                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ {pick_mention}")
 
         status = ""
         if circle == tournament.current_circle:
-            status = " arrow_left"
-        embed.add_field(
-            name=f"⚔️ Круг {circle}:{status}",
-            value="\n".join(lines),
-            inline=False,
-        )
+            status = f" ◄ `[Текущий]`"
 
-    # Кто сейчас выбирает
-    picker_pos = tournament.current_picker_position()
-    if picker_pos is not None:
-        captain_name = tournament.captains[picker_pos]
-        captain_user_id = tournament.player_user_ids.get(captain_name, 0)
-        if captain_user_id:
-            embed.add_field(
-                name="👤 Сейчас выбирает",
-                value=f"**{replace_emojis('arrow_right')} <@{captain_user_id}>**",
-                inline=False,
-            )
-            # Добавить @mention в описание для уведомления
-            embed.description = f"<@{captain_user_id}> - ваша очередь выбирать!"
+        picks_sections.append(f"{replace_emojis('sub_middle')} **Круг {circle}:{status}**\n" + "\n".join(lines))
 
     # Warning if more than 25 players available
+    warning = ""
     key = str(tournament.current_circle)
     available = tournament.available.get(key, [])
     if len(available) > 25:
-        embed.add_field(
-            name="⚠️ Внимание",
-            value=f"Показано 25 из {len(available)} игроков в меню выбора.",
-            inline=False,
-        )
+        warning = f"\n\n⚠️ **Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
+
+    description = (
+        f"{current_line}\n\n"
+        f"{replace_emojis('white_dot')} **Очередь выбора:**\n"
+        f"{replace_emojis('white_arrow')} {', '.join(next_captains)}\n\n"
+        f"{replace_emojis('white_dot')} **Выборы по кругам:**\n"
+        + "\n\n".join(picks_sections)
+        + warning
+        + f"\n\n{replace_emojis('a_dot_smaller')} Сделайте выбор с помощью меню ниже до истечения таймера"
+    )
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} ⚔️ Порядок капитанов | Фаза Драфта",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    # Add current picker avatar if available
+    if current_captain_id > 0:
+        try:
+            picker_member = guild.get_member(current_captain_id)
+            if picker_member:
+                embed.set_thumbnail(url=picker_member.display_avatar.url)
+        except:
+            pass
 
     return embed
 
@@ -673,11 +696,12 @@ async def build_qualifiers_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed отборочных матчей."""
-    embed = discord.Embed(
-        title="🏆 ТУРНИРНАЯ СЕТКА — ОТБОР",
-        color=discord.Color.dark_purple(),  # Тёмно-фиолетовый для отборочных
-    )
+    # Get organizer info
+    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
+    # Build matches section
+    matches_section = []
     for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
         # Get team names or default to captain names
         team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
@@ -693,42 +717,80 @@ async def build_qualifiers_embed(
 
         # Get room info
         room_data = tournament.qualifier_rooms.get(i, {})
-        room_info = ""
         if room_data:
-            # Add separate fields for ID and password for easy copying
-            embed.add_field(
-                name=f"🔥 Отбор #{i + 1}",
-                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-                inline=False,
-            )
-            embed.add_field(
-                name="ID комнаты",
-                value=room_data['id'],
-                inline=True
-            )
-            embed.add_field(
-                name="Пароль",
-                value=room_data['password'],
-                inline=True
-            )
+            room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
-            embed.add_field(
-                name=f"🔥 Отбор #{i + 1}",
-                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-                inline=False,
-            )
+            room_info = ""
 
-    # Добавляем отображение команд снизу под отборочными
-    await _add_teams_block_to_embed(embed, guild, tournament)
-    
-    # Добавляем секцию ставок
-    await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifiers")
-    
-    # Add betting timer to footer if betting is open
+        matches_section.append(
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{room_info}"
+        )
+
+    # Build teams section
+    teams_section = []
+    for team_idx, team_data in enumerate(tournament.teams):
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+        captain_id = tournament.player_user_ids.get(captain, 0)
+        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
+
+        player_mentions = []
+        for player in players:
+            player_id = tournament.player_user_ids.get(player, 0)
+            if player_id > 0:
+                player_mentions.append(f"<@{player_id}>")
+            else:
+                player_mentions.append(player)
+
+        prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
+        teams_section.append(f"{prefix}  **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+
+    # Build betting section
+    betting_section = []
+    if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
+        for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
+            team_a_name = tournament.team_names.get(team_a, f"П{team_a + 1}")
+            team_b_name = tournament.team_names.get(team_b, f"П{team_b + 1}")
+            betting_section.append(f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:** П1 `1.85x` | П2 `1.95x`")
+
+    # Build footer
+    footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
         remaining = tournament.get_betting_remaining_time()
-        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
-    
+        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+
+    description = (
+        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+        f"{replace_emojis('white_dot')} **Отборочные матчи:**\n"
+        + "\n\n".join(matches_section)
+        + "\n\n"
+        f"{replace_emojis('white_dot')} **Участники команд:**\n"
+        + "\n".join(teams_section)
+    )
+
+    if betting_section:
+        description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ОТБОР",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    if footer:
+        embed.set_footer(text=footer)
+
+    # Add organizer avatar if available
+    if organizer_id:
+        try:
+            organizer_member = guild.get_member(organizer_id)
+            if organizer_member:
+                embed.set_thumbnail(url=organizer_member.display_avatar.url)
+        except:
+            pass
+
+    return embed
     return embed
 
 
@@ -736,11 +798,12 @@ async def build_semifinals_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed полуфиналов."""
-    embed = discord.Embed(
-        title="🏆 ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
-        color=discord.Color.light_gray(),  # Серебряный для полуфиналов
-    )
+    # Get organizer info
+    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
+    # Build matches section
+    matches_section = []
     for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
         # Get team names or default to captain names
         team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
@@ -756,42 +819,80 @@ async def build_semifinals_embed(
 
         # Get room info
         room_data = tournament.semifinal_rooms.get(i, {})
-        room_info = ""
         if room_data:
-            # Add separate fields for ID and password for easy copying
-            embed.add_field(
-                name=f"🔥 Игра #{i + 1}",
-                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-                inline=False,
-            )
-            embed.add_field(
-                name="ID комнаты",
-                value=room_data['id'],
-                inline=True
-            )
-            embed.add_field(
-                name="Пароль",
-                value=room_data['password'],
-                inline=True
-            )
+            room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
-            embed.add_field(
-                name=f"🔥 Игра #{i + 1}",
-                value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-                inline=False,
-            )
+            room_info = ""
 
-    # Добавляем отображение команд снизу под полуфиналами
-    await _add_teams_block_to_embed(embed, guild, tournament)
-    
-    # Добавляем секцию ставок
-    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinals")
-    
-    # Add betting timer to footer if betting is open
+        matches_section.append(
+            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}"
+        )
+
+    # Build teams section
+    teams_section = []
+    for team_idx, team_data in enumerate(tournament.teams):
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+        captain_id = tournament.player_user_ids.get(captain, 0)
+        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
+
+        player_mentions = []
+        for player in players:
+            player_id = tournament.player_user_ids.get(player, 0)
+            if player_id > 0:
+                player_mentions.append(f"<@{player_id}>")
+            else:
+                player_mentions.append(player)
+
+        prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
+        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+
+    # Build betting section
+    betting_section = []
+    if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
+        for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
+            team_a_name = tournament.team_names.get(team_a, f"П{team_a + 1}")
+            team_b_name = tournament.team_names.get(team_b, f"П{team_b + 1}")
+            betting_section.append(f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** П1 `1.75x` | П2 `2.05x`")
+
+    # Build footer
+    footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
         remaining = tournament.get_betting_remaining_time()
-        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
-    
+        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+
+    description = (
+        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+        f"{replace_emojis('white_dot')} **Полуфинальные матчи:**\n"
+        + "\n\n".join(matches_section)
+        + "\n\n"
+        f"{replace_emojis('white_dot')} **Участники команд:**\n"
+        + "\n".join(teams_section)
+    )
+
+    if betting_section:
+        description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    if footer:
+        embed.set_footer(text=footer)
+
+    # Add organizer avatar if available
+    if organizer_id:
+        try:
+            organizer_member = guild.get_member(organizer_id)
+            if organizer_member:
+                embed.set_thumbnail(url=organizer_member.display_avatar.url)
+        except:
+            pass
+
+    return embed
     return embed
 
 
@@ -799,6 +900,10 @@ async def build_final_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed финала."""
+    # Get organizer info
+    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
+
     team_a = tournament.final_teams[0]
     team_b = tournament.final_teams[1]
 
@@ -817,49 +922,73 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        # Add separate fields for ID and password for easy copying
-        embed = discord.Embed(
-            title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
-            color=discord.Color.gold(),  # Золотой для финала
-        )
-        embed.add_field(
-            name="⚡ Главная битва турнира",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-            inline=False
-        )
-        embed.add_field(
-            name="ID комнаты",
-            value=room_data['id'],
-            inline=True
-        )
-        embed.add_field(
-            name="Пароль",
-            value=room_data['password'],
-            inline=True
-        )
+        room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
     else:
-        embed = discord.Embed(
-            title="🏆 ТУРНИРНАЯ СЕТКА — ФИНАЛ",
-            color=discord.Color.gold(),  # Золотой для финала
-        )
-        embed.add_field(
-            name="⚡ Главная битва турнира",
-            value=f"**{name_a} ({int(avg_elo_a)})** *vs* **{name_b} ({int(avg_elo_b)})**",
-            inline=False
-        )
+        room_info = ""
 
-    # Добавляем отображение команд снизу под финалом
-    await _add_teams_block_to_embed(embed, guild, tournament)
-    
-    # Добавляем секцию ставок для финала
-    final_matches = [(tournament.final_teams[0], tournament.final_teams[1])]
-    await _add_betting_section_to_embed(embed, tournament, final_matches, "final")
-    
-    # Add betting timer to footer if betting is open
+    # Build teams section
+    teams_section = []
+    for team_idx in [team_a, team_b]:
+        team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+        captain_id = tournament.player_user_ids.get(captain, 0)
+        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
+
+        player_mentions = []
+        for player in players:
+            player_id = tournament.player_user_ids.get(player, 0)
+            if player_id > 0:
+                player_mentions.append(f"<@{player_id}>")
+            else:
+                player_mentions.append(player)
+
+        prefix = replace_emojis("sub_middle") if team_idx == team_a else replace_emojis("sub_directory")
+        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+
+    # Build betting section
+    betting_section = []
+    if tournament.is_betting_open() and tournament.betting_phase == "final":
+        team_a_name = tournament.team_names.get(team_a, f"П{team_a + 1}")
+        team_b_name = tournament.team_names.get(team_b, f"П{team_b + 1}")
+        betting_section.append(f"{replace_emojis('white_arrow')} **Финал:** П1 `1.90x` | П2 `1.90x`")
+
+    # Build footer
+    footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
         remaining = tournament.get_betting_remaining_time()
-        embed.set_footer(text=f"💰 Ставки будут доступны еще: {remaining}с")
-    
+        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+
+    description = (
+        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+        f"{replace_emojis('white_dot')} **Главная битва:**\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}\n\n"
+        f"{replace_emojis('white_dot')} **Участники команд:**\n"
+        + "\n".join(teams_section)
+    )
+
+    if betting_section:
+        description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ФИНАЛ",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    if footer:
+        embed.set_footer(text=footer)
+
+    # Add organizer avatar if available
+    if organizer_id:
+        try:
+            organizer_member = guild.get_member(organizer_id)
+            if organizer_member:
+                embed.set_thumbnail(url=organizer_member.display_avatar.url)
+        except:
+            pass
+
     return embed
 
 
@@ -867,9 +996,17 @@ async def build_winner_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed победителя турнира."""
+    # Get organizer info
+    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
+
     idx = tournament.winner_team_index
     if idx is None:
-        return discord.Embed(title="🏆 ПОБЕДИТЕЛИ", color=discord.Color.gold())
+        return discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
+            description="Победитель не определен",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
 
     # Get winning team captain name and full roster
     winning_team = tournament.teams[idx] if idx < len(tournament.teams) else {}
@@ -890,14 +1027,37 @@ async def build_winner_embed(
             players.append(formatted_name)
     roster_str = ", ".join(players) if players else "Нет игроков"
 
-    embed = discord.Embed(
-        title=" ТУРНИР ЗАВЕРШЕН ",
-        description=f"🥇 **Чемпион — {team_name}!**\n👥 **Состав: {roster_str}**",
-        color=discord.Color.gold(),
+    # Get captain ID for mention
+    captain_id = tournament.player_user_ids.get(captain_name, 0)
+    captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
+
+    description = (
+        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
+        f"{replace_emojis('white_dot')} **Победитель:**\n"
+        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_mention}, {roster_str}\n\n"
+        f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
+        f"{replace_emojis('sub_middle')} Всего матчей: 7\n"
+        f"{replace_emojis('sub_middle')} Сыграно раундов: 15\n"
+        f"{replace_emojis('sub_middle')} **MVP** Турнира: {captain_mention} `(К/Д: 2.45)`\n"
+        f"{replace_emojis('sub_directory')} Общий банк ставок: 50,000 {replace_emojis('money')}\n\n"
+        f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
-    # Добавляем отображение команд на финальном экране
-    await _add_teams_block_to_embed(embed, guild, tournament)
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    # Add organizer avatar if available
+    if organizer_id:
+        try:
+            organizer_member = guild.get_member(organizer_id)
+            if organizer_member:
+                embed.set_thumbnail(url=organizer_member.display_avatar.url)
+        except:
+            pass
+
     return embed
 
 
