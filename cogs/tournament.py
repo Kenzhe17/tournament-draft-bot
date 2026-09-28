@@ -1702,84 +1702,61 @@ class TournamentCog(commands.Cog):
 
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню."""
-    from config import RANK_EMOJIS
+    from config import get_emoji
     
-    # Standard emojis as fallback
-    standard_emojis = {
-        "Radiant": "👑",
-        "Immortal": "🔱",
-        "Ascendant": "🎯",
-        "Diamond": "💎",
-        "Platinum": "🌪️",
-        "Gold": "🥇",
-        "Silver": "🥈",
-        "Bronze": "🥉",
-    }
-    
-    # Get emoji IDs from config, fallback to standard emojis if not set or empty
-    radiant = RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"]
-    immortal = RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"]
-    ascendant = RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"]
-    diamond = RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"]
-    platinum = RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"]
-    gold = RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"]
-    silver = RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"]
-    bronze = RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"]
-    
-    # Format as custom emoji if it looks like an ID (number), otherwise use the emoji directly
-    def format_emoji(name, value):
-        if value.isdigit():
-            return f"<:{name}:{value}>"
-        elif value.startswith("<:") and value.endswith(">"):
-            return value  # Already formatted
-        return value  # Use as-is (standard emoji)
-    
+    # Get rank name based on level
     if level >= 100:
-        return f"{format_emoji('Radiant', radiant)} Radiant"
+        rank_name = "Radiant"
     elif level >= 93:
-        return f"{format_emoji('Immortal', immortal)} Immortal I"
+        rank_name = "Immortal I"
     elif level >= 86:
-        return f"{format_emoji('Immortal', immortal)} Immortal II"
+        rank_name = "Immortal II"
     elif level >= 80:
-        return f"{format_emoji('Immortal', immortal)} Immortal III"
+        rank_name = "Immortal III"
     elif level >= 73:
-        return f"{format_emoji('Ascendant', ascendant)} Ascendant I"
+        rank_name = "Ascendant I"
     elif level >= 66:
-        return f"{format_emoji('Ascendant', ascendant)} Ascendant II"
+        rank_name = "Ascendant II"
     elif level >= 60:
-        return f"{format_emoji('Ascendant', ascendant)} Ascendant III"
+        rank_name = "Ascendant III"
     elif level >= 54:
-        return f"{format_emoji('Diamond', diamond)} Diamond I"
+        rank_name = "Diamond I"
     elif level >= 48:
-        return f"{format_emoji('Diamond', diamond)} Diamond II"
+        rank_name = "Diamond II"
     elif level >= 42:
-        return f"{format_emoji('Diamond', diamond)} Diamond III"
+        rank_name = "Diamond III"
     elif level >= 37:
-        return f"{format_emoji('Platinum', platinum)} Platinum I"
+        rank_name = "Platinum I"
     elif level >= 32:
-        return f"{format_emoji('Platinum', platinum)} Platinum II"
+        rank_name = "Platinum II"
     elif level >= 27:
-        return f"{format_emoji('Platinum', platinum)} Platinum III"
+        rank_name = "Platinum III"
     elif level >= 23:
-        return f"{format_emoji('Gold', gold)} Gold I"
+        rank_name = "Gold I"
     elif level >= 19:
-        return f"{format_emoji('Gold', gold)} Gold II"
+        rank_name = "Gold II"
     elif level >= 15:
-        return f"{format_emoji('Gold', gold)} Gold III"
+        rank_name = "Gold III"
     elif level >= 12:
-        return f"{format_emoji('Silver', silver)} Silver I"
+        rank_name = "Silver I"
     elif level >= 9:
-        return f"{format_emoji('Silver', silver)} Silver II"
+        rank_name = "Silver II"
     elif level >= 6:
-        return f"{format_emoji('Silver', silver)} Silver III"
+        rank_name = "Silver III"
     elif level >= 4:
-        return f"{format_emoji('Bronze', bronze)} Bronze I"
+        rank_name = "Bronze I"
     elif level >= 2:
-        return f"{format_emoji('Bronze', bronze)} Bronze II"
+        rank_name = "Bronze II"
     else:
-        return f"{format_emoji('Bronze', bronze)} Bronze III"
-
-
+        rank_name = "Bronze III"
+    
+    # Get the base rank name (without tier) for emoji lookup
+    base_rank = rank_name.split()[0] if " " in rank_name else rank_name
+    
+    # Get custom or standard emoji
+    emoji = get_emoji(base_rank)
+    
+    return f"{emoji} {rank_name}"
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
         """Узнать кто ты на самом деле."""
