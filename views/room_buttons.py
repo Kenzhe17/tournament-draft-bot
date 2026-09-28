@@ -91,7 +91,7 @@ class AdminRoomsButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только администраторы или организаторы (роль 'org') могут редактировать комнаты.",
+                replace_emojis("❌ Только администраторы или организаторы (роль 'org') могут редактировать комнаты."),
                 ephemeral=True
             )
             return
