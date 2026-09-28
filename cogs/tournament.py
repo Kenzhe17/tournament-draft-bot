@@ -1766,8 +1766,7 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
                     
                     await interaction.response.send_message(
-                        replace_emojis(f"⏰ Вы уже получили бонус!\n"),
-                        f"Следующий бонус через: {hours}ч {minutes}мин"),
+                        replace_emojis(f"⏰ Вы уже получили бонус!\nСледующий бонус через: {hours}ч {minutes}мин"),
                         ephemeral=True
                     )
                     return
