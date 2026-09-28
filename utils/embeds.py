@@ -483,7 +483,7 @@ async def build_setup_embed(
     status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
 
     # Get organizer info
-    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     # Build ELO dictionary for all registered players
@@ -698,7 +698,7 @@ async def build_qualifiers_embed(
 ) -> discord.Embed:
     """Embed отборочных матчей."""
     # Get organizer info
-    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     # Build matches section
@@ -800,7 +800,7 @@ async def build_semifinals_embed(
 ) -> discord.Embed:
     """Embed полуфиналов."""
     # Get organizer info
-    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     # Build matches section
@@ -902,7 +902,7 @@ async def build_final_embed(
 ) -> discord.Embed:
     """Embed финала."""
     # Get organizer info
-    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     team_a = tournament.final_teams[0]
@@ -998,7 +998,7 @@ async def build_winner_embed(
 ) -> discord.Embed:
     """Embed победителя турнира."""
     # Get organizer info
-    organizer_id = tournament.player_user_ids.get(tournament.captains[0] if tournament.captains else "")
+    organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
     idx = tournament.winner_team_index

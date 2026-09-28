@@ -92,6 +92,7 @@ class TournamentCog(commands.Cog):
             channel_id=interaction.channel_id,
             size=tournament_size,
             formation_mode=formation_mode,
+            organizer_id=interaction.user.id,
         )
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)

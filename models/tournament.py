@@ -133,6 +133,9 @@ class Tournament:
     draft_pick_start_time: str = ""  # ISO format timestamp when current pick started
     draft_pick_duration: int = 60  # Seconds for each pick (default 60s)
 
+    # Организатор турнира (user_id)
+    organizer_id: int = 0
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -929,6 +932,7 @@ class Tournament:
             "semifinal_rooms": self.semifinal_rooms,
             "final_room": self.final_room,
             "winner_team_index": self.winner_team_index,
+            "organizer_id": self.organizer_id,
         }
 
     @classmethod
@@ -973,5 +977,6 @@ class Tournament:
             semifinal_rooms=data.get("semifinal_rooms", {}),
             final_room=data.get("final_room", {}),
             winner_team_index=data.get("winner_team_index"),
+            organizer_id=data.get("organizer_id", 0),
         )
         return t
