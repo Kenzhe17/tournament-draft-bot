@@ -316,7 +316,7 @@ class AdminTeamSelectView(View):
         team_b_filled = any(team_b.get(f"circle{c}") in temp_stats for c in range(1, 5))
 
         if team_a_filled and team_b_filled:
-            confirm_btn = Button(label=replace_emojis("✅ Подтвердить", style=discord.ButtonStyle.success)
+            confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
             confirm_btn.callback = self._create_confirm_callback()
             self.add_item(confirm_btn)
 
