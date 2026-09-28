@@ -121,11 +121,14 @@ GAME_EMOJIS = {
     "num_7": os.getenv("EMOJI_NUM_7", ""),
     "num_8": os.getenv("EMOJI_NUM_8", ""),
 
-    # Special
+    # Special symbols
     "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
     "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
     "room": os.getenv("EMOJI_ROOM", ""),
     "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
+    "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
+    "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
+    "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -205,6 +208,9 @@ STANDARD_EMOJIS = {
     "sub_directory": "└",
     "room": "🏠",
     "white_arrow": "➡️",
+    "a_sparkle": "✨",
+    "a_triple_dots": "⋯",
+    "a_dot_smaller": "•",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -333,6 +339,8 @@ def replace_emojis(text: str) -> str:
         # Additional symbols for replacement
         "⚪": "white_dot",
         "➡️": "white_arrow",
+        "✨": "a_sparkle",
+        "⋯": "a_triple_dots",
     }
     
     result = text

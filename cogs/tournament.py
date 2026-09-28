@@ -285,27 +285,27 @@ class TournamentCog(commands.Cog):
 
         # Создать embed в новом формате
         embed = discord.Embed(
-            title=replace_emojis("🛍️ МАГАЗИН СЕРВЕРА | Главное меню"),
-            color=discord.Color.gold()
+            title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.description = (
-            "Добро пожаловать в игровой магазин!\n"
-            "Выберите нужный раздел в выпадающем меню ниже,\n"
+            f"Добро пожаловать в игровой магазин {replace_emojis('✨')}\n"
+            f"Выберите нужный раздел в выпадающем меню ниже {replace_emojis('⋯')}\n"
             "чтобы посмотреть доступные товары."
         )
 
         # Профиль пользователя
         embed.add_field(
-            name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-            value=f"├ {replace_emojis('👛')} Баланс: {balance:,} {replace_emojis('🪙')}\n"
-                  f"├ {replace_emojis('🏆')} Ранг: {rank}\n"
-                  f"└ {replace_emojis('🎒')} Мест в инвентаре: {inventory_count}/{max_inventory}",
+            name=replace_emojis("⚪ Ваш профиль:"),
+            value=f"{replace_emojis('└')} Баланс: {balance:,} {replace_emojis('🪙')}\n"
+                  f"{replace_emojis('└')} Ранг: {rank}\n"
+                  f"{replace_emojis('└')} Инвентарь: {inventory_count}/{max_inventory}",
             inline=False
         )
 
         embed.add_field(
-            name=replace_emojis("💡 Для навигации используйте компоненты ниже"),
+            name=replace_emojis("⚪ Для навигации используйте компоненты ниже"),
             value="",
             inline=False
         )
