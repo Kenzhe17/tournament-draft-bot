@@ -83,8 +83,10 @@ class TournamentBot(commands.Bot):
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.rps")
+        
+        # Sync commands globally
         await self.tree.sync()
-        logger.info("Slash-команды синхронизированы")
+        logger.info("Slash-команды синхронизированы глобально")
 
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance

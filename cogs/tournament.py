@@ -991,7 +991,7 @@ class TournamentCog(commands.Cog):
         circle="Номер круга (2, 3 или 4)",
         status="on для включения лимита, off для отключения"
     )
-    @app_commands.default_permissions(send_messages=True)
+    @is_org()
     async def set_circle_limit(
         self,
         interaction: discord.Interaction,
@@ -999,15 +999,6 @@ class TournamentCog(commands.Cog):
         status: str
     ) -> None:
         """Включить или выключить лимит для круга."""
-        # Check permissions
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "❌ Эта команда доступна только организаторам (роль 'org') или администраторам.",
-                ephemeral=True
-            )
-            return
-
         if circle not in [2, 3, 4]:
             await interaction.response.send_message(
                 "❌ Круг должен быть 2, 3 или 4.",
@@ -1153,7 +1144,6 @@ class TournamentCog(commands.Cog):
     #     await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
-    @app_commands.default_permissions(send_messages=True)
     async def booyah(self, interaction: discord.Interaction) -> None:
         """Показать рекорды турнира."""
         await interaction.response.defer()
@@ -1311,7 +1301,6 @@ class TournamentCog(commands.Cog):
         amount="Новое значение (для ELO) или количество монет (для money)",
         operation="Операция: set (установить), add (добавить), remove (убрать)"
     )
-    @app_commands.default_permissions(send_messages=True)
     async def edit_player(
         self,
         interaction: discord.Interaction,
@@ -1776,7 +1765,6 @@ def get_rank_emoji(level: int) -> str:
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
-    @app_commands.default_permissions(send_messages=True)
     async def daily(self, interaction: discord.Interaction) -> None:
         """Получить ежедневный бонус."""
         from storage.db import get_pool
@@ -1834,7 +1822,6 @@ def get_rank_emoji(level: int) -> str:
             )
 
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
-    @app_commands.default_permissions(send_messages=True)
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
@@ -1862,7 +1849,6 @@ def get_rank_emoji(level: int) -> str:
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
-    @app_commands.default_permissions(send_messages=True)
     async def reset(self, interaction: discord.Interaction, user: discord.Member) -> None:
         """Сбросить статистику игрока (только для владельца бота)."""
         # Check if user is bot owner
