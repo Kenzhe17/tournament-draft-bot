@@ -129,6 +129,18 @@ GAME_EMOJIS = {
     "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
     "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
     "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
+
+    # Case emojis
+    "case_basic": os.getenv("EMOJI_CASE_BASIC", ""),
+    "case_premium": os.getenv("EMOJI_CASE_PREMIUM", ""),
+    "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
+    "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
+
+    # Rare emojis
+    "rare_basic": os.getenv("EMOJI_RARE_BASIC", ""),
+    "rare_premium": os.getenv("EMOJI_RARE_PREMIUM", ""),
+    "rare_elite": os.getenv("EMOJI_RARE_ELITE", ""),
+    "rare_special": os.getenv("EMOJI_RARE_SPECIAL", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -211,6 +223,18 @@ STANDARD_EMOJIS = {
     "a_sparkle": "✨",
     "a_triple_dots": "⋯",
     "a_dot_smaller": "•",
+
+    # Case emojis
+    "case_basic": "📦",
+    "case_premium": "💎",
+    "case_elite": "👑",
+    "case_special": "✨",
+
+    # Rare emojis
+    "rare_basic": "⭐",
+    "rare_premium": "💫",
+    "rare_elite": "🌟",
+    "rare_special": "💎",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -341,6 +365,16 @@ def replace_emojis(text: str) -> str:
         "➡️": "white_arrow",
         "✨": "a_sparkle",
         "⋯": "a_triple_dots",
+
+        # Case emojis
+        "📦": "case_basic",
+        "💎": "case_premium",
+        "👑": "case_elite",
+
+        # Rare emojis
+        "⭐": "rare_basic",
+        "💫": "rare_premium",
+        "🌟": "rare_elite",
     }
     
     result = text

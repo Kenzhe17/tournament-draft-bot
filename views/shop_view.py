@@ -86,12 +86,31 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
         return
 
     # Создать список кейсов
-    cases_list = "\n\n".join([
-        f"{replace_emojis('⭐')} **{case.name}**\n"
-        f"├ {replace_emojis('📝')} {case.description}\n"
-        f"└ {replace_emojis('💰')} **Цена:** {case.price} {replace_emojis('🪙')}"
-        for case in cases
-    ])
+    cases_parts = []
+    for case in cases:
+        case_emoji = "📦"  # default
+        rare_emoji = "⭐"  # default
+        if "Basic" in case.name:
+            case_emoji = "case_basic"
+            rare_emoji = "rare_basic"
+        elif "Premium" in case.name:
+            case_emoji = "case_premium"
+            rare_emoji = "rare_premium"
+        elif "Elite" in case.name:
+            case_emoji = "case_elite"
+            rare_emoji = "rare_elite"
+        elif "Special" in case.name:
+            case_emoji = "case_special"
+            rare_emoji = "rare_special"
+
+        cases_parts.append(
+            f"{replace_emojis('└')} {replace_emojis(case_emoji)} **{case.name}**"
+        )
+        cases_parts.append(
+            f"└ {replace_emojis(rare_emoji)} {case.description} • **Цена:** {case.price} {replace_emojis('🪙')}"
+        )
+
+    cases_list = "\n".join(cases_parts)
 
     # Получить данные профиля
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -106,25 +125,11 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
     # Создать embed
     embed = discord.Embed(
-        title=replace_emojis("📦 КАТАЛОГ | Кейсы"),
-        description=f"Выберите кейс из списка ниже для открытия:\n\n{cases_list}",
-        color=discord.Color.orange()
+        title=replace_emojis("КАТАЛОГ | Кейсы"),
+        description=f"Выберите кейс из списка ниже для открытия:\n\n{replace_emojis('⚪')} **Доступные кейсы:**\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('└')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n{replace_emojis('└')} **Ранг:** {rank}\n{replace_emojis('└')} **Инвентарь:** {inventory_count}/{max_inventory}\n\n{replace_emojis('⚪')} Выберите кейс в выпадающем меню для открытия",
+        color=discord.Color.from_rgb(69, 69, 69)
     )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
-        inline=False
-    )
-
-    embed.add_field(
-        name=replace_emojis("💡 Выберите кейс в выпадающем меню для открытия"),
-        value="",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ShopBackView()
     view.add_item(CaseSelect(cases))
