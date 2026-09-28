@@ -31,7 +31,7 @@ class GamesMainView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -125,7 +125,7 @@ class GamesCategoryView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -215,7 +215,7 @@ class GameCardView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -299,26 +299,18 @@ class BackToCategoryButton(Button):
         games_list = []
         for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
-            games_list.append(f"└ *{game.short_description}*")
+            games_list.append(f"{replace_emojis('sub_middle')} **{game.name}** • `[{mode}]`")
+            games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
-        
+
         games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=f"{category_info['emoji']}︱{category_info['name']}",
-            description=f"""{replace_emojis('📝')} *{category_info['description']}*
-────────────────────────
-{replace_emojis('📌')} **Информация о категории:**
-**Страница:** {page} из {total_pages}
-**Игр в категории:** {len(games)}
-
-{replace_emojis('🎮')} **Игры на странице:**
-{games_text}
-
-{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
-            color=category_info['color'],
+            title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
+            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesCategoryView(self.user_id, self.guild_id, self.category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, page))
