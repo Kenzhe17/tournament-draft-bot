@@ -948,6 +948,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.user_balance_store import user_balance_store
     from storage.redis_client import get_leaderboard, set_leaderboard
     from cogs.tournament import get_rank_emoji
+    from config import replace_emojis
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -969,14 +970,14 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = "📈 ТАБЛИЦА ЛИДЕРОВ | Level"
-        color = discord.Color.dark_purple()
+        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | Level"
+        color = discord.Color.from_rgb(69, 69, 69)
     elif leaderboard_type == "money":
-        title = "🪙 ТАБЛИЦА ЛИДЕРОВ | Money"
-        color = discord.Color.dark_gold()
+        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | Money"
+        color = discord.Color.from_rgb(69, 69, 69)
     else:  # elo
-        title = "⚔️ ТАБЛИЦА ЛИДЕРОВ | ELO"
-        color = discord.Color.dark_blue()
+        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | ELO"
+        color = discord.Color.from_rgb(69, 69, 69)
 
     total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
@@ -986,7 +987,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     )
 
     if not players:
-        embed.description = "Пока нет данных. Сыграйте хотя бы один турнир!"
+        embed.description = replace_emojis("⚪ Пока нет данных. Сыграйте хотя бы один турнир!")
         return embed
 
     # For money leaderboard, we need to sort by balance
@@ -1009,17 +1010,17 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
         # Highlight top 3
         if rank == 1:
-            rank_emoji = "🥇"
+            rank_emoji = replace_emojis("🥇")
         elif rank == 2:
-            rank_emoji = "🥈"
+            rank_emoji = replace_emojis("🥈")
         elif rank == 3:
-            rank_emoji = "🥉"
+            rank_emoji = replace_emojis("🥉")
         else:
             rank_emoji = f"{rank}."
 
         # Format name with cosmetics - use stored name from stats
         formatted_name = format_player_name(guild_id, player.user_id, player.name)
-        
+
         # Get rank emoji for level leaderboard
         player_rank = get_rank_emoji(player.level)
 
@@ -1028,7 +1029,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         elif leaderboard_type == "money":
             # Get current balance (already sorted above)
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
-            line = f"{rank_emoji} {formatted_name} — {balance:,} 🪙"
+            line = f"{rank_emoji} {formatted_name} — {balance:,} {replace_emojis('money')}"
         else:  # elo
             line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
 
