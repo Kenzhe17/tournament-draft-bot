@@ -30,6 +30,77 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
         pass
 
 
+class PlayerSelectView(discord.ui.View):
+    """View с пагинацией для выбора игрока."""
+
+    def __init__(self, players: list[str], guild_id: int, action: str):
+        super().__init__(timeout=None)
+        self.players = sorted(players)
+        self.guild_id = guild_id
+        self.action = action  # "delete" or "replace"
+        self.page = 1
+        self.per_page = 16
+        self.total_pages = (len(self.players) + self.per_page - 1) // self.per_page
+        self.refresh_view()
+
+    def get_current_players(self) -> list[str]:
+        """Получить игроков для текущей страницы."""
+        start = (self.page - 1) * self.per_page
+        end = start + self.per_page
+        return self.players[start:end]
+
+    def refresh_view(self) -> None:
+        """Обновить view с новыми кнопками и select menu."""
+        self.clear_items()
+
+        # Add select menu with current page players
+        current_players = self.get_current_players()
+        select = discord.ui.Select(
+            placeholder=f"Выберите игрока ({self.page}/{self.total_pages})",
+            min_values=1,
+            max_values=1,
+            options=[discord.SelectOption(label=player, value=player) for player in current_players]
+        )
+        select.custom_id = f"player_select:{self.action}:{self.guild_id}:{self.page}"
+        self.add_item(select)
+
+        # Add pagination buttons if needed
+        if self.total_pages > 1:
+            # Previous button
+            prev_btn = discord.ui.Button(
+                label="⬅️",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.page == 1,
+                custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.page}"
+            )
+            prev_btn.callback = self.prev_callback
+            self.add_item(prev_btn)
+
+            # Next button
+            next_btn = discord.ui.Button(
+                label="➡️",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.page == self.total_pages,
+                custom_id=f"player_next:{self.action}:{self.guild_id}:{self.page}"
+            )
+            next_btn.callback = self.next_callback
+            self.add_item(next_btn)
+
+    async def prev_callback(self, interaction: discord.Interaction) -> None:
+        """Обработка кнопки предыдущей страницы."""
+        if self.page > 1:
+            self.page -= 1
+            self.refresh_view()
+            await interaction.response.edit_message(view=self)
+
+    async def next_callback(self, interaction: discord.Interaction) -> None:
+        """Обработка кнопки следующей страницы."""
+        if self.page < self.total_pages:
+            self.page += 1
+            self.refresh_view()
+            await interaction.response.edit_message(view=self)
+
+
 class CircleSelectButton(discord.ui.Button):
     """Кнопка для выбора круга при добавлении игрока."""
 
@@ -436,13 +507,12 @@ class DeletePlayerButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Create select menu
-        select = discord.ui.Select(
-            placeholder="Выберите игрока для удаления",
-            min_values=1,
-            max_values=1,
-            options=[discord.SelectOption(label=player, value=player) for player in sorted(players)]
-        )
+        # Create select menu with pagination
+        view = PlayerSelectView(players, self.guild_id, "delete")
+        view.refresh_view()
+
+        # Handle selection
+        select = view.children[0]  # The select menu
 
         async def select_callback(interaction: discord.Interaction):
             player_name = select.values[0]
@@ -476,9 +546,6 @@ class DeletePlayerButton(discord.ui.Button):
             )
 
         select.callback = select_callback
-
-        view = discord.ui.View()
-        view.add_item(select)
 
         await interaction.response.send_message(
             "Выберите игрока для удаления:",
@@ -531,13 +598,12 @@ class ReplacePlayerButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Create select menu
-        select = discord.ui.Select(
-            placeholder="Выберите игрока для замены",
-            min_values=1,
-            max_values=1,
-            options=[discord.SelectOption(label=player, value=player) for player in sorted(players)]
-        )
+        # Create select menu with pagination
+        view = PlayerSelectView(players, self.guild_id, "replace")
+        view.refresh_view()
+
+        # Handle selection
+        select = view.children[0]  # The select menu
 
         async def select_callback(interaction: discord.Interaction):
             old_player = select.values[0]
@@ -546,9 +612,6 @@ class ReplacePlayerButton(discord.ui.Button):
             await interaction.response.send_modal(modal)
 
         select.callback = select_callback
-
-        view = discord.ui.View()
-        view.add_item(select)
 
         await interaction.response.send_message(
             "Выберите игрока для замены:",
