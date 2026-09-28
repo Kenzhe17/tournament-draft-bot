@@ -1049,11 +1049,11 @@ class ShopBackToListButton(discord.ui.Button):
 
         # Создать главное меню
         embed = discord.Embed(
-            title=replace_emojis("🛍️ Магазин Сервера | Главный каталог"),
-            description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.",
-            color=discord.Color.gold()
+            title=f"{replace_emojis('a_star')} МАГАЗИН СЕРВЕРА | Главный каталог",
+            description=f"Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.\n\n{replace_emojis('⚪')} **Ваш баланс:**\n{replace_emojis('sub_middle')} {balance:,} {replace_emojis('money')}",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.add_field(name=replace_emojis("💳 Ваш баланс"), value=f"{balance} {replace_emojis('🪙')}", inline=False)
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = ShopMainView()
         await interaction.response.edit_message(embed=embed, view=view)
