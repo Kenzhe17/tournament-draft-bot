@@ -320,7 +320,7 @@ class MatchWinnerButton(discord.ui.Button):
         elif self.match_type == "final":
             match = self.tournament.final_teams
         else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
             return
 
         # Get team names
