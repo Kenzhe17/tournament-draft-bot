@@ -719,7 +719,7 @@ class AdminConfirmView(View):
         try:
             tournament = store.get(self.guild_id)
             if not tournament:
-                await interaction.followup.send(replace_emojis("❌ Турнир не найден.")
+                await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return
 
             match_id = f"{self.match_type}_{self.match_index}"
