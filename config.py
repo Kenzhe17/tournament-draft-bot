@@ -168,19 +168,30 @@ STANDARD_EMOJIS = {
 
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]
+        logger.info(f"get_emoji: {emoji_name} -> custom_id={custom_id}")
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
-        return STANDARD_EMOJIS.get(emoji_name, emoji_name)
+        result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
+        logger.info(f"get_emoji: {emoji_name} -> fallback to {result}")
+        return result
     
     # Check game emojis
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
+        logger.info(f"get_emoji: {emoji_name} -> custom_id={custom_id}")
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
-        return STANDARD_EMOJIS.get(emoji_name, emoji_name)
+        result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
+        logger.info(f"get_emoji: {emoji_name} -> fallback to {result}")
+        return result
     
     # Fallback to standard emoji
-    return STANDARD_EMOJIS.get(emoji_name, emoji_name)
+    result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
+    logger.info(f"get_emoji: {emoji_name} -> final fallback to {result}")
+    return result

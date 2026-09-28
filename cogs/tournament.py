@@ -1757,6 +1757,31 @@ def get_rank_emoji(level: int) -> str:
     emoji = get_emoji(base_rank)
     
     return f"{emoji} {rank_name}"
+    @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
+    async def debug_emoji(self, interaction: discord.Interaction) -> None:
+        """Проверить какие эмодзи загружены."""
+        from config import RANK_EMOJIS, GAME_EMOJIS, get_emoji
+        
+        embed = discord.Embed(
+            title="🔍 Debug: Конфигурация эмодзи",
+            color=discord.Color.blue()
+        )
+        
+        # Rank emojis
+        rank_text = ""
+        for rank, emoji_id in RANK_EMOJIS.items():
+            emoji = get_emoji(rank)
+            rank_text += f"{rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
+        
+        embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
+        
+        # Test rank formatting
+        test_emoji = get_rank_emoji(100)
+        embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
         """Узнать кто ты на самом деле."""
