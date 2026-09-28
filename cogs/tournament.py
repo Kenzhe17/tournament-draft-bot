@@ -965,7 +965,7 @@ class TournamentCog(commands.Cog):
         paginated_data = leaderboard_data[offset:offset + per_page]
 
         if not paginated_data:
-            await interaction.response.send_message(replace_emojis("❌ Страница не найдена."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Страница не найдена."), ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -1316,7 +1316,7 @@ class TournamentCog(commands.Cog):
         """Изменить ELO или монеты игрока."""
         # Только владелец бота может использовать эту команду
         if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
-            await interaction.response.send_message(replace_emojis("❌ Только владелец бота может использовать эту команду."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Только владелец бота может использовать эту команду."), ephemeral=True)
             return
 
         if type not in ["elo", "money"]:
@@ -1393,7 +1393,7 @@ class TournamentCog(commands.Cog):
         from storage.db import get_pool
 
         if not player_stats_store._use_db:
-            await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True)
             return
 
         pool = await get_pool()
@@ -1404,7 +1404,7 @@ class TournamentCog(commands.Cog):
                 player.id, interaction.guild_id, player.display_name
             )
 
-        await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True
+        await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True)
 
     # @app_commands.command(name="replace", description="Заменить игрока")
     # @app_commands.describe(
@@ -1561,11 +1561,11 @@ class TournamentCog(commands.Cog):
         from storage.user_balance_store import user_balance_store
         
         if amount < 100:
-            await interaction.response.send_message(replace_emojis("❌ Минимальная сумма: 100 🪙"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Минимальная сумма: 100 🪙"), ephemeral=True)
             return
         
         if user.id == interaction.user.id:
-            await interaction.response.send_message(replace_emojis("❌ Нельзя передать самому себе"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Нельзя передать самому себе"), ephemeral=True)
             return
         
         try:
@@ -1597,13 +1597,13 @@ class TournamentCog(commands.Cog):
         from storage.shop_store import inventory_store, shop_store
         
         if user.id == interaction.user.id:
-            await interaction.response.send_message(replace_emojis("❌ Нельзя подарить самому себе"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Нельзя подарить самому себе"), ephemeral=True)
             return
         
         # Get item info
         item = shop_store.get_item(item_id)
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Предмет не найден"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Предмет не найден"), ephemeral=True)
             return
         
         # Check if sender has the item
@@ -1611,7 +1611,7 @@ class TournamentCog(commands.Cog):
         has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)
         
         if not has_item:
-            await interaction.response.send_message(replace_emojis("❌ У вас нет этого предмета"), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ У вас нет этого предмета"), ephemeral=True)
             return
         
         # Calculate fee
