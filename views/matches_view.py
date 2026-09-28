@@ -92,7 +92,7 @@ class GenerateMatchesButton(discord.ui.Button):
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
             await interaction.edit_original_response(
-                content=replace_emojis("❌ Ошибка при генерации матчей: {str(e)}"
+                content=replace_emojis("❌ Ошибка при генерации матчей: {str(e)}")
             )
 
 
