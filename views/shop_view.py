@@ -730,45 +730,36 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     if stats:
         rank = get_rank_emoji(stats.level)
 
+    # Определить эмодзи для кейса
+    case_emoji = "case_basic"
+    rare_emoji = "rare_basic"
+    sub_emoji = "sub_middle"
+    sparkle = ""
+    if "Basic" in case.name:
+        case_emoji = "case_basic"
+        rare_emoji = "rare_basic"
+        sub_emoji = "sub_middle"
+    elif "Premium" in case.name:
+        case_emoji = "case_premium"
+        rare_emoji = "rare_premium"
+        sub_emoji = "sub_middle"
+    elif "Elite" in case.name:
+        case_emoji = "case_elite"
+        rare_emoji = "rare_elite"
+        sub_emoji = "sub_middle"
+    elif "Special" in case.name:
+        case_emoji = "case_special"
+        rare_emoji = "rare_special"
+        sub_emoji = "sub_directory"
+        sparkle = f" {replace_emojis('a_star')}"
+
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('📦')} ПОКУПКА КЕЙСА | {case.name}",
-        description="Вы действительно хотите открыть этот кейс?",
-        color=discord.Color.orange()
+        title=f"{replace_emojis('a_star')} ПОКУПКА КЕЙСА | {case.name}",
+        description=f"Вы действительно хотите открыть этот кейс?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} {replace_emojis(case_emoji)} Категория: Кейсы • {replace_emojis(rare_emoji)}{sparkle}\n{replace_emojis('sub_directory')} Стоимость: {case.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Монеты: 50%\n{replace_emojis('sub_middle')} Предмет: 20%\n{replace_emojis('sub_directory')} Ничего: 30%\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку и открытие кнопкой ниже",
+        color=discord.Color.from_rgb(69, 69, 69)
     )
-
-    # Информация о товаре
-    embed.add_field(
-        name=replace_emojis("📌 **Информация о товаре:**"),
-        value=f"├ {replace_emojis('🏷️')} **Категория:** Кейсы\n"
-              f"├ {replace_emojis('📝')} **Описание:** {case.description}\n"
-              f"└ {replace_emojis('💰')} **Стоимость:** {case.price} {replace_emojis('🪙')}",
-        inline=False
-    )
-
-    # Шансы выпадения (зафиксированы стандартные значения)
-    embed.add_field(
-        name=replace_emojis("🎲 **Шансы выпадения:**"),
-        value=f"├ {replace_emojis('🪙')} **Монеты:** 50%\n"
-              f"├ {replace_emojis('🎁')} **Предмет:** 20%\n"
-              f"└ {replace_emojis('❌')} **Ничего:** 30%",
-        inline=False
-    )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
-              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
-        inline=False
-    )
-
-    embed.add_field(
-        name=replace_emojis("💡 Подтвердите покупку и открытие кнопкой ниже"),
-        value="",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = CaseCardView(case.id, case.price)
     await interaction.response.edit_message(embed=embed, view=view)
