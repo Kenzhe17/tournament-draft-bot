@@ -1632,80 +1632,106 @@ class TournamentCog(commands.Cog):
         """Передать предмет с комиссией 10% от стоимости."""
         from storage.user_balance_store import user_balance_store
         from storage.shop_store import inventory_store, shop_store
-        
+
         if user.id == interaction.user.id:
-            await interaction.response.send_message(replace_emojis("❌ Нельзя подарить самому себе"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("⚪ Нельзя подарить самому себе"), ephemeral=True)
             return
-        
+
         # Get item info
         item = shop_store.get_item(item_id)
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Предмет не найден"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("⚪ Предмет не найден"), ephemeral=True)
             return
-        
+
         # Check if sender has the item
         sender_inventory = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
         has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)
-        
+
         if not has_item:
-            await interaction.response.send_message(replace_emojis("❌ У вас нет этого предмета"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("⚪ У вас нет этого предмета"), ephemeral=True)
             return
-        
+
         # Calculate fee
         fee = int(item.price * 0.1)  # 10% комиссия
-        
+
         # Check sender has enough balance for fee
         sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if sender_balance < fee:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет для комиссии. Нужно: {fee} 🪙, есть: {sender_balance} 🪙"),
+                replace_emojis(f"⚪ Недостаточно монет для комиссии. Нужно: {fee} {replace_emojis('money')}, есть: {sender_balance} {replace_emojis('money')}"),
                 ephemeral=True
             )
             return
-        
+
         # Deduct fee
         await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, fee)
-        
+
         # Transfer item
         result = inventory_store.transfer_cosmetic(
             interaction.guild_id, interaction.user.id,
             interaction.guild_id, user.id,
             item_id
         )
-        
+
         if result['success']:
+            # Icon map для значков
+            icon_map = {
+                "🎮": "icon_letter",
+                "🐾": "icon_paw",
+                "🔵": "icon_bluestacks",
+                "☕": "icon_teacup",
+                "🎀": "icon_ribbon",
+                "🔞": "icon_18plus",
+                "❤️": "icon_heart",
+                "✅": "icon_v_badge",
+                "🃏": "icon_cards",
+                "🐱": "icon_cat_ears",
+                "🪽": "icon_wing",
+            }
+
+            # Rare emoji map
+            rare_map = {
+                "basic": "rare_basic",
+                "premium": "rare_premium",
+                "elite": "rare_elite",
+                "special": "rare_special",
+            }
+
+            rare_emoji = rare_map.get(item.rarity.value, "")
+
+            # Определить отображение предмета
+            if item.cosmetic_type.value == "icon":
+                icon_emoji = icon_map.get(item.value, "")
+                item_display = f"{replace_emojis(icon_emoji)} **{item.name}**"
+            else:  # tag
+                item_display = f"**{item.value}**"
+
             embed = discord.Embed(
-                title=replace_emojis("🎁 Подарок предмета"),
-                color=discord.Color.gold()
+                title="Передача предмета",
+                description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** 10% ({fee} {replace_emojis('money')})\n• **Стоимость:** {item.price} {replace_emojis('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
-            embed.add_field(name=replace_emojis("👤 Получил:"), value=user.mention, inline=True)
-            embed.add_field(name=replace_emojis("🎁 Предмет:"), value=result['item_name'], inline=True)
-            embed.add_field(name=replace_emojis("💰 Стоимость:"), value=replace_emojis(f"{result['item_price']:,} 🪙"), inline=True)
-            embed.add_field(name=replace_emojis("📊 Комиссия:"), value=replace_emojis(f"{fee:,} 🪙 (10%)"), inline=True)
-            
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
             await interaction.response.send_message(embed=embed)
         elif result['compensated']:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
-            
+
             embed = discord.Embed(
-                title=replace_emojis("❌ Подарок не удался"),
-                color=discord.Color.red()
+                title="Передача не удалась",
+                description=f"{interaction.user.mention}, у получателя уже есть этот предмет. Комиссия возвращена.",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
-            embed.add_field(name=replace_emojis("👤 Получатель:"), value=user.mention, inline=True)
-            embed.add_field(name=replace_emojis("🎁 Предмет:"), value=result['item_name'], inline=True)
-            embed.add_field(name=replace_emojis("❌ Причина:"), value="У получателя уже есть этот предмет", inline=False)
-            embed.add_field(name=replace_emojis("💰 Компенсация:"), value=replace_emojis(f"{result['compensation_amount']:,} 🪙 (предмет возвращён)"), inline=True)
-            
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
             await interaction.response.send_message(embed=embed)
         else:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
-            
+
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось передать предмет: {result['item_name']}"),
+                replace_emojis(f"⚪ Не удалось передать предмет: {result['item_name']}"),
                 ephemeral=True
             )
 
