@@ -1580,7 +1580,7 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('🪙')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,}"
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('🪙')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {replace_emojis('🪙')}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('➡️')} {user.mention} **получил** — {result['amount']:,} {replace_emojis('🪙')}", inline=False)
             
             await interaction.response.send_message(embed=embed)
