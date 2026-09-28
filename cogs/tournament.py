@@ -1576,14 +1576,12 @@ class TournamentCog(commands.Cog):
             )
             
             embed = discord.Embed(
-                title=replace_emojis("💸 Передача монет"),
+                title=replace_emojis("Передача монет"),
                 color=discord.Color.green()
             )
-            embed.add_field(name=replace_emojis("👤 Отправил:"), value=interaction.user.mention, inline=True)
-            embed.add_field(name=replace_emojis("👤 Получил:"), value=user.mention, inline=True)
-            embed.add_field(name=replace_emojis("💰 Сумма:"), value=replace_emojis(f"{result['amount']:,} 🪙"), inline=True)
-            embed.add_field(name=replace_emojis("📊 Комиссия:"), value=replace_emojis(f"{result['fee']:,} 🪙 (10%)"), inline=True)
-            embed.add_field(name=replace_emojis("💳 Всего списано:"), value=replace_emojis(f"{result['total_deducted']:,} 🪙"), inline=True)
+            embed.description = replace_emojis(f"⚪**Сумма:** {result['amount']:,}🪙\n └ **Комиссия:** {result['fee']:,} (10%)🪙\n └ **Всего списано:** {result['total_deducted']:,}🪙")
+            embed.add_field(name="**Отправил:**", value=replace_emojis(f"└{interaction.user.mention}"), inline=True)
+            embed.add_field(name="**Получил:**", value=replace_emojis(f"└{user.mention}"), inline=True)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
