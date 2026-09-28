@@ -973,7 +973,7 @@ class ShopBackButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("arrow_left Назад в главное меню"),
+            label="⬅️ Назад в главное меню",
             custom_id="shop_back"
         )
 

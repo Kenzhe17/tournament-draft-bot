@@ -270,7 +270,7 @@ class BackToCategoryButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int = 1):
         super().__init__(
-            label=replace_emojis("arrow_left К категории"),
+            label="⬅️ К категории",
             style=discord.ButtonStyle.secondary,
             custom_id=f"back_to_category_{category}"
         )
@@ -355,7 +355,7 @@ class BackButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label=replace_emojis("arrow_left Назад"),
+            label="⬅️ Назад",
             style=discord.ButtonStyle.primary,
             custom_id=f"back_page_{category}_{page}",
             disabled=page == 1
@@ -410,7 +410,7 @@ class ForwardButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label=f"{replace_emojis('arrow_right')} Вперёд",
+            label="➡️ Вперёд",
             style=discord.ButtonStyle.primary,
             custom_id=f"forward_page_{category}_{page}",
             disabled=page == total_pages

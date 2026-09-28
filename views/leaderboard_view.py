@@ -36,13 +36,13 @@ class LeaderboardView(discord.ui.View):
         if self.page > 1:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page - 1, replace_emojis("arrow_left Назад"), discord.ButtonStyle.secondary, self.leaderboard_type
+                    self.guild_id, self.page - 1, "⬅️ Назад", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
             )
         else:
             # Disabled button for first page
             disabled_button = discord.ui.Button(
-                label=replace_emojis("arrow_left Назад"),
+                label="⬅️ Назад",
                 style=discord.ButtonStyle.secondary,
                 disabled=True
             )
@@ -52,13 +52,13 @@ class LeaderboardView(discord.ui.View):
         if self.page < self._total_pages:
             self.add_item(
                 LeaderboardPageButton(
-                    self.guild_id, self.page + 1, f"{replace_emojis('arrow_right')} Вперед", discord.ButtonStyle.secondary, self.leaderboard_type
+                    self.guild_id, self.page + 1, "➡️ Вперед", discord.ButtonStyle.secondary, self.leaderboard_type
                 )
             )
         else:
             # Disabled button for last page
             disabled_button = discord.ui.Button(
-                label=f"{replace_emojis('arrow_right')} Вперед",
+                label="➡️ Вперед",
                 style=discord.ButtonStyle.secondary,
                 disabled=True
             )

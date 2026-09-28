@@ -25,7 +25,7 @@ class SettingsButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("settings Настройки"),
+            label="⚙️ Настройки",
             custom_id=f"profile_settings:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -116,9 +116,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         if nickname:
             stats.name = nickname
         stats.description = description  # Always save description (even if empty)
-        
-        # Reset avatar to Discord avatar
-        stats.avatar_url = None
+        # Don't reset avatar_url - keep existing avatar
 
         # Save updated stats
         await player_stats_store.update(self.guild_id, self.user_id, stats)

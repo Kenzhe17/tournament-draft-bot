@@ -175,6 +175,11 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT NULL")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create questions table for quiz games
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS questions (

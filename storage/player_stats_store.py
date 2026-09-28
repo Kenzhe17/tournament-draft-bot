@@ -54,11 +54,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0))
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""))
                 return None
         else:
             key = f"{guild_id}:{user_id}"
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0)) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=row.get("xp_to_next_level", 100), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", "")) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -107,10 +107,12 @@ class PlayerStatsStore:
                 await conn.execute(
                     """UPDATE player_stats SET
                     name = $1,
-                    description = $2
-                    WHERE guild_id = $3 AND user_id = $4""",
+                    description = $2,
+                    avatar_url = $3
+                    WHERE guild_id = $4 AND user_id = $5""",
                     stats.name,
                     stats.description,
+                    stats.avatar_url,
                     guild_id,
                     user_id
                 )
@@ -144,7 +146,7 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 # Get current stats
                 row = await conn.fetchrow(
-                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, description FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
 
