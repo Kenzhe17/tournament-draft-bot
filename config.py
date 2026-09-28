@@ -117,16 +117,6 @@ GAME_EMOJIS = {
     "room": os.getenv("EMOJI_ROOM", ""),
     "winner": os.getenv("EMOJI_WINNER", ""),
 
-    # Numbers
-    "num_1": os.getenv("EMOJI_NUM_1", ""),
-    "num_2": os.getenv("EMOJI_NUM_2", ""),
-    "num_3": os.getenv("EMOJI_NUM_3", ""),
-    "num_4": os.getenv("EMOJI_NUM_4", ""),
-    "num_5": os.getenv("EMOJI_NUM_5", ""),
-    "num_6": os.getenv("EMOJI_NUM_6", ""),
-    "num_7": os.getenv("EMOJI_NUM_7", ""),
-    "num_8": os.getenv("EMOJI_NUM_8", ""),
-
     # Special symbols
     "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
     "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
@@ -239,16 +229,6 @@ STANDARD_EMOJIS = {
     # Emotions
     "fire": "🔥",
     "ice": "❄️",
-
-    # Numbers
-    "num_1": "1️⃣",
-    "num_2": "2️⃣",
-    "num_3": "3️⃣",
-    "num_4": "4️⃣",
-    "num_5": "5️⃣",
-    "num_6": "6️⃣",
-    "num_7": "7️⃣",
-    "num_8": "8️⃣",
 
     # Special
     "white_dot": "",
@@ -417,16 +397,6 @@ def replace_emojis(text: str) -> str:
         "📦": "gift",
         "⚙️": "settings",
         "👁️": "eye",
-
-        # Numbers
-        "1️⃣": "num_1",
-        "2️⃣": "num_2",
-        "3️⃣": "num_3",
-        "4️⃣": "num_4",
-        "5️⃣": "num_5",
-        "6️⃣": "num_6",
-        "7️⃣": "num_7",
-        "8️⃣": "num_8",
 
         # Special
         "•": "white_dot",
