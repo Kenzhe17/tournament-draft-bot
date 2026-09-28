@@ -90,28 +90,29 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     for case in cases:
         case_emoji = "case_basic"  # default
         rare_emoji = "rare_basic"  # default
+        sub_emoji = "sub_middle"  # default
         sparkle = ""
         if "Basic" in case.name:
             case_emoji = "case_basic"
             rare_emoji = "rare_basic"
+            sub_emoji = "sub_middle"
         elif "Premium" in case.name:
             case_emoji = "case_premium"
             rare_emoji = "rare_premium"
+            sub_emoji = "sub_middle"
         elif "Elite" in case.name:
             case_emoji = "case_elite"
             rare_emoji = "rare_elite"
+            sub_emoji = "sub_middle"
         elif "Special" in case.name:
             case_emoji = "case_special"
             rare_emoji = "rare_special"
+            sub_emoji = "sub_directory"
             sparkle = f" {replace_emojis('a_star')}"
 
         cases_parts.append(
-            f"{replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}{sparkle}"
+            f"{replace_emojis(sub_emoji)} {replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}{sparkle}"
         )
-        cases_parts.append(
-            f"{replace_emojis('└')} {replace_emojis(rare_emoji)} {case.description}"
-        )
-        cases_parts.append("")
 
     cases_list = "\n".join(cases_parts)
 
