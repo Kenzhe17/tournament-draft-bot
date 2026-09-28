@@ -85,8 +85,32 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.games.rps")
         
         # Sync commands globally
-        await self.tree.sync()
-        logger.info("Slash-команды синхронизированы глобально")
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"Slash-команды синхронизированы глобально: {len(synced)} команд")
+            for cmd in synced:
+                logger.info(f"  - {cmd.name}")
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации команд: {e}")
+        
+        # Also sync for specific guilds for faster propagation
+        if DATABASE_URL:
+            try:
+                from storage.db import get_db_connection
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT DISTINCT guild_id FROM players")
+                    guild_ids = [row[0] for row in cursor.fetchall()]
+                    cursor.close()
+                
+                for guild_id in guild_ids:
+                    try:
+                        guild_synced = await self.tree.sync(guild=discord.Object(id=guild_id))
+                        logger.info(f"Синхронизировано {len(guild_synced)} команд для сервера {guild_id}")
+                    except Exception as e:
+                        logger.error(f"Ошибка синхронизации для сервера {guild_id}: {e}")
+            except Exception as e:
+                logger.error(f"Ошибка при получении серверов из БД: {e}")
 
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance
@@ -301,6 +325,12 @@ class TournamentBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
+        
+        # Debug: Log all registered commands
+        commands = list(self.tree.walk_commands())
+        logger.info(f"Зарегистрировано {len(commands)} команд:")
+        for cmd in commands:
+            logger.info(f"  - /{cmd.name} (type: {cmd.type.__name__})")
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Log when bot is added to a server."""
