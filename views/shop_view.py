@@ -346,19 +346,19 @@ class RaritySelect(discord.ui.Select):
         # Цвет по редкости
         embed_color = discord.Color.from_rgb(69, 69, 69)
 
-        # Маппинг icon эмодзи по значению (используем стандартные эмодзи, replace_emojis заменит их на кастомные)
+        # Icon emoji map (value -> emoji name)
         icon_map = {
-            "🎮": "icon_letter",
-            "🐾": "icon_paw",
-            "🔵": "icon_bluestacks",
-            "☕": "icon_teacup",
-            "🎀": "icon_ribbon",
-            "🔞": "icon_18plus",
-            "❤️": "icon_heart",
-            "✅": "icon_v_badge",
-            "🃏": "icon_cards",
-            "🐱": "icon_cat_ears",
-            "🪽": "icon_wing",
+            "icon_letter": "icon_letter",
+            "icon_paw": "icon_paw",
+            "icon_bluestacks": "icon_bluestacks",
+            "icon_teacup": "icon_teacup",
+            "icon_ribbon": "icon_ribbon",
+            "icon_18plus": "icon_18plus",
+            "icon_heart": "icon_heart",
+            "icon_v_badge": "icon_v_badge",
+            "icon_cards": "icon_cards",
+            "icon_cat_ears": "icon_cat_ears",
+            "icon_wing": "icon_wing",
         }
 
         # Маппинг rare эмодзи по редкости
@@ -841,17 +841,17 @@ class BuyButton(discord.ui.Button):
 
             # Icon map
             icon_map = {
-                "🎮": "icon_letter",
-                "🐾": "icon_paw",
-                "🔵": "icon_bluestacks",
-                "☕": "icon_teacup",
-                "🎀": "icon_ribbon",
-                "🔞": "icon_18plus",
-                "❤️": "icon_heart",
-                "✅": "icon_v_badge",
-                "🃏": "icon_cards",
-                "🐱": "icon_cat_ears",
-                "🪽": "icon_wing",
+                "icon_letter": "icon_letter",
+                "icon_paw": "icon_paw",
+                "icon_bluestacks": "icon_bluestacks",
+                "icon_teacup": "icon_teacup",
+                "icon_ribbon": "icon_ribbon",
+                "icon_18plus": "icon_18plus",
+                "icon_heart": "icon_heart",
+                "icon_v_badge": "icon_v_badge",
+                "icon_cards": "icon_cards",
+                "icon_cat_ears": "icon_cat_ears",
+                "icon_wing": "icon_wing",
             }
             icon_emoji = icon_map.get(item.value, "")
 
@@ -930,17 +930,17 @@ class BuyCaseButton(discord.ui.Button):
             elif result["type"] == "item":
                 # Получить icon emoji для предмета
                 icon_map = {
-                    "🎮": "icon_letter",
-                    "🐾": "icon_paw",
-                    "🔵": "icon_bluestacks",
-                    "☕": "icon_teacup",
-                    "🎀": "icon_ribbon",
-                    "🔞": "icon_18plus",
-                    "❤️": "icon_heart",
-                    "✅": "icon_v_badge",
-                    "🃏": "icon_cards",
-                    "🐱": "icon_cat_ears",
-                    "🪽": "icon_wing",
+                    "icon_letter": "icon_letter",
+                    "icon_paw": "icon_paw",
+                    "icon_bluestacks": "icon_bluestacks",
+                    "icon_teacup": "icon_teacup",
+                    "icon_ribbon": "icon_ribbon",
+                    "icon_18plus": "icon_18plus",
+                    "icon_heart": "icon_heart",
+                    "icon_v_badge": "icon_v_badge",
+                    "icon_cards": "icon_cards",
+                    "icon_cat_ears": "icon_cat_ears",
+                    "icon_wing": "icon_wing",
                 }
                 icon_emoji = icon_map.get(result['value'], "")
                 result_text = f"{replace_emojis(icon_emoji)} **{result['value']}**"

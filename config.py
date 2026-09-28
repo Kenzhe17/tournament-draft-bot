@@ -420,19 +420,6 @@ def replace_emojis(text: str) -> str:
         "💫": "rare_premium",
         "🌟": "rare_elite",
 
-        # Icon emojis (mapping from standard to custom)
-        "🎮": "icon_letter",
-        "🐾": "icon_paw",
-        "🔵": "icon_bluestacks",
-        "☕": "icon_teacup",
-        "🎀": "icon_ribbon",
-        "🔞": "icon_18plus",
-        "❤️": "icon_heart",
-        "✅": "icon_v_badge",
-        "🃏": "icon_cards",
-        "🐱": "icon_cat_ears",
-        "🪽": "icon_wing",
-
         # Medal emojis (for leaderboard)
         "🥇": "medal_gold",
         "🥈": "medal_silver",

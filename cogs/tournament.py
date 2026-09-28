@@ -332,17 +332,17 @@ class TournamentCog(commands.Cog):
 
         # Icon map для значков
         icon_map = {
-            "🎮": "icon_letter",
-            "🐾": "icon_paw",
-            "🔵": "icon_bluestacks",
-            "☕": "icon_teacup",
-            "🎀": "icon_ribbon",
-            "🔞": "icon_18plus",
-            "❤️": "icon_heart",
-            "✅": "icon_v_badge",
-            "🃏": "icon_cards",
-            "🐱": "icon_cat_ears",
-            "🪽": "icon_wing",
+            "icon_letter": "icon_letter",
+            "icon_paw": "icon_paw",
+            "icon_bluestacks": "icon_bluestacks",
+            "icon_teacup": "icon_teacup",
+            "icon_ribbon": "icon_ribbon",
+            "icon_18plus": "icon_18plus",
+            "icon_heart": "icon_heart",
+            "icon_v_badge": "icon_v_badge",
+            "icon_cards": "icon_cards",
+            "icon_cat_ears": "icon_cat_ears",
+            "icon_wing": "icon_wing",
         }
 
         # Rare emoji map
@@ -886,7 +886,7 @@ class TournamentCog(commands.Cog):
 
         if not stats:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала сыграйте хотя бы один турнир!"),
+                replace_emojis("⚪ Сначала сыграйте хотя бы один турнир!"),
                 ephemeral=True
             )
             return
@@ -895,36 +895,14 @@ class TournamentCog(commands.Cog):
         current_xp, xp_needed = stats.get_level_progress()
         progress_percent = int((current_xp / xp_needed) * 100) if xp_needed > 0 else 0
         progress_bar = create_progress_bar(current_xp, xp_needed)
+        xp_remaining = xp_needed - current_xp
 
         embed = discord.Embed(
-            color=discord.Color.dark_blue()
+            title=f"{replace_emojis('a_star')} УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /level",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n{replace_emojis('sub_middle')} Уровень: Level {stats.level}\n{replace_emojis('sub_directory')} Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n{replace_emojis('sub_middle')} Прогресс: `{progress_bar}` {current_xp:,} / {xp_needed:,} XP ({progress_percent}%)\n{replace_emojis('sub_directory')} До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-
-        embed.add_field(
-            name=replace_emojis("📈 Level"),
-            value=f"{stats.level}",
-            inline=False
-        )
-
-        embed.add_field(
-            name="",
-            value=f"**{rank_title}**",
-            inline=False
-        )
-
-        embed.add_field(
-            name=replace_emojis("📊 Прогресс"),
-            value=f"{progress_bar} {current_xp}/{xp_needed} ({progress_percent}%)",
-            inline=False
-        )
-
-        embed.add_field(
-            name="До следующего уровня",
-            value=f"{xp_needed - current_xp} XP",
-            inline=False,
-        )
-
-        embed.set_footer(text="Накопить XP можно через участие в турнирах и победы")
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         await interaction.response.send_message(embed=embed)
 
@@ -1632,17 +1610,17 @@ class TournamentCog(commands.Cog):
         if result['success']:
             # Icon map для значков
             icon_map = {
-                "🎮": "icon_letter",
-                "🐾": "icon_paw",
-                "🔵": "icon_bluestacks",
-                "☕": "icon_teacup",
-                "🎀": "icon_ribbon",
-                "🔞": "icon_18plus",
-                "❤️": "icon_heart",
-                "✅": "icon_v_badge",
-                "🃏": "icon_cards",
-                "🐱": "icon_cat_ears",
-                "🪽": "icon_wing",
+                "icon_letter": "icon_letter",
+                "icon_paw": "icon_paw",
+                "icon_bluestacks": "icon_bluestacks",
+                "icon_teacup": "icon_teacup",
+                "icon_ribbon": "icon_ribbon",
+                "icon_18plus": "icon_18plus",
+                "icon_heart": "icon_heart",
+                "icon_v_badge": "icon_v_badge",
+                "icon_cards": "icon_cards",
+                "icon_cat_ears": "icon_cat_ears",
+                "icon_wing": "icon_wing",
             }
 
             # Rare emoji map
