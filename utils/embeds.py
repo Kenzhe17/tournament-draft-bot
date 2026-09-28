@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import discord
 
+from config import replace_emojis
 # ДОБАВЛЕНО: TournamentSize в список импорта
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
