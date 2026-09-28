@@ -327,6 +327,9 @@ def replace_emojis(text: str) -> str:
         "•": "white_dot",
         "└": "sub_directory",
         "🏠": "room",
+
+        # Additional symbols for replacement
+        "⚪": "white_dot",
     }
     
     result = text
