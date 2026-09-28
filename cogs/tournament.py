@@ -1789,17 +1789,24 @@ class TournamentCog(commands.Cog):
         silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
         bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
 
-        embed = discord.Embed(
+        # First embed: only banner
+        banner_embed = discord.Embed(
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+        banner_embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
+
+        # Second embed: content with menu
+        content_embed = discord.Embed(
             title=f"{replace_emojis('a_star')} ✨ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✨ {replace_emojis('a_star')}",
             description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_small_dot')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_small_dot')} {immortal} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('a_small_dot')} {ascendant} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('a_small_dot')} {diamond} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('a_small_dot')} {platinum} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('a_small_dot')} {gold} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('a_small_dot')} {silver} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('a_small_dot')} {bronze} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-
-        embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
-        embed.set_footer(text="DISCORD SERVER r1z3")
+        content_embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GuideView()
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+        await interaction.response.send_message(embed=banner_embed, ephemeral=False)
+        await interaction.followup.send(embed=content_embed, view=view, ephemeral=False)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
@@ -2018,7 +2025,6 @@ class GuideSelectMenu(discord.ui.Select):
                 description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} **📌 НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_small_dot')} 💬 <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_small_dot')} 🏆 <#1549809898643001484> {replace_emojis('white_arrow')} Анонсы, сетки и проведение турниров\n{replace_emojis('a_small_dot')} 📸 <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты и скриншоты из игр\n{replace_emojis('a_small_dot')} 🗑️ <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_small_dot')} 🎧 <#1250974603162026024> {replace_emojis('white_arrow')} Голосовые каналы и прослушивание треков\n{replace_emojis('a_small_dot')} 📁 <#1242489553189732373> {replace_emojis('white_arrow')} Обмен материалами и документами\n\n{replace_emojis('white_dot')} **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_small_dot')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_small_dot')} {immortal} **Immortal:** `80-99 lvl` {replace_emojis('white_arrow')} I `(93-99)` | II `(86-92)` | III `(80-85)`\n{replace_emojis('a_small_dot')} {ascendant} **Ascendant:** `60-79 lvl` {replace_emojis('white_arrow')} I `(73-79)` | II `(66-72)` | III `(60-65)`\n{replace_emojis('a_small_dot')} {diamond} **Diamond:** `42-59 lvl` {replace_emojis('white_arrow')} I `(54-59)` | II `(48-53)` | III `(42-47)`\n{replace_emojis('a_small_dot')} {platinum} **Platinum:** `27-41 lvl` {replace_emojis('white_arrow')} I `(37-41)` | II `(32-36)` | III `(27-31)`\n{replace_emojis('a_small_dot')} {gold} **Gold:** `15-26 lvl` {replace_emojis('white_arrow')} I `(23-26)` | II `(19-22)` | III `(15-18)`\n{replace_emojis('a_small_dot')} {silver} **Silver:** `6-14 lvl` {replace_emojis('white_arrow')} I `(12-14)` | II `(9-11)` | III `(6-8)`\n{replace_emojis('a_small_dot')} {bronze} **Bronze:** `0-5 lvl` {replace_emojis('white_arrow')} I `(4-5)` | II `(2-3)` | III `(0-1)`\n\n{replace_emojis('a_dot_smaller')} ✨ Выберите категорию в меню ниже, чтобы открыть список команд ✨",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.set_image(url="https://images-ext-1.discordapp.net/external/tcronSKm5AqSBblkNo4JykJ-E6QNXQVyy9ViC3NNnTQ/%3Fsize%3D2048/https/cdn.discordapp.com/banners/1196165488565289012/a338360963724ad1957dd13a1730547c.png?format=webp&quality=lossless&width=512&height=288")
             embed.set_footer(text="DISCORD SERVER r1z3")
             view = GuideView(current="main")
             await interaction.response.edit_message(embed=embed, view=view)
@@ -2030,7 +2036,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="tournaments")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2039,7 +2045,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="profile")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2048,7 +2054,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="economy")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2057,16 +2063,16 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="shop")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ✨ РАЗДЕЛ: МИНИ-ИГРЫ ✨ {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Развлечения и быстрые игры**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} `/games` — Единое интерактивное меню всех доступных игр\n\n{replace_emojis('white_dot')} **Категории игр в меню:**\n{replace_emojis('sub_middle')} 🎰 Игры на удачу и слот-машины\n{replace_emojis('sub_middle')} 🧠 Викторины, головоломки и виселица\n{replace_emojis('sub_directory')} 🎲 Дуэли, камень-ножницы-бумага и казино\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
+                description=f"{replace_emojis('white_arrow')} **Развлечения и быстрые игры**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_small_dot')} {replace_emojis('white_arrow')} `/games` — Единое интерактивное меню всех доступных игр\n\n{replace_emojis('white_dot')} **Категории игр в меню:**\n{replace_emojis('a_small_dot')} 🎰 Игры на удачу и слот-машины\n{replace_emojis('a_small_dot')} 🧠 Викторины, головоломки и виселица\n{replace_emojis('a_small_dot')} 🎲 Дуэли, камень-ножницы-бумага и казино\n\n{replace_emojis('a_dot_smaller')} ✨ Используйте выпадающее меню ниже для перехода в другие разделы ✨",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="games")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2075,7 +2081,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = GuideView(current="organizers")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class GuideView(discord.ui.View):
@@ -2146,7 +2152,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="tournaments")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2155,7 +2161,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="profile")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2164,7 +2170,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="economy")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2173,7 +2179,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="shop")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2182,7 +2188,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="games")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2191,7 +2197,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = HelpGuideView(current="organizers")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class HelpGuideView(discord.ui.View):
