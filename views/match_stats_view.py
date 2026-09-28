@@ -1,7 +1,9 @@
-from config import replace_emojis
+
 """Views for match statistics filling by captains and admins."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 from typing import TYPE_CHECKING
 

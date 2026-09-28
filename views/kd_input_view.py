@@ -1,7 +1,9 @@
-from config import replace_emojis
+
 """View for managing K/D input for match teams."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 from typing import TYPE_CHECKING
 

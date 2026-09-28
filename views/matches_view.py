@@ -1,7 +1,9 @@
-from config import replace_emojis
+
 """View для полуфиналов — кнопки победителей и генерации матчей."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 import logging
 from typing import TYPE_CHECKING

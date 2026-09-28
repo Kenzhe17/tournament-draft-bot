@@ -1,7 +1,8 @@
-from config import replace_emojis
 """View для драфта — Select Menu выбора игрока."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 import logging
 from typing import TYPE_CHECKING

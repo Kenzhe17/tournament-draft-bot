@@ -1,7 +1,9 @@
-from config import replace_emojis
+
 """Modal for inputting K/D statistics for match players."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 from typing import TYPE_CHECKING
 

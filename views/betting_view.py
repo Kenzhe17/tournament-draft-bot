@@ -1,7 +1,9 @@
-from config import replace_emojis
+
 """Betting view and modals for tournament betting system."""
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 import logging
 from typing import TYPE_CHECKING

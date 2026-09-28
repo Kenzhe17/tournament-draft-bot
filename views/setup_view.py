@@ -1,7 +1,8 @@
 """View для настройки турнира с кнопками выбора круга."""
-from config import replace_emojis
 
 from __future__ import annotations
+
+from config import replace_emojis
 
 import asyncio
 import logging
