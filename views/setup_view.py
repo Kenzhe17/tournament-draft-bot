@@ -283,8 +283,9 @@ class AdminAddModal(discord.ui.Modal):
 
         # Get user_id from Discord member
         user_id = 0
+        from utils.cosmetics import clean_nickname
         for member in interaction.guild.members:
-            if member.display_name == player_name:
+            if clean_nickname(member.display_name) == player_name:
                 user_id = member.id
                 break
 
@@ -591,7 +592,8 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
             user_id = int(new_name.strip("<@!>"))
             member = interaction.guild.get_member(user_id)
             if member:
-                new_name = member.display_name
+                from utils.cosmetics import clean_nickname
+                new_name = clean_nickname(member.display_name)
                 new_user_id = user_id
             else:
                 await interaction.response.send_message(
@@ -603,8 +605,9 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
         else:
             # Try to find user by name
             new_user_id = 0
+            from utils.cosmetics import clean_nickname
             for member in interaction.guild.members:
-                if member.display_name == new_name:
+                if clean_nickname(member.display_name) == new_name:
                     new_user_id = member.id
                     break
 
