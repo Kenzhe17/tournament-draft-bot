@@ -74,13 +74,13 @@ class MemoryAnswerModal(discord.ui.Modal, title="Ваша последовате
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Правильно!",
+                title=replace_emojis("✅ Правильно!",
                 description=f"**Последовательность:** {' '.join(correct_sequence)}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title="❌ Неправильно!",
+                title=replace_emojis("❌ Неправильно!",
                 description=f"**Ваша последовательность:** {' '.join(user_sequence)}\n**Правильная последовательность:** {' '.join(correct_sequence)}\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

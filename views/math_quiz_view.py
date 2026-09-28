@@ -48,7 +48,7 @@ class MathAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             user_answer = int(self.answer_input.value)
         except ValueError:
             await interaction.response.send_message(
-                "❌ Ответ должен быть числом!",
+                replace_emojis("❌ Ответ должен быть числом!",
                 ephemeral=True
             )
             return
@@ -64,13 +64,13 @@ class MathAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Правильно!",
+                title=replace_emojis("✅ Правильно!",
                 description=f"**Ответ:** {self.answer}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title="❌ Неправильно!",
+                title=replace_emojis("❌ Неправильно!",
                 description=f"**Ваш ответ:** {user_answer}\n**Правильный ответ:** {self.answer}\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

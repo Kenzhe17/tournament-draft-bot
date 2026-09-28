@@ -33,7 +33,7 @@ class TeamKDButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
         super().__init__(
-            label=f"📊 {team_name} K/D",
+            label=freplace_emojis("📊 {team_name} K/D",
             style=discord.ButtonStyle.primary,
             custom_id=f"team_kd:{guild_id}:{team_number}"
         )
@@ -67,7 +67,7 @@ class ProcessMatchButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_info: dict):
         super().__init__(
-            label="✅ Обработать результат",
+            label=replace_emojis("✅ Обработать результат",
             style=discord.ButtonStyle.success,
             custom_id=f"process_match:{guild_id}",
         )
@@ -81,7 +81,7 @@ class ProcessMatchButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or not hasattr(tournament, 'temp_kd_data') or not tournament.temp_kd_data:
             await interaction.response.send_message(
-                "❌ Нет данных K/D для обработки. Сначала введите статистику для обеих команд.",
+                replace_emojis("❌ Нет данных K/D для обработки. Сначала введите статистику для обеих команд.",
                 ephemeral=True
             )
             return
@@ -94,7 +94,7 @@ class ProcessMatchButton(discord.ui.Button):
         missing_players = [p for p in all_players if p not in tournament.temp_kd_data]
         if missing_players:
             await interaction.response.send_message(
-                f"❌ Отсутствует статистика для: {', '.join(missing_players)}",
+                freplace_emojis("❌ Отсутствует статистика для: {', '.join(missing_players)}",
                 ephemeral=True
             )
             return
@@ -113,7 +113,7 @@ class ProcessMatchButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            "✅ Результат матча обработан!",
+            replace_emojis("✅ Результат матча обработан!",
             ephemeral=True
         )
 

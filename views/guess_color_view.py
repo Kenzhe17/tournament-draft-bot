@@ -19,7 +19,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    "❌ Минимальная ставка: 10 монет", ephemeral=True
+                    replace_emojis("❌ Минимальная ставка: 10 монет", ephemeral=True
                 )
                 return
 
@@ -29,7 +29,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    "❌ Недостаточно монет", ephemeral=True
+                    replace_emojis("❌ Недостаточно монет", ephemeral=True
                 )
                 return
 
@@ -43,7 +43,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректное число", ephemeral=True
+                replace_emojis("❌ Введите корректное число", ephemeral=True
             )
 
 

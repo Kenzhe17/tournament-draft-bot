@@ -69,8 +69,8 @@ class HelpMainView(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
-        self.add_item(HelpCategoryButton("tournament", "🏆 Турниры"))
-        self.add_item(HelpCategoryButton("economy", "💰 Экономика"))
+        self.add_item(HelpCategoryButton("tournament", replace_emojis("🏆 Турниры"))
+        self.add_item(HelpCategoryButton("economy", replace_emojis("💰 Экономика"))
         self.add_item(HelpCategoryButton("shop", "🛒 Магазин"))
         self.add_item(HelpCategoryButton("profile", "👤 Профиль"))
         self.add_item(HelpCategoryButton("admin", "⚙️ Админ"))

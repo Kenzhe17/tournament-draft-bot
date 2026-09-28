@@ -19,7 +19,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    "❌ Минимальная ставка: 10 монет", ephemeral=True
+                    replace_emojis("❌ Минимальная ставка: 10 монет", ephemeral=True
                 )
                 return
 
@@ -29,13 +29,13 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    "❌ Недостаточно монет", ephemeral=True
+                    replace_emojis("❌ Недостаточно монет", ephemeral=True
                 )
                 return
 
             view = DiceRollGameView(session)
             embed = discord.Embed(
-                title="🎲 Кубик",
+                title=replace_emojis("🎲 Кубик",
                 description=f"Ставка: {bet} 🪙\nНажмите чтобы бросить кубик!",
                 color=discord.Color.blue(),
             )
@@ -43,7 +43,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректное число", ephemeral=True
+                replace_emojis("❌ Введите корректное число", ephemeral=True
             )
 
 
@@ -54,7 +54,7 @@ class DiceRollGameView(View):
         super().__init__(timeout=180)
         self.session = session
 
-    @discord.ui.button(label="🎲 Бросить", style=discord.ButtonStyle.primary, custom_id="dice_roll")
+    @discord.ui.button(label=replace_emojis("🎲 Бросить", style=discord.ButtonStyle.primary, custom_id="dice_roll")
     async def roll_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle roll."""
         player_roll = roll_dice()
@@ -79,7 +79,7 @@ class DiceRollGameView(View):
             color = discord.Color.yellow()
 
         embed = discord.Embed(
-            title="🎲 Кубик",
+            title=replace_emojis("🎲 Кубик",
             description=f"Ваш бросок: {player_roll}\nБот бросок: {bot_roll}\n\n{result}",
             color=color,
         )

@@ -60,7 +60,7 @@ class WordleAnswerView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Правильно!",
+                title=replace_emojis("✅ Правильно!",
                 description=f"**Слово:** {self.word}\n**Ваш ответ:** {user_answer}\n\n**Выигрыш:** {winnings} 🪙 (5x)",
                 color=discord.Color.green()
             )
@@ -70,7 +70,7 @@ class WordleAnswerView(discord.ui.View):
             if self.attempts > 0:
                 # Ещё есть попытки
                 embed = discord.Embed(
-                    title="❌ Неправильно!",
+                    title=replace_emojis("❌ Неправильно!",
                     description=f"**Ваш ответ:** {user_answer}\n**Осталось попыток:** {self.attempts}",
                     color=discord.Color.orange()
                 )
@@ -82,7 +82,7 @@ class WordleAnswerView(discord.ui.View):
             else:
                 # Попытки закончились
                 embed = discord.Embed(
-                    title="❌ Попытки закончились!",
+                    title=replace_emojis("❌ Попытки закончились!",
                     description=f"**Ваш ответ:** {user_answer}\n**Правильное слово:** {self.word}\n**Потеря:** {self.bet} 🪙",
                     color=discord.Color.red()
                 )

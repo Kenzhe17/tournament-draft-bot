@@ -31,7 +31,7 @@ class GamesMainView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis(replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -133,7 +133,7 @@ class GamesCategoryView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis(replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -159,7 +159,7 @@ class GameSelect(Select):
             )
 
         super().__init__(
-            placeholder=replace_emojis("🎮 Выберите игру для просмотра..."),
+            placeholder=replace_emojis(replace_emojis("🎮 Выберите игру для просмотра..."),
             min_values=1,
             max_values=1,
             options=options
@@ -172,7 +172,7 @@ class GameSelect(Select):
 
         if not game:
             await interaction.response.send_message(
-                replace_emojis("❌ Игра не найдена"),
+                replace_emojis(replace_emojis("❌ Игра не найдена"),
                 ephemeral=True
             )
             return
@@ -238,7 +238,7 @@ class GameCardView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis(replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -279,7 +279,7 @@ class PlayButton(Button):
         )
 
         embed.add_field(
-            name=replace_emojis("⚔️ Дуэль с игроком (PvP)"),
+            name=replace_emojis(replace_emojis("⚔️ Дуэль с игроком (PvP)"),
             value=pvp_command,
             inline=False
         )
@@ -372,7 +372,7 @@ class BackToMainMenuButton(Button):
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         
         embed = discord.Embed(
-            title=replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
+            title=replace_emojis(replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
             description=f"""{replace_emojis('👋')} **Добро пожаловать, {interaction.user.display_name}!**
 {replace_emojis('💳')} **Ваш Баланс:** {balance:,} {replace_emojis('🪙')}
 

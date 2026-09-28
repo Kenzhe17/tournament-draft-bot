@@ -80,7 +80,7 @@ class LeaderboardPageButton(discord.ui.Button):
 
         if self.page < 1 or self.page > total_pages:
             await interaction.response.send_message(
-                "❌ Неверная страница.",
+                replace_emojis("❌ Неверная страница.",
                 ephemeral=True
             )
             return

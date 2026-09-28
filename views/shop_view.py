@@ -80,7 +80,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
     if not cases:
         await interaction.response.send_message(
-            replace_emojis("❌ Нет доступных кейсов."),
+            replace_emojis(replace_emojis("❌ Нет доступных кейсов."),
             ephemeral=True
         )
         return
@@ -142,7 +142,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     if not roles:
         await interaction.response.send_message(
-            replace_emojis("❌ Нет доступных ролей."),
+            replace_emojis(replace_emojis("❌ Нет доступных ролей."),
             ephemeral=True
         )
         return
@@ -309,7 +309,7 @@ class RaritySelect(discord.ui.Select):
 
         if not items:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет товаров в этой категории."),
+                replace_emojis(replace_emojis("❌ Нет товаров в этой категории."),
                 ephemeral=True
             )
             return
@@ -420,7 +420,7 @@ class CosmeticSelect(discord.ui.Select):
         item = shop_store.get_item(item_id)
 
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Товар не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Товар не найден."), ephemeral=True)
             return
 
         # Для тегов используем отдельный шаблон
@@ -459,7 +459,7 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Кейс не найден."), ephemeral=True)
             return
 
         await show_case_card(interaction, case)
@@ -495,7 +495,7 @@ class RoleSelect(discord.ui.Select):
         item = shop_store.get_item(role_id)
 
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Роль не найдена."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Роль не найдена."), ephemeral=True)
             return
 
         await show_role_card(interaction, item)
@@ -762,7 +762,7 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
 
     # Шансы выпадения (зафиксированы стандартные значения)
     embed.add_field(
-        name=replace_emojis("🎲 **Шансы выпадения:**"),
+        name=replace_emojis(replace_emojis("🎲 **Шансы выпадения:**"),
         value=f"├ {replace_emojis('🪙')} **Монеты:** 50%\n"
               f"├ {replace_emojis('🎁')} **Предмет:** 20%\n"
               f"└ {replace_emojis('❌')} **Ничего:** 30%",
@@ -828,7 +828,7 @@ class BuyButton(discord.ui.Button):
         """Купить товар."""
         item = shop_store.get_item(self.item_id)
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Товар не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Товар не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -894,7 +894,7 @@ class BuyButton(discord.ui.Button):
             else:
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
                 await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось назначить роль. Монеты возвращены."),
+                    replace_emojis(replace_emojis("❌ Не удалось назначить роль. Монеты возвращены."),
                     ephemeral=True
                 )
         else:
@@ -972,7 +972,7 @@ class BuyCaseButton(discord.ui.Button):
 
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -1024,7 +1024,7 @@ class BuyCaseButton(discord.ui.Button):
         else:
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось открыть кейс. Монеты возвращены."),
+                replace_emojis(replace_emojis("❌ Не удалось открыть кейс. Монеты возвращены."),
                 ephemeral=True
             )
 
@@ -1070,7 +1070,7 @@ class ShopBackButton(discord.ui.Button):
 
         # Создать embed в новом формате
         embed = discord.Embed(
-            title=replace_emojis("🛍️ МАГАЗИН СЕРВЕРА | Главное меню"),
+            title=replace_emojis(replace_emojis("🛍️ МАГАЗИН СЕРВЕРА | Главное меню"),
             color=discord.Color.gold()
         )
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
@@ -1131,7 +1131,7 @@ class ShopBackToListButton(discord.ui.Button):
 
         # Создать главное меню
         embed = discord.Embed(
-            title=replace_emojis("🛍️ Магазин Сервера | Главный каталог"),
+            title=replace_emojis(replace_emojis("🛍️ Магазин Сервера | Главный каталог"),
             description="Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.",
             color=discord.Color.gold()
         )
@@ -1207,7 +1207,7 @@ class ItemSelect(discord.ui.Select):
         item = shop_store.get_item(item_id)
 
         if not item:
-            await interaction.response.send_message(replace_emojis("❌ Товар не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Товар не найден."), ephemeral=True)
             return
 
         # Проверить баланс
@@ -1294,7 +1294,7 @@ class ShopBuyButton(discord.ui.Button):
         item = shop_store.get_item(self.item_id)
         if not item:
             await interaction.response.send_message(
-                replace_emojis("❌ Товар не найден."),
+                replace_emojis(replace_emojis("❌ Товар не найден."),
                 ephemeral=True
             )
             return
@@ -1372,7 +1372,7 @@ class InventoryEquipSelect(discord.ui.Select):
             )
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось экипировать предмет."),
+                replace_emojis(replace_emojis("❌ Не удалось экипировать предмет."),
                 ephemeral=True
             )
 
@@ -1412,7 +1412,7 @@ class InventoryUnequipSelect(discord.ui.Select):
             )
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось снять предмет."),
+                replace_emojis(replace_emojis("❌ Не удалось снять предмет."),
                 ephemeral=True
             )
 
@@ -1441,7 +1441,7 @@ class InventoryEquipButton(discord.ui.Button):
             )
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось экипировать предмет."),
+                replace_emojis(replace_emojis("❌ Не удалось экипировать предмет."),
                 ephemeral=True
             )
 
@@ -1470,7 +1470,7 @@ class InventoryUnequipButton(discord.ui.Button):
             )
         else:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось снять предмет."),
+                replace_emojis(replace_emojis("❌ Не удалось снять предмет."),
                 ephemeral=True
             )
 
@@ -1496,7 +1496,7 @@ class RolesButton(discord.ui.Button):
 
         if not roles:
             await interaction.followup.send(
-                replace_emojis("❌ Нет доступных ролей.")
+                replace_emojis(replace_emojis("❌ Нет доступных ролей.")
             )
             return
 
@@ -1550,7 +1550,7 @@ class RoleBuyButton(discord.ui.Button):
 
         item = shop_store.get_item(self.item_id)
         if not item:
-            await interaction.followup.send(replace_emojis("❌ Предмет не найден."))
+            await interaction.followup.send(replace_emojis(replace_emojis("❌ Предмет не найден."))
             return
 
         # Проверить баланс
@@ -1590,5 +1590,5 @@ class RoleBuyButton(discord.ui.Button):
             # Возврат монет при ошибке
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, item.price)
             await interaction.followup.send(
-                replace_emojis("❌ Не удалось назначить роль. Монеты возвращены.")
+                replace_emojis(replace_emojis("❌ Не удалось назначить роль. Монеты возвращены.")
             )

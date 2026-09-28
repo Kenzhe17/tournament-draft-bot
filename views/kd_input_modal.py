@@ -42,14 +42,14 @@ class KDInputModal(discord.ui.Modal):
             deaths = int(self.deaths_input.value)
         except ValueError:
             await interaction.response.send_message(
-                "❌ Пожалуйста, введите числовые значения.",
+                replace_emojis("❌ Пожалуйста, введите числовые значения.",
                 ephemeral=True
             )
             return
 
         if kills < 0 or deaths < 0:
             await interaction.response.send_message(
-                "❌ Значения не могут быть отрицательными.",
+                replace_emojis("❌ Значения не могут быть отрицательными.",
                 ephemeral=True
             )
             return
@@ -71,7 +71,7 @@ class KDInputModal(discord.ui.Modal):
             store.set(tournament)
 
         await interaction.response.send_message(
-            f"✅ Статистика для {self.player_name}: {kills}/{deaths}",
+            freplace_emojis("✅ Статистика для {self.player_name}: {kills}/{deaths}",
             ephemeral=True
         )
 
@@ -114,7 +114,7 @@ class TeamKDInputModal(discord.ui.Modal):
         tournament = store.get(self.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                "❌ Турнир не найден.",
+                replace_emojis("❌ Турнир не найден.",
                 ephemeral=True
             )
             return
@@ -149,7 +149,7 @@ class TeamKDInputModal(discord.ui.Modal):
                     }
                 except (ValueError, IndexError):
                     await interaction.response.send_message(
-                        f"❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
+                        freplace_emojis("❌ Неверный формат для {player_name}. Используйте формат: kills deaths (например: 8 2)",
                         ephemeral=True
                     )
                     return
@@ -157,6 +157,6 @@ class TeamKDInputModal(discord.ui.Modal):
         store.set(tournament)
 
         await interaction.response.send_message(
-            f"✅ Статистика команды сохранена!",
+            freplace_emojis("✅ Статистика команды сохранена!",
             ephemeral=True
         )

@@ -19,7 +19,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
             bet = int(self.bet.value)
             if bet < 10:
                 await interaction.response.send_message(
-                    "❌ Минимальная ставка: 10 монет", ephemeral=True
+                    replace_emojis("❌ Минимальная ставка: 10 монет", ephemeral=True
                 )
                 return
 
@@ -30,7 +30,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
 
             if not session:
                 await interaction.response.send_message(
-                    "❌ Недостаточно монет", ephemeral=True
+                    replace_emojis("❌ Недостаточно монет", ephemeral=True
                 )
                 return
 
@@ -45,7 +45,7 @@ class CoinBetModal(Modal, title="Введите ставку"):
 
         except ValueError:
             await interaction.response.send_message(
-                "❌ Введите корректное число", ephemeral=True
+                replace_emojis("❌ Введите корректное число", ephemeral=True
             )
 
 
@@ -62,7 +62,7 @@ class CoinFlipGameView(View):
         """Handle heads choice."""
         await self.handle_choice(interaction, CoinSide.HEADS)
 
-    @discord.ui.button(label="🪙 Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
+    @discord.ui.button(label=replace_emojis("🪙 Решка", style=discord.ButtonStyle.primary, custom_id="coin_tails")
     async def tails_button(self, interaction: discord.Interaction, button: Button) -> None:
         """Handle tails choice."""
         await self.handle_choice(interaction, CoinSide.TAILS)

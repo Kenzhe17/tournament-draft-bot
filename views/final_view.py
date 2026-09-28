@@ -35,7 +35,7 @@ class FinalWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                "❌ Только организаторы (роль 'org') могут фиксировать результаты.",
+                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты.",
                 ephemeral=True,
             )
             return
@@ -43,19 +43,19 @@ class FinalWinnerButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.FINAL:
             await interaction.response.send_message(
-                "❌ Финал не активен.", ephemeral=True
+                replace_emojis("❌ Финал не активен.", ephemeral=True
             )
             return
 
         if self.team_index not in tournament.final_teams:
             await interaction.response.send_message(
-                "❌ Неверная команда.", ephemeral=True
+                replace_emojis("❌ Неверная команда.", ephemeral=True
             )
             return
 
         if tournament.final_pending_winner is not None:
             await interaction.response.send_message(
-                "❌ Результат финала уже выбран. Ожидается заполнение статистики.", ephemeral=True
+                replace_emojis("❌ Результат финала уже выбран. Ожидается заполнение статистики.", ephemeral=True
             )
             return
 
@@ -65,7 +65,7 @@ class FinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            f"✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
+            freplace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",
             ephemeral=True
         )
 

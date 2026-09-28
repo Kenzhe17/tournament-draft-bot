@@ -33,14 +33,14 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             amount = int(self.amount.value)
         except ValueError:
             await interaction.response.send_message(
-                "❌ Пожалуйста, введите корректное число.",
+                replace_emojis("❌ Пожалуйста, введите корректное число.",
                 ephemeral=True
             )
             return
         
         if amount <= 0:
             await interaction.response.send_message(
-                "❌ Сумма должна быть положительным числом.",
+                replace_emojis("❌ Сумма должна быть положительным числом.",
                 ephemeral=True
             )
             return
@@ -49,7 +49,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Check if betting is open for this phase
             if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
                 await interaction.response.send_message(
-                    "❌ Ставки закрыты.",
+                    replace_emojis("❌ Ставки закрыты.",
                     ephemeral=True
                 )
                 return
@@ -58,7 +58,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
             if balance < amount:
                 await interaction.response.send_message(
-                    f"❌ Недостаточно средств. Ваш баланс: {balance} 🪙",
+                    freplace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} 🪙",
                     ephemeral=True
                 )
                 return
@@ -68,7 +68,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             if user_team_index is not None:
                 if user_team_index != self.team_index:
                     await interaction.response.send_message(
-                        "❌ Вы не можете ставить против своей команды.",
+                        replace_emojis("❌ Вы не можете ставить против своей команды.",
                         ephemeral=True
                     )
                     return
@@ -95,14 +95,14 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                f"✅ Ставка принята\n\n{amount} 🪙 → {self.team_name}",
+                freplace_emojis("✅ Ставка принята\n\n{amount} 🪙 → {self.team_name}",
                 ephemeral=True
             )
         except Exception as e:
             import logging
             logging.error(f"Error placing bet: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ Ошибка при создании ставки: {str(e)}",
+                freplace_emojis("❌ Ошибка при создании ставки: {str(e)}",
                 ephemeral=True
             )
     

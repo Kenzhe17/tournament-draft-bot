@@ -48,7 +48,7 @@ class CircleSelectButton(discord.ui.Button):
             tournament = store.get(self.guild_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
                 )
                 return
@@ -56,7 +56,7 @@ class CircleSelectButton(discord.ui.Button):
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
+                    replace_emojis(replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
                     ephemeral=True
                 )
                 return
@@ -94,7 +94,7 @@ class CircleSelectButton(discord.ui.Button):
                     if user_name in getattr(tournament, f"circle{circle}"):
                         if circle == self.circle:
                             await interaction.response.send_message(
-                                replace_emojis("❌ Вы уже находитесь в этом круге."),
+                                replace_emojis(replace_emojis("❌ Вы уже находитесь в этом круге."),
                                 ephemeral=True
                             )
                             return
@@ -107,7 +107,7 @@ class CircleSelectButton(discord.ui.Button):
             success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
             if not success:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось добавить игрока."),
+                    replace_emojis(replace_emojis("❌ Не удалось добавить игрока."),
                     ephemeral=True
                 )
                 return
@@ -131,7 +131,7 @@ class CircleSelectButton(discord.ui.Button):
             logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Произошла ошибка при добавлении игрока."),
+                    replace_emojis(replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
             except:
@@ -157,7 +157,7 @@ class JoinPoolButton(discord.ui.Button):
             tournament = store.get(self.guild_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
                 )
                 return
@@ -165,7 +165,7 @@ class JoinPoolButton(discord.ui.Button):
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
+                    replace_emojis(replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
                     ephemeral=True
                 )
                 return
@@ -195,7 +195,7 @@ class JoinPoolButton(discord.ui.Button):
             # Check if user already in pool
             if user_name in tournament.players_pool:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы уже участвуете в турнире."),
+                    replace_emojis(replace_emojis("❌ Вы уже участвуете в турнире."),
                     ephemeral=True
                 )
                 return
@@ -207,7 +207,7 @@ class JoinPoolButton(discord.ui.Button):
 
             # Send response first
             await interaction.response.send_message(
-                replace_emojis("✅ Вы добавлены в турнир!"),
+                replace_emojis(replace_emojis("✅ Вы добавлены в турнир!"),
                 ephemeral=True
             )
 
@@ -218,7 +218,7 @@ class JoinPoolButton(discord.ui.Button):
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Произошла ошибка при добавлении игрока."),
+                    replace_emojis(replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
             except:
@@ -253,7 +253,7 @@ class AdminAddModal(discord.ui.Modal):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."), ephemeral=True
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."), ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
@@ -275,7 +275,7 @@ class AdminAddModal(discord.ui.Modal):
         # Check if player already in tournament
         if player_name in tournament.all_players:
             await interaction.response.send_message(
-                replace_emojis("❌ Этот игрок уже участвует в турнире."),
+                replace_emojis(replace_emojis("❌ Этот игрок уже участвует в турнире."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -292,7 +292,7 @@ class AdminAddModal(discord.ui.Modal):
         success = tournament.add_player_to_circle(self.circle, player_name, user_id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось добавить игрока."),
+                replace_emojis(replace_emojis("❌ Не удалось добавить игрока."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -325,7 +325,7 @@ class ExitButton(discord.ui.Button):
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."),
+                replace_emojis(replace_emojis("❌ Турнир не найден."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -333,7 +333,7 @@ class ExitButton(discord.ui.Button):
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -346,7 +346,7 @@ class ExitButton(discord.ui.Button):
             # RANDOM mode: check players_pool
             if user_name not in tournament.players_pool:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы не участвуете в турнире."),
+                    replace_emojis(replace_emojis("❌ Вы не участвуете в турнире."),
                     ephemeral=True
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -360,7 +360,7 @@ class ExitButton(discord.ui.Button):
             # Other modes: check circles
             if user_name not in tournament.all_players:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы не участвуете в турнире."),
+                    replace_emojis(replace_emojis("❌ Вы не участвуете в турнире."),
                     ephemeral=True
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -370,7 +370,7 @@ class ExitButton(discord.ui.Button):
             success = tournament.remove_player(user_name)
             if not success:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось удалить игрока."),
+                    replace_emojis(replace_emojis("❌ Не удалось удалить игрока."),
                     ephemeral=True
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -382,7 +382,7 @@ class ExitButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Вы вышли из турнира."),
+            replace_emojis(replace_emojis("✅ Вы вышли из турнира."),
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -403,7 +403,7 @@ class DeletePlayerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -412,7 +412,7 @@ class DeletePlayerButton(discord.ui.Button):
         tournament = store.get(interaction.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -426,7 +426,7 @@ class DeletePlayerButton(discord.ui.Button):
 
         if not players:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет зарегистрированных игроков."),
+                replace_emojis(replace_emojis("❌ Нет зарегистрированных игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -498,7 +498,7 @@ class ReplacePlayerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -507,7 +507,7 @@ class ReplacePlayerButton(discord.ui.Button):
         tournament = store.get(interaction.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -521,7 +521,7 @@ class ReplacePlayerButton(discord.ui.Button):
 
         if not players:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет зарегистрированных игроков."),
+                replace_emojis(replace_emojis("❌ Нет зарегистрированных игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -573,7 +573,7 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -592,7 +592,7 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
                 new_user_id = user_id
             else:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Новый игрок не найден на сервере."),
+                    replace_emojis(replace_emojis("❌ Новый игрок не найден на сервере."),
                     ephemeral=True
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -672,7 +672,7 @@ class AdminAddButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -689,7 +689,7 @@ class AutoDistributeButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("🎯 Распределить по ELO"),
+            label=replace_emojis(replace_emojis("🎯 Распределить по ELO"),
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
@@ -698,7 +698,7 @@ class AutoDistributeButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -707,7 +707,7 @@ class AutoDistributeButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
+                replace_emojis(replace_emojis("❌ Турнир не в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -715,7 +715,7 @@ class AutoDistributeButton(discord.ui.Button):
 
         if tournament.formation_mode != FormationMode.ELO:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                replace_emojis(replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -742,7 +742,7 @@ class AutoDistributeButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
+            replace_emojis(replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
             ephemeral=True
         )
 
@@ -762,7 +762,7 @@ class StartTournamentButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -771,7 +771,7 @@ class StartTournamentButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                replace_emojis(replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -818,7 +818,7 @@ class StartTournamentButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             await interaction.followup.send(
-                replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
+                replace_emojis(replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
                 ephemeral=True
             )
         else:
@@ -861,7 +861,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
+                replace_emojis(replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -870,7 +870,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         tournament = store.get(self.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет активного турнира."),
+                replace_emojis(replace_emojis("❌ Нет активного турнира."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))

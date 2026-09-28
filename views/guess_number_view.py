@@ -8,7 +8,7 @@ from storage.redis_client import set_minigame_session, get_minigame_session, del
 from utils.logger import log_game_play, log_balance_change, log_error
 
 
-class NumberBetModal(Modal, title="🎲 Угадай число"):
+class NumberBetModal(Modal, title=replace_emojis("🎲 Угадай число"):
     """Modal для ввода ставки и первого числа."""
 
     bet = TextInput(label="Ставка (монеты)", placeholder="Введите сумму ставки", min_length=1, max_length=10)
@@ -28,24 +28,24 @@ class NumberBetModal(Modal, title="🎲 Угадай число"):
             bet = int(self.bet.value)
             guess = int(self.guess.value)
         except ValueError:
-            await interaction.response.send_message("❌ Введите корректные числа!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Введите корректные числа!", ephemeral=True)
             return
 
         if guess < 1 or guess > 100:
-            await interaction.response.send_message("❌ Число должно быть от 1 до 100!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Число должно быть от 1 до 100!", ephemeral=True)
             return
 
         if bet < 20:
-            await interaction.response.send_message("❌ Минимальная ставка: 20 🪙", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Минимальная ставка: 20 🪙", ephemeral=True)
             return
 
         if bet > 500:
-            await interaction.response.send_message("❌ Максимальная ставка: 500 🪙", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Максимальная ставка: 500 🪙", ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         if balance < bet:
-            await interaction.response.send_message("❌ Недостаточно монет!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Недостаточно монет!", ephemeral=True)
             return
 
         # Списать ставку
@@ -60,7 +60,7 @@ class NumberBetModal(Modal, title="🎲 Угадай число"):
 
         # Создать embed
         embed = discord.Embed(
-            title="🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )
@@ -108,7 +108,7 @@ class GuessNumberGameView(View):
         """Сдаться и потерять ставку."""
         self.game.game_over = True
         embed = discord.Embed(
-            title="🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",
             description=f"😢 Вы сдались! Загаданное число было {self.game.secret_number}.",
             color=discord.Color.red()
         )
@@ -117,7 +117,7 @@ class GuessNumberGameView(View):
         await interaction.response.edit_message(embed=embed, view=None)
 
 
-class NumberGuessModal(Modal, title="🎯 Сделать попытку"):
+class NumberGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку"):
     """Modal для ввода числа."""
 
     guess = TextInput(label="Ваше число (1-100)", placeholder="Введите число от 1 до 100", min_length=1, max_length=3)
@@ -136,18 +136,18 @@ class NumberGuessModal(Modal, title="🎯 Сделать попытку"):
         try:
             guess = int(self.guess.value)
         except ValueError:
-            await interaction.response.send_message("❌ Введите корректное число!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Введите корректное число!", ephemeral=True)
             return
 
         if guess < 1 or guess > 100:
-            await interaction.response.send_message("❌ Число должно быть от 1 до 100!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Число должно быть от 1 до 100!", ephemeral=True)
             return
 
         result, message = self.game.make_guess(guess)
 
         # Создать embed
         embed = discord.Embed(
-            title="🎲 Угадай число",
+            title=replace_emojis("🎲 Угадай число",
             description=message,
             color=discord.Color.blue() if result == "correct" else discord.Color.orange()
         )

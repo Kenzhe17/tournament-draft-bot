@@ -60,7 +60,7 @@ class ReactionButtonView(discord.ui.View):
         self.bet = bet
         self.game_view = game_view
 
-    @discord.ui.button(label="🎯 НАЖМИ!", style=discord.ButtonStyle.danger, custom_id="reaction_click")
+    @discord.ui.button(label=replace_emojis("🎯 НАЖМИ!", style=discord.ButtonStyle.danger, custom_id="reaction_click")
     async def click_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Обработать нажатие."""
         if not self.game_view.can_click:
@@ -75,13 +75,13 @@ class ReactionButtonView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Победа!",
+                title=replace_emojis("✅ Победа!",
                 description=f"**Время реакции:** {reaction_time:.3f} секунд\n**Ваше время:** {reaction_time:.3f}с < 1.0с\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title="❌ Проигрыш",
+                title=replace_emojis("❌ Проигрыш",
                 description=f"**Время реакции:** {reaction_time:.3f} секунд\n**Ваше время:** {reaction_time:.3f}с > 1.0с\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

@@ -21,21 +21,21 @@ class CaseOpenButton(discord.ui.Button):
         """Открыть кейс с анимацией и reactions."""
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден.", ephemeral=True)
             return
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. Нужно: {case.price} 🪙",
+                freplace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
                 ephemeral=True
             )
             return
 
         # Начать анимацию
         msg = await interaction.response.send_message(
-            "🎲 Вращаем...",
+            replace_emojis("🎲 Вращаем...",
             ephemeral=True
         )
 
@@ -55,7 +55,7 @@ class CaseOpenButton(discord.ui.Button):
 
         # Этап 2
         await interaction.edit_original_response(
-            content="🎲 Выбираем редкость..."
+            content=replace_emojis("🎲 Выбираем редкость..."
         )
 
         try:
@@ -79,7 +79,7 @@ class CaseOpenButton(discord.ui.Button):
             color = discord.Color.dark_red()
             reaction_emoji = "😢"
         elif result["type"] == "coins":
-            message = f"💰 Выпало {result['value']} 🪙!"
+            message = freplace_emojis("💰 Выпало {result['value']} 🪙!"
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":
@@ -89,7 +89,7 @@ class CaseOpenButton(discord.ui.Button):
             color = discord.Color.dark_green()
             reaction_emoji = "🎉"
         else:
-            message = "❌ Ошибка при открытии."
+            message = replace_emojis("❌ Ошибка при открытии."
             color = discord.Color.dark_red()
             reaction_emoji = "❌"
 
@@ -150,21 +150,21 @@ class CaseSelect(discord.ui.Select):
         case = case_store.get_case(case_id)
 
         if not case:
-            await interaction.response.send_message("❌ Кейс не найден.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Кейс не найден.", ephemeral=True)
             return
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                f"❌ Недостаточно монет. Нужно: {case.price} 🪙",
+                freplace_emojis("❌ Недостаточно монет. Нужно: {case.price} 🪙",
                 ephemeral=True
             )
             return
 
         # Начать анимацию
         msg = await interaction.response.send_message(
-            "🎲 Вращаем...",
+            replace_emojis("🎲 Вращаем...",
             ephemeral=True
         )
 
@@ -184,7 +184,7 @@ class CaseSelect(discord.ui.Select):
 
         # Этап 2
         await interaction.edit_original_response(
-            content="🎲 Выбираем редкость..."
+            content=replace_emojis("🎲 Выбираем редкость..."
         )
 
         try:
@@ -208,7 +208,7 @@ class CaseSelect(discord.ui.Select):
             color = discord.Color.dark_red()
             reaction_emoji = "😢"
         elif result["type"] == "coins":
-            message = f"💰 Выпало {result['value']} 🪙!"
+            message = freplace_emojis("💰 Выпало {result['value']} 🪙!"
             color = discord.Color.dark_gold()
             reaction_emoji = "💰"
         elif result["type"] == "item":
@@ -218,7 +218,7 @@ class CaseSelect(discord.ui.Select):
             color = discord.Color.dark_green()
             reaction_emoji = "🎉"
         else:
-            message = "❌ Ошибка при открытии."
+            message = replace_emojis("❌ Ошибка при открытии."
             color = discord.Color.dark_red()
             reaction_emoji = "❌"
 
@@ -247,7 +247,7 @@ class OpenAgainButton(discord.ui.Button):
     def __init__(self, case_id: str):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="🎲 Открыть ещё 1",
+            label=replace_emojis("🎲 Открыть ещё 1",
             custom_id=f"case_open_again:{case_id}"
         )
         self.case_id = case_id

@@ -55,7 +55,7 @@ class LogicPuzzleView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=view)
         else:
             await interaction.response.send_message(
-                "❌ Все подсказки использованы!",
+                replace_emojis("❌ Все подсказки использованы!",
                 ephemeral=True
             )
 
@@ -96,7 +96,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title="✅ Правильно!",
+                title=replace_emojis("✅ Правильно!",
                 description=f"**Задача:** {self.question}\n**Ответ:** {self.answer}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
@@ -106,7 +106,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             if self.attempts > 0:
                 # Ещё есть попытки
                 embed = discord.Embed(
-                    title="❌ Неправильно!",
+                    title=replace_emojis("❌ Неправильно!",
                     description=f"**Ваш ответ:** {user_answer}\n**Осталось попыток:** {self.attempts}",
                     color=discord.Color.orange()
                 )
@@ -129,7 +129,7 @@ class LogicAnswerModal(discord.ui.Modal, title="Ваш ответ"):
             else:
                 # Попытки закончились
                 embed = discord.Embed(
-                    title="❌ Попытки закончились!",
+                    title=replace_emojis("❌ Попытки закончились!",
                     description=f"**Ваш ответ:** {user_answer}\n**Правильный ответ:** {self.answer}\n**Потеря:** {self.bet} 🪙",
                     color=discord.Color.red()
                 )
