@@ -70,13 +70,13 @@ class FlagChoiceView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!",),
+                title=replace_emojis("✅ Правильно!"),
                 description=f"**Флаг:** {self.flag_data['emoji']}\n**Правильный ответ:** {correct_country}\n**Ваш ответ:** {selected_country}\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Неправильно!",),
+                title=replace_emojis("❌ Неправильно!"),
                 description=f"**Флаг:** {self.flag_data['emoji']}\n**Правильный ответ:** {correct_country}\n**Ваш ответ:** {selected_country}\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

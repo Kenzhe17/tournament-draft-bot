@@ -165,7 +165,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             await interaction.response.send_message(
-                replace_emojis("✅ Данные отправлены\n\n⏳ Ожидается подтверждения администратора",),
+                replace_emojis("✅ Данные отправлены\n\n⏳ Ожидается подтверждения администратора"),
                 ephemeral=True
             )
         except Exception as e:
@@ -330,7 +330,7 @@ class AdminTeamSelectView(View):
         async def callback(interaction: discord.Interaction) -> None:
             # Remove this callback - winner selection will be done in a separate step
             await interaction.response.send_message(
-                replace_emojis("✅ Статистика команды сохранена.",),
+                replace_emojis("✅ Статистика команды сохранена."),
                 ephemeral=True
             )
         return callback
@@ -462,7 +462,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             # Other team not filled, ask to fill it
             other_team_name = tournament.team_names.get(other_team_index, f"Team {other_team_index}")
             await interaction.response.send_message(
-                replace_emojis("✅ Статистика команды сохранена.",),
+                replace_emojis("✅ Статистика команды сохранена."),
                 ephemeral=True
             )
 
@@ -509,7 +509,7 @@ class AdminConfirmView(View):
         }.get(self.match_type, "Матч")
 
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}",),
+            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}"),
             color=discord.Color.blue()
         )
 
@@ -601,7 +601,7 @@ class AdminConfirmView(View):
         }.get(self.match_type, "Матч")
 
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}",),
+            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}"),
             color=discord.Color.blue()
         )
 
@@ -699,7 +699,7 @@ class AdminConfirmView(View):
         view.add_item(cancel_btn)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя",),
+            title=replace_emojis("🏆 Выберите победителя"),
             description=f"{team_a_name} vs {team_b_name}",
             color=discord.Color.gold()
         )

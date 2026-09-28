@@ -38,7 +38,7 @@ class TriviaView(discord.ui.View):
         )
 
         embed.add_field(
-            name=replace_emojis("📊 Прогресс",),
+            name=replace_emojis("📊 Прогресс"),
             value=f"Правильных: {self.correct_answers}/{self.required_correct} (нужно)",
             inline=False
         )
@@ -61,13 +61,13 @@ class TriviaView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!",),
+                title=replace_emojis("✅ Победа!"),
                 description=f"**Правильных ответов:** {self.correct_answers}/{len(self.questions)}\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Проигрыш",),
+                title=replace_emojis("❌ Проигрыш"),
                 description=f"**Правильных ответов:** {self.correct_answers}/{len(self.questions)} (нужно {self.required_correct})\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )
@@ -134,13 +134,13 @@ class TriviaQuestionView(discord.ui.View):
         # Показать результат и перейти к следующему вопросу
         if is_correct:
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!",),
+                title=replace_emojis("✅ Правильно!"),
                 description=f"**Ответ:** {selected_option}",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Неправильно!",),
+                title=replace_emojis("❌ Неправильно!"),
                 description=f"**Ваш ответ:** {selected_option}\n**Правильный ответ:** {correct_answer}",
                 color=discord.Color.red()
             )

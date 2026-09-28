@@ -71,13 +71,13 @@ class SongChoiceView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!",),
+                title=replace_emojis("✅ Правильно!"),
                 description=f"**Правильный ответ:** {correct_song}\n**Ваш ответ:** {selected_song}\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Неправильно!",),
+                title=replace_emojis("❌ Неправильно!"),
                 description=f"**Правильный ответ:** {correct_song}\n**Ваш ответ:** {selected_song}\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

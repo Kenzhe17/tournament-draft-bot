@@ -114,7 +114,7 @@ class TournamentCog(commands.Cog):
         existing = store.get(interaction.guild_id)
         if not existing:
             await interaction.response.send_message(
-                replace_emojis("❌ На этом сервере нет активного турнира.",),
+                replace_emojis("❌ На этом сервере нет активного турнира."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -146,7 +146,7 @@ class TournamentCog(commands.Cog):
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала создайте турнир командой `/tournament`.",),
+                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -326,7 +326,7 @@ class TournamentCog(commands.Cog):
 
         if not cosmetics:
             await interaction.response.send_message(
-                replace_emojis("❌ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики.",),
+                replace_emojis("❌ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
                 ephemeral=True
             )
             return
@@ -888,7 +888,7 @@ class TournamentCog(commands.Cog):
 
         if not stats:
             await interaction.response.send_message(
-                replace_emojis("❌ Сначала сыграйте хотя бы один турнир!",),
+                replace_emojis("❌ Сначала сыграйте хотя бы один турнир!"),
                 ephemeral=True
             )
             return
@@ -939,7 +939,7 @@ class TournamentCog(commands.Cog):
 
         if not stats or stats["total_bets"] == 0:
             await interaction.response.send_message(
-                replace_emojis("❌ У вас пока нет статистики ставок.",),
+                replace_emojis("❌ У вас пока нет статистики ставок."),
                 ephemeral=True
             )
             return
@@ -1005,7 +1005,7 @@ class TournamentCog(commands.Cog):
         """Включить или выключить лимит для круга."""
         if circle not in [2, 3, 4]:
             await interaction.response.send_message(
-                replace_emojis("❌ Круг должен быть 2, 3 или 4.",),
+                replace_emojis("❌ Круг должен быть 2, 3 или 4."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1013,7 +1013,7 @@ class TournamentCog(commands.Cog):
 
         if status.lower() not in ["on", "off"]:
             await interaction.response.send_message(
-                replace_emojis("❌ Статус должен быть 'on' или 'off'.",),
+                replace_emojis("❌ Статус должен быть 'on' или 'off'."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1022,7 +1022,7 @@ class TournamentCog(commands.Cog):
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет активного турнира.",),
+                replace_emojis("❌ Нет активного турнира."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1030,7 +1030,7 @@ class TournamentCog(commands.Cog):
 
         if tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
-                replace_emojis("❌ Лимиты можно менять только в фазе настройки.",),
+                replace_emojis("❌ Лимиты можно менять только в фазе настройки."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1041,7 +1041,7 @@ class TournamentCog(commands.Cog):
 
         status_text = "включен" if tournament.circle_limits_enabled[circle] else "отключен"
         await interaction.response.send_message(
-            replace_emojis("✅ Лимит для круга {circle} {status_text}.",),
+            replace_emojis("✅ Лимит для круга {circle} {status_text}."),
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1055,7 +1055,7 @@ class TournamentCog(commands.Cog):
     #     # Ограничение длины
     #     if len(bio) > 100:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Описание должно быть не более 100 символов.",),
+    #             replace_emojis("❌ Описание должно быть не более 100 символов."),
     #             ephemeral=True
     #         )
     #         return
@@ -1079,7 +1079,7 @@ class TournamentCog(commands.Cog):
     #     await player_stats_store.set(interaction.guild_id, interaction.user.id, stats)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Био установлено: {bio}",),
+    #         replace_emojis("✅ Био установлено: {bio}"),
     #         ephemeral=True
     #     )
 
@@ -1112,7 +1112,7 @@ class TournamentCog(commands.Cog):
 
     #     if url:
     #         await interaction.response.send_message(
-    #             replace_emojis("✅ Аватар профиля обновлен.",),
+    #             replace_emojis("✅ Аватар профиля обновлен."),
     #             ephemeral=True
     #         )
     #     else:
@@ -1122,7 +1122,7 @@ class TournamentCog(commands.Cog):
     #         )
 
     #     embed = discord.Embed(
-    #         title=replace_emojis("📊 Профиль: {formatted_name}",),
+    #         title=replace_emojis("📊 Профиль: {formatted_name}"),
     #         color=discord.Color.blue(),
     #     )
 
@@ -1321,14 +1321,14 @@ class TournamentCog(commands.Cog):
 
         if type not in ["elo", "money"]:
             await interaction.response.send_message(
-                replace_emojis("❌ Тип должен быть 'elo' или 'money'.",),
+                replace_emojis("❌ Тип должен быть 'elo' или 'money'."),
                 ephemeral=True
             )
             return
 
         if operation not in ["set", "add", "remove"]:
             await interaction.response.send_message(
-                replace_emojis("❌ Операция должна быть 'set', 'add' или 'remove'.",),
+                replace_emojis("❌ Операция должна быть 'set', 'add' или 'remove'."),
                 ephemeral=True
             )
             return
@@ -1355,7 +1355,7 @@ class TournamentCog(commands.Cog):
             )
 
             await interaction.response.send_message(
-                replace_emojis("✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}",),
+                replace_emojis("✅ ELO игрока {player.display_name}: {current_elo} → {new_elo}"),
                 ephemeral=True
             )
         else:  # money
@@ -1379,7 +1379,7 @@ class TournamentCog(commands.Cog):
                 await user_balance_store.remove_balance(interaction.guild_id, player.id, amount)
 
             await interaction.response.send_message(
-                replace_emojis("✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}",),
+                replace_emojis("✅ Монеты игрока {player.display_name}: {current_balance} → {new_balance}"),
                 ephemeral=True
             )
 
@@ -1422,7 +1422,7 @@ class TournamentCog(commands.Cog):
     #     tournament = store.get(interaction.guild_id)
     #     if not tournament:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Нет активного турнира.",),
+    #             replace_emojis("❌ Нет активного турнира."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1450,7 +1450,7 @@ class TournamentCog(commands.Cog):
     #         # Replace in circles
     #         if old_name not in tournament.all_players:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден.",),
+    #                 replace_emojis("❌ Игрок `{old_name}` не найден."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1473,7 +1473,7 @@ class TournamentCog(commands.Cog):
 
     #         if not found:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден в финальных командах.",),
+    #                 replace_emojis("❌ Игрок `{old_name}` не найден в финальных командах."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1492,7 +1492,7 @@ class TournamentCog(commands.Cog):
 
     #         if not found:
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{old_name}` не найден в командах.",),
+    #                 replace_emojis("❌ Игрок `{old_name}` не найден в командах."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1501,7 +1501,7 @@ class TournamentCog(commands.Cog):
     #     store.set(tournament)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Игрок `{old_name}` заменен на `{new_name}`.",),
+    #         replace_emojis("✅ Игрок `{old_name}` заменен на `{new_name}`."),
     #         ephemeral=True
     #     )
     #     asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1520,7 +1520,7 @@ class TournamentCog(commands.Cog):
     #     tournament = store.get(interaction.guild_id)
     #     if not tournament:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Нет активного турнира.",),
+    #             replace_emojis("❌ Нет активного турнира."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1531,14 +1531,14 @@ class TournamentCog(commands.Cog):
     #     if tournament.phase == TournamentPhase.SETUP:
     #         if not tournament.remove_player(name):
     #             await interaction.response.send_message(
-    #                 replace_emojis("❌ Игрок `{name}` не найден.",),
+    #                 replace_emojis("❌ Игрок `{name}` не найден."),
     #                 ephemeral=True,
     #             )
     #             asyncio.create_task(_delete_ephemeral_later(interaction))
     #             return
     #     else:
     #         await interaction.response.send_message(
-    #             replace_emojis("❌ Можно удалять игроков только на этапе настройки.",),
+    #             replace_emojis("❌ Можно удалять игроков только на этапе настройки."),
     #             ephemeral=True,
     #         )
     #         asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1547,7 +1547,7 @@ class TournamentCog(commands.Cog):
     #     store.set(tournament)
 
     #     await interaction.response.send_message(
-    #         replace_emojis("✅ Игрок `{name}` удален.",),
+    #         replace_emojis("✅ Игрок `{name}` удален."),
     #         ephemeral=True
     #     )
     #     asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1621,7 +1621,7 @@ class TournamentCog(commands.Cog):
         sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if sender_balance < fee:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет для комиссии. Нужно: {fee} 🪙, есть: {sender_balance} 🪙",),
+                replace_emojis("❌ Недостаточно монет для комиссии. Нужно: {fee} 🪙, есть: {sender_balance} 🪙"),
                 ephemeral=True
             )
             return
@@ -1668,7 +1668,7 @@ class TournamentCog(commands.Cog):
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
             
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось передать предмет: {result['item_name']}",),
+                replace_emojis("❌ Не удалось передать предмет: {result['item_name']}"),
                 ephemeral=True
             )
 
@@ -1824,7 +1824,7 @@ class TournamentCog(commands.Cog):
         # Check if user is bot owner
         if BOT_OWNER_ID == 0 or interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                replace_emojis("❌ Эта команда доступна только владельцу бота.",),
+                replace_emojis("❌ Эта команда доступна только владельцу бота."),
                 ephemeral=True
             )
             return
@@ -1844,14 +1844,14 @@ class TournamentCog(commands.Cog):
             await betting_stats_store.reset_user(guild_id, user_id)
             
             await interaction.response.send_message(
-                replace_emojis("✅ Статистика пользователя {user_name} успешно сброшена!",),
+                replace_emojis("✅ Статистика пользователя {user_name} успешно сброшена!"),
                 ephemeral=True
             )
             logger.info(f"Reset stats for user {user_name} (ID: {user_id}) in guild {guild_id}")
         except Exception as e:
             logger.error(f"Error resetting user stats: {e}", exc_info=True)
             await interaction.response.send_message(
-                replace_emojis("❌ Произошла ошибка при сбросе статистики: {e}",),
+                replace_emojis("❌ Произошла ошибка при сбросе статистики: {e}"),
                 ephemeral=True
             )
 
@@ -1993,7 +1993,7 @@ class GuideSelectMenu(discord.ui.Select):
         """Обработка выбора пункта меню."""
         if self.values[0] == "games":
             embed = discord.Embed(
-                title=replace_emojis("🎮 Список игр, правила и команды",),
+                title=replace_emojis("🎮 Список игр, правила и команды"),
                 description=(
                     "**📃 Каталог игр:**\n"
                     "• `/games` — Вызывает меню всех 19 игр с описанием.\n\n"
@@ -2009,7 +2009,7 @@ class GuideSelectMenu(discord.ui.Select):
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
-                title=replace_emojis("💰 Экономика и Магазин",),
+                title=replace_emojis("💰 Экономика и Магазин"),
                 description=(
                     "• `/profile` — Ваш профиль, ELO, баланс и инвентарь\n"
                     "• `/shop` — Магазин (иконки, цветные теги, кейсы)\n"
@@ -2053,7 +2053,7 @@ class GuideSelectMenu(discord.ui.Select):
             bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
             
             embed = discord.Embed(
-                title=replace_emojis("📊 Система прогрессии и рангов",),
+                title=replace_emojis("📊 Система прогрессии и рангов"),
                 description=(
                     "**📈 Уровни:** XP зачисляется за игры и турниры.\n\n"
                     "**🏅 Ранги по уровням:**\n"
@@ -2093,7 +2093,7 @@ class GuideSelectMenu(discord.ui.Select):
 
         elif self.values[0] == "important":
             embed = discord.Embed(
-                title=replace_emojis("⚠️ Важно знать",),
+                title=replace_emojis("⚠️ Важно знать"),
                 description=(
                     "• Начальный баланс и ежедневный бонус: **100 монет**\n"
                     "• **Эскроу система:** ставки удерживаются до результата\n"

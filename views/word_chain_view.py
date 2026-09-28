@@ -53,7 +53,7 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
 
         if not is_valid:
             embed = discord.Embed(
-                title=replace_emojis("❌ Неверное слово!",),
+                title=replace_emojis("❌ Неверное слово!"),
                 description=f"Слово должно начинаться на букву '{self.letter.upper()}'",
                 color=discord.Color.red()
             )
@@ -93,7 +93,7 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!",),
+                title=replace_emojis("✅ Победа!"),
                 description=f"**Вы прошли все {self.max_rounds} раундов!**\n**Выигрыш:** {winnings} 🪙 (2x)",
                 color=discord.Color.green()
             )
@@ -130,13 +130,13 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
             next_letter = last_letter
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Правильно!",),
+                title=replace_emojis("✅ Правильно!"),
                 description=f"**Ваше слово:** {user_word}\n**Следующая буква:** {next_letter.upper()}",
                 color=discord.Color.green()
             )
 
             embed.add_field(
-                name=replace_emojis("📊 Раунд",),
+                name=replace_emojis("📊 Раунд"),
                 value=f"{self.round}/{self.max_rounds}",
                 inline=False
             )

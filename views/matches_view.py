@@ -149,7 +149,7 @@ class SemifinalWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",),
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
             ephemeral=True
         )
 
@@ -185,7 +185,7 @@ class TeamNameButton(discord.ui.Button):
 
         if team_index is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Только капитан может назвать свою команду.",),
+                replace_emojis("❌ Только капитан может назвать свою команду."),
                 ephemeral=True
             )
             return
@@ -193,7 +193,7 @@ class TeamNameButton(discord.ui.Button):
         # Check if this team has already changed their name
         if not tournament.is_team_name_editable(team_index):
             await interaction.response.send_message(
-                replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз.",),
+                replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз."),
                 ephemeral=True
             )
             return
@@ -222,7 +222,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
         name = self.name_input.value.strip()
         if not name:
             await interaction.response.send_message(
-                replace_emojis("❌ Название не может быть пустым.",),
+                replace_emojis("❌ Название не может быть пустым."),
                 ephemeral=True
             )
             return
@@ -232,7 +232,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             # Check if this team can still edit their name
             if not tournament.is_team_name_editable(self.team_index):
                 await interaction.response.send_message(
-                    replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз.",),
+                    replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз."),
                     ephemeral=True
                 )
                 return
@@ -245,7 +245,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Название команды изменено на '{name}'.",),
+            replace_emojis("✅ Название команды изменено на '{name}'."),
             ephemeral=True
         )
 
@@ -335,7 +335,7 @@ class MatchWinnerButton(discord.ui.Button):
         team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя",),
+            title=replace_emojis("🏆 Выберите победителя"),
             description=f"{teams[0][1]} vs {teams[1][1]}",
             color=discord.Color.green()
         )
@@ -419,7 +419,7 @@ class TeamWinnerButton(discord.ui.Button):
             logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",),
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
             ephemeral=True
         )
 
@@ -429,7 +429,7 @@ class SelectWinnerButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament, match_type: str):
         super().__init__(
-            label=replace_emojis("🏆 Выбрать победителя",),
+            label=replace_emojis("🏆 Выбрать победителя"),
             style=discord.ButtonStyle.success,
             custom_id=f"select_winner:{guild_id}:{match_type}"
         )
@@ -450,7 +450,7 @@ class SelectWinnerButton(discord.ui.Button):
         match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выбор победителей",),
+            title=replace_emojis("🏆 Выбор победителей"),
             description="Выберите матч для определения победителя:",
             color=discord.Color.green()
         )
@@ -511,7 +511,7 @@ class QualifierWinnerButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
         await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику.",),
+            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
             ephemeral=True
         )
 

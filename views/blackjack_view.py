@@ -121,13 +121,13 @@ class BlackjackView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, self.user_id, winnings)
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Победа!",),
+                title=replace_emojis("✅ Победа!"),
                 description=f"**Ваша рука:** {' '.join(self.player_hand)} = {player_value}\n**Рука дилера:** {' '.join(self.dealer_hand)} = {dealer_value}\n\n**Выигрыш:** {winnings} 🪙 ({multiplier}x)",
                 color=discord.Color.green()
             )
         else:
             embed = discord.Embed(
-                title=replace_emojis("❌ Проигрыш",),
+                title=replace_emojis("❌ Проигрыш"),
                 description=f"**Ваша рука:** {' '.join(self.player_hand)} = {player_value}\n**Рука дилера:** {' '.join(self.dealer_hand)} = {dealer_value}\n\n**Потеря:** {self.bet} 🪙",
                 color=discord.Color.red()
             )

@@ -34,7 +34,7 @@ class HangmanView(discord.ui.View):
         masked_word = game.get_masked_word(self.word, self.guessed_letters)
 
         embed = discord.Embed(
-            title=replace_emojis("🎯 Виселица",),
+            title=replace_emojis("🎯 Виселица"),
             description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** 2x\n\n**Слово:**\n{masked_word}",
             color=discord.Color.purple()
         )
@@ -82,7 +82,7 @@ class LetterButton(discord.ui.Button):
                 await user_balance_store.add_balance(view.guild_id, view.user_id, winnings)
 
                 embed = discord.Embed(
-                    title=replace_emojis("✅ Победа!",),
+                    title=replace_emojis("✅ Победа!"),
                     description=f"**Слово:** {view.word}\n**Выигрыш:** {winnings} 🪙 (2x)",
                     color=discord.Color.green()
                 )
@@ -127,7 +127,7 @@ class LetterButton(discord.ui.Button):
             if view.mistakes >= view.max_mistakes:
                 # Проигрыш
                 embed = discord.Embed(
-                    title=replace_emojis("❌ Проигрыш!",),
+                    title=replace_emojis("❌ Проигрыш!"),
                     description=f"**Слово:** {view.word}\n**Потеря:** {view.bet} 🪙",
                     color=discord.Color.red()
                 )

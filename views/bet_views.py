@@ -112,7 +112,7 @@ class ViewBetsButton(Button):
     
     def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(
-            label=replace_emojis("📊 Посмотреть ставки",),
+            label=replace_emojis("📊 Посмотреть ставки"),
             style=discord.ButtonStyle.secondary,
             custom_id="view_bets"
         )
@@ -196,7 +196,7 @@ class ToggleBettingButton(Button):
             tournament = store.get(self.guild_id)
             if not tournament:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден.",),
+                    replace_emojis("❌ Турнир не найден."),
                     ephemeral=True
                 )
                 return
@@ -207,7 +207,7 @@ class ToggleBettingButton(Button):
             store.set(tournament)
             
             await interaction.response.send_message(
-                replace_emojis("✅ Ставки {status}.",),
+                replace_emojis("✅ Ставки {status}."),
                 ephemeral=True
             )
             
@@ -240,7 +240,7 @@ class BetButton(Button):
         # Check if betting is open for this phase
         is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
-            label=replace_emojis("💰 Сделать ставку",),
+            label=replace_emojis("💰 Сделать ставку"),
             style=discord.ButtonStyle.success,
             custom_id="place_bet",
             disabled=not is_open
@@ -254,7 +254,7 @@ class BetButton(Button):
         """Open match selection view."""
         if not self.tournament.is_betting_open() or self.tournament.betting_phase != self.match_type:
             await interaction.response.send_message(
-                replace_emojis("❌ Ставки закрыты.",),
+                replace_emojis("❌ Ставки закрыты."),
                 ephemeral=True
             )
             return

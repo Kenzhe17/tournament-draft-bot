@@ -67,7 +67,7 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}",),
+            replace_emojis("✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}"),
             ephemeral=True
         )
 
