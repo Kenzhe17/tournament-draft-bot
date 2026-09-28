@@ -167,22 +167,20 @@ STANDARD_EMOJIS = {
 }
 
 def get_emoji(emoji_name: str) -> str:
-    """Get custom emoji or fallback to file name as custom emoji."""
+    """Get custom emoji with ID or fallback to standard emoji."""
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
-        # If no ID, use the name as custom emoji (assuming file is uploaded with this name)
-        return f"<:{emoji_name}>"
+        return STANDARD_EMOJIS.get(emoji_name, emoji_name)
     
     # Check game emojis
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
-        # If no ID, use the name as custom emoji (assuming file is uploaded with this name)
-        return f"<:{emoji_name}>"
+        return STANDARD_EMOJIS.get(emoji_name, emoji_name)
     
-    # Fallback to standard emoji if the name doesn't exist in config
+    # Fallback to standard emoji
     return STANDARD_EMOJIS.get(emoji_name, emoji_name)
