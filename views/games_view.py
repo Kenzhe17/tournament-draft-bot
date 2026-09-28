@@ -86,35 +86,27 @@ class GameCategorySelect(Select):
         games_list = []
         for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{game.emoji} **{game.name}** • [{mode}]")
-            games_list.append(f"└ *{game.short_description}*")
+            games_list.append(f"{replace_emojis('sub_middle')} **{game.name}** • `[{mode}]`")
+            games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
-        
+
         games_text = "\n".join(games_list)
 
         embed = discord.Embed(
-            title=f"{category_info['emoji']}︱{category_info['name']}",
-            description=f"""{replace_emojis('📝')} *{category_info['description']}*
-────────────────────────
-{replace_emojis('📌')} **Информация о категории:**
-**Страница:** {page} из {total_pages}
-**Игр в категории:** {len(games)}
-
-{replace_emojis('🎮')} **Игры на странице:**
-{games_text}
-
-{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
-            color=category_info['color'],
+            title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
+            description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('⚪')} **Информация о категории:**\n{replace_emojis('sub_middle')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesCategoryView(self.user_id, self.guild_id, category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, category, page))
-        
+
         # Кнопки навигации (всегда показываем 3 кнопки) - добавляем напрямую без ActionRow
         view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
         view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
-        
+
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -172,17 +164,16 @@ class GameSelect(Select):
 
         if not game:
             await interaction.response.send_message(
-                replace_emojis("❌ Игра не найдена"),
+                replace_emojis("⚪ Игра не найдена"),
                 ephemeral=True
             )
             return
 
         # Создать карточку игры
         category_info = CATEGORIES.get(game.category, {"color": discord.Color.blue(), "emoji": "🎮", "name": "Категория"})
-        
+
         # Статус игры (все в разработке)
-        status_text = "🚧 В разработке"
-        status_color = discord.Color.orange()
+        status_text = "В разработке"
 
         # Режим игры
         if game.is_pvp and game.is_pve:
@@ -193,25 +184,11 @@ class GameSelect(Select):
             mode_text = "PvE"
 
         embed = discord.Embed(
-            title=f"{game.emoji}︱{game.name}",
-            description=f"""{replace_emojis('📝')} *{game.short_description}*
-────────────────────────
-{replace_emojis('📌')} **Информация об игре:**
-• **Режим:** [{mode_text}]
-• **Команда:** /play {game.command}
-• **Категория:** {category_info['emoji']} {category_info['name']}
-• **Множитель:** {game.multiplier}
-• **Мин. ставка:** {game.min_bet} {replace_emojis('🪙')}
-• **Макс. ставка:** {game.max_bet} {replace_emojis('🪙')}
-• **Статус:** {status_text} *В разработке*
-
-────────────────────────
-{replace_emojis('📖')} **Правила и особенности:**
-{game.how_to_play}
-────────────────────────
-{replace_emojis('ℹ️')} *Нажмите кнопку ниже для запуска игры или вернитесь в меню*""",
-            color=status_color,
+            title=f"{replace_emojis('a_star')} {game.name.upper()} | Игровой режим",
+            description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Режим: `[{mode_text}]`\n{replace_emojis('sub_middle')} Команда: `/{game.command}`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GameCardView(self.user_id, self.guild_id, game, game.category, self.page)
         await interaction.response.edit_message(embed=embed, view=view)
