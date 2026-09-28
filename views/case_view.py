@@ -133,8 +133,7 @@ class CaseSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=case.name,
                     value=case.id,
-                    description=f"Цена: {case.price} {replace_emojis('money')} - {case.description}",
-                    emoji="🎲"
+                    description=f"Цена: {case.price} {replace_emojis('money')} - {case.description}"
                 )
             )
 

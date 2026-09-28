@@ -48,19 +48,18 @@ class GameCategorySelect(Select):
         options = []
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
-            # Используем простые эмодзи для Discord API
-            emoji_map = {"luck": "🎲", "quiz": "🧠", "casino": "🎰"}
-            emoji = emoji_map.get(cat_id, "🎮")
+            # Используем кастомные эмодзи
+            emoji_map = {"luck": "dice", "quiz": "a_star", "casino": "game"}
+            emoji = replace_emojis(emoji_map.get(cat_id, "game"))
             options.append(
                 discord.SelectOption(
                     label=f"{cat_info['name']}",
-                    value=cat_id,
-                    emoji=emoji
+                    value=cat_id
                 )
             )
         
         super().__init__(
-            placeholder=replace_emojis("📁 Выберите категорию игр..."),
+            placeholder=replace_emojis("sub_directory Выберите категорию игр..."),
             min_values=1,
             max_values=1,
             options=options

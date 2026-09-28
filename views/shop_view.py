@@ -411,8 +411,7 @@ class CosmeticSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=display_name,
                     value=item.id,
-                    description=f"Цена: {item.price} {replace_emojis('🪙')}",
-                    emoji="🛒"
+                    description=f"Цена: {item.price} {replace_emojis('money')}"
                 )
             )
 
@@ -485,8 +484,7 @@ class RoleSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=role.name,
                     value=role.id,
-                    description=f"{role.price} {replace_emojis('🪙')}{level_req}",
-                    emoji="👑"
+                    description=f"{role.price} {replace_emojis('money')}{level_req}"
                 )
             )
 
@@ -1062,7 +1060,6 @@ class ShopCategoryButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label=label,
-            emoji=emoji,
             custom_id=f"shop_category:{category}"
         )
         self.category = category
@@ -1100,8 +1097,7 @@ class ItemSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=display_name,
                     value=item.id,
-                    description=f"Цена: {item.price} {replace_emojis('🪙')}",
-                    emoji="🛒"
+                    description=f"Цена: {item.price} {replace_emojis('money')}"
                 )
             )
 
@@ -1259,8 +1255,7 @@ class InventoryEquipSelect(discord.ui.Select):
             options.append(
                 discord.SelectOption(
                     label=f"Экипировать {item_name}",
-                    value=item_id,
-                    emoji="✅"
+                    value=item_id
                 )
             )
 
@@ -1299,8 +1294,7 @@ class InventoryUnequipSelect(discord.ui.Select):
             options.append(
                 discord.SelectOption(
                     label=f"Снять {item_name}",
-                    value=item_id,
-                    emoji="❌"
+                    value=item_id
                 )
             )
 
@@ -1395,7 +1389,6 @@ class RolesButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.success,
             label="Роли",
-            emoji="👑",
             custom_id="shop_roles"
         )
 
