@@ -30,7 +30,7 @@ class EmojiBetModal(Modal, title="🎭 Угадай эмодзи"):
             return
 
         if not guess or len(guess) > 5:
-            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!"), ephemeral=True)
             return
 
         if bet < 15:
@@ -128,7 +128,7 @@ class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попы�
         guess = self.guess.value.strip()
 
         if not guess or len(guess) > 5:
-            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Введите эмодзи (1-5 символов)!"), ephemeral=True)
             return
 
         result, message = self.game.make_guess(guess)

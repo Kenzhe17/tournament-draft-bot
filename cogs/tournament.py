@@ -1587,7 +1587,7 @@ class TournamentCog(commands.Cog):
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
-            await interaction.response.send_message(replace_emojis("❌ {str(e)}", ephemeral=True)
+            await interaction.response.send_message(replace_emojis(f"❌ {str(e)}"), ephemeral=True)
 
     @app_commands.command(name="gift", description="Передать предмет другому игроку")
     @app_commands.describe(user="Игрок", item_id="ID предмета")

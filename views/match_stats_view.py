@@ -190,7 +190,7 @@ class AdminFillButton(Button):
         from utils.permissions import is_org_check
 
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(replace_emojis("❌ Только организаторы (роль 'org').", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Только организаторы (роль 'org')."), ephemeral=True)
             return
 
         # Show match selection view
