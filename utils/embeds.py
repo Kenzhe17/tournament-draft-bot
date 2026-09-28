@@ -719,7 +719,7 @@ async def build_qualifiers_embed(
         # Get room info
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
         else:
             room_info = ""
 
@@ -733,19 +733,12 @@ async def build_qualifiers_embed(
         captain = team_data.get("captain", f"П{team_idx + 1}")
         team_name = tournament.team_names.get(team_idx, captain)
         players = team_data.get("players", [])
-        captain_id = tournament.player_user_ids.get(captain, 0)
-        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
 
-        player_mentions = []
-        for player in players:
-            player_id = tournament.player_user_ids.get(player, 0)
-            if player_id > 0:
-                player_mentions.append(f"<@{player_id}>")
-            else:
-                player_mentions.append(player)
+        # Use player names instead of mentions
+        player_names = [player for player in players if player]
 
         prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix}  **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+        teams_section.append(f"{prefix}  **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []
@@ -821,7 +814,7 @@ async def build_semifinals_embed(
         # Get room info
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
         else:
             room_info = ""
 
@@ -835,19 +828,12 @@ async def build_semifinals_embed(
         captain = team_data.get("captain", f"П{team_idx + 1}")
         team_name = tournament.team_names.get(team_idx, captain)
         players = team_data.get("players", [])
-        captain_id = tournament.player_user_ids.get(captain, 0)
-        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
 
-        player_mentions = []
-        for player in players:
-            player_id = tournament.player_user_ids.get(player, 0)
-            if player_id > 0:
-                player_mentions.append(f"<@{player_id}>")
-            else:
-                player_mentions.append(player)
+        # Use player names instead of mentions
+        player_names = [player for player in players if player]
 
         prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []
@@ -923,7 +909,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = f"{replace_emojis('sub_directory')} {replace_emojis('room')} Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+        room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
     else:
         room_info = ""
 
@@ -934,19 +920,12 @@ async def build_final_embed(
         captain = team_data.get("captain", f"П{team_idx + 1}")
         team_name = tournament.team_names.get(team_idx, captain)
         players = team_data.get("players", [])
-        captain_id = tournament.player_user_ids.get(captain, 0)
-        captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain
 
-        player_mentions = []
-        for player in players:
-            player_id = tournament.player_user_ids.get(player, 0)
-            if player_id > 0:
-                player_mentions.append(f"<@{player_id}>")
-            else:
-                player_mentions.append(player)
+        # Use player names instead of mentions
+        player_names = [player for player in players if player]
 
         prefix = replace_emojis("sub_middle") if team_idx == team_a else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain_mention}, {', '.join(player_mentions)}")
+        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []

@@ -201,8 +201,8 @@ class Tournament:
     # --- Свойства ---
 
     @property
-    def all_players(self) -> set[int]:
-        """Все добавленные игроки (круги 1–4) - user IDs."""
+    def all_players(self) -> set[str]:
+        """Все добавленные игроки (круги 1–4) - player names."""
         return set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
 
     @property
@@ -459,8 +459,10 @@ class Tournament:
             remaining_players = team_players[1:]
 
             # Create team data
+            team_players_names = [p[0] for p in team_players]
             team_data = {
                 "captain": captain_name,
+                "players": team_players_names,
                 "circle1": captain_name,
                 "circle2": remaining_players[0][0] if len(remaining_players) > 0 else "",
                 "circle3": remaining_players[1][0] if len(remaining_players) > 1 else "",
@@ -619,20 +621,30 @@ class Tournament:
     def _build_teams(self) -> None:
         """Сформировать команды из результатов драфта."""
         self.teams = []
-        
+
         for pos in range(self.captain_count):
             captain_idx = self.captain_order[pos]
             captain_name = self.captains[captain_idx]
             picks = self.picks[str(pos)]
-            
+
+            # Collect all players from all circles
+            players = []
+            if captain_name:
+                players.append(captain_name)
+            for circle in ["2", "3", "4"]:
+                pick = picks.get(circle, "")
+                if pick:
+                    players.append(pick)
+
             team_data = {
                 "captain": captain_name,
+                "players": players,
                 "circle1": captain_name,  # Captain is in circle1
                 "circle2": picks.get("2", ""),
                 "circle3": picks.get("3", ""),
                 "circle4": picks.get("4", ""),
             }
-            
+
             self.teams.append(team_data)
 
     def generate_bracket(self) -> None:

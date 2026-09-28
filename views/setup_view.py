@@ -495,9 +495,9 @@ class DeletePlayerButton(discord.ui.Button):
 
         # Get list of all players
         if tournament.formation_mode == FormationMode.RANDOM:
-            players = tournament.players_pool
+            players = list(tournament.players_pool)
         else:
-            players = tournament.all_players
+            players = list(tournament.all_players)
 
         if not players:
             await interaction.response.send_message(
@@ -586,9 +586,9 @@ class ReplacePlayerButton(discord.ui.Button):
 
         # Get list of all players
         if tournament.formation_mode == FormationMode.RANDOM:
-            players = tournament.players_pool
+            players = list(tournament.players_pool)
         else:
-            players = tournament.all_players
+            players = list(tournament.all_players)
 
         if not players:
             await interaction.response.send_message(
@@ -647,12 +647,12 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
             return
 
         # Handle @mentions - extract display name if it's a mention
-        new_name = self.new_player_input.value.strip()
+        new_name_input = self.new_player_input.value.strip()
         old_name = self.old_player
 
         # Check if new_player is a mention and extract the name
-        if new_name.startswith("<@") and new_name.endswith(">"):
-            user_id = int(new_name.strip("<@!>"))
+        if new_name_input.startswith("<@") and new_name_input.endswith(">"):
+            user_id = int(new_name_input.strip("<@!>"))
             member = interaction.guild.get_member(user_id)
             if member:
                 from utils.cosmetics import clean_nickname
@@ -666,9 +666,11 @@ class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
         else:
-            # Try to find user by name
-            new_user_id = 0
+            # Use the input directly as the player name
             from utils.cosmetics import clean_nickname
+            new_name = clean_nickname(new_name_input)
+            new_user_id = 0
+            # Try to find user_id by name
             for member in interaction.guild.members:
                 if clean_nickname(member.display_name) == new_name:
                     new_user_id = member.id
