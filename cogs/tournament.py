@@ -1668,6 +1668,142 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
+    async def debug_emoji(self, interaction: discord.Interaction) -> None:
+        """Проверить какие эмодзи загружены."""
+        from config import RANK_EMOJIS, GAME_EMOJIS, get_emoji
+        
+        embed = discord.Embed(
+            title="🔍 Debug: Конфигурация эмодзи",
+            color=discord.Color.blue()
+        )
+        
+        # Rank emojis
+        rank_text = ""
+        for rank, emoji_id in RANK_EMOJIS.items():
+            emoji = get_emoji(rank)
+            rank_text += f"{rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
+        
+        embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
+        
+        # Test rank formatting
+        test_emoji = get_rank_emoji(100)
+        embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
+    async def whoami(self, interaction: discord.Interaction) -> None:
+        """Узнать кто ты на самом деле."""
+        import random
+        from storage.whoami_responses import WHOAMI_RESPONSES
+
+        response = random.choice(WHOAMI_RESPONSES)
+
+        embed = discord.Embed(
+            title="✨ Кто ты?",
+            description=response,
+            color=discord.Color.random()
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
+    async def daily(self, interaction: discord.Interaction) -> None:
+        """Получить ежедневный бонус."""
+        from storage.db import get_pool
+        from storage.user_balance_store import user_balance_store
+
+        guild_id = interaction.guild_id
+        user_id = interaction.user_id
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Get last claim time
+            record = await conn.fetchrow(
+                "SELECT last_claim FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                guild_id, user_id
+            )
+
+            now = datetime.now()
+            cooldown_hours = 12
+
+            if record and record["last_claim"]:
+                last_claim = record["last_claim"]
+                time_passed = now - last_claim
+                
+                if time_passed < timedelta(hours=cooldown_hours):
+                    # Calculate remaining time
+                    remaining = timedelta(hours=cooldown_hours) - time_passed
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    
+                    await interaction.response.send_message(
+                        f"⏰ Вы уже получили бонус!\n"
+                        f"Следующий бонус через: {hours}ч {minutes}мин",
+                        ephemeral=True
+                    )
+                    return
+
+            # Give the bonus
+            await user_balance_store.add_balance(guild_id, user_id, 100)
+
+            # Update last claim time
+            await conn.execute(
+                """
+                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, last_streak_date)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, user_id) 
+                DO UPDATE SET last_claim = $3, last_streak_date = $4
+                """,
+                guild_id, user_id, now, now.date()
+            )
+
+            await interaction.response.send_message(
+                f"🎁 Вы получили ежедневный бонус: 100 🪙!",
+                allowed_mentions=discord.AllowedMentions(users=True)
+            )
+
+    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
+    async def welcome(self, interaction: discord.Interaction) -> None:
+        """Показать интерактивный гайд по серверу и боту."""
+        view = GuideView()
+        embed = discord.Embed(
+            title="👋 Добро пожаловать!",
+            description="Выберите тему из меню ниже для получения информации:",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
+    @app_commands.describe(user="Игрок")
+    async def reset(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Сбросить статистику игрока."""
+        from config import BOT_OWNER_ID
+
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message("❌ Только владелец бота может использовать эту команду.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild_id
+        user_id = user.id
+
+        try:
+            await player_stats_store.reset_player(guild_id, user_id)
+            await user_balance_store.reset_user(guild_id, user_id)
+            await betting_stats_store.reset_user(guild_id, user_id)
+
+            await interaction.response.send_message(
+                f"✅ Статистика игрока {user.mention} сброшена.",
+                allowed_mentions=discord.AllowedMentions(users=True)
+            )
+        except Exception as e:
+            logger.error(f"Error resetting user stats: {e}", exc_info=True)
+            await interaction.response.send_message(
+                f"❌ Ошибка при сбросе статистики: {str(e)}",
+                ephemeral=True
+            )
+
     async def cog_app_command_error(
         self,
         interaction: discord.Interaction,
@@ -1757,109 +1893,8 @@ def get_rank_emoji(level: int) -> str:
     emoji = get_emoji(base_rank)
     
     return f"{emoji} {rank_name}"
-    @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
-    async def debug_emoji(self, interaction: discord.Interaction) -> None:
-        """Проверить какие эмодзи загружены."""
-        from config import RANK_EMOJIS, GAME_EMOJIS, get_emoji
-        
-        embed = discord.Embed(
-            title="🔍 Debug: Конфигурация эмодзи",
-            color=discord.Color.blue()
-        )
-        
-        # Rank emojis
-        rank_text = ""
-        for rank, emoji_id in RANK_EMOJIS.items():
-            emoji = get_emoji(rank)
-            rank_text += f"{rank}: ID={emoji_id or 'Empty'} → {emoji}\n"
-        
-        embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
-        
-        # Test rank formatting
-        test_emoji = get_rank_emoji(100)
-        embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-    @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
-    async def whoami(self, interaction: discord.Interaction) -> None:
-        """Узнать кто ты на самом деле."""
-        import random
-        from storage.whoami_responses import WHOAMI_RESPONSES
-
-        response = random.choice(WHOAMI_RESPONSES)
-
-        embed = discord.Embed(
-            title="✨ Кто ты?",
-            description=response,
-            color=discord.Color.random()
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
-    async def daily(self, interaction: discord.Interaction) -> None:
-        """Получить ежедневный бонус."""
-        from storage.db import get_pool
-        from storage.user_balance_store import user_balance_store
-
-        guild_id = interaction.guild_id
-        user_id = interaction.user_id
-
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            # Get last claim time
-            record = await conn.fetchrow(
-                "SELECT last_claim FROM bonus_cooldowns WHERE guild_id = $1 AND user_id = $2",
-                guild_id, user_id
-            )
-
-            now = datetime.now()
-            cooldown_hours = 12
-
-            if record and record["last_claim"]:
-                last_claim = record["last_claim"]
-                time_passed = now - last_claim
-                
-                if time_passed < timedelta(hours=cooldown_hours):
-                    # Calculate remaining time
-                    remaining = timedelta(hours=cooldown_hours) - time_passed
-                    hours = int(remaining.total_seconds() // 3600)
-                    minutes = int((remaining.total_seconds() % 3600) // 60)
-                    
-                    await interaction.response.send_message(
-                        f"⏰ Вы уже получили бонус!\n"
-                        f"Следующий бонус через: {hours}ч {minutes}мин",
-                        ephemeral=True
-                    )
-                    return
-
-            # Give the bonus
-            await user_balance_store.add_balance(guild_id, user_id, 100)
-
-            # Update last claim time
-            await conn.execute(
-                """
-                INSERT INTO bonus_cooldowns (guild_id, user_id, last_claim, last_streak_date)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (guild_id, user_id) 
-                DO UPDATE SET last_claim = $3, last_streak_date = $4
-                """,
-                guild_id, user_id, now, now.date()
-            )
-
-            await interaction.response.send_message(
-                "✅ Вы получили 100 🪙 ежедневного бонуса!\n"
-                f"Следующий бонус будет доступен через 12 часов.",
-                ephemeral=False
-            )
-
-    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
-    async def welcome(self, interaction: discord.Interaction) -> None:
-        """Показать приветственное сообщение с гайдом."""
-        embed = discord.Embed(
-            title="🎮 TOURNAMENT DRAFT BOT",
             description=(
                 "Путеводитель по возможностям бота.\n\n"
                 "📌 **НАВИГАЦИЯ ПО КАНАЛАМ:**\n\n"

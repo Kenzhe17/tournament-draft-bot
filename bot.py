@@ -96,12 +96,11 @@ class TournamentBot(commands.Bot):
         # Also sync for specific guilds for faster propagation
         if DATABASE_URL:
             try:
-                from storage.db import get_db_connection
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT DISTINCT guild_id FROM players")
-                    guild_ids = [row[0] for row in cursor.fetchall()]
-                    cursor.close()
+                from storage.db import get_pool
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM players")
+                    guild_ids = [row[0] for row in cursor]
                 
                 for guild_id in guild_ids:
                     try:
@@ -330,7 +329,8 @@ class TournamentBot(commands.Bot):
         commands = list(self.tree.walk_commands())
         logger.info(f"Зарегистрировано {len(commands)} команд:")
         for cmd in commands:
-            logger.info(f"  - /{cmd.name} (type: {cmd.type.__name__})")
+            cmd_type = cmd.type.__name__ if hasattr(cmd, 'type') else 'Group'
+            logger.info(f"  - /{cmd.name} (type: {cmd_type})")
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Log when bot is added to a server."""
