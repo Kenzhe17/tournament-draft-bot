@@ -332,35 +332,51 @@ class RaritySelect(discord.ui.Select):
             rank = get_rank_emoji(stats.level)
 
         # Цвет по редкости
-        color_map = {
-            CosmeticRarity.BASIC: discord.Color.light_grey(),
-            CosmeticRarity.PREMIUM: discord.Color.gold(),
-            CosmeticRarity.ELITE: discord.Color.orange(),
-            CosmeticRarity.SPECIAL: discord.Color.purple(),
+        embed_color = discord.Color.from_rgb(69, 69, 69)
+
+        # Маппинг icon эмодзи по значению
+        icon_map = {
+            "WW": "icon_w",
+            "Лапка": "icon_paw",
+            "Bluestacks": "icon_bluestacks",
+            "Чашка чая": "icon_teacup",
+            "Бантик": "icon_ribbon",
+            "18+": "icon_18plus",
+            "Сердечко": "icon_heart",
+            "Галочка": "icon_v_badge",
+            "Карты": "icon_cards",
+            "Кошачьи ушки": "icon_cat_ears",
+            "Голубое крыло": "icon_wing",
         }
-        embed_color = color_map.get(rarity, discord.Color.gold())
+
+        # Маппинг rare эмодзи по редкости
+        rare_map = {
+            CosmeticRarity.BASIC: "rare_basic",
+            CosmeticRarity.PREMIUM: "rare_premium",
+            CosmeticRarity.ELITE: "rare_elite",
+            CosmeticRarity.SPECIAL: "rare_special",
+        }
+
+        rare_emoji = rare_map.get(rarity, "rare_basic")
+
+        # Создать список товаров с icon эмодзи
+        items_parts = []
+        for i, item in enumerate(items):
+            icon_emoji = icon_map.get(item.value, "")
+            sub_emoji = "sub_middle" if i < len(items) - 1 else "sub_directory"
+            items_parts.append(
+                f"{replace_emojis(sub_emoji)} {replace_emojis(icon_emoji)} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
+            )
+
+        items_list = "\n".join(items_parts)
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{category_emoji} КАТАЛОГ | {category_label} — {rarity_value.capitalize()}",
-            description=f"Выберите {category_label.lower()} из списка ниже для покупки:\n\n{items_list}",
+            title=f"{replace_emojis('a_star')} КАТАЛОГ | {category_label} — {rarity_value.capitalize()}",
+            description=f"Выберите {category_label.lower()} из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные товары:**\n{items_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите предмет в выпадающем меню для покупки",
             color=embed_color
         )
-
-        # Профиль
-        embed.add_field(
-            name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-            value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-                  f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-                  f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
-            inline=False
-        )
-
-        embed.add_field(
-            name=replace_emojis("💡 Выберите предмет в выпадающем меню для покупки"),
-            value="",
-            inline=False
-        )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = ShopBackView()
         view.add_item(CosmeticSelect(items))
