@@ -891,14 +891,14 @@ class BuyCaseButton(discord.ui.Button):
 
         case = case_store.get_case(self.case_id)
         if not case:
-            await interaction.response.send_message(replace_emojis("❌ Кейс не найден."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("⚪ Кейс не найден."), ephemeral=True)
             return
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < self.price:
             await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно монет. Нужно: {self.price} {replace_emojis('🪙')}, у вас: {balance} {replace_emojis('🪙')}",
+                f"{replace_emojis('⚪')} Недостаточно монет. Нужно: {self.price} {replace_emojis('money')}, у вас: {balance} {replace_emojis('money')}",
                 ephemeral=True
             )
             return
@@ -907,43 +907,61 @@ class BuyCaseButton(discord.ui.Button):
         result = await case_store.open_case(interaction.guild_id, interaction.user.id, self.case_id, interaction.guild)
 
         if result:
+            # Определить case_rare эмодзи для заголовка
+            case_rare_map = {
+                "Basic": ("case_basic", "rare_basic"),
+                "Premium": ("case_premium", "rare_premium"),
+                "Elite": ("case_elite", "rare_elite"),
+                "Special": ("case_special", "rare_special"),
+            }
+            case_rare_emoji = "case_basic"
+            case_rare_display = "Basic"
+            for key, (case_emoji, rare_emoji) in case_rare_map.items():
+                if key in case.name:
+                    case_rare_emoji = case_emoji
+                    case_rare_display = key
+                    break
+
             # Определить иконку и текст результата
             if result["type"] == "coins":
-                status_icon = replace_emojis("💰")
-                result_text = f"{result['value']} {replace_emojis('🪙')}"
-                # Показать стандартный шанс монет из описания
+                result_text = f"{result['value']} {replace_emojis('money')}"
                 chance_text = "50%"
+                bottom_text = "Награда была зачислена на ваш баланс!"
             elif result["type"] == "item":
-                status_icon = replace_emojis("🎁")
-                result_text = result['value']  # Now it's just the name string
-                # Показать стандартный шанс предмета из описания
+                # Получить icon emoji для предмета
+                icon_map = {
+                    "🎮": "icon_letter",
+                    "🐾": "icon_paw",
+                    "🔵": "icon_bluestacks",
+                    "☕": "icon_teacup",
+                    "🎀": "icon_ribbon",
+                    "🔞": "icon_18plus",
+                    "❤️": "icon_heart",
+                    "✅": "icon_v_badge",
+                    "🃏": "icon_cards",
+                    "🐱": "icon_cat_ears",
+                    "🪽": "icon_wing",
+                }
+                icon_emoji = icon_map.get(result['value'], "")
+                result_text = f"{replace_emojis(icon_emoji)} **{result['value']}**"
                 chance_text = "20%"
+                bottom_text = "Предмет успешно добавлен в ваш инвентарь!"
             else:
-                status_icon = replace_emojis("⚪")
                 result_text = "Ничего"
-                # Показать стандартный шанс ничего из описания
                 chance_text = "30%"
+                bottom_text = "Повезёт в следующий раз!"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('📦')} ОТКРЫТИЕ КЕЙСА | {case.name}",
-                color=discord.Color.orange()
+                title=f"{replace_emojis('a_star')} ОТКРЫТИЕ КЕЙСА | {case_rare_display} {replace_emojis(case_rare_emoji)}",
+                description=f"Кейс успешно открыт!\n\n{replace_emojis('⚪')} **Награда:**\n{replace_emojis('sub_middle')} Выигрыш: {result_text}\n{replace_emojis('sub_directory')} С шансом: {chance_text}\n\n{replace_emojis('⚪')} **Открыл:**\n{replace_emojis('white_arrow')} {interaction.user.mention} открыл за {self.price} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} {bottom_text}",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.add_field(
-                name=f"{status_icon} **НАГРАДА:**",
-                value=f"├ {replace_emojis('🏷️')} **Выигрыш:** {result_text}\n"
-                      f"└ {replace_emojis('⭐')} **С Шансом:** {chance_text}",
-                inline=False
-            )
-            embed.add_field(
-                name=replace_emojis("👤 **ОТКРЫЛ:**"),
-                value=f"{interaction.user.mention} открыл за {self.price} {replace_emojis('🪙')}",
-                inline=False
-            )
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
             await interaction.response.send_message(embed=embed)
         else:
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось открыть кейс. Монеты возвращены."),
+                replace_emojis("⚪ Не удалось открыть кейс. Монеты возвращены."),
                 ephemeral=True
             )
 
