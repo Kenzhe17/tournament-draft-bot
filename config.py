@@ -125,6 +125,7 @@ GAME_EMOJIS = {
     "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
     "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
     "room": os.getenv("EMOJI_ROOM", ""),
+    "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -203,6 +204,7 @@ STANDARD_EMOJIS = {
     "white_dot": "•",
     "sub_directory": "└",
     "room": "🏠",
+    "white_arrow": "➡️",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -330,6 +332,7 @@ def replace_emojis(text: str) -> str:
 
         # Additional symbols for replacement
         "⚪": "white_dot",
+        "➡️": "white_arrow",
     }
     
     result = text

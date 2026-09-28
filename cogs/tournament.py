@@ -1577,11 +1577,11 @@ class TournamentCog(commands.Cog):
             
             embed = discord.Embed(
                 title=replace_emojis("Передача монет"),
-                color=discord.Color.green()
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.description = replace_emojis(f"⚪**Сумма:** {result['amount']:,}🪙\n └ **Комиссия:** {result['fee']:,} (10%)🪙\n └ **Всего списано:** {result['total_deducted']:,}🪙")
-            embed.add_field(name="**Отправил:**", value=replace_emojis(f"└{interaction.user.mention}"), inline=True)
-            embed.add_field(name="**Получил:**", value=replace_emojis(f"└{user.mention}"), inline=True)
+            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('🪙')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,}"
+            embed.add_field(name="Пользователь", value=f"{replace_emojis('➡️')} {user.mention} **получил** — {result['amount']:,} {replace_emojis('🪙')}", inline=False)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
