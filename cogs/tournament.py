@@ -1686,6 +1686,18 @@ class TournamentCog(commands.Cog):
         
         embed.add_field(name="🏆 Ранги", value=rank_text or "Нет данных", inline=False)
         
+        # Game emojis
+        game_text = ""
+        for name, emoji_id in GAME_EMOJIS.items():
+            if emoji_id:  # Only show if ID is set
+                emoji = get_emoji(name)
+                game_text += f"{name}: ID={emoji_id} → {emoji}\n"
+        
+        if game_text:
+            embed.add_field(name="🎮 Игровые эмодзи", value=game_text, inline=False)
+        else:
+            embed.add_field(name="🎮 Игровые эмодзи", value="Нет загруженных ID", inline=False)
+        
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
         embed.add_field(name="🧪 Тест (Radiant)", value=test_emoji, inline=False)
