@@ -694,7 +694,7 @@ class AdminConfirmView(View):
         team_b_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_b_index)
         view.add_item(team_b_btn)
 
-        cancel_btn = Button(label=replace_emojis("❌ Отмена", style=discord.ButtonStyle.secondary)
+        cancel_btn = Button(label=replace_emojis("❌ Отмена"), style=discord.ButtonStyle.secondary)
         cancel_btn.callback = self.edit_callback
         view.add_item(cancel_btn)
 
