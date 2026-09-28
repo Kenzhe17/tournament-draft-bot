@@ -776,12 +776,33 @@ class TournamentCog(commands.Cog):
         stats = await player_stats_store.get(interaction.guild_id, target_user.id)
         balance = await user_balance_store.get_balance(interaction.guild_id, target_user.id)
 
+        # Создать профиль если его нет
         if not stats:
-            await interaction.response.send_message(
-                replace_emojis("⚪ Пользователь ещё не играл в турниры!"),
-                ephemeral=True
+            from models.player_stats import PlayerStats
+            stats = PlayerStats(
+                guild_id=interaction.guild_id,
+                user_id=target_user.id,
+                name=target_user.display_name,
+                elo=1000,
+                wins=0,
+                finals=0,
+                games=0,
+                current_streak=0,
+                best_win_streak=0,
+                best_loss_streak=0,
+                total_kills=0,
+                total_deaths=0,
+                best_match_kills=0,
+                total_elo_change=0,
+                last_elo_change=0,
+                xp=0,
+                level=1,
+                xp_to_next_level=100,
+                total_earnings=0,
+                tournament_participations=0,
+                description=""
             )
-            return
+            await player_stats_store.set(stats)
 
         # Ранг и уровень
         rank_title = get_rank_emoji(stats.level)
@@ -813,16 +834,22 @@ class TournamentCog(commands.Cog):
 
         # Экономика
         description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}")
+        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} 💰")
         description_parts.append(f"{replace_emojis('sub_directory')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 
         # Статистика игр
         description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
         description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
-        description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
-        description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
-        description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
+        
+        # Show K/D and kills only if player has played games
+        if total_games_played > 0:
+            description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
+        else:
+            description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
+        
         description_parts.append("")
 
         # Био
@@ -854,12 +881,33 @@ class TournamentCog(commands.Cog):
 
         stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
 
+        # Создать профиль если его нет
         if not stats:
-            await interaction.response.send_message(
-                replace_emojis("⚪ Сначала сыграйте хотя бы один турнир!"),
-                ephemeral=True
+            from models.player_stats import PlayerStats
+            stats = PlayerStats(
+                guild_id=interaction.guild_id,
+                user_id=interaction.user.id,
+                name=interaction.user.display_name,
+                elo=1000,
+                wins=0,
+                finals=0,
+                games=0,
+                current_streak=0,
+                best_win_streak=0,
+                best_loss_streak=0,
+                total_kills=0,
+                total_deaths=0,
+                best_match_kills=0,
+                total_elo_change=0,
+                last_elo_change=0,
+                xp=0,
+                level=1,
+                xp_to_next_level=100,
+                total_earnings=0,
+                tournament_participations=0,
+                description=""
             )
-            return
+            await player_stats_store.set(stats)
 
         rank_title = get_rank_emoji(stats.level)
         current_xp, xp_needed = stats.get_level_progress()

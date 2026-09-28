@@ -104,13 +104,34 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Get current stats
         stats = await player_stats_store.get(self.guild_id, self.user_id)
+        was_new_profile = stats is None
 
+        # Создать профиль если его нет
         if not stats:
-            await interaction.response.send_message(
-                replace_emojis("❌ Профиль не найден. Сначала сыграйте турнир."),
-                ephemeral=True
+            from models.player_stats import PlayerStats
+            stats = PlayerStats(
+                guild_id=self.guild_id,
+                user_id=self.user_id,
+                name=interaction.user.display_name,
+                elo=1000,
+                wins=0,
+                finals=0,
+                games=0,
+                current_streak=0,
+                best_win_streak=0,
+                best_loss_streak=0,
+                total_kills=0,
+                total_deaths=0,
+                best_match_kills=0,
+                total_elo_change=0,
+                last_elo_change=0,
+                xp=0,
+                level=1,
+                xp_to_next_level=100,
+                total_earnings=0,
+                tournament_participations=0,
+                description=""
             )
-            return
 
         # Update stats - always save the values
         if nickname:
@@ -118,8 +139,11 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         stats.description = description  # Always save description (even if empty)
         # Don't reset avatar_url - keep existing avatar
 
-        # Save updated stats
-        await player_stats_store.update(self.guild_id, self.user_id, stats)
+        # Save stats (set for new profiles, update for existing)
+        if was_new_profile:
+            await player_stats_store.set(stats)
+        else:
+            await player_stats_store.update(self.guild_id, self.user_id, stats)
 
         # Regenerate profile embed with updated data
         from cogs.tournament import TournamentCog, get_rank_emoji
@@ -157,16 +181,22 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Экономика
         description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} {replace_emojis('money')}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} 💰")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 
         # Статистика игр
         description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats.kd_ratio:.2f}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats.avg_kills:.2f}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {stats.best_match_kills}")
+        
+        # Show K/D and kills only if player has played games
+        if total_games_played > 0:
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats.kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats.avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {stats.best_match_kills}")
+        else:
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
+        
         description_parts.append("")
 
         # Био
