@@ -347,25 +347,13 @@ class BackToMainMenuButton(Button):
         """Вернуться в главное меню."""
         # Получить баланс для главного экрана
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
-        
+
         embed = discord.Embed(
-            title=replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
-            description=f"""{replace_emojis('👋')} **Добро пожаловать, {interaction.user.display_name}!**
-{replace_emojis('💳')} **Ваш Баланс:** {balance:,} {replace_emojis('🪙')}
-
-{replace_emojis('📂')} **КАТЕГОРИИ**
-{replace_emojis('🎲')} **Игры на удачу**
-└ *Быстрые игры на риск: монетка, кубики, угадай число и др.*
-
-{replace_emojis('🧠')} **Викторины и головоломки**
-└ *Интеллектуальные состязания, викторины и слова.*
-
-{replace_emojis('🎰')} **Казино и ставки**
-└ *Слоты, рулетка, баккара, лотерея и высокие ставки.*
-
-{replace_emojis('ℹ️')} *Выберите категорию в меню ниже для просмотра списка игр:*""",
-            color=0x2F3136,  # Тёмно-фиолетовый
+            title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_directory')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Категории:**\n{replace_emojis('sub_middle')} **Игры на удачу**\n{replace_emojis('sub_middle')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('sub_middle')} **Викторины и головоломки**\n{replace_emojis('sub_middle')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('sub_middle')} **Казино и ставки**\n{replace_emojis('sub_directory')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesMainView(self.user_id, self.guild_id)
         await interaction.response.edit_message(embed=embed, view=view)
