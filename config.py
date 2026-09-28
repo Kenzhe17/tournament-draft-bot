@@ -143,6 +143,19 @@ GAME_EMOJIS = {
     "rare_premium": os.getenv("EMOJI_RARE_PREMIUM", ""),
     "rare_elite": os.getenv("EMOJI_RARE_ELITE", ""),
     "rare_special": os.getenv("EMOJI_RARE_SPECIAL", ""),
+
+    # Icon emojis
+    "icon_w": os.getenv("EMOJI_ICON_W", ""),
+    "icon_paw": os.getenv("EMOJI_ICON_PAW", ""),
+    "icon_bluestacks": os.getenv("EMOJI_ICON_BLUESTACKS", ""),
+    "icon_teacup": os.getenv("EMOJI_ICON_TEACUP", ""),
+    "icon_ribbon": os.getenv("EMOJI_ICON_RIBBON", ""),
+    "icon_18plus": os.getenv("EMOJI_ICON_18PLUS", ""),
+    "icon_heart": os.getenv("EMOJI_ICON_HEART", ""),
+    "icon_v_badge": os.getenv("EMOJI_ICON_V_BADGE", ""),
+    "icon_cards": os.getenv("EMOJI_ICON_CARDS", ""),
+    "icon_cat_ears": os.getenv("EMOJI_ICON_CAT_EARS", ""),
+    "icon_wing": os.getenv("EMOJI_ICON_WING", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -239,6 +252,19 @@ STANDARD_EMOJIS = {
     "rare_premium": "",
     "rare_elite": "",
     "rare_special": "",
+
+    # Icon emojis
+    "icon_w": "",
+    "icon_paw": "",
+    "icon_bluestacks": "",
+    "icon_teacup": "",
+    "icon_ribbon": "",
+    "icon_18plus": "",
+    "icon_heart": "",
+    "icon_v_badge": "",
+    "icon_cards": "",
+    "icon_cat_ears": "",
+    "icon_wing": "",
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -388,6 +414,8 @@ def replace_emojis(text: str) -> str:
         "case_basic", "case_premium", "case_elite", "case_special",
         "rare_basic", "rare_premium", "rare_elite", "rare_special",
         "tag",
+        "icon_w", "icon_paw", "icon_bluestacks", "icon_teacup", "icon_ribbon",
+        "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
     ]
 
     result = text
