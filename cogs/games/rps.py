@@ -1,4 +1,5 @@
 """Rock-Paper-Scissors game implementation with PvP and PvE modes."""
+from config import replace_emojis
 
 import asyncio
 import logging
@@ -122,20 +123,20 @@ class PvEChoiceView(RPSView):
         """Handle player's move choice."""
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.WAITING_PVE:
-            await interaction.response.send_message("❌ Игра недоступна.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра недоступна."), ephemeral=True)
             return
         
         # Access Control: PvE mode - only creator can click
         if interaction.user.id != game.initiator_id:
             await interaction.response.send_message(
-                "⚠️ Это не ваша игра! Запустите свою с помощью команды /rps",
+                replace_emojis("⚠️ Это не ваша игра! Запустите свою с помощью команды /rps"),
                 ephemeral=True
             )
             return
         
         # Check if game already resolved (prevent double-click)
         if game.state != GameState.WAITING_PVE:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра уже завершена."), ephemeral=True)
             return
         
         # Update state to prevent multiple submissions
@@ -173,22 +174,22 @@ class PvEChoiceView(RPSView):
         if result == "win":
             winnings = bet * 2
             await payout_winner(user_id, guild_id, winnings)
-            balance_change = f"+{bet} 🪙"
-            title = "🎉 Победа в игре против ИИ!"
+            balance_change = f"+{bet} {replace_emojis('🪙')}"
+            title = replace_emojis("🎉 Победа в игре против ИИ!")
         elif result == "draw":
             await release_escrow(user_id, guild_id, bet)
-            balance_change = "0 🪙 (возврат)"
-            title = "🤝 Ничья!"
+            balance_change = f"0 {replace_emojis('🪙')} (возврат)"
+            title = replace_emojis("🤝 Ничья!")
         else:  # loss
-            balance_change = f"-{bet} 🪙"
-            title = "💥 Поражение против ИИ!"
+            balance_change = f"-{bet} {replace_emojis('🪙')}"
+            title = replace_emojis("💥 Поражение против ИИ!")
         
         # Build result embed
         embed = discord.Embed(
             title=title,
             description=f"Ваш ход: {move.emoji} {move.display_name}\n"
                        f"Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
-                       f"💰 Изменение баланса: {balance_change}",
+                       f"{replace_emojis('💰')} Изменение баланса: {balance_change}",
             color=discord.Color.blue()
         )
         
@@ -232,7 +233,7 @@ class PvPChallengeView(RPSView):
             if channel:
                 msg = await channel.fetch_message(self.message_id)
                 embed = discord.Embed(
-                    title="⏰ Время истекло",
+                    title=replace_emojis("⏰ Время истекло"),
                     description=f"Вызов истёк и был автоматически отменён.",
                     color=discord.Color.orange()
                 )
@@ -268,7 +269,7 @@ class PvPChallengeView(RPSView):
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.WAITING_PVP:
             try:
-                await interaction.response.send_message("❌ Вызов недоступен.", ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Вызов недоступен."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -277,7 +278,7 @@ class PvPChallengeView(RPSView):
         if interaction.user.id == self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    "⚠️ Вы не можете принять свой собственный вызов!",
+                    replace_emojis("⚠️ Вы не можете принять свой собственный вызов!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -288,7 +289,7 @@ class PvPChallengeView(RPSView):
         if self.opponent_id and interaction.user.id != self.opponent_id:
             try:
                 await interaction.response.send_message(
-                    "⚠️ Этот вызов предназначен для другого игрока!",
+                    replace_emojis("⚠️ Этот вызов предназначен для другого игрока!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -298,7 +299,7 @@ class PvPChallengeView(RPSView):
         # Check if user is already in a game
         if interaction.user.id in active_users:
             try:
-                await interaction.response.send_message("❌ Вы уже участвуете в игре.", ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -325,7 +326,7 @@ class PvPChallengeView(RPSView):
         escrow_success = await hold_escrow(new_opponent_id, game.guild_id, self.bet)
         if not escrow_success:
             try:
-                await interaction.response.send_message("❌ Недостаточно баланса для ставки.", ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Недостаточно баланса для ставки."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -379,7 +380,7 @@ class PvPChallengeView(RPSView):
         if self.opponent_id and interaction.user.id != self.opponent_id:
             try:
                 await interaction.response.send_message(
-                    "⚠️ Только вызванный игрок может отклонить вызов!",
+                    replace_emojis("⚠️ Только вызванный игрок может отклонить вызов!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -390,7 +391,7 @@ class PvPChallengeView(RPSView):
         if not self.opponent_id and interaction.user.id == self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    "⚠️ Создатель не может отклонить свой вызов. Используйте отмену!",
+                    replace_emojis("⚠️ Создатель не может отклонить свой вызов. Используйте отмену!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -404,7 +405,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         embed = discord.Embed(
-            title="❌ Вызов отклонён",
+            title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{interaction.user.id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
@@ -433,7 +434,7 @@ class PvPChallengeView(RPSView):
         if interaction.user.id != self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    "⚠️ Только создатель вызова может его отменить!",
+                    replace_emojis("⚠️ Только создатель вызова может его отменить!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -447,7 +448,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         embed = discord.Embed(
-            title="🚫 Вызов отменён",
+            title=replace_emojis("🚫 Вызов отменён"),
             description=f"<@{self.initiator_id}> отменил свой вызов.",
             color=discord.Color.orange()
         )
@@ -471,7 +472,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         embed = discord.Embed(
-            title="❌ Вызов отклонён",
+            title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{self.opponent_id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
@@ -490,10 +491,10 @@ class PvPChallengeView(RPSView):
         # Instead of sending new messages, update the main challenge message
         view = PvPChoiceView(self.game_id, self.initiator_id, self.opponent_id, self.bet, is_initiator=None, is_main=True, bot=self.bot_instance)
         embed = discord.Embed(
-            title="⚔️ Выберите ваш ход",
+            title=replace_emojis("⚔️ Выберите ваш ход"),
             description=f"<@{self.initiator_id}> vs <@{self.opponent_id}>\n\n"
-                          f"💰 Ставка: {self.bet} 🪙\n"
-                          f"⏱️ У вас есть 40 секунд чтобы сделать выбор!\n\n"
+                          f"{replace_emojis('💰')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                          f"{replace_emojis('⏱️')} У вас есть 40 секунд чтобы сделать выбор!\n\n"
                           f"Сделайте выбор. Результат будет опубликован здесь!",
             color=discord.Color.blue()
         )
@@ -535,7 +536,7 @@ class PvPChoiceView(RPSView):
         """Handle player's move choice."""
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.PVP_CHOICE:
-            await interaction.response.send_message("❌ Игра недоступна.", ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра недоступна."), ephemeral=True)
             return
         
         # Access Control: Only registered participants can click
@@ -543,7 +544,7 @@ class PvPChoiceView(RPSView):
             # Main message mode - both can click, but only their own choice
             if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
                 await interaction.response.send_message(
-                    "⚠️ Вы не являетесь участником этой дуэли!",
+                    replace_emojis("⚠️ Вы не являетесь участником этой дуэли!"),
                     ephemeral=True
                 )
                 return
@@ -551,7 +552,7 @@ class PvPChoiceView(RPSView):
             # Individual message mode - only the owner can click
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message(
-                    "⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода.",
+                    replace_emojis("⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода."),
                     ephemeral=True
                 )
                 return
@@ -575,7 +576,7 @@ class PvPChoiceView(RPSView):
                 # Update message to show waiting for other player
                 waiting_for = self.opponent_id if interaction.user.id == self.user_id else self.user_id
                 embed = discord.Embed(
-                    title="⚔️ Ожидание выбора...",
+                    title=replace_emojis("⚔️ Ожидание выбора..."),
                     description=f"<@{waiting_for}> делает свой выбор...",
                     color=discord.Color.yellow()
                 )
@@ -621,30 +622,30 @@ class PvPChoiceView(RPSView):
         if result == "draw":
             await release_escrow(game.initiator_id, guild_id, bet)
             await release_escrow(game.opponent_id, guild_id, bet)
-            balance_change_p1 = "0 🪙 (возврат)"
-            balance_change_p2 = "0 🪙 (возврат)"
-            title = "🤝 Ничья!"
+            balance_change_p1 = f"0 {replace_emojis('🪙')} (возврат)"
+            balance_change_p2 = f"0 {replace_emojis('🪙')} (возврат)"
+            title = replace_emojis("🤝 Ничья!")
         else:
             await payout_winner(winner_id, guild_id, winner_payout)
             loser_id = game.opponent_id if winner_id == game.initiator_id else game.initiator_id
             # Loser already lost escrow, no action needed
-            balance_change_winner = f"+{winner_payout - bet} 🪙"
-            balance_change_loser = f"-{bet} 🪙"
-            title = f"⚔️ Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
+            balance_change_winner = f"+{winner_payout - bet} {replace_emojis('🪙')}"
+            balance_change_loser = f"-{bet} {replace_emojis('🪙')}"
+            title = f"{replace_emojis('⚔️')} Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
         
         # Build result embed
         if result == "draw":
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"🤝 Ничья! Оба игрока получают возврат ставки.\n"
-                          f"💰 <@{game.initiator_id}>: {balance_change_p1}\n"
-                          f"💰 <@{game.opponent_id}>: {balance_change_p2}")
+                          f"{replace_emojis('🤝')} Ничья! Оба игрока получают возврат ставки.\n"
+                          f"{replace_emojis('💰')} <@{game.initiator_id}>: {balance_change_p1}\n"
+                          f"{replace_emojis('💰')} <@{game.opponent_id}>: {balance_change_p2}")
         else:
             winner_name = f"<@{winner_id}>"
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"🏆 Победитель: {winner_name}!\n"
-                          f"💰 Выигрыш: {winner_payout} 🪙 (комиссия 5%)")
+                          f"{replace_emojis('🏆')} Победитель: {winner_name}!\n"
+                          f"{replace_emojis('💰')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
         
         embed = discord.Embed(
             title=title,
@@ -692,32 +693,32 @@ class RPSCog(commands.Cog):
         
         # Validate bet
         if bet <= 0:
-            await interaction.followup.send("❌ Ставка должна быть больше 0.", ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Ставка должна быть больше 0."), ephemeral=False)
             return
         
         # Check if user is already in a game
         if user_id in active_users:
-            await interaction.followup.send("❌ Вы уже участвуете в игре.", ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=False)
             return
         
         # Check balance
         if not await check_balance(user_id, guild_id, bet):
-            await interaction.followup.send("❌ Недостаточно баланса.", ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Недостаточно баланса."), ephemeral=False)
             return
         
         # Determine mode
         if opponent:
             # PvP mode - direct challenge
             if opponent.id == user_id:
-                await interaction.followup.send("❌ Нельзя играть против себя.", ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Нельзя играть против себя."), ephemeral=False)
                 return
             
             if opponent.bot:
-                await interaction.followup.send("❌ Нельзя играть против ботов.", ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=False)
                 return
             
             if opponent.id in active_users:
-                await interaction.followup.send("❌ Соперник уже участвует в игре.", ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Соперник уже участвует в игре."), ephemeral=False)
                 return
             
             mode = GameMode.PVP
@@ -730,7 +731,7 @@ class RPSCog(commands.Cog):
         # Hold escrow
         escrow_success = await hold_escrow(user_id, guild_id, bet)
         if not escrow_success:
-            await interaction.followup.send("❌ Не удалось удержать ставку.", ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True)
             return
         
         # Create game session
@@ -753,8 +754,8 @@ class RPSCog(commands.Cog):
                 game.state = GameState.WAITING_PVE
                 view = PvEChoiceView(game_id, bet)
                 embed = discord.Embed(
-                    title="🎮 Камень-Ножницы-Бумага | Игра против ИИ",
-                    description=f"Ставка: {bet} 🪙\n"
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
                                   f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                     color=discord.Color.blue()
                 )
@@ -777,10 +778,10 @@ class RPSCog(commands.Cog):
                     view = PvPChallengeView(game_id, user_id, opponent_id, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
                     embed = discord.Embed(
-                        title="⚔️ Вызов на дуэль: Камень-Ножницы-Бумага",
+                        title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
                         description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
-                                      f"💰 Ставка: {bet} 🪙\n"
-                                      f"🏆 Призовой фонд: {total_pot} 🪙 (комиссия 5%)\n\n"
+                                      f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
                                       f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
                         color=discord.Color.gold()
                     )
@@ -794,11 +795,11 @@ class RPSCog(commands.Cog):
                     view = PvPChallengeView(game_id, user_id, None, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
                     embed = discord.Embed(
-                        title="⚔️ Открытый вызов: Камень-Ножницы-Бумага",
+                        title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
                         description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
-                                      f"💰 Ставка: {bet} 🪙\n"
-                                      f"🏆 Призовой фонд: {total_pot} 🪙 (комиссия 5%)\n\n"
-                                      f"Нажмите «Принять» чтобы принять вызов в течение 60 секунд.",
+                                      f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                      f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
                         color=discord.Color.gold()
                     )
                     msg = await interaction.followup.send(embed=embed, view=view)

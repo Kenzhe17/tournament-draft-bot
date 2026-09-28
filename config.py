@@ -105,6 +105,11 @@ GAME_EMOJIS = {
     # Emotions
     "fire": os.getenv("EMOJI_FIRE", ""),
     "ice": os.getenv("EMOJI_ICE", ""),
+    
+    # Shop & UI
+    "tag": os.getenv("EMOJI_TAG", ""),
+    "settings": os.getenv("EMOJI_SETTINGS", ""),
+    "eye": os.getenv("EMOJI_EYE", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -210,11 +215,13 @@ def replace_emojis(text: str) -> str:
     emoji_map = {
         # Profile & User
         "👤": "profile",
+        "👛": "money",
         
         # Economy
         "💰": "money",
         "🪙": "money",
         "💵": "money",
+        "💳": "profile",
         "🛍️": "shop",
         "🎁": "gift",
         
@@ -267,6 +274,14 @@ def replace_emojis(text: str) -> str:
         "🎲": "dice",
         "🎰": "slots",
         "🧠": "brain",
+        
+        # Shop & UI
+        "✨": "star",
+        "🏷️": "tag",
+        "👑": "winner",
+        "📦": "gift",
+        "⚙️": "settings",
+        "👁️": "eye",
     }
     
     result = text

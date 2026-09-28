@@ -1,4 +1,5 @@
 """Enhanced view for mini-games menu with categories and game cards."""
+from config import replace_emojis
 
 import discord
 from discord.ui import Button, View, Select
@@ -30,7 +31,7 @@ class GamesMainView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!",
+                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -59,7 +60,7 @@ class GameCategorySelect(Select):
             )
         
         super().__init__(
-            placeholder="📁 Выберите категорию игр...",
+            placeholder=replace_emojis("📁 Выберите категорию игр..."),
             min_values=1,
             max_values=1,
             options=options
@@ -93,16 +94,16 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f"{category_info['emoji']}︱{category_info['name']}",
-            description=f"""📝 *{category_info['description']}*
+            description=f"""{replace_emojis('📝')} *{category_info['description']}*
 ────────────────────────
-📌 **Информация о категории:**
+{replace_emojis('📌')} **Информация о категории:**
 **Страница:** {page} из {total_pages}
 **Игр в категории:** {len(games)}
 
-🎮 **Игры на странице:**
+{replace_emojis('🎮')} **Игры на странице:**
 {games_text}
 
-ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
             color=category_info['color'],
         )
 
@@ -132,7 +133,7 @@ class GamesCategoryView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!",
+                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -158,7 +159,7 @@ class GameSelect(Select):
             )
 
         super().__init__(
-            placeholder="🎮 Выберите игру для просмотра...",
+            placeholder=replace_emojis("🎮 Выберите игру для просмотра..."),
             min_values=1,
             max_values=1,
             options=options
@@ -171,7 +172,7 @@ class GameSelect(Select):
 
         if not game:
             await interaction.response.send_message(
-                "❌ Игра не найдена",
+                replace_emojis("❌ Игра не найдена"),
                 ephemeral=True
             )
             return
@@ -193,22 +194,22 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f"{game.emoji}︱{game.name}",
-            description=f"""📝 *{game.short_description}*
+            description=f"""{replace_emojis('📝')} *{game.short_description}*
 ────────────────────────
-📌 **Информация об игре:**
+{replace_emojis('📌')} **Информация об игре:**
 • **Режим:** [{mode_text}]
 • **Команда:** /play {game.command}
 • **Категория:** {category_info['emoji']} {category_info['name']}
 • **Множитель:** {game.multiplier}
-• **Мин. ставка:** {game.min_bet} 🪙
-• **Макс. ставка:** {game.max_bet} 🪙
+• **Мин. ставка:** {game.min_bet} {replace_emojis('🪙')}
+• **Макс. ставка:** {game.max_bet} {replace_emojis('🪙')}
 • **Статус:** {status_text} *В разработке*
 
 ────────────────────────
-📖 **Правила и особенности:**
+{replace_emojis('📖')} **Правила и особенности:**
 {game.how_to_play}
 ────────────────────────
-ℹ️ *Нажмите кнопку ниже для запуска игры или вернитесь в меню*""",
+{replace_emojis('ℹ️')} *Нажмите кнопку ниже для запуска игры или вернитесь в меню*""",
             color=status_color,
         )
 
@@ -237,7 +238,7 @@ class GameCardView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!",
+                replace_emojis("❌ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -250,7 +251,7 @@ class PlayButton(Button):
     def __init__(self, game, user_id: int, guild_id: int):
         is_ready = game.status in ("ready", "available")
         super().__init__(
-            label="▶️ Сыграть",
+            label=replace_emojis("▶️ Сыграть"),
             style=discord.ButtonStyle.primary,
             custom_id=f"play_{game.id}",
             disabled=not is_ready
@@ -266,24 +267,24 @@ class PlayButton(Button):
         pvp_command = f"/{self.game.command} bet:100 opponent:@"
         
         embed = discord.Embed(
-            title=f"📖 Как начать игру {self.game.name}",
+            title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
             description="",
             color=discord.Color.blue()
         )
-        
+
         embed.add_field(
-            name="🤖 Игра с ботом (PvE)",
+            name=replace_emojis("🤖 Игра с ботом (PvE)"),
             value=pve_command,
             inline=False
         )
-        
+
         embed.add_field(
-            name="⚔️ Дуэль с игроком (PvP)",
+            name=replace_emojis("⚔️ Дуэль с игроком (PvP)"),
             value=pvp_command,
             inline=False
         )
-        
-        embed.set_footer(text="💡 Скопируйте команду, замените значения и отправьте её в чат.")
+
+        embed.set_footer(text=replace_emojis("💡 Скопируйте команду, замените значения и отправьте её в чат."))
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -293,7 +294,7 @@ class BackToCategoryButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int = 1):
         super().__init__(
-            label="⬅️ К категории",
+            label=replace_emojis("⬅️ К категории"),
             style=discord.ButtonStyle.secondary,
             custom_id=f"back_to_category_{category}"
         )
@@ -329,16 +330,16 @@ class BackToCategoryButton(Button):
 
         embed = discord.Embed(
             title=f"{category_info['emoji']}︱{category_info['name']}",
-            description=f"""📝 *{category_info['description']}*
+            description=f"""{replace_emojis('📝')} *{category_info['description']}*
 ────────────────────────
-📌 **Информация о категории:**
+{replace_emojis('📌')} **Информация о категории:**
 **Страница:** {page} из {total_pages}
 **Игр в категории:** {len(games)}
 
-🎮 **Игры на странице:**
+{replace_emojis('🎮')} **Игры на странице:**
 {games_text}
 
-ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
             color=category_info['color'],
         )
 
@@ -358,7 +359,7 @@ class BackToMainMenuButton(Button):
 
     def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label="🏠 В главное меню",
+            label=replace_emojis("🏠 В главное меню"),
             style=discord.ButtonStyle.secondary,
             custom_id="back_to_main"
         )
@@ -371,21 +372,21 @@ class BackToMainMenuButton(Button):
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
         
         embed = discord.Embed(
-            title="🎯 МИНИ-ИГРЫ| Главное меню",
-            description=f"""👋 **Добро пожаловать, {interaction.user.display_name}!**
-💳 **Ваш Баланс:** {balance:,} 🪙
+            title=replace_emojis("🎯 МИНИ-ИГРЫ| Главное меню"),
+            description=f"""{replace_emojis('👋')} **Добро пожаловать, {interaction.user.display_name}!**
+{replace_emojis('💳')} **Ваш Баланс:** {balance:,} {replace_emojis('🪙')}
 
-📂 **КАТЕГОРИИ**
-🎲 **Игры на удачу** 
+{replace_emojis('📂')} **КАТЕГОРИИ**
+{replace_emojis('🎲')} **Игры на удачу**
 └ *Быстрые игры на риск: монетка, кубики, угадай число и др.*
 
-🧠 **Викторины и головоломки**
+{replace_emojis('🧠')} **Викторины и головоломки**
 └ *Интеллектуальные состязания, викторины и слова.*
 
-🎰 **Казино и ставки** 
+{replace_emojis('🎰')} **Казино и ставки**
 └ *Слоты, рулетка, баккара, лотерея и высокие ставки.*
 
-ℹ️ *Выберите категорию в меню ниже для просмотра списка игр:*""",
+{replace_emojis('ℹ️')} *Выберите категорию в меню ниже для просмотра списка игр:*""",
             color=0x2F3136,  # Тёмно-фиолетовый
         )
 
@@ -398,7 +399,7 @@ class BackButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="◀️ Назад",
+            label=replace_emojis("◀️ Назад"),
             style=discord.ButtonStyle.primary,
             custom_id=f"back_page_{category}_{page}",
             disabled=page == 1
@@ -432,16 +433,16 @@ class BackButton(Button):
             
             embed = discord.Embed(
                 title=f"{category_info['emoji']}︱{category_info['name']}",
-                description=f"""📝 *{category_info['description']}*
+                description=f"""{replace_emojis('📝')} *{category_info['description']}*
 ────────────────────────
-📌 **Информация о категории:**
+{replace_emojis('📌')} **Информация о категории:**
 **Страница:** {new_page} из {self.total_pages}
 **Игр в категории:** {len(games)}
 
-🎮 **Игры на странице:**
+{replace_emojis('🎮')} **Игры на странице:**
 {games_text}
 
-ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
                 color=category_info['color'],
             )
             
@@ -461,7 +462,7 @@ class ForwardButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="Вперёд ▶️",
+            label=f"Вперёд {replace_emojis('▶️')}",
             style=discord.ButtonStyle.primary,
             custom_id=f"forward_page_{category}_{page}",
             disabled=page == total_pages
@@ -495,16 +496,16 @@ class ForwardButton(Button):
             
             embed = discord.Embed(
                 title=f"{category_info['emoji']}︱{category_info['name']}",
-                description=f"""📝 *{category_info['description']}*
+                description=f"""{replace_emojis('📝')} *{category_info['description']}*
 ────────────────────────
-📌 **Информация о категории:**
+{replace_emojis('📌')} **Информация о категории:**
 **Страница:** {new_page} из {self.total_pages}
 **Игр в категории:** {len(games)}
 
-🎮 **Игры на странице:**
+{replace_emojis('🎮')} **Игры на странице:**
 {games_text}
 
-ℹ️ *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
+{replace_emojis('ℹ️')} *Выберите игру в меню ниже или используйте кнопки пагинации:*""",
                 color=category_info['color'],
             )
             
