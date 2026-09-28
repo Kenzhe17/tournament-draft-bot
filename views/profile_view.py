@@ -1,4 +1,5 @@
 """View для редактирования профиля."""
+from config import replace_emojis
 
 import discord
 from storage.player_stats_store import player_stats_store
@@ -24,7 +25,7 @@ class SettingsButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="⚙️ Настройки",
+            label=replace_emojis("⚙️ Настройки"),
             custom_id=f"profile_settings:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -35,7 +36,7 @@ class SettingsButton(discord.ui.Button):
         # Проверить, что это владелец
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ Вы можете настраивать только свой профиль.",
+                replace_emojis("❌ Вы можете настраивать только свой профиль."),
                 ephemeral=True
             )
             return
@@ -50,7 +51,7 @@ class ProfileEditButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="✏️ Изменить профиль",
+            label=replace_emojis("✏️ Изменить профиль"),
             custom_id=f"profile_edit:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -61,7 +62,7 @@ class ProfileEditButton(discord.ui.Button):
         # Проверить, что это владелец профиля
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                "❌ Вы можете редактировать только свой профиль.",
+                replace_emojis("❌ Вы можете редактировать только свой профиль."),
                 ephemeral=True
             )
             return
@@ -106,7 +107,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         if not stats:
             await interaction.response.send_message(
-                "❌ Профиль не найден. Сначала сыграйте турнир.",
+                replace_emojis("❌ Профиль не найден. Сначала сыграйте турнир."),
                 ephemeral=True
             )
             return
@@ -146,7 +147,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed
         import discord
         embed = discord.Embed(
-            title=f"👤 Профиль: {stats.name}",
+            title=replace_emojis(f"👤 Профиль: {stats.name}"),
             description=f"**{rank_title}**",
             color=discord.Color.dark_blue()
         )
@@ -156,66 +157,66 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # ELO
         embed.add_field(
-            name="🏆 ELO",
+            name=replace_emojis("🏆 ELO"),
             value=f"{int(stats.elo)}",
             inline=True
         )
 
         # Уровень и опыт в одном поле
         embed.add_field(
-            name=f"📈 Level {stats.level}",
-            value=f"{current_xp:,} / {xp_needed:,} ⭐",
+            name=replace_emojis(f"📈 Level {stats.level}"),
+            value=replace_emojis(f"{current_xp:,} / {xp_needed:,} ⭐"),
             inline=True
         )
 
         # Экономика
         embed.add_field(
-            name="💵 Баланс",
-            value=f"{balance:,} 🪙",
+            name=replace_emojis("💵 Баланс"),
+            value=replace_emojis(f"{balance:,} 🪙"),
             inline=True
         )
 
         # Инвентарь
         embed.add_field(
-            name="🏷️ Предметов",
+            name=replace_emojis("🏷️ Предметов"),
             value=f"{inventory_count} шт.",
             inline=True
         )
 
         # Игровая статистика
         embed.add_field(
-            name="🎲 Сыграно",
+            name=replace_emojis("🎲 Сыграно"),
             value=f"{total_games_played} игр",
             inline=True
         )
 
         embed.add_field(
-            name="🏆 Побед",
+            name=replace_emojis("🏆 Побед"),
             value=f"{total_games_won} ({win_rate:.1f}%)",
             inline=True
         )
 
         embed.add_field(
-            name="🎯 AVG Kills",
+            name=replace_emojis("🎯 AVG Kills"),
             value=f"{stats.avg_kills:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="⚔️ K/D Ratio",
+            name=replace_emojis("⚔️ K/D Ratio"),
             value=f"{stats.kd_ratio:.2f}",
             inline=True
         )
 
         embed.add_field(
-            name="🔥 Max Kills",
+            name=replace_emojis("🔥 Max Kills"),
             value=str(stats.best_match_kills),
             inline=True
         )
 
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
         embed.add_field(
-            name="📊 Last ELO Change",
+            name=replace_emojis("📊 Last ELO Change"),
             value=f"{elo_change:+d}",
             inline=True
         )
@@ -223,7 +224,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Био в отдельном поле в самом низу
         if stats.description:
             embed.add_field(
-                name="📝 О себе",
+                name=replace_emojis("📝 О себе"),
                 value=f"**{stats.description}**",
                 inline=False
             )

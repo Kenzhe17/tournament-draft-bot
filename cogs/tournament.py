@@ -765,7 +765,7 @@ class TournamentCog(commands.Cog):
 
         if not stats:
             await interaction.response.send_message(
-                "❌ Пользователь ещё не играл в турниры!",
+                replace_emojis("❌ Пользователь ещё не играл в турниры!"),
                 ephemeral=True
             )
             return
@@ -811,7 +811,7 @@ class TournamentCog(commands.Cog):
         # Экономика
         embed.add_field(
             name=replace_emojis("💵 Баланс"),
-            value=f"{balance:,} 🪙",
+            value=replace_emojis(f"{balance:,} 🪙"),
             inline=True
         )
 
