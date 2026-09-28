@@ -441,7 +441,7 @@ class SelectWinnerButton(discord.ui.Button):
         # Проверка прав доступа
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей.",
+                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей."),
                 ephemeral=True,
             )
             return
