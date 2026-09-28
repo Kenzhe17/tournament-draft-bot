@@ -147,7 +147,7 @@ GAME_EMOJIS = {
     "rare_special": os.getenv("EMOJI_RARE_SPECIAL", ""),
 
     # Icon emojis
-    "icon_w": os.getenv("EMOJI_ICON_W", ""),
+    "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
     "icon_paw": os.getenv("EMOJI_ICON_PAW", ""),
     "icon_bluestacks": os.getenv("EMOJI_ICON_BLUESTACKS", ""),
     "icon_teacup": os.getenv("EMOJI_ICON_TEACUP", ""),
@@ -258,7 +258,7 @@ STANDARD_EMOJIS = {
     "rare_special": "",
 
     # Icon emojis
-    "icon_w": "",
+    "icon_letter": "",
     "icon_paw": "",
     "icon_bluestacks": "",
     "icon_teacup": "",
@@ -411,7 +411,7 @@ def replace_emojis(text: str) -> str:
         "🌟": "rare_elite",
 
         # Icon emojis (mapping from standard to custom)
-        "🎮": "icon_w",
+        "🎮": "icon_letter",
         "🐾": "icon_paw",
         "🔵": "icon_bluestacks",
         "☕": "icon_teacup",
@@ -431,7 +431,7 @@ def replace_emojis(text: str) -> str:
         "case_basic", "case_premium", "case_elite", "case_special",
         "rare_basic", "rare_premium", "rare_elite", "rare_special",
         "tag",
-        "icon_w", "icon_paw", "icon_bluestacks", "icon_teacup", "icon_ribbon",
+        "icon_letter", "icon_paw", "icon_bluestacks", "icon_teacup", "icon_ribbon",
         "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
         "check", "cross",
     ]

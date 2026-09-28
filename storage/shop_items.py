@@ -18,7 +18,7 @@ def initialize_shop_items() -> None:
     icons = [
         # Basic (700 монет)
         ShopItem(
-            id="icon_w",
+            id="icon_letter",
             name="WW",
             description="",
             price=700,

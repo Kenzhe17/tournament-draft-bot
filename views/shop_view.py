@@ -348,7 +348,7 @@ class RaritySelect(discord.ui.Select):
 
         # Маппинг icon эмодзи по значению (используем стандартные эмодзи, replace_emojis заменит их на кастомные)
         icon_map = {
-            "🎮": "icon_w",
+            "🎮": "icon_letter",
             "🐾": "icon_paw",
             "🔵": "icon_bluestacks",
             "☕": "icon_teacup",
@@ -841,7 +841,7 @@ class BuyButton(discord.ui.Button):
 
             # Icon map
             icon_map = {
-                "🎮": "icon_w",
+                "🎮": "icon_letter",
                 "🐾": "icon_paw",
                 "🔵": "icon_bluestacks",
                 "☕": "icon_teacup",
