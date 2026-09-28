@@ -898,7 +898,7 @@ class TournamentCog(commands.Cog):
         xp_remaining = xp_needed - current_xp
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /level",
+            title=f"{replace_emojis('a_star')} УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n{replace_emojis('sub_middle')} Уровень: Level {stats.level}\n{replace_emojis('sub_directory')} Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n{replace_emojis('sub_middle')} Прогресс: `{progress_bar}` {current_xp:,} / {xp_needed:,} XP ({progress_percent}%)\n{replace_emojis('sub_directory')} До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -924,42 +924,11 @@ class TournamentCog(commands.Cog):
         lost_bets = stats["total_bets"] - stats["successful_bets"]
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} СТАТИСТИКА СТАВОК | /bets",
+            title=f"{replace_emojis('a_star')} СТАТИСТИКА СТАВОК | /bet",
             description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
-
-        await interaction.response.send_message(embed=embed)
-
-        # Pagination
-        per_page = 10
-        offset = (page - 1) * per_page
-        paginated_data = leaderboard_data[offset:offset + per_page]
-
-        if not paginated_data:
-            await interaction.response.send_message(replace_emojis("❌ Страница не найдена."), ephemeral=True)
-            return
-
-        embed = discord.Embed(
-            title=replace_emojis("💰 Лидерборд монет"),
-            color=discord.Color.gold()
-        )
-
-        for i, data in enumerate(paginated_data):
-            rank = (page - 1) * 10 + i + 1
-            medal = ""
-            if rank == 1:
-                medal = "🥇"
-            elif rank == 2:
-                medal = "🥈"
-            elif rank == 3:
-                medal = "🥉"
-            embed.add_field(
-                name=f"{medal} #{rank} {data['name']}",
-                value=f"{data['balance']} 🪙",
-                inline=False
-            )
 
         await interaction.response.send_message(embed=embed)
 
