@@ -212,7 +212,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     from cogs.tournament import get_rank_emoji
 
     category_label = "Значки" if category == "icons" else "Теги"
-    category_emoji = replace_emojis("✨") if category == "icons" else replace_emojis("🏷️")
+    category_emoji = "a_sparkle" if category == "icons" else "tag"
 
     # Получить данные профиля
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -228,7 +228,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{replace_emojis(category_emoji)} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('sub_middle')} **Basic** • Базовые товары\n{replace_emojis('sub_middle')} **Premium** • Премиум товары\n{replace_emojis('sub_middle')} **Elite** • Элитные товары\n{replace_emojis('sub_directory')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('sub_middle')} {replace_emojis('rare_basic')} **Basic** • Базовые товары\n{replace_emojis('sub_middle')} {replace_emojis('rare_premium')} **Premium** • Премиум товары\n{replace_emojis('sub_middle')} {replace_emojis('rare_elite')} **Elite** • Элитные товары\n{replace_emojis('sub_directory')} {replace_emojis('rare_special')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
