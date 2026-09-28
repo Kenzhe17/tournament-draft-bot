@@ -186,10 +186,10 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     # Профиль
     embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"Ранг: {rank}\n"
+              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -549,10 +549,10 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
 
     # Профиль
     embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"Ранг: {rank}\n"
+              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -634,10 +634,10 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
 
     # Профиль
     embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"Ранг: {rank}\n"
+              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -694,10 +694,10 @@ async def show_role_card(interaction: discord.Interaction, item) -> None:
 
     # Профиль
     embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"Ранг: {rank}\n"
+              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -755,10 +755,10 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
 
     # Профиль
     embed.add_field(
-        name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-        value=f"├ {replace_emojis('👛')} **Баланс:** {balance:,} {replace_emojis('🪙')}\n"
-              f"├ {replace_emojis('🏆')} **Ранг:** {rank}\n"
-              f"└ {replace_emojis('🎒')} **Мест в инвентаре:** {inventory_count}/{max_inventory}",
+        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+        value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+              f"Ранг: {rank}\n"
+              f"Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -1066,10 +1066,10 @@ class ShopBackButton(discord.ui.Button):
 
         # Профиль пользователя
         embed.add_field(
-            name=replace_emojis("💳 ВАШ ПРОФИЛЬ"),
-            value=f"├ {replace_emojis('👛')} Баланс: {balance:,} {replace_emojis('🪙')}\n"
-                  f"├ {replace_emojis('🏆')} Ранг: {rank}\n"
-                  f"└ {replace_emojis('🎒')} Мест в инвентаре: {inventory_count}/{max_inventory}",
+            name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
+            value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+                  f"Ранг: {rank}\n"
+                  f"Мест в инвентаре: {inventory_count}/{max_inventory}",
             inline=False
         )
 
