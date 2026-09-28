@@ -395,7 +395,7 @@ class TeamWinnerButton(discord.ui.Button):
 
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
 
         # Call the appropriate winner setter based on match type
