@@ -123,20 +123,20 @@ class PvEChoiceView(RPSView):
         """Handle player's move choice."""
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.WAITING_PVE:
-            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Игра недоступна."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра недоступна."), ephemeral=True)
             return
         
         # Access Control: PvE mode - only creator can click
         if interaction.user.id != game.initiator_id:
             await interaction.response.send_message(
-                replace_emojis(replace_emojis("⚠️ Это не ваша игра! Запустите свою с помощью команды /rps"),
+                replace_emojis("⚠️ Это не ваша игра! Запустите свою с помощью команды /rps"),
                 ephemeral=True
             )
             return
         
         # Check if game already resolved (prevent double-click)
         if game.state != GameState.WAITING_PVE:
-            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Игра уже завершена."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра уже завершена."), ephemeral=True)
             return
         
         # Update state to prevent multiple submissions
@@ -269,7 +269,7 @@ class PvPChallengeView(RPSView):
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.WAITING_PVP:
             try:
-                await interaction.response.send_message(replace_emojis(replace_emojis("❌ Вызов недоступен."), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Вызов недоступен."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -278,7 +278,7 @@ class PvPChallengeView(RPSView):
         if interaction.user.id == self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Вы не можете принять свой собственный вызов!"),
+                    replace_emojis("⚠️ Вы не можете принять свой собственный вызов!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -289,7 +289,7 @@ class PvPChallengeView(RPSView):
         if self.opponent_id and interaction.user.id != self.opponent_id:
             try:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Этот вызов предназначен для другого игрока!"),
+                    replace_emojis("⚠️ Этот вызов предназначен для другого игрока!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -299,7 +299,7 @@ class PvPChallengeView(RPSView):
         # Check if user is already in a game
         if interaction.user.id in active_users:
             try:
-                await interaction.response.send_message(replace_emojis(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -310,14 +310,14 @@ class PvPChallengeView(RPSView):
         
         if not new_opponent:
             try:
-                await interaction.response.send_message(replace_emojis(replace_emojis("❌ Не удалось найти пользователя."), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Не удалось найти пользователя."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
         
         if new_opponent.bot:
             try:
-                await interaction.response.send_message(replace_emojis(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -326,7 +326,7 @@ class PvPChallengeView(RPSView):
         escrow_success = await hold_escrow(new_opponent_id, game.guild_id, self.bet)
         if not escrow_success:
             try:
-                await interaction.response.send_message(replace_emojis(replace_emojis("❌ Недостаточно баланса для ставки."), ephemeral=True)
+                await interaction.response.send_message(replace_emojis("❌ Недостаточно баланса для ставки."), ephemeral=True)
             except discord.errors.InteractionResponded:
                 pass
             return
@@ -350,7 +350,7 @@ class PvPChallengeView(RPSView):
         # Hold escrow for opponent
         escrow_success = await hold_escrow(self.opponent_id, game.guild_id, self.bet)
         if not escrow_success:
-            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Недостаточно баланса для ставки."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Недостаточно баланса для ставки."), ephemeral=True)
             # Refund initiator
             await release_escrow(self.initiator_id, game.guild_id, self.bet)
             active_users.discard(self.initiator_id)
@@ -380,7 +380,7 @@ class PvPChallengeView(RPSView):
         if self.opponent_id and interaction.user.id != self.opponent_id:
             try:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Только вызванный игрок может отклонить вызов!"),
+                    replace_emojis("⚠️ Только вызванный игрок может отклонить вызов!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -391,7 +391,7 @@ class PvPChallengeView(RPSView):
         if not self.opponent_id and interaction.user.id == self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Создатель не может отклонить свой вызов. Используйте отмену!"),
+                    replace_emojis("⚠️ Создатель не может отклонить свой вызов. Используйте отмену!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -405,7 +405,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         embed = discord.Embed(
-            title=replace_emojis(replace_emojis("❌ Вызов отклонён"),
+            title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{interaction.user.id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
@@ -434,7 +434,7 @@ class PvPChallengeView(RPSView):
         if interaction.user.id != self.initiator_id:
             try:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Только создатель вызова может его отменить!"),
+                    replace_emojis("⚠️ Только создатель вызова может его отменить!"),
                     ephemeral=True
                 )
             except discord.errors.InteractionResponded:
@@ -472,7 +472,7 @@ class PvPChallengeView(RPSView):
         
         # Update message
         embed = discord.Embed(
-            title=replace_emojis(replace_emojis("❌ Вызов отклонён"),
+            title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{self.opponent_id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
@@ -536,7 +536,7 @@ class PvPChoiceView(RPSView):
         """Handle player's move choice."""
         game = active_games.get(self.game_id)
         if not game or game.state != GameState.PVP_CHOICE:
-            await interaction.response.send_message(replace_emojis(replace_emojis("❌ Игра недоступна."), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("❌ Игра недоступна."), ephemeral=True)
             return
         
         # Access Control: Only registered participants can click
@@ -544,7 +544,7 @@ class PvPChoiceView(RPSView):
             # Main message mode - both can click, but only their own choice
             if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Вы не являетесь участником этой дуэли!"),
+                    replace_emojis("⚠️ Вы не являетесь участником этой дуэли!"),
                     ephemeral=True
                 )
                 return
@@ -552,7 +552,7 @@ class PvPChoiceView(RPSView):
             # Individual message mode - only the owner can click
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message(
-                    replace_emojis(replace_emojis("⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода."),
+                    replace_emojis("⚠️ Это не ваши кнопки! Используйте свои кнопки для выбора хода."),
                     ephemeral=True
                 )
                 return
@@ -693,32 +693,32 @@ class RPSCog(commands.Cog):
         
         # Validate bet
         if bet <= 0:
-            await interaction.followup.send(replace_emojis(replace_emojis("❌ Ставка должна быть больше 0."), ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Ставка должна быть больше 0."), ephemeral=False)
             return
         
         # Check if user is already in a game
         if user_id in active_users:
-            await interaction.followup.send(replace_emojis(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=False)
             return
         
         # Check balance
         if not await check_balance(user_id, guild_id, bet):
-            await interaction.followup.send(replace_emojis(replace_emojis("❌ Недостаточно баланса."), ephemeral=False)
+            await interaction.followup.send(replace_emojis("❌ Недостаточно баланса."), ephemeral=False)
             return
         
         # Determine mode
         if opponent:
             # PvP mode - direct challenge
             if opponent.id == user_id:
-                await interaction.followup.send(replace_emojis(replace_emojis("❌ Нельзя играть против себя."), ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Нельзя играть против себя."), ephemeral=False)
                 return
             
             if opponent.bot:
-                await interaction.followup.send(replace_emojis(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=False)
                 return
             
             if opponent.id in active_users:
-                await interaction.followup.send(replace_emojis(replace_emojis("❌ Соперник уже участвует в игре."), ephemeral=False)
+                await interaction.followup.send(replace_emojis("❌ Соперник уже участвует в игре."), ephemeral=False)
                 return
             
             mode = GameMode.PVP
@@ -731,7 +731,7 @@ class RPSCog(commands.Cog):
         # Hold escrow
         escrow_success = await hold_escrow(user_id, guild_id, bet)
         if not escrow_success:
-            await interaction.followup.send(replace_emojis(replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True)
             return
         
         # Create game session
@@ -754,7 +754,7 @@ class RPSCog(commands.Cog):
                 game.state = GameState.WAITING_PVE
                 view = PvEChoiceView(game_id, bet)
                 embed = discord.Embed(
-                    title=replace_emojis(replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
                     description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
                                   f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                     color=discord.Color.blue()
