@@ -298,14 +298,14 @@ class TournamentCog(commands.Cog):
         # Профиль пользователя
         embed.add_field(
             name=replace_emojis("⚪ Ваш профиль:"),
-            value=f"{replace_emojis('└')} Баланс: {balance:,} {replace_emojis('money')}\n"
-                  f"{replace_emojis('└')} Ранг: {rank}\n"
-                  f"{replace_emojis('└')} Инвентарь: {inventory_count}/{max_inventory}",
+            value=f"Баланс: {balance:,} {replace_emojis('money')}\n"
+                  f"Ранг: {rank}\n"
+                  f"Инвентарь: {inventory_count}/{max_inventory}",
             inline=False
         )
 
         embed.add_field(
-            name=replace_emojis("⚪ Для навигации используйте компоненты ниже"),
+            name=replace_emojis("a_dot_smaller Для навигации используйте компоненты ниже"),
             value="",
             inline=False
         )

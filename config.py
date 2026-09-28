@@ -216,25 +216,25 @@ STANDARD_EMOJIS = {
     "num_8": "8️⃣",
 
     # Special
-    "white_dot": "•",
-    "sub_directory": "└",
-    "room": "🏠",
-    "white_arrow": "➡️",
-    "a_sparkle": "✨",
-    "a_triple_dots": "⋯",
-    "a_dot_smaller": "•",
+    "white_dot": "",
+    "sub_directory": "",
+    "room": "",
+    "white_arrow": "",
+    "a_sparkle": "",
+    "a_triple_dots": "",
+    "a_dot_smaller": "",
 
     # Case emojis
-    "case_basic": "📦",
-    "case_premium": "💎",
-    "case_elite": "👑",
-    "case_special": "✨",
+    "case_basic": "",
+    "case_premium": "",
+    "case_elite": "",
+    "case_special": "",
 
     # Rare emojis
-    "rare_basic": "⭐",
-    "rare_premium": "💫",
-    "rare_elite": "🌟",
-    "rare_special": "💎",
+    "rare_basic": "",
+    "rare_premium": "",
+    "rare_elite": "",
+    "rare_special": "",
 }
 
 def get_emoji(emoji_name: str) -> str:
