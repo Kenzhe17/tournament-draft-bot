@@ -308,11 +308,23 @@ class RaritySelect(discord.ui.Select):
         category_emoji = replace_emojis("✨") if self.category == "icons" else replace_emojis("🏷️")
 
         if self.category == "tags":
-            items_list = "\n\n".join([
-                f"{replace_emojis('🏷️')} -  {item.value}\n"
-                f"└ {replace_emojis('💰')} **Цена:** {item.price} {replace_emojis('🪙')}"
-                for item in items
-            ])
+            # Маппинг rare эмодзи по редкости
+            rare_map = {
+                CosmeticRarity.BASIC: "rare_basic",
+                CosmeticRarity.PREMIUM: "rare_premium",
+                CosmeticRarity.ELITE: "rare_elite",
+                CosmeticRarity.SPECIAL: "rare_special",
+            }
+
+            items_parts = []
+            for i, item in enumerate(items):
+                rare_emoji = rare_map.get(item.rarity, "rare_basic")
+                sub_emoji = "sub_middle" if i < len(items) - 1 else "sub_directory"
+                items_parts.append(
+                    f"{replace_emojis(sub_emoji)} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
+                )
+
+            items_list = "\n".join(items_parts)
         else:
             items_list = "\n\n".join([
                 f"{item.value} **{item.name}**\n"
@@ -639,42 +651,11 @@ async def show_role_card(interaction: discord.Interaction, item) -> None:
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('👑')} ПОКУПКА РОЛИ | {item.name}",
-        description="Вы действительно хотите приобрести эту роль?",
-        color=discord.Color.gold()
+        title=f"{replace_emojis('a_star')} ПОКУПКА РОЛИ | {item.name}",
+        description=f"Вы действительно хотите приобрести эту роль?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Discord Роли\n{replace_emojis('sub_middle')} Описание: {item.description}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Отображение в профиле:**\n{replace_emojis('sub_directory')} Роль: <@&{item.role_id}>\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        color=discord.Color.from_rgb(69, 69, 69)
     )
-
-    # Информация о товаре
-    embed.add_field(
-        name=replace_emojis("📌 **Информация о товаре:**"),
-        value=f"├ {replace_emojis('🏷️')} **Категория:** Discord Роли\n"
-              f"├ {replace_emojis('📝')} **Описание:** {item.description}\n"
-              f"├ {replace_emojis('⚡')} **Привилегии:** {item.description}\n"
-              f"└ {replace_emojis('💰')} **Стоимость:** {item.price} {replace_emojis('🪙')}",
-        inline=False
-    )
-
-    # Отображение в профиле
-    embed.add_field(
-        name=replace_emojis("🎨 **Отображение в профиле:**"),
-        value=f"└ {replace_emojis('🏷️')} Роль: <@&{item.role_id}>",
-        inline=False
-    )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
-              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
-        inline=False
-    )
-
-    embed.add_field(
-        name=replace_emojis("💡 Подтвердите покупку кнопкой ниже"),
-        value="",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "role")
     await interaction.response.edit_message(embed=embed, view=view)
