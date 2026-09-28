@@ -521,11 +521,11 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
         rank = get_rank_emoji(stats.level)
 
     # Редкость
-    rarity_emoji = {
-        CosmeticRarity.BASIC: replace_emojis("⭐"),
-        CosmeticRarity.PREMIUM: replace_emojis("💎"),
-        CosmeticRarity.ELITE: replace_emojis("👑"),
-        CosmeticRarity.SPECIAL: replace_emojis("✨"),
+    rare_map = {
+        CosmeticRarity.BASIC: "rare_basic",
+        CosmeticRarity.PREMIUM: "rare_premium",
+        CosmeticRarity.ELITE: "rare_elite",
+        CosmeticRarity.SPECIAL: "rare_special",
     }
     rarity_label = {
         CosmeticRarity.BASIC: "Basic",
@@ -534,51 +534,38 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
         CosmeticRarity.SPECIAL: "Special",
     }
 
-    emoji = rarity_emoji.get(item.rarity, "⭐")
+    rare_emoji = rare_map.get(item.rarity, "rare_basic")
     label = rarity_label.get(item.rarity, "Basic")
 
-    # Цвет по редкости
-    color_map = {
-        CosmeticRarity.BASIC: discord.Color.light_grey(),
-        CosmeticRarity.PREMIUM: discord.Color.gold(),
-        CosmeticRarity.ELITE: discord.Color.orange(),
-        CosmeticRarity.SPECIAL: discord.Color.purple(),
-    }
-    embed_color = color_map.get(item.rarity, discord.Color.gold())
+    # Цвет
+    embed_color = discord.Color.from_rgb(69, 69, 69)
 
     # Категория
     category_label = "Значки" if item.category == "icons" else "Теги"
 
+    # Icon emoji
+    icon_map = {
+        "WW": "icon_w",
+        "Лапка": "icon_paw",
+        "Bluestacks": "icon_bluestacks",
+        "Чашка чая": "icon_teacup",
+        "Бантик": "icon_ribbon",
+        "18+": "icon_18plus",
+        "Сердечко": "icon_heart",
+        "Галочка": "icon_v_badge",
+        "Карты": "icon_cards",
+        "Кошачьи ушки": "icon_cat_ears",
+        "Голубое крыло": "icon_wing",
+    }
+    icon_emoji = icon_map.get(item.value, "")
+
     # Создать embed
     embed = discord.Embed(
-        title=f"{emoji} ПОКУПКА ЭМОДЗИ | {item.name}",
-        description="Вы действительно хотите приобрести данный предмет?",
+        title=f"{replace_emojis('a_star')} ПОКУПКА ЭМОДЗИ | {item.name}",
+        description=f"Вы действительно хотите приобрести данный предмет?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} {replace_emojis(icon_emoji)} Тип: {category_label} • {label} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=embed_color
     )
-
-    # Информация о товаре
-    embed.add_field(
-        name=replace_emojis("📌 **Информация о товаре:**"),
-        value=f"├ {replace_emojis('🏷️')} **Тип:** {category_label} ({label})\n"
-              f"├ {replace_emojis('📝')} **Описание:** {item.description}\n"
-              f"└ {replace_emojis('💰')} **Стоимость:** {item.price} {replace_emojis('🪙')}",
-        inline=False
-    )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
-              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
-        inline=False
-    )
-
-    embed.add_field(
-        name=replace_emojis("💡 Подтвердите покупку кнопкой ниже"),
-        value="",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "icon")
     await interaction.response.edit_message(embed=embed, view=view)
@@ -602,11 +589,11 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
         rank = get_rank_emoji(stats.level)
 
     # Редкость
-    rarity_emoji = {
-        CosmeticRarity.BASIC: replace_emojis("⭐"),
-        CosmeticRarity.PREMIUM: replace_emojis("💎"),
-        CosmeticRarity.ELITE: replace_emojis("👑"),
-        CosmeticRarity.SPECIAL: replace_emojis("✨"),
+    rare_map = {
+        CosmeticRarity.BASIC: "rare_basic",
+        CosmeticRarity.PREMIUM: "rare_premium",
+        CosmeticRarity.ELITE: "rare_elite",
+        CosmeticRarity.SPECIAL: "rare_special",
     }
     rarity_label = {
         CosmeticRarity.BASIC: "Basic",
@@ -615,55 +602,19 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
         CosmeticRarity.SPECIAL: "Special",
     }
 
-    emoji = rarity_emoji.get(item.rarity, "⭐")
+    rare_emoji = rare_map.get(item.rarity, "rare_basic")
     label = rarity_label.get(item.rarity, "Basic")
 
-    # Цвет по редкости
-    color_map = {
-        CosmeticRarity.BASIC: discord.Color.light_grey(),
-        CosmeticRarity.PREMIUM: discord.Color.gold(),
-        CosmeticRarity.ELITE: discord.Color.orange(),
-        CosmeticRarity.SPECIAL: discord.Color.purple(),
-    }
-    embed_color = color_map.get(item.rarity, discord.Color.gold())
+    # Цвет
+    embed_color = discord.Color.from_rgb(69, 69, 69)
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('🏷️')} ПОКУПКА ТЕГА | {item.name}",
-        description="Вы действительно хотите приобрести данный тег?",
+        title=f"{replace_emojis('a_star')} ПОКУПКА ТЕГА | {item.name}",
+        description=f"Вы действительно хотите приобрести данный тег?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Теги • {label} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Предпросмотр:**\n{replace_emojis('sub_directory')} **{item.value}** {interaction.user.display_name}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=embed_color
     )
-
-    # Информация о товаре
-    embed.add_field(
-        name=replace_emojis("📌 **Информация о товаре:**"),
-        value=f"├ {replace_emojis('🏷️')} **Категория:** Теги ({label})\n"
-              f"├ {replace_emojis('📝')} **Описание:** {item.description}\n"
-              f"└ {replace_emojis('💰')} **Стоимость:** {item.price} {replace_emojis('🪙')}",
-        inline=False
-    )
-
-    # Предпросмотр
-    embed.add_field(
-        name=replace_emojis("👁️ **Предпросмотр:**"),
-        value=f"└ **{item.value}** {interaction.user.display_name}",
-        inline=False
-    )
-
-    # Профиль
-    embed.add_field(
-        name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
-              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
-              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
-        inline=False
-    )
-
-    embed.add_field(
-        name=replace_emojis("💡 Подтвердите покупку кнопкой ниже"),
-        value="",
-        inline=False
-    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "tag")
     await interaction.response.edit_message(embed=embed, view=view)
