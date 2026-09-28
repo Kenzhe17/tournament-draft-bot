@@ -325,23 +325,39 @@ class TournamentCog(commands.Cog):
 
         if not cosmetics:
             await interaction.response.send_message(
-                replace_emojis("❌ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
+                replace_emojis("⚪ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
                 ephemeral=True
             )
             return
 
-        # Создать embed
-        embed = discord.Embed(
-            title=replace_emojis("🎒 Ваш инвентарь"),
-            color=discord.Color.blue()
-        )
+        # Icon map для значков
+        icon_map = {
+            "🎮": "icon_letter",
+            "🐾": "icon_paw",
+            "🔵": "icon_bluestacks",
+            "☕": "icon_teacup",
+            "🎀": "icon_ribbon",
+            "🔞": "icon_18plus",
+            "❤️": "icon_heart",
+            "✅": "icon_v_badge",
+            "🃏": "icon_cards",
+            "🐱": "icon_cat_ears",
+            "🪽": "icon_wing",
+        }
 
-        # Создать View с select menu
-        view = discord.ui.View()
+        # Rare emoji map
+        rare_map = {
+            "basic": "rare_basic",
+            "premium": "rare_premium",
+            "elite": "rare_elite",
+            "special": "rare_special",
+        }
 
         # Сгруппировать по типам
-        equipped_text = []
-        unequipped_text = []
+        equipped_tags = []
+        equipped_icons = []
+        unequipped_tags = []
+        unequipped_icons = []
         equipped_items = []
         unequipped_items = []
 
@@ -350,42 +366,66 @@ class TournamentCog(commands.Cog):
             if not item:
                 continue
 
-            status = "✅" if cosmetic.equipped else "❌"
-            item_text = f"{status} **{item.name}** (ID: `{item.id}`) ({item.rarity.value})"
-
+            rare_emoji = rare_map.get(item.rarity.value, "")
             if cosmetic.equipped:
-                equipped_text.append(item_text)
                 equipped_items.append((cosmetic.item_id, item.name))
+                if item.cosmetic_type.value == "tag":
+                    equipped_tags.append(f"{replace_emojis('sub_middle')} Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
+                elif item.cosmetic_type.value == "icon":
+                    icon_emoji = icon_map.get(item.value, "")
+                    equipped_icons.append(f"{replace_emojis('sub_directory')} Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
             else:
-                unequipped_text.append(item_text)
                 unequipped_items.append((cosmetic.item_id, item.name))
+                if item.cosmetic_type.value == "tag":
+                    unequipped_tags.append(f"{replace_emojis('sub_middle')} Тег: **{item.value}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
+                elif item.cosmetic_type.value == "icon":
+                    icon_emoji = icon_map.get(item.value, "")
+                    unequipped_icons.append(f"{replace_emojis('sub_directory')} Значок: {replace_emojis(icon_emoji)} **{item.name}** `(ID: {item.id})` • {replace_emojis(rare_emoji)}")
 
-        if equipped_text:
-            embed.add_field(
-                name=replace_emojis("👑 Экипировано"),
-                value="\n".join(equipped_text),
-                inline=False
-            )
+        # Build description
+        description_parts = ["Управление вашей экипировкой и предметами:\n"]
 
-        if unequipped_text:
-            embed.add_field(
-                name=replace_emojis("📦 В инвентаре"),
-                value="\n".join(unequipped_text),
-                inline=False
-            )
+        # Экипировано
+        description_parts.append(f"{replace_emojis('⚪')} **Экипировано:**")
+        if equipped_tags:
+            description_parts.extend(equipped_tags)
+        if equipped_icons:
+            description_parts.extend(equipped_icons)
+        if not equipped_tags and not equipped_icons:
+            description_parts.append(f"{replace_emojis('sub_directory')} Ничего не экипировано")
+        description_parts.append("")
 
-        # Добавить инструкции
-        embed.add_field(
-            name=replace_emojis("📖 Управление"),
-            value="Используйте выпадающие меню ниже для экипировки/снятия.\n"
-                   "Максимум 1 тег и 1 иконка одновременно.",
-            inline=False
+        # В инвентаре
+        description_parts.append(f"{replace_emojis('⚪')} **В инвентаре:**")
+        if unequipped_tags:
+            description_parts.extend(unequipped_tags)
+        if unequipped_icons:
+            description_parts.extend(unequipped_icons)
+        if not unequipped_tags and not unequipped_icons:
+            description_parts.append(f"{replace_emojis('sub_directory')} Инвентарь пуст")
+        description_parts.append("")
+
+        # Управление
+        description_parts.append(f"{replace_emojis('⚪')} **Управление:**")
+        description_parts.append(f"{replace_emojis('sub_directory')} Используйте выпадающие меню ниже для экипировки/снятия.")
+        description_parts.append("")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Максимум 1 тег и 1 значок одновременно")
+
+        # Создать embed
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} ИНВЕНТАРЬ ПОЛЬЗОВАТЕЛЯ",
+            description="\n".join(description_parts),
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+
+        # Создать View с select menu
+        view = discord.ui.View()
 
         # Добавить select menu для экипировки и снятия
         if unequipped_items:
             view.add_item(InventoryEquipSelect(unequipped_items))
-        
+
         if equipped_items:
             view.add_item(InventoryUnequipSelect(equipped_items))
 
