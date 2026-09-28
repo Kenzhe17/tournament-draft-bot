@@ -246,22 +246,22 @@ class RaritySelect(discord.ui.Select):
     def __init__(self, category: str):
         options = [
             discord.SelectOption(
-                label="Basic",
+                label=f"{replace_emojis('rare_basic')} Basic",
                 value="basic",
                 description="Базовые товары для всех"
             ),
             discord.SelectOption(
-                label="Premium",
+                label=f"{replace_emojis('rare_premium')} Premium",
                 value="premium",
                 description="Премиум товары для опытных"
             ),
             discord.SelectOption(
-                label="Elite",
+                label=f"{replace_emojis('rare_elite')} Elite",
                 value="elite",
                 description="Элитные товары для топов"
             ),
             discord.SelectOption(
-                label="Special",
+                label=f"{replace_emojis('rare_special')} Special",
                 value="special",
                 description="Специальные редкие товары"
             ),
