@@ -1944,9 +1944,9 @@ class GuideSelectMenu(discord.ui.Select):
         }
 
         def format_emoji(name, value):
-            if value.isdigit():
+            if value and value.isdigit():
                 return f"<:{name}:{value}>"
-            elif value.startswith("<:") and value.endswith(">"):
+            elif value and value.startswith("<:") and value.endswith(">"):
                 return value  # Already formatted
             return value  # Use as-is (standard emoji)
 
@@ -2104,9 +2104,9 @@ class HelpGuideSelectMenu(discord.ui.Select):
         }
 
         def format_emoji(name, value):
-            if value.isdigit():
+            if value and value.isdigit():
                 return f"<:{name}:{value}>"
-            elif value.startswith("<:") and value.endswith(">"):
+            elif value and value.startswith("<:") and value.endswith(">"):
                 return value  # Already formatted
             return value  # Use as-is (standard emoji)
 

@@ -103,7 +103,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         try:
             user = await bot.fetch_user(user_id)
             await user.send(
-                f"<@{user_id}> 🏠 **Комната открыта!**\n\n"
+                f"<@{user_id}> {replace_emojis('room')} **Комната открыта!**\n\n"
                 f"Команда: {team1_name}\n"
                 f"ID: `{room_id}`\n"
                 f"Пароль: `{room_password}`"
@@ -116,7 +116,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         try:
             user = await bot.fetch_user(user_id)
             await user.send(
-                f"<@{user_id}> 🏠 **Комната открыта!**\n\n"
+                f"<@{user_id}> {replace_emojis('room')} **Комната открыта!**\n\n"
                 f"Команда: {team2_name}\n"
                 f"ID: `{room_id}`\n"
                 f"Пароль: `{room_password}`"
