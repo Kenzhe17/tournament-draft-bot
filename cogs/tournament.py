@@ -1786,7 +1786,7 @@ class TournamentCog(commands.Cog):
         """Показать приветственное сообщение с гайдом."""
         embed = discord.Embed(
             title="✧ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✧",
-            description="",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} <#1549809898643001484> {replace_emojis('white_arrow')} Проведение турниров\n{replace_emojis('a_dot_smaller')} <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты из игр\n{replace_emojis('a_dot_smaller')} <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} <#1250974603162026024> {replace_emojis('white_arrow')} Прослушивание треков\n{replace_emojis('a_dot_smaller')} <#1242489553189732373> {replace_emojis('white_arrow')} Полезные файлы для FF\n\n {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше",
             color=discord.Color.from_rgb(69, 52, 21)
         )
         embed.set_image(url="https://media.discordapp.net/attachments/1200125075156910181/ваша_ссылка_на_баннер.png")
