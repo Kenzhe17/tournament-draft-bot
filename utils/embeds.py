@@ -1102,10 +1102,30 @@ async def build_winner_embed(
         user_id = tournament.player_user_ids[best_avg_player]
         best_avg_display = f"<@{user_id}>"
 
+    # Build team list
+    team_list = ""
+    for team_idx, team_data in enumerate(tournament.teams):
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = []
+        for circle in range(1, 5):
+            player = team_data.get(f"circle{circle}", "")
+            if player:
+                user_id = tournament.player_user_ids.get(player, 0)
+                if user_id:
+                    formatted_name = format_player_name(guild.id, user_id, player)
+                else:
+                    formatted_name = player
+                players.append(formatted_name)
+        if players:
+            team_list += f"{replace_emojis('white_arrow')} **{team_name}:** {', '.join(players)}\n"
+
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
-        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_name}, {roster_str}\n\n"
+        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_name}, {roster_str}\n\n\n"
+        f"{replace_emojis('white_dot')} **Список команд:**\n"
+        f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
         f"{replace_emojis('sub_middle')} **Наивысший AVG:** {best_avg_display} {best_avg:.1f}\n"
         f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} ({best_kd:.2f})\n"
