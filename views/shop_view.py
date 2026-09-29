@@ -378,9 +378,10 @@ class RaritySelect(discord.ui.Select):
                     f"{replace_emojis(sub_emoji)} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
                 )
             else:
-                # Icons - just show name without custom emoji
+                # Icons - use the actual custom emoji from item.value
+                icon_emoji = item.value if item.value else "⭐"
                 items_parts.append(
-                    f"{replace_emojis(sub_emoji)} ⭐ **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
+                    f"{replace_emojis(sub_emoji)} {icon_emoji} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
                 )
 
         items_list = "\n".join(items_parts)
@@ -721,11 +722,11 @@ class BuyButton(discord.ui.Button):
     """Кнопка покупки товара."""
 
     def __init__(self, item_id: str, price: int, item_type: str = "icon"):
-        label_text = f"✅ Купить за {price} {replace_emojis('money')}"
+        label_text = f"✔ Купить за {price} 💰"
         if item_type == "tag":
-            label_text = f"✅ Примерить и купить за {price} {replace_emojis('money')}"
+            label_text = f"✔ Примерить и купить за {price} 💰"
         elif item_type == "role":
-            label_text = f"✅ Купить роль за {price} {replace_emojis('money')}"
+            label_text = f"✔ Купить роль за {price} 💰"
         
         super().__init__(
             style=discord.ButtonStyle.success,
@@ -865,7 +866,7 @@ class BuyCaseButton(discord.ui.Button):
     def __init__(self, case_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"🎲 Открыть кейс за {price} {replace_emojis('money')}",
+            label=f"🎯 Открыть кейс за {price} 💰",
             custom_id=f"buy_case_{case_id}"
         )
         self.case_id = case_id
