@@ -23,6 +23,171 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AdminStatsMatchSelectView(discord.ui.View):
+    """View for admin to select a match to fill statistics for all 4 players."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+
+        # Add buttons for each match
+        if match_type == "qualifier":
+            matches = tournament.qualifier_matches
+        elif match_type == "semifinal":
+            matches = tournament.semifinal_matches
+        elif match_type == "final":
+            matches = [tournament.final_teams]
+        else:
+            return
+
+        for i, match in enumerate(matches):
+            # Get team names
+            teams = []
+            for team_index in match:
+                team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+                captain = team_data.get("captain", f"П{team_index + 1}")
+                team_name = tournament.team_names.get(team_index, captain)
+                teams.append(team_name)
+
+            # Get all 4 player names for this match
+            all_players = []
+            for team_index in match:
+                team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+                for circle in range(1, 5):
+                    player = team_data.get(f"circle{circle}")
+                    if player:
+                        all_players.append(player)
+
+            label = f"Игра #{i + 1}: {', '.join(all_players[:2])} vs {', '.join(all_players[2:])}"
+            self.add_item(AdminStatsMatchButton(guild_id, tournament, match_type, i, label, all_players))
+
+
+class AdminStatsMatchButton(discord.ui.Button):
+    """Button to select a match for admin stats filling."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str, players: list):
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.primary,
+            custom_id=f"admin_stats_match:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.players = players
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check permissions
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
+        # Open modal with 4 K/D fields for all players
+        modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, self.players)
+        await interaction.response.send_modal(modal)
+
+
+class AdminStatsModal(discord.ui.Modal, title="Статистика матча"):
+    """Modal for admin to fill K/D for all 4 players in a match."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, players: list):
+        super().__init__(title=f"Статистика (Игра #{match_index + 1})")
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.players = players
+
+        # Create input fields for each player
+        for i, player_name in enumerate(players):
+            kd_input = discord.ui.TextInput(
+                label=f"K/D {player_name}",
+                placeholder="7/5",
+                required=True,
+                max_length=7
+            )
+            setattr(self, f"kd_{i}", kd_input)
+            self.add_item(kd_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        from storage.json_store import store
+
+        # Parse and validate statistics
+        match_id = f"{self.match_type}_{self.match_index}"
+        stats = {}
+
+        for i, player_name in enumerate(self.players):
+            kd_field = getattr(self, f"kd_{i}")
+
+            try:
+                # Parse format: "kills/deaths"
+                kd_parts = kd_field.value.split('/')
+                if len(kd_parts) != 2:
+                    raise ValueError("Invalid format")
+
+                kills = int(kd_parts[0].strip())
+                deaths = int(kd_parts[1].strip())
+
+                # Validate ranges
+                if kills < 0 or kills > 35:
+                    await interaction.response.send_message(
+                        replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                        ephemeral=True
+                    )
+                    return
+
+                if deaths < 0 or deaths > 15:
+                    await interaction.response.send_message(
+                        replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                        ephemeral=True
+                    )
+                    return
+
+                stats[player_name] = {
+                    "kills": kills,
+                    "deaths": deaths
+                }
+            except (ValueError, IndexError):
+                await interaction.response.send_message(
+                    replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                    ephemeral=True
+                )
+                return
+
+        # Store in tournament temp stats
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            return
+
+        if match_id not in tournament.temp_match_stats:
+            tournament.temp_match_stats[match_id] = {}
+
+        # Merge with existing stats
+        tournament.temp_match_stats[match_id].update(stats)
+        store.set(tournament)
+
+        # Update tournament message
+        try:
+            from bot import TournamentBot
+            bot = interaction.client  # type: ignore[assignment]
+            await bot.update_tournament_message(interaction.guild, tournament)
+        except Exception as e:
+            import logging
+            logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
+
+        await interaction.response.send_message(
+            replace_emojis(f"✅ Статистика для Игра #{self.match_index + 1} успешно внесена!"),
+            ephemeral=True
+        )
+
+
 class AdminPanelSelect(discord.ui.Select):
     """Select menu for admin functions."""
 
@@ -82,19 +247,15 @@ class AdminPanelSelect(discord.ui.Select):
             await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
 
         elif selected == "fill_stats":
-            from views.match_stats_view import AdminFillButton
-            # Simulate AdminFillButton callback
-            if not is_org_check(interaction.user, interaction.guild):
-                await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы могут заполнять статистику."),
-                    ephemeral=True
-                )
-                return
+            # Show match selection view for admin stats filling
+            match_view = AdminStatsMatchSelectView(self.guild_id, self.tournament, self.match_type)
 
-            from views.match_stats_view import MatchStatsModal
-            match_id = f"{self.match_type}_0"
-            modal = MatchStatsModal(self.guild_id, self.tournament, match_id, 0, is_admin=True)
-            await interaction.response.send_modal(modal)
+            embed = discord.Embed(
+                description=replace_emojis("🏆 **Выберите матч для внесения статистики:**"),
+                color=discord.Color.green()
+            )
+
+            await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
 
         elif selected == "manage_rooms":
             # Trigger AdminRoomsButton callback
