@@ -474,6 +474,8 @@ class AdminConfirmView(View):
     """View for admin to confirm match statistics."""
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict):
+        import logging
+        logging.info(f"AdminConfirmView.__init__: match_type={match_type}, match_index={match_index}")
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
@@ -495,6 +497,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
+        logging.info("AdminConfirmView.__init__: adding buttons")
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
@@ -566,6 +569,8 @@ class AdminConfirmView(View):
 class AdminConfirmView(View):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict):
+        import logging
+        logging.info(f"AdminConfirmView.__init__: match_type={match_type}, match_index={match_index}")
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
@@ -587,6 +592,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
+        logging.info("AdminConfirmView.__init__: adding buttons")
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
