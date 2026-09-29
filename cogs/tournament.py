@@ -1682,9 +1682,9 @@ class TournamentCog(commands.Cog):
         response = random.choice(WHOAMI_RESPONSES)
 
         embed = discord.Embed(
-            title=replace_emojis(" Кто ты?"),
-            description=response,
-            color=discord.Color.random()
+            title=f"{replace_emojis('a_star')} **Кто я?** {replace_emojis('a_star')}",
+            description=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {response} {replace_emojis('a_sparkle')}",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         await interaction.response.send_message(embed=embed)
