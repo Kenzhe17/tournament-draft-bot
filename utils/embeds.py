@@ -453,42 +453,11 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             odds_b = max(1.1, odds_b)
 
         # Build field name
-        num_emoji = replace_emojis(f"num_{i + 1}")
         star_emoji = replace_emojis("a_star")
-        field_name = f"{num_emoji} {star_emoji} Игра #{i + 1}"
+        field_name = f"{star_emoji} Игра #{i + 1}"
 
-        # Build field value - match info with odds
-        field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** `{odds_a:.2f}x` vs **{name_b}** `{odds_b:.2f}x`\n"
-
-        # Get bets for this match
-        bets = await bet_store.get_bets_by_match(match_id)
-
-        # Group bets by team
-        team_a_bets = [b for b in bets if b.team_name == name_a]
-        team_b_bets = [b for b in bets if b.team_name == name_b]
-
-        # Calculate totals
-        team_a_total = sum(b.amount for b in team_a_bets)
-        team_b_total = sum(b.amount for b in team_b_bets)
-
-        # Build betting section
-        field_value += f"{replace_emojis('white_dot')} `Ставки:`\n"
-
-        # Team A bets
-        if team_a_bets:
-            users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_a_bets]
-            users_str = ", ".join(users_with_amounts)
-            field_value += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {replace_emojis('money')} - {users_str}\n"
-        else:
-            field_value += f"> {replace_emojis('white_dot')} **{name_a}**: *Нет ставок*\n"
-
-        # Team B bets
-        if team_b_bets:
-            users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_b_bets]
-            users_str = ", ".join(users_with_amounts)
-            field_value += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {replace_emojis('money')} - {users_str}\n"
-        else:
-            field_value += f"> {replace_emojis('white_dot')} **{name_b}**: *Нет ставок*\n"
+        # Build field value - match info with odds only (no betting details)
+        field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** `{odds_a:.2f}x` vs **{name_b}** `{odds_b:.2f}x`"
 
         embed.add_field(name=field_name, value=field_value, inline=False)
 

@@ -141,7 +141,18 @@ class ViewBetsButton(Button):
             name_a = self.tournament.team_names.get(team_a, captain_a)
             name_b = self.tournament.team_names.get(team_b, captain_b)
             
-            match_text = replace_emojis(f"🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n")
+            # Get odds for this match
+            from storage.bet_store import bet_store
+            current_odds = bet_store.get_current_odds(match_id)
+            if current_odds:
+                odds_a = current_odds.team_a_odds
+                odds_b = current_odds.team_b_odds
+            else:
+                odds_a = 1.9
+                odds_b = 1.9
+            
+            star_emoji = replace_emojis("a_star")
+            match_text = f"{star_emoji} Игра #{i + 1}: {name_a} `{odds_a:.2f}x` vs {name_b} `{odds_b:.2f}x`\n\n"
 
             # Group bets by team
             team_a_bets = [b for b in bets if b.team_name == name_a]
@@ -151,19 +162,21 @@ class ViewBetsButton(Button):
             team_a_total = sum(b.amount for b in team_a_bets)
             team_b_total = sum(b.amount for b in team_b_bets)
 
+            match_text += f"{replace_emojis('white_dot')} `Ставки:`\n"
+
             if team_a_bets:
                 users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_a_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"**{name_a}:** {team_a_total:,} {replace_emojis('money')} - {users_str}\n\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {replace_emojis('money')} - {users_str}\n"
             else:
-                match_text += f"**{name_a}:** *Нет ставок*\n\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: *Нет ставок*\n"
 
             if team_b_bets:
                 users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_b_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"**{name_b}:** {team_b_total:,} {replace_emojis('money')} - {users_str}\n\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {replace_emojis('money')} - {users_str}\n"
             else:
-                match_text += f"**{name_b}:** *Нет ставок*\n\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: *Нет ставок*\n"
             
             bets_text.append(match_text)
         
