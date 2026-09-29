@@ -75,8 +75,15 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                     )
                     return
             
-            # Deduct balance
-            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+            # Check if user already has a bet on this match
+            existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
+            if existing_bet:
+                # User already has a bet - only deduct additional amount
+                additional_amount = amount
+                await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
+            else:
+                # New bet - deduct full amount
+                await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
 
             # Get match teams for odds initialization
             if self.match_type == "qualifiers":
@@ -109,7 +116,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 user_name=interaction.user.display_name,
                 match_id=match_id,
                 team_name=self.team_name,
-                amount=amount,
+                amount=amount,  # Full amount
                 odds=0.0  # Will be set in save_bet
             )
             await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
@@ -127,7 +134,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                replace_emojis(f"✅ Ставка принята\n\n{amount} 💰 → {self.team_name} `({odds}x)`"),
+                replace_emojis(f"✅ Ставка добавлена\n\n{amount} 💰 → {self.team_name} `({actual_odds:.2f}x)`"),
                 ephemeral=True
             )
         except Exception as e:

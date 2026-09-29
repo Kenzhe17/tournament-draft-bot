@@ -166,11 +166,22 @@ class BetStore:
             else:
                 raise ValueError(f"Invalid team name: {bet.team_name}")
 
-            # Fix the odds at the time of betting
-            bet.odds = current_bet_odds
+            # Check if user already has a bet
+            existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
+            if existing_bet:
+                # Add to existing bet, keep original odds
+                additional_amount = bet.amount - existing_bet.amount
+                bet.amount += existing_bet.amount
+                bet.odds = existing_bet.odds
+                # Only shift odds by the additional amount
+                shift_amount = additional_amount
+            else:
+                # New bet, use current odds
+                bet.odds = current_bet_odds
+                shift_amount = bet.amount
 
             # Calculate odds shift: 100 coins = 0.1x shift
-            odds_shift = bet.amount / 100 * 0.1
+            shift_odds = shift_amount / 100 * 0.1
 
             # Apply dynamic odds with buffer logic
             if is_team_a:
@@ -178,9 +189,9 @@ class BetStore:
                 # First, check if team B has buffer to absorb
                 if current_odds.team_b_buffer > 0:
                     # Use buffer first
-                    buffer_reduction = min(current_odds.team_b_buffer, bet.amount)
+                    buffer_reduction = min(current_odds.team_b_buffer, shift_amount)
                     current_odds.team_b_buffer -= buffer_reduction
-                    remaining_bet = bet.amount - buffer_reduction
+                    remaining_bet = shift_amount - buffer_reduction
 
                     if remaining_bet > 0:
                         # Calculate shift for remaining amount
@@ -200,7 +211,7 @@ class BetStore:
                         current_odds.team_b_odds = min(3.0, current_odds.team_b_odds + remaining_shift)
                 else:
                     # No buffer, apply shift directly
-                    new_odds_a = current_odds.team_a_odds - odds_shift
+                    new_odds_a = current_odds.team_a_odds - shift_odds
                     if new_odds_a < 1.1:
                         # Hit floor, remaining goes to buffer
                         overflow = (1.1 - new_odds_a) / 0.1 * 100
@@ -210,15 +221,15 @@ class BetStore:
                         current_odds.team_a_odds = new_odds_a
 
                     # Increase team B odds
-                    current_odds.team_b_odds = min(3.0, current_odds.team_b_odds + odds_shift)
+                    current_odds.team_b_odds = min(3.0, current_odds.team_b_odds + shift_odds)
             else:
                 # Betting on team B: team B odds decrease, team A odds increase
                 # First, check if team A has buffer to absorb
                 if current_odds.team_a_buffer > 0:
                     # Use buffer first
-                    buffer_reduction = min(current_odds.team_a_buffer, bet.amount)
+                    buffer_reduction = min(current_odds.team_a_buffer, shift_amount)
                     current_odds.team_a_buffer -= buffer_reduction
-                    remaining_bet = bet.amount - buffer_reduction
+                    remaining_bet = shift_amount - buffer_reduction
 
                     if remaining_bet > 0:
                         # Calculate shift for remaining amount
@@ -238,7 +249,7 @@ class BetStore:
                         current_odds.team_a_odds = min(3.0, current_odds.team_a_odds + remaining_shift)
                 else:
                     # No buffer, apply shift directly
-                    new_odds_b = current_odds.team_b_odds - odds_shift
+                    new_odds_b = current_odds.team_b_odds - shift_odds
                     if new_odds_b < 1.1:
                         # Hit floor, remaining goes to buffer
                         overflow = (1.1 - new_odds_b) / 0.1 * 100
@@ -248,7 +259,7 @@ class BetStore:
                         current_odds.team_b_odds = new_odds_b
 
                     # Increase team A odds
-                    current_odds.team_a_odds = min(3.0, current_odds.team_a_odds + odds_shift)
+                    current_odds.team_a_odds = min(3.0, current_odds.team_a_odds + shift_odds)
 
             # Save the bet (DB or file)
             if self._use_db:
@@ -259,8 +270,10 @@ class BetStore:
                     # Check if user already has a bet on this match
                     existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
                     if existing_bet:
-                        # Refund previous bet amount
-                        await user_balance_store.add_balance(bet.guild_id, bet.user_id, existing_bet.amount)
+                        # Add new bet amount to existing bet (do NOT refund)
+                        # bet.amount already updated above
+                        # Keep the original odds (first bet's odds)
+                        bet.odds = existing_bet.odds
 
                     await conn.execute(
                         """
@@ -283,10 +296,12 @@ class BetStore:
                     None
                 )
                 if existing_idx is not None:
-                    # Refund previous bet amount
+                    # Add new bet amount to existing bet (do NOT refund)
+                    # bet.amount already updated above
+                    # Keep the original odds (first bet's odds)
                     existing_bet = self._bets[bet.match_id][existing_idx]
-                    await user_balance_store.add_balance(bet.guild_id, bet.user_id, existing_bet.amount)
-                    # Replace with new bet
+                    bet.odds = existing_bet.odds
+                    # Replace with updated bet
                     self._bets[bet.match_id][existing_idx] = bet
                 else:
                     self._bets[bet.match_id].append(bet)
