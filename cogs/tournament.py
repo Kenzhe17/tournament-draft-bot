@@ -868,7 +868,7 @@ class TournamentCog(commands.Cog):
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=target_user.display_avatar.url)
+        embed.set_image(url=target_user.display_avatar.url)
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
