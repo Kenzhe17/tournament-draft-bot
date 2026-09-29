@@ -212,6 +212,12 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
         if existing_bet:
             # User already has a bet - only deduct additional amount (difference)
+            if amount <= existing_bet.amount:
+                await interaction.response.send_message(
+                    replace_emojis(f"❌ Сумма должна быть больше текущей ставки ({existing_bet.amount} 🪙)."),
+                    ephemeral=True
+                )
+                return
             additional_amount = amount - existing_bet.amount
             await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
         else:
