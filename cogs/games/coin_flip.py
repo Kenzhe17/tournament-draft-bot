@@ -1,10 +1,14 @@
 """Coin Flip game cog."""
 
+import sys
+import os
 import discord
 from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 
+# Add parent directory to path to import games module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from games.coin_flip import create_coin_flip_game
 
 
