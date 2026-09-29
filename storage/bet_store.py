@@ -120,10 +120,12 @@ class BetStore:
 
     def get_current_odds(self, match_id: str) -> MatchOdds | None:
         """Get current odds for a match."""
-        if self._use_db:
-            # For now, use in-memory cache (will be loaded on init in production)
-            return self._odds.get(match_id)
-        return self._odds.get(match_id)
+        odds = self._odds.get(match_id)
+        if odds:
+            # Apply limits to ensure odds are within bounds
+            odds.team_a_odds = max(1.1, min(2.7, odds.team_a_odds))
+            odds.team_b_odds = max(1.1, min(2.7, odds.team_b_odds))
+        return odds
 
     async def get_current_odds_db(self, match_id: str) -> MatchOdds | None:
         """Get current odds from database."""
@@ -136,9 +138,12 @@ class BetStore:
                     match_id
                 )
                 if row:
+                    # Apply limits to ensure odds are within bounds
+                    team_a_odds = max(1.1, min(2.7, row["team_a_odds"]))
+                    team_b_odds = max(1.1, min(2.7, row["team_b_odds"]))
                     return MatchOdds(
-                        team_a_odds=row["team_a_odds"],
-                        team_b_odds=row["team_b_odds"],
+                        team_a_odds=team_a_odds,
+                        team_b_odds=team_b_odds,
                         team_a_buffer=row["team_a_buffer"],
                         team_b_buffer=row["team_b_buffer"]
                     )
