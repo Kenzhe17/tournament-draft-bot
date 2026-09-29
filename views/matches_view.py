@@ -153,13 +153,23 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         self.team_name = team_name
         self.players = players
 
+        # Check if stats already filled by captains
+        match_id = f"{match_type}_{match_index}"
+        existing_stats = tournament.temp_match_stats.get(match_id, {})
+
         # Create input fields for each player (max 4 for a team)
         for i, player_name in enumerate(players):
+            existing_kd = ""
+            if player_name in existing_stats:
+                stats = existing_stats[player_name]
+                existing_kd = f"{stats.get('kills', 0)}/{stats.get('deaths', 0)}"
+
             kd_input = discord.ui.TextInput(
                 label=f"K/D {player_name}",
                 placeholder="7/5",
                 required=True,
-                max_length=7
+                max_length=7,
+                default=existing_kd if existing_kd else None
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
