@@ -105,9 +105,9 @@ class PlayerSelect(discord.ui.Select):
                 next_captain_name = tournament.captains[tournament.captain_order[next_picker_pos]]
                 next_captain_id = tournament.player_user_ids.get(next_captain_name, 0)
                 if next_captain_id > 0:
-                    new_message = await interaction.channel.send(f"➡️ <@{next_captain_id}> - ваша очередь выбирать!")
+                    new_message = await interaction.channel.send(f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} <@{next_captain_id}> - ваша очередь выбирать!")
                 else:
-                    new_message = await interaction.channel.send(f"➡️ {next_captain_name} - ваша очередь выбирать!")
+                    new_message = await interaction.channel.send(f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {next_captain_name} - ваша очередь выбирать!")
                 tournament.draft_message_id = new_message.id
                 store.set(tournament)
 

@@ -9,7 +9,7 @@ import os
 import discord
 from discord.ext import commands
 
-from config import DATABASE_URL, DISCORD_TOKEN
+from config import DATABASE_URL, DISCORD_TOKEN, replace_emojis
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -311,9 +311,9 @@ class TournamentBot(commands.Bot):
                                     channel = guild.get_channel(tournament.channel_id)
                                     if channel:
                                         if next_captain_id > 0:
-                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n➡️ <@{next_captain_id}> - ваша очередь выбирать!")
+                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} <@{next_captain_id}> - ваша очередь выбирать!")
                                         else:
-                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n➡️ {next_captain_name} - ваша очередь выбирать!")
+                                            new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {next_captain_name} - ваша очередь выбирать!")
                                         tournament.draft_message_id = new_message.id
                                         store.set(tournament)
                             else:
