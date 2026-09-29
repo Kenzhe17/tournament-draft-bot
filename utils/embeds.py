@@ -724,11 +724,7 @@ async def build_qualifiers_embed(
         avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
         # Get room info
-        room_data = tournament.qualifier_rooms.get(i, {})
-        if room_data:
-            room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
-        else:
-            room_info = ""
+        # Not added to description anymore - will be added as embed fields later
 
         # Check if winner is set (only show confirmed winners, not pending)
         winner_info = ""
@@ -746,15 +742,22 @@ async def build_qualifiers_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{winner_info}"
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`{winner_info}"
         )
 
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+
+    # Add room info to footer for first match only
+    for i in range(len(tournament.qualifier_matches)):
+        room_data = tournament.qualifier_rooms.get(i, {})
+        if room_data:
+            footer = f"ID комнаты: {room_data['id']} | Пароль: {room_data['password']}\n\n{footer}"
+            break  # Only add first match room info
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -768,15 +771,8 @@ async def build_qualifiers_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add room info as separate fields for each match
-    for i in range(len(tournament.qualifier_matches)):
-        room_data = tournament.qualifier_rooms.get(i, {})
-        if room_data:
-            embed.add_field(name=f"ID комнаты (#{i+1})", value=str(room_data['id']), inline=True)
-            embed.add_field(name=f"Пароль (#{i+1})", value=str(room_data['password']), inline=True)
-
     if footer:
-        embed.set_footer(text=replace_emojis(footer))
+        embed.set_footer(text=footer)
 
     # Add team names and players as inline fields
     for team_idx, team_data in enumerate(tournament.teams):
@@ -838,11 +834,7 @@ async def build_semifinals_embed(
         avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
         # Get room info
-        room_data = tournament.semifinal_rooms.get(i, {})
-        if room_data:
-            room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
-        else:
-            room_info = ""
+        # Not added to description anymore - will be added as embed fields later
 
         # Check if winner is set (only show confirmed winners, not pending)
         winner_info = ""
@@ -858,15 +850,22 @@ async def build_semifinals_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
+            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`{winner_info}"
         )
 
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
-        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinals":
-        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+
+    # Add room info to footer for first match only
+    for i in range(len(tournament.semifinal_matches)):
+        room_data = tournament.semifinal_rooms.get(i, {})
+        if room_data:
+            footer = f"ID комнаты: {room_data['id']} | Пароль: {room_data['password']}\n\n{footer}"
+            break  # Only add first match room info
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -880,15 +879,8 @@ async def build_semifinals_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add room info as separate fields for each match
-    for i in range(len(tournament.semifinal_matches)):
-        room_data = tournament.semifinal_rooms.get(i, {})
-        if room_data:
-            embed.add_field(name=f"ID комнаты (#{i+1})", value=str(room_data['id']), inline=True)
-            embed.add_field(name=f"Пароль (#{i+1})", value=str(room_data['password']), inline=True)
-
     if footer:
-        embed.set_footer(text=replace_emojis(footer))
+        embed.set_footer(text=footer)
 
     # Add team names and players as inline fields
     for team_idx, team_data in enumerate(tournament.teams):
@@ -966,9 +958,13 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+
+    # Add room info to footer for final
+    if tournament.final_room:
+        footer = f"ID комнаты: {tournament.final_room['id']} | Пароль: {tournament.final_room['password']}\n\n{footer}"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -983,13 +979,8 @@ async def build_final_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add room info as separate fields for final
-    if tournament.final_room:
-        embed.add_field(name="ID комнаты", value=str(tournament.final_room['id']), inline=True)
-        embed.add_field(name="Пароль", value=str(tournament.final_room['password']), inline=True)
-
     if footer:
-        embed.set_footer(text=replace_emojis(footer))
+        embed.set_footer(text=footer)
 
     # Add team names and players as inline fields
     for team_idx in [team_a, team_b]:
