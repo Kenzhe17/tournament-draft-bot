@@ -120,17 +120,10 @@ class TakeRoleButton(discord.ui.Button):
             state.message_id = interaction.message.id
             save_state(state)
 
-            # Update view
-            view = interaction.message.view
-            if view:
-                for item in view.children:
-                    if isinstance(item, TakeRoleButton):
-                        item.disabled = True
-                    elif isinstance(item, ReleaseRoleButton):
-                        item.disabled = False
+            # Rebuild view with updated state
+            view = OrgRoleView(state)
 
             # Update embed
-            embed = interaction.message.embeds[0]
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(embed=new_embed, view=view)
 
@@ -193,17 +186,10 @@ class ReleaseRoleButton(discord.ui.Button):
             state.organizer_id = 0
             save_state(state)
 
-            # Update view
-            view = interaction.message.view
-            if view:
-                for item in view.children:
-                    if isinstance(item, TakeRoleButton):
-                        item.disabled = False
-                    elif isinstance(item, ReleaseRoleButton):
-                        item.disabled = True
+            # Rebuild view with updated state
+            view = OrgRoleView(state)
 
             # Update embed
-            embed = interaction.message.embeds[0]
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(embed=new_embed, view=view)
 
@@ -259,17 +245,10 @@ class ResetButton(discord.ui.Button):
             state.organizer_id = 0
             save_state(state)
 
-            # Update view
-            view = interaction.message.view
-            if view:
-                for item in view.children:
-                    if isinstance(item, TakeRoleButton):
-                        item.disabled = False
-                    elif isinstance(item, ReleaseRoleButton):
-                        item.disabled = True
+            # Rebuild view with updated state
+            view = OrgRoleView(state)
 
             # Update embed
-            embed = interaction.message.embeds[0]
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(embed=new_embed, view=view)
 
@@ -344,10 +323,6 @@ async def setup_org_role_message(
     """Настроить сообщение для управления ролью организатора."""
     state = load_state()
 
-    # Create image embed
-    image_embed = discord.Embed(color=discord.Color.from_rgb(69, 69, 69))
-    image_embed.set_image(url=WELCOME_BANNER_URL)
-
     # Create main embed
     main_embed = build_org_role_embed(guild, state)
 
@@ -355,7 +330,7 @@ async def setup_org_role_message(
     view = OrgRoleView(state)
 
     # Send message
-    message = await channel.send(embeds=[image_embed, main_embed], view=view)
+    message = await channel.send(embed=main_embed, view=view)
 
     # Save message info
     state.message_id = message.id
