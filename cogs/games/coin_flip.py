@@ -308,7 +308,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
                 )
                 return
 
-            await user_balance_store.add_balance(guild_id, user_id, -self.bet)
+            await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
 
         # Create game
         game = CoinFlipGame(
@@ -436,7 +436,7 @@ async def create_coin_flip_game(
             )
             return
 
-        await user_balance_store.add_balance(guild_id, user_id, -bet)
+        await user_balance_store.subtract_balance(guild_id, user_id, bet)
 
     # Create game
     game = CoinFlipGame(
