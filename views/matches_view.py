@@ -51,7 +51,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
                 team_name = tournament.team_names.get(team_index, captain)
                 teams.append(team_name)
 
-            # Get all 4 player names for this match
+            # Get all 4 player names for this match (used in modal)
             all_players = []
             for team_index in match:
                 team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
@@ -60,7 +60,7 @@ class AdminStatsMatchSelectView(discord.ui.View):
                     if player:
                         all_players.append(player)
 
-            label = f"Игра #{i + 1}: {', '.join(all_players[:2])} vs {', '.join(all_players[2:])}"
+            label = f"Игра #{i + 1}: {teams[0]} vs {teams[1]}"
             self.add_item(AdminStatsMatchButton(guild_id, tournament, match_type, i, label, all_players))
 
 
