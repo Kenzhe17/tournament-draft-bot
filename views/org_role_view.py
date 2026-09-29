@@ -297,7 +297,7 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         f"{replace_emojis('white_arrow')} **Система бронирования роли Организатора**\n\n"
         f"Чтобы избежать багов и накладок, роль одновременно может удерживать только **1 Организатор**.\n\n"
         f"{replace_emojis('a_sparkle')} **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Нажмите **«Взять роль»**, чтобы забронировать время и получить права орга.\n"
+        f"{replace_emojis('white_arrow')} Нажмите **«Взять роль»**, чтобы забронировать время и получить роль.\n"
         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} После завершения турнира обязательно нажмите **«Сдать роль»**.\n"
         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка заблокирована — слот занят другим организатором.\n\n"
         f"{replace_emojis('a_sparkle')} **ТЕКУЩИЙ СТАТУС:**\n"
