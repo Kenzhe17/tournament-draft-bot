@@ -64,9 +64,6 @@ GAME_EMOJIS = {
     "winner": os.getenv("EMOJI_WINNER", ""),
     "target": os.getenv("EMOJI_TARGET", ""),
     "sword": os.getenv("EMOJI_SWORD", ""),
-    "gold_medal": os.getenv("EMOJI_GOLD_MEDAL", ""),
-    "silver_medal": os.getenv("EMOJI_SILVER_MEDAL", ""),
-    "bronze_medal": os.getenv("EMOJI_BRONZE_MEDAL", ""),
     
     # Stats
     "grow": os.getenv("EMOJI_GROW", ""),
@@ -134,11 +131,10 @@ GAME_EMOJIS = {
     "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
     "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
 
-    # Rare emojis
-    "rare_basic": os.getenv("EMOJI_RARE_BASIC", ""),
-    "rare_premium": os.getenv("EMOJI_RARE_PREMIUM", ""),
-    "rare_elite": os.getenv("EMOJI_RARE_ELITE", ""),
-    "rare_special": os.getenv("EMOJI_RARE_SPECIAL", ""),
+    # Medal emojis
+    "medal_gold": os.getenv("EMOJI_MEDAL_GOLD", ""),
+    "medal_silver": os.getenv("EMOJI_MEDAL_SILVER", ""),
+    "medal_bronze": os.getenv("EMOJI_MEDAL_BRONZE", ""),
 
     # Icon emojis
     "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
@@ -152,11 +148,6 @@ GAME_EMOJIS = {
     "icon_cards": os.getenv("EMOJI_ICON_CARDS", ""),
     "icon_cat_ears": os.getenv("EMOJI_ICON_CAT_EARS", ""),
     "icon_wing": os.getenv("EMOJI_ICON_WING", ""),
-
-    # Medal emojis (for leaderboard)
-    "medal_gold": os.getenv("EMOJI_MEDAL_GOLD", ""),
-    "medal_silver": os.getenv("EMOJI_MEDAL_SILVER", ""),
-    "medal_bronze": os.getenv("EMOJI_MEDAL_BRONZE", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -182,9 +173,6 @@ STANDARD_EMOJIS = {
     "winner": "🏆",
     "target": "🎯",
     "sword": "⚔️",
-    "gold_medal": "🥇",
-    "silver_medal": "🥈",
-    "bronze_medal": "🥉",
     
     # Stats
     "grow": "📈",
@@ -208,6 +196,11 @@ STANDARD_EMOJIS = {
     "cross": "❌",
     "settings": "⚙️",
     "room": "🚪",
+
+    # Medals
+    "medal_gold": "🥇",
+    "medal_silver": "🥈",
+    "medal_bronze": "🥉",
 
     # Interface
     "success": "✅",
@@ -275,11 +268,6 @@ STANDARD_EMOJIS = {
     "icon_cards": "",
     "icon_cat_ears": "",
     "icon_wing": "",
-
-    # Medal emojis (for leaderboard)
-    "medal_gold": "",
-    "medal_silver": "",
-    "medal_bronze": "",
 
     # Shop & UI
     "tag": "",
@@ -364,9 +352,6 @@ def replace_emojis(text: str) -> str:
 
         # Tournaments
         "🏆": "winner",
-        "🥇": "gold_medal",
-        "🥈": "silver_medal",
-        "🥉": "bronze_medal",
         "🎯": "target",
         "⚔️": "sword",
 
@@ -417,7 +402,7 @@ def replace_emojis(text: str) -> str:
         "💫": "rare_premium",
         "🌟": "rare_elite",
 
-        # Medal emojis (for leaderboard)
+        # Medal emojis
         "🥇": "medal_gold",
         "🥈": "medal_silver",
         "🥉": "medal_bronze",
