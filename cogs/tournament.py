@@ -1798,7 +1798,7 @@ class TournamentCog(commands.Cog):
             await setup_org_role_message(self.bot, interaction.guild, interaction.channel)
             await interaction.followup.send(
                 "✅ Сообщение для управления ролью организатора создано",
-                ephemeral=True
+                ephemeral=False
             )
         except Exception as e:
             await interaction.followup.send(

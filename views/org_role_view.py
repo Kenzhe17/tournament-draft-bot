@@ -310,7 +310,7 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
-    embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+    embed.set_image(url=WELCOME_BANNER_URL)
     embed.set_footer(text="r1z3 Tournament System")
 
     return embed
