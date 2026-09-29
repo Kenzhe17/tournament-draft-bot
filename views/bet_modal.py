@@ -121,14 +121,15 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 amount=amount,  # Full amount
                 odds=0.0  # Will be set in save_bet
             )
-            await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
-
-            # Get the odds that were actually used
-            updated_odds = bet_store.get_current_odds(match_id)
+            # Get the odds BEFORE saving (so we show the odds user actually bet on)
+            current_odds = bet_store.get_current_odds(match_id)
             if self.team_name == self.team_a_name:
-                actual_odds = updated_odds.team_a_odds if updated_odds else 1.9
+                actual_odds = current_odds.team_a_odds if current_odds else 1.9
             else:
-                actual_odds = updated_odds.team_b_odds if updated_odds else 1.9
+                actual_odds = current_odds.team_b_odds if current_odds else 1.9
+
+            # Save the bet (this will update odds)
+            await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
             
             # Update tournament message
             from bot import TournamentBot
