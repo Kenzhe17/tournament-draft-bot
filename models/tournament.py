@@ -795,10 +795,16 @@ class Tournament:
             else:
                 duration_minutes = 0
 
+            # Get actual guild object for logging
+            guild = bot.get_guild(self.guild_id)
+            if not guild:
+                print(f"Failed to get guild {self.guild_id} for logging")
+                return
+
             # Log asynchronously
             asyncio.create_task(log_tournament_completed(
                 bot,
-                discord.Object(id=self.guild_id),
+                guild,
                 f"Турнир {self.size.value}",
                 winner_name,
                 participant_count,
