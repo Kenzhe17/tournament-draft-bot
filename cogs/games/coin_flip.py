@@ -472,7 +472,7 @@ class CoinFlipCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка")
+    @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка", hidden=True)
     @app_commands.describe(bet="Ставка в монетах (10-10,000)", opponent="Соперник (для PvP)")
     @is_bot_owner()
     async def coin_flip(
