@@ -284,8 +284,11 @@ async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
                 if stats:
                     total_elo += stats.elo
                     player_count += 1
+                else:
+                    total_elo += 1000  # Default ELO for new players
+                    player_count += 1
 
-    avg_elo = total_elo // player_count if player_count > 0 else 0
+    avg_elo = total_elo // player_count if player_count > 0 else 1000
     return avg_elo
 
 
@@ -752,17 +755,10 @@ async def build_qualifiers_embed(
     elif tournament.betting_phase == "qualifiers":
         footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
 
-    # Add room info to description instead of footer for better visibility
-    for i in range(len(tournament.qualifier_matches)):
-        room_data = tournament.qualifier_rooms.get(i, {})
-        if room_data:
-            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
-            break  # Only add first match room info
-
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Отборочные матчи:**\n"
-        + "\n\n".join(matches_section)
+        + "\n\n".join(matches_section) + "\n"
     )
 
     embed = discord.Embed(
@@ -791,15 +787,7 @@ async def build_qualifiers_embed(
             formatted_players.append(formatted_name)
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
-
-    # Add room ID fields for each match
-    for i in range(len(tournament.qualifier_matches)):
-        room_data = tournament.qualifier_rooms.get(i, {})
-        if room_data:
-            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Отбор #{i + 1}):** {room_data['id']}",
-                             f"{replace_emojis('white_dot')} **Пароль:** {room_data['password']}")
-            embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -860,17 +848,10 @@ async def build_semifinals_embed(
     elif tournament.betting_phase == "semifinals":
         footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
 
-    # Add room info to description for first match only
-    for i in range(len(tournament.semifinal_matches)):
-        room_data = tournament.semifinal_rooms.get(i, {})
-        if room_data:
-            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
-            break  # Only add first match room info
-
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Полуфинальные матчи:**\n"
-        + "\n\n".join(matches_section)
+        + "\n\n".join(matches_section) + "\n"
     )
 
     embed = discord.Embed(
@@ -899,15 +880,7 @@ async def build_semifinals_embed(
             formatted_players.append(formatted_name)
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
-
-    # Add room ID fields for each semifinal match
-    for i in range(len(tournament.semifinal_matches)):
-        room_data = tournament.semifinal_rooms.get(i, {})
-        if room_data:
-            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Полуфинал #{i + 1}):** {room_data['id']}",
-                             f"{replace_emojis('white_dot')} **Пароль:** {room_data['password']}")
-            embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -941,12 +914,9 @@ async def build_final_embed(
     avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
     avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
-    # Get room info
+    # Get room info (not displayed in embed, only sent via DM)
     room_data = tournament.final_room
-    if room_data:
-        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
-    else:
-        room_info = ""
+    room_info = ""
 
     # Check if winner is set (only show confirmed winner when tournament is complete)
     winner_info = ""
@@ -965,7 +935,7 @@ async def build_final_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO)\n{room_info}{winner_info}\n\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
