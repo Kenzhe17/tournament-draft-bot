@@ -610,9 +610,9 @@ async def build_draft_embed(
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
         current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         if current_captain_id > 0:
-            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** <@{current_captain_id}> `{replace_emojis('white_arrow')} У вас 60 сек на выбор`"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** <@{current_captain_id}>\n{replace_emojis('white_arrow')} У вас есть 60 сек на выбор!"
         else:
-            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** {current_captain_name} `{replace_emojis('white_arrow')} У вас 60 сек на выбор`"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** {current_captain_name}\n{replace_emojis('white_arrow')} У вас есть 60 сек на выбор!"
     else:
         current_line = "Драфт завершён"
 
