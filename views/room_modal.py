@@ -106,12 +106,12 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         try:
             user = await bot.fetch_user(user_id)
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')}  КОМНАТА ОТКРЫТА  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Заходите в лобби!**\n\n{replace_emojis('white_dot')} ** ДАННЫЕ ДЛЯ ВХОДА:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Команда:** `{team1_name}`\n\n{replace_emojis('a_dot_smaller')} *Убедительная просьба занять свои слоты вовремя!*",
+                title="КОМНАТА ОТКРЫТА",
+                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**",
                 color=discord.Color.from_rgb(69, 233, 233)
             )
-            embed.add_field(name="ID комнаты", value=f"`{room_id}`", inline=True)
-            embed.add_field(name="Пароль", value=f"`{room_password}`", inline=True)
+            embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
+            embed.add_field(name="Пароль", value=str(room_password), inline=True)
             await user.send(content=f"<@{user_id}>", embed=embed)
         except Exception:
             pass  # User has DMs disabled
@@ -121,12 +121,12 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         try:
             user = await bot.fetch_user(user_id)
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')}  КОМНАТА ОТКРЫТА  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Заходите в лобби!**\n\n{replace_emojis('white_dot')} ** ДАННЫЕ ДЛЯ ВХОДА:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Команда:** `{team2_name}`\n\n{replace_emojis('a_dot_smaller')} *Убедительная просьба занять свои слоты вовремя!*",
+                title="КОМНАТА ОТКРЫТА",
+                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**",
                 color=discord.Color.from_rgb(69, 233, 233)
             )
-            embed.add_field(name="ID комнаты", value=f"`{room_id}`", inline=True)
-            embed.add_field(name="Пароль", value=f"`{room_password}`", inline=True)
+            embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
+            embed.add_field(name="Пароль", value=str(room_password), inline=True)
             await user.send(content=f"<@{user_id}>", embed=embed)
         except Exception:
             pass  # User has DMs disabled

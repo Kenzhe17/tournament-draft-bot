@@ -162,15 +162,15 @@ class AdminStatsConfirmView(discord.ui.View):
         team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
         team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
 
-        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[0], team_a_name))
-        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[1], team_b_name))
+        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[0], team_a_name, match))
+        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[1], team_b_name, match))
         self.add_item(AdminEditStatsButton(guild_id, tournament, match_type, match_index, match))
 
 
 class AdminConfirmWinnerButton(discord.ui.Button):
     """Button to confirm winner with stats."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: list):
         super().__init__(
             label=f"Победитель: {team_name}",
             style=discord.ButtonStyle.success,
@@ -182,6 +182,7 @@ class AdminConfirmWinnerButton(discord.ui.Button):
         self.match_index = match_index
         self.team_index = team_index
         self.team_name = team_name
+        self.match = match
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check

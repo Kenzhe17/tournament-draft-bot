@@ -726,7 +726,7 @@ async def build_qualifiers_embed(
         # Get room info
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
         else:
             room_info = ""
 
@@ -746,7 +746,7 @@ async def build_qualifiers_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{winner_info}"
         )
 
     # Build footer
@@ -767,6 +767,13 @@ async def build_qualifiers_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add room info as separate fields for each match
+    for i in range(len(tournament.qualifier_matches)):
+        room_data = tournament.qualifier_rooms.get(i, {})
+        if room_data:
+            embed.add_field(name=f"ID комнаты (#{i+1})", value=str(room_data['id']), inline=True)
+            embed.add_field(name=f"Пароль (#{i+1})", value=str(room_data['password']), inline=True)
 
     if footer:
         embed.set_footer(text=replace_emojis(footer))
@@ -833,7 +840,7 @@ async def build_semifinals_embed(
         # Get room info
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
         else:
             room_info = ""
 
@@ -872,6 +879,13 @@ async def build_semifinals_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add room info as separate fields for each match
+    for i in range(len(tournament.semifinal_matches)):
+        room_data = tournament.semifinal_rooms.get(i, {})
+        if room_data:
+            embed.add_field(name=f"ID комнаты (#{i+1})", value=str(room_data['id']), inline=True)
+            embed.add_field(name=f"Пароль (#{i+1})", value=str(room_data['password']), inline=True)
 
     if footer:
         embed.set_footer(text=replace_emojis(footer))
@@ -938,7 +952,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
     else:
         room_info = ""
 
@@ -968,6 +982,11 @@ async def build_final_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add room info as separate fields for final
+    if tournament.final_room:
+        embed.add_field(name="ID комнаты", value=str(tournament.final_room['id']), inline=True)
+        embed.add_field(name="Пароль", value=str(tournament.final_room['password']), inline=True)
 
     if footer:
         embed.set_footer(text=replace_emojis(footer))
