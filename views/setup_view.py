@@ -919,7 +919,7 @@ class ToggleRegistrationButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, is_open: bool):
         self.is_open = is_open
-        label = replace_emojis("🔒 Закрыть") if is_open else replace_emojis("🔓 Открыть")
+        label = "🔒 Закрыть" if is_open else "🔓 Открыть"
         style = discord.ButtonStyle.danger if is_open else discord.ButtonStyle.primary
         super().__init__(
             style=style,
