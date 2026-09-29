@@ -379,7 +379,7 @@ class RaritySelect(discord.ui.Select):
                 )
             else:
                 # Icons - use the actual custom emoji from item.value
-                icon_emoji = item.value if item.value else "⭐"
+                icon_emoji = replace_emojis(item.value) if item.value else "⭐"
                 items_parts.append(
                     f"{replace_emojis(sub_emoji)} {icon_emoji} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
                 )
