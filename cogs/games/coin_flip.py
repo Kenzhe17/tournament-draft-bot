@@ -139,10 +139,10 @@ class CoinFlipView(discord.ui.View):
 class CoinFlipHeadsButton(discord.ui.Button):
     """Кнопка выбора Орла (PvE)."""
 
-    def __init__(self, game: CoinFlipGame, view: CoinFlipView):
+    def __init__(self, game: CoinFlipGame, game_view: CoinFlipView):
         super().__init__(style=discord.ButtonStyle.primary, label="Орёл")
         self.game = game
-        self.view = view
+        self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
@@ -150,16 +150,16 @@ class CoinFlipHeadsButton(discord.ui.Button):
             return
 
         self.game.initiator_choice = "heads"
-        await start_game(interaction, self.game, self.view)
+        await start_game(interaction, self.game, self.game_view)
 
 
 class CoinFlipTailsButton(discord.ui.Button):
     """Кнопка выбора Решки (PvE)."""
 
-    def __init__(self, game: CoinFlipGame, view: CoinFlipView):
+    def __init__(self, game: CoinFlipGame, game_view: CoinFlipView):
         super().__init__(style=discord.ButtonStyle.secondary, label="Решка")
         self.game = game
-        self.view = view
+        self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
@@ -167,7 +167,7 @@ class CoinFlipTailsButton(discord.ui.Button):
             return
 
         self.game.initiator_choice = "tails"
-        await start_game(interaction, self.game, self.view)
+        await start_game(interaction, self.game, self.game_view)
 
 
 class CoinFlipCancelButton(discord.ui.Button):
@@ -202,10 +202,10 @@ class CoinFlipCancelButton(discord.ui.Button):
 class CoinFlipAcceptButton(discord.ui.Button):
     """Кнопка принятия вызова (PvP)."""
 
-    def __init__(self, game: CoinFlipGame, view: CoinFlipView):
+    def __init__(self, game: CoinFlipGame, game_view: CoinFlipView):
         super().__init__(style=discord.ButtonStyle.success, label="Принять вызов")
         self.game = game
-        self.view = view
+        self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.opponent_id:
@@ -223,13 +223,13 @@ class CoinFlipAcceptButton(discord.ui.Button):
                 )
                 return
 
-            await user_balance_store.add_balance(
+            await user_balance_store.subtract_balance(
                 self.game.guild_id,
                 self.game.opponent_id,
-                -self.game.bet
+                self.game.bet
             )
 
-        await start_game(interaction, self.game, self.view)
+        await start_game(interaction, self.game, self.game_view)
 
 
 class CoinFlipDeclineButton(discord.ui.Button):
@@ -324,12 +324,12 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
 
         if opponent:
             # PvP mode
-            view.add_item(CoinFlipAcceptButton(game, view))
+            view.add_item(CoinFlipAcceptButton(game, game_view=view))
             view.add_item(CoinFlipDeclineButton(game))
         else:
             # PvE mode
-            view.add_item(CoinFlipHeadsButton(game, view))
-            view.add_item(CoinFlipTailsButton(game, view))
+            view.add_item(CoinFlipHeadsButton(game, game_view=view))
+            view.add_item(CoinFlipTailsButton(game, game_view=view))
 
         view.add_item(CoinFlipCancelButton(game))
 
@@ -452,12 +452,12 @@ async def create_coin_flip_game(
 
     if opponent:
         # PvP mode
-        view.add_item(CoinFlipAcceptButton(game, view))
+        view.add_item(CoinFlipAcceptButton(game, game_view=view))
         view.add_item(CoinFlipDeclineButton(game))
     else:
         # PvE mode
-        view.add_item(CoinFlipHeadsButton(game, view))
-        view.add_item(CoinFlipTailsButton(game, view))
+        view.add_item(CoinFlipHeadsButton(game, game_view=view))
+        view.add_item(CoinFlipTailsButton(game, game_view=view))
 
     view.add_item(CoinFlipCancelButton(game))
 
