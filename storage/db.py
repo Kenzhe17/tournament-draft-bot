@@ -301,12 +301,20 @@ async def init_db() -> None:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS match_odds (
                 match_id TEXT PRIMARY KEY,
+                team_a_name TEXT NOT NULL DEFAULT '',
+                team_b_name TEXT NOT NULL DEFAULT '',
                 team_a_odds REAL NOT NULL DEFAULT 1.9,
                 team_b_odds REAL NOT NULL DEFAULT 1.9,
                 team_a_buffer INTEGER NOT NULL DEFAULT 0,
                 team_b_buffer INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Add team name columns if they don't exist
+        try:
+            await conn.execute("ALTER TABLE match_odds ADD COLUMN IF NOT EXISTS team_a_name TEXT NOT NULL DEFAULT ''")
+            await conn.execute("ALTER TABLE match_odds ADD COLUMN IF NOT EXISTS team_b_name TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # Columns might already exist
 
         # Create betting_stats table for betting statistics
         await conn.execute("""
