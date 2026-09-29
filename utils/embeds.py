@@ -714,13 +714,20 @@ async def build_qualifiers_embed(
         team_name = tournament.team_names.get(team_idx, captain)
         players = team_data.get("players", [])
 
-        # Use player names instead of mentions
-        player_names = [player for player in players if player]
+        # Format player names with cosmetics (tags and icons)
+        formatted_players = []
+        for player in players:
+            player_user_id = tournament.player_user_ids.get(player, 0)
+            if player_user_id:
+                formatted_name = format_player_name(guild.id, player_user_id, player)
+            else:
+                formatted_name = player
+            formatted_players.append(formatted_name)
 
         # Use number emoji for team prefix
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
+        teams_section.append(f"{num_emoji} **{team_name}**")
+        teams_section.append(f"{replace_emojis('white_arrow')} {', '.join(formatted_players)}")
 
     # Build betting section
     betting_section = []
@@ -766,8 +773,26 @@ async def build_qualifiers_embed(
         + "\n\n".join(matches_section)
         + "\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
-        + "\n".join(teams_section)
     )
+
+    # Add team names and players as inline fields
+    for team_idx, team_data in enumerate(tournament.teams):
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+
+        # Format player names with cosmetics (tags and icons)
+        formatted_players = []
+        for player in players:
+            player_user_id = tournament.player_user_ids.get(player, 0)
+            if player_user_id:
+                formatted_name = format_player_name(guild.id, player_user_id, player)
+            else:
+                formatted_name = player
+            formatted_players.append(formatted_name)
+
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
 
     if betting_section:
         description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
@@ -835,13 +860,20 @@ async def build_semifinals_embed(
         team_name = tournament.team_names.get(team_idx, captain)
         players = team_data.get("players", [])
 
-        # Use player names instead of mentions
-        player_names = [player for player in players if player]
+        # Format player names with cosmetics (tags and icons)
+        formatted_players = []
+        for player in players:
+            player_user_id = tournament.player_user_ids.get(player, 0)
+            if player_user_id:
+                formatted_name = format_player_name(guild.id, player_user_id, player)
+            else:
+                formatted_name = player
+            formatted_players.append(formatted_name)
 
         # Use number emoji for team prefix
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
+        teams_section.append(f"{num_emoji} **{team_name}**")
+        teams_section.append(f"{replace_emojis('white_arrow')} {', '.join(formatted_players)}")
 
     # Build betting section
     betting_section = []
@@ -882,7 +914,6 @@ async def build_semifinals_embed(
         + "\n\n".join(matches_section)
         + "\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
-        + "\n".join(teams_section)
     )
 
     if betting_section:
@@ -893,6 +924,25 @@ async def build_semifinals_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add team names and players as inline fields
+    for team_idx, team_data in enumerate(tournament.teams):
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+
+        # Format player names with cosmetics (tags and icons)
+        formatted_players = []
+        for player in players:
+            player_user_id = tournament.player_user_ids.get(player, 0)
+            if player_user_id:
+                formatted_name = format_player_name(guild.id, player_user_id, player)
+            else:
+                formatted_name = player
+            formatted_players.append(formatted_name)
+
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
 
     if footer:
         embed.set_footer(text=footer)
@@ -940,22 +990,6 @@ async def build_final_embed(
     else:
         room_info = ""
 
-    # Build teams section
-    teams_section = []
-    for team_idx in [team_a, team_b]:
-        team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
-        captain = team_data.get("captain", f"П{team_idx + 1}")
-        team_name = tournament.team_names.get(team_idx, captain)
-        players = team_data.get("players", [])
-
-        # Use player names instead of mentions
-        player_names = [player for player in players if player]
-
-        # Use number emoji for team prefix
-        num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        prefix = replace_emojis("sub_middle") if team_idx == team_a else replace_emojis("sub_directory")
-        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
-
     # Build betting section
     betting_section = []
     if tournament.is_betting_open() and tournament.betting_phase == "final":
@@ -993,7 +1027,6 @@ async def build_final_embed(
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
         f"{replace_emojis('white_arrow')} **Финал:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
-        + "\n".join(teams_section)
     )
 
     if betting_section:
@@ -1004,6 +1037,26 @@ async def build_final_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    # Add team names and players as inline fields
+    for team_idx in [team_a, team_b]:
+        team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
+        captain = team_data.get("captain", f"П{team_idx + 1}")
+        team_name = tournament.team_names.get(team_idx, captain)
+        players = team_data.get("players", [])
+
+        # Format player names with cosmetics (tags and icons)
+        formatted_players = []
+        for player in players:
+            player_user_id = tournament.player_user_ids.get(player, 0)
+            if player_user_id:
+                formatted_name = format_player_name(guild.id, player_user_id, player)
+            else:
+                formatted_name = player
+            formatted_players.append(formatted_name)
+
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
 
     if footer:
         embed.set_footer(text=footer)
