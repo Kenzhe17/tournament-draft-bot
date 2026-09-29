@@ -182,6 +182,9 @@ STANDARD_EMOJIS = {
     "winner": "🏆",
     "target": "🎯",
     "sword": "⚔️",
+    "gold_medal": "🥇",
+    "silver_medal": "🥈",
+    "bronze_medal": "🥉",
     
     # Stats
     "grow": "📈",
