@@ -583,7 +583,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Название команды изменено на '{name}'."),
+            replace_emojis("✅ Название команды изменено."),
             ephemeral=True
         )
 
