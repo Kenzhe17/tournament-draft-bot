@@ -254,30 +254,30 @@ class TournamentBot(commands.Bot):
     async def draft_timer_loop(self) -> None:
         """Background task to handle draft pick timer and auto-random picks."""
         import asyncio
-        
+
         while not self.is_closed():
             try:
-                await asyncio.sleep(1)  # Check every second
-                
+                await asyncio.sleep(5)  # Check every 5 seconds
+
                 # Get all guilds with active tournaments
                 for guild in self.guilds:
                     tournament = store.get(guild.id)
                     if not tournament:
                         continue
-                    
+
                     # Only process if in draft phase
                     if tournament.phase != TournamentPhase.DRAFT:
                         continue
-                    
+
                     # Check if current picker exists
                     picker_pos = tournament.current_picker_position()
                     if picker_pos is None:
                         continue
-                    
+
                     # Check if time has expired
                     remaining_time = tournament.get_draft_pick_remaining_time()
                     if remaining_time > 0:
-                        # Update message to show countdown every second
+                        # Update message to show countdown every 5 seconds
                         await self.update_tournament_message(guild, tournament)
                     else:
                         # Time expired - make random pick
