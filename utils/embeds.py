@@ -717,8 +717,10 @@ async def build_qualifiers_embed(
         # Use player names instead of mentions
         player_names = [player for player in players if player]
 
+        # Use number emoji for team prefix
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
         prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix}  **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
+        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []
@@ -812,8 +814,10 @@ async def build_semifinals_embed(
         # Use player names instead of mentions
         player_names = [player for player in players if player]
 
+        # Use number emoji for team prefix
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
         prefix = replace_emojis("sub_middle") if team_idx < len(tournament.teams) - 1 else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
+        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []
@@ -904,8 +908,10 @@ async def build_final_embed(
         # Use player names instead of mentions
         player_names = [player for player in players if player]
 
+        # Use number emoji for team prefix
+        num_emoji = replace_emojis(f"num_{team_idx + 1}")
         prefix = replace_emojis("sub_middle") if team_idx == team_a else replace_emojis("sub_directory")
-        teams_section.append(f"{prefix} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
+        teams_section.append(f"{num_emoji} **{team_name}:** {replace_emojis('white_arrow')} {captain}, {', '.join(player_names)}")
 
     # Build betting section
     betting_section = []
