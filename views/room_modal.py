@@ -107,7 +107,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             user = await bot.fetch_user(user_id)
             embed = discord.Embed(
                 title="КОМНАТА ОТКРЫТА",
-                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**",
+                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
                 color=discord.Color.from_rgb(69, 233, 233)
             )
             embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
@@ -122,7 +122,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             user = await bot.fetch_user(user_id)
             embed = discord.Embed(
                 title="КОМНАТА ОТКРЫТА",
-                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**",
+                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
                 color=discord.Color.from_rgb(69, 233, 233)
             )
             embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
