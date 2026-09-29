@@ -286,9 +286,27 @@ async def init_db() -> None:
                     match_id TEXT NOT NULL,
                     team_name TEXT NOT NULL,
                     amount INTEGER NOT NULL,
+                    odds REAL NOT NULL DEFAULT 1.9,
                     PRIMARY KEY (guild_id, user_id, match_id)
                 )
             """)
+        else:
+            # Add odds column if it doesn't exist
+            try:
+                await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS odds REAL NOT NULL DEFAULT 1.9")
+            except Exception:
+                pass  # Column might already exist
+
+        # Create match_odds table for dynamic odds tracking
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_odds (
+                match_id TEXT PRIMARY KEY,
+                team_a_odds REAL NOT NULL DEFAULT 1.9,
+                team_b_odds REAL NOT NULL DEFAULT 1.9,
+                team_a_buffer INTEGER NOT NULL DEFAULT 0,
+                team_b_buffer INTEGER NOT NULL DEFAULT 0
+            )
+        """)
 
         # Create betting_stats table for betting statistics
         await conn.execute("""

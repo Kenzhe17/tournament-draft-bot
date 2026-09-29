@@ -96,9 +96,44 @@ class BetStore:
             team_b_buffer=0
         )
 
+    async def initialize_match_odds_db(self, match_id: str, team_a_odds: float, team_b_odds: float) -> None:
+        """Initialize odds in database."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO match_odds (match_id, team_a_odds, team_b_odds, team_a_buffer, team_b_buffer)
+                    VALUES ($1, $2, $3, 0, 0)
+                    ON CONFLICT (match_id) DO UPDATE SET
+                        team_a_odds = $2, team_b_odds = $3, team_a_buffer = 0, team_b_buffer = 0
+                    """,
+                    match_id, team_a_odds, team_b_odds
+                )
+
     def get_current_odds(self, match_id: str) -> MatchOdds | None:
         """Get current odds for a match."""
         return self._odds.get(match_id)
+
+    async def get_current_odds_db(self, match_id: str) -> MatchOdds | None:
+        """Get current odds from database."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT team_a_odds, team_b_odds, team_a_buffer, team_b_buffer FROM match_odds WHERE match_id = $1",
+                    match_id
+                )
+                if row:
+                    return MatchOdds(
+                        team_a_odds=row["team_a_odds"],
+                        team_b_odds=row["team_b_odds"],
+                        team_a_buffer=row["team_a_buffer"],
+                        team_b_buffer=row["team_b_buffer"]
+                    )
+        return None
 
     async def save_bet(self, bet: Bet, team_a_name: str, team_b_name: str) -> None:
         """Сохранить ставку с динамическим расчётом коэффициентов."""
