@@ -193,8 +193,8 @@ class BetStore:
                 bet.odds = current_bet_odds
                 shift_amount = bet.amount
 
-            # Calculate odds shift: 100 coins = 0.1x shift
-            shift_odds = shift_amount / 100 * 0.1
+            # Calculate odds shift: 1000 coins = 0.1x shift (less aggressive)
+            shift_odds = shift_amount / 1000 * 0.1
 
             # Apply dynamic odds with buffer logic
             if is_team_a:
