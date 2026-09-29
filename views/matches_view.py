@@ -27,28 +27,29 @@ class AdminPanelSelect(discord.ui.Select):
     """Select menu for admin functions."""
 
     def __init__(self, guild_id: int, tournament, match_type: str):
+        star_emoji = replace_emojis("a_star")
         options = [
             discord.SelectOption(
                 label="Выбрать победителя",
                 value="select_winner",
-                emoji=replace_emojis("a_star"),
+                emoji=star_emoji,
                 description="Отметить победителя матча"
             ),
             discord.SelectOption(
                 label="Заполнить статистику",
                 value="fill_stats",
-                emoji=replace_emojis("a_star"),
+                emoji=star_emoji,
                 description="Внести данные турнира"
             ),
             discord.SelectOption(
                 label="Управление комнатами",
                 value="manage_rooms",
-                emoji=replace_emojis("a_star"),
+                emoji=star_emoji,
                 description="Настройка турнирных комнат"
             ),
         ]
         super().__init__(
-            placeholder="⚙️ Панель организатора...",
+            placeholder=":gear: Панель организатора...",
             options=options,
             custom_id=f"admin_panel:{guild_id}:{match_type}",
             min_values=1,
