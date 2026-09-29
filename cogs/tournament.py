@@ -1707,7 +1707,7 @@ class TournamentCog(commands.Cog):
             )
 
             now = datetime.now()
-            cooldown_hours = 24
+            cooldown_hours = 12
             today = now.date()
 
             if record and record["last_claim"]:
@@ -1735,7 +1735,7 @@ class TournamentCog(commands.Cog):
                 # If claimed yesterday, increment streak
                 if (today - last_streak_date).days == 1:
                     streak = (record["streak"] or 0) + 1
-                # If claimed today but it's been 24+ hours, don't increment
+                # If claimed today but it's been 12+ hours, don't increment
                 elif last_claim_date == today:
                     streak = record["streak"] or 1
                 # If streak was broken, reset to 1
@@ -1773,7 +1773,7 @@ class TournamentCog(commands.Cog):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
-                description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь завтра, чтобы получить следующую награду!",
+                description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -2028,7 +2028,7 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "economy":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ЭКОНОМИКА  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Управление финансами, подарками и ставками**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/daily` — Получить ежедневный бонус `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/bet` — Личная статистика и история активных ставок\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Управление финансами, подарками и ставками**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/daily` — Получить бонус каждые 12 часов `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/bet` — Личная статистика и история активных ставок\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="economy")
@@ -2188,7 +2188,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "economy":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ЭКОНОМИКА  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Управление финансами, подарками и ставками**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/daily` — Получить ежедневный бонус `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/bet` — Личная статистика и история активных ставок\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Управление финансами, подарками и ставками**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/daily` — Получить бонус каждые 12 часов `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/bet` — Личная статистика и история активных ставок\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="economy")
