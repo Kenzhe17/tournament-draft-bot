@@ -104,8 +104,10 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика матча")
         self.match_index = match_index
         self.players = players
 
-        # Create input fields for each player
-        for i, player_name in enumerate(players):
+        # Create input fields for each player (max 5 due to Discord limit)
+        # If more than 5 players, only process first 5
+        players_to_process = players[:5]
+        for i, player_name in enumerate(players_to_process):
             kd_input = discord.ui.TextInput(
                 label=f"K/D {player_name}",
                 placeholder="7/5",
