@@ -24,7 +24,8 @@ from storage.user_balance_store import user_balance_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org, is_bot_owner
-from config import BOT_OWNER_ID, replace_emojis
+from config import BOT_OWNER_ID, replace_emojis, WELCOME_BANNER_URL
+from views.org_role_view import setup_org_role_message
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -2230,6 +2231,24 @@ class HelpGuideSelectMenu(discord.ui.Select):
             )
             view = HelpGuideView(current="organizers")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+    @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def role_command(self, interaction: discord.Interaction) -> None:
+        """Создать сообщение для управления ролью организатора."""
+        await interaction.response.defer()
+
+        try:
+            await setup_org_role_message(self.bot, interaction.guild, interaction.channel)
+            await interaction.followup.send(
+                "✅ Сообщение для управления ролью организатора создано",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка при создании сообщения: {str(e)}",
+                ephemeral=True
+            )
 
 
 class HelpGuideView(discord.ui.View):

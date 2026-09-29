@@ -324,7 +324,26 @@ class TournamentBot(commands.Bot):
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
-        
+
+        # Restore org role view if it exists
+        from views.org_role_view import load_state, OrgRoleView
+        state = load_state()
+        if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
+            try:
+                guild = self.get_guild(state.guild_id)
+                if guild:
+                    channel = guild.get_channel(state.channel_id)
+                    if channel:
+                        try:
+                            message = await channel.fetch_message(state.message_id)
+                            view = OrgRoleView(state)
+                            self.add_view(view, message_id=state.message_id)
+                            logger.info("Org role view restored")
+                        except discord.NotFound:
+                            logger.warning("Org role message not found, will be recreated")
+            except Exception as e:
+                logger.error(f"Error restoring org role view: {e}")
+
         # Debug: Log all registered commands
         commands = list(self.tree.walk_commands())
         logger.info(f"Зарегистрировано {len(commands)} команд:")

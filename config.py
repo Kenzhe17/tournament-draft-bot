@@ -26,6 +26,12 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 # Redis Cache
 REDIS_URL = os.getenv("REDIS_URL", "")
 
+# Organizer role ID
+ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
+
+# Welcome banner URL
+WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://media.discordapp.net/attachments/1200125075156910181/ваша_ссылка_на_баннер.png")
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка
