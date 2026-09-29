@@ -98,7 +98,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Initialize odds if not already done
             from models.bet import Bet
             match_id = f"{self.match_type}_{self.match_index}"
-            current_odds = await bet_store.get_current_odds(match_id)
+            current_odds = bet_store.get_current_odds(match_id)
 
             if not current_odds:
                 # Initialize odds based on ELO
@@ -122,7 +122,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
 
             # Get the odds that were actually used
-            updated_odds = await bet_store.get_current_odds(match_id)
+            updated_odds = bet_store.get_current_odds(match_id)
             if self.team_name == self.team_a_name:
                 actual_odds = updated_odds.team_a_odds if updated_odds else 1.9
             else:

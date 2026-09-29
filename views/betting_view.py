@@ -129,13 +129,31 @@ class TeamButton(discord.ui.Button):
         self.team_name = team_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Get team names for this match
+        if self.match_type == "qualifiers":
+            match = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinals":
+            match = self.tournament.semifinal_matches[self.match_index]
+        elif self.match_type == "final":
+            match = self.tournament.final_teams
+        else:
+            return
+
+        team_a_index, team_b_index = match
+        team_a_data = self.tournament.teams[team_a_index] if team_a_index < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[team_b_index] if team_b_index < len(self.tournament.teams) else {}
+        team_a_name = self.tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
+        team_b_name = self.tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
+
         modal = BetAmountModal(
             self.guild_id,
             self.tournament,
             self.match_type,
             self.match_index,
             self.team_index,
-            self.team_name
+            self.team_name,
+            team_a_name,
+            team_b_name
         )
         await interaction.response.send_modal(modal)
 
@@ -143,7 +161,7 @@ class TeamButton(discord.ui.Button):
 class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
     """Modal for entering bet amount."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, team_a_name: str, team_b_name: str):
         super().__init__()
         self.guild_id = guild_id
         self.tournament = tournament
@@ -151,6 +169,8 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         self.match_index = match_index
         self.team_index = team_index
         self.team_name = team_name
+        self.team_a_name = team_a_name
+        self.team_b_name = team_b_name
 
         self.amount_input = discord.ui.TextInput(
             label="Сумма ставки",
@@ -184,22 +204,68 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             await interaction.response.send_message(replace_emojis("❌ Вы не можете ставить против своей команды."), ephemeral=True)
             return
 
-        # Deduct balance
-        await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+        # Check if user already has a bet on this match
+        from storage.bet_store import bet_store
+        existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
+        if existing_bet:
+            # User already has a bet - only deduct additional amount
+            additional_amount = amount
+            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
+        else:
+            # New bet - deduct full amount
+            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
 
-        # Create bet
-        await bets_store.create_bet(
-            self.guild_id,
-            str(self.guild_id),  # Use guild_id as tournament_id for now
-            interaction.user.id,
-            self.match_type,
-            self.match_index,
-            self.team_index,
-            amount
+        # Initialize odds if not already done
+        from models.bet import Bet
+        from storage.bet_store import bet_store
+        from utils.embeds import get_team_avg_elo
+        match_id = f"{self.match_type}_{self.match_index}"
+        current_odds = bet_store.get_current_odds(match_id)
+
+        if not current_odds:
+            # Get match teams
+            if self.match_type == "qualifiers":
+                match = self.tournament.qualifier_matches[self.match_index]
+            elif self.match_type == "semifinals":
+                match = self.tournament.semifinal_matches[self.match_index]
+            elif self.match_type == "final":
+                match = self.tournament.final_teams
+            else:
+                return
+
+            # Initialize odds based on ELO
+            team_a_data = self.tournament.teams[match[0]] if match[0] < len(self.tournament.teams) else {}
+            team_b_data = self.tournament.teams[match[1]] if match[1] < len(self.tournament.teams) else {}
+            avg_elo_a = await get_team_avg_elo(team_a_data, self.tournament)
+            avg_elo_b = await get_team_avg_elo(team_b_data, self.tournament)
+            bet_store.initialize_match_odds(match_id, self.team_a_name, self.team_b_name, avg_elo_a, avg_elo_b)
+
+        # Create bet (odds will be set dynamically in save_bet)
+        bet = Bet(
+            guild_id=self.guild_id,
+            user_id=interaction.user.id,
+            user_name=interaction.user.display_name,
+            match_id=match_id,
+            team_name=self.team_name,
+            amount=amount,  # Full amount
+            odds=0.0  # Will be set in save_bet
         )
+        await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
+
+        # Get the odds that were actually used
+        updated_odds = bet_store.get_current_odds(match_id)
+        if self.team_name == self.team_a_name:
+            actual_odds = updated_odds.team_a_odds if updated_odds else 1.9
+        else:
+            actual_odds = updated_odds.team_b_odds if updated_odds else 1.9
+
+        # Update tournament message
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, self.tournament)
 
         await interaction.response.send_message(
-            replace_emojis("✅ Ставка {amount} 🪙 на {self.team_name} принята!"),
+            replace_emojis(f"✅ Ставка {amount} 🪙 на {self.team_name} добавлена! Коэффициент: {actual_odds:.2f}x"),
             ephemeral=True
         )
 
