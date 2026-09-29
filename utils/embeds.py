@@ -539,7 +539,7 @@ async def build_setup_embed(
                 formatted_name = player_name
 
             if player_name in elo_dict:
-                player_strings.append(f"{formatted_name} `({int(elo_dict[player_name])} ELO)`")
+                player_strings.append(f"{formatted_name} ({int(elo_dict[player_name])} ELO)")
             else:
                 player_strings.append(formatted_name)
 
@@ -742,7 +742,7 @@ async def build_qualifiers_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`{winner_info}"
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** ({int(avg_elo_a)} ELO) vs  **{name_b}:** ({int(avg_elo_b)} ELO){winner_info}"
         )
 
     # Build footer
@@ -752,11 +752,11 @@ async def build_qualifiers_embed(
     elif tournament.betting_phase == "qualifiers":
         footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
 
-    # Add room info to footer for first match only
+    # Add room info to description instead of footer for better visibility
     for i in range(len(tournament.qualifier_matches)):
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            footer = f"ID комнаты: {room_data['id']} | Пароль: {room_data['password']}\n\n{footer}"
+            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
             break  # Only add first match room info
 
     description = (
@@ -850,7 +850,7 @@ async def build_semifinals_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`{winner_info}"
+            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}"
         )
 
     # Build footer
@@ -860,11 +860,11 @@ async def build_semifinals_embed(
     elif tournament.betting_phase == "semifinals":
         footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
 
-    # Add room info to footer for first match only
+    # Add room info to description for first match only
     for i in range(len(tournament.semifinal_matches)):
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            footer = f"ID комнаты: {room_data['id']} | Пароль: {room_data['password']}\n\n{footer}"
+            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
             break  # Only add first match room info
 
     description = (
@@ -944,7 +944,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
+        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
     else:
         room_info = ""
 
@@ -962,14 +962,10 @@ async def build_final_embed(
     elif tournament.betting_phase == "final":
         footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
 
-    # Add room info to footer for final
-    if tournament.final_room:
-        footer = f"ID комнаты: {tournament.final_room['id']} | Пароль: {tournament.final_room['password']}\n\n{footer}"
-
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}\n\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO)\n{room_info}{winner_info}\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
