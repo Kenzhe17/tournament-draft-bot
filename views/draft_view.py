@@ -41,6 +41,16 @@ class PlayerSelect(discord.ui.Select):
             )
             return
 
+        # Check if there are still available players
+        key = str(tournament.current_circle)
+        available = tournament.available.get(key, [])
+        if not available:
+            await interaction.response.send_message(
+                replace_emojis("❌ Все игроки выбраны."),
+                ephemeral=True,
+            )
+            return
+
         picker_pos = tournament.current_picker_position()
         if picker_pos is None:
             await interaction.response.send_message(

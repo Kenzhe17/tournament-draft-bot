@@ -274,6 +274,12 @@ class TournamentBot(commands.Bot):
                     if picker_pos is None:
                         continue
 
+                    # Check if there are still available players
+                    key = str(tournament.current_circle)
+                    available = tournament.available.get(key, [])
+                    if not available:
+                        continue
+
                     # Check if time has expired
                     remaining_time = tournament.get_draft_pick_remaining_time()
                     if remaining_time > 0:
