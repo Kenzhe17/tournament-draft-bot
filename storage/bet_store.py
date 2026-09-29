@@ -89,9 +89,9 @@ class BetStore:
             odds_a = base_odds - abs(odds_diff)
             odds_b = base_odds + abs(odds_diff)
 
-        # Ensure minimum odds of 1.1x
-        odds_a = max(1.1, odds_a)
-        odds_b = max(1.1, odds_b)
+        # Ensure minimum odds of 1.1x and maximum of 2.7x
+        odds_a = max(1.1, min(2.7, odds_a))
+        odds_b = max(1.1, min(2.7, odds_b))
 
         self._odds[match_id] = MatchOdds(
             team_a_name=team_a_name,
@@ -216,7 +216,7 @@ class BetStore:
                             current_odds.team_a_odds = new_odds_a
 
                         # Increase team B odds
-                        current_odds.team_b_odds = min(3.0, current_odds.team_b_odds + remaining_shift)
+                        current_odds.team_b_odds = min(2.7, current_odds.team_b_odds + remaining_shift)
                 else:
                     # No buffer, apply shift directly
                     new_odds_a = current_odds.team_a_odds - shift_odds
@@ -229,7 +229,7 @@ class BetStore:
                         current_odds.team_a_odds = new_odds_a
 
                     # Increase team B odds
-                    current_odds.team_b_odds = min(3.0, current_odds.team_b_odds + shift_odds)
+                    current_odds.team_b_odds = min(2.7, current_odds.team_b_odds + shift_odds)
             else:
                 # Betting on team B: team B odds decrease, team A odds increase
                 # First, check if team A has buffer to absorb
@@ -254,7 +254,7 @@ class BetStore:
                             current_odds.team_b_odds = new_odds_b
 
                         # Increase team A odds
-                        current_odds.team_a_odds = min(3.0, current_odds.team_a_odds + remaining_shift)
+                        current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + remaining_shift)
                 else:
                     # No buffer, apply shift directly
                     new_odds_b = current_odds.team_b_odds - shift_odds
@@ -267,7 +267,7 @@ class BetStore:
                         current_odds.team_b_odds = new_odds_b
 
                     # Increase team A odds
-                    current_odds.team_a_odds = min(3.0, current_odds.team_a_odds + shift_odds)
+                    current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + shift_odds)
 
             # Save the bet (DB or file)
             if self._use_db:

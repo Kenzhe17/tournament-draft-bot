@@ -449,8 +449,8 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
                 odds_a = base_odds - abs(odds_diff)
                 odds_b = base_odds + abs(odds_diff)
 
-            odds_a = max(1.1, odds_a)
-            odds_b = max(1.1, odds_b)
+            odds_a = max(1.1, min(2.7, odds_a))
+            odds_b = max(1.1, min(2.7, odds_b))
 
         # Build field name
         star_emoji = replace_emojis("a_star")
