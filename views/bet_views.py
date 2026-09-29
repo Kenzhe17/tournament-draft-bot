@@ -89,10 +89,12 @@ class TeamSelectView(View):
             self.match_index,
             self.team_a,
             self.name_a,
-            self.match_type
+            self.match_type,
+            self.name_a,
+            self.name_b
         )
         await interaction.response.send_modal(modal)
-    
+
     async def team_b_button(self, interaction: discord.Interaction):
         """Handle team B selection."""
         from views.bet_modal import BetAmountModal
@@ -102,7 +104,9 @@ class TeamSelectView(View):
             self.match_index,
             self.team_b,
             self.name_b,
-            self.match_type
+            self.match_type,
+            self.name_a,
+            self.name_b
         )
         await interaction.response.send_modal(modal)
 

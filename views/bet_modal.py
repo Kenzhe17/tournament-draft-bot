@@ -18,7 +18,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
         max_length=10,
     )
     
-    def __init__(self, guild_id: int, tournament, match_index: int, team_index: int, team_name: str, match_type: str):
+    def __init__(self, guild_id: int, tournament, match_index: int, team_index: int, team_name: str, match_type: str, team_a_name: str, team_b_name: str):
         super().__init__()
         self.guild_id = guild_id
         self.tournament = tournament
@@ -26,7 +26,8 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
         self.team_index = team_index
         self.team_name = team_name
         self.match_type = match_type
-        # Don't modify label - use default
+        self.team_a_name = team_a_name
+        self.team_b_name = team_b_name
     
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Handle modal submission."""
@@ -77,37 +78,31 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Deduct balance
             await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
 
-            # Calculate odds based on team ELO
-            from storage.json_store import store
-            from utils.embeds import get_team_avg_elo
-            team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
-            team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
-            
-            # Get average ELO for each team
-            avg_elo_a = await get_team_avg_elo(team_a_data, self.tournament)
-            avg_elo_b = await get_team_avg_elo(team_b_data, self.tournament)
-            
-            # Calculate odds for the selected team
-            if self.team_index == self.team_a_index:
-                # Betting on team A
-                elo_diff = avg_elo_b - avg_elo_a
-                if elo_diff > 0:
-                    odds = round(1.9 + (elo_diff / 100), 2)
-                else:
-                    odds = round(1.9 - (abs(elo_diff) / 100), 2)
+            # Get match teams for odds initialization
+            if self.match_type == "qualifiers":
+                match = self.tournament.qualifier_matches[self.match_index]
+            elif self.match_type == "semifinals":
+                match = self.tournament.semifinal_matches[self.match_index]
+            elif self.match_type == "final":
+                match = self.tournament.final_teams
             else:
-                # Betting on team B
-                elo_diff = avg_elo_b - avg_elo_a
-                if elo_diff > 0:
-                    odds = round(1.9 - (elo_diff / 100), 2)
-                else:
-                    odds = round(1.9 + (abs(elo_diff) / 100), 2)
-            
-            odds = max(1.1, min(10.0, odds))
+                return
 
-            # Create and save bet
+            # Initialize odds if not already done
             from models.bet import Bet
             match_id = f"{self.match_type}_{self.match_index}"
+            current_odds = await bet_store.get_current_odds(match_id)
+
+            if not current_odds:
+                # Initialize odds based on ELO
+                from utils.embeds import get_team_avg_elo
+                team_a_data = self.tournament.teams[match[0]] if match[0] < len(self.tournament.teams) else {}
+                team_b_data = self.tournament.teams[match[1]] if match[1] < len(self.tournament.teams) else {}
+                avg_elo_a = await get_team_avg_elo(team_a_data, self.tournament)
+                avg_elo_b = await get_team_avg_elo(team_b_data, self.tournament)
+                bet_store.initialize_match_odds(match_id, self.team_a_name, self.team_b_name, avg_elo_a, avg_elo_b)
+
+            # Create bet (odds will be set dynamically in save_bet)
             bet = Bet(
                 guild_id=self.guild_id,
                 user_id=interaction.user.id,
@@ -115,9 +110,16 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 match_id=match_id,
                 team_name=self.team_name,
                 amount=amount,
-                odds=odds
+                odds=0.0  # Will be set in save_bet
             )
-            await bet_store.save_bet(bet)
+            await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
+
+            # Get the odds that were actually used
+            updated_odds = await bet_store.get_current_odds(match_id)
+            if self.team_name == self.team_a_name:
+                actual_odds = updated_odds.team_a_odds if updated_odds else 1.9
+            else:
+                actual_odds = updated_odds.team_b_odds if updated_odds else 1.9
             
             # Update tournament message
             from bot import TournamentBot

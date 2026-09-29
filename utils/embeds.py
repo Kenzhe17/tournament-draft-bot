@@ -427,33 +427,30 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
         name_a = tournament.team_names.get(team_a, captain_a)
         name_b = tournament.team_names.get(team_b, captain_b)
 
-        # Get average ELO for each team
-        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+        # Get current odds from bet_store (dynamic odds system)
+        match_id = f"{match_type}_{i}"
+        current_odds = await bet_store.get_current_odds(match_id)
 
-        # Calculate odds based on ELO difference
-        # Base odds: 1.9x (when teams are equal)
-        # Formula: 1 ELO difference = 0.002x odds difference
-        # Example: 1300 vs 1000 (300 diff) = 1.3x vs 2.5x
-        elo_diff = avg_elo_b - avg_elo_a
-        odds_diff = elo_diff * 0.002
-
-        # Base odds (when teams are equal)
-        base_odds = 1.9
-
-        # Calculate odds for each team
-        if elo_diff >= 0:
-            # Team B has higher ELO
-            odds_a = base_odds + odds_diff
-            odds_b = base_odds - odds_diff
+        if current_odds:
+            odds_a = current_odds.team_a_odds
+            odds_b = current_odds.team_b_odds
         else:
-            # Team A has higher ELO
-            odds_a = base_odds - abs(odds_diff)
-            odds_b = base_odds + abs(odds_diff)
+            # Fallback to ELO-based calculation if odds not initialized
+            avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
+            avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+            elo_diff = avg_elo_b - avg_elo_a
+            odds_diff = elo_diff * 0.002
+            base_odds = 1.9
 
-        # Ensure minimum odds of 1.1x
-        odds_a = max(1.1, odds_a)
-        odds_b = max(1.1, odds_b)
+            if elo_diff >= 0:
+                odds_a = base_odds + odds_diff
+                odds_b = base_odds - odds_diff
+            else:
+                odds_a = base_odds - abs(odds_diff)
+                odds_b = base_odds + abs(odds_diff)
+
+            odds_a = max(1.1, odds_a)
+            odds_b = max(1.1, odds_b)
 
         # Build field name
         num_emoji = replace_emojis(f"num_{i + 1}")
@@ -464,7 +461,6 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
         field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** `{odds_a:.2f}x` vs **{name_b}** `{odds_b:.2f}x`\n"
 
         # Get bets for this match
-        match_id = f"{match_type}_{i}"
         bets = await bet_store.get_bets_by_match(match_id)
 
         # Group bets by team
