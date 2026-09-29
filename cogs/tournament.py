@@ -1781,7 +1781,8 @@ class TournamentCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 
-    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте")
+    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте (только для владельца)")
+    @is_bot_owner()
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         # Single embed with image and text
@@ -2279,7 +2280,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
 
     @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
     @app_commands.checks.has_permissions(administrator=True)
-    async def role_command(self, interaction: discord.Interaction) -> None:
+    async def role(self, interaction: discord.Interaction) -> None:
         """Создать сообщение для управления ролью организатора."""
         await interaction.response.defer()
 
