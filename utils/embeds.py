@@ -758,7 +758,7 @@ async def build_qualifiers_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Отборочные матчи:**\n"
-        + "\n\n".join(matches_section) + "\n"
+        + "\n\n".join(matches_section) + "\n\n\n"
     )
 
     embed = discord.Embed(
@@ -851,7 +851,7 @@ async def build_semifinals_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Полуфинальные матчи:**\n"
-        + "\n\n".join(matches_section) + "\n"
+        + "\n\n".join(matches_section) + "\n\n\n"
     )
 
     embed = discord.Embed(
@@ -935,7 +935,7 @@ async def build_final_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}\n\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}\n\n\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
