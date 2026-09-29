@@ -1823,6 +1823,12 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
+        # Send confirmation to bot owner
+        await interaction.followup.send(
+            replace_emojis("✅ Сообщение приветствия создано"),
+            ephemeral=True
+        )
+
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
     @is_bot_owner()
