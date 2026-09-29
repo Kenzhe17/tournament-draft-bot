@@ -1961,6 +1961,11 @@ class GuideSelectMenu(discord.ui.Select):
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
+            ),
+            discord.SelectOption(
+                label="Правила сервера",
+                description="Свод правил и регламент турниров",
+                value="rules"
             )
         ]
         
@@ -2016,7 +2021,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="tournaments")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2025,7 +2030,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="profile")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2034,7 +2039,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="economy")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2043,7 +2048,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="shop")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2052,7 +2057,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="games")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -2061,7 +2066,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="ranks")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2070,7 +2075,25 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = GuideView(current="organizers")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+        elif self.values[0] == "rules":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 1. Базовые правила сервера",
+                value="• **Уважение и адекватность:** Запрещены оскорбления, провокации, разжигание межнациональной или иной розни, токсичное поведение в текстовых и голосовых каналах.\n> 🛑 **Наказание:** **Мут от 2 до 24 часов** *(при повторе — бан)*.\n\n• **Реклама и спам:** Запрещена реклама сторонних Discord-серверов, сторонних ресурсов, реферальных ссылок и спам/сообщений не по теме каналов.\n> 🛑 **Наказание:** **Мут на 12 часов** или **Пермабан** *(за сторонние ссылки/серверы)*.\n\n• **Медиа-контент:** Запрещена публикация контента 18+ (NSFW), шок-контента, вредоносных ссылок и файлов.\n> 🛑 **Наказание:** **Мут на 24 часа** или **Пермабан** *(за вредоносные ссылки)*.",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 2. Регламент турниров",
+                value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных мутов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Мут на 1 час**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
+                inline=False
+            )
+            view = GuideView(current="rules")
+            await interaction.response.edit_message(embed=embed, view=view)
 
 
 class GuideView(discord.ui.View):
@@ -2121,6 +2144,11 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
+            ),
+            discord.SelectOption(
+                label="Правила сервера",
+                description="Свод правил и регламент турниров",
+                value="rules"
             )
         ]
 
@@ -2176,7 +2204,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="tournaments")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2185,7 +2213,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="profile")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2194,7 +2222,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="economy")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2203,7 +2231,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="shop")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2212,7 +2240,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="games")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -2221,7 +2249,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="ranks")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2230,7 +2258,25 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = HelpGuideView(current="organizers")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.edit_message(embed=embed, view=view)
+
+        elif self.values[0] == "rules":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 1. Базовые правила сервера",
+                value="• **Уважение и адекватность:** Запрещены оскорбления, провокации, разжигание межнациональной или иной розни, токсичное поведение в текстовых и голосовых каналах.\n> 🛑 **Наказание:** **Мут от 2 до 24 часов** *(при повторе — бан)*.\n\n• **Реклама и спам:** Запрещена реклама сторонних Discord-серверов, сторонних ресурсов, реферальных ссылок и спам/сообщений не по теме каналов.\n> 🛑 **Наказание:** **Мут на 12 часов** или **Пермабан** *(за сторонние ссылки/серверы)*.\n\n• **Медиа-контент:** Запрещена публикация контента 18+ (NSFW), шок-контента, вредоносных ссылок и файлов.\n> 🛑 **Наказание:** **Мут на 24 часа** или **Пермабан** *(за вредоносные ссылки)*.",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 2. Регламент турниров",
+                value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных мутов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Мут на 1 час**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
+                inline=False
+            )
+            view = HelpGuideView(current="rules")
+            await interaction.response.edit_message(embed=embed, view=view)
 
     @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
     @app_commands.checks.has_permissions(administrator=True)
