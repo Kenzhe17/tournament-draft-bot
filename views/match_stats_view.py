@@ -725,6 +725,8 @@ class AdminConfirmView(View):
             match_id = f"{self.match_type}_{self.match_index}"
             temp_stats = tournament.temp_match_stats.get(match_id, {})
 
+            logging.info(f"Processing match result: match_id={match_id}, temp_stats={temp_stats}")
+
             # Process the match with statistics (this applies ELO and stats immediately)
             await process_match_result(self.guild_id, tournament, {
                 "match_type": self.match_type,
@@ -734,6 +736,8 @@ class AdminConfirmView(View):
                 "team2_index": self.team_b_index,
                 "temp_kd_data": temp_stats
             }, interaction)
+
+            logging.info("Match result processed, storing tournament")
 
             # Store tournament after stats are processed
             store.set(tournament)

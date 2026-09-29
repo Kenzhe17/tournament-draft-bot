@@ -241,6 +241,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 xp_reward += 30  # Bonus XP for winning
             new_level, old_level = updated_stats.add_xp(xp_reward)
 
+            import logging
+            logging.info(f"Saving stats for {player_name}: elo={updated_stats.elo}, elo_change={elo_change}, games={updated_stats.games}")
+
             await player_stats_store.set(updated_stats)
 
             # Level up notifications disabled
