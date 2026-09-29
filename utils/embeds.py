@@ -432,12 +432,14 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
         avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
 
         # Calculate odds based on ELO difference
-        # 50 ELO difference = 0.1x odds difference
+        # Base odds: 1.9x (when teams are equal)
+        # Formula: 1 ELO difference = 0.002x odds difference
+        # Example: 1300 vs 1000 (300 diff) = 1.3x vs 2.5x
         elo_diff = avg_elo_b - avg_elo_a
-        odds_diff = elo_diff / 50 * 0.1
+        odds_diff = elo_diff * 0.002
 
         # Base odds (when teams are equal)
-        base_odds = 1.5
+        base_odds = 1.9
 
         # Calculate odds for each team
         if elo_diff >= 0:
