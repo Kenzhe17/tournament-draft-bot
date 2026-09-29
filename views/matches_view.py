@@ -596,27 +596,32 @@ class ConfirmWinnerButton(discord.ui.Button):
 
         team_a_index, team_b_index = match
 
-        # Check if stats are filled
+        # Check if stats are filled - REQUIRE stats for winner selection
         match_id = f"{self.match_type}_{self.match_index}"
         temp_stats = tournament.temp_match_stats.get(match_id, {})
 
         logging.info(f"ConfirmWinnerButton: match_id={match_id}, temp_stats={temp_stats}")
 
-        if temp_stats:
-            # Stats are filled - process match with stats
-            from views.kd_input_view import process_match_result
-            await process_match_result(self.guild_id, tournament, {
-                "match_type": self.match_type,
-                "match_index": self.match_index,
-                "winning_team_index": self.team_index,
-                "team1_index": team_a_index,
-                "team2_index": team_b_index,
-                "temp_kd_data": temp_stats
-            }, interaction)
-            logging.info("Stats processed successfully")
-        else:
-            # No stats - just set winner without stats processing
-            logging.warning("No stats found, setting winner without stats processing")
+        if not temp_stats:
+            # No stats - require stats to be filled first
+            logging.warning("No stats found, blocking winner selection")
+            await interaction.response.send_message(
+                replace_emojis("❌ Сначала заполните статистику через 'Заполнить статистику' → выберите матч → заполните данные для обеих команд"),
+                ephemeral=True
+            )
+            return
+
+        # Stats are filled - process match with stats
+        from views.kd_input_view import process_match_result
+        await process_match_result(self.guild_id, tournament, {
+            "match_type": self.match_type,
+            "match_index": self.match_index,
+            "winning_team_index": self.team_index,
+            "team1_index": team_a_index,
+            "team2_index": team_b_index,
+            "temp_kd_data": temp_stats
+        }, interaction)
+        logging.info("Stats processed successfully")
 
         # Call the appropriate winner setter based on match type (pending)
         if self.match_type == "qualifier":
