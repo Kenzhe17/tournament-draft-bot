@@ -98,8 +98,15 @@ class TournamentCog(commands.Cog):
         embed = await build_setup_embed(tournament, interaction.guild)
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
-        await interaction.response.send_message(embed=embed, view=view)
-        message = await interaction.original_response()
+
+        # Send ephemeral confirmation first
+        await interaction.response.send_message(
+            replace_emojis("✅ Турнир создан"),
+            ephemeral=True
+        )
+
+        # Send main tournament message through channel.send to unbind it
+        message = await interaction.channel.send(embed=embed, view=view)
 
         tournament.message_id = message.id
         store.set(tournament)
