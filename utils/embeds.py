@@ -605,15 +605,14 @@ async def build_draft_embed(
     current_picker_pos = tournament.current_picker_position()
     current_line = ""
     current_captain_id = 0
-    remaining_time = tournament.get_draft_pick_remaining_time()
 
     if current_picker_pos is not None:
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
         current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         if current_captain_id > 0:
-            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** <@{current_captain_id}> `(Осталось: {remaining_time} сек)`"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** <@{current_captain_id}> `{replace_emojis('white_arrow')} У вас 60 сек на выбор`"
         else:
-            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** {current_captain_name} `(Осталось: {remaining_time} сек)`"
+            current_line = f"{replace_emojis('white_arrow')} **Сейчас выбирает:** {current_captain_name} `{replace_emojis('white_arrow')} У вас 60 сек на выбор`"
     else:
         current_line = "Драфт завершён"
 
@@ -676,7 +675,6 @@ async def build_draft_embed(
         f"{replace_emojis('white_dot')} **Выборы по кругам:**\n"
         + "\n\n".join(picks_sections)
         + warning
-        + f"\n\n{replace_emojis('a_dot_smaller')} Сделайте выбор с помощью меню ниже до истечения таймера"
     )
 
     embed = discord.Embed(
@@ -746,8 +744,9 @@ async def build_qualifiers_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        remaining = tournament.get_betting_remaining_time()
-        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+    elif tournament.betting_phase == "qualifiers":
+        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -844,8 +843,9 @@ async def build_semifinals_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
-        remaining = tournament.get_betting_remaining_time()
-        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+    elif tournament.betting_phase == "semifinals":
+        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -938,8 +938,9 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        remaining = tournament.get_betting_remaining_time()
-        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+    elif tournament.betting_phase == "final":
+        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"

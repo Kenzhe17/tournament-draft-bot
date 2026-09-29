@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 class AdminStatsMatchSelectView(discord.ui.View):
-    """View for admin to select a match to fill statistics for all 4 players."""
+    """View for admin to select a match, then a team, then fill stats for that team."""
 
     def __init__(self, guild_id: int, tournament, match_type: str):
         super().__init__(timeout=None)
@@ -51,23 +51,14 @@ class AdminStatsMatchSelectView(discord.ui.View):
                 team_name = tournament.team_names.get(team_index, captain)
                 teams.append(team_name)
 
-            # Get all 4 player names for this match (used in modal)
-            all_players = []
-            for team_index in match:
-                team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
-                for circle in range(1, 5):
-                    player = team_data.get(f"circle{circle}")
-                    if player:
-                        all_players.append(player)
-
             label = f"Игра #{i + 1}: {teams[0]} vs {teams[1]}"
-            self.add_item(AdminStatsMatchButton(guild_id, tournament, match_type, i, label, all_players))
+            self.add_item(AdminStatsMatchButton(guild_id, tournament, match_type, i, label, match))
 
 
 class AdminStatsMatchButton(discord.ui.Button):
-    """Button to select a match for admin stats filling."""
+    """Button to select a match and show team selection."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str, players: list):
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str, match: list):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.primary,
@@ -77,7 +68,7 @@ class AdminStatsMatchButton(discord.ui.Button):
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
-        self.players = players
+        self.match = match
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Check permissions
@@ -88,26 +79,82 @@ class AdminStatsMatchButton(discord.ui.Button):
             )
             return
 
-        # Open modal with 4 K/D fields for all players
-        modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, self.players)
-        await interaction.response.send_modal(modal)
+        # Show team selection view
+        team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+
+        embed = discord.Embed(
+            title=replace_emojis("📊 Выберите команду"),
+            description="Выберите команду для заполнения статистики:",
+            color=discord.Color.gold()
+        )
+
+        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
 
 
-class AdminStatsModal(discord.ui.Modal, title="Статистика матча"):
-    """Modal for admin to fill K/D for all 4 players in a match."""
+class AdminStatsTeamSelectView(discord.ui.View):
+    """View for admin to select a team to fill stats for."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, players: list):
-        super().__init__(title=f"Статистика (Игра #{match_index + 1})")
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+        super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
+        self.match = match
+
+        # Add buttons for each team
+        for team_index in match:
+            team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+            captain = team_data.get("captain", f"П{team_index + 1}")
+            team_name = tournament.team_names.get(team_index, captain)
+            self.add_item(AdminStatsTeamButton(guild_id, tournament, match_type, match_index, team_index, team_name))
+
+
+class AdminStatsTeamButton(discord.ui.Button):
+    """Button to select a team and open modal for that team's players."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+        super().__init__(
+            label=team_name,
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"admin_stats_team:{guild_id}:{match_type}:{match_index}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Get players for this team
+        team_data = self.tournament.teams[self.team_index] if self.team_index < len(self.tournament.teams) else {}
+        players = []
+        for circle in range(1, 5):
+            player = team_data.get(f"circle{circle}")
+            if player:
+                players.append(player)
+
+        # Open modal with K/D fields for this team's players
+        modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, players)
+        await interaction.response.send_modal(modal)
+
+
+class AdminStatsModal(discord.ui.Modal, title="Статистика команды"):
+    """Modal for admin to fill K/D for 4 players in a team."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, players: list):
+        super().__init__(title=f"Статистика: {team_name}")
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
         self.players = players
 
-        # Create input fields for each player (max 5 due to Discord limit)
-        # If more than 5 players, only process first 5
-        players_to_process = players[:5]
-        for i, player_name in enumerate(players_to_process):
+        # Create input fields for each player (max 4 for a team)
+        for i, player_name in enumerate(players):
             kd_input = discord.ui.TextInput(
                 label=f"K/D {player_name}",
                 placeholder="7/5",
