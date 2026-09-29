@@ -455,7 +455,7 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
         field_name = f"{star_emoji} Игра #{i + 1}"
 
         # Build field value - match info with odds only (no betting details)
-        field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** `{odds_a:.2f}x` vs **{name_b}** `{odds_b:.2f}x`"
+        field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** {odds_a:.2f}x vs **{name_b}** {odds_b:.2f}x"
 
         embed.add_field(name=field_name, value=field_value, inline=False)
 
@@ -748,15 +748,15 @@ async def build_qualifiers_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
 
     # Add room info to description instead of footer for better visibility
     for i in range(len(tournament.qualifier_matches)):
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
+            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
             break  # Only add first match room info
 
     description = (
@@ -797,8 +797,8 @@ async def build_qualifiers_embed(
     for i in range(len(tournament.qualifier_matches)):
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Отбор #{i + 1}):** `{room_data['id']}`",
-                             f"{replace_emojis('white_dot')} **Пароль:** `{room_data['password']}`")
+            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Отбор #{i + 1}):** {room_data['id']}",
+                             f"{replace_emojis('white_dot')} **Пароль:** {room_data['password']}")
             embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
 
     # Add empty field for gap before betting section
@@ -856,15 +856,15 @@ async def build_semifinals_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
-        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinals":
-        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
 
     # Add room info to description for first match only
     for i in range(len(tournament.semifinal_matches)):
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
+            matches_section[i] += f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
             break  # Only add first match room info
 
     description = (
@@ -905,8 +905,8 @@ async def build_semifinals_embed(
     for i in range(len(tournament.semifinal_matches)):
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Полуфинал #{i + 1}):** `{room_data['id']}`",
-                             f"{replace_emojis('white_dot')} **Пароль:** `{room_data['password']}`")
+            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Полуфинал #{i + 1}):** {room_data['id']}",
+                             f"{replace_emojis('white_dot')} **Пароль:** {room_data['password']}")
             embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
 
     # Add empty field for gap before betting section
@@ -944,7 +944,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: `{room_data['id']}` | Пароль: `{room_data['password']}`"
+        room_info = f"\n{replace_emojis('sub_directory')} ID комнаты: {room_data['id']} | Пароль: {room_data['password']}"
     else:
         room_info = ""
 
@@ -958,9 +958,9 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = "⬆️ 🔓**СТАВКИ ОТКРЫТЫ**\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = "⬆️ 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -1126,9 +1126,9 @@ async def build_winner_embed(
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
         f"{replace_emojis('sub_middle')} **Всего матчей:** {total_matches}\n"
         f"{replace_emojis('sub_middle')} **Всего киллов:** {total_kills}\n"
-        f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} `({best_kd:.2f})`\n"
-        f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} `({best_kills})`\n"
-        f"{replace_emojis('sub_middle')} **Средний K/D:** `{avg_kd:.2f}`\n"
+        f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} ({best_kd:.2f})\n"
+        f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} ({best_kills})\n"
+        f"{replace_emojis('sub_middle')} **Средний K/D:** {avg_kd:.2f}\n"
         f"{replace_emojis('sub_directory')} **Общий банк ставок:** {total_bet_pool:,} {replace_emojis('money')}\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
