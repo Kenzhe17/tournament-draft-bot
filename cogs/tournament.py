@@ -830,7 +830,7 @@ class TournamentCog(commands.Cog):
         description_parts.append(f"{replace_emojis('⚪')} **Игровой профиль:**")
         description_parts.append(f"{replace_emojis('sub_middle')} Ранг: {rank_title}")
         description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 
         # Экономика
@@ -841,8 +841,9 @@ class TournamentCog(commands.Cog):
 
         # Статистика игр
         description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
-        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
-        
+        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр")
+        description_parts.append(f"{replace_emojis('sub_middle')} Побед: {total_games_won} `({win_rate:.1f}%)`")
+
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
             description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
