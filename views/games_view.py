@@ -59,7 +59,7 @@ class GameCategorySelect(Select):
             )
         
         super().__init__(
-            placeholder=replace_emojis("sub_directory Выберите категорию игр..."),
+            placeholder="Выберите категорию игр...",
             min_values=1,
             max_values=1,
             options=options
