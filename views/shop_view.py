@@ -1424,7 +1424,7 @@ class RolesButton(discord.ui.Button):
             can_buy = user_level >= role.required_level
             level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
 
-            label = f"{role.name} - {role.price} {replace_emojis('money')}{level_req}"
+            label = f"{role.name} - {role.price} 💰{level_req}"
             button = RoleBuyButton(role.id, label, can_buy)
             view.add_item(button)
 
