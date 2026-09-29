@@ -381,7 +381,10 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             self.add_item(kd_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        import logging
         from storage.json_store import store
+
+        logging.info(f"AdminStatsModal on_submit called: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
 
         # Parse statistics
         match_id = f"{self.match_type}_{self.match_index}"
@@ -653,6 +656,9 @@ class AdminConfirmView(View):
 
     async def show_winner_confirmation(self, interaction: discord.Interaction) -> None:
         """Show stats for confirmation first, then winner selection."""
+        import logging
+        logging.info(f"show_winner_confirmation called")
+
         # Show stats for confirmation
         await interaction.response.send_message(
             "Проверьте статистику перед подтверждением:",
@@ -677,11 +683,17 @@ class AdminConfirmView(View):
 
     async def _show_winner_selection(self, interaction: discord.Interaction) -> None:
         """Show winner selection buttons after confirmation."""
+        import logging
+        logging.info(f"_show_winner_selection called")
+
         # Get team names
         team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
         team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
         team_a_name = self.tournament.team_names.get(self.team_a_index, team_a_data.get("captain", f"Team {self.team_a_index}"))
         team_b_name = self.tournament.team_names.get(self.team_b_index, team_b_data.get("captain", f"Team {self.team_b_index}"))
+
+        import logging
+        logging.info(f"show_winner_selection called: team_a={team_a_name}, team_b={team_b_name}")
 
         # Create view with winner selection buttons
         view = discord.ui.View()
@@ -713,6 +725,8 @@ class AdminConfirmView(View):
         from storage.player_stats_store import player_stats_store
         from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
+
+        logging.info(f"confirm_callback called: match_type={self.match_type}, match_index={self.match_index}, winning_team_index={winning_team_index}")
 
         await interaction.response.defer(ephemeral=True)
 
