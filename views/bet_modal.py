@@ -76,7 +76,35 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             
             # Deduct balance
             await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+
+            # Calculate odds based on team ELO
+            from storage.json_store import store
+            from utils.embeds import get_team_avg_elo
+            team_a_data = self.tournament.teams[self.team_a_index] if self.team_a_index < len(self.tournament.teams) else {}
+            team_b_data = self.tournament.teams[self.team_b_index] if self.team_b_index < len(self.tournament.teams) else {}
             
+            # Get average ELO for each team
+            avg_elo_a = await get_team_avg_elo(team_a_data, self.tournament)
+            avg_elo_b = await get_team_avg_elo(team_b_data, self.tournament)
+            
+            # Calculate odds for the selected team
+            if self.team_index == self.team_a_index:
+                # Betting on team A
+                elo_diff = avg_elo_b - avg_elo_a
+                if elo_diff > 0:
+                    odds = round(1.9 + (elo_diff / 100), 2)
+                else:
+                    odds = round(1.9 - (abs(elo_diff) / 100), 2)
+            else:
+                # Betting on team B
+                elo_diff = avg_elo_b - avg_elo_a
+                if elo_diff > 0:
+                    odds = round(1.9 - (elo_diff / 100), 2)
+                else:
+                    odds = round(1.9 + (abs(elo_diff) / 100), 2)
+            
+            odds = max(1.1, min(10.0, odds))
+
             # Create and save bet
             from models.bet import Bet
             match_id = f"{self.match_type}_{self.match_index}"
@@ -86,7 +114,8 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 user_name=interaction.user.display_name,
                 match_id=match_id,
                 team_name=self.team_name,
-                amount=amount
+                amount=amount,
+                odds=odds
             )
             await bet_store.save_bet(bet)
             
@@ -96,7 +125,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                replace_emojis(f"✅ Ставка принята\n\n{amount} 💰 → {self.team_name}"),
+                replace_emojis(f"✅ Ставка принята\n\n{amount} 💰 → {self.team_name} `({odds}x)`"),
                 ephemeral=True
             )
         except Exception as e:

@@ -13,6 +13,7 @@ class Bet:
     match_id: str
     team_name: str
     amount: int
+    odds: float = 1.9  # Default odds
     
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
@@ -23,6 +24,7 @@ class Bet:
             "match_id": self.match_id,
             "team_name": self.team_name,
             "amount": self.amount,
+            "odds": self.odds,
         }
     
     @classmethod
@@ -35,4 +37,5 @@ class Bet:
             match_id=data.get("match_id", ""),
             team_name=data.get("team_name", ""),
             amount=data.get("amount", 0),
+            odds=data.get("odds", 1.9),
         )

@@ -153,7 +153,7 @@ class BetStore:
         bets = await self.get_bets_by_match(match_id)
         payouts = {}
 
-        # Calculate total bank and winning team bets
+        # Calculate total bank
         total_bank = sum(b.amount for b in bets)
         winning_bets = [b for b in bets if b.team_name == winning_team_name]
         winning_total = sum(b.amount for b in winning_bets)
@@ -165,12 +165,10 @@ class BetStore:
                 # Record as loss (bet amount lost)
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
         else:
-            # Calculate payout ratio (total bank / winning bets total)
-            payout_ratio = total_bank / winning_total
-
-            # Distribute winnings
+            # Calculate payout based on individual odds (fixed odds system)
+            # Instead of pooling, each bet pays based on its own odds
             for bet in winning_bets:
-                payout = int(bet.amount * payout_ratio)
+                payout = int(bet.amount * bet.odds)
                 payouts[bet.user_id] = payout
                 # Record as win (profit = payout - bet_amount)
                 profit = payout - bet.amount
