@@ -47,8 +47,8 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
-        # Start draft timer background task (for auto-random picks)
-        self.loop.create_task(self.draft_timer_loop())
+        # Temporarily disabled draft timer to debug deployment issue
+        # self.loop.create_task(self.draft_timer_loop())
         
         # Initialize shop items
         try:
