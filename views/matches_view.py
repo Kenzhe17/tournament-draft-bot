@@ -534,6 +534,9 @@ class ConfirmWinnerButton(discord.ui.Button):
         self.team_name = team_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        import logging
+        logging.info(f"ConfirmWinnerButton callback: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
+
         # Check permissions
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
@@ -571,6 +574,38 @@ class ConfirmWinnerButton(discord.ui.Button):
                 )
                 return
 
+        # Get match teams
+        if self.match_type == "qualifier":
+            match = tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (tournament.final_teams[0], tournament.final_teams[1])
+
+        team_a_index, team_b_index = match
+
+        # Check if stats are filled
+        match_id = f"{self.match_type}_{self.match_index}"
+        temp_stats = tournament.temp_match_stats.get(match_id, {})
+
+        logging.info(f"ConfirmWinnerButton: match_id={match_id}, temp_stats={temp_stats}")
+
+        if temp_stats:
+            # Stats are filled - process match with stats
+            from views.kd_input_view import process_match_result
+            await process_match_result(self.guild_id, tournament, {
+                "match_type": self.match_type,
+                "match_index": self.match_index,
+                "winning_team_index": self.team_index,
+                "team1_index": team_a_index,
+                "team2_index": team_b_index,
+                "temp_kd_data": temp_stats
+            }, interaction)
+            logging.info("Stats processed successfully")
+        else:
+            # No stats - just set winner without stats processing
+            logging.warning("No stats found, setting winner without stats processing")
+
         # Call the appropriate winner setter based on match type (pending)
         if self.match_type == "qualifier":
             tournament.set_qualifier_winner(self.match_index, self.team_index)
@@ -589,9 +624,6 @@ class ConfirmWinnerButton(discord.ui.Button):
         except Exception as e:
             import logging
             logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
-
-        # TODO: Implement betting payout
-        # TODO: Enable captain stats access
 
         await interaction.response.edit_message(
             content=f"Победитель Игра #{self.match_index + 1} ({self.team_name}) успешно зафиксирован!",
