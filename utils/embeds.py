@@ -741,8 +741,15 @@ async def build_qualifiers_embed(
         else:
             room_info = ""
 
+        # Check if winner is set
+        winner_info = ""
+        if i < len(tournament.qualifier_winners) and tournament.qualifier_winners[i] is not None:
+            winner_idx = tournament.qualifier_winners[i]
+            winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+            winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{room_info}"
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
         )
 
     # Build teams section
@@ -854,8 +861,15 @@ async def build_semifinals_embed(
         else:
             room_info = ""
 
+        # Check if winner is set
+        winner_info = ""
+        if i < len(tournament.semifinal_pending_winners) and tournament.semifinal_pending_winners[i] is not None:
+            winner_idx = tournament.semifinal_pending_winners[i]
+            winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+            winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}"
+            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
         )
 
     # Build teams section
@@ -995,6 +1009,13 @@ async def build_final_embed(
     else:
         room_info = ""
 
+    # Check if winner is set
+    winner_info = ""
+    if tournament.final_pending_winner is not None:
+        winner_idx = tournament.final_pending_winner
+        winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+        winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
@@ -1004,7 +1025,7 @@ async def build_final_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}\n\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
