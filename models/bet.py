@@ -44,6 +44,8 @@ class Bet:
 @dataclass
 class MatchOdds:
     """Represents current odds and buffer for a match."""
+    team_a_name: str
+    team_b_name: str
     team_a_odds: float
     team_b_odds: float
     team_a_buffer: int = 0  # Buffer when odds hit floor
@@ -52,6 +54,8 @@ class MatchOdds:
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary."""
         return {
+            "team_a_name": self.team_a_name,
+            "team_b_name": self.team_b_name,
             "team_a_odds": self.team_a_odds,
             "team_b_odds": self.team_b_odds,
             "team_a_buffer": self.team_a_buffer,
@@ -62,6 +66,8 @@ class MatchOdds:
     def from_dict(cls, data: dict[str, Any]) -> "MatchOdds":
         """Deserialize from dictionary."""
         return cls(
+            team_a_name=data.get("team_a_name", ""),
+            team_b_name=data.get("team_b_name", ""),
             team_a_odds=data.get("team_a_odds", 1.9),
             team_b_odds=data.get("team_b_odds", 1.9),
             team_a_buffer=data.get("team_a_buffer", 0),

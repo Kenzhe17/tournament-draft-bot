@@ -48,6 +48,10 @@ class BetStore:
                 with open(ODDS_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     for match_id, odds_data in data.items():
+                        # Handle old format without team names
+                        if "team_a_name" not in odds_data:
+                            odds_data["team_a_name"] = ""
+                            odds_data["team_b_name"] = ""
                         self._odds[match_id] = MatchOdds.from_dict(odds_data)
             except (json.JSONDecodeError, KeyError):
                 self._odds = {}
@@ -90,6 +94,8 @@ class BetStore:
         odds_b = max(1.1, odds_b)
 
         self._odds[match_id] = MatchOdds(
+            team_a_name=team_a_name,
+            team_b_name=team_b_name,
             team_a_odds=odds_a,
             team_b_odds=odds_b,
             team_a_buffer=0,
@@ -147,6 +153,8 @@ class BetStore:
             if bet.match_id not in self._odds:
                 # Initialize with default odds if not set
                 self._odds[bet.match_id] = MatchOdds(
+                    team_a_name=team_a_name,
+                    team_b_name=team_b_name,
                     team_a_odds=1.9,
                     team_b_odds=1.9,
                     team_a_buffer=0,
@@ -383,11 +391,25 @@ class BetStore:
         bets = await self.get_bets_by_match(match_id)
         payouts = {}
 
-        # Calculate payouts based on fixed odds at time of betting
+        # Get current odds for the winning team (final odds)
+        current_odds = self.get_current_odds(match_id)
+        if current_odds:
+            # Determine which team won based on team name
+            if winning_team_name == current_odds.team_a_name:
+                winning_odds = current_odds.team_a_odds
+            elif winning_team_name == current_odds.team_b_name:
+                winning_odds = current_odds.team_b_odds
+            else:
+                # Fallback: try to match partial name or use default
+                winning_odds = 1.9
+        else:
+            winning_odds = 1.9  # Default if no odds stored
+
+        # Calculate payouts based on final odds (not fixed at betting time)
         for bet in bets:
             if bet.team_name == winning_team_name:
-                # Winning bet: payout = amount * odds (fixed at betting time)
-                payout = int(bet.amount * bet.odds)
+                # Winning bet: payout = amount * final odds
+                payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
                 # Record as win (profit = payout - bet_amount)
                 profit = payout - bet.amount

@@ -476,17 +476,17 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
 
         # Team A bets
         if team_a_bets:
-            users = [f"<@{b.user_id}>" for b in team_a_bets]
-            users_str = ", ".join(users)
-            field_value += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {replace_emojis('money')} *(поставили: {users_str})*\n"
+            users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_a_bets]
+            users_str = ", ".join(users_with_amounts)
+            field_value += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {replace_emojis('money')} - {users_str}\n"
         else:
             field_value += f"> {replace_emojis('white_dot')} **{name_a}**: *Нет ставок*\n"
 
         # Team B bets
         if team_b_bets:
-            users = [f"<@{b.user_id}>" for b in team_b_bets]
-            users_str = ", ".join(users)
-            field_value += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {replace_emojis('money')} *(поставили: {users_str})*\n"
+            users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_b_bets]
+            users_str = ", ".join(users_with_amounts)
+            field_value += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {replace_emojis('money')} - {users_str}\n"
         else:
             field_value += f"> {replace_emojis('white_dot')} **{name_b}**: *Нет ставок*\n"
 

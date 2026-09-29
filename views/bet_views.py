@@ -142,25 +142,28 @@ class ViewBetsButton(Button):
             name_b = self.tournament.team_names.get(team_b, captain_b)
             
             match_text = replace_emojis(f"🔥 Игра #{i + 1}\n{name_a} vs {name_b}\n\n")
-            
+
             # Group bets by team
             team_a_bets = [b for b in bets if b.team_name == name_a]
             team_b_bets = [b for b in bets if b.team_name == name_b]
-            
+
+            # Calculate totals
+            team_a_total = sum(b.amount for b in team_a_bets)
+            team_b_total = sum(b.amount for b in team_b_bets)
+
             if team_a_bets:
-                match_text += f"**{name_a}:**\n"
-                for bet in team_a_bets:
-                    match_text += f"• {bet.user_name} — {bet.amount} 🪙\n"
-                match_text += "\n"
-            
+                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_a_bets]
+                users_str = ", ".join(users_with_amounts)
+                match_text += f"**{name_a}:** {team_a_total:,} {replace_emojis('money')} - {users_str}\n\n"
+            else:
+                match_text += f"**{name_a}:** *Нет ставок*\n\n"
+
             if team_b_bets:
-                match_text += f"**{name_b}:**\n"
-                for bet in team_b_bets:
-                    match_text += f"• {bet.user_name} — {bet.amount} 🪙\n"
-                match_text += "\n"
-            
-            if not team_a_bets and not team_b_bets:
-                match_text += "*Пока нет ставок*\n"
+                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_b_bets]
+                users_str = ", ".join(users_with_amounts)
+                match_text += f"**{name_b}:** {team_b_total:,} {replace_emojis('money')} - {users_str}\n\n"
+            else:
+                match_text += f"**{name_b}:** *Нет ставок*\n\n"
             
             bets_text.append(match_text)
         
