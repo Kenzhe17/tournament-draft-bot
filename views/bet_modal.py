@@ -59,7 +59,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
             if balance < amount:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} 🪙"),
+                    replace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} 💰"),
                     ephemeral=True
                 )
                 return
@@ -96,7 +96,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                replace_emojis("✅ Ставка принята\n\n{amount} 🪙 → {self.team_name}"),
+                replace_emojis("✅ Ставка принята\n\n{amount} 💰 → {self.team_name}"),
                 ephemeral=True
             )
         except Exception as e:

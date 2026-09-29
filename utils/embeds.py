@@ -565,17 +565,6 @@ async def build_setup_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add organizer avatar if available
-    if organizer_id:
-        try:
-            organizer_member = guild.get_member(organizer_id)
-            if organizer_member:
-                embed.set_thumbnail(url=organizer_member.display_avatar.url)
-        except:
-            pass
-
-    return embed
-
     return embed
 
 
@@ -667,15 +656,6 @@ async def build_draft_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add current picker avatar if available
-    if current_captain_id > 0:
-        try:
-            picker_member = guild.get_member(current_captain_id)
-            if picker_member:
-                embed.set_thumbnail(url=picker_member.display_avatar.url)
-        except:
-            pass
-
     return embed
 
 
@@ -719,7 +699,7 @@ async def build_qualifiers_embed(
         # Get room info
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
+            room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
             room_info = ""
 
@@ -814,7 +794,7 @@ async def build_semifinals_embed(
         # Get room info
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
+            room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
             room_info = ""
 
@@ -909,7 +889,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = replace_emojis(f"sub_directory room Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`")
+        room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
     else:
         room_info = ""
 
