@@ -823,86 +823,51 @@ class TournamentCog(commands.Cog):
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
 
-        # Создать embed с новым стандартом верстки
+        # Build description
+        description_parts = ["Основная информация и статистика игрока:\n"]
+
+        # Игровой профиль
+        description_parts.append(f"{replace_emojis('⚪')} **Игровой профиль:**")
+        description_parts.append(f"{replace_emojis('sub_middle')} Ранг: {rank_title}")
+        description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append("")
+
+        # Экономика
+        description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
+        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}")
+        description_parts.append(f"{replace_emojis('sub_directory')} Предметов: {inventory_count} шт.")
+        description_parts.append("")
+
+        # Статистика игр
+        description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
+        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
+        
+        # Show K/D and kills only if player has played games
+        if total_games_played > 0:
+            description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
+        else:
+            description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
+        
+        description_parts.append("")
+
+        # Био
+        if stats.description:
+            description_parts.append(f"{replace_emojis('⚪')} **О себе:**")
+            description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
+            description_parts.append("")
+
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")
+
+        # Создать embed
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {target_user.display_name}",
+            description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=target_user.display_avatar.url)
-
-        # Игровой профиль (inline: true для компактности)
-        embed.add_field(
-            name=f"{replace_emojis('⚪')} **Игровой профиль**",
-            value=f"{replace_emojis('sub_middle')} Ранг: {rank_title}\n"
-                  f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,}\n"
-                  f"{replace_emojis('sub_middle')} Δ: {elo_change:+d}\n"
-                  f"{replace_emojis('sub_directory')} Lvl: {stats.level}\n"
-                  f"{replace_emojis('sub_directory')} XP: {current_xp:,}",
-            inline=True
-        )
-
-        # Экономика (inline: true)
-        embed.add_field(
-            name=f"{replace_emojis('⚪')} **Экономика**",
-            value=f"{replace_emojis('sub_middle')} Баланс:\n"
-                  f"{replace_emojis('sub_directory')} {balance:,} 💰\n\n"
-                  f"{replace_emojis('sub_middle')} Предметов:\n"
-                  f"{replace_emojis('sub_directory')} {inventory_count} шт.",
-            inline=True
-        )
-
-        # Невидимый разделитель
-        embed.add_field(name="\u200b", value="\u200b", inline=False)
-
-        # Статистика игр (inline: true)
-        if total_games_played > 0:
-            stats_value = (
-                f"{replace_emojis('sub_middle')} Сыграно:\n"
-                f"{replace_emojis('sub_directory')} {total_games_played}\n\n"
-                f"{replace_emojis('sub_middle')} Побед:\n"
-                f"{replace_emojis('sub_directory')} {total_games_won}\n\n"
-                f"{replace_emojis('sub_middle')} Winrate:\n"
-                f"{replace_emojis('sub_directory')} {win_rate:.1f}%"
-            )
-        else:
-            stats_value = f"{replace_emojis('sub_directory')} Ещё не играл"
-
-        embed.add_field(
-            name=f"{replace_emojis('⚪')} **Статистика игр**",
-            value=stats_value,
-            inline=True
-        )
-
-        # K/D и Kills (inline: true)
-        if total_games_played > 0:
-            kd_value = (
-                f"{replace_emojis('sub_middle')} K/D Ratio:\n"
-                f"{replace_emojis('sub_directory')} {stats.kd_ratio:.2f}\n\n"
-                f"{replace_emojis('sub_middle')} AVG Kills:\n"
-                f"{replace_emojis('sub_directory')} {stats.avg_kills:.2f}\n\n"
-                f"{replace_emojis('sub_middle')} Max Kills:\n"
-                f"{replace_emojis('sub_directory')} {stats.best_match_kills}"
-            )
-        else:
-            kd_value = f"{replace_emojis('sub_directory')} Нет данных"
-
-        embed.add_field(
-            name=f"{replace_emojis('⚪')} **Детали**",
-            value=kd_value,
-            inline=True
-        )
-
-        # О себе (если есть)
-        if stats.description:
-            embed.add_field(name="\u200b", value="\u200b", inline=False)
-            embed.add_field(
-                name=f"{replace_emojis('⚪')} **О себе**",
-                value=f"{replace_emojis('sub_directory')} {stats.description}",
-                inline=False
-            )
-
-        # Футер
-        embed.set_footer(text=f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
