@@ -358,11 +358,8 @@ class BetStore:
 
     async def delete_bets_by_match(self, match_id: str) -> None:
         """Удалить все ставки для матча."""
-        # Also clear odds for this match
-        if match_id in self._odds:
-            del self._odds[match_id]
-        if match_id in self._locks:
-            del self._locks[match_id]
+        # DO NOT delete odds - keep them for display
+        # Odds should only be cleared when tournament is deleted, not when match is resolved
 
         if self._use_db:
             from storage.db import get_pool
