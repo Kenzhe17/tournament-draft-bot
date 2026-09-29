@@ -783,7 +783,13 @@ async def build_qualifiers_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-
+    # Add room ID fields for each match
+    for i in range(len(tournament.qualifier_matches)):
+        room_data = tournament.qualifier_rooms.get(i, {})
+        if room_data:
+            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Отбор #{i + 1}):** `{room_data['id']}`",
+                             f"{replace_emojis('white_dot')} **Пароль:** `{room_data['password']}`")
+            embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -875,7 +881,13 @@ async def build_semifinals_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-
+    # Add room ID fields for each semifinal match
+    for i in range(len(tournament.semifinal_matches)):
+        room_data = tournament.semifinal_rooms.get(i, {})
+        if room_data:
+            room_id_field = (f"{replace_emojis('a_dot_smaller')} **ID комнаты (Полуфинал #{i + 1}):** `{room_data['id']}`",
+                             f"{replace_emojis('white_dot')} **Пароль:** `{room_data['password']}`")
+            embed.add_field(name=room_id_field[0], value=room_id_field[1], inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -964,8 +976,6 @@ async def build_final_embed(
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
-
-
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
