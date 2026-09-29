@@ -211,8 +211,8 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
         from storage.bet_store import bet_store
         existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
         if existing_bet:
-            # User already has a bet - only deduct additional amount
-            additional_amount = amount
+            # User already has a bet - only deduct additional amount (difference)
+            additional_amount = amount - existing_bet.amount
             await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
         else:
             # New bet - deduct full amount
