@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import discord
 
-from config import replace_emojis
+from config import ORGANIZER_THUMBNAIL_URL, replace_emojis
 # ДОБАВЛЕНО: TournamentSize в список импорта
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
@@ -816,14 +816,8 @@ async def build_qualifiers_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer avatar if available
-    if organizer_id:
-        try:
-            organizer_member = guild.get_member(organizer_id)
-            if organizer_member:
-                embed.set_thumbnail(url=organizer_member.display_avatar.url)
-        except:
-            pass
+    # Add organizer thumbnail
+    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
     # Add betting section with detailed info AFTER teams
     await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifiers")
@@ -912,14 +906,8 @@ async def build_semifinals_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer avatar if available
-    if organizer_id:
-        try:
-            organizer_member = guild.get_member(organizer_id)
-            if organizer_member:
-                embed.set_thumbnail(url=organizer_member.display_avatar.url)
-        except:
-            pass
+    # Add organizer thumbnail
+    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
     # Add betting section with detailed info AFTER teams
     await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinals")
@@ -1006,14 +994,8 @@ async def build_final_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer avatar if available
-    if organizer_id:
-        try:
-            organizer_member = guild.get_member(organizer_id)
-            if organizer_member:
-                embed.set_thumbnail(url=organizer_member.display_avatar.url)
-        except:
-            pass
+    # Add organizer thumbnail
+    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
     # Add betting section with detailed info AFTER teams
     final_matches = [(team_a, team_b)]
@@ -1153,14 +1135,8 @@ async def build_winner_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add organizer avatar if available
-    if organizer_id:
-        try:
-            organizer_member = guild.get_member(organizer_id)
-            if organizer_member:
-                embed.set_thumbnail(url=organizer_member.display_avatar.url)
-        except:
-            pass
+    # Add organizer thumbnail
+    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
     return embed
 
