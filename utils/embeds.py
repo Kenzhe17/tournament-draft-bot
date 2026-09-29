@@ -1076,17 +1076,6 @@ async def build_winner_embed(
                 best_kills = stat.get('kills', 0)
                 best_kills_player = player_name
 
-    # Calculate best AVG from player stats
-    best_avg = 0.0
-    best_avg_player = ""
-    for player_name, user_id in tournament.player_user_ids.items():
-        stats = await player_stats_store.get(tournament.guild_id, user_id)
-        if stats and stats.games > 0:
-            avg_kills = stats.avg_kills
-            if avg_kills > best_avg:
-                best_avg = avg_kills
-                best_avg_player = player_name
-
     # Calculate total bet pool
     for match_type in ["qualifier", "semifinal", "final"]:
         match_count = len(tournament.qualifier_matches) if match_type == "qualifier" else len(tournament.semifinal_matches) if match_type == "semifinal" else 1
