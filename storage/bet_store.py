@@ -182,12 +182,15 @@ class BetStore:
             # Check if user already has a bet
             existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
             if existing_bet:
-                # Add to existing bet, keep original odds
+                # Update existing bet, keep original odds
                 additional_amount = bet.amount - existing_bet.amount
-                bet.amount += existing_bet.amount
                 bet.odds = existing_bet.odds
-                # Only shift odds by the additional amount
-                shift_amount = additional_amount
+                # Only shift odds if increasing bet (positive additional_amount)
+                # Decreasing bet does not shift odds to prevent manipulation
+                if additional_amount > 0:
+                    shift_amount = additional_amount
+                else:
+                    shift_amount = 0
             else:
                 # New bet, use current odds
                 bet.odds = current_bet_odds

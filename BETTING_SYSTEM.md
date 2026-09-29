@@ -208,7 +208,7 @@ async with lock:
 5. Новые коэффициенты: Team A = 1.88x, Team B = 1.92x
 6. Коэффициент ставки: 1.9x (фиксированный)
 
-### Сценарий 2: Добавление к ставке (ИСПРАВЛЕННОЕ)
+### Сценарий 2: Увеличение ставки
 
 1. Текущая ставка пользователя: 333 на Team B
 2. Пользователь вводит 590 (итоговая сумма)
@@ -216,6 +216,16 @@ async with lock:
 4. Списывается 257 со счёта
 5. Новая сумма ставки: 590
 6. Сдвиг: `257 / 500 * 0.1 = 0.0514x`
+7. Коэффициент ставки остаётся прежним (из первой ставки)
+
+### Сценарий 3: Уменьшение ставки
+
+1. Текущая ставка пользователя: 1000 на Team A
+2. Пользователь вводит 500 (итоговая сумма)
+3. Разница: 1000 - 500 = 500
+4. Возвращается 500 на счёт (рефанд)
+5. Новая сумма ставки: 500
+6. Сдвиг: 0 (уменьшение ставки не меняет коэффициенты)
 7. Коэффициент ставки остаётся прежним (из первой ставки)
 
 ### Сценарий 3: Текущее поведение (С БАГОМ)
@@ -241,23 +251,45 @@ if existing_bet:
 На:
 ```python
 if existing_bet:
-    if amount <= existing_bet.amount:
-        await interaction.response.send_message(
-            replace_emojis(f"❌ Сумма должна быть больше текущей ставки ({existing_bet.amount} 💰)."),
-            ephemeral=True
-        )
-        return
-    additional_amount = amount - existing_bet.amount
-    await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
+    if amount > existing_bet.amount:
+        # Increasing bet - deduct additional amount
+        additional_amount = amount - existing_bet.amount
+        await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
+    elif amount < existing_bet.amount:
+        # Decreasing bet - refund difference
+        refund_amount = existing_bet.amount - amount
+        await user_balance_store.add_balance(self.guild_id, interaction.user.id, refund_amount)
+    else:
+        # Same amount - no balance change
+        additional_amount = 0
 ```
 
 ### 2. Исправить логику списания в betting_view.py
 
-Аналогичное исправление в строках 213-219.
+Аналогичное исправление в строках 210-227.
 
-### 3. Добавить валидацию суммы
+### 3. Исправить логику сдвига в bet_store.py
 
-Добавлена проверка, что новая сумма должна быть больше существующей ставки. Это предотвращает ошибку "Amount must be positive" когда пользователь вводит сумму меньше или равную текущей ставке.
+Добавить проверку, что уменьшение ставки не сдвигает коэффициенты:
+
+```python
+if existing_bet:
+    additional_amount = bet.amount - existing_bet.amount
+    bet.odds = existing_bet.odds
+    # Only shift odds if increasing bet (positive additional_amount)
+    # Decreasing bet does not shift odds to prevent manipulation
+    if additional_amount > 0:
+        shift_amount = additional_amount
+    else:
+        shift_amount = 0
+```
+
+### 4. Разрешить уменьшение ставок
+
+Теперь пользователи могут уменьшать свои ставки:
+- Увеличение: списывается разница, коэффициенты сдвигаются
+- Уменьшение: возвращается разница на счёт, коэффициенты НЕ сдвигаются
+- Та же сумма: никаких изменений
 
 ### 3. Явно указать в UI, что пользователь вводит итоговую сумму
 
