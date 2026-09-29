@@ -79,16 +79,167 @@ class AdminStatsMatchButton(discord.ui.Button):
             )
             return
 
-        # Show team selection view
-        team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+        # Check if both teams have stats filled
+        match_id = f"{self.match_type}_{self.match_index}"
+        team_a_filled = any(
+            self.tournament.teams[self.match[0]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
+            for c in range(1, 5)
+        )
+        team_b_filled = any(
+            self.tournament.teams[self.match[1]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
+            for c in range(1, 5)
+        )
+
+        if team_a_filled and team_b_filled:
+            # Both teams filled - show confirmation view
+            view = AdminStatsConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+            embed = self._build_stats_embed()
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        else:
+            # Not both filled - show team selection
+            team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+            embed = discord.Embed(
+                title=replace_emojis("📊 Выберите команду"),
+                description="Выберите команду для заполнения статистики:",
+                color=discord.Color.gold()
+            )
+            await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
+
+    def _build_stats_embed(self) -> discord.Embed:
+        """Build embed showing stats for both teams."""
+        match_id = f"{self.match_type}_{self.match_index}"
+        stats = self.tournament.temp_match_stats.get(match_id, {})
+
+        team_a_data = self.tournament.teams[self.match[0]] if self.match[0] < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[self.match[1]] if self.match[1] < len(self.tournament.teams) else {}
+        team_a_name = self.tournament.team_names.get(self.match[0], team_a_data.get("captain", f"Team {self.match[0]}"))
+        team_b_name = self.tournament.team_names.get(self.match[1], team_b_data.get("captain", f"Team {self.match[1]}"))
+
+        # Build team A stats
+        team_a_stats = []
+        for c in range(1, 5):
+            player = team_a_data.get(f"circle{c}")
+            if player and player in stats:
+                s = stats[player]
+                team_a_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+
+        # Build team B stats
+        team_b_stats = []
+        for c in range(1, 5):
+            player = team_b_data.get(f"circle{c}")
+            if player and player in stats:
+                s = stats[player]
+                team_b_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
 
         embed = discord.Embed(
-            title=replace_emojis("📊 Выберите команду"),
-            description="Выберите команду для заполнения статистики:",
+            title=replace_emojis("📊 Статистика матча"),
+            description=f"**{team_a_name}** vs **{team_b_name}**",
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
+        embed.add_field(name=f"{team_a_name}", value="\n".join(team_a_stats) or "Нет данных", inline=True)
+        embed.add_field(name=f"{team_b_name}", value="\n".join(team_b_stats) or "Нет данных", inline=True)
+
+        return embed
+
+
+class AdminStatsConfirmView(discord.ui.View):
+    """View for admin to confirm stats and select winner."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.match = match
+
+        # Add winner selection buttons
+        team_a_data = tournament.teams[match[0]] if match[0] < len(tournament.teams) else {}
+        team_b_data = tournament.teams[match[1]] if match[1] < len(tournament.teams) else {}
+        team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
+        team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
+
+        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[0], team_a_name))
+        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[1], team_b_name))
+        self.add_item(AdminEditStatsButton(guild_id, tournament, match_type, match_index, match))
+
+
+class AdminConfirmWinnerButton(discord.ui.Button):
+    """Button to confirm winner with stats."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+        super().__init__(
+            label=f"Победитель: {team_name}",
+            style=discord.ButtonStyle.success,
+            custom_id=f"confirm_winner_stats:{guild_id}:{match_type}:{match_index}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав!"),
+                ephemeral=True
+            )
+            return
+
+        # Confirm winner
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            return
+
+        if self.match_type == "qualifier":
+            tournament.confirm_qualifier_winner(self.match_index, self.team_index)
+        elif self.match_type == "semifinal":
+            tournament.confirm_semifinal_winner(self.match_index, self.team_index)
+        elif self.match_type == "final":
+            tournament.confirm_final_winner(self.team_index)
+
+        store.set(tournament)
+
+        # Update tournament message
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.response.edit_message(
+            content=f"✅ Победитель {self.team_name} подтверждён!",
+            embed=None,
+            view=None
+        )
+
+
+class AdminEditStatsButton(discord.ui.Button):
+    """Button to edit stats instead of confirming."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+        super().__init__(
+            label="Изменить статистику",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"edit_stats:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.match = match
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Show team selection for editing
+        team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+        embed = discord.Embed(
+            title=replace_emojis("📊 Выберите команду для редактирования"),
+            color=discord.Color.gold()
+        )
+        await interaction.response.edit_message(embed=embed, view=team_view)
 
 
 class AdminStatsTeamSelectView(discord.ui.View):
@@ -228,7 +379,12 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         if match_id not in tournament.temp_match_stats:
             tournament.temp_match_stats[match_id] = {}
 
-        # Merge with existing stats
+        # Update only this team's stats (remove old stats for this team first)
+        team_players = set(self.players)
+        tournament.temp_match_stats[match_id] = {
+            k: v for k, v in tournament.temp_match_stats[match_id].items()
+            if k not in team_players
+        }
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
 
@@ -242,7 +398,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
             logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
 
         await interaction.response.send_message(
-            replace_emojis(f"✅ Статистика для Игра #{self.match_index + 1} успешно внесена!"),
+            replace_emojis(f"✅ Статистика для {self.team_name} сохранена!"),
             ephemeral=True
         )
 
@@ -390,7 +546,7 @@ class ConfirmWinnerButton(discord.ui.Button):
                 )
                 return
 
-        # Call the appropriate winner setter based on match type
+        # Call the appropriate winner setter based on match type (pending)
         if self.match_type == "qualifier":
             tournament.set_qualifier_winner(self.match_index, self.team_index)
         elif self.match_type == "semifinal":
