@@ -792,7 +792,7 @@ async def build_qualifiers_embed(
             formatted_players.append(formatted_name)
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     if betting_section:
         description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
@@ -815,7 +815,6 @@ async def build_qualifiers_embed(
         except:
             pass
 
-    return embed
     return embed
 
 
@@ -942,7 +941,7 @@ async def build_semifinals_embed(
             formatted_players.append(formatted_name)
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     if footer:
         embed.set_footer(text=footer)
@@ -956,7 +955,6 @@ async def build_semifinals_embed(
         except:
             pass
 
-    return embed
     return embed
 
 
@@ -1056,7 +1054,7 @@ async def build_final_embed(
             formatted_players.append(formatted_name)
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{', '.join(formatted_players)}", inline=True)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     if footer:
         embed.set_footer(text=footer)
