@@ -2279,9 +2279,16 @@ class HelpGuideSelectMenu(discord.ui.Select):
             await interaction.response.edit_message(embed=embed, view=view)
 
     @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
-    @app_commands.checks.has_permissions(administrator=True)
     async def role(self, interaction: discord.Interaction) -> None:
         """Создать сообщение для управления ролью организатора."""
+        # Check permissions manually
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ У вас нет прав для использования этой команды. Требуются права администратора.",
+                ephemeral=True
+            )
+            return
+
         await interaction.response.defer()
 
         try:
