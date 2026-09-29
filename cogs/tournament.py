@@ -2118,7 +2118,7 @@ class GuideSelectMenu(discord.ui.Select):
                 inline=False
             )
             view = GuideView(current="rules")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class GuideView(discord.ui.View):
@@ -2301,7 +2301,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 inline=False
             )
             view = HelpGuideView(current="rules")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class HelpGuideView(discord.ui.View):
