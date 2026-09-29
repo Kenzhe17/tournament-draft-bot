@@ -138,9 +138,9 @@ GAME_EMOJIS = {
     "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
 
     # Medal emojis
-    "medal_gold": os.getenv("EMOJI_MEDAL_GOLD", ""),
-    "medal_silver": os.getenv("EMOJI_MEDAL_SILVER", ""),
-    "medal_bronze": os.getenv("EMOJI_MEDAL_BRONZE", ""),
+    "gold_medal": os.getenv("EMOJI_GOLD_MEDAL", ""),
+    "silver_medal": os.getenv("EMOJI_SILVER_MEDAL", ""),
+    "bronze_medal": os.getenv("EMOJI_BRONZE_MEDAL", ""),
 
     # Number emojis
     "num_1": os.getenv("EMOJI_NUM_1", ""),
@@ -210,9 +210,9 @@ STANDARD_EMOJIS = {
     "room": "🚪",
 
     # Medals
-    "medal_gold": "🥇",
-    "medal_silver": "🥈",
-    "medal_bronze": "🥉",
+    "gold_medal": "🥇",
+    "silver_medal": "🥈",
+    "bronze_medal": "🥉",
 
     # Numbers
     "num_1": "1️⃣",
@@ -421,9 +421,9 @@ def replace_emojis(text: str) -> str:
         "🌟": "rare_elite",
 
         # Medal emojis
-        "🥇": "medal_gold",
-        "🥈": "medal_silver",
-        "🥉": "medal_bronze",
+        "🥇": "gold_medal",
+        "🥈": "silver_medal",
+        "🥉": "bronze_medal",
 
         # Number emojis
         "1️⃣": "num_1",
@@ -442,7 +442,7 @@ def replace_emojis(text: str) -> str:
         "icon_letter", "icon_paw", "icon_bluestacks", "icon_teacup", "icon_ribbon",
         "icon_18plus", "icon_heart", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
         "check", "cross",
-        "medal_gold", "medal_silver", "medal_bronze",
+        "gold_medal", "silver_medal", "bronze_medal",
         "num_1", "num_2", "num_3", "num_4",
         "room",
         "winner",

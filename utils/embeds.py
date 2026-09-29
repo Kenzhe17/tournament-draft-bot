@@ -1274,11 +1274,11 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
         # Highlight top 3
         if rank == 1:
-            rank_emoji = replace_emojis("medal_gold")
+            rank_emoji = replace_emojis("gold_medal")
         elif rank == 2:
-            rank_emoji = replace_emojis("medal_silver")
+            rank_emoji = replace_emojis("silver_medal")
         elif rank == 3:
-            rank_emoji = replace_emojis("medal_bronze")
+            rank_emoji = replace_emojis("bronze_medal")
         else:
             rank_emoji = f"{rank}."
 
