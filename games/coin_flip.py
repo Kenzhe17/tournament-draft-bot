@@ -61,7 +61,7 @@ class CoinFlipView(discord.ui.View):
     def create_game_embed(self, state: str = "menu", initiator_avatar: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **COIN FLIP | ИГРЫ НА УДАЧУ**",
+            title=f"{replace_emojis('a_sparkle')} **COIN FLIP | /coin_flip**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -188,7 +188,7 @@ class CoinFlipCancelButton(discord.ui.Button):
 
         self.game.is_active = False
         await interaction.response.edit_message(
-            content=f"{replace_emojis('❌')} Игра отменена. Ставка возвращена.",
+            content="❌ Игра отменена. Ставка возвращена.",
             embed=None,
             view=None
         )
@@ -250,10 +250,88 @@ class CoinFlipDeclineButton(discord.ui.Button):
 
         self.game.is_active = False
         await interaction.response.edit_message(
-            content=f"{replace_emojis('❌')} Вызов отклонён. Ставка возвращена.",
+            content="❌ Вызов отклонён. Ставка возвращена.",
             embed=None,
             view=None
         )
+
+
+class CoinFlipPlayAgainButton(discord.ui.Button):
+    """Кнопка сыграть снова."""
+
+    def __init__(self, bet: int, opponent_id: Optional[int] = None):
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
+        self.bet = bet
+        self.opponent_id = opponent_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Перезапустить игру с теми же параметрами."""
+        opponent = None
+        if self.opponent_id:
+            opponent = interaction.guild.get_member(self.opponent_id)
+
+        # For play again, we need to edit the existing message
+        # First create the game
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+
+        # Validate bet
+        if self.bet < 10 or self.bet > 10000:
+            await interaction.response.send_message(
+                "❌ Ставка должна быть от 10 до 10,000 монет.",
+                ephemeral=True
+            )
+            return
+
+        # Check balance
+        balance = await user_balance_store.get_balance(guild_id, user_id)
+        if balance < self.bet:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. У вас: {balance}",
+                ephemeral=True
+            )
+            return
+
+        # Deduct bet atomically
+        lock = get_user_lock(guild_id, user_id)
+        async with lock:
+            balance = await user_balance_store.get_balance(guild_id, user_id)
+            if balance < self.bet:
+                await interaction.response.send_message(
+                    f"❌ Недостаточно монет. У вас: {balance}",
+                    ephemeral=True
+                )
+                return
+
+            await user_balance_store.add_balance(guild_id, user_id, -self.bet)
+
+        # Create game
+        game = CoinFlipGame(
+            guild_id=guild_id,
+            channel_id=interaction.channel_id,
+            initiator_id=user_id,
+            bet=self.bet,
+            opponent_id=opponent.id if opponent else None
+        )
+
+        # Create view
+        view = CoinFlipView(game)
+
+        if opponent:
+            # PvP mode
+            view.add_item(CoinFlipAcceptButton(game, view))
+            view.add_item(CoinFlipDeclineButton(game))
+        else:
+            # PvE mode
+            view.add_item(CoinFlipHeadsButton(game, view))
+            view.add_item(CoinFlipTailsButton(game, view))
+
+        view.add_item(CoinFlipCancelButton(game))
+
+        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+
+        # Edit the existing message instead of sending new one
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 async def start_game(
@@ -308,7 +386,12 @@ async def start_game(
 
     # Show result
     result_embed = view.create_game_embed("result")
-    await interaction.edit_original_response(embed=result_embed, view=None)
+
+    # Add play again button
+    result_view = discord.ui.View(timeout=None)
+    result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id))
+
+    await interaction.edit_original_response(embed=result_embed, view=result_view)
 
 
 async def create_coin_flip_game(
