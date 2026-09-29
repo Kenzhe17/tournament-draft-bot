@@ -751,9 +751,9 @@ async def build_qualifiers_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -844,9 +844,9 @@ async def build_semifinals_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
-        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinals":
-        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -928,9 +928,9 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = "⬆️ 🔓 СТАВКИ ОТКРЫТЫ\n⬆️ У вас есть 3 минуты на ставку"
+        footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = "⬆️ 🔒 СТАВКИ ЗАКРЫТЫ"
+        footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
