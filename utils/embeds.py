@@ -995,32 +995,6 @@ async def build_final_embed(
     else:
         room_info = ""
 
-    # Build betting section
-    betting_section = []
-    if tournament.is_betting_open() and tournament.betting_phase == "final":
-        team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-        team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-        
-        # Get average ELO for each team
-        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
-        
-        # Calculate odds based on ELO difference
-        elo_diff = avg_elo_b - avg_elo_a
-        if elo_diff > 0:
-            odds_a = round(1.9 + (elo_diff / 100), 2)
-            odds_b = round(1.9 - (elo_diff / 100), 2)
-        else:
-            odds_a = round(1.9 - (abs(elo_diff) / 100), 2)
-            odds_b = round(1.9 + (abs(elo_diff) / 100), 2)
-        
-        odds_a = max(1.1, min(10.0, odds_a))
-        odds_b = max(1.1, min(10.0, odds_b))
-        
-        team_a_name = tournament.team_names.get(team_a, f"П{team_a + 1}")
-        team_b_name = tournament.team_names.get(team_b, f"П{team_b + 1}")
-        betting_section.append(f"{replace_emojis('white_arrow')} **Финал:** {team_a_name} `{odds_a}x` | {team_b_name} `{odds_b}x`")
-
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
@@ -1034,14 +1008,18 @@ async def build_final_embed(
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
-    if betting_section:
-        description += "\n\n" + f"{replace_emojis('white_dot')} **Ставки на матчи:**\n" + "\n".join(betting_section)
-
     embed = discord.Embed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+
+    if footer:
+        embed.set_footer(text=footer)
+
+    # Add betting section with detailed info
+    final_matches = [(team_a, team_b)]
+    await _add_betting_section_to_embed(embed, tournament, final_matches, "final")
 
     # Add team names and players as inline fields
     for team_idx in [team_a, team_b]:
@@ -1062,9 +1040,6 @@ async def build_final_embed(
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
-
-    if footer:
-        embed.set_footer(text=footer)
 
     # Add organizer avatar if available
     if organizer_id:
