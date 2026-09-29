@@ -1784,23 +1784,18 @@ class TournamentCog(commands.Cog):
     @is_bot_owner()
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
-        # First embed with image (top)
-        image_embed = discord.Embed(
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        image_embed.set_image(url="https://media.discordapp.net/attachments/1200125075156910181/ваша_ссылка_на_баннер.png")
-
-        # Second embed with text
-        text_embed = discord.Embed(
+        # Single embed with image and text
+        embed = discord.Embed(
             title="✧ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✧",
             description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} <#1549809898643001484> {replace_emojis('white_arrow')} Проведение турниров\n{replace_emojis('a_dot_smaller')} <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты из игр\n{replace_emojis('a_dot_smaller')} <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} <#1250974603162026024> {replace_emojis('white_arrow')} Прослушивание треков\n{replace_emojis('a_dot_smaller')} <#1242489553189732373> {replace_emojis('white_arrow')} Полезные файлы для FF\n\n {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        text_embed.set_footer(text="DISCORD SERVER r1z3")
+        embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GuideView()
 
-        await interaction.response.send_message(embeds=[image_embed, text_embed], view=view, ephemeral=False)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
