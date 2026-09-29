@@ -1124,12 +1124,26 @@ class SemifinalsView(discord.ui.View):
 
                 self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Add captain fill buttons for pending matches
+        # Add captain fill buttons for matches (always available during active phases)
         from views.match_stats_view import CaptainFillButton
-        for i, winner in enumerate(tournament.semifinal_pending_winners):
-            if winner is not None:
-                # Add fill button for both teams in this match
-                match = matches[i]
+        for i, match in enumerate(matches):
+            if self.match_type == "qualifier" and tournament.phase.value == "qualifiers":
+                match_id = f"qualifier_{i}"
+                # Check if team 0 has filled stats
+                team0_filled = any(
+                    tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team0_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
+                # Check if team 1 has filled stats
+                team1_filled = any(
+                    tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
+                if not team1_filled:
+                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
+            elif self.match_type == "semifinal" and tournament.phase.value == "semifinals":
                 match_id = f"semifinal_{i}"
                 # Check if team 0 has filled stats
                 team0_filled = any(

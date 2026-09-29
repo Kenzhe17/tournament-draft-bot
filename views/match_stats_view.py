@@ -45,19 +45,18 @@ class CaptainFillButton(Button):
             await interaction.response.send_message(replace_emojis("❌ Только капитан может заполнять статистику."), ephemeral=True)
             return
 
-        # Check if match has pending winner
-        if self.match_type == "qualifier":
-            if tournament.qualifier_winners[self.match_index] is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
-                return
-        elif self.match_type == "semifinal":
-            if tournament.semifinal_pending_winners[self.match_index] is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
-                return
-        elif self.match_type == "final":
-            if tournament.final_pending_winner is None:
-                await interaction.response.send_message(replace_emojis("❌ Матч ещё не завершён."), ephemeral=True)
-                return
+        # Check if match is in active phase (allow stats filling during active phase)
+        match_active = False
+        if self.match_type == "qualifier" and tournament.phase.value == "qualifiers":
+            match_active = True
+        elif self.match_type == "semifinal" and tournament.phase.value == "semifinals":
+            match_active = True
+        elif self.match_type == "final" and tournament.phase.value == "final":
+            match_active = True
+
+        if not match_active:
+            await interaction.response.send_message(replace_emojis("❌ Матч ещё не активен."), ephemeral=True)
+            return
 
         # Check if this team already filled stats
         match_id = f"{self.match_type}_{self.match_index}"
@@ -245,9 +244,21 @@ class AdminMatchSelectView(View):
                     btn.callback = self._create_callback("semifinal", i)
                     self.add_item(btn)
 
-        # Final
-        if tournament.phase.value in ["final", "complete"] and tournament.final_pending_winner is not None:
+        # Final - allow stats filling during final phase
+        if tournament.phase.value == "final":
             team_a = tournament.final_teams[0]
+            team_b = tournament.final_teams[1]
+            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+            team_a_name = tournament.team_names.get(team_a, team_a_data.get("captain", f"Team {team_a}"))
+            team_b_name = tournament.team_names.get(team_b, team_b_data.get("captain", f"Team {team_b}"))
+            btn = Button(
+                label=f"Финал: {team_a_name} vs {team_b_name}",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"admin_match:final:0"
+            )
+            btn.callback = self._create_callback("final", 0)
+            self.add_item(btn)
             team_b = tournament.final_teams[1]
             team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
             team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
@@ -782,7 +793,8 @@ class AdminConfirmView(View):
             elif self.match_type == "semifinal":
                 winning_team_index = tournament.semifinal_pending_winners[self.match_index]
             else:  # final
-                winning_team_index = tournament.final_pending_winner
+                # Final doesn't have pending_winner - we're confirming from admin stats flow
+                winning_team_index = self.team_index  # Use the team_index passed to confirm_callback
 
             import logging
             logging.info(f"Confirming winner: match_type={self.match_type}, winning_team_index={winning_team_index}")
@@ -863,4 +875,5 @@ class AdminConfirmView(View):
         elif self.match_type == "semifinal":
             return self.tournament.semifinal_pending_winners[self.match_index]
         else:  # final
+            # For final, we need to get the winner from the tournament
             return self.tournament.final_pending_winner

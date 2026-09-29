@@ -111,9 +111,9 @@ class FinalView(discord.ui.View):
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Add captain fill buttons for pending final
+        # Add captain fill buttons for final (always available during final phase)
         from views.match_stats_view import CaptainFillButton
-        if tournament.final_pending_winner is not None:
+        if tournament.phase == TournamentPhase.FINAL:
             match_id = "final_0"
             # Check if team 0 has filled stats
             team0_filled = any(
