@@ -105,7 +105,7 @@ class TakeRoleButton(discord.ui.Button):
             role = interaction.guild.get_role(ORG_ROLE_ID)
             if not role:
                 await interaction.response.send_message(
-                    "❌ Роль организатора не найдена на сервере",
+                    f"❌ Роль организатора не найдена на сервере (ID: {ORG_ROLE_ID})",
                     ephemeral=True
                 )
                 return
