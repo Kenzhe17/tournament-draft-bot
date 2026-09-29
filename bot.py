@@ -325,6 +325,13 @@ class TournamentBot(commands.Bot):
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
 
+        # Sync commands with Discord
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"Синхронизировано {len(synced)} slash-команд")
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации команд: {e}")
+
         # Restore org role view if it exists
         from views.org_role_view import load_state, OrgRoleView
         state = load_state()
