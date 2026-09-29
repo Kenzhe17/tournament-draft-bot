@@ -1678,10 +1678,52 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
         """Узнать кто ты на самом деле."""
+        from storage.db import get_pool
         import random
         from storage.whoami_responses import WHOAMI_RESPONSES
 
-        response = random.choice(WHOAMI_RESPONSES)
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Get last use time
+            record = await conn.fetchrow(
+                "SELECT last_use FROM whoami_cooldowns WHERE guild_id = $1 AND user_id = $2",
+                guild_id, user_id
+            )
+
+            now = datetime.now()
+            cooldown_hours = 3
+
+            if record and record["last_use"]:
+                last_use = record["last_use"]
+                time_passed = now - last_use
+
+                if time_passed < timedelta(hours=cooldown_hours):
+                    # Calculate remaining time
+                    remaining = timedelta(hours=cooldown_hours) - time_passed
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+
+                    await interaction.response.send_message(
+                        replace_emojis(f"⚪ Вы уже узнали кто ты!\nСледующий вопрос через: {hours}ч {minutes}мин"),
+                        ephemeral=True
+                    )
+                    return
+
+            # Get random response
+            response = random.choice(WHOAMI_RESPONSES)
+
+            # Update last use time
+            await conn.execute(
+                """
+                INSERT INTO whoami_cooldowns (guild_id, user_id, last_use)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET last_use = $3
+                """,
+                guild_id, user_id, now
+            )
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} **Кто я?** {replace_emojis('a_star')}",

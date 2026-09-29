@@ -238,6 +238,16 @@ async def init_db() -> None:
             )
         """)
 
+        # Create whoami_cooldowns table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS whoami_cooldowns (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                last_use TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+
         # Create user_balance table for betting system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (
