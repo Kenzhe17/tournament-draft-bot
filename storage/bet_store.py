@@ -114,6 +114,9 @@ class BetStore:
 
     def get_current_odds(self, match_id: str) -> MatchOdds | None:
         """Get current odds for a match."""
+        if self._use_db:
+            # For now, use in-memory cache (will be loaded on init in production)
+            return self._odds.get(match_id)
         return self._odds.get(match_id)
 
     async def get_current_odds_db(self, match_id: str) -> MatchOdds | None:
