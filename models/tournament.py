@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import random
+import discord
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -774,7 +776,7 @@ class Tournament:
         # Log tournament completion
         try:
             from utils.logging import log_tournament_completed
-            import asyncio
+            from datetime import datetime
 
             bot = get_bot_instance()
             if not bot:
@@ -786,7 +788,6 @@ class Tournament:
             participant_count = len(self.player_user_ids)
 
             # Calculate duration
-            from datetime import datetime
             if self.start_time:
                 start_dt = datetime.fromisoformat(self.start_time)
                 end_dt = datetime.now()
@@ -869,41 +870,6 @@ class Tournament:
                 await player_stats_store.set(stats)
 
         return earnings_map
-
-        # Log tournament completion
-        try:
-            from utils.logging import log_tournament_completed
-            import asyncio
-
-            bot = get_bot_instance()
-            if not bot:
-                print("Bot instance not available for logging")
-                return
-
-            winner_team = self.teams[team_index] if team_index < len(self.teams) else {}
-            winner_name = self.team_names.get(team_index, winner_team.get("captain", f"Team {team_index}"))
-            participant_count = len(self.player_user_ids)
-
-            # Calculate duration
-            from datetime import datetime
-            if self.start_time:
-                start_dt = datetime.fromisoformat(self.start_time)
-                end_dt = datetime.now()
-                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
-            else:
-                duration_minutes = 0
-
-            # Log asynchronously
-            asyncio.create_task(log_tournament_completed(
-                bot,
-                discord.Object(id=self.guild_id),
-                f"Турнир {self.size.value}",
-                winner_name,
-                participant_count,
-                duration_minutes
-            ))
-        except Exception as e:
-            print(f"Failed to log tournament completion: {e}")
 
     # --- Сериализация ---
 

@@ -1061,9 +1061,9 @@ async def build_winner_embed(
     from storage.player_stats_store import player_stats_store
     from storage.bet_store import bet_store
 
-    # Calculate from tournament match stats
+    # Calculate from tournament match stats using temp_match_stats
     for match_idx in range(len(tournament.qualifier_matches)):
-        match_stats = tournament.qualifier_match_stats.get(match_idx, {})
+        match_stats = tournament.temp_match_stats.get(f"qualifier_{match_idx}", {})
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
@@ -1078,7 +1078,7 @@ async def build_winner_embed(
                     best_kills_player = player_name
 
     for match_idx in range(len(tournament.semifinal_matches)):
-        match_stats = tournament.semifinal_match_stats.get(match_idx, {})
+        match_stats = tournament.temp_match_stats.get(f"semifinal_{match_idx}", {})
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
@@ -1092,8 +1092,8 @@ async def build_winner_embed(
                     best_kills = stat.get('kills', 0)
                     best_kills_player = player_name
 
-    # Get final match stats
-    final_stats = tournament.final_match_stats
+    # Get final match stats from temp_match_stats
+    final_stats = tournament.temp_match_stats.get("final_0", {})
     if final_stats:
         total_matches += 1
         for player_name, stat in final_stats.items():
