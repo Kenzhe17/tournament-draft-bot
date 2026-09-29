@@ -1636,6 +1636,7 @@ class TournamentCog(commands.Cog):
             )
 
     @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
+    @is_bot_owner()
     async def debug_emoji(self, interaction: discord.Interaction) -> None:
         """Проверить какие эмодзи загружены."""
         from config import RANK_EMOJIS, GAME_EMOJIS, get_emoji
