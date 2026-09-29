@@ -204,6 +204,9 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             await interaction.response.send_message(replace_emojis("❌ Вы не можете ставить против своей команды."), ephemeral=True)
             return
 
+        # Get match ID early for bet checking
+        match_id = f"{self.match_type}_{self.match_index}"
+
         # Check if user already has a bet on this match
         from storage.bet_store import bet_store
         existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
@@ -217,9 +220,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         # Initialize odds if not already done
         from models.bet import Bet
-        from storage.bet_store import bet_store
         from utils.embeds import get_team_avg_elo
-        match_id = f"{self.match_type}_{self.match_index}"
         current_odds = bet_store.get_current_odds(match_id)
 
         if not current_odds:

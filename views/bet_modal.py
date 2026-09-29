@@ -75,6 +75,9 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                     )
                     return
             
+            # Get match ID early for bet checking
+            match_id = f"{self.match_type}_{self.match_index}"
+
             # Check if user already has a bet on this match
             existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
             if existing_bet:
@@ -97,7 +100,6 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
 
             # Initialize odds if not already done
             from models.bet import Bet
-            match_id = f"{self.match_type}_{self.match_index}"
             current_odds = bet_store.get_current_odds(match_id)
 
             if not current_odds:
