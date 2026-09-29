@@ -316,7 +316,7 @@ class AdminTeamSelectView(View):
         team_b_filled = any(team_b.get(f"circle{c}") in temp_stats for c in range(1, 5))
 
         if team_a_filled and team_b_filled:
-            confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
+            confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
             confirm_btn.callback = self._create_confirm_callback()
             self.add_item(confirm_btn)
 
@@ -492,7 +492,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
+        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
 
@@ -584,7 +584,7 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
 
         # Add confirm and edit buttons
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
+        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
 
@@ -665,7 +665,7 @@ class AdminConfirmView(View):
         """Create view with confirm button that shows winner selection."""
         view = discord.ui.View()
         
-        confirm_btn = Button(label=replace_emojis("✅ Подтвердить"), style=discord.ButtonStyle.success)
+        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self._show_winner_selection
         view.add_item(confirm_btn)
         
@@ -686,15 +686,15 @@ class AdminConfirmView(View):
         # Create view with winner selection buttons
         view = discord.ui.View()
 
-        team_a_btn = Button(label=replace_emojis(f"🏆 {team_a_name}"), style=discord.ButtonStyle.success)
+        team_a_btn = Button(label=f"🏆 {team_a_name}", style=discord.ButtonStyle.success)
         team_a_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_a_index)
         view.add_item(team_a_btn)
 
-        team_b_btn = Button(label=replace_emojis(f"🏆 {team_b_name}"), style=discord.ButtonStyle.success)
+        team_b_btn = Button(label=f"🏆 {team_b_name}", style=discord.ButtonStyle.success)
         team_b_btn.callback = lambda interaction: self.confirm_callback(interaction, self.team_b_index)
         view.add_item(team_b_btn)
 
-        cancel_btn = Button(label=replace_emojis("❌ Отмена"), style=discord.ButtonStyle.secondary)
+        cancel_btn = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
         cancel_btn.callback = self.edit_callback
         view.add_item(cancel_btn)
 

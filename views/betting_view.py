@@ -232,7 +232,7 @@ class BettingButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label=replace_emojis("💰 Сделать ставку"),
+            label="💰 Сделать ставку",
             style=discord.ButtonStyle.primary,
             custom_id=f"betting_main:{guild_id}"
         )

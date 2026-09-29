@@ -429,7 +429,7 @@ class SelectWinnerButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament, match_type: str):
         super().__init__(
-            label=replace_emojis("🏆 Выбрать победителя"),
+            label="🏆 Выбрать победителя",
             style=discord.ButtonStyle.success,
             custom_id=f"select_winner:{guild_id}:{match_type}"
         )

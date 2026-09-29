@@ -1011,7 +1011,7 @@ class ShopBackToListButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("◀ Назад к списку"),
+            label="◀ Назад к списку",
             custom_id="shop_back_list"
         )
 
@@ -1156,7 +1156,7 @@ class RarityBackButton(discord.ui.Button):
     def __init__(self, category: str):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("↩️ Назад"),
+            label="↩️ Назад",
             custom_id=f"shop_rarity_back:{category}"
         )
         self.category = category

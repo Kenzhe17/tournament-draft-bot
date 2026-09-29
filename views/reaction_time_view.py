@@ -61,7 +61,7 @@ class ReactionButtonView(discord.ui.View):
         self.bet = bet
         self.game_view = game_view
 
-    @discord.ui.button(label=replace_emojis("🎯 НАЖМИ!", style=discord.ButtonStyle.danger, custom_id="reaction_click")
+    @discord.ui.button(label="🎯 НАЖМИ!", style=discord.ButtonStyle.danger, custom_id="reaction_click")
     async def click_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Обработать нажатие."""
         if not self.game_view.can_click:

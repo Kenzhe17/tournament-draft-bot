@@ -70,7 +70,7 @@ class ReflexTestGameView(View):
         self.game = ReflexTestGame()
         self.started = False
 
-    @button(label=replace_emojis("🎯 Начать", style=discord.ButtonStyle.primary)
+    @button(label="🎯 Начать", style=discord.ButtonStyle.primary)
     async def start_game(self, interaction: discord.Interaction, button: Button) -> None:
         """Начать игру."""
         if self.started:

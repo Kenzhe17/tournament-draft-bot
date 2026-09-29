@@ -469,7 +469,7 @@ class DeletePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label=replace_emojis("🗑️ Удалить"),
+            label="🗑️ Удалить",
             custom_id=f"delete_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -560,7 +560,7 @@ class ReplacePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("🔄 Заменить"),
+            label="🔄 Заменить",
             custom_id=f"replace_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -760,7 +760,7 @@ class AutoDistributeButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=replace_emojis("🎯 Распределить по ELO"),
+            label="🎯 Распределить по ELO",
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
@@ -824,7 +824,7 @@ class StartTournamentButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=replace_emojis("🚀 Старт"),
+            label="🚀 Старт",
             custom_id=f"start_tournament:{guild_id}",
         )
         self.guild_id = guild_id

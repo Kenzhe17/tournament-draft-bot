@@ -36,7 +36,7 @@ class TeamKDButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
         super().__init__(
-            label=replace_emojis("📊 {team_name} K/D"),
+            label=f"📊 {team_name} K/D",
             style=discord.ButtonStyle.primary,
             custom_id=f"team_kd:{guild_id}:{team_number}"
         )
@@ -70,7 +70,7 @@ class ProcessMatchButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_info: dict):
         super().__init__(
-            label=replace_emojis("✅ Обработать результат"),
+            label="✅ Обработать результат",
             style=discord.ButtonStyle.success,
             custom_id=f"process_match:{guild_id}",
         )

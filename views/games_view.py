@@ -227,7 +227,7 @@ class PlayButton(Button):
     def __init__(self, game, user_id: int, guild_id: int):
         is_ready = game.status in ("ready", "available")
         super().__init__(
-            label=replace_emojis("▶️ Сыграть"),
+            label="▶️ Сыграть",
             style=discord.ButtonStyle.primary,
             custom_id=f"play_{game.id}",
             disabled=not is_ready
@@ -327,7 +327,7 @@ class BackToMainMenuButton(Button):
 
     def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label=replace_emojis("room В главное меню"),
+            label="🚪 В главное меню",
             style=discord.ButtonStyle.secondary,
             custom_id="back_to_main"
         )

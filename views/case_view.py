@@ -247,7 +247,7 @@ class OpenAgainButton(discord.ui.Button):
     def __init__(self, case_id: str):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label=replace_emojis("🎲 Открыть ещё 1"),
+            label="🎲 Открыть ещё 1",
             custom_id=f"case_open_again:{case_id}"
         )
         self.case_id = case_id

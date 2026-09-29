@@ -112,7 +112,7 @@ class ViewBetsButton(Button):
     
     def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(
-            label=replace_emojis("📊 Посмотреть ставки"),
+            label="📊 Посмотреть ставки",
             style=discord.ButtonStyle.secondary,
             custom_id="view_bets"
         )
@@ -240,7 +240,7 @@ class BetButton(Button):
         # Check if betting is open for this phase
         is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
-            label=replace_emojis("💰 Сделать ставку"),
+            label="💰 Сделать ставку",
             style=discord.ButtonStyle.success,
             custom_id="place_bet",
             disabled=not is_open
