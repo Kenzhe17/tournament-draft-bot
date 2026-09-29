@@ -699,7 +699,7 @@ async def build_qualifiers_embed(
         # Get room info
         room_data = tournament.qualifier_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
             room_info = ""
 
@@ -732,7 +732,7 @@ async def build_qualifiers_embed(
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
         remaining = tournament.get_betting_remaining_time()
-        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -794,7 +794,7 @@ async def build_semifinals_embed(
         # Get room info
         room_data = tournament.semifinal_rooms.get(i, {})
         if room_data:
-            room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+            room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
         else:
             room_info = ""
 
@@ -827,7 +827,7 @@ async def build_semifinals_embed(
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
         remaining = tournament.get_betting_remaining_time()
-        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -889,7 +889,7 @@ async def build_final_embed(
     # Get room info
     room_data = tournament.final_room
     if room_data:
-        room_info = f"{replace_emojis('sub_directory')} 🚪 Данные комнаты: ID `{room_data['id']}` | Пароль `{room_data['password']}`"
+        room_info = f"{replace_emojis('sub_directory')} **Данные комнаты:** ID `{room_data['id']}` | Пароль `{room_data['password']}`"
     else:
         room_info = ""
 
@@ -918,7 +918,7 @@ async def build_final_embed(
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
         remaining = tournament.get_betting_remaining_time()
-        footer = f"{replace_emojis('a_dot_smaller')} ⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
+        footer = f"⏳ Прием ставок закрывается через: {remaining // 60:02d}:{remaining % 60:02d}"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -987,19 +987,93 @@ async def build_winner_embed(
             players.append(formatted_name)
     roster_str = ", ".join(players) if players else "Нет игроков"
 
-    # Get captain ID for mention
-    captain_id = tournament.player_user_ids.get(captain_name, 0)
-    captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
+    # Get captain name (no mention)
+    captain_name = winning_team.get("captain", f"П{idx + 1}")
+
+    # Calculate real tournament statistics
+    total_kills = 0
+    total_deaths = 0
+    total_matches = 0
+    total_rounds = 0
+    best_kd_player = ""
+    best_kd = 0
+    best_kills_player = ""
+    best_kills = 0
+    total_bet_pool = 0
+
+    # Get all player stats from this tournament
+    from storage.player_stats_store import player_stats_store
+    from storage.bet_store import bet_store
+
+    # Calculate from tournament match stats
+    for match_idx in range(len(tournament.qualifier_matches)):
+        match_stats = tournament.qualifier_match_stats.get(match_idx, {})
+        if match_stats:
+            total_matches += 1
+            for player_name, stat in match_stats.items():
+                total_kills += stat.get('kills', 0)
+                total_deaths += stat.get('deaths', 0)
+                kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
+                if kd > best_kd:
+                    best_kd = kd
+                    best_kd_player = player_name
+                if stat.get('kills', 0) > best_kills:
+                    best_kills = stat.get('kills', 0)
+                    best_kills_player = player_name
+
+    for match_idx in range(len(tournament.semifinal_matches)):
+        match_stats = tournament.semifinal_match_stats.get(match_idx, {})
+        if match_stats:
+            total_matches += 1
+            for player_name, stat in match_stats.items():
+                total_kills += stat.get('kills', 0)
+                total_deaths += stat.get('deaths', 0)
+                kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
+                if kd > best_kd:
+                    best_kd = kd
+                    best_kd_player = player_name
+                if stat.get('kills', 0) > best_kills:
+                    best_kills = stat.get('kills', 0)
+                    best_kills_player = player_name
+
+    # Get final match stats
+    final_stats = tournament.final_match_stats
+    if final_stats:
+        total_matches += 1
+        for player_name, stat in final_stats.items():
+            total_kills += stat.get('kills', 0)
+            total_deaths += stat.get('deaths', 0)
+            kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
+            if kd > best_kd:
+                best_kd = kd
+                best_kd_player = player_name
+            if stat.get('kills', 0) > best_kills:
+                best_kills = stat.get('kills', 0)
+                best_kills_player = player_name
+
+    # Calculate total bet pool
+    for match_type in ["qualifier", "semifinal", "final"]:
+        match_count = len(tournament.qualifier_matches) if match_type == "qualifier" else len(tournament.semifinal_matches) if match_type == "semifinal" else 1
+        for i in range(match_count):
+            match_id = f"{match_type}_{i}"
+            bets = await bet_store.get_bets_by_match(match_id)
+            for bet in bets:
+                total_bet_pool += bet.amount
+
+    # Calculate average K/D
+    avg_kd = total_kills / total_deaths if total_deaths > 0 else 0
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
-        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_mention}, {roster_str}\n\n"
+        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_name}, {roster_str}\n\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} Всего матчей: 7\n"
-        f"{replace_emojis('sub_middle')} Сыграно раундов: 15\n"
-        f"{replace_emojis('sub_middle')} **MVP** Турнира: {captain_mention} `(К/Д: 2.45)`\n"
-        f"{replace_emojis('sub_directory')} Общий банк ставок: 50,000 {replace_emojis('money')}\n\n"
+        f"{replace_emojis('sub_middle')} **Всего матчей:** {total_matches}\n"
+        f"{replace_emojis('sub_middle')} **Всего киллов:** {total_kills}\n"
+        f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} `({best_kd:.2f})`\n"
+        f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} `({best_kills})`\n"
+        f"{replace_emojis('sub_middle')} **Средний K/D:** `{avg_kd:.2f}`\n"
+        f"{replace_emojis('sub_directory')} **Общий банк ставок:** {total_bet_pool:,} {replace_emojis('money')}\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 

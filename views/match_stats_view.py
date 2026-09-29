@@ -509,8 +509,8 @@ class AdminConfirmView(View):
         }.get(self.match_type, "Матч")
 
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}"),
-            color=discord.Color.blue()
+            title=f"Статистика {match_name} #{self.match_index + 1}",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         # Group stats by actual team
@@ -548,14 +548,14 @@ class AdminConfirmView(View):
         for player_name, stat in team_a_stats.items():
             team_a_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
         if team_a_text:
-            embed.add_field(name=f"🔵 {team_a_name}", value=team_a_text or "Нет данных", inline=False)
+            embed.add_field(name=team_a_name, value=team_a_text or "Нет данных", inline=False)
 
         # Display team B stats
         team_b_text = ""
         for player_name, stat in team_b_stats.items():
             team_b_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
         if team_b_text:
-            embed.add_field(name=f"🔴 {team_b_name}", value=team_b_text or "Нет данных", inline=False)
+            embed.add_field(name=team_b_name, value=team_b_text or "Нет данных", inline=False)
 
         return embed
 
@@ -601,8 +601,8 @@ class AdminConfirmView(View):
         }.get(self.match_type, "Матч")
 
         embed = discord.Embed(
-            title=replace_emojis("📊 Статистика {match_name} #{self.match_index + 1}"),
-            color=discord.Color.blue()
+            title=f"Статистика {match_name} #{self.match_index + 1}",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         # Group stats by actual team
@@ -640,14 +640,14 @@ class AdminConfirmView(View):
         for player_name, stat in team_a_stats.items():
             team_a_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
         if team_a_text:
-            embed.add_field(name=f"🔵 {team_a_name}", value=team_a_text or "Нет данных", inline=False)
+            embed.add_field(name=team_a_name, value=team_a_text or "Нет данных", inline=False)
 
         # Display team B stats
         team_b_text = ""
         for player_name, stat in team_b_stats.items():
             team_b_text += f"{player_name}: {stat['kills']}/{stat['deaths']}\n"
         if team_b_text:
-            embed.add_field(name=f"🔴 {team_b_name}", value=team_b_text or "Нет данных", inline=False)
+            embed.add_field(name=team_b_name, value=team_b_text or "Нет данных", inline=False)
 
         return embed
 

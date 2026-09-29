@@ -227,7 +227,7 @@ class TournamentBot(commands.Bot):
         
         while not self.is_closed():
             try:
-                await asyncio.sleep(1)  # Update every second
+                await asyncio.sleep(5)  # Update every 5 seconds
                 
                 # Get all guilds with active tournaments
                 for guild in self.guilds:

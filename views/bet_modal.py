@@ -96,7 +96,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                replace_emojis("✅ Ставка принята\n\n{amount} 💰 → {self.team_name}"),
+                replace_emojis(f"✅ Ставка принята\n\n{amount} 💰 → {self.team_name}"),
                 ephemeral=True
             )
         except Exception as e:

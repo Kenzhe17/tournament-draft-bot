@@ -112,9 +112,15 @@ class PlayerSelect(discord.ui.Select):
                 store.set(tournament)
 
         if draft_complete:
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except discord.NotFound:
+                pass
         else:
-            await interaction.response.defer()
+            try:
+                await interaction.response.defer()
+            except discord.NotFound:
+                pass
 
 
 class DraftView(discord.ui.View):

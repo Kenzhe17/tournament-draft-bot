@@ -66,10 +66,13 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         # Send DM notifications to team members
         await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
 
-        await interaction.response.send_message(
-            replace_emojis("✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}"),
-            ephemeral=True
-        )
+        try:
+            await interaction.response.send_message(
+                replace_emojis("✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}"),
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
@@ -102,12 +105,12 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     for user_id in team1_members:
         try:
             user = await bot.fetch_user(user_id)
-            await user.send(
-                f"<@{user_id}> 🚪 **Комната открыта!**\n\n"
-                f"Команда: {team1_name}\n"
-                f"ID: `{room_id}`\n"
-                f"Пароль: `{room_password}`"
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')}  КОМНАТА ОТКРЫТА  {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Заходите в лобби!**\n\n{replace_emojis('white_dot')} ** ДАННЫЕ ДЛЯ ВХОДА:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Команда:** `{team1_name}`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **ID комнаты:** `{room_id}`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Пароль:** `{room_password}`\n\n{replace_emojis('a_dot_smaller')} *Убедительная просьба занять свои слоты вовремя!*",
+                color=discord.Color.from_rgb(69, 233, 233)
             )
+            await user.send(content=f"<@{user_id}>", embed=embed)
         except Exception:
             pass  # User has DMs disabled
 
@@ -115,11 +118,11 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     for user_id in team2_members:
         try:
             user = await bot.fetch_user(user_id)
-            await user.send(
-                f"<@{user_id}> 🚪 **Комната открыта!**\n\n"
-                f"Команда: {team2_name}\n"
-                f"ID: `{room_id}`\n"
-                f"Пароль: `{room_password}`"
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')}  КОМНАТА ОТКРЫТА  {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **Заходите в лобби!**\n\n{replace_emojis('white_dot')} ** ДАННЫЕ ДЛЯ ВХОДА:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Команда:** `{team2_name}`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **ID комнаты:** `{room_id}`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} **Пароль:** `{room_password}`\n\n{replace_emojis('a_dot_smaller')} *Убедительная просьба занять свои слоты вовремя!*",
+                color=discord.Color.from_rgb(69, 233, 233)
             )
+            await user.send(content=f"<@{user_id}>", embed=embed)
         except Exception:
             pass  # User has DMs disabled
