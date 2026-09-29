@@ -99,10 +99,20 @@ class AdminStatsMatchButton(discord.ui.Button):
 
         if team_a_filled and team_b_filled:
             # Both teams filled - show confirmation view
-            logging.info("Both teams filled, showing AdminConfirmView")
-            view = AdminStatsConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
-            embed = self._build_stats_embed()
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            logging.info("Both teams filled, creating AdminConfirmView")
+            try:
+                view = AdminStatsConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+                embed = self._build_stats_embed()
+                logging.info("AdminConfirmView created, sending message")
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                logging.info("Message sent successfully")
+            except Exception as e:
+                import logging
+                logging.error(f"Error creating or sending AdminConfirmView: {e}", exc_info=True)
+                await interaction.response.send_message(
+                    replace_emojis(f"❌ Ошибка при создании окна подтверждения: {e}"),
+                    ephemeral=True
+                )
         else:
             # Not both filled - show team selection
             logging.info(f"Not both teams filled, showing team selection")
