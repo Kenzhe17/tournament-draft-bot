@@ -1821,14 +1821,14 @@ class TournamentCog(commands.Cog):
 
         view = GuideView()
 
-        # Send confirmation first (visible to everyone)
+        # Send the main welcome message directly to channel (not as followup)
+        await interaction.channel.send(embed=embed, view=view)
+
+        # Send confirmation to bot owner only
         await interaction.response.send_message(
             replace_emojis("✅ Сообщение приветствия создано"),
-            ephemeral=False
+            ephemeral=True
         )
-
-        # Then send the main welcome message
-        await interaction.followup.send(embed=embed, view=view, ephemeral=False)
 
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
@@ -2053,7 +2053,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="tournaments")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2062,7 +2062,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="profile")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2071,7 +2071,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="economy")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2080,7 +2080,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="shop")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2089,7 +2089,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="games")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -2098,7 +2098,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="ranks")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2107,7 +2107,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = GuideView(current="organizers")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "rules":
             embed = discord.Embed(
@@ -2236,7 +2236,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="tournaments")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2245,7 +2245,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="profile")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2254,7 +2254,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="economy")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2263,7 +2263,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="shop")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2272,7 +2272,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="games")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -2281,7 +2281,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="ranks")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2290,7 +2290,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = HelpGuideView(current="organizers")
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         elif self.values[0] == "rules":
             embed = discord.Embed(
