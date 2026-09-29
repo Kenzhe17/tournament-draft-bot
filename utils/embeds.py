@@ -730,12 +730,20 @@ async def build_qualifiers_embed(
         else:
             room_info = ""
 
-        # Check if winner is set
+        # Check if winner is set (only show confirmed winners, not pending)
         winner_info = ""
         if i < len(tournament.qualifier_winners) and tournament.qualifier_winners[i] is not None:
-            winner_idx = tournament.qualifier_winners[i]
-            winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
-            winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+            # Only show if confirmed (not pending for next phase)
+            # Check if this match is already completed (moved to next phase)
+            is_completed = False
+            if tournament.phase.value in ["semifinals", "final", "complete"]:
+                # If we're past qualifiers, show confirmed winners
+                is_completed = True
+
+            if is_completed:
+                winner_idx = tournament.qualifier_winners[i]
+                winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+                winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
             f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** `({int(avg_elo_a)} ELO)` vs  **{name_b}:** `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
@@ -829,12 +837,18 @@ async def build_semifinals_embed(
         else:
             room_info = ""
 
-        # Check if winner is set
+        # Check if winner is set (only show confirmed winners, not pending)
         winner_info = ""
-        if i < len(tournament.semifinal_pending_winners) and tournament.semifinal_pending_winners[i] is not None:
-            winner_idx = tournament.semifinal_pending_winners[i]
-            winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
-            winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+        if i < len(tournament.semifinal_winners) and tournament.semifinal_winners[i] is not None:
+            # Only show if confirmed (moved to final or complete)
+            is_completed = False
+            if tournament.phase.value in ["final", "complete"]:
+                is_completed = True
+
+            if is_completed:
+                winner_idx = tournament.semifinal_winners[i]
+                winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+                winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
             f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} `({int(avg_elo_a)} ELO)` vs {name_b} `({int(avg_elo_b)} ELO)`\n{room_info}{winner_info}"
@@ -928,10 +942,10 @@ async def build_final_embed(
     else:
         room_info = ""
 
-    # Check if winner is set
+    # Check if winner is set (only show confirmed winner when tournament is complete)
     winner_info = ""
-    if tournament.final_pending_winner is not None:
-        winner_idx = tournament.final_pending_winner
+    if tournament.winner_team_index is not None and tournament.phase.value == "complete":
+        winner_idx = tournament.winner_team_index
         winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
         winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
