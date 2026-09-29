@@ -12,6 +12,8 @@ import discord
 
 from models.tournament import TournamentPhase, TournamentSize
 from storage.json_store import store
+from storage.bet_store import bet_store
+from storage.user_balance_store import user_balance_store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_org_check
 from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
@@ -204,6 +206,23 @@ class AdminConfirmWinnerButton(discord.ui.Button):
             tournament.confirm_final_winner(self.team_index)
 
         store.set(tournament)
+
+        # Resolve bets for this match
+        match_id = f"{self.match_type}_{self.match_index}"
+        team_a_data = tournament.teams[self.match[0]] if self.match[0] < len(tournament.teams) else {}
+        team_b_data = tournament.teams[self.match[1]] if self.match[1] < len(tournament.teams) else {}
+        team_a_name = tournament.team_names.get(self.match[0], team_a_data.get("captain", f"Team {self.match[0]}"))
+        team_b_name = tournament.team_names.get(self.match[1], team_b_data.get("captain", f"Team {self.match[1]}"))
+        winning_team_name = team_a_name if self.team_index == self.match[0] else team_b_name
+
+        try:
+            payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+            for user_id, payout in payouts.items():
+                if payout > 0:
+                    await user_balance_store.add_balance(self.guild_id, user_id, payout)
+        except Exception as e:
+            import logging
+            logging.error(f"Error resolving bets: {e}", exc_info=True)
 
         # Update tournament message
         from bot import TournamentBot
