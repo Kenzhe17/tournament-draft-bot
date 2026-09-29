@@ -1684,7 +1684,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} **Кто я?** {replace_emojis('a_star')}",
-            description=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {response} {replace_emojis('a_sparkle')}",
+            description=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {response} {replace_emojis('a_star')}",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
