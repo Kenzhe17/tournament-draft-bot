@@ -669,7 +669,7 @@ async def build_draft_embed(
         warning = f"\n\n⚠️ **Внимание:** В пуле более 25 игроков! Выбор ограничен текущим кругом."
 
     description = (
-        f"{current_line}\n\n"
+        f"{replace_emojis(current_line)}\n\n"
         f"{replace_emojis('white_dot')} **Очередь выбора:**\n"
         f"{replace_emojis('white_arrow')} {', '.join(next_captains)}\n\n"
         f"{replace_emojis('white_dot')} **Выборы по кругам:**\n"
