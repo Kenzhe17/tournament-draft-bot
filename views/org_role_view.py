@@ -123,9 +123,11 @@ class TakeRoleButton(discord.ui.Button):
             # Rebuild view with updated state
             view = OrgRoleView(state)
 
-            # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            # Update embeds (image + main)
+            image_embed = discord.Embed(color=discord.Color.from_rgb(69, 69, 69))
+            image_embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+            main_embed = build_org_role_embed(interaction.guild, state)
+            await interaction.response.edit_message(embeds=[image_embed, main_embed], view=view)
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -189,9 +191,11 @@ class ReleaseRoleButton(discord.ui.Button):
             # Rebuild view with updated state
             view = OrgRoleView(state)
 
-            # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            # Update embeds (image + main)
+            image_embed = discord.Embed(color=discord.Color.from_rgb(69, 69, 69))
+            image_embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+            main_embed = build_org_role_embed(interaction.guild, state)
+            await interaction.response.edit_message(embeds=[image_embed, main_embed], view=view)
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -248,9 +252,11 @@ class ResetButton(discord.ui.Button):
             # Rebuild view with updated state
             view = OrgRoleView(state)
 
-            # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            # Update embeds (image + main)
+            image_embed = discord.Embed(color=discord.Color.from_rgb(69, 69, 69))
+            image_embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+            main_embed = build_org_role_embed(interaction.guild, state)
+            await interaction.response.edit_message(embeds=[image_embed, main_embed], view=view)
 
             await interaction.followup.send(
                 "✅ Роль организатора сброшена для всех пользователей",
@@ -323,6 +329,10 @@ async def setup_org_role_message(
     """Настроить сообщение для управления ролью организатора."""
     state = load_state()
 
+    # Create image embed
+    image_embed = discord.Embed(color=discord.Color.from_rgb(69, 69, 69))
+    image_embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+
     # Create main embed
     main_embed = build_org_role_embed(guild, state)
 
@@ -330,7 +340,7 @@ async def setup_org_role_message(
     view = OrgRoleView(state)
 
     # Send message
-    message = await channel.send(embed=main_embed, view=view)
+    message = await channel.send(embeds=[image_embed, main_embed], view=view)
 
     # Save message info
     state.message_id = message.id
