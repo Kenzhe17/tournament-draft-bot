@@ -788,6 +788,9 @@ async def build_qualifiers_embed(
     # Add organizer thumbnail
     embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
+    # Add empty field for gap before betting section
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+
     # Add betting section with detailed info AFTER teams
     await _add_betting_section_to_embed(embed, tournament, tournament.qualifier_matches, "qualifiers")
 
@@ -878,6 +881,9 @@ async def build_semifinals_embed(
     # Add organizer thumbnail
     embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
 
+    # Add empty field for gap before betting section
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
+
     # Add betting section with detailed info AFTER teams
     await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinals")
 
@@ -965,6 +971,9 @@ async def build_final_embed(
 
     # Add organizer thumbnail
     embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
+
+    # Add empty field for gap before betting section
+    embed.add_field(name="\u200b", value="\u200b", inline=False)
 
     # Add betting section with detailed info AFTER teams
     final_matches = [(team_a, team_b)]
