@@ -85,6 +85,8 @@ class AdminRoomsButton(discord.ui.Button):
             custom_id=f"admin_rooms:{guild_id}"
         )
         self.guild_id = guild_id
+        self.tournament = None
+        self.match_type = None
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Show all rooms for editing."""
@@ -102,11 +104,29 @@ class AdminRoomsButton(discord.ui.Button):
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
-        # Create view with edit buttons for each room
+        # Determine which rooms to show based on match_type
+        if self.match_type == "qualifier":
+            rooms_to_show = [(i, match, "qualifier") for i, match in enumerate(tournament.qualifier_matches)]
+        elif self.match_type == "semifinal":
+            rooms_to_show = [(i, match, "semifinal") for i, match in enumerate(tournament.semifinal_matches)]
+        elif self.match_type == "final":
+            rooms_to_show = [(0, tournament.final_teams, "final")] if tournament.final_teams else []
+        else:
+            # Show all rooms
+            rooms_to_show = []
+            for i, match in enumerate(tournament.qualifier_matches):
+                rooms_to_show.append((i, match, "qualifier"))
+            for i, match in enumerate(tournament.semifinal_matches):
+                rooms_to_show.append((i, match, "semifinal"))
+            if tournament.final_teams:
+                rooms_to_show.append((0, tournament.final_teams, "final"))
+
+        # Create view with edit buttons
         view = discord.ui.View()
 
-        # Add edit buttons for qualifier rooms
-        for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
+        for match_index, match, match_type in rooms_to_show:
+            team_a = match[0]
+            team_b = match[1]
             team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
             team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
             captain_a = team_a_data.get("captain", f"П{team_a + 1}")
@@ -114,31 +134,7 @@ class AdminRoomsButton(discord.ui.Button):
             name_a = tournament.team_names.get(team_a, captain_a)
             name_b = tournament.team_names.get(team_b, captain_b)
 
-            view.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=True))
-
-        # Add edit buttons for semifinal rooms
-        for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
-            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = tournament.team_names.get(team_a, captain_a)
-            name_b = tournament.team_names.get(team_b, captain_b)
-
-            view.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=True))
-
-        # Add edit button for final room
-        if tournament.final_teams:
-            team_a = tournament.final_teams[0]
-            team_b = tournament.final_teams[1]
-            team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
-            team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
-            captain_a = team_a_data.get("captain", f"П{team_a + 1}")
-            captain_b = team_b_data.get("captain", f"П{team_b + 1}")
-            name_a = tournament.team_names.get(team_a, captain_a)
-            name_b = tournament.team_names.get(team_b, captain_b)
-
-            view.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=True))
+            view.add_item(RoomButton(match_type, match_index, team_a, team_b, name_a, name_b, is_admin=True))
 
         embed = discord.Embed(
             title="📋 Редактирование комнат",

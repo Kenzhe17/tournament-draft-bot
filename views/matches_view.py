@@ -23,6 +23,87 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AdminPanelSelect(discord.ui.Select):
+    """Select menu for admin functions."""
+
+    def __init__(self, guild_id: int, tournament, match_type: str):
+        options = [
+            discord.SelectOption(
+                label="Выбрать победителя",
+                value="select_winner",
+                emoji=replace_emojis("a_star"),
+                description="Отметить победителя матча"
+            ),
+            discord.SelectOption(
+                label="Заполнить статистику",
+                value="fill_stats",
+                emoji=replace_emojis("a_star"),
+                description="Внести данные турнира"
+            ),
+            discord.SelectOption(
+                label="Управление комнатами",
+                value="manage_rooms",
+                emoji=replace_emojis("a_star"),
+                description="Настройка турнирных комнат"
+            ),
+        ]
+        super().__init__(
+            placeholder="⚙️ Панель организатора...",
+            options=options,
+            custom_id=f"admin_panel:{guild_id}:{match_type}",
+            min_values=1,
+            max_values=1
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check permissions
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
+        selected = self.values[0]
+
+        if selected == "select_winner":
+            # Create match selection view
+            match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
+
+            embed = discord.Embed(
+                title=replace_emojis("🏆 Выбор победителей"),
+                description="Выберите матч для определения победителя:",
+                color=discord.Color.green()
+            )
+
+            await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
+
+        elif selected == "fill_stats":
+            from views.match_stats_view import AdminFillButton
+            # Simulate AdminFillButton callback
+            if not is_org_check(interaction.user, interaction.guild):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Только организаторы могут заполнять статистику."),
+                    ephemeral=True
+                )
+                return
+
+            from views.match_stats_view import MatchStatsModal
+            match_id = f"{self.match_type}_0"
+            modal = MatchStatsModal(self.guild_id, self.tournament, match_id, 0, is_admin=True)
+            await interaction.response.send_modal(modal)
+
+        elif selected == "manage_rooms":
+            # Trigger AdminRoomsButton callback
+            admin_rooms_btn = AdminRoomsButton(self.guild_id)
+            admin_rooms_btn.tournament = self.tournament
+            admin_rooms_btn.match_type = self.match_type
+            await admin_rooms_btn.callback(interaction)
+
+
 class GenerateMatchesButton(discord.ui.Button):
     """Кнопка генерации пар для матчей."""
 
@@ -524,8 +605,8 @@ class QualifiersView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add single winner selection button
-        self.add_item(SelectWinnerButton(guild_id, tournament, "qualifier"))
+        # Add admin panel select menu
+        self.add_item(AdminPanelSelect(guild_id, tournament, "qualifier"))
 
         # Add team name button if any team can still edit their name
         has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -535,10 +616,6 @@ class QualifiersView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifiers"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifiers"))
-
-        # Add admin fill button
-        from views.match_stats_view import AdminFillButton
-        self.add_item(AdminFillButton(guild_id, tournament))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
@@ -553,9 +630,6 @@ class QualifiersView(discord.ui.View):
                 name_b = tournament.team_names.get(team_b, captain_b)
 
                 self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
-
-        # Add admin rooms button
-        self.add_item(AdminRoomsButton(guild_id))
 
         # Add captain fill buttons for pending matches
         from views.match_stats_view import CaptainFillButton
@@ -588,8 +662,8 @@ class SemifinalsView(discord.ui.View):
         self.guild_id = guild_id
         self.tournament = tournament
 
-        # Add single winner selection button
-        self.add_item(SelectWinnerButton(guild_id, tournament, "semifinal"))
+        # Add admin panel select menu
+        self.add_item(AdminPanelSelect(guild_id, tournament, "semifinal"))
 
         # Add team name button if any team can still edit their name
         has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -599,10 +673,6 @@ class SemifinalsView(discord.ui.View):
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinals"))
         self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinals"))
-
-        # Add admin fill button
-        from views.match_stats_view import AdminFillButton
-        self.add_item(AdminFillButton(guild_id, tournament))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
@@ -617,9 +687,6 @@ class SemifinalsView(discord.ui.View):
                 name_b = tournament.team_names.get(team_b, captain_b)
 
                 self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
-
-        # Add admin rooms button
-        self.add_item(AdminRoomsButton(guild_id))
 
         # Add captain fill buttons for pending matches
         from views.match_stats_view import CaptainFillButton

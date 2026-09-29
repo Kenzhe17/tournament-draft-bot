@@ -82,9 +82,9 @@ class FinalView(discord.ui.View):
     def __init__(self, guild_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
-        # Add single winner selection button
-        from views.matches_view import SelectWinnerButton
-        self.add_item(SelectWinnerButton(guild_id, tournament, "final"))
+        # Add admin panel select menu
+        from views.matches_view import AdminPanelSelect
+        self.add_item(AdminPanelSelect(guild_id, tournament, "final"))
 
         # Add team name button if any team can still edit their name
         has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -98,10 +98,6 @@ class FinalView(discord.ui.View):
         self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
         self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
 
-        # Add admin fill button
-        from views.match_stats_view import AdminFillButton
-        self.add_item(AdminFillButton(guild_id, tournament))
-
         # Add room button for final (only if not filled)
         if not tournament.final_room:
             team_a = final_teams[0]
@@ -114,9 +110,6 @@ class FinalView(discord.ui.View):
             name_b = tournament.team_names.get(team_b, captain_b)
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
-
-        # Add admin rooms button
-        self.add_item(AdminRoomsButton(guild_id))
 
         # Add captain fill buttons for pending final
         from views.match_stats_view import CaptainFillButton
