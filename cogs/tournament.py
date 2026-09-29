@@ -1781,6 +1781,31 @@ class TournamentCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 
+    @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
+    async def role(self, interaction: discord.Interaction) -> None:
+        """Создать сообщение для управления ролью организатора."""
+        # Check permissions manually
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ У вас нет прав для использования этой команды. Требуются права администратора.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        try:
+            await setup_org_role_message(self.bot, interaction.guild, interaction.channel)
+            await interaction.followup.send(
+                "✅ Сообщение для управления ролью организатора создано",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Ошибка при создании сообщения: {str(e)}",
+                ephemeral=True
+            )
+
     @app_commands.command(name="welcome", description="Показать информацию о сервере и боте (только для владельца)")
     @is_bot_owner()
     async def welcome(self, interaction: discord.Interaction) -> None:
