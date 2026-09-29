@@ -6,14 +6,17 @@ from config import replace_emojis
 
 
 def clean_nickname(text: str) -> str:
-    """Очистить никнейм от Unicode эмодзи и кастомных эмодзи Discord.
-    
+    """Очистить никнейм от Unicode эмодзи, кастомных эмодзи Discord и форматирования.
+
     Args:
         text: Исходный текст
-        
+
     Returns:
-        Текст без эмодзи
+        Текст без эмодзи и форматирования
     """
+    # Discord custom emoji pattern: <:name:id> or <a:name:id>
+    custom_emoji_pattern = re.compile(r'<a?:\w+:\d+>')
+
     # Unicode emoji ranges
     emoji_pattern = re.compile(
         "["
@@ -33,17 +36,32 @@ def clean_nickname(text: str) -> str:
         "]+",
         flags=re.UNICODE
     )
-    
-    # Discord custom emoji pattern: <:name:id> or <a:name:id>
-    custom_emoji_pattern = re.compile(r'<a?:\w+:\d+>')
-    
+
+    # Remove Discord formatting characters
+    text = text.replace('*', '')  # bold
+    text = text.replace('_', '')  # italic
+    text = text.replace('~', '')  # strikethrough
+    text = text.replace('||', '')  # spoiler
+    text = text.replace('`', '')  # code/inline code
+    text = text.replace('>', '')  # blockquote
+
+    # Remove zero-width characters (used for invisible formatting)
+    text = text.replace('\u200B', '')  # zero-width space
+    text = text.replace('\u200C', '')  # zero-width non-joiner
+    text = text.replace('\u200D', '')  # zero-width joiner
+    text = text.replace('\uFEFF', '')  # zero-width no-break space
+
+    # Remove zalgo text (combining diacritical marks)
+    combining_pattern = re.compile(r'[\u0300-\u036F\u1AB0-\u1AFF\u20D0-\u20FF\uFE20-\uFE2F]+')
+    text = combining_pattern.sub('', text)
+
     # Remove both types of emojis
     text = emoji_pattern.sub('', text)
     text = custom_emoji_pattern.sub('', text)
-    
+
     # Remove extra whitespace
     text = ' '.join(text.split())
-    
+
     return text
 
 
