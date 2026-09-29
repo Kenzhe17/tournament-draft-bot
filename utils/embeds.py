@@ -299,7 +299,6 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
             description="❌ Статистика не найдена. Игрок ещё не участвовал в турнирах.",
             color=discord.Color.red()
         )
-        embed.set_thumbnail(url=user.display_avatar.url)
         return embed
 
     # Calculate win rate
@@ -318,7 +317,6 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
         title=f"📊 Статистика {user.display_name}",
         color=discord.Color.dark_blue()
     )
-    embed.set_thumbnail(url=user.display_avatar.url)
 
     # Basic stats
     embed.add_field(
@@ -785,8 +783,7 @@ async def build_qualifiers_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer thumbnail
-    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
+
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -878,8 +875,7 @@ async def build_semifinals_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer thumbnail
-    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
+
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -969,8 +965,7 @@ async def build_final_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
-    # Add organizer thumbnail
-    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
+
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -1113,8 +1108,7 @@ async def build_winner_embed(
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
-    # Add organizer thumbnail
-    embed.set_thumbnail(url=ORGANIZER_THUMBNAIL_URL)
+
 
     return embed
 
