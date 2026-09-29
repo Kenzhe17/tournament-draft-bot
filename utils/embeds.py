@@ -1028,7 +1028,6 @@ async def build_winner_embed(
     total_bet_pool = 0
 
     # Get all player stats from this tournament
-    from storage.player_stats_store import player_stats_store
     from storage.bet_store import bet_store
 
     # Calculate from tournament match stats using temp_match_stats
@@ -1077,6 +1076,17 @@ async def build_winner_embed(
                 best_kills = stat.get('kills', 0)
                 best_kills_player = player_name
 
+    # Calculate best AVG from player stats
+    best_avg = 0.0
+    best_avg_player = ""
+    for player_name, user_id in tournament.player_user_ids.items():
+        stats = await player_stats_store.get(tournament.guild_id, user_id)
+        if stats and stats.games > 0:
+            avg_kills = stats.avg_kills
+            if avg_kills > best_avg:
+                best_avg = avg_kills
+                best_avg_player = player_name
+
     # Calculate total bet pool
     for match_type in ["qualifier", "semifinal", "final"]:
         match_count = len(tournament.qualifier_matches) if match_type == "qualifier" else len(tournament.semifinal_matches) if match_type == "semifinal" else 1
@@ -1086,19 +1096,20 @@ async def build_winner_embed(
             for bet in bets:
                 total_bet_pool += bet.amount
 
-    # Calculate average K/D
-    avg_kd = total_kills / total_deaths if total_deaths > 0 else 0
+    # Format best AVG player with mention if available
+    best_avg_display = best_avg_player
+    if best_avg_player and best_avg_player in tournament.player_user_ids:
+        user_id = tournament.player_user_ids[best_avg_player]
+        best_avg_display = f"<@{user_id}>"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
         f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_name}, {roster_str}\n\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Всего матчей:** {total_matches}\n"
-        f"{replace_emojis('sub_middle')} **Всего киллов:** {total_kills}\n"
+        f"{replace_emojis('sub_middle')} **Наивысший AVG:** {best_avg_display} {best_avg:.1f}\n"
         f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} ({best_kd:.2f})\n"
         f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} ({best_kills})\n"
-        f"{replace_emojis('sub_middle')} **Средний K/D:** {avg_kd:.2f}\n"
         f"{replace_emojis('sub_directory')} **Общий банк ставок:** {total_bet_pool:,} {replace_emojis('money')}\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
