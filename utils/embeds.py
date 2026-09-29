@@ -1096,12 +1096,6 @@ async def build_winner_embed(
             for bet in bets:
                 total_bet_pool += bet.amount
 
-    # Format best AVG player with mention if available
-    best_avg_display = best_avg_player
-    if best_avg_player and best_avg_player in tournament.player_user_ids:
-        user_id = tournament.player_user_ids[best_avg_player]
-        best_avg_display = f"<@{user_id}>"
-
     # Build team list
     team_list = ""
     for team_idx, team_data in enumerate(tournament.teams):
@@ -1127,7 +1121,6 @@ async def build_winner_embed(
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Наивысший AVG:** {best_avg_display} {best_avg:.1f}\n"
         f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} ({best_kd:.2f})\n"
         f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} ({best_kills})\n"
         f"{replace_emojis('sub_directory')} **Общий банк ставок:** {total_bet_pool:,} {replace_emojis('money')}\n\n"

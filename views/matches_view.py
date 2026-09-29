@@ -73,6 +73,9 @@ class AdminStatsMatchButton(discord.ui.Button):
         self.match = match
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        import logging
+        logging.info(f"AdminStatsMatchButton callback: match_type={self.match_type}, match_index={self.match_index}")
+
         # Check permissions
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
@@ -91,6 +94,8 @@ class AdminStatsMatchButton(discord.ui.Button):
             self.tournament.teams[self.match[1]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
             for c in range(1, 5)
         )
+
+        logging.info(f"Team filled status: team_a={team_a_filled}, team_b={team_b_filled}, match_id={match_id}")
 
         if team_a_filled and team_b_filled:
             # Both teams filled - show confirmation view
