@@ -570,13 +570,21 @@ class AdminConfirmView(View):
 
     def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, stats: dict):
         import logging
-        logging.info(f"AdminConfirmView.__init__: match_type={match_type}, match_index={match_index}")
-        super().__init__(timeout=None)
+        logging.info(f"=== AdminConfirmView.__init__ START === match_type={match_type}, match_index={match_index}")
+        try:
+            super().__init__(timeout=None)
+            logging.info("super().__init__ called")
+        except Exception as e:
+            logging.error(f"Error in super().__init__: {e}", exc_info=True)
+            raise
+
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
         self.stats = stats
+
+        logging.info(f"Basic attributes set, getting match teams")
 
         # Get match teams for display
         if match_type == "qualifier":
@@ -587,12 +595,14 @@ class AdminConfirmView(View):
             match = (tournament.final_teams[0], tournament.final_teams[1])
 
         self.team_a_index, self.team_b_index = match
+        logging.info(f"Match teams: team_a={self.team_a_index}, team_b={self.team_b_index}")
 
         # Build stats display
         self.embed = self._build_stats_embed()
+        logging.info("Stats embed built")
 
         # Add confirm and edit buttons
-        logging.info("AdminConfirmView.__init__: adding buttons")
+        logging.info("Adding buttons to view")
         confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
         confirm_btn.callback = self.show_winner_confirmation
         self.add_item(confirm_btn)
@@ -600,6 +610,7 @@ class AdminConfirmView(View):
         edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         self.add_item(edit_btn)
+        logging.info("=== AdminConfirmView.__init__ END ===")
 
     def _build_stats_embed(self) -> discord.Embed:
         """Build embed displaying match statistics."""
