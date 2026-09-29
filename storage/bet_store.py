@@ -198,8 +198,8 @@ class BetStore:
 
             # Apply dynamic odds with buffer logic
             if is_team_a:
-                # Betting on team A: team A odds increase (becomes less attractive), team B odds decrease (becomes more attractive)
-                # First, check if team B has buffer to absorb the decrease
+                # Betting on team A: team A odds decrease (becomes more attractive), team B odds increase
+                # First, check if team B has buffer to absorb
                 if current_odds.team_b_buffer > 0:
                     # Use buffer first
                     buffer_reduction = min(current_odds.team_b_buffer, shift_amount)
@@ -210,45 +210,7 @@ class BetStore:
                         # Calculate shift for remaining amount
                         remaining_shift = remaining_bet / 100 * 0.1
 
-                        # Apply shift with floor check for team B
-                        new_odds_b = current_odds.team_b_odds - remaining_shift
-                        if new_odds_b < 1.1:
-                            # Hit floor, remaining goes to buffer
-                            overflow = (1.1 - new_odds_b) / 0.1 * 100
-                            current_odds.team_b_odds = 1.1
-                            current_odds.team_b_buffer += int(overflow)
-                        else:
-                            current_odds.team_b_odds = new_odds_b
-
-                        # Increase team A odds
-                        current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + remaining_shift)
-                else:
-                    # No buffer, apply shift directly
-                    new_odds_b = current_odds.team_b_odds - shift_odds
-                    if new_odds_b < 1.1:
-                        # Hit floor, remaining goes to buffer
-                        overflow = (1.1 - new_odds_b) / 0.1 * 100
-                        current_odds.team_b_odds = 1.1
-                        current_odds.team_b_buffer += int(overflow)
-                    else:
-                        current_odds.team_b_odds = new_odds_b
-
-                    # Increase team A odds
-                    current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + shift_odds)
-            else:
-                # Betting on team B: team B odds increase (becomes less attractive), team A odds decrease (becomes more attractive)
-                # First, check if team A has buffer to absorb the decrease
-                if current_odds.team_a_buffer > 0:
-                    # Use buffer first
-                    buffer_reduction = min(current_odds.team_a_buffer, shift_amount)
-                    current_odds.team_a_buffer -= buffer_reduction
-                    remaining_bet = shift_amount - buffer_reduction
-
-                    if remaining_bet > 0:
-                        # Calculate shift for remaining amount
-                        remaining_shift = remaining_bet / 100 * 0.1
-
-                        # Apply shift with floor check for team A
+                        # Apply shift with floor check
                         new_odds_a = current_odds.team_a_odds - remaining_shift
                         if new_odds_a < 1.1:
                             # Hit floor, remaining goes to buffer
@@ -273,6 +235,44 @@ class BetStore:
 
                     # Increase team B odds
                     current_odds.team_b_odds = min(2.7, current_odds.team_b_odds + shift_odds)
+            else:
+                # Betting on team B: team B odds decrease (becomes more attractive), team A odds increase
+                # First, check if team A has buffer to absorb
+                if current_odds.team_a_buffer > 0:
+                    # Use buffer first
+                    buffer_reduction = min(current_odds.team_a_buffer, shift_amount)
+                    current_odds.team_a_buffer -= buffer_reduction
+                    remaining_bet = shift_amount - buffer_reduction
+
+                    if remaining_bet > 0:
+                        # Calculate shift for remaining amount
+                        remaining_shift = remaining_bet / 100 * 0.1
+
+                        # Apply shift with floor check
+                        new_odds_b = current_odds.team_b_odds - remaining_shift
+                        if new_odds_b < 1.1:
+                            # Hit floor, remaining goes to buffer
+                            overflow = (1.1 - new_odds_b) / 0.1 * 100
+                            current_odds.team_b_odds = 1.1
+                            current_odds.team_b_buffer += int(overflow)
+                        else:
+                            current_odds.team_b_odds = new_odds_b
+
+                        # Increase team A odds
+                        current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + remaining_shift)
+                else:
+                    # No buffer, apply shift directly
+                    new_odds_b = current_odds.team_b_odds - shift_odds
+                    if new_odds_b < 1.1:
+                        # Hit floor, remaining goes to buffer
+                        overflow = (1.1 - new_odds_b) / 0.1 * 100
+                        current_odds.team_b_odds = 1.1
+                        current_odds.team_b_buffer += int(overflow)
+                    else:
+                        current_odds.team_b_odds = new_odds_b
+
+                    # Increase team A odds
+                    current_odds.team_a_odds = min(2.7, current_odds.team_a_odds + shift_odds)
 
             # Save the bet (DB or file)
             if self._use_db:
