@@ -11,6 +11,7 @@ from typing import Optional
 
 from storage.user_balance_store import user_balance_store
 from utils.embeds import replace_emojis
+from utils.permissions import is_bot_owner
 
 # Locks for atomic transactions
 _user_locks = {}
@@ -473,6 +474,7 @@ class CoinFlipCog(commands.Cog):
 
     @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)", opponent="Соперник (для PvP)")
+    @is_bot_owner()
     async def coin_flip(
         self,
         interaction: discord.Interaction,
