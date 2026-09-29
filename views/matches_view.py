@@ -75,8 +75,7 @@ class AdminPanelSelect(discord.ui.Select):
             match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
 
             embed = discord.Embed(
-                title=replace_emojis("🏆 Выбор победителей"),
-                description="Выберите матч для определения победителя:",
+                description=replace_emojis("🏆 **Выберите матч для фиксации результата:**"),
                 color=discord.Color.green()
             )
 
@@ -138,11 +137,42 @@ class ConfirmWinnerButton(discord.ui.Button):
         self.team_name = team_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Check permissions
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
         # Finalize winner selection
         tournament = store.get(self.guild_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
+
+        # Check if winner already set to prevent duplicate finalization
+        if self.match_type == "qualifier":
+            if tournament.qualifier_winners[self.match_index] is not None:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    ephemeral=True
+                )
+                return
+        elif self.match_type == "semifinal":
+            if tournament.semifinal_pending_winners[self.match_index] is not None:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    ephemeral=True
+                )
+                return
+        elif self.match_type == "final":
+            if tournament.final_pending_winner is not None:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Результат этого матча уже зафиксирован."),
+                    ephemeral=True
+                )
+                return
 
         # Call the appropriate winner setter based on match type
         if self.match_type == "qualifier":
@@ -162,6 +192,9 @@ class ConfirmWinnerButton(discord.ui.Button):
         except Exception as e:
             import logging
             logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
+
+        # TODO: Implement betting payout
+        # TODO: Enable captain stats access
 
         await interaction.response.edit_message(
             content=f"Победитель Игра #{self.match_index + 1} ({self.team_name}) успешно зафиксирован!",
@@ -185,6 +218,14 @@ class CancelWinnerButton(discord.ui.Button):
         self.match_index = match_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Check permissions
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
+                ephemeral=True
+            )
+            return
+
         # Go back to team selection
         tournament = store.get(self.guild_id)
         if not tournament:
@@ -214,8 +255,7 @@ class CancelWinnerButton(discord.ui.Button):
         team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя"),
-            description=f"{teams[0][1]} vs {teams[1][1]}",
+            description=replace_emojis(f"🏆 **Кто победил в Игра #{self.match_index + 1}?**"),
             color=discord.Color.green()
         )
 
@@ -293,64 +333,6 @@ class GenerateMatchesButton(discord.ui.Button):
             await interaction.edit_original_response(
                 content=replace_emojis(f"❌ Ошибка при генерации матчей: {str(e)}")
             )
-
-
-class SemifinalWinnerButton(discord.ui.Button):
-    """Кнопка выбора победителя полуфинала."""
-
-    def __init__(self, guild_id: int, match_index: int, team_index: int, team_name: str):
-        super().__init__(
-            label=f"{team_name} победил",
-            style=discord.ButtonStyle.success,
-            custom_id=f"semi_win:{guild_id}:{match_index}:{team_index}",
-        )
-        self.guild_id = guild_id
-        self.match_index = match_index
-        self.team_index = team_index
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
-                ephemeral=True,
-            )
-            return
-
-        tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.SEMIFINALS:
-            await interaction.response.send_message(
-                replace_emojis("❌ Полуфиналы не активны."),
-                ephemeral=True,
-            )
-            return
-
-        # Проверяем, что team_index — участник этого матча
-        match = tournament.semifinal_matches[self.match_index]
-        if self.team_index not in match:
-            await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда для этого матча."),
-                ephemeral=True,
-            )
-            return
-
-        if tournament.semifinal_pending_winners[self.match_index] is not None:
-            await interaction.response.send_message(
-                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики."),
-                ephemeral=True,
-            )
-            return
-
-        both_done = tournament.set_semifinal_winner(
-            self.match_index, self.team_index
-        )
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
-            ephemeral=True
-        )
 
 
 class TeamNameButton(discord.ui.Button):
@@ -534,58 +516,11 @@ class MatchButton(discord.ui.Button):
         team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя"),
-            description=f"{teams[0][1]} vs {teams[1][1]}",
+            description=replace_emojis(f"🏆 **Кто победил в Игра #{self.match_index + 1}?**"),
             color=discord.Color.green()
         )
 
         await interaction.response.edit_message(embed=embed, view=team_view)
-
-
-class MatchWinnerButton(discord.ui.Button):
-    """Button to select a match and choose winner."""
-
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str):
-        super().__init__(
-            label=label,
-            style=discord.ButtonStyle.primary,
-            custom_id=f"match_winner_select:{guild_id}:{match_type}:{match_index}"
-        )
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.match_type = match_type
-        self.match_index = match_index
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Get teams for this match
-        if self.match_type == "qualifier":
-            match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinal":
-            match = self.tournament.semifinal_matches[self.match_index]
-        elif self.match_type == "final":
-            match = self.tournament.final_teams
-        else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
-            return
-
-        # Get team names
-        teams = []
-        for team_index in match:
-            team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
-            captain = team_data.get("captain", f"П{team_index + 1}")
-            team_name = self.tournament.team_names.get(team_index, captain)
-            teams.append((team_index, team_name))
-
-        # Create team selection view
-        team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
-
-        embed = discord.Embed(
-            title=replace_emojis("🏆 Выберите победителя"),
-            description=f"{teams[0][1]} vs {teams[1][1]}",
-            color=discord.Color.green()
-        )
-
-        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
 
 
 class TeamWinnerSelectView(discord.ui.View):
@@ -633,7 +568,7 @@ class TeamWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей."),
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -650,98 +585,6 @@ class TeamWinnerButton(discord.ui.Button):
         )
 
         await interaction.response.edit_message(embed=embed, view=confirmation_view)
-
-
-class SelectWinnerButton(discord.ui.Button):
-    """Main button to open winner selection interface."""
-
-    def __init__(self, guild_id: int, tournament, match_type: str):
-        super().__init__(
-            label="🏆 Выбрать победителя",
-            style=discord.ButtonStyle.success,
-            custom_id=f"select_winner:{guild_id}:{match_type}"
-        )
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.match_type = match_type
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Проверка прав доступа
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут выбирать победителей."),
-                ephemeral=True,
-            )
-            return
-
-        # Create match selection view
-        match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
-
-        embed = discord.Embed(
-            title=replace_emojis("🏆 Выбор победителей"),
-            description="Выберите матч для определения победителя:",
-            color=discord.Color.green()
-        )
-
-        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
-
-
-class QualifierWinnerButton(discord.ui.Button):
-    """Кнопка выбора победителя отборочного матча."""
-
-    def __init__(self, guild_id: int, match_index: int, team_index: int, team_name: str):
-        super().__init__(
-            label=f"{team_name} победил",
-            style=discord.ButtonStyle.success,
-            custom_id=f"qual_win:{guild_id}:{match_index}:{team_index}",
-        )
-        self.guild_id = guild_id
-        self.match_index = match_index
-        self.team_index = team_index
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
-                ephemeral=True,
-            )
-            return
-
-        tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.QUALIFIERS:
-            await interaction.response.send_message(
-                replace_emojis("❌ Отборочные матчи не активны."),
-                ephemeral=True,
-            )
-            return
-
-        # Проверяем, что team_index — участник этого матча
-        match = tournament.qualifier_matches[self.match_index]
-        if self.team_index not in match:
-            await interaction.response.send_message(
-                replace_emojis("❌ Неверная команда для этого матча."),
-                ephemeral=True,
-            )
-            return
-
-        if tournament.qualifier_winners[self.match_index] is not None:
-            await interaction.response.send_message(
-                replace_emojis("❌ Результат этого матча уже выбран. Ожидается заполнение статистики."),
-                ephemeral=True,
-            )
-            return
-
-        both_done = tournament.set_qualifier_winner(
-            self.match_index, self.team_index
-        )
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-        await interaction.response.send_message(
-            replace_emojis("✅ Победитель выбран. Капитаны команд могут заполнить статистику."),
-            ephemeral=True
-        )
 
 
 class QualifiersView(discord.ui.View):
