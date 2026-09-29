@@ -47,6 +47,8 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Start betting timer background task
+        self.loop.create_task(self.betting_timer_loop())
         # Start draft timer background task (for auto-random picks)
         self.loop.create_task(self.draft_timer_loop())
         
@@ -217,6 +219,38 @@ class TournamentBot(commands.Bot):
             await message.edit(embed=embed, view=view)
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
+
+    async def betting_timer_loop(self) -> None:
+        """Background task to update betting timer in tournament messages."""
+        import asyncio
+        # Track which tournaments we've updated after betting closed
+        updated_after_close = set()
+
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(5)  # Update every 5 seconds
+
+                # Get all guilds with active tournaments
+                for guild in self.guilds:
+                    tournament = store.get(guild.id)
+                    if not tournament:
+                        continue
+
+                    tournament_key = f"{guild.id}_{tournament.betting_phase}"
+
+                    if tournament.is_betting_open():
+                        # Update message to show countdown
+                        await self.update_tournament_message(guild, tournament)
+                        # Reset the updated flag since betting is open again
+                        if tournament_key in updated_after_close:
+                            updated_after_close.remove(tournament_key)
+                    elif tournament.betting_phase_start_time is not None:
+                        # Betting was open but now closed - update once to remove timer
+                        if tournament_key not in updated_after_close:
+                            await self.update_tournament_message(guild, tournament)
+                            updated_after_close.add(tournament_key)
+            except Exception as e:
+                logger.error(f"Error in betting timer loop: {e}", exc_info=True)
 
     async def draft_timer_loop(self) -> None:
         """Background task to handle draft pick timer and auto-random picks."""

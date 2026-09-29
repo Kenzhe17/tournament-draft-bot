@@ -744,9 +744,9 @@ async def build_qualifiers_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "qualifiers":
-        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "qualifiers":
-        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -761,7 +761,7 @@ async def build_qualifiers_embed(
     )
 
     if footer:
-        embed.set_footer(text=footer)
+        embed.set_footer(text=replace_emojis(footer))
 
     # Add team names and players as inline fields
     for team_idx, team_data in enumerate(tournament.teams):
@@ -843,9 +843,9 @@ async def build_semifinals_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
-        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "semifinals":
-        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -860,7 +860,7 @@ async def build_semifinals_embed(
     )
 
     if footer:
-        embed.set_footer(text=footer)
+        embed.set_footer(text=replace_emojis(footer))
 
     # Add team names and players as inline fields
     for team_idx, team_data in enumerate(tournament.teams):
@@ -938,9 +938,9 @@ async def build_final_embed(
     # Build footer
     footer = ""
     if tournament.is_betting_open() and tournament.betting_phase == "final":
-        footer = f"{replace_emojis('white_arrow')} 🔓**СТАВКИ ОТКРЫТЫ**\n{replace_emojis('white_arrow')} У вас есть 3 минуты на ставку"
+        footer = "white_arrow 🔓**СТАВКИ ОТКРЫТЫ**\nwhite_arrow У вас есть 3 минуты на ставку"
     elif tournament.betting_phase == "final":
-        footer = f"{replace_emojis('white_arrow')} 🔒**СТАВКИ ЗАКРЫТЫ**"
+        footer = "white_arrow 🔒**СТАВКИ ЗАКРЫТЫ**"
 
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
@@ -956,7 +956,7 @@ async def build_final_embed(
     )
 
     if footer:
-        embed.set_footer(text=footer)
+        embed.set_footer(text=replace_emojis(footer))
 
     # Add team names and players as inline fields
     for team_idx in [team_a, team_b]:
