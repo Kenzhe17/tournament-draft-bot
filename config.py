@@ -30,10 +30,10 @@ REDIS_URL = os.getenv("REDIS_URL", "")
 ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 
 # Welcome banner URL
-WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
+WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430577132961823/image.png?ex=6abcdbc9&is=6abb8a49&hm=668a5650450e51905a99ec6ed624eb0cc51c019d91c786d228e5e2f821fc5260&")
 
 # Organizer thumbnail URL for tournament embeds
-ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://media.discordapp.net/attachments/1535342239679520880/1554415078567182346/83776364716bc5dfa19c9209c1fc2028.png?ex=6abccd5a&is=6abb7bda&hm=38b6f8ba856c403a94313e34f4df9bf1621b703b7675e64adf2c60031b56bbfd&=&format=webp&quality=lossless")
+ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430580442005564/image.png?ex=6abcdbca&is=6abb8a4a&hm=47d04c7fdccae7a3dd3e9b23f84596f471986b77077848b8c29ed9045ce81dc1&")
 
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
