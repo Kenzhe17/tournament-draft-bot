@@ -1115,16 +1115,23 @@ async def build_winner_embed(
                 best_avg = avg
                 best_avg_player = player_name
 
-    # Calculate max payout from bets
-    for match_type in ["qualifier", "semifinal", "final"]:
-        match_count = len(tournament.qualifier_matches) if match_type == "qualifier" else len(tournament.semifinal_matches) if match_type == "semifinal" else 1
-        for i in range(match_count):
-            match_id = f"{match_type}_{i}"
-            bets = await bet_store.get_bets_by_match(match_id)
-            for bet in bets:
-                if bet.won and bet.payout > max_payout:
-                    max_payout = bet.payout
-                    max_payout_player = bet.player_name
+    # Calculate max payout from betting stats (best_win from betting_stats_store)
+    from storage.betting_stats_store import betting_stats_store
+    betting_leaderboard = await betting_stats_store.get_leaderboard(guild.id, per_page=100)
+    if betting_leaderboard:
+        for entry in betting_leaderboard:
+            if entry["best_win"] > max_payout:
+                max_payout = entry["best_win"]
+                # Get player name from tournament
+                # Find player with this user_id in tournament
+                for team_idx, team_data in enumerate(tournament.teams):
+                    for circle in range(1, 5):
+                        player = team_data.get(f"circle{circle}", "")
+                        if player:
+                            user_id = tournament.player_user_ids.get(player, 0)
+                            if user_id == entry["user_id"]:
+                                max_payout_player = player
+                                break
 
     # Build team list
     team_list = ""
