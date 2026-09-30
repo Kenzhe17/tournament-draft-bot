@@ -761,63 +761,6 @@ class ConfirmWinnerButton(discord.ui.Button):
         )
 
 
-class CancelWinnerButton(discord.ui.Button):
-    """Button to cancel and go back to team selection."""
-
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int):
-        super().__init__(
-            label="Назад / Изменить",
-            style=discord.ButtonStyle.danger,
-            custom_id=f"cancel_winner:{guild_id}:{match_type}:{match_index}"
-        )
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.match_type = match_type
-        self.match_index = match_index
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Check permissions
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
-                ephemeral=True
-            )
-            return
-
-        # Go back to team selection
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
-            return
-
-        # Get teams for this match
-        if self.match_type == "qualifier":
-            match = tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinal":
-            match = tournament.semifinal_matches[self.match_index]
-        elif self.match_type == "final":
-            match = tournament.final_teams
-        else:
-            await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
-            return
-
-        # Get team names
-        teams = []
-        for team_index in match:
-            team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
-            captain = team_data.get("captain", f"П{team_index + 1}")
-            team_name = tournament.team_names.get(team_index, captain)
-            teams.append((team_index, team_name))
-
-        # Create team selection view
-        team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
-
-        embed = discord.Embed(
-            description=replace_emojis(f"🏆 **Кто победил в Игра #{self.match_index + 1}?**"),
-            color=discord.Color.green()
-        )
-
-        await interaction.response.edit_message(embed=embed, view=team_view)
 
 
 class GenerateMatchesButton(discord.ui.Button):
