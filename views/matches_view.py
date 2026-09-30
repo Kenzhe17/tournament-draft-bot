@@ -163,7 +163,7 @@ class AdminStatsMatchButton(discord.ui.Button):
 
 
 class AdminStatsConfirmView(discord.ui.View):
-    """View for admin to confirm stats and select winner."""
+    """View for admin to view and edit stats only (no winner selection here)."""
 
     def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
         super().__init__(timeout=None)
@@ -173,14 +173,7 @@ class AdminStatsConfirmView(discord.ui.View):
         self.match_index = match_index
         self.match = match
 
-        # Add winner selection buttons
-        team_a_data = tournament.teams[match[0]] if match[0] < len(tournament.teams) else {}
-        team_b_data = tournament.teams[match[1]] if match[1] < len(tournament.teams) else {}
-        team_a_name = tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
-        team_b_name = tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
-
-        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[0], team_a_name, match))
-        self.add_item(AdminConfirmWinnerButton(guild_id, tournament, match_type, match_index, match[1], team_b_name, match))
+        # Add only edit button (winner selection is done via "Выбрать победителя" panel)
         self.add_item(AdminEditStatsButton(guild_id, tournament, match_type, match_index, match))
 
 
