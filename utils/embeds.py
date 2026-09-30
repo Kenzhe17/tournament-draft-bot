@@ -1025,10 +1025,18 @@ async def build_winner_embed(
     best_kd = 0
     best_kills_player = ""
     best_kills = 0
-    total_bet_pool = 0
+    best_avg_player = ""
+    best_avg = 0
+    max_payout_player = ""
+    max_payout = 0
 
     # Get all player stats from this tournament
     from storage.bet_store import bet_store
+
+    # Track player stats across all matches for overall calculations
+    player_total_kills = {}
+    player_total_deaths = {}
+    player_match_count = {}
 
     # Calculate from tournament match stats using temp_match_stats
     for match_idx in range(len(tournament.qualifier_matches)):
@@ -1036,12 +1044,16 @@ async def build_winner_embed(
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
-                total_kills += stat.get('kills', 0)
-                total_deaths += stat.get('deaths', 0)
-                kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
-                if kd > best_kd:
-                    best_kd = kd
-                    best_kd_player = player_name
+                # Track for overall stats
+                if player_name not in player_total_kills:
+                    player_total_kills[player_name] = 0
+                    player_total_deaths[player_name] = 0
+                    player_match_count[player_name] = 0
+                player_total_kills[player_name] += stat.get('kills', 0)
+                player_total_deaths[player_name] += stat.get('deaths', 0)
+                player_match_count[player_name] += 1
+
+                # Max kills in a single match
                 if stat.get('kills', 0) > best_kills:
                     best_kills = stat.get('kills', 0)
                     best_kills_player = player_name
@@ -1051,12 +1063,16 @@ async def build_winner_embed(
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
-                total_kills += stat.get('kills', 0)
-                total_deaths += stat.get('deaths', 0)
-                kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
-                if kd > best_kd:
-                    best_kd = kd
-                    best_kd_player = player_name
+                # Track for overall stats
+                if player_name not in player_total_kills:
+                    player_total_kills[player_name] = 0
+                    player_total_deaths[player_name] = 0
+                    player_match_count[player_name] = 0
+                player_total_kills[player_name] += stat.get('kills', 0)
+                player_total_deaths[player_name] += stat.get('deaths', 0)
+                player_match_count[player_name] += 1
+
+                # Max kills in a single match
                 if stat.get('kills', 0) > best_kills:
                     best_kills = stat.get('kills', 0)
                     best_kills_player = player_name
@@ -1066,24 +1082,49 @@ async def build_winner_embed(
     if final_stats:
         total_matches += 1
         for player_name, stat in final_stats.items():
-            total_kills += stat.get('kills', 0)
-            total_deaths += stat.get('deaths', 0)
-            kd = stat.get('kills', 0) / stat.get('deaths', 1) if stat.get('deaths', 0) > 0 else stat.get('kills', 0)
-            if kd > best_kd:
-                best_kd = kd
-                best_kd_player = player_name
+            # Track for overall stats
+            if player_name not in player_total_kills:
+                player_total_kills[player_name] = 0
+                player_total_deaths[player_name] = 0
+                player_match_count[player_name] = 0
+            player_total_kills[player_name] += stat.get('kills', 0)
+            player_total_deaths[player_name] += stat.get('deaths', 0)
+            player_match_count[player_name] += 1
+
+            # Max kills in a single match
             if stat.get('kills', 0) > best_kills:
                 best_kills = stat.get('kills', 0)
                 best_kills_player = player_name
 
-    # Calculate total bet pool
+    # Calculate best K/D (overall across all matches)
+    for player_name in player_total_kills:
+        kills = player_total_kills[player_name]
+        deaths = player_total_deaths[player_name]
+        kd = kills / deaths if deaths > 0 else kills
+        if kd > best_kd:
+            best_kd = kd
+            best_kd_player = player_name
+
+    # Calculate best AVG (average kills per match)
+    for player_name in player_total_kills:
+        kills = player_total_kills[player_name]
+        matches = player_match_count[player_name]
+        if matches > 0:
+            avg = kills / matches
+            if avg > best_avg:
+                best_avg = avg
+                best_avg_player = player_name
+
+    # Calculate max payout from bets
     for match_type in ["qualifier", "semifinal", "final"]:
         match_count = len(tournament.qualifier_matches) if match_type == "qualifier" else len(tournament.semifinal_matches) if match_type == "semifinal" else 1
         for i in range(match_count):
             match_id = f"{match_type}_{i}"
             bets = await bet_store.get_bets_by_match(match_id)
             for bet in bets:
-                total_bet_pool += bet.amount
+                if bet.won and bet.payout > max_payout:
+                    max_payout = bet.payout
+                    max_payout_player = bet.player_name
 
     # Build team list
     team_list = ""
@@ -1110,9 +1151,10 @@ async def build_winner_embed(
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Лучший K/D:** {best_kd_player} ({best_kd:.2f})\n"
-        f"{replace_emojis('sub_middle')} **Больше всего киллов:** {best_kills_player} ({best_kills})\n"
-        f"{replace_emojis('sub_directory')} **Общий банк ставок:** {total_bet_pool:,} {replace_emojis('money')}\n\n"
+        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player} ({best_kd:.2f})\n"
+        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player} ({best_avg:.1f})\n"
+        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player} ({best_kills})\n"
+        f"{replace_emojis('sub_directory')} **Max Payout:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
