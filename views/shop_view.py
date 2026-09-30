@@ -1,5 +1,5 @@
 """View для интерактивного магазина."""
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 import discord
 from storage.shop_store import shop_store
@@ -321,13 +321,6 @@ class RaritySelect(discord.ui.Select):
                 )
 
             items_list = "\n".join(items_parts)
-        else:
-            # For icons, use the custom emoji from item.value
-            items_list = "\n\n".join([
-                f"{item.value if item.value else '⭐'} **{item.name}**\n"
-                f"└ {replace_emojis('money')} **Цена:** {item.price} {replace_emojis('money')}"
-                for item in items
-            ])
 
         # Получить данные профиля
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -379,7 +372,7 @@ class RaritySelect(discord.ui.Select):
                 )
             else:
                 # Icons - use the actual custom emoji from item.value
-                icon_emoji = replace_emojis(item.value) if item.value else "⭐"
+                icon_emoji = get_emoji(item.value) if item.value else "⭐"
                 items_parts.append(
                     f"{replace_emojis(sub_emoji)} {icon_emoji} **{item.name}** • {item.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}"
                 )
@@ -558,9 +551,10 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     category_label = "Значки" if item.category == "icons" else "Теги"
 
     # Icon emoji
-    # Create embed without custom emoji in value display
+    icon_emoji = get_emoji(item.value) if item.value else "⭐"
+    # Create embed with custom emoji
     embed = discord.Embed(
-        title=f"⭐ ПОКУПКА ЭМОДЗИ | {item.name}",
+        title=f"{icon_emoji} ПОКУПКА ЭМОДЗИ | {item.name}",
         description=f"Вы действительно хотите приобрести данный предмет?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Тип: {category_label} • {label} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=embed_color
     )
@@ -826,21 +820,8 @@ class BuyButton(discord.ui.Button):
             rare_emoji = rare_map.get(item.rarity, "rare_basic")
             rarity_display = rarity_label.get(item.rarity, "Basic")
 
-            # Icon map
-            icon_map = {
-                "icon_letter": "icon_letter",
-                "icon_paw": "icon_paw",
-                "icon_bluestacks": "icon_bluestacks",
-                "icon_teacup": "icon_teacup",
-                "icon_ribbon": "icon_ribbon",
-                "icon_18plus": "icon_18plus",
-                "icon_heart": "icon_heart",
-                "icon_v_badge": "icon_v_badge",
-                "icon_cards": "icon_cards",
-                "icon_cat_ears": "icon_cat_ears",
-                "icon_wing": "icon_wing",
-            }
-            icon_emoji = icon_map.get(item.value, "")
+            # Icon emoji - use get_emoji
+            icon_emoji = get_emoji(item.value) if item.value else "⭐"
 
             if item.category == "tags":
                 embed = discord.Embed(
@@ -852,7 +833,7 @@ class BuyButton(discord.ui.Button):
             else:
                 embed = discord.Embed(
                     title=f"{replace_emojis('a_star')} ПОКУПКА ЗНАЧКА | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n{replace_emojis('sub_middle')} Предмет: {replace_emojis(icon_emoji)} **{item.value}**\n{replace_emojis('sub_middle')} Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Цена: {self.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n{replace_emojis('white_arrow')} {interaction.user.mention} купил за {self.price} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
+                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n{replace_emojis('sub_middle')} Предмет: {icon_emoji} **{item.name}**\n{replace_emojis('sub_middle')} Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Цена: {self.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n{replace_emojis('white_arrow')} {interaction.user.mention} купил за {self.price} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1086,7 +1067,7 @@ class ItemSelect(discord.ui.Select):
     def __init__(self, items, category):
         options = []
         for item in items:
-            display_name = item.value if item.value else item.name
+            display_name = item.name  # Use name instead of value for display
             options.append(
                 discord.SelectOption(
                     label=display_name,
