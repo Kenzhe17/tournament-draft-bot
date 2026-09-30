@@ -939,6 +939,9 @@ class MatchButton(discord.ui.Button):
         self.match_index = match_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        import logging
+        logging.info(f"MatchButton callback: match_type={self.match_type}, match_index={self.match_index}")
+
         # Get teams for this match
         if self.match_type == "qualifier":
             match = self.tournament.qualifier_matches[self.match_index]
@@ -950,6 +953,26 @@ class MatchButton(discord.ui.Button):
             await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
             return
 
+        # Check if stats are filled
+        match_id = f"{self.match_type}_{self.match_index}"
+        temp_stats = self.tournament.temp_match_stats.get(match_id, {})
+
+        logging.info(f"MatchButton: match_id={match_id}, temp_stats_filled={len(temp_stats) > 0}")
+
+        if not temp_stats:
+            # No stats - ask admin to fill stats first
+            embed = discord.Embed(
+                title=replace_emojis("⚠️ Статистика не заполнена"),
+                description=replace_emojis(
+                    "Сначала заполните статистику через 'Заполнить статистику' → выберите этот матч → заполните данные для обеих команд.\n\n"
+                    "После заполнения статистики возвращайтесь сюда для выбора победителя."
+                ),
+                color=discord.Color.orange()
+            )
+            await interaction.response.edit_message(embed=embed, view=None)
+            return
+
+        # Stats are filled - proceed to winner selection
         # Get team names
         teams = []
         for team_index in match:

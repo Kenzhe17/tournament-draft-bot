@@ -1345,6 +1345,54 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True)
 
+    @app_commands.command(name="fix", description="Сбросить статистику ботов (cap1, cap2 и т.д.)")
+    @app_commands.default_permissions(administrator=True)
+    @is_bot_owner()
+    async def fix_bot_stats(self, interaction: discord.Interaction) -> None:
+        """Сбросить статистику ботов в базе данных."""
+        from storage.player_stats_store import player_stats_store
+        from storage.db import get_pool
+
+        if not player_stats_store._use_db:
+            await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True)
+            return
+
+        # Bot names to reset
+        bot_names = ["cap1", "cap2", "cap3", "cap4", "cap5", "cap6", "cap7", "cap8", "cap9", "cap10",
+                     "cap11", "cap12", "cap13", "cap14", "cap15", "cap16", "cap17", "cap18", "cap19", "cap20",
+                     "cap21", "cap22", "cap23", "cap24", "cap25", "cap26", "cap27", "cap28", "cap29", "cap30",
+                     "cap31", "cap32"]
+
+        pool = await get_pool()
+        reset_count = 0
+
+        async with pool.acquire() as conn:
+            for bot_name in bot_names:
+                # Check if bot exists
+                result = await conn.fetchrow(
+                    "SELECT user_id FROM player_stats WHERE guild_id = $1 AND name = $2",
+                    interaction.guild_id, bot_name
+                )
+                if result:
+                    # Reset stats to default values
+                    await conn.execute(
+                        """UPDATE player_stats
+                        SET elo = 1000, wins = 0, finals = 0, games = 0,
+                            current_streak = 0, best_win_streak = 0, best_loss_streak = 0,
+                            total_kills = 0, total_deaths = 0, best_match_kills = 0,
+                            total_elo_change = 0, last_elo_change = 0,
+                            xp = 0, level = 1, xp_to_next_level = 100,
+                            total_earnings = 0, tournament_participations = 0
+                        WHERE guild_id = $1 AND name = $2""",
+                        interaction.guild_id, bot_name
+                    )
+                    reset_count += 1
+
+        await interaction.response.send_message(
+            replace_emojis(f"✅ Сброшена статистика для {reset_count} ботов."),
+            ephemeral=True
+        )
+
     # @app_commands.command(name="replace", description="Заменить игрока")
     # @app_commands.describe(
     #     current_player="Имя игрока которого нужно заменить (или @упоминание)",

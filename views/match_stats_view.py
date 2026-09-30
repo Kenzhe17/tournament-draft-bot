@@ -612,12 +612,8 @@ class AdminConfirmView(View):
         self.embed = self._build_stats_embed()
         logging.info("Stats embed built")
 
-        # Add confirm and edit buttons
-        logging.info("Adding buttons to view")
-        confirm_btn = Button(label="✅ Подтвердить", style=discord.ButtonStyle.success)
-        confirm_btn.callback = self.show_winner_confirmation
-        self.add_item(confirm_btn)
-
+        # Add only edit button (no winner selection - that's done via "Выбрать победителя" panel)
+        logging.info("Adding edit button to view")
         edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         self.add_item(edit_btn)
