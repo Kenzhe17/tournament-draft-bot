@@ -1098,7 +1098,7 @@ class MatchButton(discord.ui.Button):
         team_a_data = self.tournament.teams[team_a_index] if team_a_index < len(self.tournament.teams) else {}
         team_b_data = self.tournament.teams[team_b_index] if team_b_index < len(self.tournament.teams) else {}
         team_a_name = self.tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
-        team_b_name = tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
+        team_b_name = self.tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
         
         embed = discord.Embed(
             title=replace_emojis("📊 Статистика матча"),
@@ -1128,8 +1128,6 @@ class MatchButton(discord.ui.Button):
 
         # Create view with winner selection buttons
         team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams, match)
-
-        await interaction.response.edit_message(embed=embed, view=team_view)
 
         await interaction.response.edit_message(embed=embed, view=team_view)
 
