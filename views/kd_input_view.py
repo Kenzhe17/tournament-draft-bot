@@ -247,6 +247,10 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             if team_won:
                 coin_reward += 50  # Bonus coins for winning
             updated_stats.total_earnings += coin_reward
+            
+            # Add coins to user balance
+            from storage.user_balance_store import user_balance_store
+            await user_balance_store.add_balance(guild_id, user_id, coin_reward)
 
             # Add bonus ELO for kills (only if team won)
             if team_won:
