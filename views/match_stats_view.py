@@ -465,13 +465,8 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         )
 
         if other_team_filled:
-            # Both teams filled, show confirmation
-            view = AdminConfirmView(self.guild_id, tournament, self.match_type, self.match_index, tournament.temp_match_stats[match_id])
-            await interaction.response.send_message(
-                "Проверьте статистику перед подтверждением:",
-                view=view,
-                ephemeral=True
-            )
+            # Both teams filled, show stats with edit button
+            await self._show_stats_view(interaction, tournament)
         else:
             # Other team not filled, ask to fill it
             other_team_name = tournament.team_names.get(other_team_index, f"Team {other_team_index}")
@@ -479,6 +474,69 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                 replace_emojis("✅ Статистика команды сохранена."),
                 ephemeral=True
             )
+
+    async def _show_stats_view(self, interaction: discord.Interaction, tournament):
+        """Show stats view with edit button only."""
+        from views.matches_view import AdminStatsConfirmView
+        
+        # Get match teams
+        if self.match_type == "qualifier":
+            match = tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (tournament.final_teams[0], tournament.final_teams[1])
+        
+        # Build stats embed
+        embed = self._build_stats_embed(tournament, match)
+        
+        # Create view with edit button only
+        view = AdminStatsConfirmView(self.guild_id, tournament, self.match_type, self.match_index, match)
+        
+        await interaction.response.send_message(
+            embed=embed,
+            view=view,
+            ephemeral=True
+        )
+    
+    def _build_stats_embed(self, tournament, match):
+        """Build embed displaying match statistics."""
+        match_id = f"{self.match_type}_{self.match_index}"
+        temp_stats = tournament.temp_match_stats.get(match_id, {})
+        
+        team_a_index, team_b_index = match
+        team_a_data = tournament.teams[team_a_index] if team_a_index < len(tournament.teams) else {}
+        team_b_data = tournament.teams[team_b_index] if team_b_index < len(tournament.teams) else {}
+        team_a_name = tournament.team_names.get(team_a_index, team_a_data.get("captain", f"Team {team_a_index}"))
+        team_b_name = tournament.team_names.get(team_b_index, team_b_data.get("captain", f"Team {team_b_index}"))
+        
+        embed = discord.Embed(
+            title=replace_emojis("📊 Статистика матча"),
+            description=f"{team_a_name} vs {team_b_name}",
+            color=discord.Color.blue()
+        )
+        
+        # Add team A stats
+        team_a_stats_lines = []
+        for circle in range(1, 5):
+            player = team_a_data.get(f"circle{circle}")
+            if player and player in temp_stats:
+                kd = temp_stats[player]
+                team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        if team_a_stats_lines:
+            embed.add_field(name=team_a_name, value="\n".join(team_a_stats_lines), inline=False)
+        
+        # Add team B stats
+        team_b_stats_lines = []
+        for circle in range(1, 5):
+            player = team_b_data.get(f"circle{circle}")
+            if player and player in temp_stats:
+                kd = temp_stats[player]
+                team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        if team_b_stats_lines:
+            embed.add_field(name=team_b_name, value="\n".join(team_b_stats_lines), inline=False)
+        
+        return embed
 
 
 class AdminConfirmView(View):
