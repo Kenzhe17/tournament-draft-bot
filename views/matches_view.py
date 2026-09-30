@@ -210,6 +210,94 @@ class AdminConfirmWinnerButton(discord.ui.Button):
             )
             return
 
+        # Show confirmation view instead of immediately confirming
+        confirm_view = WinnerConfirmationView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, self.match)
+        
+        embed = discord.Embed(
+            title=replace_emojis("⚠️ Подтвердите выбор победителя"),
+            description=f"Вы уверены, что хотите выбрать {self.team_name} победителем?\n\nСтатистика будет сохранена для всех игроков.",
+            color=discord.Color.orange()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=confirm_view)
+
+
+class WinnerConfirmationView(discord.ui.View):
+    """View for final winner confirmation."""
+    
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: list):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
+        self.match = match
+        
+        self.add_item(ConfirmFinalWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, match))
+        self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index))
+
+
+class ConfirmFinalWinnerButton(discord.ui.Button):
+    """Button to finally confirm winner after confirmation dialog."""
+    
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: list):
+        super().__init__(
+            label=f"Подтвердить победу {team_name}",
+            style=discord.ButtonStyle.success,
+            custom_id=f"confirm_final_winner:{guild_id}:{match_type}:{match_index}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.team_name = team_name
+        self.match = match
+    
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав!"),
+                ephemeral=True
+            )
+            return
+
+        # Get match teams
+        if self.match_type == "qualifier":
+            match = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = self.tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (self.tournament.final_teams[0], self.tournament.final_teams[1])
+
+        team_a_index, team_b_index = match
+
+        # Check if stats are filled
+        match_id = f"{self.match_type}_{self.match_index}"
+        temp_stats = self.tournament.temp_match_stats.get(match_id, {})
+
+        if not temp_stats:
+            # No stats - require stats to be filled first
+            await interaction.response.send_message(
+                replace_emojis("❌ Сначала заполните статистику через 'Заполнить статистику' → выберите матч → заполните данные для обеих команд"),
+                ephemeral=True
+            )
+            return
+
+        # Stats are filled - process match with stats
+        from views.kd_input_view import process_match_result
+        await process_match_result(self.guild_id, self.tournament, {
+            "match_type": self.match_type,
+            "match_index": self.match_index,
+            "winning_team_index": self.team_index,
+            "team1_index": team_a_index,
+            "team2_index": team_b_index,
+            "temp_kd_data": temp_stats
+        }, interaction)
+
         # Confirm winner
         tournament = store.get(self.guild_id)
         if not tournament:
