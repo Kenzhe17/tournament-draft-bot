@@ -54,7 +54,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="brazil_flag",
+            value="icon_brazil_flag",
             category="icons"
         ),
         ShopItem(
@@ -64,7 +64,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="japan_flag",
+            value="icon_japan_flag",
             category="icons"
         ),
         ShopItem(
@@ -74,7 +74,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="germany_flag",
+            value="icon_germany_flag",
             category="icons"
         ),
         ShopItem(
@@ -84,7 +84,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="spain_flag",
+            value="icon_spain_flag",
             category="icons"
         ),
         ShopItem(
@@ -94,7 +94,7 @@ def initialize_shop_items() -> None:
             price=700,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.BASIC,
-            value="gray_cat",
+            value="icon_gray_cat",
             category="icons"
         ),
         # Elite (3500 монет)
@@ -145,7 +145,7 @@ def initialize_shop_items() -> None:
             price=3500,
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
-            value="white_sword",
+            value="icon_white_sword",
             category="icons"
         ),
         # Premium (1750 монет)
