@@ -1357,11 +1357,41 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(replace_emojis("❌ База данных не включена."), ephemeral=True)
             return
 
-        # Bot names to reset
-        bot_names = ["cap1", "cap2", "cap3", "cap4", "cap5", "cap6", "cap7", "cap8", "cap9", "cap10",
-                     "cap11", "cap12", "cap13", "cap14", "cap15", "cap16", "cap17", "cap18", "cap19", "cap20",
-                     "cap21", "cap22", "cap23", "cap24", "cap25", "cap26", "cap27", "cap28", "cap29", "cap30",
-                     "cap31", "cap32"]
+        # Bot names to reset (both lowercase and uppercase variants)
+        bot_names = [
+            "cap1", "Cap1", "CAP1",
+            "cap2", "Cap2", "CAP2",
+            "cap3", "Cap3", "CAP3",
+            "cap4", "Cap4", "CAP4",
+            "cap5", "Cap5", "CAP5",
+            "cap6", "Cap6", "CAP6",
+            "cap7", "Cap7", "CAP7",
+            "cap8", "Cap8", "CAP8",
+            "cap9", "Cap9", "CAP9",
+            "cap10", "Cap10", "CAP10",
+            "cap11", "Cap11", "CAP11",
+            "cap12", "Cap12", "CAP12",
+            "cap13", "Cap13", "CAP13",
+            "cap14", "Cap14", "CAP14",
+            "cap15", "Cap15", "CAP15",
+            "cap16", "Cap16", "CAP16",
+            "cap17", "Cap17", "CAP17",
+            "cap18", "Cap18", "CAP18",
+            "cap19", "Cap19", "CAP19",
+            "cap20", "Cap20", "CAP20",
+            "cap21", "Cap21", "CAP21",
+            "cap22", "Cap22", "CAP22",
+            "cap23", "Cap23", "CAP23",
+            "cap24", "Cap24", "CAP24",
+            "cap25", "Cap25", "CAP25",
+            "cap26", "Cap26", "CAP26",
+            "cap27", "Cap27", "CAP27",
+            "cap28", "Cap28", "CAP28",
+            "cap29", "Cap29", "CAP29",
+            "cap30", "Cap30", "CAP30",
+            "cap31", "Cap31", "CAP31",
+            "cap32", "Cap32", "CAP32",
+        ]
 
         pool = await get_pool()
         reset_count = 0
