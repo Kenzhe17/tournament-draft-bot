@@ -296,7 +296,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             "team1_index": team_a_index,
             "team2_index": team_b_index,
             "temp_kd_data": temp_stats
-        }, interaction)
+        }, None)
 
         # Confirm winner
         tournament = store.get(self.guild_id)
@@ -340,6 +340,70 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             embed=None,
             view=None
         )
+
+
+class CancelWinnerButton(discord.ui.Button):
+    """Button to cancel winner selection and return to stats view."""
+    
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int):
+        super().__init__(
+            label="Отмена",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"cancel_winner:{guild_id}:{match_type}:{match_index}"
+        )
+        self.guild_id = guild_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+    
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет прав!"),
+                ephemeral=True
+            )
+            return
+
+        # Return to stats view
+        from views.match_stats_view import AdminConfirmView
+        match_id = f"{self.match_type}_{self.match_index}"
+        temp_stats = self.tournament.temp_match_stats.get(match_id, {})
+        
+        if self.match_type == "qualifier":
+            match = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = self.tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (self.tournament.final_teams[0], self.tournament.final_teams[1])
+        
+        team_a_data = self.tournament.teams[match[0]] if match[0] < len(self.tournament.teams) else {}
+        team_b_data = self.tournament.teams[match[1]] if match[1] < len(self.tournament.teams) else {}
+        team_a_name = self.tournament.team_names.get(match[0], team_a_data.get("captain", f"Team {match[0]}"))
+        team_b_name = self.tournament.team_names.get(match[1], team_b_data.get("captain", f"Team {match[1]}"))
+        
+        embed = discord.Embed(
+            title=replace_emojis("📊 Статистика матча"),
+            description=f"{team_a_name} vs {team_b_name}",
+            color=discord.Color.blue()
+        )
+        
+        if temp_stats:
+            for team_index, team_name in [(match[0], team_a_name), (match[1], team_b_name)]:
+                team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
+                stats_lines = []
+                for circle in range(1, 5):
+                    player = team_data.get(f"circle{circle}")
+                    if player and player in temp_stats:
+                        kd = temp_stats[player]
+                        stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+                if stats_lines:
+                    embed.add_field(name=team_name, value="\n".join(stats_lines), inline=False)
+        
+        from views.matches_view import AdminStatsConfirmView
+        confirm_view = AdminStatsConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, match)
+        
+        await interaction.response.edit_message(embed=embed, view=confirm_view)
 
 
 class AdminEditStatsButton(discord.ui.Button):
