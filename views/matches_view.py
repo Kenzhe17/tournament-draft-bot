@@ -177,48 +177,10 @@ class AdminStatsConfirmView(discord.ui.View):
         self.add_item(AdminEditStatsButton(guild_id, tournament, match_type, match_index, match))
 
 
-class AdminConfirmWinnerButton(discord.ui.Button):
-    """Button to confirm winner with stats."""
-
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: list):
-        super().__init__(
-            label=f"Победитель: {team_name}",
-            style=discord.ButtonStyle.success,
-            custom_id=f"confirm_winner_stats:{guild_id}:{match_type}:{match_index}:{team_index}"
-        )
-        self.guild_id = guild_id
-        self.tournament = tournament
-        self.match_type = match_type
-        self.match_index = match_index
-        self.team_index = team_index
-        self.team_name = team_name
-        self.match = match
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав!"),
-                ephemeral=True
-            )
-            return
-
-        # Show confirmation view instead of immediately confirming
-        confirm_view = WinnerConfirmationView(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, self.match)
-        
-        embed = discord.Embed(
-            title=replace_emojis("⚠️ Подтвердите выбор победителя"),
-            description=f"Вы уверены, что хотите выбрать {self.team_name} победителем?\n\nСтатистика будет сохранена для всех игроков.",
-            color=discord.Color.orange()
-        )
-        
-        await interaction.response.edit_message(embed=embed, view=confirm_view)
-
-
 class WinnerConfirmationView(discord.ui.View):
-    """View for final winner confirmation."""
+    """View for final winner confirmation with stats display."""
     
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: list):
+    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
@@ -229,7 +191,7 @@ class WinnerConfirmationView(discord.ui.View):
         self.match = match
         
         self.add_item(ConfirmFinalWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, match))
-        self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index))
+        self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index, match))
 
 
 class ConfirmFinalWinnerButton(discord.ui.Button):
