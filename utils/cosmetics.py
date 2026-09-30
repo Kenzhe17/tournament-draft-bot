@@ -2,7 +2,7 @@
 
 import re
 from storage.shop_store import inventory_store, shop_store
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 
 def clean_nickname(text: str) -> str:
@@ -95,8 +95,8 @@ def format_player_name(guild_id: int, user_id: int, base_name: str) -> str:
     if tag:
         formatted = f"**{tag}** {formatted}"
     if icon:
-        # Replace standard emoji with custom emoji through replace_emojis
-        formatted = f"{formatted} {replace_emojis(icon)}"
+        # Get custom emoji for the icon
+        formatted = f"{formatted} {get_emoji(icon)}"
 
     return formatted
 
