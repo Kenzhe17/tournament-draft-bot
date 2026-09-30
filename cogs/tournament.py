@@ -1359,6 +1359,7 @@ class TournamentCog(commands.Cog):
 
         # Bot names to reset (both lowercase and uppercase variants)
         bot_names = [
+            # Cap bots
             "cap1", "Cap1", "CAP1",
             "cap2", "Cap2", "CAP2",
             "cap3", "Cap3", "CAP3",
@@ -1391,6 +1392,11 @@ class TournamentCog(commands.Cog):
             "cap30", "Cap30", "CAP30",
             "cap31", "Cap31", "CAP31",
             "cap32", "Cap32", "CAP32",
+            # P bots
+            "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10",
+            "P11", "P12", "P13", "P14", "P15", "P16", "P17", "P18", "P19", "P20",
+            "P21", "P22", "P23", "P24", "P25", "P26", "P27", "P28", "P29", "P30",
+            "P31", "P32",
         ]
 
         pool = await get_pool()
