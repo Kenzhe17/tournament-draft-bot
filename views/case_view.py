@@ -95,8 +95,19 @@ class CaseOpenButton(discord.ui.Button):
             reaction_emoji = "cross"
 
         # Показать результат
+        # Determine emoji for case name
+        name_emoji = "emoji_basic_case"
+        if "Basic" in case.name:
+            name_emoji = "emoji_basic_case"
+        elif "Premium" in case.name:
+            name_emoji = "emoji_premium_case"
+        elif "Elite" in case.name:
+            name_emoji = "emoji_elite_case"
+        elif "Special" in case.name:
+            name_emoji = "emoji_special_case"
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Результат открытия {case.name}",
+            title=f"{replace_emojis('a_star')} Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
@@ -223,8 +234,19 @@ class CaseSelect(discord.ui.Select):
             reaction_emoji = "cross"
 
         # Показать результат
+        # Determine emoji for case name
+        name_emoji = "emoji_basic_case"
+        if "Basic" in case.name:
+            name_emoji = "emoji_basic_case"
+        elif "Premium" in case.name:
+            name_emoji = "emoji_premium_case"
+        elif "Elite" in case.name:
+            name_emoji = "emoji_elite_case"
+        elif "Special" in case.name:
+            name_emoji = "emoji_special_case"
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Результат открытия {case.name}",
+            title=f"{replace_emojis('a_star')} Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )

@@ -140,6 +140,12 @@ GAME_EMOJIS = {
     "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
     "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
 
+    # Case name emojis (for display before case names)
+    "emoji_basic_case": os.getenv("EMOJI_BASIC_CASE", ""),
+    "emoji_premium_case": os.getenv("EMOJI_PREMIUM_CASE", ""),
+    "emoji_elite_case": os.getenv("EMOJI_ELITE_CASE", ""),
+    "emoji_special_case": os.getenv("EMOJI_SPECIAL_CASE", ""),
+
     # Medal emojis
     "gold_medal": os.getenv("EMOJI_GOLD_MEDAL", ""),
     "silver_medal": os.getenv("EMOJI_SILVER_MEDAL", ""),
@@ -277,6 +283,12 @@ STANDARD_EMOJIS = {
     "case_elite": "",
     "case_special": "",
 
+    # Case name emojis (for display before case names)
+    "emoji_basic_case": "📦",
+    "emoji_premium_case": "🎁",
+    "emoji_elite_case": "💎",
+    "emoji_special_case": "✨",
+
     # Rare emojis
     "rare_basic": "",
     "rare_premium": "",
@@ -301,6 +313,12 @@ STANDARD_EMOJIS = {
     "icon_cards": "",
     "icon_cat_ears": "",
     "icon_wing": "",
+
+    # Case name emojis (for display before case names)
+    "emoji_basic_case": "📦",
+    "emoji_premium_case": "🎁",
+    "emoji_elite_case": "💎",
+    "emoji_special_case": "✨",
 
     # Shop & UI
     "tag": "",
@@ -462,6 +480,7 @@ def replace_emojis(text: str) -> str:
         "num_1", "num_2", "num_3", "num_4",
         "room",
         "winner",
+        "emoji_basic_case", "emoji_premium_case", "emoji_elite_case", "emoji_special_case",
     ]
 
     result = text

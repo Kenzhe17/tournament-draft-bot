@@ -87,27 +87,32 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
         case_emoji = "case_basic"  # default
         rare_emoji = "rare_basic"  # default
         sub_emoji = "sub_middle"  # default
+        name_emoji = "emoji_basic_case"  # default
         sparkle = ""
         if "Basic" in case.name:
             case_emoji = "case_basic"
             rare_emoji = "rare_basic"
             sub_emoji = "sub_middle"
+            name_emoji = "emoji_basic_case"
         elif "Premium" in case.name:
             case_emoji = "case_premium"
             rare_emoji = "rare_premium"
             sub_emoji = "sub_middle"
+            name_emoji = "emoji_premium_case"
         elif "Elite" in case.name:
             case_emoji = "case_elite"
             rare_emoji = "rare_elite"
             sub_emoji = "sub_middle"
+            name_emoji = "emoji_elite_case"
         elif "Special" in case.name:
             case_emoji = "case_special"
             rare_emoji = "rare_special"
             sub_emoji = "sub_directory"
+            name_emoji = "emoji_special_case"
             sparkle = f" {replace_emojis('a_star')}"
 
         cases_parts.append(
-            f"{replace_emojis(sub_emoji)} {replace_emojis(case_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}{sparkle}"
+            f"{replace_emojis(sub_emoji)} {replace_emojis(name_emoji)} **{case.name}** • {case.price} {replace_emojis('money')} {replace_emojis(rare_emoji)}{sparkle}"
         )
 
     cases_list = "\n".join(cases_parts)
@@ -663,28 +668,33 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     case_emoji = "case_basic"
     rare_emoji = "rare_basic"
     sub_emoji = "sub_middle"
+    name_emoji = "emoji_basic_case"  # For display before case name
     sparkle = ""
     if "Basic" in case.name:
         case_emoji = "case_basic"
         rare_emoji = "rare_basic"
         sub_emoji = "sub_middle"
+        name_emoji = "emoji_basic_case"
     elif "Premium" in case.name:
         case_emoji = "case_premium"
         rare_emoji = "rare_premium"
         sub_emoji = "sub_middle"
+        name_emoji = "emoji_premium_case"
     elif "Elite" in case.name:
         case_emoji = "case_elite"
         rare_emoji = "rare_elite"
         sub_emoji = "sub_middle"
+        name_emoji = "emoji_elite_case"
     elif "Special" in case.name:
         case_emoji = "case_special"
         rare_emoji = "rare_special"
         sub_emoji = "sub_directory"
+        name_emoji = "emoji_special_case"
         sparkle = f" {replace_emojis('a_star')}"
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ПОКУПКА КЕЙСА | {case.name}",
+        title=f"{replace_emojis('a_star')} ПОКУПКА КЕЙСА | {replace_emojis(name_emoji)} {case.name}",
         description=f"Вы действительно хотите открыть этот кейс?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} {replace_emojis(case_emoji)} Категория: Кейсы • {replace_emojis(rare_emoji)}{sparkle}\n{replace_emojis('sub_directory')} Стоимость: {case.price} {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Монеты: 50%\n{replace_emojis('sub_middle')} Предмет: 20%\n{replace_emojis('sub_directory')} Ничего: 30%\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку и открытие кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
