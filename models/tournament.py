@@ -422,6 +422,67 @@ class Tournament:
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
 
+    async def distribute_by_avg(self, guild_id: int) -> None:
+        """Распределить игроков по кругам на основе AVG (средние киллы за матч)."""
+        from storage.player_stats_store import player_stats_store
+
+        # Collect all players from all circles
+        all_players = []
+        for circle in range(1, 5):
+            circle_list = self.circle_list(circle)
+            for player_name in circle_list:
+                user_id = self.player_user_ids.get(player_name, 0)
+                all_players.append((player_name, user_id))
+
+        # Get AVG for each player
+        players_with_avg = []
+        for player_name, user_id in all_players:
+            stats = await player_stats_store.get(guild_id, user_id)
+            if stats and stats.games > 0:
+                avg = stats.total_kills / stats.games
+            else:
+                avg = 0  # Default AVG for new players
+            players_with_avg.append((player_name, user_id, avg))
+
+        # Sort by AVG (descending)
+        players_with_avg.sort(key=lambda x: x[2], reverse=True)
+
+        # Clear all circles
+        self.circle1 = []
+        self.circle2 = []
+        self.circle3 = []
+        self.circle4 = []
+
+        # Distribute to circles based on tournament size
+        captain_count = self.captain_count
+
+        # Top players become captains (circle1)
+        for i in range(captain_count):
+            if i < len(players_with_avg):
+                player_name, user_id, _ = players_with_avg[i]
+                self.circle1.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # Next group goes to circle2
+        for i in range(captain_count, captain_count * 2):
+            if i < len(players_with_avg):
+                player_name, user_id, _ = players_with_avg[i]
+                self.circle2.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # Next group goes to circle3
+        for i in range(captain_count * 2, captain_count * 3):
+            if i < len(players_with_avg):
+                player_name, user_id, _ = players_with_avg[i]
+                self.circle3.append(player_name)
+                self.player_user_ids[player_name] = user_id
+
+        # All remaining players go to circle4
+        for i in range(captain_count * 3, len(players_with_avg)):
+            player_name, user_id, _ = players_with_avg[i]
+            self.circle4.append(player_name)
+            self.player_user_ids[player_name] = user_id
+
     # --- Случайное распределение (без кругов) ---
 
     def distribute_randomly(self) -> None:

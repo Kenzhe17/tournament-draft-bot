@@ -750,9 +750,7 @@ class AdminConfirmView(View):
                 winning_team_index = tournament.qualifier_winners[self.match_index]
             elif self.match_type == "semifinal":
                 winning_team_index = tournament.semifinal_pending_winners[self.match_index]
-            else:  # final
-                # Final doesn't have pending_winner - we're confirming from admin stats flow
-                winning_team_index = self.team_index  # Use the team_index passed to confirm_callback
+            # For final, use the winning_team_index parameter passed to confirm_callback
 
             import logging
             logging.info(f"Confirming winner: match_type={self.match_type}, winning_team_index={winning_team_index}")

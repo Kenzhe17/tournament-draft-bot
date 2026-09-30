@@ -34,7 +34,14 @@ class PlayerSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.DRAFT:
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."),
+                ephemeral=True,
+            )
+            return
+
+        if tournament.phase != TournamentPhase.DRAFT:
             await interaction.response.send_message(
                 replace_emojis("❌ Драфт не активен."),
                 ephemeral=True,

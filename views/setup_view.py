@@ -818,6 +818,70 @@ class AutoDistributeButton(discord.ui.Button):
         )
 
 
+class AutoDistributeAvgButton(discord.ui.Button):
+    """Кнопка для автоматического распределения по AVG."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="🎯 Распределить по AVG",
+            custom_id=f"auto_distribute_avg:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            await interaction.response.send_message(
+                replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не в фазе настройки."),
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        if tournament.formation_mode != FormationMode.ELO:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Check if we have enough players
+        total_players = len(tournament.all_players)
+        required_players = int(tournament.size.value)
+        if total_players < required_players:
+            await interaction.response.send_message(
+                f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        await interaction.response.defer()
+
+        # Distribute by AVG
+        await tournament.distribute_by_avg(self.guild_id)
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        await interaction.followup.send(
+            replace_emojis("✅ Игроки распределены по кругам на основе AVG!"),
+            ephemeral=True
+        )
+
+
 class StartTournamentButton(discord.ui.Button):
     """Кнопка для запуска турнира."""
 
@@ -989,10 +1053,12 @@ class SetupView(discord.ui.View):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
                 self.add_item(button)
 
-            # Add auto-distribute button if in ELO mode
+            # Add auto-distribute buttons if in ELO mode
             if tournament.formation_mode == FormationMode.ELO:
                 auto_distribute_button = AutoDistributeButton(tournament.guild_id)
                 self.add_item(auto_distribute_button)
+                auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)
+                self.add_item(auto_distribute_avg_button)
 
         # Add management buttons (Start, Toggle Registration)
         start_button = StartTournamentButton(tournament.guild_id)
