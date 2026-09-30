@@ -1154,7 +1154,7 @@ async def build_winner_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
-        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {captain_name}, {roster_str}\n\n\n"
+        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {roster_str}\n\n\n"
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
