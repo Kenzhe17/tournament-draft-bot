@@ -47,6 +47,56 @@ def initialize_shop_items() -> None:
             value="icon_bluestacks",
             category="icons"
         ),
+        ShopItem(
+            id="icon_brazil_flag",
+            name="Флаг Бразилии",
+            description="",
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="brazil_flag",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_japan_flag",
+            name="Флаг Японии",
+            description="",
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="japan_flag",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_germany_flag",
+            name="Флаг Германии",
+            description="",
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="germany_flag",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_spain_flag",
+            name="Флаг Испании",
+            description="",
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="spain_flag",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_gray_cat",
+            name="Серый кот",
+            description="",
+            price=700,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.BASIC,
+            value="gray_cat",
+            category="icons"
+        ),
         # Elite (3500 монет)
         ShopItem(
             id="icon_teacup",
@@ -86,6 +136,16 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.ELITE,
             value="icon_heart",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_white_sword",
+            name="Белый меч",
+            description="",
+            price=3500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="white_sword",
             category="icons"
         ),
         # Premium (1750 монет)
