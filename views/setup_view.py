@@ -116,10 +116,12 @@ class CircleSelectButton(discord.ui.Button):
         self.circle_name = circle_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
         try:
             tournament = store.get(self.guild_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
                 )
@@ -127,7 +129,7 @@ class CircleSelectButton(discord.ui.Button):
 
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
                     ephemeral=True
                 )
@@ -138,7 +140,7 @@ class CircleSelectButton(discord.ui.Button):
                 circle_list = getattr(tournament, f"circle{self.circle}")
                 limit = tournament.circle_limit(self.circle)
                 if len(circle_list) >= limit:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"{replace_emojis('❌')} Круг {self.circle} уже заполнен (максимум {limit} игрока).",
                         ephemeral=True
                     )
@@ -165,7 +167,7 @@ class CircleSelectButton(discord.ui.Button):
                 for circle in range(1, 5):
                     if user_name in getattr(tournament, f"circle{circle}"):
                         if circle == self.circle:
-                            await interaction.response.send_message(
+                            await interaction.followup.send(
                                 replace_emojis("❌ Вы уже находитесь в этом круге."),
                                 ephemeral=True
                             )
@@ -178,7 +180,7 @@ class CircleSelectButton(discord.ui.Button):
             # Add player with user_id
             success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
             if not success:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Не удалось добавить игрока."),
                     ephemeral=True
                 )
@@ -190,19 +192,19 @@ class CircleSelectButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             if was_moved:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"{replace_emojis('✅')} Вы перемещены в {circle_names[self.circle]}!",
                     ephemeral=True
                 )
             else:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"{replace_emojis('✅')} Вы добавлены в {circle_names[self.circle]}!",
                     ephemeral=True
                 )
         except Exception as e:
             logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
             try:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
