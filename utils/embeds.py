@@ -792,6 +792,10 @@ async def build_qualifiers_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
+        # Add empty field for gap between teams (except after last team)
+        if team_idx < len(tournament.teams) - 1:
+            embed.add_field(name="\u200b", value="\u200b", inline=False)
+
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
@@ -885,6 +889,10 @@ async def build_semifinals_embed(
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
+        # Add empty field for gap between teams (except after last team)
+        if team_idx < len(tournament.teams) - 1:
+            embed.add_field(name="\u200b", value="\u200b", inline=False)
+
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
@@ -970,6 +978,10 @@ async def build_final_embed(
 
         num_emoji = replace_emojis(f"num_{team_idx + 1}")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
+
+        # Add empty field for gap between teams (except after last team)
+        if team_idx < len(tournament.teams) - 1:
+            embed.add_field(name="\u200b", value="\u200b", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
