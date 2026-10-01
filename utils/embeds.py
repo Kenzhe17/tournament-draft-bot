@@ -440,13 +440,16 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
             avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
             elo_diff = avg_elo_b - avg_elo_a
-            odds_diff = elo_diff * 0.002
+            # 100 ELO difference = 0.1x odds difference
+            odds_diff = elo_diff * 0.001
             base_odds = 1.9
 
             if elo_diff >= 0:
+                # Team B has higher ELO -> Team B gets lower odds
                 odds_a = base_odds + odds_diff
                 odds_b = base_odds - odds_diff
             else:
+                # Team A has higher ELO -> Team A gets lower odds
                 odds_a = base_odds - abs(odds_diff)
                 odds_b = base_odds + abs(odds_diff)
 
