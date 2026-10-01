@@ -301,8 +301,8 @@ class PlayerStatsStore:
                     """
                     SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, level, xp, total_earnings
                     FROM player_stats
-                    WHERE guild_id = $1 AND games > 0 AND user_id > 0
-                    ORDER BY total_earnings DESC
+                    WHERE guild_id = $1 AND games > 0
+                    ORDER BY CAST(total_earnings AS INTEGER) DESC NULLS LAST
                     LIMIT $2 OFFSET $3
                     """,
                     guild_id, per_page, offset

@@ -190,6 +190,26 @@ def initialize_shop_items() -> None:
             value="icon_wing",
             category="icons"
         ),
+        ShopItem(
+            id="icon_fuck_you",
+            name="Fuck You",
+            description="",
+            price=3500,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.ELITE,
+            value="icon_fuck_you",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_zzz",
+            name="Premium",
+            description="",
+            price=1750,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="icon_zzz",
+            category="icons"
+        ),
     ]
 
     # Текстовые теги и титулы (Titles & Badges)

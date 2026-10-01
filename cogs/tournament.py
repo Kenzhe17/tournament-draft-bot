@@ -346,6 +346,8 @@ class TournamentCog(commands.Cog):
             "icon_cards": "icon_cards",
             "icon_cat_ears": "icon_cat_ears",
             "icon_wing": "icon_wing",
+            "icon_fuck_you": "icon_fuck_you",
+            "icon_zzz": "icon_zzz",
         }
 
         # Rare emoji map
@@ -1675,6 +1677,8 @@ class TournamentCog(commands.Cog):
                 "icon_cards": "icon_cards",
                 "icon_cat_ears": "icon_cat_ears",
                 "icon_wing": "icon_wing",
+                "icon_fuck_you": "icon_fuck_you",
+                "icon_zzz": "icon_zzz",
             }
 
             # Rare emoji map

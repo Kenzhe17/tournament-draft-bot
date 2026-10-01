@@ -354,6 +354,8 @@ class RaritySelect(discord.ui.Select):
             "icon_cards": "icon_cards",
             "icon_cat_ears": "icon_cat_ears",
             "icon_wing": "icon_wing",
+            "icon_fuck_you": "icon_fuck_you",
+            "icon_zzz": "icon_zzz",
         }
 
         # Маппинг rare эмодзи по редкости
@@ -919,6 +921,8 @@ class BuyCaseButton(discord.ui.Button):
                     "icon_cards": "icon_cards",
                     "icon_cat_ears": "icon_cat_ears",
                     "icon_wing": "icon_wing",
+                    "icon_fuck_you": "icon_fuck_you",
+                    "icon_zzz": "icon_zzz",
                 }
                 icon_emoji = icon_map.get(result['value'], "")
                 result_text = f"{replace_emojis(icon_emoji)} **{result['value']}**"

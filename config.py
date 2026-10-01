@@ -179,6 +179,8 @@ GAME_EMOJIS = {
     "icon_cards": os.getenv("EMOJI_ICON_CARDS", ""),
     "icon_cat_ears": os.getenv("EMOJI_ICON_CAT_EARS", ""),
     "icon_wing": os.getenv("EMOJI_ICON_WING", ""),
+    "icon_fuck_you": os.getenv("EMOJI_ICON_FUCK_YOU", ""),
+    "icon_zzz": os.getenv("EMOJI_ICON_ZZZ", ""),
 }
 
 # Standard emojis as fallback when custom emojis are not set
@@ -321,6 +323,8 @@ STANDARD_EMOJIS = {
     "icon_cards": "",
     "icon_cat_ears": "",
     "icon_wing": "",
+    "icon_fuck_you": "🖕",
+    "icon_zzz": "💤",
 
     # Case name emojis (for display before case names)
     "emoji_basic_case": "📦",
@@ -487,6 +491,7 @@ def replace_emojis(text: str) -> str:
         "icon_letter", "icon_paw", "icon_bluestacks", "icon_brazil_flag", "icon_japan_flag",
         "icon_germany_flag", "icon_spain_flag", "icon_gray_cat", "icon_teacup", "icon_ribbon",
         "icon_18plus", "icon_heart", "icon_white_sword", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
+        "icon_fuck_you", "icon_zzz",
         "check", "cross",
         "gold_medal", "silver_medal", "bronze_medal",
         "num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8",
