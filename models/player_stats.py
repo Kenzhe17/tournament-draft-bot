@@ -79,6 +79,7 @@ class PlayerStats:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PlayerStats":
         """Десериализация из словарЯ."""
+        level = data.get("level", 1)
         return cls(
             guild_id=data.get("guild_id", 0),
             user_id=data.get("user_id", 0),
@@ -103,8 +104,8 @@ class PlayerStats:
             last_20_wins=data.get("last_20_wins", 0),
             last_20_games=data.get("last_20_games", 0),
             xp=data.get("xp", 0),
-            level=data.get("level", 1),
-            xp_to_next_level=data.get("xp_to_next_level", 250),
+            level=level,
+            xp_to_next_level=cls._calculate_xp_to_next_level(level),
             total_earnings=data.get("total_earnings", 0),
             tournament_participations=data.get("tournament_participations", 0),
             description=data.get("description", ""),
@@ -148,28 +149,33 @@ class PlayerStats:
             self.level += 1
             levels_gained += 1
             # Calculate XP needed for next level based on current level
-            if self.level <= 10:
-                self.xp_to_next_level = 250
-            elif self.level <= 20:
-                self.xp_to_next_level = 270
-            elif self.level <= 30:
-                self.xp_to_next_level = 300
-            elif self.level <= 40:
-                self.xp_to_next_level = 330
-            elif self.level <= 50:
-                self.xp_to_next_level = 360
-            elif self.level <= 60:
-                self.xp_to_next_level = 390
-            elif self.level <= 70:
-                self.xp_to_next_level = 420
-            elif self.level <= 80:
-                self.xp_to_next_level = 450
-            elif self.level <= 90:
-                self.xp_to_next_level = 470
-            else:
-                self.xp_to_next_level = 500
+            self.xp_to_next_level = self._calculate_xp_to_next_level(self.level)
 
         return self.level, old_level
+
+    @staticmethod
+    def _calculate_xp_to_next_level(level: int) -> int:
+        """Calculate XP needed for next level based on current level."""
+        if level <= 10:
+            return 250
+        elif level <= 20:
+            return 270
+        elif level <= 30:
+            return 300
+        elif level <= 40:
+            return 330
+        elif level <= 50:
+            return 360
+        elif level <= 60:
+            return 390
+        elif level <= 70:
+            return 420
+        elif level <= 80:
+            return 450
+        elif level <= 90:
+            return 470
+        else:
+            return 500
 
     def get_level_progress(self) -> tuple[int, int]:
         """Получить прогресс до следующего уровня (текущий XP, максимум)."""
