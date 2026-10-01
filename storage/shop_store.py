@@ -199,6 +199,10 @@ class InventoryStore:
 
         return False
 
+    def remove_item(self, guild_id: int, user_id: int, item_id: str) -> bool:
+        """Удалить предмет из инвентаря (алиас для remove_cosmetic)."""
+        return self.remove_cosmetic(guild_id, user_id, item_id)
+
     def transfer_cosmetic(self, from_guild: int, from_user: int, to_guild: int, to_user: int, item_id: str) -> dict:
         """Перенести предмет от одного игрока к другому.
         
