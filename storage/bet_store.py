@@ -391,42 +391,55 @@ class BetStore:
     async def resolve_match_bets(self, guild_id: int, match_id: str, winning_team_name: str) -> dict[int, int]:
         """Resolve bets for a match and return payouts (user_id -> amount)."""
         from storage.betting_stats_store import betting_stats_store
+        import logging
 
         bets = await self.get_bets_by_match(match_id)
         payouts = {}
 
+        logging.info(f"Resolving bets for match_id={match_id}, winning_team_name='{winning_team_name}'")
+        logging.info(f"Found {len(bets)} bets for this match")
+
         # Get current odds for the winning team (final odds)
         current_odds = self.get_current_odds(match_id)
         if current_odds:
+            logging.info(f"Current odds: team_a='{current_odds.team_a_name}' ({current_odds.team_a_odds}x), team_b='{current_odds.team_b_name}' ({current_odds.team_b_odds}x)")
             # Determine which team won based on team name
             if winning_team_name == current_odds.team_a_name:
                 winning_odds = current_odds.team_a_odds
+                logging.info(f"Matched to team_a with odds {winning_odds}x")
             elif winning_team_name == current_odds.team_b_name:
                 winning_odds = current_odds.team_b_odds
+                logging.info(f"Matched to team_b with odds {winning_odds}x")
             else:
                 # Fallback: try to match partial name or use default
+                logging.warning(f"Team name mismatch: winning_team_name='{winning_team_name}' not in odds")
                 winning_odds = 1.9
         else:
+            logging.warning(f"No odds found for match_id={match_id}, using default 1.9x")
             winning_odds = 1.9  # Default if no odds stored
 
         # Calculate payouts based on final odds (not fixed at betting time)
         for bet in bets:
+            logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', amount={bet.amount}, odds={bet.odds}")
             if bet.team_name == winning_team_name:
                 # Winning bet: payout = amount * final odds
                 payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
+                logging.info(f"WINNING bet: user_id={bet.user_id}, payout={payout}")
                 # Record as win (profit = payout - bet_amount)
                 profit = payout - bet.amount
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
             else:
                 # Losing bet: no payout
                 payouts[bet.user_id] = 0
+                logging.info(f"LOSING bet: user_id={bet.user_id}, team_name='{bet.team_name}' != '{winning_team_name}'")
                 # Record as loss (bet amount lost)
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
 
         # Delete bets after resolution
         await self.delete_bets_by_match(match_id)
 
+        logging.info(f"Final payouts: {payouts}")
         return payouts
 
     def enable_db(self) -> None:
