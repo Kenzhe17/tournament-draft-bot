@@ -138,7 +138,7 @@ class PlayerStats:
 
     @property
     def skill_rating(self) -> float:
-        """Рейтинг скилла на основе K/D, Win Rate и AVG Kills (шкала 1.0-10.0)."""
+        """Рейтинг скилла на основе K/D и AVG Kills (шкала 1.0-10.0)."""
         if self.games < 5:
             # Штраф за мало игр
             games_multiplier = self.games / 5
@@ -152,11 +152,8 @@ class PlayerStats:
         # Безопасная обработка total_games = 0
         avg_kills = self.avg_kills if self.games > 0 else 0.0
 
-        # Win rate
-        win_rate = self.win_rate
-
-        # Расчёт сырого индекса
-        raw_index = (kd_ratio * 40) + (win_rate * 0.8) + (avg_kills * 5)
+        # Расчёт сырого индекса (только K/D и AVG Kills)
+        raw_index = (kd_ratio * 60) + (avg_kills * 8)
 
         # Нормализация в диапазон 1.0-10.0
         # Raw Index = 30 -> 1.0, Raw Index = 220 -> 10.0

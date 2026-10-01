@@ -203,7 +203,14 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             
             try:
                 skill_rating = stats.skill_rating
-            except AttributeError:
+            except Exception as e:
+                import sys
+                print(f"[DEBUG] skill_rating error: {type(e).__name__}: {e}", file=sys.stderr)
+                print(f"[DEBUG] stats type: {type(stats)}", file=sys.stderr)
+                print(f"[DEBUG] has skill_rating: {hasattr(stats, 'skill_rating')}", file=sys.stderr)
+                print(f"[DEBUG] total_kills: {getattr(stats, 'total_kills', 'MISSING')}", file=sys.stderr)
+                print(f"[DEBUG] total_deaths: {getattr(stats, 'total_deaths', 'MISSING')}", file=sys.stderr)
+                print(f"[DEBUG] games: {getattr(stats, 'games', 'MISSING')}", file=sys.stderr)
                 skill_rating = 0.0
             
             try:
