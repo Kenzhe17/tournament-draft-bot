@@ -38,7 +38,7 @@ class PlayerStats:
     # New fields for level and XP system
     xp: int = 0
     level: int = 1
-    xp_to_next_level: int = 500
+    xp_to_next_level: int = 250
     total_earnings: int = 0  # Total coins earned
     tournament_participations: int = 0
     description: str = ""  # User profile description
@@ -104,7 +104,7 @@ class PlayerStats:
             last_20_games=data.get("last_20_games", 0),
             xp=data.get("xp", 0),
             level=data.get("level", 1),
-            xp_to_next_level=data.get("xp_to_next_level", 500),
+            xp_to_next_level=data.get("xp_to_next_level", 250),
             total_earnings=data.get("total_earnings", 0),
             tournament_participations=data.get("tournament_participations", 0),
             description=data.get("description", ""),
@@ -147,8 +147,8 @@ class PlayerStats:
             self.xp -= self.xp_to_next_level
             self.level += 1
             levels_gained += 1
-            # Fixed XP needed for next level: 500 XP per level
-            self.xp_to_next_level = 500
+            # Fixed XP needed for next level: 250 XP per level
+            self.xp_to_next_level = 250
 
         return self.level, old_level
 

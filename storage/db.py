@@ -156,7 +156,7 @@ async def init_db() -> None:
             pass
 
         try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS xp_to_next_level INTEGER DEFAULT 500")
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS xp_to_next_level INTEGER DEFAULT 250")
         except asyncpg.DuplicateColumnError:
             pass
 

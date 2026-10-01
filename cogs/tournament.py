@@ -805,7 +805,7 @@ class TournamentCog(commands.Cog):
                 last_elo_change=0,
                 xp=0,
                 level=1,
-                xp_to_next_level=500,
+                xp_to_next_level=250,
                 total_earnings=0,
                 tournament_participations=0,
                 description=""
@@ -911,7 +911,7 @@ class TournamentCog(commands.Cog):
                 last_elo_change=0,
                 xp=0,
                 level=1,
-                xp_to_next_level=500,
+                xp_to_next_level=250,
                 total_earnings=0,
                 tournament_participations=0,
                 description=""
@@ -1421,7 +1421,7 @@ class TournamentCog(commands.Cog):
                             current_streak = 0, best_win_streak = 0, best_loss_streak = 0,
                             total_kills = 0, total_deaths = 0, best_match_kills = 0,
                             total_elo_change = 0, last_elo_change = 0,
-                            xp = 0, level = 1, xp_to_next_level = 500,
+                            xp = 0, level = 1, xp_to_next_level = 250,
                             total_earnings = 0, tournament_participations = 0
                         WHERE guild_id = $1 AND name = $2""",
                         interaction.guild_id, bot_name
