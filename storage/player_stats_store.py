@@ -312,10 +312,10 @@ class PlayerStatsStore:
             # Filter players with at least 1 game and from the same guild
             players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
 
-            # Sort by total earnings (descending)
+            # Sort by total earnings (descending) - ensure numeric comparison
             sorted_players = sorted(
                 players_with_games,
-                key=lambda p: p.total_earnings,
+                key=lambda p: int(p.total_earnings) if p.total_earnings is not None else 0,
                 reverse=True
             )
 

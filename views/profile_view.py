@@ -191,9 +191,15 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats.kd_ratio:.2f}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats.avg_kills:.2f}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {stats.best_match_kills}")
+            kd_ratio = stats.kd_ratio if hasattr(stats, 'kd_ratio') else 0.0
+            avg_kills = stats.avg_kills if hasattr(stats, 'avg_kills') else 0.0
+            skill_rating = stats.skill_rating if hasattr(stats, 'skill_rating') else 0.0
+            best_match_kills = stats.best_match_kills if hasattr(stats, 'best_match_kills') else 0
+            
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Skill Rating: {skill_rating}/10.0")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {best_match_kills}")
         else:
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
         

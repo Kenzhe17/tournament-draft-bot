@@ -819,12 +819,12 @@ class AutoDistributeButton(discord.ui.Button):
 
 
 class AutoDistributeAvgButton(discord.ui.Button):
-    """Кнопка для автоматического распределения по AVG."""
+    """Кнопка для автоматического распределения по Skill Rating."""
 
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🎯 Распределить по AVG",
+            label="🎯 Распределить по Skill Rating",
             custom_id=f"auto_distribute_avg:{guild_id}",
         )
         self.guild_id = guild_id
@@ -869,15 +869,15 @@ class AutoDistributeAvgButton(discord.ui.Button):
 
         await interaction.response.defer()
 
-        # Distribute by AVG
-        await tournament.distribute_by_avg(self.guild_id)
+        # Distribute by Skill Rating
+        await tournament.distribute_by_skill_rating(self.guild_id)
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе AVG!"),
+            replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
             ephemeral=True
         )
 

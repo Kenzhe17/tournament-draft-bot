@@ -422,8 +422,8 @@ class Tournament:
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
 
-    async def distribute_by_avg(self, guild_id: int) -> None:
-        """Распределить игроков по кругам на основе AVG (средние киллы за матч)."""
+    async def distribute_by_skill_rating(self, guild_id: int) -> None:
+        """Распределить игроков по кругам на основе Skill Rating."""
         from storage.player_stats_store import player_stats_store
 
         # Collect all players from all circles
@@ -434,18 +434,15 @@ class Tournament:
                 user_id = self.player_user_ids.get(player_name, 0)
                 all_players.append((player_name, user_id))
 
-        # Get AVG for each player
-        players_with_avg = []
+        # Get Skill Rating for each player
+        players_with_rating = []
         for player_name, user_id in all_players:
             stats = await player_stats_store.get(guild_id, user_id)
-            if stats and stats.games > 0:
-                avg = stats.total_kills / stats.games
-            else:
-                avg = 0  # Default AVG for new players
-            players_with_avg.append((player_name, user_id, avg))
+            skill_rating = stats.skill_rating if stats else 1.0  # Default 1.0 for new players
+            players_with_rating.append((player_name, user_id, skill_rating))
 
-        # Sort by AVG (descending)
-        players_with_avg.sort(key=lambda x: x[2], reverse=True)
+        # Sort by Skill Rating (descending)
+        players_with_rating.sort(key=lambda x: x[2], reverse=True)
 
         # Clear all circles
         self.circle1 = []
@@ -458,28 +455,28 @@ class Tournament:
 
         # Top players become captains (circle1)
         for i in range(captain_count):
-            if i < len(players_with_avg):
-                player_name, user_id, _ = players_with_avg[i]
+            if i < len(players_with_rating):
+                player_name, user_id, _ = players_with_rating[i]
                 self.circle1.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
         # Next group goes to circle2
         for i in range(captain_count, captain_count * 2):
-            if i < len(players_with_avg):
-                player_name, user_id, _ = players_with_avg[i]
+            if i < len(players_with_rating):
+                player_name, user_id, _ = players_with_rating[i]
                 self.circle2.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
         # Next group goes to circle3
         for i in range(captain_count * 2, captain_count * 3):
-            if i < len(players_with_avg):
-                player_name, user_id, _ = players_with_avg[i]
+            if i < len(players_with_rating):
+                player_name, user_id, _ = players_with_rating[i]
                 self.circle3.append(player_name)
                 self.player_user_ids[player_name] = user_id
 
         # All remaining players go to circle4
-        for i in range(captain_count * 3, len(players_with_avg)):
-            player_name, user_id, _ = players_with_avg[i]
+        for i in range(captain_count * 3, len(players_with_rating)):
+            player_name, user_id, _ = players_with_rating[i]
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
 

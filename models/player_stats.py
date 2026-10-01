@@ -136,6 +136,41 @@ class PlayerStats:
         """Процент побед."""
         return (self.wins / self.games * 100) if self.games > 0 else 0.0
 
+    @property
+    def skill_rating(self) -> float:
+        """Рейтинг скилла на основе K/D, Win Rate и AVG Kills (шкала 1.0-10.0)."""
+        if self.games < 5:
+            # Штраф за мало игр
+            games_multiplier = self.games / 5
+        else:
+            games_multiplier = 1.0
+
+        # Безопасная обработка deaths = 0
+        deaths = self.total_deaths if self.total_deaths > 0 else 1
+        kd_ratio = self.total_kills / deaths
+
+        # Безопасная обработка total_games = 0
+        avg_kills = self.avg_kills if self.games > 0 else 0.0
+
+        # Win rate
+        win_rate = self.win_rate
+
+        # Расчёт сырого индекса
+        raw_index = (kd_ratio * 40) + (win_rate * 0.8) + (avg_kills * 5)
+
+        # Нормализация в диапазон 1.0-10.0
+        # Raw Index = 30 -> 1.0, Raw Index = 220 -> 10.0
+        rating = 1.0 + ((raw_index - 30) / (220 - 30)) * 9.0
+
+        # Применяем штраф за мало игр
+        rating *= games_multiplier
+
+        # Жёсткие рамки: 1.0-10.0
+        rating = max(1.0, min(10.0, rating))
+
+        # Округление до 1 знака после запятой
+        return round(rating, 1)
+
     def add_xp(self, amount: int) -> tuple[int, int]:
         """Добавить XP и автоматически повысить уровень. Возвращает (новый уровень, уровень до)."""
         self.xp += amount
