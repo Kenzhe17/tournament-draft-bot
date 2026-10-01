@@ -772,8 +772,11 @@ class AdminConfirmView(View):
                 logging.info(f"Received payouts from bet resolution: {payouts}")
                 for user_id, payout in payouts.items():
                     logging.info(f"Adding balance: user_id={user_id}, payout={payout}")
-                    await user_balance_store.add_balance(self.guild_id, user_id, payout)
-                    logging.info(f"Balance added successfully for user_id={user_id}")
+                    if payout > 0:
+                        await user_balance_store.add_balance(self.guild_id, user_id, payout)
+                        logging.info(f"Balance added successfully for user_id={user_id}")
+                    else:
+                        logging.info(f"Skipping balance addition for user_id={user_id}, payout=0")
             except Exception as e:
                 import logging
                 logging.error(f"Error resolving bets: {e}", exc_info=True)
