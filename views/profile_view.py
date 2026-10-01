@@ -191,10 +191,25 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
-            kd_ratio = stats.kd_ratio if hasattr(stats, 'kd_ratio') else 0.0
-            avg_kills = stats.avg_kills if hasattr(stats, 'avg_kills') else 0.0
-            skill_rating = stats.skill_rating if hasattr(stats, 'skill_rating') else 0.0
-            best_match_kills = stats.best_match_kills if hasattr(stats, 'best_match_kills') else 0
+            try:
+                kd_ratio = stats.kd_ratio
+            except AttributeError:
+                kd_ratio = 0.0
+            
+            try:
+                avg_kills = stats.avg_kills
+            except AttributeError:
+                avg_kills = 0.0
+            
+            try:
+                skill_rating = stats.skill_rating
+            except AttributeError:
+                skill_rating = 0.0
+            
+            try:
+                best_match_kills = stats.best_match_kills
+            except AttributeError:
+                best_match_kills = 0
             
             description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {kd_ratio:.2f}")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {avg_kills:.2f}")
