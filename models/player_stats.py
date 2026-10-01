@@ -147,8 +147,27 @@ class PlayerStats:
             self.xp -= self.xp_to_next_level
             self.level += 1
             levels_gained += 1
-            # Fixed XP needed for next level: 250 XP per level
-            self.xp_to_next_level = 250
+            # Calculate XP needed for next level based on current level
+            if self.level <= 10:
+                self.xp_to_next_level = 250
+            elif self.level <= 20:
+                self.xp_to_next_level = 270
+            elif self.level <= 30:
+                self.xp_to_next_level = 300
+            elif self.level <= 40:
+                self.xp_to_next_level = 330
+            elif self.level <= 50:
+                self.xp_to_next_level = 360
+            elif self.level <= 60:
+                self.xp_to_next_level = 390
+            elif self.level <= 70:
+                self.xp_to_next_level = 420
+            elif self.level <= 80:
+                self.xp_to_next_level = 450
+            elif self.level <= 90:
+                self.xp_to_next_level = 470
+            else:
+                self.xp_to_next_level = 500
 
         return self.level, old_level
 
