@@ -200,9 +200,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {avg_kills:.2f}")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Skill Rating: {skill_rating}/10.0")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {best_match_kills}")
-            
-            # Debug logging
-            print(f"[DEBUG] Profile skill_rating calculation: user_id={self.user_id}, total_kills={stats.total_kills if hasattr(stats, 'total_kills') else 'N/A'}, total_deaths={stats.total_deaths if hasattr(stats, 'total_deaths') else 'N/A'}, wins={stats.wins if hasattr(stats, 'wins') else 'N/A'}, games={stats.games if hasattr(stats, 'games') else 'N/A'}, skill_rating={skill_rating}")
         else:
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
         
