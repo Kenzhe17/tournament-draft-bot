@@ -1295,50 +1295,63 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         embed.description = replace_emojis("⚪ Пока нет данных. Сыграйте хотя бы один турнир!")
         return embed
 
-    # For money leaderboard, we need to sort by balance
+    # For money leaderboard, get balances for display (SQL already sorted by balance)
     if leaderboard_type == "money":
-        # Get balances for all players and sort
+        # Get balances for all players (for display only)
         player_balances = []
         for player in players:
             balance = await user_balance_store.get_balance(guild_id, player.user_id)
             player_balances.append((player, balance))
 
-        # Sort by balance (descending)
-        player_balances.sort(key=lambda x: x[1], reverse=True)
-        players = [p for p, b in player_balances]
-
     lines = []
     global_rank = (page - 1) * 10
 
-    for i, player in enumerate(players):
-        rank = global_rank + i + 1
+    # For money leaderboard, use the pre-fetched balances
+    if leaderboard_type == "money":
+        for i, (player, balance) in enumerate(player_balances):
+            rank = global_rank + i + 1
 
-        # Highlight top 3
-        if rank == 1:
-            rank_emoji = replace_emojis("gold_medal")
-        elif rank == 2:
-            rank_emoji = replace_emojis("silver_medal")
-        elif rank == 3:
-            rank_emoji = replace_emojis("bronze_medal")
-        else:
-            rank_emoji = f"{rank}."
+            # Highlight top 3
+            if rank == 1:
+                rank_emoji = replace_emojis("gold_medal")
+            elif rank == 2:
+                rank_emoji = replace_emojis("silver_medal")
+            elif rank == 3:
+                rank_emoji = replace_emojis("bronze_medal")
+            else:
+                rank_emoji = f"{rank}."
 
-        # Format name with cosmetics - use stored name from stats
-        formatted_name = format_player_name(guild_id, player.user_id, player.name)
+            # Format name with cosmetics
+            formatted_name = format_player_name(guild_id, player.user_id, player.name)
 
-        # Get rank emoji for level leaderboard
-        player_rank = get_rank_emoji(player.level)
-
-        if leaderboard_type == "level":
-            line = f"{rank_emoji} {formatted_name} | {player_rank} — lvl {player.level}"
-        elif leaderboard_type == "money":
-            # Get current balance (already sorted above)
-            balance = await user_balance_store.get_balance(guild_id, player.user_id)
             line = f"{rank_emoji} {formatted_name} — {balance:,} {replace_emojis('money')}"
-        else:  # elo
-            line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
+            lines.append(line)
+    else:
+        for i, player in enumerate(players):
+            rank = global_rank + i + 1
 
-        lines.append(line)
+            # Highlight top 3
+            if rank == 1:
+                rank_emoji = replace_emojis("gold_medal")
+            elif rank == 2:
+                rank_emoji = replace_emojis("silver_medal")
+            elif rank == 3:
+                rank_emoji = replace_emojis("bronze_medal")
+            else:
+                rank_emoji = f"{rank}."
+
+            # Format name with cosmetics - use stored name from stats
+            formatted_name = format_player_name(guild_id, player.user_id, player.name)
+
+            # Get rank emoji for level leaderboard
+            player_rank = get_rank_emoji(player.level)
+
+            if leaderboard_type == "level":
+                line = f"{rank_emoji} {formatted_name} | {player_rank} — lvl {player.level}"
+            else:  # elo
+                line = f"{rank_emoji} {formatted_name} — {int(player.elo)} ELO"
+
+            lines.append(line)
 
     embed.description = "\n".join(lines)
     embed.set_footer(text=f"Страница {page}/{total_pages}")
