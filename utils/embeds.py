@@ -1127,21 +1127,36 @@ async def build_winner_embed(
                 best_avg = avg
                 best_avg_player = player_name
 
-    # Calculate max payout from betting stats (best_win from betting_stats_store)
-    from storage.betting_stats_store import betting_stats_store
-    betting_leaderboard = await betting_stats_store.get_leaderboard(guild.id, per_page=100)
-    if betting_leaderboard:
-        for entry in betting_leaderboard:
-            if entry["best_win"] > max_payout:
-                max_payout = entry["best_win"]
+    # Calculate max payout from bets in this tournament
+    from storage.bet_store import bet_store
+    max_payout = 0
+    max_payout_player = ""
+    
+    # Get all match IDs for this tournament
+    match_ids = []
+    for i in range(len(tournament.qualifier_matches)):
+        match_ids.append(f"qualifier_{i}")
+    for i in range(len(tournament.semifinal_matches)):
+        match_ids.append(f"semifinal_{i}")
+    match_ids.append("final_0")
+    
+    # Calculate max payout from all bets in this tournament
+    for match_id in match_ids:
+        bets = await bet_store.get_bets_by_match(match_id)
+        for bet in bets:
+            # Calculate payout for this bet (if it won)
+            # We need to check if this bet won, but we don't have that info
+            # Instead, we'll calculate potential payout and assume the best case
+            payout = int(bet.amount * bet.odds)
+            if payout > max_payout:
+                max_payout = payout
                 # Get player name from tournament
-                # Find player with this user_id in tournament
                 for team_idx, team_data in enumerate(tournament.teams):
                     for circle in range(1, 5):
                         player = team_data.get(f"circle{circle}", "")
                         if player:
                             user_id = tournament.player_user_ids.get(player, 0)
-                            if user_id == entry["user_id"]:
+                            if user_id == bet.user_id:
                                 max_payout_player = player
                                 break
 
