@@ -101,9 +101,9 @@ class TournamentBot(commands.Bot):
                 from storage.db import get_pool
                 pool = await get_pool()
                 async with pool.acquire() as conn:
-                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM players")
+                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM player_stats")
                     guild_ids = [row[0] for row in cursor]
-                
+
                 for guild_id in guild_ids:
                     try:
                         guild_synced = await self.tree.sync(guild=discord.Object(id=guild_id))

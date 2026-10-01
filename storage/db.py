@@ -401,21 +401,31 @@ async def init_db() -> None:
         """)
 
         # Create minigames table
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS minigames (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                category TEXT NOT NULL,
-                difficulty TEXT NOT NULL,
-                min_bet INTEGER NOT NULL,
-                max_bet INTEGER NOT NULL,
-                multiplier REAL NOT NULL,
-                is_pvp BOOLEAN DEFAULT FALSE,
-                is_pve BOOLEAN DEFAULT TRUE,
-                is_active BOOLEAN DEFAULT TRUE
-            )
-        """)
+        try:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS minigames (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT NOT NULL,
+                    difficulty TEXT NOT NULL,
+                    min_bet INTEGER NOT NULL,
+                    max_bet INTEGER NOT NULL,
+                    multiplier REAL NOT NULL,
+                    is_pvp BOOLEAN DEFAULT FALSE,
+                    is_pve BOOLEAN DEFAULT TRUE,
+                    is_active BOOLEAN DEFAULT TRUE
+                )
+            """)
+            logger.info("minigames table created or already exists")
+        except Exception as e:
+            logger.error(f"Failed to create minigames table: {e}", exc_info=True)
+
+        # Add command_name column to minigames if table exists
+        try:
+            await conn.execute("ALTER TABLE minigames ADD COLUMN IF NOT EXISTS command_name TEXT")
+        except Exception as e:
+            logger.warning(f"Could not add command_name column to minigames: {e}")
 
         # Create minigame_sessions table
         await conn.execute("""
