@@ -1028,11 +1028,12 @@ class MatchButton(discord.ui.Button):
             return
 
         # Stats are filled - show stats with winner selection buttons
-        # Get team names
+        # Get team names - use team_names dict if available, otherwise use captain
         teams = []
         for team_index in match:
             team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
             captain = team_data.get("captain", f"П{team_index + 1}")
+            # Use team_names if set, otherwise use captain name
             team_name = self.tournament.team_names.get(team_index, captain)
             teams.append((team_index, team_name))
 

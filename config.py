@@ -156,6 +156,10 @@ GAME_EMOJIS = {
     "num_2": os.getenv("EMOJI_NUM_2", ""),
     "num_3": os.getenv("EMOJI_NUM_3", ""),
     "num_4": os.getenv("EMOJI_NUM_4", ""),
+    "num_5": os.getenv("EMOJI_NUM_5", ""),
+    "num_6": os.getenv("EMOJI_NUM_6", ""),
+    "num_7": os.getenv("EMOJI_NUM_7", ""),
+    "num_8": os.getenv("EMOJI_NUM_8", ""),
 
     # Icon emojis
     "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
@@ -234,6 +238,10 @@ STANDARD_EMOJIS = {
     "num_2": "2️⃣",
     "num_3": "3️⃣",
     "num_4": "4️⃣",
+    "num_5": "5️⃣",
+    "num_6": "6️⃣",
+    "num_7": "7️⃣",
+    "num_8": "8️⃣",
 
     # Interface
     "success": "✅",
@@ -463,6 +471,10 @@ def replace_emojis(text: str) -> str:
         "2️⃣": "num_2",
         "3️⃣": "num_3",
         "4️⃣": "num_4",
+        "5️⃣": "num_5",
+        "6️⃣": "num_6",
+        "7️⃣": "num_7",
+        "8️⃣": "num_8",
     }
 
     # Direct emoji name mapping for custom emoji names passed directly
@@ -477,7 +489,7 @@ def replace_emojis(text: str) -> str:
         "icon_18plus", "icon_heart", "icon_white_sword", "icon_v_badge", "icon_cards", "icon_cat_ears", "icon_wing",
         "check", "cross",
         "gold_medal", "silver_medal", "bronze_medal",
-        "num_1", "num_2", "num_3", "num_4",
+        "num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8",
         "room",
         "winner",
         "emoji_basic_case", "emoji_premium_case", "emoji_elite_case", "emoji_special_case",

@@ -746,11 +746,13 @@ class AdminConfirmView(View):
             store.set(tournament)
 
             # Resolve betting
+            # For qualifiers and semifinals, get the winning team index from tournament
+            # For final, use the winning_team_index parameter passed to confirm_callback
             if self.match_type == "qualifier":
                 winning_team_index = tournament.qualifier_winners[self.match_index]
             elif self.match_type == "semifinal":
                 winning_team_index = tournament.semifinal_pending_winners[self.match_index]
-            # For final, use the winning_team_index parameter passed to confirm_callback
+            # For final, winning_team_index is already the correct parameter
 
             import logging
             logging.info(f"Confirming winner: match_type={self.match_type}, winning_team_index={winning_team_index}")
