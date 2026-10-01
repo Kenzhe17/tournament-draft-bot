@@ -52,7 +52,7 @@ class RobView(discord.ui.View):
         """Построить embed для ограбления."""
         embed = discord.Embed(
             title=f"{get_emoji('a_sparkle')} **ОГРАБЛЕНИЕ | /rob**",
-            color=0x4539717
+            color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
@@ -325,7 +325,7 @@ class RobGroupView(discord.ui.View):
 
         embed = discord.Embed(
             title=f"{get_emoji('a_sparkle')} **ГРУППОВОЕ ОГРАБЛЕНИЕ | /robgroup**",
-            color=0x4539717
+            color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
