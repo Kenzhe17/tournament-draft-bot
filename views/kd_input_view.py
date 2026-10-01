@@ -252,13 +252,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             from storage.user_balance_store import user_balance_store
             await user_balance_store.add_balance(guild_id, user_id, coin_reward)
 
-            # Add bonus ELO for kills (only if team won)
-            if team_won:
-                kill_bonus = kills  # 1 ELO per kill
-                updated_stats.elo += kill_bonus
-                updated_stats.total_elo_change += kill_bonus
-                updated_stats.last_elo_change = updated_stats.last_elo_change + kill_bonus if updated_stats.last_elo_change else kill_bonus
-
             import logging
             logging.info(f"Saving stats for {player_name}: elo={updated_stats.elo}, elo_change={elo_change}, games={updated_stats.games}, coins={coin_reward}")
 
