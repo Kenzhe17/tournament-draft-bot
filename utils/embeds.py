@@ -744,7 +744,8 @@ async def build_qualifiers_embed(
 
             if is_completed:
                 winner_idx = tournament.qualifier_winners[i]
-                winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+                # Use team_names to get the custom team name
+                winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
@@ -840,7 +841,8 @@ async def build_semifinals_embed(
 
             if is_completed:
                 winner_idx = tournament.semifinal_winners[i]
-                winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+                # Use team_names to get the custom team name
+                winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
@@ -931,7 +933,8 @@ async def build_final_embed(
     winner_info = ""
     if tournament.winner_team_index is not None and tournament.phase.value == "complete":
         winner_idx = tournament.winner_team_index
-        winner_name = tournament.team_names.get(winner_idx, tournament.teams[winner_idx].get("captain", f"П{winner_idx + 1}"))
+        # Use team_names to get the custom team name
+        winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
         winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
     # Build footer
