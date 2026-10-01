@@ -1,7 +1,10 @@
 """Database connection and utilities."""
 
 import asyncpg
+import logging
 from config import DATABASE_URL
+
+logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
@@ -249,14 +252,18 @@ async def init_db() -> None:
         """)
 
         # Create user_balance table for betting system
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_balance (
-                guild_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                balance INTEGER DEFAULT 100,
-                PRIMARY KEY (guild_id, user_id)
-            )
-        """)
+        try:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_balance (
+                    guild_id BIGINT NOT NULL,
+                    user_id BIGINT NOT NULL,
+                    balance INTEGER DEFAULT 100,
+                    PRIMARY KEY (guild_id, user_id)
+                )
+            """)
+            logger.info("user_balance table created or already exists")
+        except Exception as e:
+            logger.error(f"Failed to create user_balance table: {e}", exc_info=True)
 
         # Create bets table for betting system
         await conn.execute("""

@@ -79,7 +79,7 @@ class TournamentBot(commands.Bot):
                 except Exception as e:
                     logger.error(f"Failed to sync games from config: {e}")
             except Exception as e:
-                logger.error("Failed to initialize database: %s", e)
+                logger.error("Failed to initialize database: %s", e, exc_info=True)
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.coin_flip")
