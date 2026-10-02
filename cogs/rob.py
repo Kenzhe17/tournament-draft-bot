@@ -151,7 +151,7 @@ class RobStartButton(discord.ui.Button):
                 stealable_items.append(item)
 
         has_items = len(stealable_items) > 0
-        use_item_steal = has_items and random.random() < 0.4  # 40% шанс кражи предмета
+        use_item_steal = has_items and random.random() < 0.5  # 50% шанс кражи предмета
 
         # Бросок на успех/провал
         success = random.random() < 0.5  # 50% шанс
@@ -557,7 +557,7 @@ class RobGroupStartButton(discord.ui.Button):
                 stealable_items.append(item)
 
         has_items = len(stealable_items) > 0
-        use_item_steal = has_items and random.random() < 0.4
+        use_item_steal = has_items and random.random() < 0.5
 
         # Бросок на успех/провал
         success = random.random() < success_chance
