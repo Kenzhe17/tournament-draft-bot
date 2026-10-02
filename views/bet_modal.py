@@ -127,6 +127,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 user_name=interaction.user.display_name,
                 match_id=match_id,
                 team_name=self.team_name,
+                team_index=self.team_index,  # Сохраняем индекс команды
                 amount=amount,  # Full amount
                 odds=0.0  # Will be set in save_bet
             )

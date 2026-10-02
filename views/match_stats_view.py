@@ -765,9 +765,21 @@ class AdminConfirmView(View):
 
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
             winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
+            
+            # Calculate winning_team_index (0 or 1) based on match teams
+            if self.match_type == "qualifier":
+                match = tournament.qualifier_matches[self.match_index]
+            elif self.match_type == "semifinal":
+                match = tournament.semifinal_matches[self.match_index]
+            elif self.match_type == "final":
+                match = tournament.final_teams
+            else:
+                match = (0, 0)
+            
+            winning_team_index_resolved = 0 if winning_team_index == match[0] else 1
 
             try:
-                payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+                payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name, winning_team_index_resolved)
                 import logging
                 logging.info(f"Received payouts from bet resolution: {payouts}")
                 for user_id, payout in payouts.items():

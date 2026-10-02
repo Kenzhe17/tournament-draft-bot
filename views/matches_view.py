@@ -275,12 +275,13 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         team_a_name = tournament.team_names.get(self.match[0], team_a_data.get("captain", f"Team {self.match[0]}"))
         team_b_name = tournament.team_names.get(self.match[1], team_b_data.get("captain", f"Team {self.match[1]}"))
         winning_team_name = team_a_name if self.team_index == self.match[0] else team_b_name
+        winning_team_index = 0 if self.team_index == self.match[0] else 1
 
         import logging
-        logging.info(f"Resolving bets: match_id={match_id}, team_a_name='{team_a_name}', team_b_name='{team_b_name}', winning_team_name='{winning_team_name}'")
+        logging.info(f"Resolving bets: match_id={match_id}, team_a_name='{team_a_name}', team_b_name='{team_b_name}', winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
 
         try:
-            payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
+            payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name, winning_team_index)
             for user_id, payout in payouts.items():
                 if payout > 0:
                     await user_balance_store.add_balance(self.guild_id, user_id, payout)

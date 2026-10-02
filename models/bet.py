@@ -12,6 +12,7 @@ class Bet:
     user_name: str
     match_id: str
     team_name: str
+    team_index: int  # Индекс команды (0 или 1)
     amount: int
     odds: float  # Odds at the time of betting (fixed for payout)
 
@@ -23,6 +24,7 @@ class Bet:
             "user_name": self.user_name,
             "match_id": self.match_id,
             "team_name": self.team_name,
+            "team_index": self.team_index,
             "amount": self.amount,
             "odds": self.odds,
         }
@@ -36,6 +38,7 @@ class Bet:
             user_name=data.get("user_name", "Unknown"),
             match_id=data.get("match_id", ""),
             team_name=data.get("team_name", ""),
+            team_index=data.get("team_index", 0),
             amount=data.get("amount", 0),
             odds=data.get("odds", 1.9),
         )

@@ -292,12 +292,12 @@ class BetStore:
 
                     await conn.execute(
                         """
-                        INSERT INTO bets (guild_id, user_id, user_name, match_id, team_name, amount, odds)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        INSERT INTO bets (guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                         ON CONFLICT (guild_id, user_id, match_id)
-                        DO UPDATE SET user_name = $3, team_name = $5, amount = $6, odds = $7
+                        DO UPDATE SET user_name = $3, team_name = $5, team_index = $6, amount = $7, odds = $8
                         """,
-                        bet.guild_id, bet.user_id, bet.user_name, bet.match_id, bet.team_name, bet.amount, bet.odds
+                        bet.guild_id, bet.user_id, bet.user_name, bet.match_id, bet.team_name, bet.team_index, bet.amount, bet.odds
                     )
             else:
                 from storage.user_balance_store import user_balance_store
@@ -331,10 +331,10 @@ class BetStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, user_name, match_id, team_name, amount, odds FROM bets WHERE match_id = $1",
+                    "SELECT guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds FROM bets WHERE match_id = $1",
                     match_id
                 )
-                return [Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], amount=row["amount"], odds=row["odds"]) for row in rows]
+                return [Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"]) for row in rows]
         else:
             return self._bets.get(match_id, [])
 
@@ -345,11 +345,11 @@ class BetStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, user_name, match_id, team_name, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND match_id = $3",
+                    "SELECT guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND match_id = $3",
                     guild_id, user_id, match_id
                 )
                 if row:
-                    return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], amount=row["amount"], odds=row["odds"])
+                    return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"])
                 return None
         else:
             bets = self._bets.get(match_id, [])
@@ -388,7 +388,7 @@ class BetStore:
             }
             self.save()
 
-    async def resolve_match_bets(self, guild_id: int, match_id: str, winning_team_name: str) -> dict[int, int]:
+    async def resolve_match_bets(self, guild_id: int, match_id: str, winning_team_name: str, winning_team_index: int) -> dict[int, int]:
         """Resolve bets for a match and return payouts (user_id -> amount)."""
         from storage.betting_stats_store import betting_stats_store
         import logging
@@ -396,23 +396,23 @@ class BetStore:
         bets = await self.get_bets_by_match(match_id)
         payouts = {}
 
-        logging.info(f"Resolving bets for match_id={match_id}, winning_team_name='{winning_team_name}'")
+        logging.info(f"Resolving bets for match_id={match_id}, winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
         logging.info(f"Found {len(bets)} bets for this match")
 
         # Get current odds for the winning team (final odds)
         current_odds = self.get_current_odds(match_id)
         if current_odds:
             logging.info(f"Current odds: team_a='{current_odds.team_a_name}' ({current_odds.team_a_odds}x), team_b='{current_odds.team_b_name}' ({current_odds.team_b_odds}x)")
-            # Determine which team won based on team name
-            if winning_team_name == current_odds.team_a_name:
+            # Determine which team won based on team index
+            if winning_team_index == 0:
                 winning_odds = current_odds.team_a_odds
-                logging.info(f"Matched to team_a with odds {winning_odds}x")
-            elif winning_team_name == current_odds.team_b_name:
+                logging.info(f"Matched to team_a (index 0) with odds {winning_odds}x")
+            elif winning_team_index == 1:
                 winning_odds = current_odds.team_b_odds
-                logging.info(f"Matched to team_b with odds {winning_odds}x")
+                logging.info(f"Matched to team_b (index 1) with odds {winning_odds}x")
             else:
-                # Fallback: try to match partial name or use default
-                logging.warning(f"Team name mismatch: winning_team_name='{winning_team_name}' not in odds")
+                # Fallback: use default
+                logging.warning(f"Invalid team_index: {winning_team_index}, using default 1.9x")
                 winning_odds = 1.9
         else:
             logging.warning(f"No odds found for match_id={match_id}, using default 1.9x")
@@ -420,19 +420,19 @@ class BetStore:
 
         # Calculate payouts based on final odds (not fixed at betting time)
         for bet in bets:
-            logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', amount={bet.amount}, odds={bet.odds}")
-            if bet.team_name == winning_team_name:
+            logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', team_index={bet.team_index}, amount={bet.amount}, odds={bet.odds}")
+            if bet.team_index == winning_team_index:
                 # Winning bet: payout = amount * final odds
                 payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
-                logging.info(f"WINNING bet: user_id={bet.user_id}, payout={payout}")
+                logging.info(f"WINNING bet: user_id={bet.user_id}, team_index={bet.team_index} == {winning_team_index}, payout={payout}")
                 # Record as win (profit = payout - bet_amount)
                 profit = payout - bet.amount
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
             else:
                 # Losing bet: no payout
                 payouts[bet.user_id] = 0
-                logging.info(f"LOSING bet: user_id={bet.user_id}, team_name='{bet.team_name}' != '{winning_team_name}'")
+                logging.info(f"LOSING bet: user_id={bet.user_id}, team_index={bet.team_index} != {winning_team_index}")
                 # Record as loss (bet amount lost)
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
 

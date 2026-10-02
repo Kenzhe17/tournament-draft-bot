@@ -286,40 +286,18 @@ async def init_db() -> None:
                 user_name TEXT NOT NULL,
                 match_id TEXT NOT NULL,
                 team_name TEXT NOT NULL,
+                team_index INTEGER NOT NULL DEFAULT 0,
                 amount INTEGER NOT NULL,
+                odds REAL NOT NULL DEFAULT 1.9,
                 PRIMARY KEY (guild_id, user_id, match_id)
             )
         """)
         
-        # Migrations for bets table
-        # Drop and recreate table if it exists with wrong schema
-        # Check if table exists and has correct primary key
-        table_info = await conn.fetch("""
-            SELECT conname, contype
-            FROM pg_constraint
-            WHERE conrelid = 'bets'::regclass
-        """)
-        
-        has_correct_pk = any(
-            row['conname'] == 'bets_pkey' and row['contype'] == 'p'
-            for row in table_info
-        )
-        
-        if not has_correct_pk:
-            # Drop existing table and recreate with correct schema
-            await conn.execute("DROP TABLE IF EXISTS bets CASCADE")
-            await conn.execute("""
-                CREATE TABLE bets (
-                    guild_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    user_name TEXT NOT NULL,
-                    match_id TEXT NOT NULL,
-                    team_name TEXT NOT NULL,
-                    amount INTEGER NOT NULL,
-                    odds REAL NOT NULL DEFAULT 1.9,
-                    PRIMARY KEY (guild_id, user_id, match_id)
-                )
-            """)
+        # Migration: add team_index column if it doesn't exist
+        try:
+            await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS team_index INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # Column might already exist
         else:
             # Add odds column if it doesn't exist
             try:
