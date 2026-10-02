@@ -227,10 +227,12 @@ class JoinPoolButton(discord.ui.Button):
         self.limit = limit
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         try:
             tournament = store.get(self.guild_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
                 )
@@ -238,7 +240,7 @@ class JoinPoolButton(discord.ui.Button):
 
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
                     ephemeral=True
                 )
@@ -246,7 +248,7 @@ class JoinPoolButton(discord.ui.Button):
 
             # Check if pool is full
             if len(tournament.players_pool) >= int(tournament.size.value):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"{replace_emojis('❌')} Турнир заполнен (максимум {tournament.size.value} игрока).",
                     ephemeral=True
                 )
@@ -268,7 +270,7 @@ class JoinPoolButton(discord.ui.Button):
 
             # Check if user already in pool
             if user_name in tournament.players_pool:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Вы уже участвуете в турнире."),
                     ephemeral=True
                 )
@@ -279,8 +281,8 @@ class JoinPoolButton(discord.ui.Button):
             tournament.player_user_ids[user_name] = interaction.user.id
             store.set(tournament)
 
-            # Send response first
-            await interaction.response.send_message(
+            # Send response
+            await interaction.followup.send(
                 replace_emojis("✅ Вы добавлены в турнир!"),
                 ephemeral=True
             )
@@ -291,10 +293,12 @@ class JoinPoolButton(discord.ui.Button):
         except Exception as e:
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
             try:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
+            except discord.NotFound:
+                pass
             except:
                 pass
 
@@ -396,21 +400,27 @@ class ExitButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         tournament = store.get(interaction.guild_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не найден."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         if tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         user_name = interaction.user.display_name
@@ -422,11 +432,13 @@ class ExitButton(discord.ui.Button):
         if tournament.formation_mode == FormationMode.RANDOM:
             # RANDOM mode: check players_pool
             if user_name not in tournament.players_pool:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Вы не участвуете в турнире."),
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                try:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Вы не участвуете в турнире."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
                 return
 
             # Remove from pool
@@ -436,21 +448,25 @@ class ExitButton(discord.ui.Button):
         else:
             # Other modes: check circles
             if user_name not in tournament.all_players:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Вы не участвуете в турнире."),
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                try:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Вы не участвуете в турнире."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
                 return
 
             # Remove player
             success = tournament.remove_player(user_name)
             if not success:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось удалить игрока."),
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                try:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Не удалось удалить игрока."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
                 return
 
         store.set(tournament)
@@ -458,10 +474,13 @@ class ExitButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.send_message(
-            replace_emojis("✅ Вы вышли из турнира."),
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                replace_emojis("✅ Вы вышли из турнира."),
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
 
@@ -477,22 +496,28 @@ class DeletePlayerButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут удалять игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(interaction.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Get list of all players
@@ -502,11 +527,13 @@ class DeletePlayerButton(discord.ui.Button):
             players = list(tournament.all_players)
 
         if not players:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нет зарегистрированных игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Create select menu with pagination
@@ -579,22 +606,28 @@ class ReplacePlayerButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(interaction.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Get list of all players
@@ -604,11 +637,13 @@ class ReplacePlayerButton(discord.ui.Button):
             players = list(tournament.all_players)
 
         if not players:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нет зарегистрированных игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Create select menu with pagination
@@ -622,15 +657,21 @@ class ReplacePlayerButton(discord.ui.Button):
             old_player = select.values[0]
             # Show modal for new player
             modal = ReplacePlayerModal(self.guild_id, old_player)
-            await interaction.response.send_modal(modal)
+            try:
+                await interaction.response.send_modal(modal)
+            except discord.NotFound:
+                pass
 
         select.callback = select_callback
 
-        await interaction.response.send_message(
-            "Выберите игрока для замены:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                "Выберите игрока для замены:",
+                view=view,
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"):
