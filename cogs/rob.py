@@ -594,12 +594,11 @@ class RobGroupStartButton(discord.ui.Button):
                 # Продажа за 30% стоимости
                 sale_price = int(stolen_item.price * 0.3)
                 share = sale_price // len(members)
+                total_stolen = sale_price
 
                 # Выплатить всем участникам
                 for member_id in members:
                     await user_balance_store.add_balance(guild_id, member_id, share)
-
-                result_text = f"{get_emoji('a_sparkle')} Банда украла предмет **{stolen_item.name}** и продала его за `{sale_price}` {get_emoji('money')}!\n{get_emoji('white_arrow')} Каждый участник получил по `{share}` {get_emoji('money')}.\n\n{get_emoji('white_dot')} *Монеты в сейфе жертвы защищены от ограбления.*"
             else:
                 # Кража монет
                 percent = random.uniform(0.1, 0.5)
@@ -610,10 +609,11 @@ class RobGroupStartButton(discord.ui.Button):
 
                 # Разделить поровну
                 share = loot // len(members)
+                total_stolen = loot
+
+                # Выплатить всем участникам
                 for member_id in members:
                     await user_balance_store.add_balance(guild_id, member_id, share)
-
-                result_text = f"{get_emoji('a_sparkle')} Банда успешно украла `{loot}` {get_emoji('money')}!\n{get_emoji('white_arrow')} Каждый участник получил по `{share}` {get_emoji('money')}.\n\n{get_emoji('white_dot')} *Монеты в сейфе жертвы защищены от ограбления.*"
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)
@@ -654,8 +654,6 @@ class RobGroupStartButton(discord.ui.Button):
             # Выплатить жертве
             await user_balance_store.add_balance(guild_id, victim_id, collected)
 
-            result_text = f"{replace_emojis('❌')} **ПРОВАЛ!** Банда выплатила штраф **{collected}** {get_emoji('money')} жертве."
-
         # Установить cooldown для всех участников (пропускаем владельца бота)
         for member_id in members:
             if member_id != BOT_OWNER_ID:
@@ -665,11 +663,52 @@ class RobGroupStartButton(discord.ui.Button):
         if self.game_view.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.game_view.message_id]
 
-        await interaction.response.edit_message(
-            content=result_text,
-            embed=None,
-            view=None
-        )
+        # Build success embed
+        if success:
+            embed = discord.Embed(
+                title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ | УСПЕХ**",
+                color=0x57F287  # зелёный
+            )
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Жертва",
+                value=f"<@{victim_id}>",
+                inline=False
+            )
+            
+            if use_item_steal:
+                stolen_amount = sale_price
+            else:
+                stolen_amount = loot
+                
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Результат",
+                value=f"• Украдено всего: **`{stolen_amount}`** {get_emoji('money')}\n• Доля каждого: **`{share}`** {get_emoji('money')}",
+                inline=False
+            )
+            party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Состав банды ({len(members)})",
+                value=party_list,
+                inline=False
+            )
+            embed.set_footer(text=f"{get_emoji('white_dot')} Монеты в сейфе жертвы защищены от ограбления.")
+            
+            await interaction.response.edit_message(embed=embed, view=None)
+        else:
+            # Failure embed
+            embed = discord.Embed(
+                title=f"{get_emoji('white_arrow')} **ГРУППОВОЕ ОГРАБЛЕНИЕ | ПРОВАЛ**",
+                color=0xED4245  # красный
+            )
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Штраф",
+                value=f"Банда выплатила штраф **{collected}** {get_emoji('money')} жертве.",
+                inline=False
+            )
+            
+            await interaction.response.edit_message(embed=embed, view=None)
 
 
 class RobGroupCancelButton(discord.ui.Button):
