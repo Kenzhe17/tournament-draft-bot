@@ -61,8 +61,8 @@ def build_help_category_embed(category: str) -> discord.Embed:
                 {
                     "name": "/tournament create",
                     "description": "Создать новый турнир",
-                    "params": "size (8/16/32), formation (manual/skill/random)",
-                    "example": "/tournament create size=16 formation=random",
+                    "params": "size (8/16/32), formation (skill/elo/random)",
+                    "example": "/tournament create size=16 formation=elo",
                     "access": "орг"
                 },
                 {
@@ -514,7 +514,7 @@ async def build_setup_embed(
 ) -> discord.Embed:
     """Embed настройки турнира."""
     status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
-    formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "Ручной" if tournament.formation_mode == FormationMode.MANUAL else "RANDOM"
+    formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "ELO" if tournament.formation_mode == FormationMode.ELO else "RANDOM"
     status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
 
     # Get organizer info
@@ -562,7 +562,7 @@ async def build_setup_embed(
             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации"
         )
     else:
-        # MANUAL/ELO modes: show circles
+        # ELO/SKILL modes: show circles
         circle_counts = tournament.get_circle_counts()
 
         # Build circle sections

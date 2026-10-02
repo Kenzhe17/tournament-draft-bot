@@ -809,12 +809,12 @@ class AdminAddButton(discord.ui.Button):
 
 
 class AutoDistributeButton(discord.ui.Button):
-    """Кнопка для автоматического распределения по Skill Rating."""
+    """Кнопка для автоматического распределения по ELO."""
 
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🎯 Распределить по Skill Rating",
+            label="🎯 Распределить по ELO",
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
@@ -838,9 +838,9 @@ class AutoDistributeButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        if tournament.formation_mode != FormationMode.SKILL:
+        if tournament.formation_mode != FormationMode.ELO:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
+                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -859,15 +859,15 @@ class AutoDistributeButton(discord.ui.Button):
 
         await interaction.response.defer()
 
-        # Distribute by Skill Rating
-        await tournament.distribute_by_skill_rating(self.guild_id)
+        # Distribute by ELO
+        await tournament.distribute_by_elo(self.guild_id)
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
+            replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
             ephemeral=True
         )
 
@@ -987,7 +987,7 @@ class StartTournamentButton(discord.ui.Button):
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
         else:
-            # MANUAL/SKILL modes: check circles
+            # ELO/SKILL modes: check circles
             if not tournament.is_setup_complete:
                 captain_count = tournament.captain_count
                 msg = f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
@@ -1011,7 +1011,7 @@ class StartTournamentButton(discord.ui.Button):
                 ephemeral=True
             )
         else:
-            # Manual or Skill mode: shuffle circles and start draft
+            # Manual or ELO mode: shuffle circles and start draft
             tournament.shuffle_circles()
             tournament.start_draft()
             store.set(tournament)
@@ -1096,7 +1096,7 @@ class SetupView(discord.ui.View):
             join_button = JoinPoolButton(tournament.guild_id, current, limit)
             self.add_item(join_button)
         else:
-            # MANUAL/SKILL modes: circle buttons
+            # ELO/SKILL modes: circle buttons
             circle_counts = tournament.get_circle_counts()
 
             # Always show all 4 circles with the same buttons
@@ -1107,10 +1107,11 @@ class SetupView(discord.ui.View):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
                 self.add_item(button)
 
-            # Add auto-distribute buttons if in SKILL mode
-            if tournament.formation_mode == FormationMode.SKILL:
+            # Add auto-distribute buttons based on formation mode
+            if tournament.formation_mode == FormationMode.ELO:
                 auto_distribute_button = AutoDistributeButton(tournament.guild_id)
                 self.add_item(auto_distribute_button)
+            elif tournament.formation_mode == FormationMode.SKILL:
                 auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)
                 self.add_item(auto_distribute_avg_button)
 

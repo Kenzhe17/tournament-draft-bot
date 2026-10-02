@@ -53,7 +53,7 @@ class FormationMode(str, Enum):
     """Режим формирования кругов."""
 
     SKILL = "skill"
-    MANUAL = "manual"
+    ELO = "elo"
     RANDOM = "random"
 
 
@@ -106,7 +106,7 @@ class Tournament:
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
     registration: RegistrationState = RegistrationState.CLOSED
-    formation_mode: FormationMode = FormationMode.MANUAL
+    formation_mode: FormationMode = FormationMode.ELO
     captains: list[str] = field(default_factory=list)  # Display names
     circle1: list[str] = field(default_factory=list)  # Captain circle (display names)
     circle2: list[str] = field(default_factory=list)
@@ -304,7 +304,7 @@ class Tournament:
                     rejected.append(name)
                 continue
 
-            # For MANUAL/ELO modes, use circles
+            # For ELO/SKILL modes, use circles
             if name in self.all_players:
                 rejected.append(name)
                 continue
