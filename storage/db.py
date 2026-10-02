@@ -190,6 +190,16 @@ async def init_db() -> None:
             )
         """)
 
+        # Create user_bank table for bank system
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_bank (
+                guild_id BIGINT,
+                user_id BIGINT,
+                bank_balance INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+
         # Create questions table for quiz games
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS questions (
