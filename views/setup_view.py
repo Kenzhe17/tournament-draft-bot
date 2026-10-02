@@ -866,14 +866,14 @@ class AutoDistributeButton(discord.ui.Button):
         total_players = len(tournament.all_players)
         required_players = int(tournament.size.value)
         if total_players < required_players:
-            await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
-
-        await interaction.response.defer()
 
         # Distribute by ELO
         await tournament.distribute_by_elo(self.guild_id)
@@ -882,10 +882,13 @@ class AutoDistributeButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 class AutoDistributeAvgButton(discord.ui.Button):
@@ -938,14 +941,14 @@ class AutoDistributeAvgButton(discord.ui.Button):
         total_players = len(tournament.all_players)
         required_players = int(tournament.size.value)
         if total_players < required_players:
-            await interaction.response.send_message(
-                f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
-
-        await interaction.response.defer()
 
         # Distribute by Skill Rating
         await tournament.distribute_by_skill_rating(self.guild_id)
@@ -954,10 +957,13 @@ class AutoDistributeAvgButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 class StartTournamentButton(discord.ui.Button):
