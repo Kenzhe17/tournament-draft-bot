@@ -276,6 +276,9 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         team_b_name = tournament.team_names.get(self.match[1], team_b_data.get("captain", f"Team {self.match[1]}"))
         winning_team_name = team_a_name if self.team_index == self.match[0] else team_b_name
 
+        import logging
+        logging.info(f"Resolving bets: match_id={match_id}, team_a_name='{team_a_name}', team_b_name='{team_b_name}', winning_team_name='{winning_team_name}'")
+
         try:
             payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name)
             for user_id, payout in payouts.items():

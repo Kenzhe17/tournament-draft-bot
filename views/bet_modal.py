@@ -137,6 +137,9 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             else:
                 actual_odds = current_odds.team_b_odds if current_odds else 1.9
 
+            import logging
+            logging.info(f"Placing bet: match_id={match_id}, team_name='{self.team_name}', amount={amount}, odds={actual_odds}, match_type={self.match_type}")
+
             # Save the bet (this will update odds)
             await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
             
