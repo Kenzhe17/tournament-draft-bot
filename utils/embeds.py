@@ -1150,11 +1150,6 @@ async def build_winner_embed(
             if stats and stats.best_win > max_payout:
                 max_payout = stats.best_win
                 max_payout_player = player_name
-                        if player:
-                            user_id = tournament.player_user_ids.get(player, 0)
-                            if user_id == bet.user_id:
-                                max_payout_player = player
-                                break
 
     # Build team list
     team_list = ""
