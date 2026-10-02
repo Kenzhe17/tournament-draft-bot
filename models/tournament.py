@@ -438,7 +438,13 @@ class Tournament:
         players_with_rating = []
         for player_name, user_id in all_players:
             stats = await player_stats_store.get(guild_id, user_id)
-            skill_rating = stats.skill_rating if stats else 1.0  # Default 1.0 for new players
+            if stats:
+                try:
+                    skill_rating = stats.skill_rating
+                except (AttributeError, Exception):
+                    skill_rating = 1.0  # Default if skill_rating not available
+            else:
+                skill_rating = 1.0  # Default for new players
             players_with_rating.append((player_name, user_id, skill_rating))
 
         # Sort by Skill Rating (descending)
