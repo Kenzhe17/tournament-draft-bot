@@ -48,7 +48,6 @@ class BankCog(commands.Cog):
     @app_commands.command(name="bank", description="Управление банковским сейфом")
     @app_commands.describe(action="Действие: status, deposit, withdraw")
     @app_commands.describe(amount="Сумма (или 'all' для всех средств)")
-    @app_commands.default_permissions()
     async def bank(
         self,
         interaction: discord.Interaction,
