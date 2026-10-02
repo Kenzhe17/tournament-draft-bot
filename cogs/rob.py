@@ -183,7 +183,7 @@ class RobStartButton(discord.ui.Button):
                 )
                 embed.add_field(
                     name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Изъятый трофей",
-                    value=f"• Предмет: **{stolen_item.name}**\n• Перемещено в инвентарь грабителя.",
+                    value=f"• Предмет: **{stolen_item.name}**\n• Продан на чёрном рынке за `{sale_price}` {get_emoji('money')}.",
                     inline=False
                 )
 
