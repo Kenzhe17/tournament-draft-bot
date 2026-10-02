@@ -120,17 +120,19 @@ class RobStartButton(discord.ui.Button):
         victim_cash = victim_balance  # user_balance это наличные на руках
 
         if robber_balance <= 0:
-            await interaction.response.edit_message(
+            await interaction.response.send_message(
                 content=f"{replace_emojis('❌')} У вас нет {get_emoji('money')} для ограбления!",
-                view=None
+                ephemeral=True
             )
+            await interaction.message.delete()
             return
 
         if victim_balance <= 0:
-            await interaction.response.edit_message(
+            await interaction.response.send_message(
                 content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')}!",
-                view=None
+                ephemeral=True
             )
+            await interaction.message.delete()
             return
 
         # Проверка инвентаря жертвы
@@ -539,10 +541,11 @@ class RobGroupStartButton(discord.ui.Button):
 
         # Грабить можно только наличные (без денег в сейфе)
         if victim_balance <= 0:
-            await interaction.response.edit_message(
+            await interaction.response.send_message(
                 content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')} на руках! Монеты в сейфе защищены.",
-                view=None
+                ephemeral=True
             )
+            await interaction.message.delete()
             return
 
         # Рассчитать групповой кап
