@@ -52,13 +52,13 @@ class RobView(discord.ui.View):
         """Построить embed для ограбления."""
         embed = discord.Embed(
             title=f"{get_emoji('a_sparkle')} **ОГРАБЛЕНИЕ | /rob**",
-            color=discord.Color.from_rgb(69, 69, 69)
+            color=0x581878  # 5763719 - синий
         )
         embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Информация о деле",
-            value=f"• Жертва: <@{self.victim_id}>\n• Грабитель: <@{self.robber_id}>\n• Шанс успеха: **50%**\n• Лимит кражи: **до 100% вашего баланса**\n• Статус: **{status}** {get_emoji('white_dots')}",
+            value=f"• Жертва: <@{self.victim_id}>\n• Грабитель: <@{self.robber_id}>\n• Шанс успеха: **50%**\n• Лимит кражи: **до 100% вашего баланса**\n• Статус: **{status}**",
             inline=False
         )
 
@@ -155,41 +155,86 @@ class RobStartButton(discord.ui.Button):
                 # Кража предмета
                 stolen_item = random.choice(stealable_items)
                 inventory_store.remove_item(self.guild_id, self.victim_id, stolen_item.id)
-                
+
                 # Продажа за 30% стоимости
                 sale_price = int(stolen_item.price * 0.3)
                 await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
-                
-                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Вы украли предмет **{stolen_item.name}** и продали его на Чёрном рынке за **{sale_price}** монет!"
+
+                # Build success embed
+                embed = discord.Embed(
+                    title=f"{get_emoji('a_sparkle')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
+                    color=0x57F287  # 5763719 - зелёный
+                )
+                embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+                embed.add_field(
+                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
+                    value=f"<@{self.robber_id}> пробрался в инвентарь <@{self.victim_id}>!",
+                    inline=False
+                )
+                embed.add_field(
+                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Изъятый трофей",
+                    value=f"• Предмет: **{stolen_item.name}**\n• Перемещено в инвентарь грабителя.",
+                    inline=False
+                )
+
+                await interaction.response.edit_message(embed=embed, view=None)
             else:
                 # Кража монет
                 percent = random.uniform(0.1, 0.5)  # 10% - 50%
                 potential = int(victim_balance * percent)
                 stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
-                
+
                 await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
                 await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
-                
-                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Вы украли **{stolen}** монет ({int(percent * 100)}% от баланса жертвы)!"
+
+                # Build success embed
+                embed = discord.Embed(
+                    title=f"{get_emoji('a_sparkle')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | /rob**",
+                    color=0x57F287  # 5763719 - зелёный
+                )
+                embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+                embed.add_field(
+                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
+                    value=f"<@{self.robber_id}> совершил одиночный налёт на <@{self.victim_id}> и скрылся незамеченным!",
+                    inline=False
+                )
+                embed.add_field(
+                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Украденная добыча",
+                    value=f"• Сумма: **{stolen} монет**",
+                    inline=False
+                )
+
+                await interaction.response.edit_message(embed=embed, view=None)
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
             potential = int(victim_balance * percent)
             penalty = min(potential, int(robber_balance * 0.7))  # Максимум 70% от баланса грабителя
-            
+
             await user_balance_store.subtract_balance(self.guild_id, self.robber_id, penalty)
             await user_balance_store.add_balance(self.guild_id, self.victim_id, penalty)
-            
-            result_text = f"{replace_emojis('❌')} **ПРОВАЛ!** Вас поймали! Вы выплатили жертве штраф **{penalty}** монет."
+
+            # Build failure embed
+            embed = discord.Embed(
+                title=f"{get_emoji('a_sparkle')} **ОГРАБЛЕНИЕ ПРОВАЛЕНО!**",
+                color=0xED4245  # 15548997 - красный
+            )
+            embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
+                value=f"<@{self.robber_id}> попытался ограбить <@{self.victim_id}>, но был пойман с поличным!",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Выплата штрафа",
+                value=f"• Штраф: **{penalty} монет** (выплачено жертве)",
+                inline=False
+            )
+
+            await interaction.response.edit_message(embed=embed, view=None)
 
         # Установить cooldown
         _rob_cooldowns[self.guild_id][self.robber_id] = now
-
-        await interaction.response.edit_message(
-            content=result_text,
-            embed=None,
-            view=None
-        )
 
 
 class RobCog(commands.Cog):
@@ -200,6 +245,7 @@ class RobCog(commands.Cog):
 
     @app_commands.command(name="rob", description="Ограбить другого пользователя")
     @app_commands.describe(user="Пользователь, которого хотите ограбить")
+    @app_commands.default_permissions()
     async def rob(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Команда ограбления."""
         if user.id == interaction.user.id:
@@ -236,6 +282,7 @@ class RobCog(commands.Cog):
 
     @app_commands.command(name="robgroup", description="Ограбить другого пользователя группой")
     @app_commands.describe(user="Пользователь, которого хотите ограбить")
+    @app_commands.default_permissions()
     async def robgroup(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Команда группового ограбления."""
         if user.id == interaction.user.id:
@@ -325,13 +372,13 @@ class RobGroupView(discord.ui.View):
 
         embed = discord.Embed(
             title=f"{get_emoji('a_sparkle')} **ГРУППОВОЕ ОГРАБЛЕНИЕ | /robgroup**",
-            color=discord.Color.from_rgb(69, 69, 69)
+            color=0x581878
         )
         embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Информация о налёте",
-            value=f"• Цель: <@{self.victim_id}>\n• Лидер: <@{self.leader_id}>\n• Состав банды ({member_count}/6): {members_list}\n• Шанс успеха: **{success_chance}%**\n• Лимит кражи: **Средний баланс банды**\n• Время на сбор: **{time_str}** {get_emoji('white_dots')}",
+            value=f"• Цель: <@{self.victim_id}>\n• Лидер: <@{self.leader_id}>\n• Состав банды ({member_count}/6): {members_list}\n• Шанс успеха: **{success_chance}%**\n• Лимит кражи: **Средний баланс банды**\n• Время на сбор: **{time_str}**",
             inline=False
         )
 

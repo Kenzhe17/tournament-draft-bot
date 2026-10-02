@@ -1,10 +1,7 @@
 """Database connection and utilities."""
 
 import asyncpg
-import logging
 from config import DATABASE_URL
-
-logger = logging.getLogger(__name__)
 
 _pool: asyncpg.Pool | None = None
 
@@ -183,6 +180,16 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Create user_balance table for economy system
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_balance (
+                guild_id BIGINT,
+                user_id BIGINT,
+                balance INTEGER DEFAULT 100,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+
         # Create questions table for quiz games
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS questions (
@@ -252,18 +259,14 @@ async def init_db() -> None:
         """)
 
         # Create user_balance table for betting system
-        try:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS user_balance (
-                    guild_id BIGINT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    balance INTEGER DEFAULT 100,
-                    PRIMARY KEY (guild_id, user_id)
-                )
-            """)
-            logger.info("user_balance table created or already exists")
-        except Exception as e:
-            logger.error(f"Failed to create user_balance table: {e}", exc_info=True)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_balance (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                balance INTEGER DEFAULT 100,
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
 
         # Create bets table for betting system
         await conn.execute("""
@@ -401,31 +404,21 @@ async def init_db() -> None:
         """)
 
         # Create minigames table
-        try:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS minigames (
-                    id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    category TEXT NOT NULL,
-                    difficulty TEXT NOT NULL,
-                    min_bet INTEGER NOT NULL,
-                    max_bet INTEGER NOT NULL,
-                    multiplier REAL NOT NULL,
-                    is_pvp BOOLEAN DEFAULT FALSE,
-                    is_pve BOOLEAN DEFAULT TRUE,
-                    is_active BOOLEAN DEFAULT TRUE
-                )
-            """)
-            logger.info("minigames table created or already exists")
-        except Exception as e:
-            logger.error(f"Failed to create minigames table: {e}", exc_info=True)
-
-        # Add command_name column to minigames if table exists
-        try:
-            await conn.execute("ALTER TABLE minigames ADD COLUMN IF NOT EXISTS command_name TEXT")
-        except Exception as e:
-            logger.warning(f"Could not add command_name column to minigames: {e}")
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS minigames (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                category TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                min_bet INTEGER NOT NULL,
+                max_bet INTEGER NOT NULL,
+                multiplier REAL NOT NULL,
+                is_pvp BOOLEAN DEFAULT FALSE,
+                is_pve BOOLEAN DEFAULT TRUE,
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        """)
 
         # Create minigame_sessions table
         await conn.execute("""

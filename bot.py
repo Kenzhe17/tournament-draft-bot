@@ -79,7 +79,7 @@ class TournamentBot(commands.Bot):
                 except Exception as e:
                     logger.error(f"Failed to sync games from config: {e}")
             except Exception as e:
-                logger.error("Failed to initialize database: %s", e, exc_info=True)
+                logger.error("Failed to initialize database: %s", e)
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.coin_flip")
@@ -101,9 +101,9 @@ class TournamentBot(commands.Bot):
                 from storage.db import get_pool
                 pool = await get_pool()
                 async with pool.acquire() as conn:
-                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM player_stats")
+                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM players")
                     guild_ids = [row[0] for row in cursor]
-
+                
                 for guild_id in guild_ids:
                     try:
                         guild_synced = await self.tree.sync(guild=discord.Object(id=guild_id))
