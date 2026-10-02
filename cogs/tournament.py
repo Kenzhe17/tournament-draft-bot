@@ -251,12 +251,16 @@ class TournamentCog(commands.Cog):
     async def balance(self, interaction: discord.Interaction) -> None:
         """Показать баланс пользователя."""
         from storage.user_balance_store import user_balance_store
+        from storage.user_bank_store import user_bank_store
+        from config import get_emoji
 
-        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        cash = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        safe = await user_bank_store.get_bank_balance(interaction.guild_id, interaction.user.id)
+        total = cash + safe
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Текущие средства:**\n{replace_emojis('sub_directory')} Монеты: **{balance:,}** {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Используйте /daily для получения ежедневной награды или перейдите в магазин",
+            title=f"{get_emoji('a_star')} **БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance**",
+            description=f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n{get_emoji('white_arrow')} **Наличные:** **`{cash:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **В сейфе:** **`{safe:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **Всего:** **`{total:,}`** {get_emoji('money')}\n\n{get_emoji('white_dot')} *Используйте `/daily` для получения награды или посетите магазин.*",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
