@@ -517,24 +517,32 @@ class DeletePlayerButton(discord.ui.Button):
         select = view.children[0]  # The select menu
 
         async def select_callback(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
             player_name = select.values[0]
 
             if tournament.formation_mode == FormationMode.RANDOM:
                 if player_name not in tournament.players_pool:
-                    await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
-                        ephemeral=True
-                    )
+                    try:
+                        await interaction.followup.send(
+                            f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
+                            ephemeral=True
+                        )
+                    except discord.NotFound:
+                        pass
                     return
                 tournament.players_pool.remove(player_name)
                 if player_name in tournament.player_user_ids:
                     del tournament.player_user_ids[player_name]
             else:
                 if not tournament.remove_player(player_name):
-                    await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
-                        ephemeral=True
-                    )
+                    try:
+                        await interaction.followup.send(
+                            f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
+                            ephemeral=True
+                        )
+                    except discord.NotFound:
+                        pass
                     return
 
             store.set(tournament)
@@ -542,10 +550,13 @@ class DeletePlayerButton(discord.ui.Button):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            await interaction.response.send_message(
-                f"{replace_emojis('✅')} Игрок `{player_name}` удален.",
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    f"{replace_emojis('✅')} Игрок `{player_name}` удален.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
 
         select.callback = select_callback
 
