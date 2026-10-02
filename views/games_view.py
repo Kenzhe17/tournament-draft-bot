@@ -171,8 +171,11 @@ class GameSelect(Select):
         # Создать карточку игры
         category_info = CATEGORIES.get(game.category, {"color": discord.Color.blue(), "emoji": "🎮", "name": "Категория"})
 
-        # Статус игры (все в разработке)
-        status_text = "В разработке"
+        # Статус игры
+        if game.status in ("ready", "available"):
+            status_text = "Доступно"
+        else:
+            status_text = "В разработке"
 
         # Режим игры
         if game.is_pvp and game.is_pve:
