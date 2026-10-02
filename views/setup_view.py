@@ -795,18 +795,25 @@ class AdminAddButton(discord.ui.Button):
         self.circle = circle
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут добавлять игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Show modal
         modal = AdminAddModal(self.guild_id, self.circle)
-        await interaction.response.send_modal(modal)
+        try:
+            await interaction.followup.send_modal(modal)
+        except discord.NotFound:
+            pass
 
 
 class AutoDistributeButton(discord.ui.Button):
@@ -821,30 +828,38 @@ class AutoDistributeButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         if tournament.formation_mode != FormationMode.ELO:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Check if we have enough players
@@ -885,30 +900,38 @@ class AutoDistributeAvgButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут распределять игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(self.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         if tournament.formation_mode != FormationMode.SKILL:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Check if we have enough players
@@ -949,30 +972,38 @@ class StartTournamentButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут запускать турнир."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                    ephemeral=True,
+                )
+            except discord.NotFound:
+                pass
             return
 
         if tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                f"{replace_emojis('❌')} Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    f"{replace_emojis('❌')} Турнир не в фазе настройки. Текущая фаза: {tournament.phase.value}",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Check if tournament is ready to start based on formation mode
@@ -981,22 +1012,26 @@ class StartTournamentButton(discord.ui.Button):
             required_players = int(tournament.size.value)
             current_players = len(tournament.players_pool)
             if current_players < required_players:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Недостаточно игроков. Нужно {required_players}, есть {current_players}.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                try:
+                    await interaction.followup.send(
+                        f"{replace_emojis('❌')} Недостаточно игроков. Нужно {required_players}, есть {current_players}.",
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
                 return
         else:
             # ELO/SKILL modes: check circles
             if not tournament.is_setup_complete:
                 captain_count = tournament.captain_count
-                msg = f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
-                await interaction.response.send_message(msg, ephemeral=True)
-                asyncio.create_task(_delete_ephemeral_later(interaction))
+                try:
+                    await interaction.followup.send(
+                        f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4.",
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
                 return
-
-        await interaction.response.defer()
 
         # Handle different formation modes
         if tournament.formation_mode == FormationMode.RANDOM:
@@ -1007,12 +1042,15 @@ class StartTournamentButton(discord.ui.Button):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            await interaction.followup.send(
-                replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
         else:
-            # Manual or ELO mode: shuffle circles and start draft
+            # ELO/SKILL modes: shuffle circles and start draft
             tournament.shuffle_circles()
             tournament.start_draft()
             store.set(tournament)
@@ -1048,22 +1086,28 @@ class ToggleRegistrationButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут менять регистрацию."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нет активного турнира."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
             return
 
         # Переключить состояние
@@ -1075,10 +1119,13 @@ class ToggleRegistrationButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         action = "закрыта" if new_state == RegistrationState.CLOSED else "открыта"
-        await interaction.response.send_message(
-            f"{replace_emojis('🔒')} Регистрация {action}!",
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                f"{replace_emojis('🔒')} Регистрация {action}!",
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 class SetupView(discord.ui.View):
