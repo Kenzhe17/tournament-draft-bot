@@ -242,12 +242,17 @@ class RobStartButton(discord.ui.Button):
                 value=f"• Штраф: **{penalty}** {get_emoji('money')} (выплачено жертве)",
                 inline=False
             )
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Тюрьма",
+                value=f"Вы отправлены в тюрьму на **3 часа**.",
+                inline=False
+            )
 
             await interaction.response.edit_message(embed=embed, view=None)
 
-        # Установить cooldown (пропускаем для владельца бота)
-        if self.robber_id != BOT_OWNER_ID:
-            _rob_cooldowns[self.guild_id][self.robber_id] = now
+        # Установить cooldown только если поймали (провал)
+        if not success and self.robber_id != BOT_OWNER_ID:
+            _rob_cooldowns[self.guild_id][self.robber_id] = now + timedelta(hours=3)
 
 
 class RobCog(commands.Cog):
@@ -657,11 +662,6 @@ class RobGroupStartButton(discord.ui.Button):
             # Выплатить жертве
             await user_balance_store.add_balance(guild_id, victim_id, collected)
 
-        # Установить cooldown для всех участников (пропускаем владельца бота)
-        for member_id in members:
-            if member_id != BOT_OWNER_ID:
-                _robgroup_cooldowns[guild_id][member_id] = now
-
         # Удалить лобби
         if self.game_view.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.game_view.message_id]
@@ -710,8 +710,18 @@ class RobGroupStartButton(discord.ui.Button):
                 value=f"Банда выплатила штраф **{collected}** {get_emoji('money')} жертве.",
                 inline=False
             )
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Тюрьма",
+                value=f"Все участники отправлены в тюрьму на **3 часа**.",
+                inline=False
+            )
             
             await interaction.response.edit_message(embed=embed, view=None)
+            
+            # Установить cooldown для всех участников только если поймали (провал)
+            for member_id in members:
+                if member_id != BOT_OWNER_ID:
+                    _robgroup_cooldowns[guild_id][member_id] = now + timedelta(hours=3)
 
 
 class RobGroupCancelButton(discord.ui.Button):
