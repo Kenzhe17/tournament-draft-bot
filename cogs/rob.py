@@ -119,17 +119,9 @@ class RobStartButton(discord.ui.Button):
         # Грабить можно только наличные (без денег в сейфе)
         victim_cash = victim_balance  # user_balance это наличные на руках
 
-        if robber_balance <= 0:
+        if robber_balance <= 100:
             await interaction.response.send_message(
-                content=f"{replace_emojis('❌')} У вас нет {get_emoji('money')} для ограбления!",
-                ephemeral=True
-            )
-            await interaction.message.delete()
-            return
-
-        if victim_balance <= 0:
-            await interaction.response.send_message(
-                content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')}!",
+                content=f"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
                 ephemeral=True
             )
             await interaction.message.delete()
@@ -192,31 +184,55 @@ class RobStartButton(discord.ui.Button):
                 await interaction.response.edit_message(embed=embed, view=None)
             else:
                 # Кража монет
-                percent = random.uniform(0.1, 0.5)  # 10% - 50%
-                potential = int(victim_balance * percent)
-                stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
+                if victim_balance == 0:
+                    # У жертвы нет монет - считаем ограбление неуспешным
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_sparkle')} **ОГРАБЛЕНИЕ НЕУДАЧНО | /rob**",
+                        color=0xF1C40F  # жёлтый
+                    )
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
+                        value=f"<@{self.robber_id}> совершил налёт на <@{self.victim_id}>!",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Результат",
+                        value=f"У игрока было **0** {get_emoji('money')}, что ограбление и успешным считать нельзя :(",
+                        inline=False
+                    )
+                    embed.set_footer(text=f"{get_emoji('white_dot')} Монеты в сейфе жертвы защищены от ограбления.")
+                    
+                    await interaction.response.edit_message(embed=embed, view=None)
+                    # Не ставим кулдаун при неуспешном ограблении из-за отсутствия монет
+                    return
+                else:
+                    # Кража монет
+                    percent = random.uniform(0.1, 0.5)  # 10% - 50%
+                    potential = int(victim_balance * percent)
+                    stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
 
-                await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
-                await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
+                    await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
+                    await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
 
-                # Build success embed
-                embed = discord.Embed(
-                    title=f"{get_emoji('a_sparkle')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | /rob**",
-                    color=0x57F287  # 5763719 - зелёный
-                )
-                embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
-                embed.add_field(
-                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
-                    value=f"<@{self.robber_id}> совершил одиночный налёт на <@{self.victim_id}> и скрылся незамеченным!",
-                    inline=False
-                )
-                embed.add_field(
-                    name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Украденная добыча",
-                    value=f"• Сумма: **{stolen}** {get_emoji('money')}\n• Монеты в сейфе жертвы **защищены** от ограбления.",
-                    inline=False
-                )
+                    # Build success embed
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_sparkle')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | /rob**",
+                        color=0x57F287  # 5763719 - зелёный
+                    )
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Итоги нападения",
+                        value=f"<@{self.robber_id}> совершил одиночный налёт на <@{self.victim_id}> и скрылся незамеченным!",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Украденная добыча",
+                        value=f"• Сумма: **{stolen}** {get_emoji('money')}\n• Монеты в сейфе жертвы **защищены** от ограбления.",
+                        inline=False
+                    )
 
-                await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message(embed=embed, view=None)
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
@@ -544,14 +560,16 @@ class RobGroupStartButton(discord.ui.Button):
         victim_balance = await user_balance_store.get_balance(guild_id, victim_id)
         victim_bank = await user_bank_store.get_bank_balance(guild_id, victim_id)
 
-        # Грабить можно только наличные (без денег в сейфе)
-        if victim_balance <= 0:
-            await interaction.response.send_message(
-                content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')} на руках! Монеты в сейфе защищены.",
-                ephemeral=True
-            )
-            await interaction.message.delete()
-            return
+        # Проверить что у всех участников баланс > 100
+        for member_id in members:
+            member_balance = await user_balance_store.get_balance(guild_id, member_id)
+            if member_balance <= 100:
+                await interaction.response.send_message(
+                    content=f"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
+                    ephemeral=True
+                )
+                await interaction.message.delete()
+                return
 
         # Рассчитать групповой кап
         total_balance = 0
@@ -609,19 +627,49 @@ class RobGroupStartButton(discord.ui.Button):
                     await user_balance_store.add_balance(guild_id, member_id, share)
             else:
                 # Кража монет
-                percent = random.uniform(0.1, 0.5)
-                potential = int(victim_balance * percent)
-                loot = min(potential, group_cap)
+                if victim_balance == 0:
+                    # У жертвы нет монет - считаем ограбление неуспешным
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_sparkle')} **ГРУППОВОЕ ОГРАБЛЕНИЕ | НЕУДАЧНО**",
+                        color=0xF1C40F  # жёлтый
+                    )
+                    embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Жертва",
+                        value=f"<@{victim_id}>",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Результат",
+                        value=f"У игрока было **0** {get_emoji('money')}, что ограбление и успешным считать нельзя :(",
+                        inline=False
+                    )
+                    party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+                    embed.add_field(
+                        name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Состав банды ({len(members)})",
+                        value=party_list,
+                        inline=False
+                    )
+                    embed.set_footer(text=f"{get_emoji('white_dot')} Монеты в сейфе жертвы защищены от ограбления.")
+                    
+                    await interaction.response.edit_message(embed=embed, view=None)
+                    # Не ставим кулдаун при неуспешном ограблении из-за отсутствия монет
+                    return
+                else:
+                    # Кража монет
+                    percent = random.uniform(0.1, 0.5)
+                    potential = int(victim_balance * percent)
+                    loot = min(potential, group_cap)
 
-                await user_balance_store.subtract_balance(guild_id, victim_id, loot)
+                    await user_balance_store.subtract_balance(guild_id, victim_id, loot)
 
-                # Разделить поровну
-                share = loot // len(members)
-                total_stolen = loot
+                    # Разделить поровну
+                    share = loot // len(members)
+                    total_stolen = loot
 
-                # Выплатить всем участникам
-                for member_id in members:
-                    await user_balance_store.add_balance(guild_id, member_id, share)
+                    # Выплатить всем участникам
+                    for member_id in members:
+                        await user_balance_store.add_balance(guild_id, member_id, share)
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)
