@@ -5,9 +5,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-import asyncpg
-
-from storage.db import get_db_connection
+from storage.db import get_pool
 
 
 class UserBankStore:
@@ -43,13 +41,13 @@ class UserBankStore:
     async def get_bank_balance(self, guild_id: int, user_id: int) -> int:
         """Получить баланс в сейфе."""
         if self._db_mode:
-            conn = await get_db_connection()
-            row = await conn.fetchrow(
-                "SELECT bank_balance FROM user_bank WHERE guild_id = $1 AND user_id = $2",
-                guild_id, user_id
-            )
-            await conn.close()
-            return row["bank_balance"] if row else 0
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT bank_balance FROM user_bank WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+                return row["bank_balance"] if row else 0
         else:
             key = self._get_key(guild_id, user_id)
             return self._data.get(key, 0)
@@ -57,16 +55,16 @@ class UserBankStore:
     async def set_bank_balance(self, guild_id: int, user_id: int, balance: int) -> None:
         """Установить баланс в сейфе."""
         if self._db_mode:
-            conn = await get_db_connection()
-            await conn.execute(
-                """
-                INSERT INTO user_bank (guild_id, user_id, bank_balance)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (guild_id, user_id) DO UPDATE SET bank_balance = $3
-                """,
-                guild_id, user_id, balance
-            )
-            await conn.close()
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO user_bank (guild_id, user_id, bank_balance)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id, user_id) DO UPDATE SET bank_balance = $3
+                    """,
+                    guild_id, user_id, balance
+                )
         else:
             key = self._get_key(guild_id, user_id)
             self._data[key] = balance
