@@ -425,6 +425,8 @@ class Tournament:
     async def distribute_by_skill_rating(self, guild_id: int) -> None:
         """Распределить игроков по кругам на основе Skill Rating."""
         from storage.player_stats_store import player_stats_store
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Collect all players from all circles
         all_players = []
@@ -434,20 +436,26 @@ class Tournament:
                 user_id = self.player_user_ids.get(player_name, 0)
                 all_players.append((player_name, user_id))
 
+        logger.info(f"distribute_by_skill_rating: total_players={len(all_players)}")
+        
         # Get Skill Rating for each player
         players_with_rating = []
         all_ratings = []  # Для расчёта среднего по серверу
         
         for player_name, user_id in all_players:
+            logger.info(f"distribute_by_skill_rating: player={player_name}, user_id={user_id}")
             stats = await player_stats_store.get(guild_id, user_id)
+            logger.info(f"distribute_by_skill_rating: stats={stats}")
             if stats:
                 try:
                     skill_rating = stats.skill_rating
                     if stats.games >= 3:
                         all_ratings.append(skill_rating)
-                except (AttributeError, Exception):
+                except (AttributeError, Exception) as e:
+                    logger.error(f"distribute_by_skill_rating: error getting skill_rating for {player_name}: {e}")
                     skill_rating = 1.0  # Default if skill_rating not available
             else:
+                logger.warning(f"distribute_by_skill_rating: no stats for {player_name} (user_id={user_id})")
                 skill_rating = 1.0  # Default for new players
             players_with_rating.append((player_name, user_id, skill_rating))
         
@@ -455,6 +463,8 @@ class Tournament:
         server_avg_rating = 5.0  # Default if no data
         if all_ratings:
             server_avg_rating = sum(all_ratings) / len(all_ratings)
+        
+        logger.info(f"distribute_by_skill_rating: server_avg_rating={server_avg_rating}, all_ratings={all_ratings}")
         
         # Заменить Skill Rating на среднее по серверу для игроков с менее чем 3 катками
         final_players_with_rating = []

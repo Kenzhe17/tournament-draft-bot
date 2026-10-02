@@ -940,6 +940,11 @@ class AutoDistributeAvgButton(discord.ui.Button):
         # Check if we have enough players
         total_players = len(tournament.all_players)
         required_players = int(tournament.size.value)
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"AutoDistributeAvgButton: total_players={total_players}, required_players={required_players}, formation_mode={tournament.formation_mode}")
+        
         if total_players < required_players:
             try:
                 await interaction.followup.send(
@@ -951,7 +956,9 @@ class AutoDistributeAvgButton(discord.ui.Button):
             return
 
         # Distribute by Skill Rating
+        logger.info("AutoDistributeAvgButton: calling distribute_by_skill_rating")
         await tournament.distribute_by_skill_rating(self.guild_id)
+        logger.info("AutoDistributeAvgButton: distribute_by_skill_rating completed")
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
