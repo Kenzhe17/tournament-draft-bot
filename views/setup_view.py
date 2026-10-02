@@ -809,12 +809,12 @@ class AdminAddButton(discord.ui.Button):
 
 
 class AutoDistributeButton(discord.ui.Button):
-    """Кнопка для автоматического распределения по ELO."""
+    """Кнопка для автоматического распределения по Skill Rating."""
 
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🎯 Распределить по ELO",
+            label="🎯 Распределить по Skill Rating",
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
@@ -859,15 +859,15 @@ class AutoDistributeButton(discord.ui.Button):
 
         await interaction.response.defer()
 
-        # Distribute by ELO
-        await tournament.distribute_by_elo(self.guild_id)
+        # Distribute by Skill Rating
+        await tournament.distribute_by_skill_rating(self.guild_id)
         store.set(tournament)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
         await interaction.followup.send(
-            replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
+            replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
             ephemeral=True
         )
 
@@ -987,7 +987,7 @@ class StartTournamentButton(discord.ui.Button):
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
         else:
-            # MANUAL/ELO modes: check circles
+            # MANUAL/SKILL modes: check circles
             if not tournament.is_setup_complete:
                 captain_count = tournament.captain_count
                 msg = f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4."
@@ -1011,7 +1011,7 @@ class StartTournamentButton(discord.ui.Button):
                 ephemeral=True
             )
         else:
-            # Manual or ELO mode: shuffle circles and start draft
+            # Manual or Skill mode: shuffle circles and start draft
             tournament.shuffle_circles()
             tournament.start_draft()
             store.set(tournament)
@@ -1096,7 +1096,7 @@ class SetupView(discord.ui.View):
             join_button = JoinPoolButton(tournament.guild_id, current, limit)
             self.add_item(join_button)
         else:
-            # MANUAL/ELO modes: circle buttons
+            # MANUAL/SKILL modes: circle buttons
             circle_counts = tournament.get_circle_counts()
 
             # Always show all 4 circles with the same buttons
@@ -1107,7 +1107,7 @@ class SetupView(discord.ui.View):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
                 self.add_item(button)
 
-            # Add auto-distribute buttons if in ELO mode
+            # Add auto-distribute buttons if in SKILL mode
             if tournament.formation_mode == FormationMode.SKILL:
                 auto_distribute_button = AutoDistributeButton(tournament.guild_id)
                 self.add_item(auto_distribute_button)

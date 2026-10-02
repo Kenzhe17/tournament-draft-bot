@@ -61,7 +61,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
                 {
                     "name": "/tournament create",
                     "description": "Создать новый турнир",
-                    "params": "size (8/16/32), formation (manual/elo/random)",
+                    "params": "size (8/16/32), formation (manual/skill/random)",
                     "example": "/tournament create size=16 formation=random",
                     "access": "орг"
                 },

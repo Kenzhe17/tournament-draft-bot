@@ -52,7 +52,7 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим формирования кругов: manual, elo или random")
+    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим формирования кругов: manual, skill или random")
     @is_org()
     async def tournament_create(
         self, interaction: discord.Interaction, size: str, formation: str = "manual"
@@ -78,7 +78,10 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Validate formation mode
+        # Validate formation mode (elo -> skill for backward compatibility)
+        if formation == "elo":
+            formation = "skill"
+        
         try:
             formation_mode = FormationMode(formation)
         except ValueError:
@@ -2254,7 +2257,7 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "organizers":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ОРГАНИЗАТОРАМ  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Инструменты проведения турниров (только для оргов)**\n\n{replace_emojis('white_dot')} **Команды управления:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: elo/random`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Инструменты проведения турниров (только для оргов)**\n\n{replace_emojis('white_dot')} **Команды управления:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: skill/random`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = GuideView(current="organizers")
@@ -2437,7 +2440,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "organizers":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ОРГАНИЗАТОРАМ  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Инструменты проведения турниров (только для оргов)**\n\n{replace_emojis('white_dot')} **Команды управления:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: elo/random`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Инструменты проведения турниров (только для оргов)**\n\n{replace_emojis('white_dot')} **Команды управления:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: skill/random`\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = HelpGuideView(current="organizers")
