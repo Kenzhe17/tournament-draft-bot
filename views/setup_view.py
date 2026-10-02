@@ -587,11 +587,14 @@ class DeletePlayerButton(discord.ui.Button):
 
         select.callback = select_callback
 
-        await interaction.response.send_message(
-            "Выберите игрока для удаления:",
-            view=view,
-            ephemeral=True
-        )
+        try:
+            await interaction.followup.send(
+                "Выберите игрока для удаления:",
+                view=view,
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
 
 
 class ReplacePlayerButton(discord.ui.Button):
@@ -606,12 +609,10 @@ class ReplacePlayerButton(discord.ui.Button):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        await interaction.response.defer(ephemeral=True)
-        
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
                     ephemeral=True
                 )
@@ -622,7 +623,7 @@ class ReplacePlayerButton(discord.ui.Button):
         tournament = store.get(interaction.guild_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
                 )
@@ -638,7 +639,7 @@ class ReplacePlayerButton(discord.ui.Button):
 
         if not players:
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Нет зарегистрированных игроков."),
                     ephemeral=True
                 )
@@ -665,13 +666,13 @@ class ReplacePlayerButton(discord.ui.Button):
         select.callback = select_callback
 
         try:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 "Выберите игрока для замены:",
                 view=view,
                 ephemeral=True
             )
-        except discord.NotFound:
-            pass
+        except discord.InteractionResponded:
+            pass  # Interaction уже был отвечен
 
 
 class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"):
