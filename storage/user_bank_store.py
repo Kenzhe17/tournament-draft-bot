@@ -7,7 +7,7 @@ from typing import Optional
 
 import asyncpg
 
-from database import get_db_connection
+from storage.db import get_db_connection
 
 
 class UserBankStore:
