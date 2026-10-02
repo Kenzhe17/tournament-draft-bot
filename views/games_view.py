@@ -49,7 +49,7 @@ class GameCategorySelect(Select):
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
             # Используем кастомные эмодзи
-            emoji_map = {"luck": "dice", "quiz": "a_star", "casino": "game"}
+            emoji_map = {"luck": "dice", "quiz": "a_star", "casino": "game", "economy": "money"}
             emoji = replace_emojis(emoji_map.get(cat_id, "game"))
             options.append(
                 discord.SelectOption(
@@ -239,29 +239,46 @@ class PlayButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать гайд как играть."""
         # Build guide message with parameter attributes
-        pve_command = f"/{self.game.command} bet:100"
-        pvp_command = f"/{self.game.command} bet:100 opponent:@"
-        
-        embed = discord.Embed(
-            title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
-            description="",
-            color=discord.Color.blue()
-        )
+        if self.game.category == "economy":
+            # Special guide for economy commands
+            if self.game.id == "rob":
+                guide_text = f"**Команда:** `/rob @пользователь`\n\n**Описание:** Одиночное ограбление с 50% шансом успеха.\n\n**Условия:**\n• 3 часа cooldown\n• Кап кражи: до 100% вашего баланса\n• При успехе: кража монет или предмета (40% шанс)\n• При провале: штраф до 70% от баланса\n\n**Защита:** Наличные уязвимы, деньги в сейфе защищены!"
+            elif self.game.id == "robgroup":
+                guide_text = f"**Команда:** `/robgroup @пользователь`\n\n**Описание:** Групповое ограбление от 2 до 6 игроков.\n\n**Условия:**\n• Шанс успеха: 50% (2 игр) до 80% (6 игр)\n• Входной барьер: минимум 30% от баланса лидера\n• Куш делится поровну\n• Круговая порука при провале\n\n**Защита:** Наличные уязвимы, деньги в сейфе защищены!"
+            elif self.game.id == "bank":
+                guide_text = f"**Команды:**\n• `/bank status` - статус сейфа\n• `/bank deposit [сумма/all]` - пополнить (комиссия 5%)\n• `/bank withdraw [сумма/all]` - снять (без комиссии)\n\n**Лимит сейфа:** 3000 + ((уровень-1)//10)*2000\n\n**Защита:** Деньги в сейфе 100% защищены от ограбления!"
+            else:
+                guide_text = "Информация недоступна"
 
-        embed.add_field(
-            name=replace_emojis("🤖 Игра с ботом (PvE)"),
-            value=pve_command,
-            inline=False
-        )
+            embed = discord.Embed(
+                title=f"{replace_emojis('📖')} {self.game.name}",
+                description=guide_text,
+                color=discord.Color.from_rgb(218, 165, 32)  # goldenrod
+            )
+        else:
+            pve_command = f"/{self.game.command} bet:100"
+            pvp_command = f"/{self.game.command} bet:100 opponent:@"
 
-        embed.add_field(
-            name=replace_emojis("⚔️ Дуэль с игроком (PvP)"),
-            value=pvp_command,
-            inline=False
-        )
+            embed = discord.Embed(
+                title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
+                description="",
+                color=discord.Color.blue()
+            )
 
-        embed.set_footer(text=replace_emojis("💡 Скопируйте команду, замените значения и отправьте её в чат."))
-        
+            embed.add_field(
+                name=replace_emojis("🤖 Игра с ботом (PvE)"),
+                value=pve_command,
+                inline=False
+            )
+
+            embed.add_field(
+                name=replace_emojis("⚔️ Дуэль с игроком (PvP)"),
+                value=pvp_command,
+                inline=False
+            )
+
+            embed.set_footer(text=replace_emojis("💡 Скопируйте команду, замените значения и отправьте её в чат."))
+
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 

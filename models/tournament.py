@@ -52,8 +52,8 @@ class RegistrationState(str, Enum):
 class FormationMode(str, Enum):
     """Режим формирования кругов."""
 
+    SKILL = "skill"
     MANUAL = "manual"
-    ELO = "elo"
     RANDOM = "random"
 
 

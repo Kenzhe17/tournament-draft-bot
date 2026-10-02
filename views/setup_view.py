@@ -786,9 +786,9 @@ class AutoDistributeButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        if tournament.formation_mode != FormationMode.ELO:
+        if tournament.formation_mode != FormationMode.SKILL:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -850,9 +850,9 @@ class AutoDistributeAvgButton(discord.ui.Button):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        if tournament.formation_mode != FormationMode.ELO:
+        if tournament.formation_mode != FormationMode.SKILL:
             await interaction.response.send_message(
-                replace_emojis("❌ Турнир создан не в режиме ELO. Используйте /tournament create с параметром formation=elo."),
+                replace_emojis("❌ Турнир создан не в режиме Skill. Используйте /tournament create с параметром formation=skill."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
@@ -1056,7 +1056,7 @@ class SetupView(discord.ui.View):
                 self.add_item(button)
 
             # Add auto-distribute buttons if in ELO mode
-            if tournament.formation_mode == FormationMode.ELO:
+            if tournament.formation_mode == FormationMode.SKILL:
                 auto_distribute_button = AutoDistributeButton(tournament.guild_id)
                 self.add_item(auto_distribute_button)
                 auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)

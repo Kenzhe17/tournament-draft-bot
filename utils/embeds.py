@@ -514,7 +514,7 @@ async def build_setup_embed(
 ) -> discord.Embed:
     """Embed настройки турнира."""
     status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
-    formation_text = "ELO" if tournament.formation_mode == FormationMode.ELO else "Ручной" if tournament.formation_mode == FormationMode.MANUAL else "RANDOM"
+    formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "Ручной" if tournament.formation_mode == FormationMode.MANUAL else "RANDOM"
     status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
 
     # Get organizer info
@@ -1012,7 +1012,7 @@ async def build_winner_embed(
     # Get winning team captain name and full roster
     winning_team = tournament.teams[idx] if idx < len(tournament.teams) else {}
     captain_name = winning_team.get("captain", "Unknown")
-    team_name = tournament.team_names.get(idx, captain_name)
+    winner_team_name = tournament.team_names.get(idx, captain_name)  # Сохранить имя победителя
 
     # Build full roster string
     players = []
@@ -1130,33 +1130,26 @@ async def build_winner_embed(
                 best_avg = avg
                 best_avg_player = player_name
 
-    # Calculate max payout from bets in this tournament
-    from storage.bet_store import bet_store
-    max_payout = 0
-    max_payout_player = ""
-    
-    # Get all match IDs for this tournament
-    match_ids = []
-    for i in range(len(tournament.qualifier_matches)):
-        match_ids.append(f"qualifier_{i}")
-    for i in range(len(tournament.semifinal_matches)):
-        match_ids.append(f"semifinal_{i}")
-    match_ids.append("final_0")
-    
-    # Calculate max payout from all bets in this tournament
-    for match_id in match_ids:
-        bets = await bet_store.get_bets_by_match(match_id)
-        for bet in bets:
-            # Calculate payout for this bet (if it won)
-            # We need to check if this bet won, but we don't have that info
-            # Instead, we'll calculate potential payout and assume the best case
-            payout = int(bet.amount * bet.odds)
-            if payout > max_payout:
-                max_payout = payout
-                # Get player name from tournament
-                for team_idx, team_data in enumerate(tournament.teams):
-                    for circle in range(1, 5):
-                        player = team_data.get(f"circle{circle}", "")
+    # Calculate max payout from betting stats
+    from storage.betting_stats_store import betting_stats_store
+
+    # Get all player names from tournament
+    player_names = set()
+    for team_idx, team_data in enumerate(tournament.teams):
+        for circle in range(1, 5):
+            player = team_data.get(f"circle{circle}", "")
+            if player:
+                player_names.add(player)
+
+    # Check betting stats for each player
+    for player_name in player_names:
+        # Try to get user_id from tournament
+        user_id = tournament.player_user_ids.get(player_name, 0)
+        if user_id:
+            stats = await betting_stats_store.get_stats(guild.id, user_id)
+            if stats and stats.best_win > max_payout:
+                max_payout = stats.best_win
+                max_payout_player = player_name
                         if player:
                             user_id = tournament.player_user_ids.get(player, 0)
                             if user_id == bet.user_id:
@@ -1184,7 +1177,7 @@ async def build_winner_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
-        f"{replace_emojis('white_arrow')} **{team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {roster_str}\n\n\n"
+        f"{replace_emojis('white_arrow')} **{winner_team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {roster_str}\n\n\n"
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
