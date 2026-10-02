@@ -100,8 +100,8 @@ class RobStartButton(discord.ui.Button):
         if self.robber_id != BOT_OWNER_ID:  # Нет cooldown для владельца
             if self.robber_id in _rob_cooldowns[self.guild_id]:
                 last_rob = _rob_cooldowns[self.guild_id][self.robber_id]
-                if now - last_rob < timedelta(hours=3):
-                    remaining = timedelta(hours=3) - (now - last_rob)
+                if now - last_rob < timedelta(hours=2):
+                    remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
                     await interaction.response.send_message(
@@ -260,7 +260,7 @@ class RobStartButton(discord.ui.Button):
             )
             embed.add_field(
                 name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Тюрьма",
-                value=f"Вы отправлены в тюрьму на **3 часа**.",
+                value=f"Вы отправлены в тюрьму на **2 часа**.",
                 inline=False
             )
 
@@ -268,7 +268,7 @@ class RobStartButton(discord.ui.Button):
 
         # Установить cooldown только если поймали (провал)
         if not success and self.robber_id != BOT_OWNER_ID:
-            _rob_cooldowns[self.guild_id][self.robber_id] = now + timedelta(hours=3)
+            _rob_cooldowns[self.guild_id][self.robber_id] = now + timedelta(hours=2)
 
 
 class RobCog(commands.Cog):
@@ -450,8 +450,8 @@ class RobGroupJoinButton(discord.ui.Button):
             if user_id != BOT_OWNER_ID:  # Нет cooldown для владельца
                 if user_id in _robgroup_cooldowns[self.guild_id]:
                     last_rob = _robgroup_cooldowns[self.guild_id][user_id]
-                    if now - last_rob < timedelta(hours=3):
-                        remaining = timedelta(hours=3) - (now - last_rob)
+                    if now - last_rob < timedelta(hours=2):
+                        remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
                         await interaction.response.send_message(
@@ -545,8 +545,8 @@ class RobGroupStartButton(discord.ui.Button):
             if member_id != BOT_OWNER_ID:  # Нет cooldown для владельца
                 if member_id in _robgroup_cooldowns[guild_id]:
                     last_rob = _robgroup_cooldowns[guild_id][member_id]
-                    if now - last_rob < timedelta(hours=3):
-                        remaining = timedelta(hours=3) - (now - last_rob)
+                    if now - last_rob < timedelta(hours=2):
+                        remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
                         await interaction.response.send_message(
@@ -760,7 +760,7 @@ class RobGroupStartButton(discord.ui.Button):
             )
             embed.add_field(
                 name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Тюрьма",
-                value=f"Все участники отправлены в тюрьму на **3 часа**.",
+                value=f"Все участники отправлены в тюрьму на **2 часа**.",
                 inline=False
             )
             
@@ -769,7 +769,7 @@ class RobGroupStartButton(discord.ui.Button):
             # Установить cooldown для всех участников только если поймали (провал)
             for member_id in members:
                 if member_id != BOT_OWNER_ID:
-                    _robgroup_cooldowns[guild_id][member_id] = now + timedelta(hours=3)
+                    _robgroup_cooldowns[guild_id][member_id] = now + timedelta(hours=2)
 
 
 class RobGroupCancelButton(discord.ui.Button):
