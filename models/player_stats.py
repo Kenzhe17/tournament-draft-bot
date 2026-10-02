@@ -139,9 +139,9 @@ class PlayerStats:
     @property
     def skill_rating(self) -> float:
         """Рейтинг скилла на основе K/D и AVG Kills (шкала 1.0-10.0)."""
-        if self.games < 5:
-            # Штраф за мало игр
-            games_multiplier = self.games / 5
+        if self.games < 3:
+            # Штраф за мало игр (менее 3 каток)
+            games_multiplier = self.games / 3
         else:
             games_multiplier = 1.0
 
