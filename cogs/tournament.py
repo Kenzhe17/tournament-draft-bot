@@ -21,6 +21,7 @@ from models.tournament import (
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
+from storage.user_bank_store import user_bank_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org, is_bot_owner
@@ -843,8 +844,10 @@ class TournamentCog(commands.Cog):
         description_parts.append("")
 
         # Экономика
+        bank_balance = await user_bank_store.get_bank_balance(interaction.guild_id, target_user.id)
         description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}")
+        description_parts.append(f"{replace_emojis('sub_middle')} Наличные: {balance:,} {replace_emojis('money')} *(уязвимы для /rob)*")
+        description_parts.append(f"{replace_emojis('sub_middle')} В сейфе: {bank_balance:,} {replace_emojis('money')} *(защищено)*")
         description_parts.append(f"{replace_emojis('sub_directory')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 

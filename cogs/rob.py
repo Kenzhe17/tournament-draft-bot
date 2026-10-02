@@ -14,6 +14,7 @@ from discord.ext import commands
 
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store, shop_store
+from storage.user_bank_store import user_bank_store
 from models.shop_item import CosmeticRarity
 from config import replace_emojis, get_emoji, BOT_OWNER_ID
 
@@ -64,7 +65,7 @@ class RobView(discord.ui.View):
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Условия и риски",
-            value=f"При успехе вы заберёте {get_emoji('money')} или предмет (с авто-продажей за 30% на Чёрном рынке). При провале вы выплатите жертве штраф до 70% своего баланса.",
+            value=f"При успехе вы заберёте {get_emoji('money')} или предмет (с авто-продажей за 30% на Чёрном рынке). При провале вы выплатите жертве штраф до 70% своего баланса. Монеты в банковском сейфе **защищены** от ограбления.",
             inline=False
         )
 
@@ -109,6 +110,10 @@ class RobStartButton(discord.ui.Button):
         # Получить балансы
         robber_balance = await user_balance_store.get_balance(self.guild_id, self.robber_id)
         victim_balance = await user_balance_store.get_balance(self.guild_id, self.victim_id)
+        victim_bank = await user_bank_store.get_bank_balance(self.guild_id, self.victim_id)
+
+        # Грабить можно только наличные (без денег в сейфе)
+        victim_cash = victim_balance  # user_balance это наличные на руках
 
         if robber_balance <= 0:
             await interaction.response.edit_message(
@@ -201,7 +206,7 @@ class RobStartButton(discord.ui.Button):
                 )
                 embed.add_field(
                     name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Украденная добыча",
-                    value=f"• Сумма: **{stolen}** {get_emoji('money')}",
+                    value=f"• Сумма: **{stolen}** {get_emoji('money')}\n• Монеты в сейфе жертвы **защищены** от ограбления.",
                     inline=False
                 )
 
@@ -386,7 +391,7 @@ class RobGroupView(discord.ui.View):
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Условия и риски",
-            value="• Управление лобби доступно **только Лидеру**.\n• При успехе куш делится **поровну**.\n• При провале дефицит штрафа бедных соучастников списывается со **случайно выбранного платежеспособного участника**!",
+            value="• Управление лобби доступно **только Лидеру**.\n• При успехе куш делится **поровну**.\n• При провале дефицит штрафа бедных соучастников списывается со **случайно выбранного платежеспособного участника**!\n• Монеты в банковском сейфе **защищены** от ограбления.",
             inline=False
         )
 
@@ -507,9 +512,12 @@ class RobGroupStartButton(discord.ui.Button):
 
         # Получить балансы
         victim_balance = await user_balance_store.get_balance(guild_id, victim_id)
+        victim_bank = await user_bank_store.get_bank_balance(guild_id, victim_id)
+
+        # Грабить можно только наличные (без денег в сейфе)
         if victim_balance <= 0:
             await interaction.response.edit_message(
-                content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')}!",
+                content=f"{replace_emojis('❌')} У жертвы нет {get_emoji('money')} на руках! Монеты в сейфе защищены.",
                 view=None
             )
             return
@@ -568,7 +576,7 @@ class RobGroupStartButton(discord.ui.Button):
                 for member_id in members:
                     await user_balance_store.add_balance(guild_id, member_id, share)
 
-                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Банда украла предмет **{stolen_item.name}** и продала его за {sale_price} {get_emoji('money')}! Каждый получил **{share}** {get_emoji('money')}."
+                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Банда украла предмет **{stolen_item.name}** и продала его за {sale_price} {get_emoji('money')}! Каждый получил **{share}** {get_emoji('money')}.\n• Монеты в сейфе жертвы **защищены** от ограбления."
             else:
                 # Кража монет
                 percent = random.uniform(0.1, 0.5)
@@ -582,7 +590,7 @@ class RobGroupStartButton(discord.ui.Button):
                 for member_id in members:
                     await user_balance_store.add_balance(guild_id, member_id, share)
 
-                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Банда украла **{loot}** {get_emoji('money')}! Каждый получил **{share}** {get_emoji('money')}."
+                result_text = f"{replace_emojis('✅')} **УСПЕХ!** Банда украла **{loot}** {get_emoji('money')}! Каждый получил **{share}** {get_emoji('money')}.\n• Монеты в сейфе жертвы **защищены** от ограбления."
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)
