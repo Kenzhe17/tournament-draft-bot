@@ -49,7 +49,7 @@ class GameCategorySelect(Select):
         for cat_id, cat_info in CATEGORIES.items():
             games = get_games_by_category(cat_id)
             # Используем кастомные эмодзи
-            emoji_map = {"luck": "dice", "quiz": "a_star", "casino": "game", "economy": "money"}
+            emoji_map = {"luck": "dice", "quiz": "a_star", "casino": "game"}
             emoji = replace_emojis(emoji_map.get(cat_id, "game"))
             options.append(
                 discord.SelectOption(

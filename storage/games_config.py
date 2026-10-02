@@ -44,12 +44,6 @@ CATEGORIES = {
         "description": "Азартные игры с коэффициентами: крутите рулетку, слоты, играйте в баккару, лотерею, High-Low и Тройной шанс.",
         "color": 0x006400  # dark_green
     },
-    "economy": {
-        "emoji": "💰",
-        "name": "Экономика",
-        "description": "Управление финансами: ограбления, банковский сейф, система коинов и команд взаимодействия.",
-        "color": 0xDAA520  # goldenrod
-    },
 }
 
 # Игры на удачу (8 игр)
@@ -387,63 +381,8 @@ CASINO_GAMES = [
     ),
 ]
 
-# Экономика (3 игры)
-ECONOMY_GAMES = [
-    GameConfig(
-        id="rob",
-        name="Ограбление",
-        emoji="🔫",
-        command="rob",
-        status="ready",
-        short_description="Ограбить другого игрока и украсть монеты или предмет.",
-        description="Ограбление с 50% шансом успеха. При успехе заберёте монеты или предмет (авто-продажа за 30%). При провале выплатите штраф до 70% от баланса.",
-        how_to_play="Используйте /rob @пользователь для одиночного ограбления или /robgroup @пользователь для группового. Наличные уязвимы, деньги в сейфе защищены.",
-        min_bet=0,
-        max_bet=0,
-        category="economy",
-        difficulty="medium",
-        multiplier=0.0,
-        is_pvp=True,
-        is_pve=False
-    ),
-    GameConfig(
-        id="robgroup",
-        name="Групповое ограбление",
-        emoji="👥",
-        command="robgroup",
-        status="ready",
-        short_description="Собрать банду и ограбить жертву вместе.",
-        description="Групповое ограбление от 2 до 6 игроков. Шанс успеха 50-80% в зависимости от количества участников. Куш делится поровну.",
-        how_to_play="Используйте /robgroup @пользователь для создания лобби. Пригласите других участников и начните штурм. Дефицит штрафа списывается со случайного платежеспособного участника.",
-        min_bet=0,
-        max_bet=0,
-        category="economy",
-        difficulty="hard",
-        multiplier=0.0,
-        is_pvp=True,
-        is_pve=False
-    ),
-    GameConfig(
-        id="bank",
-        name="Банковский сейф",
-        emoji="🏦",
-        command="bank",
-        status="ready",
-        short_description="Безопасное хранение монет с защитой от ограбления.",
-        description="Банковский сейф защищает ваши монеты от /rob и /robgroup. Депозит с комиссией 5%, снятие бесплатно. Лимит зависит от уровня.",
-        how_to_play="Используйте /bank status для просмотра, /bank deposit [сумма/all] для пополнения, /bank withdraw [сумма/all] для снятия. Лимит: 3000 + ((уровень-1)//10)*2000.",
-        min_bet=0,
-        max_bet=0,
-        category="economy",
-        difficulty="easy",
-        multiplier=0.0,
-        is_pvp=False,
-        is_pve=False
-    ),
-]
-
 # Все игры
-ALL_GAMES = LUCK_GAMES + QUIZ_GAMES + CASINO_GAMES + ECONOMY_GAMES
+ALL_GAMES = LUCK_GAMES + QUIZ_GAMES + CASINO_GAMES
 
 
 def get_game_by_id(game_id: str) -> Optional[GameConfig]:
