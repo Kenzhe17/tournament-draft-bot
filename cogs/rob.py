@@ -15,7 +15,7 @@ from discord.ext import commands
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store, shop_store
 from models.shop_item import CosmeticRarity
-from config import replace_emojis, get_emoji
+from config import replace_emojis, get_emoji, BOT_OWNER_ID
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -88,22 +88,23 @@ class RobStartButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать нажатие кнопки начала ограбления."""
-        # Проверка cooldown
+        # Проверка cooldown (пропускаем для владельца бота)
         now = datetime.now()
         if self.guild_id not in _rob_cooldowns:
             _rob_cooldowns[self.guild_id] = {}
-        
-        if self.robber_id in _rob_cooldowns[self.guild_id]:
-            last_rob = _rob_cooldowns[self.guild_id][self.robber_id]
-            if now - last_rob < timedelta(hours=3):
-                remaining = timedelta(hours=3) - (now - last_rob)
-                hours, remainder = divmod(remaining.seconds, 3600)
-                minutes, _ = divmod(remainder, 60)
-                await interaction.response.edit_message(
-                    content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                    view=None
-                )
-                return
+
+        if self.robber_id != BOT_OWNER_ID:  # Нет cooldown для владельца
+            if self.robber_id in _rob_cooldowns[self.guild_id]:
+                last_rob = _rob_cooldowns[self.guild_id][self.robber_id]
+                if now - last_rob < timedelta(hours=3):
+                    remaining = timedelta(hours=3) - (now - last_rob)
+                    hours, remainder = divmod(remaining.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    await interaction.response.edit_message(
+                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                        view=None
+                    )
+                    return
 
         # Получить балансы
         robber_balance = await user_balance_store.get_balance(self.guild_id, self.robber_id)
@@ -233,8 +234,9 @@ class RobStartButton(discord.ui.Button):
 
             await interaction.response.edit_message(embed=embed, view=None)
 
-        # Установить cooldown
-        _rob_cooldowns[self.guild_id][self.robber_id] = now
+        # Установить cooldown (пропускаем для владельца бота)
+        if self.robber_id != BOT_OWNER_ID:
+            _rob_cooldowns[self.guild_id][self.robber_id] = now
 
 
 class RobCog(commands.Cog):
@@ -484,23 +486,24 @@ class RobGroupStartButton(discord.ui.Button):
         members = list(self.game_view.members)
         leader_id = self.game_view.leader_id
 
-        # Проверка cooldown для всех участников
+        # Проверка cooldown для всех участников (пропускаем владельца бота)
         now = datetime.now()
         if guild_id not in _rob_cooldowns:
             _rob_cooldowns[guild_id] = {}
 
         for member_id in members:
-            if member_id in _rob_cooldowns[guild_id]:
-                last_rob = _rob_cooldowns[guild_id][member_id]
-                if now - last_rob < timedelta(hours=3):
-                    remaining = timedelta(hours=3) - (now - last_rob)
-                    hours, remainder = divmod(remaining.seconds, 3600)
-                    minutes, _ = divmod(remainder, 60)
-                    await interaction.response.edit_message(
-                        content=f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин.",
-                        view=None
-                    )
-                    return
+            if member_id != BOT_OWNER_ID:  # Нет cooldown для владельца
+                if member_id in _rob_cooldowns[guild_id]:
+                    last_rob = _rob_cooldowns[guild_id][member_id]
+                    if now - last_rob < timedelta(hours=3):
+                        remaining = timedelta(hours=3) - (now - last_rob)
+                        hours, remainder = divmod(remaining.seconds, 3600)
+                        minutes, _ = divmod(remainder, 60)
+                        await interaction.response.edit_message(
+                            content=f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин.",
+                            view=None
+                        )
+                        return
 
         # Получить балансы
         victim_balance = await user_balance_store.get_balance(guild_id, victim_id)
@@ -622,9 +625,10 @@ class RobGroupStartButton(discord.ui.Button):
 
             result_text = f"{replace_emojis('❌')} **ПРОВАЛ!** Банда выплатила штраф **{collected}** монет жертве."
 
-        # Установить cooldown для всех участников
+        # Установить cooldown для всех участников (пропускаем владельца бота)
         for member_id in members:
-            _rob_cooldowns[guild_id][member_id] = now
+            if member_id != BOT_OWNER_ID:
+                _rob_cooldowns[guild_id][member_id] = now
 
         # Удалить лобби
         if self.game_view.message_id in _robgroup_lobbies:
