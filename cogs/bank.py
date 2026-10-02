@@ -42,7 +42,7 @@ def get_next_bank_limit(level: int) -> int:
 class BankCog(commands.Cog):
     """Ког с командами банка."""
 
-    def __init__(self, bot: TournamentBot):
+    def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
     @app_commands.command(name="bank", description="Управление банковским сейфом")
