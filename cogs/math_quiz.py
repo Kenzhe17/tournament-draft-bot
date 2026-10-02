@@ -224,15 +224,14 @@ class MathQuizCog(commands.Cog):
                 except (discord.Forbidden, discord.HTTPException):
                     pass
 
-            # Удалить все сообщения бота после раунда перед следующим раундом
+            # Удалить все сообщения после раунда перед следующим раундом
             if round_idx < 10:
                 try:
                     async for msg in interaction.channel.history(after=message, limit=None):
-                        if msg.author == self.bot.user:
-                            try:
-                                await msg.delete()
-                            except (discord.Forbidden, discord.HTTPException):
-                                pass
+                        try:
+                            await msg.delete()
+                        except (discord.Forbidden, discord.HTTPException):
+                            pass
                 except (discord.Forbidden, discord.HTTPException):
                     pass
 
