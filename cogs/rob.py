@@ -201,7 +201,7 @@ class RobStartButton(discord.ui.Button):
                 )
                 embed.add_field(
                     name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Украденная добыча",
-                    value=f"• Сумма: **{stolen} {get_emoji('money')}**",
+                    value=f"• Сумма: **{stolen}** {get_emoji('money')}",
                     inline=False
                 )
 
@@ -228,7 +228,7 @@ class RobStartButton(discord.ui.Button):
             )
             embed.add_field(
                 name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Выплата штрафа",
-                value=f"• Штраф: **{penalty} {get_emoji('money')}** (выплачено жертве)",
+                value=f"• Штраф: **{penalty}** {get_emoji('money')} (выплачено жертве)",
                 inline=False
             )
 
