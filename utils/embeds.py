@@ -1146,7 +1146,7 @@ async def build_winner_embed(
         # Try to get user_id from tournament
         user_id = tournament.player_user_ids.get(player_name, 0)
         if user_id:
-            stats = await betting_stats_store.get_stats(guild.id, user_id)
+            stats = await betting_stats_store.get_user_stats(guild.id, user_id)
             if stats and stats.best_win > max_payout:
                 max_payout = stats.best_win
                 max_payout_player = player_name
