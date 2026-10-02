@@ -1243,7 +1243,7 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(replace_emojis(f"✅ ELO игрока {player.display_name} изменен на {elo}."), delete_after=10)
 
-    @app_commands.command(name="edit", description="Изменить ELO или монеты игрока")
+    @app_commands.command(name="edit", description=f"Изменить ELO или {replace_emojis('money')} игрока")
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",
