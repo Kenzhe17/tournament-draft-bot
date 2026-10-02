@@ -779,7 +779,7 @@ class AdminConfirmView(View):
             winning_team_index_resolved = 0 if winning_team_index == match[0] else 1
 
             try:
-                payouts = await bet_store.resolve_match_bets(self.guild_id, match_id, winning_team_name, winning_team_index_resolved)
+                payouts = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index_resolved)
                 import logging
                 logging.info(f"Received payouts from bet resolution: {payouts}")
                 for user_id, payout in payouts.items():

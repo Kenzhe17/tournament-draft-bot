@@ -10,7 +10,8 @@ class Bet:
     guild_id: int
     user_id: int
     user_name: str
-    match_id: str
+    tournament_id: str  # ID турнира
+    match_id: str  # ID матча (qualifiers_0, semifinals_0, final_0)
     team_name: str
     team_index: int  # Индекс команды (0 или 1)
     amount: int
@@ -22,6 +23,7 @@ class Bet:
             "guild_id": self.guild_id,
             "user_id": self.user_id,
             "user_name": self.user_name,
+            "tournament_id": self.tournament_id,
             "match_id": self.match_id,
             "team_name": self.team_name,
             "team_index": self.team_index,
@@ -36,6 +38,7 @@ class Bet:
             guild_id=data.get("guild_id", 0),
             user_id=data.get("user_id", 0),
             user_name=data.get("user_name", "Unknown"),
+            tournament_id=data.get("tournament_id", ""),
             match_id=data.get("match_id", ""),
             team_name=data.get("team_name", ""),
             team_index=data.get("team_index", 0),

@@ -79,7 +79,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             match_id = f"{self.match_type}_{self.match_index}"
 
             # Check if user already has a bet on this match
-            existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
+            existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, self.tournament.id, match_id)
             if existing_bet:
                 # User already has a bet - calculate difference
                 if amount > existing_bet.amount:
@@ -125,6 +125,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                 guild_id=self.guild_id,
                 user_id=interaction.user.id,
                 user_name=interaction.user.display_name,
+                tournament_id=self.tournament.id,  # Сохраняем ID турнира
                 match_id=match_id,
                 team_name=self.team_name,
                 team_index=self.team_index,  # Сохраняем индекс команды

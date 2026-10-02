@@ -284,14 +284,21 @@ async def init_db() -> None:
                 guild_id BIGINT NOT NULL,
                 user_id BIGINT NOT NULL,
                 user_name TEXT NOT NULL,
+                tournament_id TEXT NOT NULL,
                 match_id TEXT NOT NULL,
                 team_name TEXT NOT NULL,
                 team_index INTEGER NOT NULL DEFAULT 0,
                 amount INTEGER NOT NULL,
                 odds REAL NOT NULL DEFAULT 1.9,
-                PRIMARY KEY (guild_id, user_id, match_id)
+                PRIMARY KEY (guild_id, user_id, tournament_id, match_id)
             )
         """)
+        
+        # Migration: add tournament_id column if it doesn't exist
+        try:
+            await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS tournament_id TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # Column might already exist
         
         # Migration: add team_index column if it doesn't exist
         try:

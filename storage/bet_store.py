@@ -16,7 +16,7 @@ class BetStore:
     """Хранилище ставок с динамическими коэффициентами и буфером."""
 
     def __init__(self) -> None:
-        self._bets: dict[str, list[Bet]] = {}  # match_id -> list of bets
+        self._bets: dict[str, list[Bet]] = {}  # (tournament_id:match_id) -> list of bets
         self._odds: dict[str, MatchOdds] = {}  # match_id -> current odds and buffer
         self._locks: dict[str, asyncio.Lock] = {}  # match_id -> async lock for race condition protection
         self._use_db = True  # Использовать PostgreSQL
@@ -283,7 +283,7 @@ class BetStore:
                 pool = await get_pool()
                 async with pool.acquire() as conn:
                     # Check if user already has a bet on this match
-                    existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
+                    existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
                     if existing_bet:
                         # Add new bet amount to existing bet (do NOT refund)
                         # bet.amount already updated above
@@ -292,73 +292,75 @@ class BetStore:
 
                     await conn.execute(
                         """
-                        INSERT INTO bets (guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                        ON CONFLICT (guild_id, user_id, match_id)
-                        DO UPDATE SET user_name = $3, team_name = $5, team_index = $6, amount = $7, odds = $8
+                        INSERT INTO bets (guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                        ON CONFLICT (guild_id, user_id, tournament_id, match_id)
+                        DO UPDATE SET user_name = $3, team_name = $6, team_index = $7, amount = $8, odds = $9
                         """,
-                        bet.guild_id, bet.user_id, bet.user_name, bet.match_id, bet.team_name, bet.team_index, bet.amount, bet.odds
+                        bet.guild_id, bet.user_id, bet.user_name, bet.tournament_id, bet.match_id, bet.team_name, bet.team_index, bet.amount, bet.odds
                     )
             else:
                 from storage.user_balance_store import user_balance_store
 
-                if bet.match_id not in self._bets:
-                    self._bets[bet.match_id] = []
+                key = f"{bet.tournament_id}:{bet.match_id}"
+                if key not in self._bets:
+                    self._bets[key] = []
 
                 # Check if user already has a bet on this match
                 existing_idx = next(
-                    (i for i, b in enumerate(self._bets[bet.match_id]) if b.user_id == bet.user_id),
+                    (i for i, b in enumerate(self._bets[key]) if b.user_id == bet.user_id),
                     None
                 )
                 if existing_idx is not None:
                     # Add new bet amount to existing bet (do NOT refund)
                     # bet.amount already updated above
                     # Keep the original odds (first bet's odds)
-                    existing_bet = self._bets[bet.match_id][existing_idx]
+                    existing_bet = self._bets[key][existing_idx]
                     bet.odds = existing_bet.odds
                     # Replace with updated bet
-                    self._bets[bet.match_id][existing_idx] = bet
+                    self._bets[key][existing_idx] = bet
                 else:
-                    self._bets[bet.match_id].append(bet)
+                    self._bets[key].append(bet)
 
                 self.save()
                 self.save()  # Save odds as well
 
-    async def get_bets_by_match(self, match_id: str) -> list[Bet]:
+    async def get_bets_by_match(self, tournament_id: str, match_id: str) -> list[Bet]:
         """Получить все ставки для матча."""
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds FROM bets WHERE match_id = $1",
-                    match_id
+                    "SELECT guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds FROM bets WHERE tournament_id = $1 AND match_id = $2",
+                    tournament_id, match_id
                 )
-                return [Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"]) for row in rows]
+                return [Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], tournament_id=row["tournament_id"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"]) for row in rows]
         else:
-            return self._bets.get(match_id, [])
+            key = f"{tournament_id}:{match_id}"
+            return self._bets.get(key, [])
 
-    async def get_user_bet(self, guild_id: int, user_id: int, match_id: str) -> Bet | None:
+    async def get_user_bet(self, guild_id: int, user_id: int, tournament_id: str, match_id: str) -> Bet | None:
         """Получить ставку пользователя на матч."""
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, user_name, match_id, team_name, team_index, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND match_id = $3",
-                    guild_id, user_id, match_id
+                    "SELECT guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_id = $4",
+                    guild_id, user_id, tournament_id, match_id
                 )
                 if row:
-                    return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"])
+                    return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], tournament_id=row["tournament_id"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"])
                 return None
         else:
             bets = self._bets.get(match_id, [])
             for bet in bets:
-                if bet.user_id == user_id and bet.guild_id == guild_id:
+                if bet.user_id == user_id and bet.guild_id == guild_id and bet.tournament_id == tournament_id:
                     return bet
             return None
 
-    async def delete_bets_by_match(self, match_id: str) -> None:
+    async def delete_bets_by_match(self, tournament_id: str, match_id: str) -> None:
         """Удалить все ставки для матча."""
         # DO NOT delete odds - keep them for display
         # Odds should only be cleared when tournament is deleted, not when match is resolved
@@ -367,10 +369,11 @@ class BetStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
-                await conn.execute("DELETE FROM bets WHERE match_id = $1", match_id)
+                await conn.execute("DELETE FROM bets WHERE tournament_id = $1 AND match_id = $2", tournament_id, match_id)
         else:
-            if match_id in self._bets:
-                del self._bets[match_id]
+            key = f"{tournament_id}:{match_id}"
+            if key in self._bets:
+                del self._bets[key]
             self.save()
 
     async def delete_bets_by_guild(self, guild_id: int) -> None:
@@ -383,20 +386,20 @@ class BetStore:
         else:
             # Filter out bets from this guild
             self._bets = {
-                match_id: [b for b in bets if b.guild_id == guild_id]
-                for match_id, bets in self._bets.items()
+                key: [b for b in bets if b.guild_id == guild_id]
+                for key, bets in self._bets.items()
             }
             self.save()
 
-    async def resolve_match_bets(self, guild_id: int, match_id: str, winning_team_name: str, winning_team_index: int) -> dict[int, int]:
+    async def resolve_match_bets(self, guild_id: int, tournament_id: str, match_id: str, winning_team_name: str, winning_team_index: int) -> dict[int, int]:
         """Resolve bets for a match and return payouts (user_id -> amount)."""
         from storage.betting_stats_store import betting_stats_store
         import logging
 
-        bets = await self.get_bets_by_match(match_id)
+        bets = await self.get_bets_by_match(tournament_id, match_id)
         payouts = {}
 
-        logging.info(f"Resolving bets for match_id={match_id}, winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
+        logging.info(f"Resolving bets for tournament_id={tournament_id}, match_id={match_id}, winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
         logging.info(f"Found {len(bets)} bets for this match")
 
         # Get current odds for the winning team (final odds)
@@ -437,7 +440,7 @@ class BetStore:
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
 
         # Delete bets after resolution
-        await self.delete_bets_by_match(match_id)
+        await self.delete_bets_by_match(tournament_id, match_id)
 
         logging.info(f"Final payouts: {payouts}")
         return payouts
