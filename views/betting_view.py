@@ -209,7 +209,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         # Check if user already has a bet on this match
         from storage.bet_store import bet_store
-        existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, match_id)
+        existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, self.tournament.id, match_id)
         if existing_bet:
             # User already has a bet - calculate difference
             if amount > existing_bet.amount:
@@ -255,8 +255,10 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             guild_id=self.guild_id,
             user_id=interaction.user.id,
             user_name=interaction.user.display_name,
+            tournament_id=self.tournament.id,
             match_id=match_id,
             team_name=self.team_name,
+            team_index=self.team_index,
             amount=amount,  # Full amount
             odds=0.0  # Will be set in save_bet
         )

@@ -181,7 +181,7 @@ class BetStore:
                 raise ValueError(f"Invalid team name: {bet.team_name}")
 
             # Check if user already has a bet
-            existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.match_id)
+            existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
             if existing_bet:
                 # Update existing bet, keep original odds
                 additional_amount = bet.amount - existing_bet.amount
