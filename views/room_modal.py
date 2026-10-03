@@ -76,8 +76,8 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
 
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
-    """Send DM notifications to team members about room info."""
-    # Get team members
+    """Send room info to specific channel with all player pings."""
+    # Get team members for pings
     team1_members = []
     team2_members = []
 
@@ -101,32 +101,21 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     team1_name = tournament.team_names.get(team1_index, team1_data.get("captain", f"Team {team1_index}"))
     team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
 
-    # Send DM to team1 members
-    for user_id in team1_members:
-        try:
-            user = await bot.fetch_user(user_id)
-            embed = discord.Embed(
-                title="КОМНАТА ОТКРЫТА",
-                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
-                color=discord.Color.from_rgb(69, 233, 233)
-            )
-            embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
-            embed.add_field(name="Пароль", value=str(room_password), inline=True)
-            await user.send(content=f"<@{user_id}>", embed=embed)
-        except Exception:
-            pass  # User has DMs disabled
+    # Get specific channel
+    channel = bot.get_channel(1492103238348967988)
+    if not channel:
+        return
 
-    # Send DM to team2 members
-    for user_id in team2_members:
-        try:
-            user = await bot.fetch_user(user_id)
-            embed = discord.Embed(
-                title="КОМНАТА ОТКРЫТА",
-                description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
-                color=discord.Color.from_rgb(69, 233, 233)
-            )
-            embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
-            embed.add_field(name="Пароль", value=str(room_password), inline=True)
-            await user.send(content=f"<@{user_id}>", embed=embed)
-        except Exception:
-            pass  # User has DMs disabled
+    # Create ping string for all players
+    all_members = team1_members + team2_members
+    pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
+
+    embed = discord.Embed(
+        title="🏠 КОМНАТА ОТКРЫТА",
+        description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
+        color=discord.Color.from_rgb(69, 233, 233)
+    )
+    embed.add_field(name="ID комнаты", value=str(room_id), inline=True)
+    embed.add_field(name="Пароль", value=str(room_password), inline=True)
+    
+    await channel.send(content=pings, embed=embed)
