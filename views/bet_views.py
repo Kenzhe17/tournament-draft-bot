@@ -132,7 +132,7 @@ class ViewBetsButton(Button):
         bets_text = []
         for i, (team_a, team_b) in enumerate(self.matches):
             match_id = f"{self.match_type}_{i}"
-            bets = await bet_store.get_bets_by_match(match_id)
+            bets = await bet_store.get_bets_by_match(self.tournament.id, match_id)
             
             team_a_data = self.tournament.teams[team_a] if team_a < len(self.tournament.teams) else {}
             team_b_data = self.tournament.teams[team_b] if team_b < len(self.tournament.teams) else {}
@@ -154,9 +154,9 @@ class ViewBetsButton(Button):
             star_emoji = replace_emojis("a_star")
             match_text = f"{star_emoji} Игра #{i + 1}: {name_a} `{odds_a:.2f}x` vs {name_b} `{odds_b:.2f}x`\n\n"
 
-            # Group bets by team
-            team_a_bets = [b for b in bets if b.team_name == name_a]
-            team_b_bets = [b for b in bets if b.team_name == name_b]
+            # Group bets by team (using team_index)
+            team_a_bets = [b for b in bets if b.team_index == 0]
+            team_b_bets = [b for b in bets if b.team_index == 1]
 
             # Calculate totals
             team_a_total = sum(b.amount for b in team_a_bets)
