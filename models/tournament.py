@@ -102,10 +102,10 @@ class Tournament:
     guild_id: int
     channel_id: int
     message_id: int = 0
-    id: int = field(init=False)  # Alias for guild_id (tournament isolation)
+    id: str = field(init=False)  # Alias for guild_id (tournament isolation)
 
     def __post_init__(self):
-        self.id = self.guild_id
+        self.id = str(self.guild_id)
 
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
