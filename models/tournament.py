@@ -425,6 +425,8 @@ class Tournament:
     async def distribute_by_skill_rating(self, guild_id: int) -> None:
         """Распределить игроков по кругам на основе Skill Rating."""
         from storage.player_stats_store import player_stats_store
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Collect all players from all circles
         all_players = []
@@ -434,6 +436,8 @@ class Tournament:
                 user_id = self.player_user_ids.get(player_name, 0)
                 all_players.append((player_name, user_id))
 
+        logger.info(f"distribute_by_skill_rating: collected {len(all_players)} players from circles")
+        
         # Get Skill Rating for each player
         players_with_rating = []
         all_ratings = []  # Для расчёта среднего по серверу
@@ -456,6 +460,8 @@ class Tournament:
         if all_ratings:
             server_avg_rating = sum(all_ratings) / len(all_ratings)
         
+        logger.info(f"distribute_by_skill_rating: server_avg_rating={server_avg_rating}, players_with_rating={len(players_with_rating)}")
+        
         # Заменить Skill Rating на среднее по серверу для игроков с менее чем 3 катками
         final_players_with_rating = []
         for player_name, user_id, skill_rating in players_with_rating:
@@ -469,6 +475,8 @@ class Tournament:
 
         # Sort by Skill Rating (descending)
         final_players_with_rating.sort(key=lambda x: x[2], reverse=True)
+        
+        logger.info(f"distribute_by_skill_rating: sorted players: {[(p[0], p[2]) for p in final_players_with_rating]}")
 
         # Clear all circles
         self.circle1 = []
@@ -478,6 +486,7 @@ class Tournament:
 
         # Distribute to circles based on tournament size
         captain_count = self.captain_count
+        logger.info(f"distribute_by_skill_rating: captain_count={captain_count}")
 
         # Top players become captains (circle1)
         for i in range(captain_count):
@@ -485,6 +494,8 @@ class Tournament:
                 player_name, user_id, _ = final_players_with_rating[i]
                 self.circle1.append(player_name)
                 self.player_user_ids[player_name] = user_id
+        
+        logger.info(f"distribute_by_skill_rating: circle1={self.circle1}")
 
         # Next group goes to circle2
         for i in range(captain_count, captain_count * 2):
@@ -492,6 +503,8 @@ class Tournament:
                 player_name, user_id, _ = final_players_with_rating[i]
                 self.circle2.append(player_name)
                 self.player_user_ids[player_name] = user_id
+        
+        logger.info(f"distribute_by_skill_rating: circle2={self.circle2}")
 
         # Next group goes to circle3
         for i in range(captain_count * 2, captain_count * 3):
@@ -499,12 +512,16 @@ class Tournament:
                 player_name, user_id, _ = final_players_with_rating[i]
                 self.circle3.append(player_name)
                 self.player_user_ids[player_name] = user_id
+        
+        logger.info(f"distribute_by_skill_rating: circle3={self.circle3}")
 
         # All remaining players go to circle4
         for i in range(captain_count * 3, len(final_players_with_rating)):
             player_name, user_id, _ = final_players_with_rating[i]
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
+        
+        logger.info(f"distribute_by_skill_rating: circle4={self.circle4}")
 
     # --- Случайное распределение (без кругов) ---
 
