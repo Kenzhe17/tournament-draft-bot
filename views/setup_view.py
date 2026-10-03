@@ -543,7 +543,7 @@ class DeletePlayerButton(discord.ui.Button):
             if tournament.formation_mode == FormationMode.RANDOM:
                 if player_name not in tournament.players_pool:
                     try:
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
@@ -556,7 +556,7 @@ class DeletePlayerButton(discord.ui.Button):
             else:
                 if not tournament.remove_player(player_name):
                     try:
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
@@ -570,7 +570,7 @@ class DeletePlayerButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             try:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"{replace_emojis('✅')} Игрок `{player_name}` удален.",
                     ephemeral=True
                 )
@@ -647,11 +647,13 @@ class ReplacePlayerButton(discord.ui.Button):
         select = view.children[0]  # The select menu
 
         async def select_callback(interaction: discord.Interaction):
+            await interaction.response.defer()
+            
             old_player = select.values[0]
             # Show modal for new player
             modal = ReplacePlayerModal(self.guild_id, old_player)
             try:
-                await interaction.response.send_modal(modal)
+                await interaction.followup.send_modal(modal)
             except discord.NotFound:
                 pass
 
