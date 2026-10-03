@@ -66,14 +66,6 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         # Send DM notifications to team members
         await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
 
-        try:
-            await interaction.response.send_message(
-                replace_emojis("✅ Комната добавлена: ID={self.room_id.value}, Пароль={self.room_password.value}"),
-                ephemeral=True
-            )
-        except discord.NotFound:
-            pass
-
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
     """Send room info to specific channel with all player pings."""
