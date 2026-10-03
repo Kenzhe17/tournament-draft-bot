@@ -847,14 +847,6 @@ class TournamentCog(commands.Cog):
         description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 
-        # Экономика
-        bank_balance = await user_bank_store.get_bank_balance(interaction.guild_id, target_user.id)
-        description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('sub_middle')} Наличные: {balance:,} {replace_emojis('money')} *(уязвимы для /rob)*")
-        description_parts.append(f"{replace_emojis('sub_middle')} В сейфе: {bank_balance:,} {replace_emojis('money')} *(защищено)*")
-        description_parts.append(f"{replace_emojis('sub_directory')} Предметов: {inventory_count} шт.")
-        description_parts.append("")
-
         # Статистика игр
         description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
         description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр")
