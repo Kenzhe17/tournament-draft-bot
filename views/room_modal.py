@@ -103,7 +103,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
     embed = discord.Embed(
-        title="🏠 КОМНАТА ОТКРЫТА",
+        title=f"{replace_emojis('emoji_room')} КОМНАТА ОТКРЫТА",
         description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
         color=discord.Color.from_rgb(69, 233, 233)
     )
