@@ -165,7 +165,7 @@ class CircleSelectButton(discord.ui.Button):
                 for circle in range(1, 5):
                     if user_name in getattr(tournament, f"circle{circle}"):
                         if circle == self.circle:
-                            await interaction.followup.send(
+                            await interaction.response.send_message(
                                 replace_emojis("❌ Вы уже находитесь в этом круге."),
                                 ephemeral=True
                             )
@@ -178,7 +178,7 @@ class CircleSelectButton(discord.ui.Button):
             # Add player with user_id
             success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
             if not success:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Не удалось добавить игрока."),
                     ephemeral=True
                 )
@@ -190,19 +190,19 @@ class CircleSelectButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             if was_moved:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{replace_emojis('✅')} Вы перемещены в {circle_names[self.circle]}!",
                     ephemeral=True
                 )
             else:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{replace_emojis('✅')} Вы добавлены в {circle_names[self.circle]}!",
                     ephemeral=True
                 )
         except Exception as e:
             logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
@@ -266,7 +266,7 @@ class JoinPoolButton(discord.ui.Button):
 
             # Check if user already in pool
             if user_name in tournament.players_pool:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Вы уже участвуете в турнире."),
                     ephemeral=True
                 )
@@ -278,7 +278,7 @@ class JoinPoolButton(discord.ui.Button):
             store.set(tournament)
 
             # Send response
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 replace_emojis("✅ Вы добавлены в турнир!"),
                 ephemeral=True
             )
@@ -289,7 +289,7 @@ class JoinPoolButton(discord.ui.Button):
         except Exception as e:
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Произошла ошибка при добавлении игрока."),
                     ephemeral=True
                 )
@@ -455,7 +455,7 @@ class ExitButton(discord.ui.Button):
             success = tournament.remove_player(user_name)
             if not success:
                 try:
-                    await interaction.followup.send(
+                    await interaction.response.send_message(
                         replace_emojis("❌ Не удалось удалить игрока."),
                         ephemeral=True
                     )
@@ -469,7 +469,7 @@ class ExitButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         try:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 replace_emojis("✅ Вы вышли из турнира."),
                 ephemeral=True
             )
@@ -520,7 +520,7 @@ class DeletePlayerButton(discord.ui.Button):
 
         if not players:
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis("❌ Нет зарегистрированных игроков."),
                     ephemeral=True
                 )
@@ -543,7 +543,7 @@ class DeletePlayerButton(discord.ui.Button):
             if tournament.formation_mode == FormationMode.RANDOM:
                 if player_name not in tournament.players_pool:
                     try:
-                        await interaction.followup.send(
+                        await interaction.response.send_message(
                             f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
@@ -556,7 +556,7 @@ class DeletePlayerButton(discord.ui.Button):
             else:
                 if not tournament.remove_player(player_name):
                     try:
-                        await interaction.followup.send(
+                        await interaction.response.send_message(
                             f"{replace_emojis('❌')} Игрок `{player_name}` не найден.",
                             ephemeral=True
                         )
@@ -570,7 +570,7 @@ class DeletePlayerButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{replace_emojis('✅')} Игрок `{player_name}` удален.",
                     ephemeral=True
                 )
@@ -855,7 +855,7 @@ class AutoDistributeButton(discord.ui.Button):
         required_players = int(tournament.size.value)
         if total_players < required_players:
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
                     ephemeral=True
                 )
@@ -871,7 +871,7 @@ class AutoDistributeButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         try:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 replace_emojis("✅ Игроки распределены по кругам на основе ELO!"),
                 ephemeral=True
             )
@@ -933,7 +933,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         
         if total_players < required_players:
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"{replace_emojis('❌')} Недостаточно игроков для распределения. Нужно {required_players}, есть {total_players}.",
                     ephemeral=True
                 )
@@ -951,7 +951,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         try:
-            await interaction.followup.send(
+            await interaction.response.send_message(
                 replace_emojis("✅ Игроки распределены по кругам на основе Skill Rating!"),
                 ephemeral=True
             )
