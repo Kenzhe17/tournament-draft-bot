@@ -94,7 +94,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
 
     # Get specific channel
-    channel = bot.get_channel(1492103238348967988)
+    channel = bot.get_channel(1200125075156910181)
     if not channel:
         return
 
@@ -103,7 +103,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
     embed = discord.Embed(
-        title=f"{replace_emojis('room')} КОМНАТА ОТКРЫТА",
+        title=f"{replace_emojis('a_star')} КОМНАТА ОТКРЫТА",
         description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
         color=discord.Color.from_rgb(69, 233, 233)
     )
