@@ -412,9 +412,17 @@ class RobGroupView(discord.ui.View):
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Информация о налёте",
-            value=f"• Цель: <@{self.victim_id}>\n• Лидер: <@{self.leader_id}>\n• Состав банды ({member_count}/6): {members_list}\n• Шанс успеха: **{success_chance}%**\n• Лимит кражи: **Средний баланс банды**\n• Время на сбор: **{time_str}**",
+            value=f"• Цель: <@{self.victim_id}>\n• Лидер: <@{self.leader_id}>\n• Шанс успеха: **{success_chance}%**\n• Лимит кражи: **Средний баланс банды**\n• Время на сбор: **{time_str}**",
             inline=False
         )
+
+        # Состав банды - отдельное поле
+        if members_list:
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Состав банды ({member_count}/6)",
+                value=members_list,
+                inline=False
+            )
 
         embed.add_field(
             name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Условия и риски",
