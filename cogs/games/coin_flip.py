@@ -341,28 +341,30 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             if opponent:
                 thread_name = f"🎲 Монетка - {interaction.user.display_name} vs {opponent.display_name}"
 
-        # Send empty message in main channel (required to create thread)
-        await interaction.response.send_message(content=" ", ephemeral=False)
-
-        # Get the original message and create thread
-        try:
-            original_message = await interaction.original_response()
-            thread = await original_message.create_thread(
-                name=thread_name,
-                auto_archive_duration=60
-            )
-
-            # Send game embed with buttons in the thread
+        # Check if we're already in a thread
+        if isinstance(interaction.channel, discord.Thread):
+            # Already in thread, just send the game embed
             embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-            await thread.send(embed=embed, view=view)
+            await interaction.response.send_message(embed=embed, view=view)
+        else:
+            # Not in thread, create new thread
+            await interaction.response.send_message(content="\u200b", ephemeral=False)
 
-            # Delete the empty message in main channel
-            await original_message.delete()
-        except Exception as e:
-            # If thread creation fails, send game in main channel
-            print(f"Failed to create thread: {e}")
-            embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-            await interaction.edit_original_response(content=None, embed=embed, view=view)
+            try:
+                original_message = await interaction.original_response()
+                thread = await original_message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
+
+                embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+                await thread.send(embed=embed, view=view)
+
+                await original_message.delete()
+            except Exception as e:
+                print(f"Failed to create thread: {e}")
+                embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+                await interaction.edit_original_response(content=None, embed=embed, view=view)
 
 
 async def start_game(
@@ -492,8 +494,8 @@ async def create_coin_flip_game(
     if opponent:
         thread_name = f"🎲 Монетка - {interaction.user.display_name} vs {opponent.display_name}"
 
-    # Send empty message in main channel (required to create thread)
-    await interaction.response.send_message(content=" ", ephemeral=False)
+    # Send minimal message in main channel (required to create thread)
+    await interaction.response.send_message(content="\u200b", ephemeral=False)
 
     # Get the original message and create thread
     try:
@@ -507,7 +509,7 @@ async def create_coin_flip_game(
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
         await thread.send(embed=embed, view=view)
 
-        # Delete the empty message in main channel
+        # Delete the minimal message in main channel
         await original_message.delete()
     except Exception as e:
         # If thread creation fails, send game in main channel
