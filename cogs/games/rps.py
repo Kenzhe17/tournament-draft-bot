@@ -16,8 +16,8 @@ from discord.ext import commands
 # Rate limiter for thread creation
 thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
 
-# Track active threads per user (user_id -> thread_id)
-_active_threads = {}
+# Import shared game state
+from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread
 
 from storage.economy import (
     check_balance,
@@ -715,8 +715,7 @@ class RPSCloseThreadButton(discord.ui.Button):
         thread = interaction.channel
 
         # Remove from active threads
-        if user_id in _active_threads:
-            del _active_threads[user_id]
+        remove_active_thread(user_id)
 
         if isinstance(thread, discord.Thread):
             await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
@@ -931,7 +930,7 @@ class RPSCog(commands.Cog):
         guild_id = interaction.guild_id
 
         # Check if user has an active thread
-        if user_id in _active_threads:
+        if has_active_thread(user_id):
             await interaction.response.send_message(
                 "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
                 ephemeral=True
@@ -1000,7 +999,7 @@ class RPSCog(commands.Cog):
                     )
 
                     # Track this thread for the user
-                    _active_threads[user_id] = thread.id
+                    add_active_thread(user_id, thread.id)
 
                     embed = discord.Embed(
                         title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),

@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # Rate limiter for thread creation
 thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
 
-# Track active threads per user (user_id -> thread_id)
-_active_threads = {}
+# Import shared game state
+from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread
 
 
 class MathQuizCloseThreadButton(discord.ui.Button):
@@ -33,8 +33,7 @@ class MathQuizCloseThreadButton(discord.ui.Button):
         thread = interaction.channel
 
         # Remove from active threads
-        if user_id in _active_threads:
-            del _active_threads[user_id]
+        remove_active_thread(user_id)
 
         if isinstance(thread, discord.Thread):
             await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
@@ -143,8 +142,7 @@ class QuizLobbyView(discord.ui.View):
             await user_balance_store.add_balance(self.guild_id, player.id, self.bet)
 
         # Remove from active threads
-        if self.host.id in _active_threads:
-            del _active_threads[self.host.id]
+        remove_active_thread(self.host.id)
 
         self.stop()
         cancel_embed = discord.Embed(
@@ -169,7 +167,7 @@ class MathQuizCog(commands.Cog):
         user_id = interaction.user.id
 
         # Check if user has an active thread
-        if user_id in _active_threads:
+        if has_active_thread(user_id):
             await interaction.response.send_message(
                 "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
                 ephemeral=True
@@ -207,7 +205,7 @@ class MathQuizCog(commands.Cog):
                 )
 
                 # Track this thread for the user
-                _active_threads[user_id] = thread.id
+                add_active_thread(user_id, thread.id)
 
                 lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
                 message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
