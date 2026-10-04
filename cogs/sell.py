@@ -55,9 +55,7 @@ class SellCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    economy = app_commands.Group(name="economy", description="Управление экономикой")
-
-    @economy.command(name="sell", description="Продать значок или тег за 50% от стоимости")
+    @app_commands.command(name="sell", description="Продать значок или тег за 50% от стоимости")
     @app_commands.describe(
         item_id="ID или название продаваемого предмета (значка/тега)"
     )
@@ -98,7 +96,7 @@ class SellCog(commands.Cog):
 
         # 5. Красивый Embed ответа
         embed = discord.Embed(
-            title="<a:a_star:0000> **ПРОДАЖА ПРЕДМЕТА | /sell**",
+            title="<a:a_star:0000> **ПРОДАЖА ПРЕДМЕТА**",
             description=(
                 f"<a:a_sparkle:0000> **Пользователь:** {interaction.user.mention}\n\n"
                 f"<:white_arrow:0000> **Продан предмет:** `{item['name']}`\n"
