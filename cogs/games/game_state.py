@@ -46,8 +46,8 @@ async def wait_for_thread_cooldown() -> None:
 
         logger.info(f"Thread cooldown check: time_since_last={time_since_last:.2f}s")
 
-        # Wait at least 2 seconds between thread creations
-        min_cooldown = 2.0
+        # Wait at least 5 seconds between thread creations (increased from 2 to avoid rate limits)
+        min_cooldown = 5.0
         if time_since_last < min_cooldown:
             wait_time = min_cooldown - time_since_last
             logger.info(f"Waiting for thread cooldown: {wait_time:.2f}s")
