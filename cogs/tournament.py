@@ -241,7 +241,7 @@ class TournamentCog(commands.Cog):
         """Показать интерактивную справку."""
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')}  СПРАВКА ПО КОМАНДАМ  {replace_emojis('a_star')}",
-            description=f"{replace_emojis('white_arrow')} **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n{replace_emojis('white_dot')} **Выберите категорию в меню ниже:**\n{replace_emojis('a_dot_smaller')} Турниры — Сетка, топ ELO и статистика\n{replace_emojis('a_dot_smaller')} Профиль — Карточка игрока и текущий ранг\n{replace_emojis('a_dot_smaller')} Экономика — Баланс, переводы, подарки и ставки\n{replace_emojis('a_dot_smaller')} Магазин — Покупка ролей и инвентарь\n{replace_emojis('a_dot_smaller')} Мини-игры — Казино, викторины и дуэли\n{replace_emojis('a_dot_smaller')} Система рангов — Информация о рангах и уровнях\n{replace_emojis('a_dot_smaller')} Организаторам — Создание турниров и управление\n{replace_emojis('a_dot_smaller')} Правила сервера — Свод правил и регламент",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n{replace_emojis('white_dot')} **Выберите категорию в меню ниже:**\n{replace_emojis('a_dot_smaller')} Турниры — Сетка, топ ELO и статистика\n{replace_emojis('a_dot_smaller')} Профиль — Карточка игрока и текущий ранг\n{replace_emojis('a_dot_smaller')} Экономика — Баланс, переводы, продажи и ставки\n{replace_emojis('a_dot_smaller')} Магазин — Покупка ролей и инвентарь\n{replace_emojis('a_dot_smaller')} Мини-игры — Игровые треды и игры\n{replace_emojis('a_dot_smaller')} Система рангов — Информация о рангах и уровнях\n{replace_emojis('a_dot_smaller')} Организаторам — Создание турниров и управление\n{replace_emojis('a_dot_smaller')} Правила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -1956,7 +1956,7 @@ class TournamentCog(commands.Cog):
         # Single embed with image and text
         embed = discord.Embed(
             title="✧ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✧",
-            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} <#1556234028833706014> {replace_emojis('white_arrow')} Новости об сообществе\n{replace_emojis('a_dot_smaller')} <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} <#1549809898643001484> {replace_emojis('white_arrow')} Проведение турниров\n{replace_emojis('a_dot_smaller')} <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты из игр\n{replace_emojis('a_dot_smaller')} <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} <#1250974603162026024> {replace_emojis('white_arrow')} Прослушивание треков\n{replace_emojis('a_dot_smaller')} <#1242489553189732373> {replace_emojis('white_arrow')} Полезные файлы для FF\n\n {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше",
+            description=f"{replace_emojis('white_arrow')} **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} <#1556234028833706014> {replace_emojis('white_arrow')} Новости об сообществе\n{replace_emojis('a_dot_smaller')} <#1200125075156910181> {replace_emojis('white_arrow')} Основное общение сообщества\n{replace_emojis('a_dot_smaller')} <#1549809898643001484> {replace_emojis('white_arrow')} Проведение турниров\n{replace_emojis('a_dot_smaller')} <#1514677029159567604> {replace_emojis('white_arrow')} Яркие моменты из игр\n{replace_emojis('a_dot_smaller')} <#1551167853741219880> {replace_emojis('white_arrow')} Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} <#1250974603162026024> {replace_emojis('white_arrow')} Прослушивание треков\n{replace_emojis('a_dot_smaller')} <#1242489553189732373> {replace_emojis('white_arrow')} Полезные файлы для FF\n\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **ОСНОВНЫЕ КОМАНДЫ БОТА:**\n{replace_emojis('a_dot_smaller')} `/help` — Справка по всем командам\n{replace_emojis('a_dot_smaller')} `/balance` — Проверить баланс\n{replace_emojis('a_dot_smaller')} `/daily` — Ежедневный бонус\n{replace_emojis('a_dot_smaller')} `/games open` — Создать игровой тред\n{replace_emojis('a_dot_smaller')} `/coin_flip` — Орёл или решка\n{replace_emojis('a_dot_smaller')} `/rps` — Камень-ножницы-бумага\n{replace_emojis('a_dot_smaller')} `/mathquiz` — Математическая дуэль\n{replace_emojis('a_dot_smaller')} `/profile` — Карточка игрока\n{replace_emojis('a_dot_smaller')} `/shop` — Магазин предметов\n\n {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")
@@ -2114,7 +2114,7 @@ class GuideSelectMenu(discord.ui.Select):
             ),
             discord.SelectOption(
                 label="Экономика",
-                description="Баланс, переводы, подарки и ставки",
+                description="Баланс, переводы, продажи и ставки",
                 value="economy"
             ),
             discord.SelectOption(
@@ -2124,7 +2124,7 @@ class GuideSelectMenu(discord.ui.Select):
             ),
             discord.SelectOption(
                 label="Мини-игры",
-                description="Казино, викторины и дуэли",
+                description="Игровые треды и игры",
                 value="games"
             ),
             discord.SelectOption(
@@ -2297,7 +2297,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
             ),
             discord.SelectOption(
                 label="Экономика",
-                description="Баланс, переводы, подарки и ставки",
+                description="Баланс, переводы, продажи и ставки",
                 value="economy"
             ),
             discord.SelectOption(
@@ -2307,7 +2307,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
             ),
             discord.SelectOption(
                 label="Мини-игры",
-                description="Казино, викторины и дуэли",
+                description="Игровые треды и игры",
                 value="games"
             ),
             discord.SelectOption(
