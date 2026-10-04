@@ -5,7 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from storage.shop_store import shop_store
+from storage.shop_store import shop_store, inventory_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -31,20 +31,13 @@ async def get_shop_item(item_id: str) -> Optional[dict]:
 
 async def has_user_item(user_id: int, item_id: str) -> bool:
     """Проверка наличия предмета у пользователя."""
-    from storage.user_profile_store import user_profile_store
-    profile = user_profile_store.get_profile(0, user_id)  # guild_id = 0
-    if not profile:
-        return False
-    return item_id in profile.inventory
+    inventory = inventory_store.get_player_inventory(0, user_id)  # guild_id = 0
+    return any(cosmetic.item_id == item_id for cosmetic in inventory)
 
 
 async def remove_user_item(user_id: int, item_id: str) -> None:
     """Удаление уникального предмета из инвентаря пользователя."""
-    from storage.user_profile_store import user_profile_store
-    profile = user_profile_store.get_profile(0, user_id)  # guild_id = 0
-    if profile and item_id in profile.inventory:
-        profile.inventory.remove(item_id)
-        user_profile_store.set_profile(0, user_id, profile)
+    inventory_store.remove_cosmetic(0, user_id, item_id)  # guild_id = 0
 
 
 # ==========================================
