@@ -756,8 +756,11 @@ class RPSCog(commands.Cog):
                 # Determine thread name
                 thread_name = f"🎮 RPS - {interaction.user.display_name}"
 
-                # Send minimal message in main channel (required to create thread)
-                msg = await interaction.followup.send(content="\u200b", ephemeral=False)
+                # Send notification in main channel
+                msg = await interaction.followup.send(
+                    content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
+                    ephemeral=False
+                )
 
                 # Create thread and send game embed with buttons
                 try:
@@ -772,9 +775,6 @@ class RPSCog(commands.Cog):
                         color=discord.Color.blue()
                     )
                     await thread.send(embed=embed, view=view)
-
-                    # Delete the minimal message in main channel
-                    await msg.delete()
                 except Exception as e:
                     logger.error(f"Failed to create thread: {e}")
                     # Fallback: send in main channel
@@ -805,8 +805,11 @@ class RPSCog(commands.Cog):
                     # Determine thread name
                     thread_name = f"⚔️ RPS - {interaction.user.display_name} vs {opponent.display_name}"
 
-                    # Send minimal message in main channel (required to create thread)
-                    msg = await interaction.followup.send(content="\u200b", ephemeral=False)
+                    # Send notification in main channel
+                    msg = await interaction.followup.send(
+                        content=f"{replace_emojis('a_star')} Вызов отправлен в треде: {thread_name}",
+                        ephemeral=False
+                    )
 
                     # Create thread and send game embed with buttons
                     try:
@@ -828,9 +831,6 @@ class RPSCog(commands.Cog):
                         # Update view with message_id after sending
                         view.message_id = thread_msg.id
                         view.channel_id = thread.id
-
-                        # Delete the minimal message in main channel
-                        await msg.delete()
                     except Exception as e:
                         logger.error(f"Failed to create thread: {e}")
                         # Fallback: send in main channel
@@ -853,8 +853,11 @@ class RPSCog(commands.Cog):
                     # Determine thread name
                     thread_name = f"⚔️ RPS - {interaction.user.display_name} (открытый вызов)"
 
-                    # Send minimal message in main channel (required to create thread)
-                    msg = await interaction.followup.send(content="\u200b", ephemeral=False)
+                    # Send notification in main channel
+                    msg = await interaction.followup.send(
+                        content=f"{replace_emojis('a_star')} Открытый вызов в треде: {thread_name}",
+                        ephemeral=False
+                    )
 
                     # Create thread and send game embed with buttons
                     try:
@@ -876,9 +879,6 @@ class RPSCog(commands.Cog):
                         # Update view with message_id after sending
                         view.message_id = thread_msg.id
                         view.channel_id = thread.id
-
-                        # Delete the minimal message in main channel
-                        await msg.delete()
                     except Exception as e:
                         logger.error(f"Failed to create thread: {e}")
                         # Fallback: send in main channel

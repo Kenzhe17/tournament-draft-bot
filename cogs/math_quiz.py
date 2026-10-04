@@ -147,8 +147,11 @@ class MathQuizCog(commands.Cog):
         # Determine thread name
         thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
 
-        # Send minimal message in main channel (required to create thread)
-        original_message = await interaction.followup.send(content="\u200b", ephemeral=False)
+        # Send notification in main channel
+        original_message = await interaction.followup.send(
+            content=f"{get_emoji('a_star')} Мат. дуэль началась в треде: {thread_name}",
+            ephemeral=False
+        )
 
         # Create thread and send lobby embed with buttons
         try:
@@ -158,9 +161,6 @@ class MathQuizCog(commands.Cog):
             )
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
             message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
-
-            # Delete the minimal message in main channel
-            await original_message.delete()
         except Exception as e:
             print(f"Failed to create thread: {e}")
             # Fallback: edit the followup message to show lobby
