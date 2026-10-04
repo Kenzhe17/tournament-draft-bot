@@ -55,7 +55,9 @@ class SellCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="sell", description="Продать значок или тег за 50% от стоимости")
+    economy = app_commands.Group(name="economy", description="Управление экономикой")
+
+    @economy.command(name="sell", description="Продать значок или тег за 50% от стоимости")
     @app_commands.describe(
         item_id="ID или название продаваемого предмета (значка/тега)"
     )

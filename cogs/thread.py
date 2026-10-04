@@ -19,9 +19,9 @@ class ThreadCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    thread = app_commands.Group(name="thread", description="Управление игровыми тредами")
+    games = app_commands.Group(name="games", description="Мини-игры и игровые треды")
 
-    @thread.command(name="open", description="Открыть игровой тред (1 тред на пользователя)")
+    @games.command(name="open", description="Открыть игровой тред (1 тред на пользователя)")
     @app_commands.describe(name="Название треда (опционально)")
     async def thread_open(self, interaction: discord.Interaction, name: str = None):
         """Create a game thread for the user."""
@@ -30,7 +30,7 @@ class ThreadCog(commands.Cog):
         # Check if user already has an active thread
         if has_active_thread(user_id):
             await interaction.response.send_message(
-                "❌ У вас уже есть открытый игровой тред. Закройте его с помощью `/thread delete` перед созданием нового.",
+                "❌ У вас уже есть открытый игровой тред. Закройте его с помощью `/games delete` перед созданием нового.",
                 ephemeral=True
             )
             return
@@ -42,7 +42,7 @@ class ThreadCog(commands.Cog):
         # Check if already in a thread
         if isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ Вы уже находитесь в треде. Используйте `/thread delete` для удаления текущего треда.",
+                "❌ Вы уже находитесь в треде. Используйте `/games delete` для удаления текущего треда.",
                 ephemeral=True
             )
             return
@@ -65,7 +65,7 @@ class ThreadCog(commands.Cog):
             logger.error(f"Failed to create thread: {e}")
             await original_message.edit(content="❌ Не удалось создать тред. Попробуйте позже.")
 
-    @thread.command(name="delete", description="Удалить текущий игровой тред")
+    @games.command(name="delete", description="Удалить текущий игровой тред")
     async def thread_delete(self, interaction: discord.Interaction):
         """Delete the current game thread."""
         user_id = interaction.user.id
