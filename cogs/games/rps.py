@@ -830,11 +830,32 @@ class RPSPlayAgainButton(discord.ui.Button):
                     view.message_id = msg.id
                     view.channel_id = interaction.channel.id
                 else:
-                    await interaction.response.send_message(embed=embed, view=view)
-                    msg = await interaction.original_response()
-                    game.message_id = msg.id
-                    game.channel_id = interaction.channel.id
-                    view.message_id = msg.id
+                    # Create thread like in initial game
+                    thread_name = f"⚔️ RPS - {interaction.guild.get_member(self.initiator_id).display_name} vs {opponent.display_name}" if opponent else f"⚔️ RPS - {interaction.user.display_name} vs Unknown"
+
+                    await interaction.response.send_message(
+                        content=f"{replace_emojis('a_star')} Вызов отправлен в треде: {thread_name}",
+                        ephemeral=False
+                    )
+
+                    try:
+                        original_message = await interaction.original_response()
+                        thread = await original_message.create_thread(
+                            name=thread_name,
+                            auto_archive_duration=60
+                        )
+                        thread_msg = await thread.send(embed=embed, view=view)
+                        game.message_id = thread_msg.id
+                        game.channel_id = thread.id
+                        view.message_id = thread_msg.id
+                        view.channel_id = thread.id
+                    except Exception as e:
+                        logger.error(f"Failed to create thread: {e}")
+                        original_message = await interaction.original_response()
+                        await original_message.edit(content=None, embed=embed, view=view)
+                        game.message_id = original_message.id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = original_message.id
             else:
                 # Only one player clicked - wait for the other
                 waiting_for = self.opponent_id if user_id == self.initiator_id else self.initiator_id
