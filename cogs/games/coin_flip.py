@@ -524,7 +524,6 @@ class CoinFlipCog(commands.Cog):
 
     @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)", opponent="Соперник (для PvP)")
-    @is_bot_owner()
     async def coin_flip(
         self,
         interaction: discord.Interaction,

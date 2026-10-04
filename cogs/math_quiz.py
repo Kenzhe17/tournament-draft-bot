@@ -165,9 +165,9 @@ class MathQuizCog(commands.Cog):
             message = lobby_message
         except Exception as e:
             print(f"Failed to create thread: {e}")
-            # Fallback: send in main channel
+            # Fallback: edit the followup message to show lobby
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-            message = await interaction.edit_original_response(embed=lobby_view.build_embed(), view=lobby_view)
+            await message.edit(content=None, embed=lobby_view.build_embed(), view=lobby_view)
 
         await lobby_view.wait()
 
