@@ -78,13 +78,13 @@ class MatchButton(discord.ui.Button):
             await interaction.response.send_message(replace_emojis("❌ Неверный тип матча."), ephemeral=True)
             return
 
-        # Get team names
+        # Get team names with match position (0 for team_a, 1 for team_b)
         teams = []
-        for team_index in match:
+        for match_position, team_index in enumerate(match):
             team_data = self.tournament.teams[team_index] if team_index < len(self.tournament.teams) else {}
             captain = team_data.get("captain", f"П{team_index + 1}")
             team_name = self.tournament.team_names.get(team_index, captain)
-            teams.append((team_index, team_name))
+            teams.append((match_position, team_index, team_name))
 
         # Create team selection view
         team_view = TeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
@@ -101,31 +101,32 @@ class MatchButton(discord.ui.Button):
 class TeamSelectView(discord.ui.View):
     """View for selecting a team to bet on."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, teams: list[tuple[int, str]]):
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, teams: list[tuple[int, int, str]]):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
 
-        for team_index, team_name in teams:
-            self.add_item(TeamButton(guild_id, tournament, match_type, match_index, team_index, team_name))
+        for match_position, team_index, team_name in teams:
+            self.add_item(TeamButton(guild_id, tournament, match_type, match_index, match_position, team_index, team_name))
 
 
 class TeamButton(discord.ui.Button):
     """Button to select a team."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, match_position: int, team_index: int, team_name: str):
         super().__init__(
             label=team_name,
             style=discord.ButtonStyle.secondary,
-            custom_id=f"team_select:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"team_select:{guild_id}:{match_type}:{match_index}:{match_position}"
         )
         self.guild_id = guild_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
-        self.team_index = team_index
+        self.match_position = match_position  # Position in match (0 or 1)
+        self.team_index = team_index  # Absolute team index in tournament.teams
         self.team_name = team_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -150,7 +151,7 @@ class TeamButton(discord.ui.Button):
             self.tournament,
             self.match_type,
             self.match_index,
-            self.team_index,
+            self.match_position,  # Use match position (0 or 1) instead of absolute team index
             self.team_name,
             team_a_name,
             team_b_name
