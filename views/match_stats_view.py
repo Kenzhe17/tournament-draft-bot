@@ -115,6 +115,8 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
 
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Parse statistics
             match_id = f"{self.match_type}_{self.match_index}"
@@ -133,7 +135,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                         kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
                         deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                     except (ValueError, IndexError):
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                             ephemeral=True
                         )
@@ -148,7 +150,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             # Store in tournament temp stats
             tournament = store.get(self.guild_id)
             if not tournament:
-                await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+                await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return
 
             if match_id not in tournament.temp_match_stats:
@@ -163,14 +165,14 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 replace_emojis("✅ Данные отправлены\n\n⏳ Ожидается подтверждения администратора"),
                 ephemeral=True
             )
         except Exception as e:
             import logging
             logging.error(f"Error in CaptainStatsModal.on_submit: {e}", exc_info=True)
-            await interaction.response.send_message(replace_emojis("❌ Произошла ошибка при сохранении статистики."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Произошла ошибка при сохранении статистики."), ephemeral=True)
 
 
 class AdminFillButton(Button):
@@ -395,6 +397,8 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         import logging
         from storage.json_store import store
 
+        await interaction.response.defer(ephemeral=True)
+
         logging.info(f"AdminStatsModal on_submit called: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
 
         # Parse statistics
@@ -414,7 +418,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
                     kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
                     deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                 except (ValueError, IndexError):
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                         ephemeral=True
                     )
@@ -429,7 +433,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         # Store in tournament temp stats
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
 
         # Merge with existing stats (admin fills one team at a time)
@@ -489,11 +493,11 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         
         # Build stats embed
         embed = self._build_stats_embed(tournament, match)
-        
+
         # Create view with edit button only
         view = AdminStatsConfirmView(self.guild_id, tournament, self.match_type, self.match_index, match)
-        
-        await interaction.response.send_message(
+
+        await interaction.followup.send(
             embed=embed,
             view=view,
             ephemeral=True

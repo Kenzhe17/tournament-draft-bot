@@ -484,6 +484,9 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
 
+        # Defer to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Parse and validate statistics
         match_id = f"{self.match_type}_{self.match_index}"
         stats = {}
@@ -502,14 +505,14 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
 
                 # Validate ranges
                 if kills < 0 or kills > 35:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
                         ephemeral=True
                     )
                     return
 
                 if deaths < 0 or deaths > 15:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
                         ephemeral=True
                     )
@@ -520,7 +523,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
                     "deaths": deaths
                 }
             except (ValueError, IndexError):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
                     ephemeral=True
                 )
@@ -529,7 +532,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         # Store in tournament temp stats
         tournament = store.get(self.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
 
         if match_id not in tournament.temp_match_stats:
@@ -553,7 +556,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
             import logging
             logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             replace_emojis(f"✅ Статистика для {self.team_name} сохранена!"),
             ephemeral=True
         )
@@ -909,9 +912,11 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
         self.add_item(self.name_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
         name = self.name_input.value.strip()
         if not name:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 replace_emojis("❌ Название не может быть пустым."),
                 ephemeral=True
             )
@@ -921,7 +926,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
         if tournament:
             # Check if this team can still edit their name
             if not tournament.is_team_name_editable(self.team_index):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз."),
                     ephemeral=True
                 )
@@ -934,7 +939,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             replace_emojis("✅ Название команды изменено."),
             ephemeral=True
         )
