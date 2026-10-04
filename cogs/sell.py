@@ -5,58 +5,46 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from storage.db import get_pool
+from storage.shop_store import shop_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 
 # ==========================================
-# Вспомогательные функции работы с БД
+# Вспомогательные функции работы с магазином
 # ==========================================
 
 async def add_balance(user_id: int, amount: int) -> None:
     """Зачисление монет пользователю."""
     if amount <= 0:
         return
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE users SET cash = cash + $1 WHERE user_id = $2",
-            amount, user_id
-        )
+    from storage.user_balance_store import user_balance_store
+    # Assume guild_id = 0 for now, should be fixed
+    await user_balance_store.add_balance(0, user_id, amount)
 
 
 async def get_shop_item(item_id: str) -> Optional[dict]:
     """Получение информации о предмете из каталога (тег / значок)."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT item_id, name, price, is_sellable FROM shop_items WHERE item_id = $1",
-            item_id
-        )
-        return dict(row) if row else None
+    return shop_store.get_item(item_id)
 
 
 async def has_user_item(user_id: int, item_id: str) -> bool:
     """Проверка наличия предмета у пользователя."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT 1 FROM user_inventory WHERE user_id = $1 AND item_id = $2",
-            user_id, item_id
-        )
-        return row is not None
+    from storage.user_profile_store import user_profile_store
+    profile = user_profile_store.get_profile(0, user_id)  # guild_id = 0
+    if not profile:
+        return False
+    return item_id in profile.inventory
 
 
 async def remove_user_item(user_id: int, item_id: str) -> None:
     """Удаление уникального предмета из инвентаря пользователя."""
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "DELETE FROM user_inventory WHERE user_id = $1 AND item_id = $2",
-            user_id, item_id
-        )
+    from storage.user_profile_store import user_profile_store
+    profile = user_profile_store.get_profile(0, user_id)  # guild_id = 0
+    if profile and item_id in profile.inventory:
+        profile.inventory.remove(item_id)
+        user_profile_store.set_profile(0, user_id, profile)
 
 
 # ==========================================
@@ -91,7 +79,7 @@ class SellCog(commands.Cog):
             return
 
         # 2. Проверяем наличие предмета в инвентаре у игрока
-        if not await has_user_item(interaction.user.id, item["item_id"]):
+        if not await has_user_item(interaction.user.id, item["id"]):
             await interaction.followup.send(
                 "<:white_dot:0000> У вас нет этого предмета в инвентаре!",
                 ephemeral=True
@@ -103,7 +91,7 @@ class SellCog(commands.Cog):
         sell_price = math.floor(base_price * 0.5)
 
         # 4. Удаляем предмет и начисляем монеты
-        await remove_user_item(interaction.user.id, item["item_id"])
+        await remove_user_item(interaction.user.id, item["id"])
         await add_balance(interaction.user.id, sell_price)
 
         # 5. Красивый Embed ответа

@@ -457,33 +457,6 @@ async def init_db() -> None:
             )
         """)
 
-        # Create shop_items table for store system
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS shop_items (
-                item_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                description TEXT,
-                price INTEGER NOT NULL,
-                category TEXT NOT NULL,
-                rarity TEXT NOT NULL,
-                is_sellable BOOLEAN DEFAULT TRUE,
-                emoji TEXT,
-                is_active BOOLEAN DEFAULT TRUE
-            )
-        """)
-
-        # Create user_inventory table for player inventories
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_inventory (
-                guild_id BIGINT NOT NULL,
-                user_id BIGINT NOT NULL,
-                item_id TEXT NOT NULL,
-                obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (guild_id, user_id, item_id),
-                FOREIGN KEY (item_id) REFERENCES shop_items(item_id) ON DELETE CASCADE
-            )
-        """)
-
         # Create minigame_sessions table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS minigame_sessions (
