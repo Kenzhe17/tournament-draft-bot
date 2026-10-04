@@ -201,6 +201,9 @@ class CoinFlipCancelButton(discord.ui.Button):
                 self.game.bet
             )
 
+        # Remove from active threads
+        remove_active_thread(self.game.initiator_id)
+
         self.game.is_active = False
         await interaction.response.edit_message(
             content="❌ Игра отменена. Ставка возвращена.",

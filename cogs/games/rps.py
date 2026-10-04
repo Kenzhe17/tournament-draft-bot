@@ -119,12 +119,12 @@ class PvEChoiceView(RPSView):
     @discord.ui.button(label="Камень", emoji="🪨", style=discord.ButtonStyle.primary, custom_id="rps:rock")
     async def btn_rock(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.ROCK)
-    
-    @discord.ui.button(label="Бумага", emoji="📜", style=discord.ButtonStyle.primary, custom_id="rps:paper")
+
+    @discord.ui.button(label="Бумага", emoji="📜", style=discord.ButtonStyle.secondary, custom_id="rps:paper")
     async def btn_paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.PAPER)
-    
-    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.primary, custom_id="rps:scissors")
+
+    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.success, custom_id="rps:scissors")
     async def btn_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.SCISSORS)
     
@@ -552,12 +552,12 @@ class PvPChoiceView(RPSView):
     @discord.ui.button(label="Камень", emoji="🪨", style=discord.ButtonStyle.primary, custom_id="rps:rock")
     async def btn_rock(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.ROCK)
-    
-    @discord.ui.button(label="Бумага", emoji="📜", style=discord.ButtonStyle.primary, custom_id="rps:paper")
+
+    @discord.ui.button(label="Бумага", emoji="📜", style=discord.ButtonStyle.secondary, custom_id="rps:paper")
     async def btn_paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.PAPER)
-    
-    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.primary, custom_id="rps:scissors")
+
+    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.success, custom_id="rps:scissors")
     async def btn_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.SCISSORS)
     
@@ -1022,10 +1022,21 @@ class RPSCog(commands.Cog):
                         add_active_thread(user_id, thread.id)
 
                         embed = discord.Embed(
-                            title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                            description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                            color=discord.Color.blue()
+                            title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
+                            color=discord.Color.from_rgb(69, 69, 69)
+                        )
+                        embed.add_field(
+                            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                            value=f"• Режим: **PvE**\n"
+                                  f"• Игрок: <@{user_id}>\n"
+                                  f"• Ставка: **{bet}** {replace_emojis('money')}\n"
+                                  f"• Множитель: **2.0x**",
+                            inline=False
+                        )
+                        embed.add_field(
+                            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                            value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
+                            inline=False
                         )
                         await thread.send(embed=embed, view=view)
                         break  # Success, exit retry loop
@@ -1050,10 +1061,21 @@ class RPSCog(commands.Cog):
                 logger.error(f"Failed to create thread after {max_retries} retries, using fallback")
                 original_message = await interaction.original_response()
                 embed = discord.Embed(
-                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                    color=discord.Color.blue()
+                    title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
+                    color=discord.Color.from_rgb(69, 69, 69)
+                )
+                embed.add_field(
+                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                    value=f"• Режим: **PvE**\n"
+                          f"• Игрок: <@{user_id}>\n"
+                          f"• Ставка: **{bet}** {replace_emojis('money')}\n"
+                          f"• Множитель: **2.0x**",
+                    inline=False
+                )
+                embed.add_field(
+                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                    value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
+                    inline=False
                 )
                 await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
 
