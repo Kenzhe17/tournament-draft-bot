@@ -179,6 +179,16 @@ def initialize_shop_items() -> None:
             value="icon_cat_ears",
             category="icons"
         ),
+        ShopItem(
+            id="icon_bunny",
+            name="Зайчик",
+            description="",
+            price=1750,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.PREMIUM,
+            value="icon_bunny",
+            category="icons"
+        ),
         # Special (5950 монет)
         ShopItem(
             id="icon_wing",
@@ -188,6 +198,16 @@ def initialize_shop_items() -> None:
             cosmetic_type=CosmeticType.ICON,
             rarity=CosmeticRarity.SPECIAL,
             value="icon_wing",
+            category="icons"
+        ),
+        ShopItem(
+            id="icon_black_rose",
+            name="Чёрная роза",
+            description="",
+            price=5950,
+            cosmetic_type=CosmeticType.ICON,
+            rarity=CosmeticRarity.SPECIAL,
+            value="icon_black_rose",
             category="icons"
         ),
         ShopItem(
