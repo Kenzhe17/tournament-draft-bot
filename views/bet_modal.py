@@ -81,19 +81,12 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Check if user already has a bet on this match
             existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, self.tournament.id, match_id)
             if existing_bet:
-                # User already has a bet - calculate difference
-                if amount > existing_bet.amount:
-                    # Increasing bet - deduct additional amount ONLY
-                    additional_amount = amount - existing_bet.amount
-                    await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
-                elif amount < existing_bet.amount:
-                    # Decreasing bet - refund difference
-                    refund_amount = existing_bet.amount - amount
-                    await user_balance_store.add_balance(self.guild_id, interaction.user.id, refund_amount)
-                else:
-                    # Same amount - no balance change at all
-                    # Do NOT deduct or add anything
-                    pass
+                # User already has a bet - reject any changes
+                await interaction.response.send_message(
+                    replace_emojis("❌ Вы уже сделали ставку на этот матч! Только одна ставка на матч."),
+                    ephemeral=True
+                )
+                return
             else:
                 # New bet - deduct full amount
                 await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)

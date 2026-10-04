@@ -187,8 +187,9 @@ class BetStore:
                 additional_amount = bet.amount - existing_bet.amount
                 bet.amount += existing_bet.amount  # Update to total amount
                 bet.odds = existing_bet.odds
-                # Shift odds by actual change amount (positive = increase, negative = decrease)
-                shift_amount = additional_amount
+                # Always shift odds by absolute amount (even when decreasing)
+                # Any bet on a team decreases its odds, regardless of amount change
+                shift_amount = abs(additional_amount)
             else:
                 # New bet, use current odds
                 bet.odds = current_bet_odds
@@ -284,18 +285,15 @@ class BetStore:
                     # Check if user already has a bet on this match
                     existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
                     if existing_bet:
-                        # Add new bet amount to existing bet (do NOT refund)
-                        # bet.amount already updated above in bet_modal.py
-                        # Keep the original odds (first bet's odds)
-                        bet.odds = existing_bet.odds
-                        # Do NOT do any balance operations here - already handled in bet_modal.py
+                        # Bet already exists - do nothing (only one bet per match)
+                        return
 
                     await conn.execute(
                         """
                         INSERT INTO bets (guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         ON CONFLICT (guild_id, user_id, tournament_id, match_id)
-                        DO UPDATE SET user_name = $3, team_name = $6, team_index = $7, amount = $8, odds = $9
+                        DO NOTHING
                         """,
                         bet.guild_id, bet.user_id, bet.user_name, bet.tournament_id, bet.match_id, bet.team_name, bet.team_index, bet.amount, bet.odds
                     )
@@ -312,16 +310,10 @@ class BetStore:
                     None
                 )
                 if existing_idx is not None:
-                    # Add new bet amount to existing bet (do NOT refund)
-                    # bet.amount already updated above
-                    # Keep the original odds (first bet's odds)
-                    existing_bet = self._bets[key][existing_idx]
-                    bet.odds = existing_bet.odds
-                    # Replace with updated bet
-                    self._bets[key][existing_idx] = bet
-                else:
-                    self._bets[key].append(bet)
+                    # Bet already exists - do nothing (only one bet per match)
+                    return
 
+                self._bets[key].append(bet)
                 self.save()
                 self.save()  # Save odds as well
 
