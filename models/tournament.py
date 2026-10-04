@@ -102,10 +102,12 @@ class Tournament:
     guild_id: int
     channel_id: int
     message_id: int = 0
-    id: str = field(init=False)  # Alias for guild_id (tournament isolation)
+    id: str = field(init=False)  # Unique tournament ID
+    creation_time: str = field(init=False, default_factory=lambda: str(int(__import__('time').time() * 1000)))
 
     def __post_init__(self):
-        self.id = str(self.guild_id)
+        # Use guild_id + creation_time for unique tournament ID
+        self.id = f"{self.guild_id}_{self.creation_time}"
 
     # Настройка
     size: TournamentSize = TournamentSize.EIGHT
