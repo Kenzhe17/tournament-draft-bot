@@ -203,79 +203,16 @@ class CoinFlipCancelButton(discord.ui.Button):
         )
 
 
-class CoinFlipAcceptButton(discord.ui.Button):
-    """Кнопка принятия вызова (PvP)."""
-
-    def __init__(self, game: CoinFlipGame, game_view: CoinFlipView):
-        super().__init__(style=discord.ButtonStyle.success, label="Принять вызов")
-        self.game = game
-        self.game_view = game_view
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.game.opponent_id:
-            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
-            return
-
-        # Deduct bet from opponent
-        lock = get_user_lock(self.game.guild_id, self.game.opponent_id)
-        async with lock:
-            balance = await user_balance_store.get_balance(self.game.guild_id, self.game.opponent_id)
-            if balance < self.game.bet:
-                await interaction.response.send_message(
-                    f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
-                return
-
-            await user_balance_store.subtract_balance(
-                self.game.guild_id,
-                self.game.opponent_id,
-                self.game.bet
-            )
-
-        await start_game(interaction, self.game, self.game_view)
-
-
-class CoinFlipDeclineButton(discord.ui.Button):
-    """Кнопка отклонения вызова (PvP)."""
-
-    def __init__(self, game: CoinFlipGame):
-        super().__init__(style=discord.ButtonStyle.danger, label="Отклонить")
-        self.game = game
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.user.id != self.game.opponent_id:
-            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
-            return
-
-        # Return bet to initiator
-        lock = get_user_lock(self.game.guild_id, self.game.initiator_id)
-        async with lock:
-            await user_balance_store.add_balance(
-                self.game.guild_id,
-                self.game.initiator_id,
-                self.game.bet
-            )
-
-        self.game.is_active = False
-        await interaction.response.edit_message(
-            content="❌ Вызов отклонён. Ставка возвращена.",
-            embed=None,
-            view=None
-        )
-
-
 class CoinFlipPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
-    def __init__(self, bet: int, opponent_id: Optional[int] = None):
+    def __init__(self, bet: int):
         super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
-        self.opponent_id = opponent_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перезапустить игру с теми же параметрами."""
-        opponent = None
+        await create_coin_flip_game(interaction, self.bet)
         if self.opponent_id:
             opponent = interaction.guild.get_member(self.opponent_id)
 
@@ -403,15 +340,14 @@ async def start_game(
 
     # Add play again button
     result_view = discord.ui.View(timeout=None)
-    result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id))
+    result_view.add_item(CoinFlipPlayAgainButton(game.bet))
 
     await interaction.edit_original_response(embed=result_embed, view=result_view)
 
 
 async def create_coin_flip_game(
     interaction: discord.Interaction,
-    bet: int,
-    opponent: Optional[discord.Member] = None
+    bet: int
 ) -> None:
     """Создать игру Монетка."""
     guild_id = interaction.guild_id
@@ -447,61 +383,26 @@ async def create_coin_flip_game(
 
         await user_balance_store.subtract_balance(guild_id, user_id, bet)
 
-    # Create game
+    # Create game (PvE only)
     game = CoinFlipGame(
         guild_id=guild_id,
         channel_id=interaction.channel_id,
         initiator_id=user_id,
         bet=bet,
-        opponent_id=opponent.id if opponent else None
+        opponent_id=None
     )
 
     # Create view
     view = CoinFlipView(game)
 
-    if opponent:
-        # PvP mode
-        view.add_item(CoinFlipAcceptButton(game, game_view=view))
-        view.add_item(CoinFlipDeclineButton(game))
-    else:
-        # PvE mode
-        view.add_item(CoinFlipHeadsButton(game, game_view=view))
-        view.add_item(CoinFlipTailsButton(game, game_view=view))
-
+    # PvE mode only
+    view.add_item(CoinFlipHeadsButton(game, game_view=view))
+    view.add_item(CoinFlipTailsButton(game, game_view=view))
     view.add_item(CoinFlipCancelButton(game))
 
-    # Determine thread name
-    thread_name = f"🎲 Монетка - {interaction.user.display_name}"
-    if opponent:
-        thread_name = f"🎲 Монетка - {interaction.user.display_name} vs {opponent.display_name}"
-
-    # Send notification in main channel
-    await interaction.response.send_message(
-        content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
-        ephemeral=False
-    )
-
-    # Get the original message and create thread
-    try:
-        original_message = await interaction.original_response()
-        thread = await original_message.create_thread(
-            name=thread_name,
-            auto_archive_duration=60
-        )
-
-        # Send game embed with buttons in the thread
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await thread.send(embed=embed, view=view)
-    except discord.HTTPException as e:
-        # If thread creation fails due to Discord API error, send game in main channel
-        logger.error(f"Failed to create thread (HTTPException): {e}")
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
-    except Exception as e:
-        # Other errors
-        logger.error(f"Failed to create thread (Unexpected error): {e}")
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+    # Send game embed with buttons directly in main channel
+    embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 class CoinFlipCog(commands.Cog):
@@ -511,15 +412,14 @@ class CoinFlipCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка")
-    @app_commands.describe(bet="Ставка в монетах (10-10,000)", opponent="Соперник (для PvP)")
+    @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def coin_flip(
         self,
         interaction: discord.Interaction,
-        bet: int,
-        opponent: Optional[discord.Member] = None
+        bet: int
     ):
         """Запустить игру Монетка."""
-        await create_coin_flip_game(interaction, bet, opponent)
+        await create_coin_flip_game(interaction, bet)
 
 
 async def setup(bot: commands.Bot):

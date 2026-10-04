@@ -893,9 +893,9 @@ class RPSCog(commands.Cog):
         self.bot = bot
     
     @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
-    @app_commands.describe(bet="Ставка в монетах", opponent="Соперник (для PvP)")
-    async def rps(self, interaction: discord.Interaction, bet: int, opponent: Optional[discord.Member] = None):
-        """Start RPS game."""
+    @app_commands.describe(bet="Ставка в монетах")
+    async def rps(self, interaction: discord.Interaction, bet: int):
+        """Start RPS game against AI."""
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
@@ -914,34 +914,16 @@ class RPSCog(commands.Cog):
             await interaction.response.send_message(replace_emojis("❌ Недостаточно баланса."), ephemeral=True)
             return
 
-        # Determine mode
-        if opponent:
-            # PvP mode - direct challenge
-            if opponent.id == user_id:
-                await interaction.response.send_message(replace_emojis("❌ Нельзя играть против себя."), ephemeral=True)
-                return
-
-            if opponent.bot:
-                await interaction.response.send_message(replace_emojis("❌ Нельзя играть против ботов."), ephemeral=True)
-                return
-
-            if opponent.id in active_users:
-                await interaction.response.send_message(replace_emojis("❌ Соперник уже участвует в игре."), ephemeral=True)
-                return
-
-            mode = GameMode.PVP
-            opponent_id = opponent.id
-        else:
-            # PvE mode
-            mode = GameMode.PVE
-            opponent_id = None
+        # PvE mode only - game against AI
+        mode = GameMode.PVE
+        opponent_id = None
 
         # Hold escrow
         escrow_success = await hold_escrow(user_id, guild_id, bet)
         if not escrow_success:
             await interaction.response.send_message(replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True)
             return
-        
+
         # Create game session
         game_id = f"rps_{user_id}_{guild_id}_{asyncio.get_event_loop().time()}"
         game = GameSession(
@@ -955,199 +937,24 @@ class RPSCog(commands.Cog):
         )
         active_games[game_id] = game
         active_users.add(user_id)
-        
+
         try:
-            if mode == GameMode.PVE:
-                # PvE mode
-                game.state = GameState.WAITING_PVE
-                view = PvEChoiceView(game_id, bet)
-                # Determine thread name
-                thread_name = f"🎮 RPS - {interaction.user.display_name}"
+            # PvE mode
+            game.state = GameState.WAITING_PVE
+            view = PvEChoiceView(game_id, bet)
+            embed = discord.Embed(
+                title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                              f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, view=view)
 
-                # Send notification in main channel
-                await interaction.response.send_message(
-                    content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
-                    ephemeral=False
-                )
-
-                # Get the original message and create thread
-                try:
-                    original_message = await interaction.original_response()
-                    thread = await original_message.create_thread(
-                        name=thread_name,
-                        auto_archive_duration=60
-                    )
-                    embed = discord.Embed(
-                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                        color=discord.Color.blue()
-                    )
-                    await thread.send(embed=embed, view=view)
-                except discord.HTTPException as e:
-                    logger.error(f"Failed to create thread (HTTPException): {e}")
-                    # Fallback: send in main channel
-                    original_message = await interaction.original_response()
-                    embed = discord.Embed(
-                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                        color=discord.Color.blue()
-                    )
-                    await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
-                except Exception as e:
-                    logger.error(f"Failed to create thread (Unexpected error): {e}")
-                    # Fallback: send in main channel
-                    original_message = await interaction.original_response()
-                    embed = discord.Embed(
-                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                        color=discord.Color.blue()
-                    )
-                    await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
-            else:
-                # PvP mode
-                game.state = GameState.WAITING_PVP
-
-                if opponent_id:
-                    # Direct challenge - hold escrow for opponent immediately to check balance
-                    opponent_escrow = await hold_escrow(opponent_id, guild_id, bet)
-                    if not opponent_escrow:
-                        await release_escrow(user_id, guild_id, bet)
-                        active_users.discard(user_id)
-                        del active_games[game_id]
-                        await interaction.response.send_message(replace_emojis("❌ У соперника недостаточно баланса."), ephemeral=True)
-                        return
-                    # Opponent is not added to active_users yet (only when they accept)
-
-                    view = PvPChallengeView(game_id, user_id, opponent_id, bet, interaction.channel_id, 0, self.bot)
-                    total_pot = bet * 2 * 0.95
-                    # Determine thread name
-                    thread_name = f"⚔️ RPS - {interaction.user.display_name} vs {opponent.display_name}"
-
-                    # Send notification in main channel
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('a_star')} Вызов отправлен в треде: {thread_name}",
-                        ephemeral=False
-                    )
-
-                    # Get the original message and create thread
-                    try:
-                        original_message = await interaction.original_response()
-                        thread = await original_message.create_thread(
-                            name=thread_name,
-                            auto_archive_duration=60
-                        )
-                        embed = discord.Embed(
-                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
-                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
-                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
-                            color=discord.Color.gold()
-                        )
-                        thread_msg = await thread.send(embed=embed, view=view)
-                        game.message_id = thread_msg.id
-                        game.channel_id = thread.id
-                        # Update view with message_id after sending
-                        view.message_id = thread_msg.id
-                        view.channel_id = thread.id
-                    except discord.HTTPException as e:
-                        logger.error(f"Failed to create thread (HTTPException): {e}")
-                        # Fallback: send in main channel
-                        original_message = await interaction.original_response()
-                        embed = discord.Embed(
-                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
-                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
-                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
-                            color=discord.Color.gold()
-                        )
-                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel.id
-                        view.message_id = original_message.id
-                    except Exception as e:
-                        logger.error(f"Failed to create thread (Unexpected error): {e}")
-                        # Fallback: send in main channel
-                        original_message = await interaction.original_response()
-                        embed = discord.Embed(
-                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
-                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
-                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
-                            color=discord.Color.gold()
-                        )
-                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel.id
-                        view.message_id = original_message.id
-                else:
-                    # Open challenge - anyone can accept
-                    view = PvPChallengeView(game_id, user_id, None, bet, interaction.channel_id, 0, self.bot)
-                    total_pot = bet * 2 * 0.95
-                    # Determine thread name
-                    thread_name = f"⚔️ RPS - {interaction.user.display_name} (открытый вызов)"
-
-                    # Send notification in main channel
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('a_star')} Открытый вызов в треде: {thread_name}",
-                        ephemeral=False
-                    )
-
-                    # Get the original message and create thread
-                    try:
-                        original_message = await interaction.original_response()
-                        thread = await original_message.create_thread(
-                            name=thread_name,
-                            auto_archive_duration=60
-                        )
-                        embed = discord.Embed(
-                            title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
-                            description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
-                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                          f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
-                            color=discord.Color.gold()
-                        )
-                        thread_msg = await thread.send(embed=embed, view=view)
-                        game.message_id = thread_msg.id
-                        game.channel_id = thread.id
-                        # Update view with message_id after sending
-                        view.message_id = thread_msg.id
-                        view.channel_id = thread.id
-                    except discord.HTTPException as e:
-                        logger.error(f"Failed to create thread (HTTPException): {e}")
-                        # Fallback: send in main channel
-                        original_message = await interaction.original_response()
-                        embed = discord.Embed(
-                            title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
-                            description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
-                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                          f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
-                            color=discord.Color.gold()
-                        )
-                        await original_message.edit(content=f"{replace_emojis('a_star')} Открытый вызов в чате (не удалось создать тред)", embed=embed, view=view)
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel.id
-                        view.message_id = original_message.id
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel_id
-                        view.message_id = original_message.id
-        
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)
             # Refund on error
             await release_escrow(user_id, guild_id, bet)
-            if mode == GameMode.PVP and opponent:
-                await release_escrow(opponent.id, guild_id, bet)
             active_users.discard(user_id)
-            if mode == GameMode.PVP and opponent:
-                active_users.discard(opponent.id)
             if game_id in active_games:
                 del active_games[game_id]
             await interaction.followup.send(replace_emojis("❌ Произошла ошибка при запуске игры."), ephemeral=True)
