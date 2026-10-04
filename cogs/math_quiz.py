@@ -231,13 +231,19 @@ class MathQuizCog(commands.Cog):
                 logger.error(f"Failed to create thread (Unexpected error): {e}")
                 break
 
-        # If thread creation failed after all retries, use fallback
+        # If thread creation failed after all retries, refund and show error
         if thread is None:
-            logger.error(f"Failed to create thread after {max_retries} retries, using fallback")
+            logger.error(f"Failed to create thread after {max_retries} retries")
+
+            # Refund bet
+            await user_balance_store.add_balance(guild_id, user_id, bet)
+
+            # Edit the notification message to show error
             original_message = await interaction.original_response()
-            lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-            await original_message.edit(content=f"{get_emoji('a_star')} Мат. дуэль началась в чате (не удалось создать тред)", embed=lobby_view.build_embed(), view=lobby_view)
-            message = original_message
+            await original_message.edit(
+                content=f"{get_emoji('❌')} Не удалось создать игру. Попробуйте еще раз."
+            )
+            return
 
         await lobby_view.wait()
 

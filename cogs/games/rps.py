@@ -1056,28 +1056,22 @@ class RPSCog(commands.Cog):
                     logger.error(f"Failed to create thread (Unexpected error): {e}")
                     break
 
-            # If thread creation failed after all retries, use fallback
+            # If thread creation failed after all retries, refund and show error
             if thread is None:
-                logger.error(f"Failed to create thread after {max_retries} retries, using fallback")
+                logger.error(f"Failed to create thread after {max_retries} retries")
+
+                # Refund bet
+                await release_escrow(user_id, guild_id, bet)
+                active_users.discard(user_id)
+                if game_id in active_games:
+                    del active_games[game_id]
+
+                # Edit the notification message to show error
                 original_message = await interaction.original_response()
-                embed = discord.Embed(
-                    title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
-                    color=discord.Color.from_rgb(69, 69, 69)
+                await original_message.edit(
+                    content=f"{replace_emojis('❌')} Не удалось создать игру. Попробуйте еще раз."
                 )
-                embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
-                    value=f"• Режим: **PvE**\n"
-                          f"• Игрок: <@{user_id}>\n"
-                          f"• Ставка: **{bet}** {replace_emojis('money')}\n"
-                          f"• Множитель: **2.0x**",
-                    inline=False
-                )
-                embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                    value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
-                    inline=False
-                )
-                await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+                return
 
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)

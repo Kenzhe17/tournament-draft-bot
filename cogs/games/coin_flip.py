@@ -550,11 +550,20 @@ async def create_coin_flip_game(
             logger.error(f"Failed to create thread (Unexpected error): {e}")
             break
 
-    # If thread creation failed after all retries, use fallback
+    # If thread creation failed after all retries, refund and show error
     if thread is None:
-        logger.error(f"Failed to create thread after {max_retries} retries, using fallback")
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+        logger.error(f"Failed to create thread after {max_retries} retries")
+
+        # Refund bet
+        lock = get_user_lock(guild_id, user_id)
+        async with lock:
+            await user_balance_store.add_balance(guild_id, user_id, bet)
+
+        # Edit the notification message to show error
+        await interaction.edit_original_response(
+            content=f"{replace_emojis('❌')} Не удалось создать игру. Попробуйте еще раз."
+        )
+        return
 
 
 class CoinFlipCog(commands.Cog):
