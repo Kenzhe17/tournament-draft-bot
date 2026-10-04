@@ -418,12 +418,12 @@ class BetStore:
         # Calculate payouts based on final odds (not fixed at betting time)
         for bet in bets:
             logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', team_index={bet.team_index}, amount={bet.amount}, odds={bet.odds}")
-            if bet.team_index == winning_team_index:
+            if bet.team_name == winning_team_name:
                 # Winning bet: payout = amount * final odds
                 payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
                 payouts_by_name[bet.user_name] = payout
-                logging.info(f"WINNING bet: user_id={bet.user_id}, team_index={bet.team_index} == {winning_team_index}, payout={payout}")
+                logging.info(f"WINNING bet: user_id={bet.user_id}, team_name='{bet.team_name}' == '{winning_team_name}', payout={payout}")
                 # Record as win (profit = payout - bet_amount)
                 profit = payout - bet.amount
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
@@ -431,7 +431,7 @@ class BetStore:
                 # Losing bet: no payout
                 payouts[bet.user_id] = 0
                 payouts_by_name[bet.user_name] = 0
-                logging.info(f"LOSING bet: user_id={bet.user_id}, team_index={bet.team_index} != {winning_team_index}")
+                logging.info(f"LOSING bet: user_id={bet.user_id}, team_name='{bet.team_name}' != '{winning_team_name}'")
                 # Record as loss (bet amount lost)
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
 
