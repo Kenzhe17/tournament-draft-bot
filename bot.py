@@ -83,10 +83,10 @@ class TournamentBot(commands.Bot):
 
         await self.load_extension("cogs.tournament")
         await self.load_extension("cogs.games.coin_flip")
+        await self.load_extension("cogs.games.rps")
         await self.load_extension("cogs.rob")
         await self.load_extension("cogs.bank")
         await self.load_extension("cogs.math_quiz")
-        # await self.load_extension("cogs.games.rps")  # Disabled - game in development
         
         # Sync commands globally
         try:
