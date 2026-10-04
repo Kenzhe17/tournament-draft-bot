@@ -86,18 +86,14 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                     # Increasing bet - deduct additional amount ONLY
                     additional_amount = amount - existing_bet.amount
                     await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, additional_amount)
-                    # Update bet object to total amount
-                    bet.amount = amount
                 elif amount < existing_bet.amount:
                     # Decreasing bet - refund difference
                     refund_amount = existing_bet.amount - amount
                     await user_balance_store.add_balance(self.guild_id, interaction.user.id, refund_amount)
-                    # Update bet object to new amount
-                    bet.amount = amount
                 else:
                     # Same amount - no balance change at all
                     # Do NOT deduct or add anything
-                    bet.amount = amount
+                    pass
             else:
                 # New bet - deduct full amount
                 await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
