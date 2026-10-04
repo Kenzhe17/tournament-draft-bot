@@ -545,13 +545,27 @@ class PvPChoiceView(RPSView):
         if not game or game.state != GameState.PVP_CHOICE:
             await interaction.response.send_message(replace_emojis("❌ Игра недоступна."), ephemeral=True)
             return
-        
+
         # Access Control: Only registered participants can click
         if self.is_main:
             # Main message mode - both can click, but only their own choice
             if interaction.user.id != self.user_id and interaction.user.id != self.opponent_id:
                 await interaction.response.send_message(
                     replace_emojis("⚠️ Вы не являетесь участником этой дуэли!"),
+                    ephemeral=True
+                )
+                return
+
+            # Check if player already made a move
+            if interaction.user.id == self.user_id and game.initiator_move:
+                await interaction.response.send_message(
+                    replace_emojis("⚠️ Вы уже сделали свой выбор! Ожидайте выбора соперника."),
+                    ephemeral=True
+                )
+                return
+            if interaction.user.id == self.opponent_id and game.opponent_move:
+                await interaction.response.send_message(
+                    replace_emojis("⚠️ Вы уже сделали свой выбор! Ожидайте выбора соперника."),
                     ephemeral=True
                 )
                 return
