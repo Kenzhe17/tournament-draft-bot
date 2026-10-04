@@ -860,40 +860,12 @@ class TeamNameButton(discord.ui.Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."),
-                ephemeral=True,
-            )
-            return
-
-        # Find if user is a captain
-        user_name = interaction.user.display_name
-        team_index = None
-        for i, team in enumerate(tournament.teams):
-            if team.get("captain") == user_name:
-                team_index = i
-                break
-
-        if team_index is None:
-            await interaction.response.send_message(
-                replace_emojis("❌ Только капитан может назвать свою команду."),
-                ephemeral=True
-            )
-            return
-
-        # Check if this team has already changed their name
-        if not tournament.is_team_name_editable(team_index):
-            await interaction.response.send_message(
-                replace_emojis("❌ Ваша команда уже изменила название. Можно изменить только один раз."),
-                ephemeral=True
-            )
-            return
-
-        # Create modal for team name input
-        modal = TeamNameModal(self.guild_id, team_index)
-        await interaction.response.send_modal(modal)
+        # Team name changes disabled
+        await interaction.response.send_message(
+            replace_emojis("❌ Изменение названия команд отключено."),
+            ephemeral=True
+        )
+        return
 
 
 class TeamNameModal(discord.ui.Modal, title="Название команды"):
@@ -952,10 +924,10 @@ class TeamsView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(GenerateMatchesButton(guild_id))
 
-        # Add team name button if any team can still edit their name
-        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        if has_editable_team:
-            self.add_item(TeamNameButton(guild_id, tournament))
+        # Team name button disabled - no team name changes allowed
+        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        # if has_editable_team:
+        #     self.add_item(TeamNameButton(guild_id, tournament))
 
 
 class MatchWinnerSelectView(discord.ui.View):
@@ -1166,10 +1138,10 @@ class QualifiersView(discord.ui.View):
         # Add admin panel select menu
         self.add_item(AdminPanelSelect(guild_id, tournament, "qualifier"))
 
-        # Add team name button if any team can still edit their name
-        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        if has_editable_team:
-            self.add_item(TeamNameButton(guild_id, tournament))
+        # Team name button disabled - no team name changes allowed
+        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        # if has_editable_team:
+        #     self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "qualifiers"))
@@ -1223,10 +1195,10 @@ class SemifinalsView(discord.ui.View):
         # Add admin panel select menu
         self.add_item(AdminPanelSelect(guild_id, tournament, "semifinal"))
 
-        # Add team name button if any team can still edit their name
-        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        if has_editable_team:
-            self.add_item(TeamNameButton(guild_id, tournament))
+        # Team name button disabled - no team name changes allowed
+        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        # if has_editable_team:
+        #     self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
         self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))

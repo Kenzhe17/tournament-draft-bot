@@ -86,11 +86,11 @@ class FinalView(discord.ui.View):
         from views.matches_view import AdminPanelSelect
         self.add_item(AdminPanelSelect(guild_id, tournament, "final"))
 
-        # Add team name button if any team can still edit their name
-        has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
-        if has_editable_team:
-            from views.matches_view import TeamNameButton
-            self.add_item(TeamNameButton(guild_id, tournament))
+        # Team name button disabled - no team name changes allowed
+        # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
+        # if has_editable_team:
+        #     from views.matches_view import TeamNameButton
+        #     self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton
