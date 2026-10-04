@@ -564,10 +564,6 @@ class PvPChoiceView(RPSView):
                 )
                 return
         
-        # Disable buttons
-        for item in self.children:
-            item.disabled = True
-        
         # Record move
         if self.is_main:
             # Main message mode - need to determine which player made the move
@@ -575,12 +571,16 @@ class PvPChoiceView(RPSView):
                 game.initiator_move = move
             else:
                 game.opponent_move = move
-            
+
             # Check if both players have chosen
             if game.initiator_move and game.opponent_move:
+                # Disable buttons before resolving
+                for item in self.children:
+                    item.disabled = True
                 await self.resolve_game(interaction, game)
             else:
                 # Update message to show waiting for other player
+                # DO NOT disable buttons - second player still needs to click
                 waiting_for = self.opponent_id if interaction.user.id == self.user_id else self.user_id
                 embed = discord.Embed(
                     title=replace_emojis("⚔️ Ожидание выбора..."),
