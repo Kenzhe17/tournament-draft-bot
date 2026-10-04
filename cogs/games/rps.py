@@ -23,6 +23,9 @@ from storage.economy import (
 
 logger = logging.getLogger(__name__)
 
+# Track play again requests for PvP
+play_again_requests: dict[str, set[int]] = {}  # game_id -> set of user_ids who clicked play again
+
 
 class GameMode(Enum):
     """Game mode enum."""
@@ -192,10 +195,14 @@ class PvEChoiceView(RPSView):
                        f"{replace_emojis('💰')} Изменение баланса: {balance_change}",
             color=discord.Color.blue()
         )
-        
+
+        # Add play again button
+        result_view = discord.ui.View(timeout=None)
+        result_view.add_item(RPSPlayAgainButton(bet, None))
+
         # Send public result message (not ephemeral)
-        await interaction.edit_original_response(embed=embed, view=None)
-        
+        await interaction.edit_original_response(embed=embed, view=result_view)
+
         # Cleanup
         active_users.discard(user_id)
         if self.game_id in active_games:
@@ -646,34 +653,195 @@ class PvPChoiceView(RPSView):
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"{replace_emojis('🏆')} Победитель: {winner_name}!\n"
                           f"{replace_emojis('💰')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
-        
+
         embed = discord.Embed(
             title=title,
             description=description,
             color=discord.Color.gold()
         )
-        
-        # Update main message with result (no need to delete messages anymore)
+
+        # Add play again button
+        result_view = discord.ui.View(timeout=None)
+        result_view.add_item(RPSPlayAgainButton(bet, game.initiator_id, game.opponent_id))
+
+        # Update main message with result
         if game.message_id:
             try:
-                # Get bot instance from the view
                 channel = interaction.client.get_channel(game.channel_id)
                 if channel:
                     msg = await channel.fetch_message(game.message_id)
-                    await msg.edit(embed=embed, view=None)
+                    await msg.edit(embed=embed, view=result_view)
             except Exception as e:
                 logger.error(f"Error editing main message with result: {e}")
-            try:
-                msg = await channel.fetch_message(game.message_id)
-                await msg.edit(embed=embed, view=None)
-            except Exception as e:
-                logger.error(f"Error editing challenge message: {e}")
-        
+
         # Cleanup
         active_users.discard(game.initiator_id)
         active_users.discard(game.opponent_id)
         if self.game_id in active_games:
             del active_games[self.game_id]
+
+
+class RPSPlayAgainButton(discord.ui.Button):
+    """Кнопка сыграть снова."""
+
+    def __init__(self, bet: int, initiator_id: Optional[int] = None, opponent_id: Optional[int] = None):
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
+        self.bet = bet
+        self.initiator_id = initiator_id
+        self.opponent_id = opponent_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Перезапустить игру с теми же параметрами."""
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+
+        # PvE mode - immediate restart
+        if self.opponent_id is None:
+            # Check balance
+            balance = await check_balance(user_id, guild_id, self.bet)
+            if not balance:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Недостаточно баланса."),
+                    ephemeral=True
+                )
+                return
+
+            # Hold escrow
+            escrow_success = await hold_escrow(user_id, guild_id, self.bet)
+            if not escrow_success:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Не удалось удержать ставку."),
+                    ephemeral=True
+                )
+                return
+
+            # Create new game
+            game_id = f"rps_{user_id}_{guild_id}_{asyncio.get_event_loop().time()}"
+            game = GameSession(
+                game_id=game_id,
+                mode=GameMode.PVE,
+                state=GameState.WAITING_PVE,
+                initiator_id=user_id,
+                guild_id=guild_id,
+                bet=self.bet,
+                opponent_id=None
+            )
+            active_games[game_id] = game
+            active_users.add(user_id)
+
+            # Check if we're in a thread
+            if isinstance(interaction.channel, discord.Thread):
+                # Already in thread, just edit the message
+                view = PvEChoiceView(game_id, self.bet)
+                embed = discord.Embed(
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                # Not in thread, send new message
+                view = PvEChoiceView(game_id, self.bet)
+                embed = discord.Embed(
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.send_message(embed=embed, view=view)
+        else:
+            # PvP mode - wait for both players
+            game_id = f"rps_play_again_{self.initiator_id}_{self.opponent_id}_{asyncio.get_event_loop().time()}"
+
+            # Check if this is a play again request
+            if game_id not in play_again_requests:
+                play_again_requests[game_id] = set()
+
+            play_again_requests[game_id].add(user_id)
+
+            # Check if both players have requested
+            if len(play_again_requests[game_id]) == 2:
+                # Both players agreed - start new game
+                del play_again_requests[game_id]
+
+                # Check balance for both
+                initiator_balance = await check_balance(self.initiator_id, guild_id, self.bet)
+                opponent_balance = await check_balance(self.opponent_id, guild_id, self.bet)
+
+                if not initiator_balance or not opponent_balance:
+                    await interaction.response.send_message(
+                        replace_emojis("❌ Недостаточно баланса у одного из игроков."),
+                        ephemeral=True
+                    )
+                    return
+
+                # Hold escrow for both
+                initiator_escrow = await hold_escrow(self.initiator_id, guild_id, self.bet)
+                opponent_escrow = await hold_escrow(self.opponent_id, guild_id, self.bet)
+
+                if not initiator_escrow or not opponent_escrow:
+                    await interaction.response.send_message(
+                        replace_emojis("❌ Не удалось удержать ставку."),
+                        ephemeral=True
+                    )
+                    return
+
+                # Create new game
+                game = GameSession(
+                    game_id=game_id,
+                    mode=GameMode.PVP,
+                    state=GameState.WAITING_PVP,
+                    initiator_id=self.initiator_id,
+                    guild_id=guild_id,
+                    bet=self.bet,
+                    opponent_id=self.opponent_id
+                )
+                active_games[game_id] = game
+                active_users.add(self.initiator_id)
+                active_users.add(self.opponent_id)
+
+                # Get opponent member
+                opponent = interaction.guild.get_member(self.opponent_id)
+                if opponent:
+                    thread_name = f"⚔️ RPS - {interaction.guild.get_member(self.initiator_id).display_name} vs {opponent.display_name}"
+                else:
+                    thread_name = f"⚔️ RPS - {interaction.user.display_name} vs Unknown"
+
+                total_pot = self.bet * 2 * 0.95
+                view = PvPChallengeView(game_id, self.initiator_id, self.opponent_id, self.bet, interaction.channel_id, 0, interaction.client)
+
+                embed = discord.Embed(
+                    title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
+                    description=f"<@{self.initiator_id}> вызывает <@{self.opponent_id}> на дуэль!\n\n"
+                                  f"{replace_emojis('💰')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                                  f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                  f"<@{self.opponent_id}>, примите вызов в течение 60 секунд.",
+                    color=discord.Color.gold()
+                )
+
+                # Check if in thread
+                if isinstance(interaction.channel, discord.Thread):
+                    await interaction.response.edit_message(embed=embed, view=view)
+                    # Update game message_id
+                    msg = await interaction.original_response()
+                    game.message_id = msg.id
+                    game.channel_id = interaction.channel.id
+                    view.message_id = msg.id
+                    view.channel_id = interaction.channel.id
+                else:
+                    await interaction.response.send_message(embed=embed, view=view)
+                    msg = await interaction.original_response()
+                    game.message_id = msg.id
+                    game.channel_id = interaction.channel.id
+                    view.message_id = msg.id
+            else:
+                # Only one player clicked - wait for the other
+                waiting_for = self.opponent_id if user_id == self.initiator_id else self.initiator_id
+                await interaction.response.send_message(
+                    f"{replace_emojis('⏳')} Ожидание ответа от <@{waiting_for}>...",
+                    ephemeral=True
+                )
 
 
 class RPSCog(commands.Cog):
