@@ -71,7 +71,8 @@ class SellCog(commands.Cog):
             )
             return
 
-        if not item.get("is_sellable", True):
+        # Check if item is sellable
+        if not item.is_sellable:
             await interaction.followup.send(
                 "<:white_dot:0000> Этот предмет нельзя продать!",
                 ephemeral=True
@@ -79,7 +80,7 @@ class SellCog(commands.Cog):
             return
 
         # 2. Проверяем наличие предмета в инвентаре у игрока
-        if not await has_user_item(interaction.user.id, item["id"]):
+        if not await has_user_item(interaction.user.id, item.id):
             await interaction.followup.send(
                 "<:white_dot:0000> У вас нет этого предмета в инвентаре!",
                 ephemeral=True
@@ -87,11 +88,11 @@ class SellCog(commands.Cog):
             return
 
         # 3. Расчёт стоимости продажи (50% от стоимости предмета в магазине)
-        base_price = item["price"]
+        base_price = item.price
         sell_price = math.floor(base_price * 0.5)
 
         # 4. Удаляем предмет и начисляем монеты
-        await remove_user_item(interaction.user.id, item["id"])
+        await remove_user_item(interaction.user.id, item.id)
         await add_balance(interaction.user.id, sell_price)
 
         # 5. Красивый Embed ответа
@@ -99,7 +100,7 @@ class SellCog(commands.Cog):
             title="<a:a_star:0000> **ПРОДАЖА ПРЕДМЕТА**",
             description=(
                 f"<a:a_sparkle:0000> **Пользователь:** {interaction.user.mention}\n\n"
-                f"<:white_arrow:0000> **Продан предмет:** `{item['name']}`\n"
+                f"<:white_arrow:0000> **Продан предмет:** `{item.name}`\n"
                 f"<:white_arrow:0000> **Цена в магазине:** `{base_price:,}` монет\n"
                 f"<:white_arrow:0000> **Выручка (50%):** **`{sell_price:,}`** монет\n\n"
                 f"<:white_dot:0000> *Монеты зачислены на ваш баланс.*"
