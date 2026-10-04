@@ -14,33 +14,6 @@ from config import replace_emojis, get_emoji
 
 logger = logging.getLogger(__name__)
 
-# Rate limiter for thread creation
-thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
-
-# Import shared game state
-from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread, wait_for_thread_cooldown
-
-
-class MathQuizCloseThreadButton(discord.ui.Button):
-    """Кнопка закрыть тред."""
-
-    def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="Закрыть тред")
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Закрыть и удалить тред."""
-        user_id = interaction.user.id
-        thread = interaction.channel
-
-        # Remove from active threads
-        remove_active_thread(user_id)
-
-        if isinstance(thread, discord.Thread):
-            await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
-            await asyncio.sleep(5)
-            await thread.delete()
-        else:
-            await interaction.response.send_message("❌ Это не тред", ephemeral=True)
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -141,9 +114,6 @@ class QuizLobbyView(discord.ui.View):
         for player in self.players:
             await user_balance_store.add_balance(self.guild_id, player.id, self.bet)
 
-        # Remove from active threads
-        remove_active_thread(self.host.id)
-
         self.stop()
         cancel_embed = discord.Embed(
             title=f"{get_emoji('white_arrow')} **Игра отменена**",
@@ -151,12 +121,6 @@ class QuizLobbyView(discord.ui.View):
             color=0xED4245
         )
         await interaction.edit_original_response(embed=cancel_embed, view=None)
-
-        # Close the thread if in a thread
-        thread = interaction.channel
-        if isinstance(thread, discord.Thread):
-            await asyncio.sleep(2)
-            await thread.delete()
 
 
 # ==========================================
@@ -172,10 +136,10 @@ class MathQuizCog(commands.Cog):
     async def math_quiz(self, interaction: discord.Interaction, bet: int):
         user_id = interaction.user.id
 
-        # Check if user has an active thread
-        if has_active_thread(user_id):
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
+                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread open` для создания треда.",
                 ephemeral=True
             )
             return
@@ -192,69 +156,9 @@ class MathQuizCog(commands.Cog):
 
         await user_balance_store.subtract_balance(guild_id, interaction.user.id, bet)
 
-        # Determine thread name
-        thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
-
-        # Send notification in main channel
-        await interaction.response.send_message(
-            content=f"{get_emoji('a_star')} Мат. дуэль началась в треде: {thread_name}",
-            ephemeral=False
-        )
-
-        # Get the original message and create thread with retry logic
-        max_retries = 3
-        retry_count = 0
-        thread = None
-
-        while retry_count < max_retries:
-            try:
-                # Wait for global cooldown before creating thread
-                await wait_for_thread_cooldown()
-
-                async with thread_creation_semaphore:
-                    original_message = await interaction.original_response()
-                    thread = await original_message.create_thread(
-                        name=thread_name,
-                        auto_archive_duration=60
-                    )
-
-                    # Track this thread for the user
-                    add_active_thread(user_id, thread.id)
-
-                    lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-                    message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
-                    break  # Success, exit retry loop
-            except discord.HTTPException as e:
-                retry_count += 1
-                if hasattr(e, 'retry_after') and e.retry_after:
-                    # Rate limit - wait and retry
-                    wait_time = e.retry_after + 1  # Add 1 second buffer
-                    logger.warning(f"Rate limit hit. Retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                else:
-                    # Other HTTP error - log and use fallback
-                    logger.error(f"Failed to create thread (HTTPException): {e}")
-                    break
-            except Exception as e:
-                # Other errors
-                logger.error(f"Failed to create thread (Unexpected error): {e}")
-                break
-
-        # If thread creation failed after all retries, refund and show error
-        if thread is None:
-            logger.error(f"Failed to create thread after {max_retries} retries")
-
-            # Refund bet
-            await user_balance_store.add_balance(guild_id, user_id, bet)
-
-            # Edit the notification message to show error
-            original_message = await interaction.original_response()
-            await original_message.edit(
-                content=f"{get_emoji('❌')} Не удалось создать игру. Попробуйте еще раз."
-            )
-            return
-
-        await lobby_view.wait()
+        # Create lobby view directly in the thread
+        lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
+        await interaction.response.send_message(embed=lobby_view.build_embed(), view=lobby_view)
 
         if not lobby_view.started:
             return
@@ -363,10 +267,7 @@ class MathQuizCog(commands.Cog):
             color=0x2ECC71
         )
 
-        # Add close thread button
-        final_view = discord.ui.View(timeout=None)
-        final_view.add_item(MathQuizCloseThreadButton())
-        await message.edit(embed=final_embed, view=final_view)
+        await message.edit(embed=final_embed, view=None)
 
 
 async def setup(bot: "TournamentBot"):

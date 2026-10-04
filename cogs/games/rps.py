@@ -13,12 +13,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-# Rate limiter for thread creation
-thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
-
-# Import shared game state
-from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread, wait_for_thread_cooldown
-
 from storage.economy import (
     check_balance,
     get_balance,
@@ -202,10 +196,9 @@ class PvEChoiceView(RPSView):
             color=discord.Color.blue()
         )
 
-        # Add play again and close thread buttons
+        # Add play again button
         result_view = discord.ui.View(timeout=None)
         result_view.add_item(RPSPlayAgainButton(bet, None))
-        result_view.add_item(RPSCloseThreadButton())
 
         # Send public result message (not ephemeral)
         await interaction.edit_original_response(embed=embed, view=result_view)
@@ -236,15 +229,10 @@ class PvPChallengeView(RPSView):
         
         # Refund initiator
         await release_escrow(self.initiator_id, game.guild_id, self.bet)
-        
+
         # Refund opponent if they accepted (escrow held)
         if self.opponent_id and self.opponent_id in active_users:
             await release_escrow(self.opponent_id, game.guild_id, self.bet)
-
-        # Remove from active threads
-        remove_active_thread(self.initiator_id)
-        if self.opponent_id:
-            remove_active_thread(self.opponent_id)
 
         # Update message
         try:
@@ -422,11 +410,6 @@ class PvPChallengeView(RPSView):
         if self.opponent_id:
             await release_escrow(self.opponent_id, game.guild_id, self.bet)
 
-        # Remove from active threads
-        remove_active_thread(self.initiator_id)
-        if self.opponent_id:
-            remove_active_thread(self.opponent_id)
-
         # Update message
         embed = discord.Embed(
             title=replace_emojis("❌ Вызов отклонён"),
@@ -490,31 +473,7 @@ class PvPChallengeView(RPSView):
             active_users.discard(self.opponent_id)
         if self.game_id in active_games:
             del active_games[self.game_id]
-        
-        # Refund initiator
-        await release_escrow(self.initiator_id, game.guild_id, self.bet)
 
-        # Remove from active threads
-        remove_active_thread(self.initiator_id)
-        if self.opponent_id:
-            remove_active_thread(self.opponent_id)
-
-        # Update message
-        embed = discord.Embed(
-            title=replace_emojis("❌ Вызов отклонён"),
-            description=f"<@{self.opponent_id}> отклонил вызов от <@{self.initiator_id}>.",
-            color=discord.Color.red()
-        )
-
-        for item in self.children:
-            item.disabled = True
-        await interaction.response.edit_message(embed=embed, view=self)
-
-        # Cleanup
-        active_users.discard(self.initiator_id)
-        if self.game_id in active_games:
-            del active_games[self.game_id]
-    
     async def send_choice_views(self, interaction: discord.Interaction, game: GameSession):
         """Update main message to show choice phase."""
         # Instead of sending new messages, update the main challenge message
@@ -696,10 +655,9 @@ class PvPChoiceView(RPSView):
             color=discord.Color.gold()
         )
 
-        # Add play again and close thread buttons
+        # Add play again button
         result_view = discord.ui.View(timeout=None)
         result_view.add_item(RPSPlayAgainButton(bet, game.initiator_id, game.opponent_id))
-        result_view.add_item(RPSCloseThreadButton())
 
         # Update main message with result
         if game.message_id:
@@ -716,28 +674,6 @@ class PvPChoiceView(RPSView):
         active_users.discard(game.opponent_id)
         if self.game_id in active_games:
             del active_games[self.game_id]
-
-
-class RPSCloseThreadButton(discord.ui.Button):
-    """Кнопка закрыть тред."""
-
-    def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="Закрыть тред")
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Закрыть и удалить тред."""
-        user_id = interaction.user.id
-        thread = interaction.channel
-
-        # Remove from active threads
-        remove_active_thread(user_id)
-
-        if isinstance(thread, discord.Thread):
-            await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
-            await asyncio.sleep(5)
-            await thread.delete()
-        else:
-            await interaction.response.send_message("❌ Это не тред", ephemeral=True)
 
 
 class RPSPlayAgainButton(discord.ui.Button):
@@ -879,49 +815,13 @@ class RPSPlayAgainButton(discord.ui.Button):
                     color=discord.Color.gold()
                 )
 
-                # Check if in thread
-                if isinstance(interaction.channel, discord.Thread):
-                    await interaction.response.edit_message(embed=embed, view=view)
-                    # Update game message_id
-                    msg = await interaction.original_response()
-                    game.message_id = msg.id
-                    game.channel_id = interaction.channel.id
-                    view.message_id = msg.id
-                    view.channel_id = interaction.channel.id
-                else:
-                    # Create thread like in initial game
-                    thread_name = f"⚔️ RPS - {interaction.guild.get_member(self.initiator_id).display_name} vs {opponent.display_name}" if opponent else f"⚔️ RPS - {interaction.user.display_name} vs Unknown"
-
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('a_star')} Вызов отправлен в треде: {thread_name}",
-                        ephemeral=False
-                    )
-
-                    try:
-                        original_message = await interaction.original_response()
-                        thread = await original_message.create_thread(
-                            name=thread_name,
-                            auto_archive_duration=60
-                        )
-                        thread_msg = await thread.send(embed=embed, view=view)
-                        game.message_id = thread_msg.id
-                        game.channel_id = thread.id
-                        view.message_id = thread_msg.id
-                        view.channel_id = thread.id
-                    except discord.HTTPException as e:
-                        logger.error(f"Failed to create thread (HTTPException): {e}")
-                        original_message = await interaction.original_response()
-                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel.id
-                        view.message_id = original_message.id
-                    except Exception as e:
-                        logger.error(f"Failed to create thread (Unexpected error): {e}")
-                        original_message = await interaction.original_response()
-                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
-                        game.message_id = original_message.id
-                        game.channel_id = interaction.channel.id
-                        view.message_id = original_message.id
+                # Edit the message with the challenge view
+                await interaction.response.edit_message(embed=embed, view=view)
+                msg = await interaction.original_response()
+                game.message_id = msg.id
+                game.channel_id = interaction.channel.id
+                view.message_id = msg.id
+                view.channel_id = interaction.channel.id
             else:
                 # Only one player clicked - wait for the other
                 waiting_for = self.opponent_id if user_id == self.initiator_id else self.initiator_id
@@ -944,10 +844,10 @@ class RPSCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
-        # Check if user has an active thread
-        if has_active_thread(user_id):
+        # Check if user is in a thread
+        if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
+                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread open` для создания треда.",
                 ephemeral=True
             )
             return
@@ -995,86 +895,26 @@ class RPSCog(commands.Cog):
             # PvE mode
             game.state = GameState.WAITING_PVE
             view = PvEChoiceView(game_id, bet)
-            # Determine thread name
-            thread_name = f"🎮 RPS - {interaction.user.display_name}"
 
-            # Send notification in main channel
-            await interaction.response.send_message(
-                content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
-                ephemeral=False
+            # Send game embed directly in the thread
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-
-            # Get the original message and create thread with retry logic
-            max_retries = 3
-            retry_count = 0
-            thread = None
-
-            while retry_count < max_retries:
-                try:
-                    # Wait for global cooldown before creating thread
-                    await wait_for_thread_cooldown()
-
-                    async with thread_creation_semaphore:
-                        original_message = await interaction.original_response()
-                        thread = await original_message.create_thread(
-                            name=thread_name,
-                            auto_archive_duration=60
-                        )
-
-                        # Track this thread for the user
-                        add_active_thread(user_id, thread.id)
-
-                        embed = discord.Embed(
-                            title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
-                            color=discord.Color.from_rgb(69, 69, 69)
-                        )
-                        embed.add_field(
-                            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
-                            value=f"• Режим: **PvE**\n"
-                                  f"• Игрок: <@{user_id}>\n"
-                                  f"• Ставка: **{bet}** {replace_emojis('money')}\n"
-                                  f"• Множитель: **2.0x**",
-                            inline=False
-                        )
-                        embed.add_field(
-                            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                            value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
-                            inline=False
-                        )
-                        await thread.send(embed=embed, view=view)
-                        break  # Success, exit retry loop
-                except discord.HTTPException as e:
-                    retry_count += 1
-                    if hasattr(e, 'retry_after') and e.retry_after:
-                        # Rate limit - wait and retry
-                        wait_time = e.retry_after + 1  # Add 1 second buffer
-                        logger.warning(f"Rate limit hit. Retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
-                        await asyncio.sleep(wait_time)
-                    else:
-                        # Other HTTP error - log and use fallback
-                        logger.error(f"Failed to create thread (HTTPException): {e}")
-                        break
-                except Exception as e:
-                    # Other errors
-                    logger.error(f"Failed to create thread (Unexpected error): {e}")
-                    break
-
-            # If thread creation failed after all retries, refund and show error
-            if thread is None:
-                logger.error(f"Failed to create thread after {max_retries} retries")
-
-                # Refund bet
-                await release_escrow(user_id, guild_id, bet)
-                active_users.discard(user_id)
-                if game_id in active_games:
-                    del active_games[game_id]
-
-                # Edit the notification message to show error
-                original_message = await interaction.original_response()
-                await original_message.edit(
-                    content=f"{replace_emojis('❌')} Не удалось создать игру. Попробуйте еще раз."
-                )
-                return
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                value=f"• Режим: **PvE**\n"
+                      f"• Игрок: <@{user_id}>\n"
+                      f"• Ставка: **{bet}** {replace_emojis('money')}\n"
+                      f"• Множитель: **2.0x**",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
+                inline=False
+            )
+            await interaction.response.send_message(embed=embed, view=view)
 
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)

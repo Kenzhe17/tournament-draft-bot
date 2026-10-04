@@ -16,12 +16,6 @@ from utils.permissions import is_bot_owner
 
 logger = logging.getLogger(__name__)
 
-# Rate limiter for thread creation
-thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
-
-# Import shared game state
-from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread, wait_for_thread_cooldown
-
 # Locks for atomic transactions
 _user_locks = {}
 _guild_locks = {}
@@ -201,9 +195,6 @@ class CoinFlipCancelButton(discord.ui.Button):
                 self.game.bet
             )
 
-        # Remove from active threads
-        remove_active_thread(self.game.initiator_id)
-
         self.game.is_active = False
         await interaction.response.edit_message(
             content="❌ Игра отменена. Ставка возвращена.",
@@ -266,37 +257,12 @@ class CoinFlipDeclineButton(discord.ui.Button):
                 self.game.bet
             )
 
-        # Remove from active threads
-        remove_active_thread(self.game.initiator_id)
-
         self.game.is_active = False
         await interaction.response.edit_message(
             content="❌ Вызов отклонён. Ставка возвращена.",
             embed=None,
             view=None
         )
-
-
-class CoinFlipCloseThreadButton(discord.ui.Button):
-    """Кнопка закрыть тред."""
-
-    def __init__(self):
-        super().__init__(style=discord.ButtonStyle.danger, label="Закрыть тред")
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Закрыть и удалить тред."""
-        user_id = interaction.user.id
-        thread = interaction.channel
-
-        # Remove from active threads
-        remove_active_thread(user_id)
-
-        if isinstance(thread, discord.Thread):
-            await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
-            await asyncio.sleep(5)
-            await thread.delete()
-        else:
-            await interaction.response.send_message("❌ Это не тред", ephemeral=True)
 
 
 class CoinFlipPlayAgainButton(discord.ui.Button):
@@ -433,10 +399,9 @@ async def start_game(
     # Show result
     result_embed = view.create_game_embed("result")
 
-    # Add play again and close thread buttons
+    # Add play again button
     result_view = discord.ui.View(timeout=None)
     result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id))
-    result_view.add_item(CoinFlipCloseThreadButton())
 
     await interaction.edit_original_response(embed=result_embed, view=result_view)
 
@@ -449,10 +414,10 @@ async def create_coin_flip_game(
     guild_id = interaction.guild_id
     user_id = interaction.user.id
 
-    # Check if user has an active thread
-    if has_active_thread(user_id):
+    # Check if user is in a thread
+    if not isinstance(interaction.channel, discord.Thread):
         await interaction.response.send_message(
-            "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
+            "❌ Игры можно запускать только в игровых тредах. Используйте `/thread open` для создания треда.",
             ephemeral=True
         )
         return
@@ -501,69 +466,9 @@ async def create_coin_flip_game(
     view.add_item(CoinFlipHeadsButton(game, game_view=view))
     view.add_item(CoinFlipTailsButton(game, game_view=view))
 
-    # Determine thread name
-    thread_name = f"🎲 Монетка - {interaction.user.display_name}"
-
-    # Send notification in main channel
-    await interaction.response.send_message(
-        content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
-        ephemeral=False
-    )
-
-    # Get the original message and create thread with retry logic
-    max_retries = 3
-    retry_count = 0
-    thread = None
-
-    while retry_count < max_retries:
-        try:
-            # Wait for global cooldown before creating thread
-            await wait_for_thread_cooldown()
-
-            async with thread_creation_semaphore:
-                original_message = await interaction.original_response()
-                thread = await original_message.create_thread(
-                    name=thread_name,
-                    auto_archive_duration=60
-                )
-
-                # Track this thread for the user
-                add_active_thread(user_id, thread.id)
-
-                # Send game embed with buttons in the thread
-                embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-                await thread.send(embed=embed, view=view)
-                break  # Success, exit retry loop
-        except discord.HTTPException as e:
-            retry_count += 1
-            if hasattr(e, 'retry_after') and e.retry_after:
-                # Rate limit - wait and retry
-                wait_time = e.retry_after + 1  # Add 1 second buffer
-                logger.warning(f"Rate limit hit. Retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
-                await asyncio.sleep(wait_time)
-            else:
-                # Other HTTP error - log and use fallback
-                logger.error(f"Failed to create thread (HTTPException): {e}")
-                break
-        except Exception as e:
-            # Other errors
-            logger.error(f"Failed to create thread (Unexpected error): {e}")
-            break
-
-    # If thread creation failed after all retries, refund and show error
-    if thread is None:
-        logger.error(f"Failed to create thread after {max_retries} retries")
-
-        # Refund bet
-        lock = get_user_lock(guild_id, user_id)
-        async with lock:
-            await user_balance_store.add_balance(guild_id, user_id, bet)
-
-        # Edit the notification message to show error
-        await interaction.edit_original_response(
-            content=f"{replace_emojis('❌')} Не удалось создать игру. Попробуйте еще раз."
-        )
-        return
+    # Send game embed directly in the thread
+    embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 class CoinFlipCog(commands.Cog):
