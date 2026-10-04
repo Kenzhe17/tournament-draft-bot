@@ -240,7 +240,12 @@ class PvPChallengeView(RPSView):
         # Refund opponent if they accepted (escrow held)
         if self.opponent_id and self.opponent_id in active_users:
             await release_escrow(self.opponent_id, game.guild_id, self.bet)
-        
+
+        # Remove from active threads
+        remove_active_thread(self.initiator_id)
+        if self.opponent_id:
+            remove_active_thread(self.opponent_id)
+
         # Update message
         try:
             channel = self.bot_instance.get_channel(self.channel_id)
@@ -416,21 +421,26 @@ class PvPChallengeView(RPSView):
         await release_escrow(self.initiator_id, game.guild_id, self.bet)
         if self.opponent_id:
             await release_escrow(self.opponent_id, game.guild_id, self.bet)
-        
+
+        # Remove from active threads
+        remove_active_thread(self.initiator_id)
+        if self.opponent_id:
+            remove_active_thread(self.opponent_id)
+
         # Update message
         embed = discord.Embed(
             title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{interaction.user.id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
-        
+
         for item in self.children:
             item.disabled = True
         try:
             await interaction.response.edit_message(embed=embed, view=self)
         except discord.errors.InteractionResponded:
             pass
-        
+
         # Cleanup
         active_users.discard(self.initiator_id)
         if self.opponent_id:
@@ -483,18 +493,23 @@ class PvPChallengeView(RPSView):
         
         # Refund initiator
         await release_escrow(self.initiator_id, game.guild_id, self.bet)
-        
+
+        # Remove from active threads
+        remove_active_thread(self.initiator_id)
+        if self.opponent_id:
+            remove_active_thread(self.opponent_id)
+
         # Update message
         embed = discord.Embed(
             title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{self.opponent_id}> отклонил вызов от <@{self.initiator_id}>.",
             color=discord.Color.red()
         )
-        
+
         for item in self.children:
             item.disabled = True
         await interaction.response.edit_message(embed=embed, view=self)
-        
+
         # Cleanup
         active_users.discard(self.initiator_id)
         if self.game_id in active_games:
