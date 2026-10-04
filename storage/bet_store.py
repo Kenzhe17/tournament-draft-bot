@@ -187,9 +187,8 @@ class BetStore:
                 additional_amount = bet.amount - existing_bet.amount
                 bet.amount += existing_bet.amount  # Update to total amount
                 bet.odds = existing_bet.odds
-                # Always shift odds by absolute amount (even when decreasing)
-                # Any bet on a team decreases its odds, regardless of amount change
-                shift_amount = abs(additional_amount)
+                # Shift odds by actual change amount (positive = increase, negative = decrease)
+                shift_amount = additional_amount
             else:
                 # New bet, use current odds
                 bet.odds = current_bet_odds
