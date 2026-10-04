@@ -286,9 +286,10 @@ class BetStore:
                     existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
                     if existing_bet:
                         # Add new bet amount to existing bet (do NOT refund)
-                        # bet.amount already updated above
+                        # bet.amount already updated above in bet_modal.py
                         # Keep the original odds (first bet's odds)
                         bet.odds = existing_bet.odds
+                        # Do NOT do any balance operations here - already handled in bet_modal.py
 
                     await conn.execute(
                         """
