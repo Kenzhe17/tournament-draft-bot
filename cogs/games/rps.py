@@ -13,6 +13,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+# Rate limiter for thread creation
+thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
+
 from storage.economy import (
     check_balance,
     get_balance,
@@ -953,18 +956,19 @@ class RPSCog(commands.Cog):
 
             # Get the original message and create thread
             try:
-                original_message = await interaction.original_response()
-                thread = await original_message.create_thread(
-                    name=thread_name,
-                    auto_archive_duration=60
-                )
-                embed = discord.Embed(
-                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                    color=discord.Color.blue()
-                )
-                await thread.send(embed=embed, view=view)
+                async with thread_creation_semaphore:
+                    original_message = await interaction.original_response()
+                    thread = await original_message.create_thread(
+                        name=thread_name,
+                        auto_archive_duration=60
+                    )
+                    embed = discord.Embed(
+                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                        color=discord.Color.blue()
+                    )
+                    await thread.send(embed=embed, view=view)
             except discord.HTTPException as e:
                 logger.error(f"Failed to create thread (HTTPException): {e}")
                 # Fallback: send in main channel

@@ -16,6 +16,9 @@ from utils.permissions import is_bot_owner
 
 logger = logging.getLogger(__name__)
 
+# Rate limiter for thread creation
+thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
+
 # Locks for atomic transactions
 _user_locks = {}
 _guild_locks = {}
@@ -472,15 +475,16 @@ async def create_coin_flip_game(
 
     # Get the original message and create thread
     try:
-        original_message = await interaction.original_response()
-        thread = await original_message.create_thread(
-            name=thread_name,
-            auto_archive_duration=60
-        )
+        async with thread_creation_semaphore:
+            original_message = await interaction.original_response()
+            thread = await original_message.create_thread(
+                name=thread_name,
+                auto_archive_duration=60
+            )
 
-        # Send game embed with buttons in the thread
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await thread.send(embed=embed, view=view)
+            # Send game embed with buttons in the thread
+            embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+            await thread.send(embed=embed, view=view)
     except discord.HTTPException as e:
         # If thread creation fails due to Discord API error, send game in main channel
         logger.error(f"Failed to create thread (HTTPException): {e}")

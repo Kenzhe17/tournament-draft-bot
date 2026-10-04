@@ -14,6 +14,9 @@ from config import replace_emojis, get_emoji
 
 logger = logging.getLogger(__name__)
 
+# Rate limiter for thread creation
+thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
+
 if TYPE_CHECKING:
     from bot import TournamentBot
 
@@ -145,9 +148,39 @@ class MathQuizCog(commands.Cog):
 
         await user_balance_store.subtract_balance(guild_id, interaction.user.id, bet)
 
-        # Send lobby embed directly in main channel
-        lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-        message = await interaction.response.send_message(embed=lobby_view.build_embed(), view=lobby_view)
+        # Determine thread name
+        thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
+
+        # Send notification in main channel
+        await interaction.response.send_message(
+            content=f"{get_emoji('a_star')} Мат. дуэль началась в треде: {thread_name}",
+            ephemeral=False
+        )
+
+        # Get the original message and create thread
+        try:
+            async with thread_creation_semaphore:
+                original_message = await interaction.original_response()
+                thread = await original_message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
+                lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
+                message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
+        except discord.HTTPException as e:
+            logger.error(f"Failed to create thread (HTTPException): {e}")
+            # Fallback: edit the followup message to show lobby
+            original_message = await interaction.original_response()
+            lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
+            await original_message.edit(content=f"{get_emoji('a_star')} Мат. дуэль началась в чате (не удалось создать тред)", embed=lobby_view.build_embed(), view=lobby_view)
+            message = original_message
+        except Exception as e:
+            logger.error(f"Failed to create thread (Unexpected error): {e}")
+            # Fallback: edit the followup message to show lobby
+            original_message = await interaction.original_response()
+            lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
+            await original_message.edit(content=f"{get_emoji('a_star')} Мат. дуэль началась в чате (не удалось создать тред)", embed=lobby_view.build_embed(), view=lobby_view)
+            message = original_message
 
         await lobby_view.wait()
 
