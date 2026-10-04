@@ -942,13 +942,51 @@ class RPSCog(commands.Cog):
             # PvE mode
             game.state = GameState.WAITING_PVE
             view = PvEChoiceView(game_id, bet)
-            embed = discord.Embed(
-                title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                              f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                color=discord.Color.blue()
+            # Determine thread name
+            thread_name = f"🎮 RPS - {interaction.user.display_name}"
+
+            # Send notification in main channel
+            await interaction.response.send_message(
+                content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
+                ephemeral=False
             )
-            await interaction.response.send_message(embed=embed, view=view)
+
+            # Get the original message and create thread
+            try:
+                original_message = await interaction.original_response()
+                thread = await original_message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
+                embed = discord.Embed(
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                    color=discord.Color.blue()
+                )
+                await thread.send(embed=embed, view=view)
+            except discord.HTTPException as e:
+                logger.error(f"Failed to create thread (HTTPException): {e}")
+                # Fallback: send in main channel
+                original_message = await interaction.original_response()
+                embed = discord.Embed(
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                    color=discord.Color.blue()
+                )
+                await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+            except Exception as e:
+                logger.error(f"Failed to create thread (Unexpected error): {e}")
+                # Fallback: send in main channel
+                original_message = await interaction.original_response()
+                embed = discord.Embed(
+                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                    color=discord.Color.blue()
+                )
+                await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
 
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)
