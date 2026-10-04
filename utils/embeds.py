@@ -1130,8 +1130,8 @@ async def build_winner_embed(
                 best_avg = avg
                 best_avg_player = player_name
 
-    # Calculate max payout from betting stats
-    from storage.betting_stats_store import betting_stats_store
+    # Calculate max payout from betting stats for this tournament only
+    from storage.bet_store import bet_store
 
     # Get all player names from tournament
     player_names = set()
@@ -1141,15 +1141,31 @@ async def build_winner_embed(
             if player:
                 player_names.add(player)
 
-    # Check betting stats for each player
-    for player_name in player_names:
-        # Try to get user_id from tournament
-        user_id = tournament.player_user_ids.get(player_name, 0)
-        if user_id:
-            stats = await betting_stats_store.get_user_stats(guild.id, user_id)
-            if stats and stats["best_win"] > max_payout:
-                max_payout = stats["best_win"]
-                max_payout_player = player_name
+    # Get all bets for this tournament
+    tournament_id = str(tournament.guild_id)
+    all_bets = []
+    if bet_store._use_db:
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT user_name, amount, odds FROM bets WHERE guild_id = $1 AND tournament_id = $2",
+                guild.id, tournament_id
+            )
+            all_bets = [{"user_name": row["user_name"], "amount": row["amount"], "odds": row["odds"]} for row in rows]
+    else:
+        # Fallback to JSON storage
+        for key, bets in bet_store._bets.items():
+            if key.startswith(f"{tournament_id}:"):
+                all_bets.extend(bets)
+
+    # Calculate max payout for this tournament
+    for bet in all_bets:
+        # Calculate potential payout (amount * odds)
+        potential_payout = int(bet["amount"] * bet["odds"])
+        if potential_payout > max_payout:
+            max_payout = potential_payout
+            max_payout_player = bet["user_name"]
 
     # Build team list
     team_list = ""

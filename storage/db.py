@@ -299,12 +299,27 @@ async def init_db() -> None:
             await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS tournament_id TEXT NOT NULL DEFAULT ''")
         except Exception:
             pass  # Column might already exist
-        
+
         # Migration: add team_index column if it doesn't exist
         try:
             await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS team_index INTEGER NOT NULL DEFAULT 0")
         except Exception:
             pass  # Column might already exist
+
+        # Migration: ensure PRIMARY KEY constraint exists on bets table
+        try:
+            # Drop existing primary key if it exists (might be different)
+            await conn.execute("ALTER TABLE bets DROP CONSTRAINT IF EXISTS bets_pkey")
+        except Exception:
+            pass  # Constraint might not exist
+
+        # Add correct PRIMARY KEY constraint
+        try:
+            await conn.execute(
+                "ALTER TABLE bets ADD PRIMARY KEY (guild_id, user_id, tournament_id, match_id)"
+            )
+        except Exception:
+            pass  # Might already exist or table recreated
         else:
             # Add odds column if it doesn't exist
             try:
