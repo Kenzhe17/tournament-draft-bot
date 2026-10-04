@@ -16,6 +16,9 @@ from discord.ext import commands
 # Rate limiter for thread creation
 thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
 
+# Track active threads per user (user_id -> thread_id)
+_active_threads = {}
+
 from storage.economy import (
     check_balance,
     get_balance,
@@ -199,9 +202,10 @@ class PvEChoiceView(RPSView):
             color=discord.Color.blue()
         )
 
-        # Add play again button
+        # Add play again and close thread buttons
         result_view = discord.ui.View(timeout=None)
         result_view.add_item(RPSPlayAgainButton(bet, None))
+        result_view.add_item(RPSCloseThreadButton())
 
         # Send public result message (not ephemeral)
         await interaction.edit_original_response(embed=embed, view=result_view)
@@ -677,9 +681,10 @@ class PvPChoiceView(RPSView):
             color=discord.Color.gold()
         )
 
-        # Add play again button
+        # Add play again and close thread buttons
         result_view = discord.ui.View(timeout=None)
         result_view.add_item(RPSPlayAgainButton(bet, game.initiator_id, game.opponent_id))
+        result_view.add_item(RPSCloseThreadButton())
 
         # Update main message with result
         if game.message_id:
@@ -696,6 +701,29 @@ class PvPChoiceView(RPSView):
         active_users.discard(game.opponent_id)
         if self.game_id in active_games:
             del active_games[self.game_id]
+
+
+class RPSCloseThreadButton(discord.ui.Button):
+    """Кнопка закрыть тред."""
+
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="Закрыть тред")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Закрыть и удалить тред."""
+        user_id = interaction.user.id
+        thread = interaction.channel
+
+        # Remove from active threads
+        if user_id in _active_threads:
+            del _active_threads[user_id]
+
+        if isinstance(thread, discord.Thread):
+            await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
+            await asyncio.sleep(5)
+            await thread.delete()
+        else:
+            await interaction.response.send_message("❌ Это не тред", ephemeral=True)
 
 
 class RPSPlayAgainButton(discord.ui.Button):
@@ -902,6 +930,14 @@ class RPSCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
+        # Check if user has an active thread
+        if user_id in _active_threads:
+            await interaction.response.send_message(
+                "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
+                ephemeral=True
+            )
+            return
+
         # Validate bet
         if bet <= 0:
             await interaction.response.send_message(replace_emojis("❌ Ставка должна быть больше 0."), ephemeral=True)
@@ -962,6 +998,10 @@ class RPSCog(commands.Cog):
                         name=thread_name,
                         auto_archive_duration=60
                     )
+
+                    # Track this thread for the user
+                    _active_threads[user_id] = thread.id
+
                     embed = discord.Embed(
                         title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
                         description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
