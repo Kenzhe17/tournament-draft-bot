@@ -507,29 +507,46 @@ async def create_coin_flip_game(
         ephemeral=False
     )
 
-    # Get the original message and create thread
-    try:
-        async with thread_creation_semaphore:
-            original_message = await interaction.original_response()
-            thread = await original_message.create_thread(
-                name=thread_name,
-                auto_archive_duration=60
-            )
+    # Get the original message and create thread with retry logic
+    max_retries = 3
+    retry_count = 0
+    thread = None
 
-            # Track this thread for the user
-            add_active_thread(user_id, thread.id)
+    while retry_count < max_retries:
+        try:
+            async with thread_creation_semaphore:
+                original_message = await interaction.original_response()
+                thread = await original_message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
 
-            # Send game embed with buttons in the thread
-            embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-            await thread.send(embed=embed, view=view)
-    except discord.HTTPException as e:
-        # If thread creation fails due to Discord API error, send game in main channel
-        logger.error(f"Failed to create thread (HTTPException): {e}")
-        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
-    except Exception as e:
-        # Other errors
-        logger.error(f"Failed to create thread (Unexpected error): {e}")
+                # Track this thread for the user
+                add_active_thread(user_id, thread.id)
+
+                # Send game embed with buttons in the thread
+                embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+                await thread.send(embed=embed, view=view)
+                break  # Success, exit retry loop
+        except discord.HTTPException as e:
+            retry_count += 1
+            if hasattr(e, 'retry_after') and e.retry_after:
+                # Rate limit - wait and retry
+                wait_time = e.retry_after + 1  # Add 1 second buffer
+                logger.warning(f"Rate limit hit. Retrying in {wait_time} seconds (attempt {retry_count}/{max_retries})")
+                await asyncio.sleep(wait_time)
+            else:
+                # Other HTTP error - log and use fallback
+                logger.error(f"Failed to create thread (HTTPException): {e}")
+                break
+        except Exception as e:
+            # Other errors
+            logger.error(f"Failed to create thread (Unexpected error): {e}")
+            break
+
+    # If thread creation failed after all retries, use fallback
+    if thread is None:
+        logger.error(f"Failed to create thread after {max_retries} retries, using fallback")
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
         await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
 
