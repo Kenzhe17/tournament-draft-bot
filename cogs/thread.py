@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from cogs.games.game_state import add_active_thread, remove_active_thread, has_active_thread
+from cogs.games.game_state import add_active_thread, remove_active_thread, has_active_thread, clear_user_games
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,9 @@ class ThreadCog(commands.Cog):
             return
 
         thread = interaction.channel
+
+        # Clear all active games for this user
+        clear_user_games(user_id)
 
         # Remove from active threads
         remove_active_thread(user_id)
