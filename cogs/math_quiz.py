@@ -139,7 +139,7 @@ class MathQuizCog(commands.Cog):
         # Check if user is in a thread
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
-                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread open` для создания треда.",
+                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда.",
                 ephemeral=True
             )
             return
