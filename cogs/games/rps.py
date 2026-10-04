@@ -17,7 +17,7 @@ from discord.ext import commands
 thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
 
 # Import shared game state
-from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread
+from cogs.games.game_state import get_active_threads, add_active_thread, remove_active_thread, has_active_thread, wait_for_thread_cooldown
 
 from storage.economy import (
     check_balance,
@@ -1011,6 +1011,9 @@ class RPSCog(commands.Cog):
 
             while retry_count < max_retries:
                 try:
+                    # Wait for global cooldown before creating thread
+                    await wait_for_thread_cooldown()
+
                     async with thread_creation_semaphore:
                         original_message = await interaction.original_response()
                         thread = await original_message.create_thread(
