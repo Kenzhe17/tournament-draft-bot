@@ -39,7 +39,7 @@ class MatchSelectView(discord.ui.View):
             for i, (team1, team2) in enumerate(tournament.semifinal_matches):
                 team1_name = self._get_team_name(team1)
                 team2_name = self._get_team_name(team2)
-                self.add_item(MatchButton(guild_id, tournament, "semifinals", i, f"{team1_name} vs {team2_name}"))
+                self.add_item(MatchButton(guild_id, tournament, "semifinal", i, f"{team1_name} vs {team2_name}"))
         elif tournament.phase == TournamentPhase.FINAL:
             team1_name = self._get_team_name(tournament.final_teams[0])
             team2_name = self._get_team_name(tournament.final_teams[1])
@@ -68,9 +68,9 @@ class MatchButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Get teams for this match
-        if self.match_type == "qualifiers":
+        if self.match_type == "qualifier":
             match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinals":
+        elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
         elif self.match_type == "final":
             match = self.tournament.final_teams
@@ -130,9 +130,9 @@ class TeamButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Get team names for this match
-        if self.match_type == "qualifiers":
+        if self.match_type == "qualifier":
             match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinals":
+        elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
         elif self.match_type == "final":
             match = self.tournament.final_teams
@@ -234,9 +234,9 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         if not current_odds:
             # Get match teams
-            if self.match_type == "qualifiers":
+            if self.match_type == "qualifier":
                 match = self.tournament.qualifier_matches[self.match_index]
-            elif self.match_type == "semifinals":
+            elif self.match_type == "semifinal":
                 match = self.tournament.semifinal_matches[self.match_index]
             elif self.match_type == "final":
                 match = self.tournament.final_teams

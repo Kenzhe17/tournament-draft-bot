@@ -11,7 +11,7 @@ class Bet:
     user_id: int
     user_name: str
     tournament_id: str  # ID турнира
-    match_id: str  # ID матча (qualifiers_0, semifinals_0, final_0)
+    match_id: str  # ID матча (qualifier_0, semifinal_0, final_0)
     team_name: str
     team_index: int  # Индекс команды (0 или 1)
     amount: int

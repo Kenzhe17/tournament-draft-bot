@@ -199,7 +199,7 @@ class Tournament:
 
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
-    betting_phase: str | None = None  # "qualifiers", "semifinals", "final"
+    betting_phase: str | None = None  # "qualifier", "semifinal", "final"
     betting_duration: int = 180  # 3 minutes in seconds
     
     # Legacy betting_open field (kept for backward compatibility)
@@ -236,7 +236,7 @@ class Tournament:
         return self.phase in bracket_phases and team_index not in self.team_names_changed_teams
 
     def start_betting_phase(self, phase: str) -> None:
-        """Start betting for a specific phase (qualifiers/semifinals/final)."""
+        """Start betting for a specific phase (qualifier/semifinal/final)."""
         import time
         self.betting_phase = phase
         self.betting_phase_start_time = time.time()
@@ -793,7 +793,7 @@ class Tournament:
         self.qualifier_winners = [None, None, None, None]
         self.phase = TournamentPhase.QUALIFIERS
         # Start betting phase for qualifiers
-        self.start_betting_phase("qualifiers")
+        self.start_betting_phase("qualifier")
 
     def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
         """
@@ -830,7 +830,7 @@ class Tournament:
         self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
         # Start betting phase for semifinals
-        self.start_betting_phase("semifinals")
+        self.start_betting_phase("semifinal")
 
     def generate_semifinals(self) -> None:
         """Случайно сгенерировать пары полуфиналов."""
@@ -840,7 +840,7 @@ class Tournament:
         self.semifinal_pending_winners = [None, None]
         self.phase = TournamentPhase.SEMIFINALS
         # Start betting phase for semifinals
-        self.start_betting_phase("semifinals")
+        self.start_betting_phase("semifinal")
 
     def set_semifinal_winner(self, match_index: int, team_index: int) -> bool:
         """

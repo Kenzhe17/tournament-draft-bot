@@ -94,7 +94,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Get match teams for odds initialization
             if self.match_type == "qualifiers":
                 match = self.tournament.qualifier_matches[self.match_index]
-            elif self.match_type == "semifinals":
+            elif self.match_type == "semifinal":
                 match = self.tournament.semifinal_matches[self.match_index]
             elif self.match_type == "final":
                 match = self.tournament.final_teams
@@ -161,7 +161,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
         # Get teams in this match
         if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
-        elif self.match_type == "semifinals":
+        elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
         elif self.match_type == "final":
             match = self.tournament.final_teams

@@ -1224,8 +1224,8 @@ class SemifinalsView(discord.ui.View):
             self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
-        self.add_item(BetButton(guild_id, tournament, matches, "semifinals"))
-        self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinals"))
+        self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):

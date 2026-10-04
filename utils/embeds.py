@@ -851,9 +851,9 @@ async def build_semifinals_embed(
 
     # Build footer
     footer = ""
-    if tournament.is_betting_open() and tournament.betting_phase == "semifinals":
+    if tournament.is_betting_open() and tournament.betting_phase == "semifinal":
         footer = "🔓 СТАВКИ ОТКРЫТЫ\nУ вас есть 3 минуты на ставку"
-    elif tournament.betting_phase == "semifinals":
+    elif tournament.betting_phase == "semifinal":
         footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
@@ -897,7 +897,7 @@ async def build_semifinals_embed(
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
     # Add betting section with detailed info AFTER teams
-    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinals")
+    await _add_betting_section_to_embed(embed, tournament, tournament.semifinal_matches, "semifinal")
 
     return embed
 
