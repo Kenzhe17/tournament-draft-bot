@@ -17,6 +17,32 @@ logger = logging.getLogger(__name__)
 # Rate limiter for thread creation
 thread_creation_semaphore = asyncio.Semaphore(2)  # Max 2 thread creations at once
 
+# Track active threads per user (user_id -> thread_id)
+_active_threads = {}
+
+
+class MathQuizCloseThreadButton(discord.ui.Button):
+    """Кнопка закрыть тред."""
+
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.danger, label="Закрыть тред")
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Закрыть и удалить тред."""
+        user_id = interaction.user.id
+        thread = interaction.channel
+
+        # Remove from active threads
+        if user_id in _active_threads:
+            del _active_threads[user_id]
+
+        if isinstance(thread, discord.Thread):
+            await interaction.response.send_message("🗑️ Тред будет закрыт через 5 секунд...", ephemeral=True)
+            await asyncio.sleep(5)
+            await thread.delete()
+        else:
+            await interaction.response.send_message("❌ Это не тред", ephemeral=True)
+
 if TYPE_CHECKING:
     from bot import TournamentBot
 
@@ -116,6 +142,10 @@ class QuizLobbyView(discord.ui.View):
         for player in self.players:
             await user_balance_store.add_balance(self.guild_id, player.id, self.bet)
 
+        # Remove from active threads
+        if self.host.id in _active_threads:
+            del _active_threads[self.host.id]
+
         self.stop()
         cancel_embed = discord.Embed(
             title=f"{get_emoji('white_arrow')} **Игра отменена**",
@@ -136,6 +166,16 @@ class MathQuizCog(commands.Cog):
     @app_commands.command(name="mathquiz", description="Математическая дуэль на скорость (2-6 игроков)")
     @app_commands.describe(bet="Размер ставки (от 20 до 1 000 монет)")
     async def math_quiz(self, interaction: discord.Interaction, bet: int):
+        user_id = interaction.user.id
+
+        # Check if user has an active thread
+        if user_id in _active_threads:
+            await interaction.response.send_message(
+                "❌ У вас есть незакрытый тред с игрой. Закройте его перед началом новой игры.",
+                ephemeral=True
+            )
+            return
+
         if bet < 20 or bet > 1000:
             await interaction.response.send_message(f"{get_emoji('white_dot')} Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
             return
@@ -165,6 +205,10 @@ class MathQuizCog(commands.Cog):
                     name=thread_name,
                     auto_archive_duration=60
                 )
+
+                # Track this thread for the user
+                _active_threads[user_id] = thread.id
+
                 lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
                 message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
         except discord.HTTPException as e:
@@ -290,7 +334,11 @@ class MathQuizCog(commands.Cog):
             description=f"{result_text}\n\n**Финальный счёт:**\n{final_board}",
             color=0x2ECC71
         )
-        await message.edit(embed=final_embed)
+
+        # Add close thread button
+        final_view = discord.ui.View(timeout=None)
+        final_view.add_item(MathQuizCloseThreadButton())
+        await message.edit(embed=final_embed, view=final_view)
 
 
 async def setup(bot: "TournamentBot"):
