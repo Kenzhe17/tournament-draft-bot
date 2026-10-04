@@ -130,16 +130,14 @@ class MathQuizCog(commands.Cog):
     @app_commands.command(name="mathquiz", description="Математическая дуэль на скорость (2-6 игроков)")
     @app_commands.describe(bet="Размер ставки (от 20 до 1 000 монет)")
     async def math_quiz(self, interaction: discord.Interaction, bet: int):
-        await interaction.response.defer()
-
         if bet < 20 or bet > 1000:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
+            await interaction.response.send_message(f"{get_emoji('white_dot')} Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
             return
 
         guild_id = interaction.guild_id
         balance = await user_balance_store.get_balance(guild_id, interaction.user.id)
         if balance < bet:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
+            await interaction.response.send_message(f"{get_emoji('white_dot')} Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
             return
 
         await user_balance_store.subtract_balance(guild_id, interaction.user.id, bet)
@@ -148,13 +146,14 @@ class MathQuizCog(commands.Cog):
         thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
 
         # Send notification in main channel
-        original_message = await interaction.followup.send(
+        await interaction.response.send_message(
             content=f"{get_emoji('a_star')} Мат. дуэль началась в треде: {thread_name}",
             ephemeral=False
         )
 
-        # Create thread and send lobby embed with buttons
+        # Get the original message and create thread
         try:
+            original_message = await interaction.original_response()
             thread = await original_message.create_thread(
                 name=thread_name,
                 auto_archive_duration=60
@@ -164,6 +163,7 @@ class MathQuizCog(commands.Cog):
         except Exception as e:
             print(f"Failed to create thread: {e}")
             # Fallback: edit the followup message to show lobby
+            original_message = await interaction.original_response()
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
             await original_message.edit(content=None, embed=lobby_view.build_embed(), view=lobby_view)
             message = original_message
