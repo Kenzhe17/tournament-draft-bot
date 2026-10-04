@@ -76,6 +76,7 @@ class BetStore:
     def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_elo_a: float, avg_elo_b: float) -> None:
         """Initialize odds for a match based on ELO difference."""
         # Calculate initial odds based on ELO
+        # Higher ELO team gets lower odds
         # 100 ELO difference = 0.1x odds difference
         elo_diff = avg_elo_b - avg_elo_a
         odds_diff = elo_diff * 0.001
@@ -83,12 +84,12 @@ class BetStore:
 
         if elo_diff >= 0:
             # Team B has higher ELO -> Team B gets lower odds
-            odds_a = base_odds + odds_diff
-            odds_b = base_odds - odds_diff
+            odds_a = base_odds + odds_diff  # Team A gets higher odds
+            odds_b = base_odds - odds_diff  # Team B gets lower odds
         else:
             # Team A has higher ELO -> Team A gets lower odds
-            odds_a = base_odds - abs(odds_diff)
-            odds_b = base_odds + abs(odds_diff)
+            odds_a = base_odds + odds_diff  # Team A gets lower odds (odds_diff is negative)
+            odds_b = base_odds - odds_diff  # Team B gets higher odds
 
         # Ensure minimum odds of 1.1x and maximum of 2.7x
         odds_a = max(1.1, min(2.7, odds_a))
