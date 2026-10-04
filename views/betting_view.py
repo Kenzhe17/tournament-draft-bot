@@ -68,7 +68,7 @@ class MatchButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Get teams for this match
-        if self.match_type == "qualifier":
+        if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
         elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
@@ -130,7 +130,7 @@ class TeamButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Get team names for this match
-        if self.match_type == "qualifier":
+        if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
         elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
@@ -234,7 +234,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         if not current_odds:
             # Get match teams
-            if self.match_type == "qualifier":
+            if self.match_type == "qualifiers":
                 match = self.tournament.qualifier_matches[self.match_index]
             elif self.match_type == "semifinal":
                 match = self.tournament.semifinal_matches[self.match_index]
@@ -286,7 +286,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
     def _get_user_team_index(self, user_id: int) -> int | None:
         """Get the team index if user is participating in this match, or None otherwise."""
         # Get teams in this match
-        if self.match_type == "qualifier":
+        if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
         elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]

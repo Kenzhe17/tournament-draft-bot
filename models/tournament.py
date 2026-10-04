@@ -199,7 +199,7 @@ class Tournament:
 
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
-    betting_phase: str | None = None  # "qualifier", "semifinal", "final"
+    betting_phase: str | None = None  # "qualifiers", "semifinal", "final"
     betting_duration: int = 180  # 3 minutes in seconds
     
     # Legacy betting_open field (kept for backward compatibility)
@@ -793,7 +793,7 @@ class Tournament:
         self.qualifier_winners = [None, None, None, None]
         self.phase = TournamentPhase.QUALIFIERS
         # Start betting phase for qualifiers
-        self.start_betting_phase("qualifier")
+        self.start_betting_phase("qualifiers")
 
     def set_qualifier_winner(self, match_index: int, team_index: int) -> bool:
         """
