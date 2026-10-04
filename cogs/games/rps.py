@@ -204,7 +204,7 @@ class PvEChoiceView(RPSView):
 
 class PvPChallengeView(RPSView):
     """View for PvP challenge acceptance."""
-    
+
     def __init__(self, game_id: str, initiator_id: int, opponent_id: Optional[int], bet: int, channel_id: int, message_id: int, bot: commands.Bot):
         super().__init__(game_id, timeout=60)
         self.initiator_id = initiator_id
@@ -753,24 +753,38 @@ class RPSCog(commands.Cog):
                 # PvE mode
                 game.state = GameState.WAITING_PVE
                 view = PvEChoiceView(game_id, bet)
-                embed = discord.Embed(
-                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                    description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
-                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                    color=discord.Color.blue()
-                )
-                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=False)
-
-                # Create thread for the game
+                # Determine thread name
                 thread_name = f"🎮 RPS - {interaction.user.display_name}"
+
+                # Send brief message in main channel
+                msg = await interaction.followup.send(
+                    content=f"{replace_emojis('a_star')} Игра началась в треде: {thread_name}",
+                    ephemeral=False
+                )
+
+                # Create thread and send game embed with buttons
                 try:
                     thread = await msg.create_thread(
                         name=thread_name,
                         auto_archive_duration=60
                     )
-                    await thread.send(f"{replace_emojis('white_arrow')} Игра началась! Используйте кнопки выше для взаимодействия.")
+                    embed = discord.Embed(
+                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                        color=discord.Color.blue()
+                    )
+                    await thread.send(embed=embed, view=view)
                 except Exception as e:
                     logger.error(f"Failed to create thread: {e}")
+                    # Fallback: send in main channel
+                    embed = discord.Embed(
+                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                        color=discord.Color.blue()
+                    )
+                    await msg.edit(embed=embed, view=view)
             else:
                 # PvP mode
                 game.state = GameState.WAITING_PVP
@@ -788,58 +802,98 @@ class RPSCog(commands.Cog):
                     
                     view = PvPChallengeView(game_id, user_id, opponent_id, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
-                    embed = discord.Embed(
-                        title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
-                        description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
-                                      f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                      f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                      f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
-                        color=discord.Color.gold()
-                    )
-                    msg = await interaction.followup.send(embed=embed, view=view)
-                    game.message_id = msg.id
-                    game.channel_id = interaction.channel.id
-                    # Update view with message_id after sending
-                    view.message_id = msg.id
-
-                    # Create thread for the game
+                    # Determine thread name
                     thread_name = f"⚔️ RPS - {interaction.user.display_name} vs {opponent.display_name}"
+
+                    # Send brief message in main channel
+                    msg = await interaction.followup.send(
+                        content=f"{replace_emojis('a_star')} Вызов отправлен в треде: {thread_name}",
+                        ephemeral=False
+                    )
+
+                    # Create thread and send game embed with buttons
                     try:
                         thread = await msg.create_thread(
                             name=thread_name,
                             auto_archive_duration=60
                         )
-                        await thread.send(f"{replace_emojis('white_arrow')} Вызов отправлен! Используйте кнопки выше для взаимодействия.")
+                        embed = discord.Embed(
+                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
+                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
+                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
+                            color=discord.Color.gold()
+                        )
+                        thread_msg = await thread.send(embed=embed, view=view)
+                        game.message_id = thread_msg.id
+                        game.channel_id = thread.id
+                        # Update view with message_id after sending
+                        view.message_id = thread_msg.id
+                        view.channel_id = thread.id
                     except Exception as e:
                         logger.error(f"Failed to create thread: {e}")
+                        # Fallback: send in main channel
+                        embed = discord.Embed(
+                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
+                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
+                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
+                            color=discord.Color.gold()
+                        )
+                        await msg.edit(embed=embed, view=view)
+                        game.message_id = msg.id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = msg.id
                 else:
                     # Open challenge - anyone can accept
                     view = PvPChallengeView(game_id, user_id, None, bet, interaction.channel_id, 0, self.bot)
                     total_pot = bet * 2 * 0.95
-                    embed = discord.Embed(
-                        title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
-                        description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
-                                      f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
-                                      f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
-                                      f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
-                        color=discord.Color.gold()
-                    )
-                    msg = await interaction.followup.send(embed=embed, view=view)
-                    game.message_id = msg.id
-                    game.channel_id = interaction.channel.id
-                    # Update view with message_id after sending
-                    view.message_id = msg.id
-
-                    # Create thread for the game
+                    # Determine thread name
                     thread_name = f"⚔️ RPS - {interaction.user.display_name} (открытый вызов)"
+
+                    # Send brief message in main channel
+                    msg = await interaction.followup.send(
+                        content=f"{replace_emojis('a_star')} Открытый вызов в треде: {thread_name}",
+                        ephemeral=False
+                    )
+
+                    # Create thread and send game embed with buttons
                     try:
                         thread = await msg.create_thread(
                             name=thread_name,
                             auto_archive_duration=60
                         )
-                        await thread.send(f"{replace_emojis('white_arrow')} Открытый вызов! Используйте кнопки выше для взаимодействия.")
+                        embed = discord.Embed(
+                            title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
+                            description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
+                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                          f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
+                            color=discord.Color.gold()
+                        )
+                        thread_msg = await thread.send(embed=embed, view=view)
+                        game.message_id = thread_msg.id
+                        game.channel_id = thread.id
+                        # Update view with message_id after sending
+                        view.message_id = thread_msg.id
+                        view.channel_id = thread.id
                     except Exception as e:
                         logger.error(f"Failed to create thread: {e}")
+                        # Fallback: send in main channel
+                        embed = discord.Embed(
+                            title=replace_emojis("⚔️ Открытый вызов: Камень-Ножницы-Бумага"),
+                            description=f"<@{user_id}> ищет соперника на дуэль!\n\n"
+                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                          f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
+                            color=discord.Color.gold()
+                        )
+                        await msg.edit(embed=embed, view=view)
+                        game.message_id = msg.id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = msg.id
         
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)
