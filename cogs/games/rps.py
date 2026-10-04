@@ -638,7 +638,7 @@ class PvPChoiceView(RPSView):
         guild_id = game.guild_id
         bet = game.bet
         total_pot = bet * 2
-        winner_payout = int(total_pot * 0.95)  # 5% house fee
+        winner_payout = int(total_pot)  # No house fee
         
         if result == "draw":
             await release_escrow(game.initiator_id, guild_id, bet)
