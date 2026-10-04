@@ -1141,8 +1141,8 @@ async def build_winner_embed(
             if player:
                 player_names.add(player)
 
-    # Get all bets for this tournament
-    tournament_id = str(tournament.guild_id)
+    # Get all bets for this tournament (exact tournament_id)
+    tournament_id = tournament.id
     all_bets = []
     if bet_store._use_db:
         from storage.db import get_pool
