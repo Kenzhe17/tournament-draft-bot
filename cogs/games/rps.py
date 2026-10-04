@@ -863,10 +863,17 @@ class RPSPlayAgainButton(discord.ui.Button):
                         game.channel_id = thread.id
                         view.message_id = thread_msg.id
                         view.channel_id = thread.id
-                    except Exception as e:
-                        logger.error(f"Failed to create thread: {e}")
+                    except discord.HTTPException as e:
+                        logger.error(f"Failed to create thread (HTTPException): {e}")
                         original_message = await interaction.original_response()
-                        await original_message.edit(content=None, embed=embed, view=view)
+                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
+                        game.message_id = original_message.id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = original_message.id
+                    except Exception as e:
+                        logger.error(f"Failed to create thread (Unexpected error): {e}")
+                        original_message = await interaction.original_response()
+                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
                         game.message_id = original_message.id
                         game.channel_id = interaction.channel.id
                         view.message_id = original_message.id
@@ -977,8 +984,8 @@ class RPSCog(commands.Cog):
                         color=discord.Color.blue()
                     )
                     await thread.send(embed=embed, view=view)
-                except Exception as e:
-                    logger.error(f"Failed to create thread: {e}")
+                except discord.HTTPException as e:
+                    logger.error(f"Failed to create thread (HTTPException): {e}")
                     # Fallback: send in main channel
                     original_message = await interaction.original_response()
                     embed = discord.Embed(
@@ -987,7 +994,18 @@ class RPSCog(commands.Cog):
                                       f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                         color=discord.Color.blue()
                     )
-                    await original_message.edit(content=None, embed=embed, view=view)
+                    await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+                except Exception as e:
+                    logger.error(f"Failed to create thread (Unexpected error): {e}")
+                    # Fallback: send in main channel
+                    original_message = await interaction.original_response()
+                    embed = discord.Embed(
+                        title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                        description=f"Ставка: {bet} {replace_emojis('🪙')}\n"
+                                      f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                        color=discord.Color.blue()
+                    )
+                    await original_message.edit(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
             else:
                 # PvP mode
                 game.state = GameState.WAITING_PVP
@@ -1035,8 +1053,8 @@ class RPSCog(commands.Cog):
                         # Update view with message_id after sending
                         view.message_id = thread_msg.id
                         view.channel_id = thread.id
-                    except Exception as e:
-                        logger.error(f"Failed to create thread: {e}")
+                    except discord.HTTPException as e:
+                        logger.error(f"Failed to create thread (HTTPException): {e}")
                         # Fallback: send in main channel
                         original_message = await interaction.original_response()
                         embed = discord.Embed(
@@ -1047,9 +1065,25 @@ class RPSCog(commands.Cog):
                                           f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
                             color=discord.Color.gold()
                         )
-                        await original_message.edit(content=None, embed=embed, view=view)
+                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
                         game.message_id = original_message.id
-                        game.channel_id = interaction.channel_id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = original_message.id
+                    except Exception as e:
+                        logger.error(f"Failed to create thread (Unexpected error): {e}")
+                        # Fallback: send in main channel
+                        original_message = await interaction.original_response()
+                        embed = discord.Embed(
+                            title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
+                            description=f"<@{user_id}> вызывает <@{opponent_id}> на дуэль!\n\n"
+                                          f"{replace_emojis('💰')} Ставка: {bet} {replace_emojis('🪙')}\n"
+                                          f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
+                                          f"<@{opponent_id}>, примите вызов в течение 60 секунд.",
+                            color=discord.Color.gold()
+                        )
+                        await original_message.edit(content=f"{replace_emojis('a_star')} Вызов отправлен в чате (не удалось создать тред)", embed=embed, view=view)
+                        game.message_id = original_message.id
+                        game.channel_id = interaction.channel.id
                         view.message_id = original_message.id
                 else:
                     # Open challenge - anyone can accept
@@ -1085,8 +1119,8 @@ class RPSCog(commands.Cog):
                         # Update view with message_id after sending
                         view.message_id = thread_msg.id
                         view.channel_id = thread.id
-                    except Exception as e:
-                        logger.error(f"Failed to create thread: {e}")
+                    except discord.HTTPException as e:
+                        logger.error(f"Failed to create thread (HTTPException): {e}")
                         # Fallback: send in main channel
                         original_message = await interaction.original_response()
                         embed = discord.Embed(
@@ -1097,7 +1131,10 @@ class RPSCog(commands.Cog):
                                           f'Нажмите "Принять" чтобы принять вызов в течение 60 секунд.',
                             color=discord.Color.gold()
                         )
-                        await original_message.edit(content=None, embed=embed, view=view)
+                        await original_message.edit(content=f"{replace_emojis('a_star')} Открытый вызов в чате (не удалось создать тред)", embed=embed, view=view)
+                        game.message_id = original_message.id
+                        game.channel_id = interaction.channel.id
+                        view.message_id = original_message.id
                         game.message_id = original_message.id
                         game.channel_id = interaction.channel_id
                         view.message_id = original_message.id

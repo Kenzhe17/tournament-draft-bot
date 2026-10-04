@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import logging
 from typing import TYPE_CHECKING, Dict, List
 
 import discord
@@ -10,6 +11,8 @@ from discord.ext import commands
 
 from storage.user_balance_store import user_balance_store
 from config import replace_emojis, get_emoji
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -160,12 +163,19 @@ class MathQuizCog(commands.Cog):
             )
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
             message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
-        except Exception as e:
-            print(f"Failed to create thread: {e}")
+        except discord.HTTPException as e:
+            logger.error(f"Failed to create thread (HTTPException): {e}")
             # Fallback: edit the followup message to show lobby
             original_message = await interaction.original_response()
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-            await original_message.edit(content=None, embed=lobby_view.build_embed(), view=lobby_view)
+            await original_message.edit(content=f"{get_emoji('a_star')} Мат. дуэль началась в чате (не удалось создать тред)", embed=lobby_view.build_embed(), view=lobby_view)
+            message = original_message
+        except Exception as e:
+            logger.error(f"Failed to create thread (Unexpected error): {e}")
+            # Fallback: edit the followup message to show lobby
+            original_message = await interaction.original_response()
+            lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
+            await original_message.edit(content=f"{get_emoji('a_star')} Мат. дуэль началась в чате (не удалось создать тред)", embed=lobby_view.build_embed(), view=lobby_view)
             message = original_message
 
         await lobby_view.wait()

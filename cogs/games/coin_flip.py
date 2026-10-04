@@ -5,6 +5,7 @@ import os
 import discord
 import secrets
 import asyncio
+import logging
 from discord import app_commands
 from discord.ext import commands
 from typing import Optional
@@ -12,6 +13,8 @@ from typing import Optional
 from storage.user_balance_store import user_balance_store
 from utils.embeds import replace_emojis
 from utils.permissions import is_bot_owner
+
+logger = logging.getLogger(__name__)
 
 # Locks for atomic transactions
 _user_locks = {}
@@ -489,11 +492,16 @@ async def create_coin_flip_game(
         # Send game embed with buttons in the thread
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
         await thread.send(embed=embed, view=view)
-    except Exception as e:
-        # If thread creation fails, send game in main channel
-        print(f"Failed to create thread: {e}")
+    except discord.HTTPException as e:
+        # If thread creation fails due to Discord API error, send game in main channel
+        logger.error(f"Failed to create thread (HTTPException): {e}")
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.edit_original_response(content=None, embed=embed, view=view)
+        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
+    except Exception as e:
+        # Other errors
+        logger.error(f"Failed to create thread (Unexpected error): {e}")
+        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+        await interaction.edit_original_response(content=f"{replace_emojis('a_star')} Игра началась в чате (не удалось создать тред)", embed=embed, view=view)
 
 
 class CoinFlipCog(commands.Cog):
