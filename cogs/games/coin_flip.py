@@ -369,8 +369,6 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             view.add_item(CoinFlipHeadsButton(game, game_view=view))
             view.add_item(CoinFlipTailsButton(game, game_view=view))
 
-        view.add_item(CoinFlipCancelButton(game))
-
         # Check if we're in a thread
         if isinstance(interaction.channel, discord.Thread):
             # Already in thread, just edit the message
@@ -502,7 +500,6 @@ async def create_coin_flip_game(
     view = CoinFlipView(game)
     view.add_item(CoinFlipHeadsButton(game, game_view=view))
     view.add_item(CoinFlipTailsButton(game, game_view=view))
-    view.add_item(CoinFlipCancelButton(game))
 
     # Determine thread name
     thread_name = f"🎲 Монетка - {interaction.user.display_name}"

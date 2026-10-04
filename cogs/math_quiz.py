@@ -152,6 +152,12 @@ class QuizLobbyView(discord.ui.View):
         )
         await interaction.edit_original_response(embed=cancel_embed, view=None)
 
+        # Close the thread if in a thread
+        thread = interaction.channel
+        if isinstance(thread, discord.Thread):
+            await asyncio.sleep(2)
+            await thread.delete()
+
 
 # ==========================================
 # Основной Cog Модуль
