@@ -1130,42 +1130,12 @@ async def build_winner_embed(
                 best_avg = avg
                 best_avg_player = player_name
 
-    # Calculate max payout from betting stats for this tournament only
-    from storage.bet_store import bet_store
-
-    # Get all player names from tournament
-    player_names = set()
-    for team_idx, team_data in enumerate(tournament.teams):
-        for circle in range(1, 5):
-            player = team_data.get(f"circle{circle}", "")
-            if player:
-                player_names.add(player)
-
-    # Get all bets for this tournament (exact tournament_id)
-    tournament_id = tournament.id
-    all_bets = []
-    if bet_store._use_db:
-        from storage.db import get_pool
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT user_name, amount, odds FROM bets WHERE guild_id = $1 AND tournament_id = $2",
-                guild.id, tournament_id
-            )
-            all_bets = [{"user_name": row["user_name"], "amount": row["amount"], "odds": row["odds"]} for row in rows]
-    else:
-        # Fallback to JSON storage
-        for key, bets in bet_store._bets.items():
-            if key.startswith(f"{tournament_id}:"):
-                all_bets.extend(bets)
-
-    # Calculate max payout for this tournament
-    for bet in all_bets:
-        # Calculate potential payout (amount * odds)
-        potential_payout = int(bet["amount"] * bet["odds"])
-        if potential_payout > max_payout:
-            max_payout = potential_payout
-            max_payout_player = bet["user_name"]
+    # Calculate max actual payout from betting results for this tournament
+    # Use tournament.betting_results which stores actual payouts from resolved matches
+    for user_name, payout in tournament.betting_results.items():
+        if payout > max_payout:
+            max_payout = payout
+            max_payout_player = user_name
 
     # Build team list
     team_list = ""
@@ -1195,7 +1165,7 @@ async def build_winner_embed(
         f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player} ({best_kd:.2f})\n"
         f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player} ({best_avg:.1f})\n"
         f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player} ({best_kills})\n"
-        f"{replace_emojis('sub_directory')} **Max Payout:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
+        f"{replace_emojis('sub_directory')} **Max Actual Payout:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 

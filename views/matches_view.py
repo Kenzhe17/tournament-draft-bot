@@ -281,10 +281,14 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         logging.info(f"Resolving bets: tournament_id={tournament.id}, match_id={match_id}, team_a_name='{team_a_name}', team_b_name='{team_b_name}', winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
 
         try:
-            payouts = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index)
+            payouts, payouts_by_name = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index)
             for user_id, payout in payouts.items():
                 if payout > 0:
                     await user_balance_store.add_balance(self.guild_id, user_id, payout)
+            # Store payouts in tournament for max payout calculation
+            for user_name, payout in payouts_by_name.items():
+                if payout > 0:
+                    tournament.betting_results[user_name] = tournament.betting_results.get(user_name, 0) + payout
         except Exception as e:
             import logging
             logging.error(f"Error resolving bets: {e}", exc_info=True)

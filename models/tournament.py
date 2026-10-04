@@ -104,6 +104,7 @@ class Tournament:
     message_id: int = 0
     id: str = field(init=False)  # Unique tournament ID
     creation_time: str = field(init=False, default_factory=lambda: str(int(__import__('time').time() * 1000)))
+    betting_results: dict[str, int] = field(default_factory=dict)  # Store betting payouts {user_name: payout}
 
     def __post_init__(self):
         # Use guild_id + creation_time for unique tournament ID
