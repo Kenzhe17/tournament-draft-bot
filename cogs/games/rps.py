@@ -759,7 +759,18 @@ class RPSCog(commands.Cog):
                                   f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                     color=discord.Color.blue()
                 )
-                await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+                msg = await interaction.followup.send(embed=embed, view=view, ephemeral=False)
+
+                # Create thread for the game
+                thread_name = f"🎮 RPS - {interaction.user.display_name}"
+                try:
+                    thread = await msg.create_thread(
+                        name=thread_name,
+                        auto_archive_duration=60
+                    )
+                    await thread.send(f"{replace_emojis('white_arrow')} Игра началась! Используйте кнопки выше для взаимодействия.")
+                except Exception as e:
+                    logger.error(f"Failed to create thread: {e}")
             else:
                 # PvP mode
                 game.state = GameState.WAITING_PVP
@@ -790,6 +801,17 @@ class RPSCog(commands.Cog):
                     game.channel_id = interaction.channel.id
                     # Update view with message_id after sending
                     view.message_id = msg.id
+
+                    # Create thread for the game
+                    thread_name = f"⚔️ RPS - {interaction.user.display_name} vs {opponent.display_name}"
+                    try:
+                        thread = await msg.create_thread(
+                            name=thread_name,
+                            auto_archive_duration=60
+                        )
+                        await thread.send(f"{replace_emojis('white_arrow')} Вызов отправлен! Используйте кнопки выше для взаимодействия.")
+                    except Exception as e:
+                        logger.error(f"Failed to create thread: {e}")
                 else:
                     # Open challenge - anyone can accept
                     view = PvPChallengeView(game_id, user_id, None, bet, interaction.channel_id, 0, self.bot)
@@ -807,6 +829,17 @@ class RPSCog(commands.Cog):
                     game.channel_id = interaction.channel.id
                     # Update view with message_id after sending
                     view.message_id = msg.id
+
+                    # Create thread for the game
+                    thread_name = f"⚔️ RPS - {interaction.user.display_name} (открытый вызов)"
+                    try:
+                        thread = await msg.create_thread(
+                            name=thread_name,
+                            auto_archive_duration=60
+                        )
+                        await thread.send(f"{replace_emojis('white_arrow')} Открытый вызов! Используйте кнопки выше для взаимодействия.")
+                    except Exception as e:
+                        logger.error(f"Failed to create thread: {e}")
         
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)

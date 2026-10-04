@@ -147,6 +147,17 @@ class MathQuizCog(commands.Cog):
         lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
         message = await interaction.followup.send(embed=lobby_view.build_embed(), view=lobby_view)
 
+        # Create thread for the game
+        thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
+        try:
+            thread = await message.create_thread(
+                name=thread_name,
+                auto_archive_duration=60
+            )
+            await thread.send(f"{get_emoji('white_arrow')} Лобби создано! Ожидание игроков...")
+        except Exception as e:
+            print(f"Failed to create thread: {e}")
+
         await lobby_view.wait()
 
         if not lobby_view.started:

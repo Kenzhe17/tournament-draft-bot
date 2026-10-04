@@ -339,6 +339,24 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
         # Edit the existing message instead of sending new one
         await interaction.response.edit_message(embed=embed, view=view)
 
+        # Create thread for the game if not already in a thread
+        if not isinstance(interaction.channel, discord.Thread):
+            thread_name = f"🎲 Монетка - {interaction.user.display_name}"
+            if self.opponent_id:
+                opponent = interaction.guild.get_member(self.opponent_id)
+                if opponent:
+                    thread_name = f"🎲 Монетка - {interaction.user.display_name} vs {opponent.display_name}"
+
+            try:
+                original_message = await interaction.original_response()
+                thread = await original_message.create_thread(
+                    name=thread_name,
+                    auto_archive_duration=60
+                )
+                await thread.send(f"{replace_emojis('white_arrow')} Игра началась! Используйте кнопки выше для взаимодействия.")
+            except Exception as e:
+                print(f"Failed to create thread: {e}")
+
 
 async def start_game(
     interaction: discord.Interaction,
@@ -464,6 +482,24 @@ async def create_coin_flip_game(
 
     embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed, view=view)
+
+    # Create thread for the game
+    thread_name = f"🎲 Монетка - {interaction.user.display_name}"
+    if opponent:
+        thread_name = f"🎲 Монетка - {interaction.user.display_name} vs {opponent.display_name}"
+
+    try:
+        # Get the original message
+        original_message = await interaction.original_response()
+        thread = await original_message.create_thread(
+            name=thread_name,
+            auto_archive_duration=60
+        )
+        # Send initial message in thread
+        await thread.send(f"{replace_emojis('white_arrow')} Игра началась! Используйте кнопки выше для взаимодействия.")
+    except Exception as e:
+        # If thread creation fails, continue without thread
+        print(f"Failed to create thread: {e}")
 
 
 class CoinFlipCog(commands.Cog):
