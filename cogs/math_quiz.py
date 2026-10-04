@@ -147,27 +147,26 @@ class MathQuizCog(commands.Cog):
         # Determine thread name
         thread_name = f"🧮 Мат. дуэль - {interaction.user.display_name}"
 
-        # Send brief message in main channel
-        message = await interaction.followup.send(
-            content=f"{get_emoji('a_star')} Мат. дуэль началась в треде: {thread_name}",
-            ephemeral=False
-        )
+        # Send empty message in main channel (required to create thread)
+        original_message = await interaction.followup.send(content=" ", ephemeral=False)
 
         # Create thread and send lobby embed with buttons
         try:
-            thread = await message.create_thread(
+            thread = await original_message.create_thread(
                 name=thread_name,
                 auto_archive_duration=60
             )
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-            lobby_message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
-            # Update message reference to thread message
-            message = lobby_message
+            message = await thread.send(embed=lobby_view.build_embed(), view=lobby_view)
+
+            # Delete the empty message in main channel
+            await original_message.delete()
         except Exception as e:
             print(f"Failed to create thread: {e}")
             # Fallback: edit the followup message to show lobby
             lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-            await message.edit(content=None, embed=lobby_view.build_embed(), view=lobby_view)
+            await original_message.edit(content=None, embed=lobby_view.build_embed(), view=lobby_view)
+            message = original_message
 
         await lobby_view.wait()
 
