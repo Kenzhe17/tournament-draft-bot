@@ -376,57 +376,28 @@ async def start_game(
         game.winner = game.initiator_id if game.initiator_choice == game.result else None
 
     # Process payouts
-    from cogs.games.game_state import can_award_coins, increment_daily_games
-
-    can_award = can_award_coins(game.guild_id, game.initiator_id)
-    games_played = increment_daily_games(game.guild_id, game.initiator_id)
-
     if game.opponent_id:
         # PvP
         winner_lock = get_user_lock(game.guild_id, game.winner)
         async with winner_lock:
-            if can_award:
-                await user_balance_store.add_balance(
-                    game.guild_id,
-                    game.winner,
-                    game.bet * 2
-                )
-            else:
-                # Still return the bet but no profit
-                await user_balance_store.add_balance(
-                    game.guild_id,
-                    game.winner,
-                    game.bet
-                )
+            await user_balance_store.add_balance(
+                game.guild_id,
+                game.winner,
+                game.bet * 2
+            )
     else:
         # PvE
         if game.winner == game.initiator_id:
             lock = get_user_lock(game.guild_id, game.initiator_id)
             async with lock:
-                if can_award:
-                    await user_balance_store.add_balance(
-                        game.guild_id,
-                        game.initiator_id,
-                        game.bet * 2
-                    )
-                else:
-                    # Still return the bet but no profit
-                    await user_balance_store.add_balance(
-                        game.guild_id,
-                        game.initiator_id,
-                        game.bet
-                    )
+                await user_balance_store.add_balance(
+                    game.guild_id,
+                    game.initiator_id,
+                    game.bet * 2
+                )
 
     # Show result
     result_embed = view.create_game_embed("result")
-
-    # Add daily limit warning if needed
-    if not can_award:
-        result_embed.add_field(
-            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Дневной лимит",
-            value=f"Достигнут лимит игр с наградами ({games_played}/5). Возврат ставки без прибыли.",
-            inline=False
-        )
 
     # Add play again button
     result_view = discord.ui.View(timeout=None)

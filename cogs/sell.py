@@ -96,8 +96,8 @@ class SellCog(commands.Cog):
             description=(
                 f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n"
                 f"{get_emoji('white_arrow')} **Продан предмет:** `{item.name}`\n"
-                f"{get_emoji('white_arrow')} **Цена в магазине:** `{base_price:,}` монет\n"
-                f"{get_emoji('white_arrow')} **Выручка (50%):** **`{sell_price:,}`** монет\n\n"
+                f"{get_emoji('white_arrow')} **Цена в магазине:** `{base_price:,}` {get_emoji('money')}\n"
+                f"{get_emoji('white_arrow')} **Выручка (50%):** **`{sell_price:,}`** {get_emoji('money')}\n\n"
                 f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс.*"
             ),
             color=0x2ECC71
