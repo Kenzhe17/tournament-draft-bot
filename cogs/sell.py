@@ -15,13 +15,12 @@ if TYPE_CHECKING:
 # Вспомогательные функции работы с магазином
 # ==========================================
 
-async def add_balance(user_id: int, amount: int) -> None:
+async def add_balance(guild_id: int, user_id: int, amount: int) -> None:
     """Зачисление монет пользователю."""
     if amount <= 0:
         return
     from storage.user_balance_store import user_balance_store
-    # Assume guild_id = 0 for now, should be fixed
-    await user_balance_store.add_balance(0, user_id, amount)
+    await user_balance_store.add_balance(guild_id, user_id, amount)
 
 
 async def get_shop_item(item_id: str) -> Optional[dict]:
@@ -29,15 +28,15 @@ async def get_shop_item(item_id: str) -> Optional[dict]:
     return shop_store.get_item(item_id)
 
 
-async def has_user_item(user_id: int, item_id: str) -> bool:
+async def has_user_item(guild_id: int, user_id: int, item_id: str) -> bool:
     """Проверка наличия предмета у пользователя."""
-    inventory = inventory_store.get_player_inventory(0, user_id)  # guild_id = 0
+    inventory = inventory_store.get_player_inventory(guild_id, user_id)
     return any(cosmetic.item_id == item_id for cosmetic in inventory)
 
 
-async def remove_user_item(user_id: int, item_id: str) -> None:
+async def remove_user_item(guild_id: int, user_id: int, item_id: str) -> None:
     """Удаление уникального предмета из инвентаря пользователя."""
-    inventory_store.remove_cosmetic(0, user_id, item_id)  # guild_id = 0
+    inventory_store.remove_cosmetic(guild_id, user_id, item_id)
 
 
 # ==========================================
@@ -54,6 +53,8 @@ class SellCog(commands.Cog):
     )
     async def sell_item(self, interaction: discord.Interaction, item_id: str):
         await interaction.response.defer()
+
+        guild_id = interaction.guild_id if interaction.guild else 0
 
         # 1. Проверяем существование предмета в каталоге
         item = await get_shop_item(item_id.lower())
@@ -73,7 +74,7 @@ class SellCog(commands.Cog):
             return
 
         # 2. Проверяем наличие предмета в инвентаре у игрока
-        if not await has_user_item(interaction.user.id, item.id):
+        if not await has_user_item(guild_id, interaction.user.id, item.id):
             await interaction.followup.send(
                 "<:white_dot:0000> У вас нет этого предмета в инвентаре!",
                 ephemeral=True
@@ -85,8 +86,8 @@ class SellCog(commands.Cog):
         sell_price = math.floor(base_price * 0.5)
 
         # 4. Удаляем предмет и начисляем монеты
-        await remove_user_item(interaction.user.id, item.id)
-        await add_balance(interaction.user.id, sell_price)
+        await remove_user_item(guild_id, interaction.user.id, item.id)
+        await add_balance(guild_id, interaction.user.id, sell_price)
 
         # 5. Красивый Embed ответа
         embed = discord.Embed(
