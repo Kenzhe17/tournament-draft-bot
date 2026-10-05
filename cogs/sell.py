@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from storage.shop_store import shop_store, inventory_store
+from config import get_emoji
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -60,7 +61,7 @@ class SellCog(commands.Cog):
         item = await get_shop_item(item_id.lower())
         if not item:
             await interaction.followup.send(
-                "<:white_dot:0000> Указанный предмет не найден в базе данных!",
+                f"{get_emoji('white_dot')} Указанный предмет не найден в базе данных!",
                 ephemeral=True
             )
             return
@@ -68,7 +69,7 @@ class SellCog(commands.Cog):
         # Check if item is sellable
         if not item.is_sellable:
             await interaction.followup.send(
-                "<:white_dot:0000> Этот предмет нельзя продать!",
+                f"{get_emoji('white_dot')} Этот предмет нельзя продать!",
                 ephemeral=True
             )
             return
@@ -76,7 +77,7 @@ class SellCog(commands.Cog):
         # 2. Проверяем наличие предмета в инвентаре у игрока
         if not await has_user_item(guild_id, interaction.user.id, item.id):
             await interaction.followup.send(
-                "<:white_dot:0000> У вас нет этого предмета в инвентаре!",
+                f"{get_emoji('white_dot')} У вас нет этого предмета в инвентаре!",
                 ephemeral=True
             )
             return
@@ -91,13 +92,13 @@ class SellCog(commands.Cog):
 
         # 5. Красивый Embed ответа
         embed = discord.Embed(
-            title="<a:a_star:0000> **ПРОДАЖА ПРЕДМЕТА**",
+            title=f"{get_emoji('a_star')} **ПРОДАЖА ПРЕДМЕТА**",
             description=(
-                f"<a:a_sparkle:0000> **Пользователь:** {interaction.user.mention}\n\n"
-                f"<:white_arrow:0000> **Продан предмет:** `{item.name}`\n"
-                f"<:white_arrow:0000> **Цена в магазине:** `{base_price:,}` монет\n"
-                f"<:white_arrow:0000> **Выручка (50%):** **`{sell_price:,}`** монет\n\n"
-                f"<:white_dot:0000> *Монеты зачислены на ваш баланс.*"
+                f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n"
+                f"{get_emoji('white_arrow')} **Продан предмет:** `{item.name}`\n"
+                f"{get_emoji('white_arrow')} **Цена в магазине:** `{base_price:,}` монет\n"
+                f"{get_emoji('white_arrow')} **Выручка (50%):** **`{sell_price:,}`** монет\n\n"
+                f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс.*"
             ),
             color=0x2ECC71
         )

@@ -249,14 +249,32 @@ class MathQuizCog(commands.Cog):
         max_score = max(scores.values())
         winners = [p for p in players if scores[p.id] == max_score]
 
+        from cogs.games.game_state import can_award_coins, increment_daily_games
+
         if len(winners) == 1:
             winner = winners[0]
-            await user_balance_store.add_balance(guild_id, winner.id, total_bank)
-            result_text = f"{get_emoji('a_sparkle')} **Победитель:** {winner.mention}\n{get_emoji('white_arrow')} **Выигрыш:** `{total_bank:,}` {get_emoji('money')}!"
+            can_award = can_award_coins(guild_id, winner.id)
+            games_played = increment_daily_games(guild_id, winner.id)
+
+            if can_award:
+                await user_balance_store.add_balance(guild_id, winner.id, total_bank)
+                result_text = f"{get_emoji('a_sparkle')} **Победитель:** {winner.mention}\n{get_emoji('white_arrow')} **Выигрыш:** `{total_bank:,}` {get_emoji('money')}!"
+            else:
+                # Return bet without profit
+                await user_balance_store.add_balance(guild_id, winner.id, self.bet)
+                result_text = f"{get_emoji('a_sparkle')} **Победитель:** {winner.mention}\n{get_emoji('white_arrow')} **Выигрыш:** `{self.bet:,}` {get_emoji('money')} (дневной лимит: {games_played}/5)"
         else:
             split_prize = total_bank // len(winners)
             for winner in winners:
-                await user_balance_store.add_balance(guild_id, winner.id, split_prize)
+                can_award = can_award_coins(guild_id, winner.id)
+                games_played = increment_daily_games(guild_id, winner.id)
+
+                if can_award:
+                    await user_balance_store.add_balance(guild_id, winner.id, split_prize)
+                else:
+                    # Return bet without profit
+                    await user_balance_store.add_balance(guild_id, winner.id, self.bet)
+
             winners_mentions = ", ".join([w.mention for w in winners])
             result_text = f"{get_emoji('a_sparkle')} **Ничья между:** {winners_mentions}\n{get_emoji('white_arrow')} **Каждый получает:** `{split_prize:,}` {get_emoji('money')}!"
 
