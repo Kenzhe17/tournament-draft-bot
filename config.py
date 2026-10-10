@@ -94,6 +94,31 @@ GAME_EMOJIS = {
     "shop": os.getenv("EMOJI_SHOP", ""),
     "gift": os.getenv("EMOJI_GIFT", ""),
     
+    # Shop & UI
+    "tag": os.getenv("EMOJI_TAG", ""),
+    "guild_tag": os.getenv("EMOJI_GUILD_TAG", ""),
+    "settings": os.getenv("EMOJI_SETTINGS", ""),
+    "eye": os.getenv("EMOJI_EYE", ""),
+    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
+    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
+    "room": os.getenv("EMOJI_ROOM", ""),
+    
+    # Special UI emojis
+    "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
+    "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
+    "sub_middle": os.getenv("EMOJI_SUB_MIDDLE", ""),
+    "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
+    "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
+    "a_star": os.getenv("EMOJI_A_STAR", ""),
+    "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
+    "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
+    
+    # Case emojis
+    "case_basic": os.getenv("EMOJI_CASE_BASIC", ""),
+    "case_premium": os.getenv("EMOJI_CASE_PREMIUM", ""),
+    "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
+    "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
+    
     # Interface
     "success": os.getenv("EMOJI_SUCCESS", ""),
     "error": os.getenv("EMOJI_ERROR", ""),
@@ -363,39 +388,6 @@ STANDARD_EMOJIS = {
     "a_triple_dots": "⋮",
     "a_dot_smaller": "⋮",
 }
-
-GAME_EMOJIS = {
-    # Shop & UI
-    "tag": os.getenv("EMOJI_TAG", ""),
-    "guild_tag": os.getenv("EMOJI_GUILD_TAG", ""),
-    "settings": os.getenv("EMOJI_SETTINGS", ""),
-    "eye": os.getenv("EMOJI_EYE", ""),
-    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
-    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
-    "room": os.getenv("EMOJI_ROOM", ""),
-    "winner": os.getenv("EMOJI_WINNER", ""),
-    
-    # Special UI emojis
-    "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
-    "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
-    "sub_middle": os.getenv("EMOJI_SUB_MIDDLE", ""),
-    "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
-    "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
-    "a_star": os.getenv("EMOJI_A_STAR", ""),
-    "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
-    "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
-    
-    # Case emojis
-    "case_basic": os.getenv("EMOJI_CASE_BASIC", ""),
-    "case_premium": os.getenv("EMOJI_CASE_PREMIUM", ""),
-    "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
-    "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
-}
-
-# Debug: Log EMOJI_MONEY value
-money_value = os.getenv("EMOJI_MONEY", "NOT_SET")
-print(f"DEBUG: EMOJI_MONEY env var: '{money_value}'")
-print(f"DEBUG: GAME_EMOJIS['money']: '{GAME_EMOJIS.get('money', 'NOT_IN_DICT')}'")
 
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
