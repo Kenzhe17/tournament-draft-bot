@@ -569,7 +569,7 @@ async def build_setup_embed(
         circle_sections = []
         for circle in range(1, 5):
             circle_list = getattr(tournament, f"circle{circle}")
-            circle_name = "Капитаны" if circle == 1 else f"Круг {circle}"
+            circle_name = f"Круг {circle}"
             limit = tournament.circle_limit(circle)
             limit_enabled = tournament.circle_limits_enabled.get(circle, True) if circle != 1 else True
             count = circle_counts[circle]

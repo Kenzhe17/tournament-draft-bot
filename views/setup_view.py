@@ -322,7 +322,7 @@ class JoinPoolButton(discord.ui.Button):
 
 
 circle_names = {
-    1: "Капитан",
+    1: "Круг 1",
     2: "Круг 2",
     3: "Круг 3",
     4: "Круг 4",
@@ -816,7 +816,6 @@ class MovePlayerButton(discord.ui.Button):
             
             # Create circle select menu
             circle_options = [
-                discord.SelectOption(label="Капитаны", value="captains"),
                 discord.SelectOption(label="Круг 1", value="circle1"),
                 discord.SelectOption(label="Круг 2", value="circle2"),
                 discord.SelectOption(label="Круг 3", value="circle3"),
@@ -836,7 +835,7 @@ class MovePlayerButton(discord.ui.Button):
                 await interaction.response.defer()
                 target_circle = circle_select.values[0]
                 
-                # Remove player from current location
+                # Remove player from current location (including captains/circle1)
                 for circle in range(1, 5):
                     circle_list = getattr(tournament, f"circle{circle}")
                     if player in circle_list:
@@ -847,11 +846,8 @@ class MovePlayerButton(discord.ui.Button):
                     tournament.captains.remove(player)
                 
                 # Add to target circle
-                if target_circle == "captains":
-                    tournament.captains.append(player)
-                else:
-                    circle_list = getattr(tournament, target_circle)
-                    circle_list.append(player)
+                circle_list = getattr(tournament, target_circle)
+                circle_list.append(player)
                 
                 # Save
                 store.set(tournament)
@@ -861,7 +857,6 @@ class MovePlayerButton(discord.ui.Button):
                 await bot.update_tournament_message(interaction.guild, tournament)
                 
                 circle_names = {
-                    "captains": "Капитаны",
                     "circle1": "Круг 1",
                     "circle2": "Круг 2",
                     "circle3": "Круг 3",
