@@ -89,6 +89,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.math_quiz")
         await self.load_extension("cogs.sell")
         await self.load_extension("cogs.thread")
+        await self.load_extension("cogs.coin_drop")
         
         # Sync commands globally
         try:
