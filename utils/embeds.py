@@ -559,7 +559,8 @@ async def build_setup_embed(
             f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
             f"{replace_emojis('white_dot')} **Пул игроков:**\n"
             f"{replace_emojis('white_arrow')} {players_text}\n\n"
-            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации"
+            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации\n\n"
+            f"{replace_emojis('white_dot')} Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
         )
     else:
         # ELO/SKILL modes: show circles
@@ -591,7 +592,8 @@ async def build_setup_embed(
             f"{replace_emojis('sub_middle')} Режим формирования: {formation_text}\n"
             f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
             + "\n\n".join(circle_sections) + "\n\n"
-            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации или управления капитанами"
+            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации или управления капитанами\n\n"
+            f"{replace_emojis('white_dot')} Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
         )
 
     embed = discord.Embed(
@@ -599,10 +601,6 @@ async def build_setup_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
-    
-    # Add footer about guild tag privilege
-    tag_info = f"Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
-    embed.set_footer(text=tag_info)
 
     return embed
 

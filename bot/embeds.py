@@ -86,11 +86,7 @@ async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> dis
         _format_line(3, " ".join(tournament.circles.get("3", []))),
         _format_line(4, " ".join(tournament.circles.get("4", []))),
     ]
-    embed.description = "\n".join(lines)
-    
-    # Add footer about guild tag privilege
-    tag_info = f"Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
-    embed.set_footer(text=tag_info)
+    embed.description = "\n".join(lines) + f"\n\nУчастники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
     
     return embed
 
