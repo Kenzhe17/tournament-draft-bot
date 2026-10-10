@@ -23,8 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 def has_guild_tag(user: discord.Member) -> bool:
-    """Check if user has the guild tag 'r!z3' in their display name."""
-    return "r!z3" in user.display_name
+    """Check if user has the guild tag 'r!z3' in their display name, nick, or username (case-insensitive)."""
+    tag = "r!z3"
+    display = user.display_name.lower()
+    nick = user.nick.lower() if user.nick else ""
+    name = user.name.lower()
+    return tag in display or tag in nick or tag in name
 
 
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
