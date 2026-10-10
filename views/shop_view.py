@@ -38,7 +38,7 @@ class ShopCategorySelect(discord.ui.Select):
                 description="Роли и права"
             ),
             discord.SelectOption(
-                label="📦 Кейсы",
+                label="Кейсы",
                 value="cases",
                 description="Награды и удача"
             ),

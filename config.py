@@ -303,10 +303,10 @@ STANDARD_EMOJIS = {
     "ice": "❄️",
 
     # Case emojis
-    "case_basic": "📦",
-    "case_premium": "🎁",
-    "case_elite": "�",
-    "case_special": "✨",
+    "case_basic": "",
+    "case_premium": "",
+    "case_elite": "",
+    "case_special": "",
 
     # Rare emojis
     "rare_basic": "",
@@ -338,10 +338,10 @@ STANDARD_EMOJIS = {
     "icon_zzz": "💤",
 
     # Case name emojis (for display before case names)
-    "emoji_basic_case": "📦",
-    "emoji_premium_case": "🎁",
-    "emoji_elite_case": "💎",
-    "emoji_special_case": "✨",
+    "emoji_basic_case": "",
+    "emoji_premium_case": "",
+    "emoji_elite_case": "",
+    "emoji_special_case": "",
 
     # Shop & UI
     "tag": "🏷️",
@@ -396,7 +396,7 @@ def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]
@@ -404,7 +404,7 @@ def get_emoji(emoji_name: str) -> str:
             return f"<:{emoji_name}:{custom_id}>"
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
         return result
-    
+
     # Check icon emojis
     if emoji_name in ICON_EMOJIS:
         custom_id = ICON_EMOJIS[emoji_name]
@@ -412,15 +412,16 @@ def get_emoji(emoji_name: str) -> str:
             return f"<:{emoji_name}:{custom_id}>"
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
         return result
-    
+
     # Check game emojis
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
-        result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
-        return result
-    
+        # Don't fallback to standard emoji for custom emoji names like 'money'
+        # Return empty string if custom ID is not set
+        return ""
+
     # Fallback to standard emoji
     result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
     return result
