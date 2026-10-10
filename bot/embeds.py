@@ -86,7 +86,7 @@ async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> dis
         _format_line(3, " ".join(tournament.circles.get("3", []))),
         _format_line(4, " ".join(tournament.circles.get("4", []))),
     ]
-    embed.description = "\n".join(lines) + f"\n\n{get_emoji('white_dot')} Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить в закрытые турниры при наличии свободных мест."
+    embed.description = "\n".join(lines) + f"\n\n{get_emoji('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
     
     return embed
 
