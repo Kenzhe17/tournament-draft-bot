@@ -561,6 +561,18 @@ class DeletePlayerButton(discord.ui.Button):
             await interaction.response.defer()
             
             player_name = select.values[0]
+            
+            # Reload tournament from store to get fresh data
+            tournament = store.get(self.guild_id)
+            if not tournament:
+                try:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Турнир не найден."),
+                        ephemeral=True
+                    )
+                except discord.NotFound:
+                    pass
+                return
 
             if tournament.formation_mode == FormationMode.RANDOM:
                 if player_name not in tournament.players_pool:
@@ -681,6 +693,15 @@ class SwapPlayersButton(discord.ui.Button):
             async def select2_callback(interaction: discord.Interaction):
                 await interaction.response.defer()
                 second_player = select2.values[0]
+                
+                # Reload tournament from store to get fresh data
+                tournament = store.get(self.guild_id)
+                if not tournament:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Турнир не найден."),
+                        ephemeral=True
+                    )
+                    return
                 
                 # Swap the players
                 # Find where both players are
@@ -834,6 +855,15 @@ class MovePlayerButton(discord.ui.Button):
             async def circle_callback(interaction: discord.Interaction):
                 await interaction.response.defer()
                 target_circle = circle_select.values[0]
+                
+                # Reload tournament from store to get fresh data
+                tournament = store.get(self.guild_id)
+                if not tournament:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Турнир не найден."),
+                        ephemeral=True
+                    )
+                    return
                 
                 # Remove player from current location (including captains/circle1)
                 for circle in range(1, 5):
