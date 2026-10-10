@@ -21,7 +21,6 @@ class ThreadCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="delete", description="Удалить текущий игровой тред")
-    @is_org()
     async def thread_delete(self, interaction: discord.Interaction):
         """Delete the current game thread."""
         user_id = interaction.user.id
