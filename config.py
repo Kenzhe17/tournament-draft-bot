@@ -338,6 +338,7 @@ STANDARD_EMOJIS = {
 
     # Shop & UI
     "tag": "",
+    "guild_tag": "",
     "settings": "",
     "eye": "",
     "arrow_left": "",

@@ -599,6 +599,10 @@ async def build_setup_embed(
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
+    
+    # Add footer about guild tag privilege
+    tag_info = f"Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить в закрытые турниры при наличии свободных мест."
+    embed.set_footer(text=tag_info)
 
     return embed
 

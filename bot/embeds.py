@@ -71,6 +71,8 @@ async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, 
 
 async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> discord.Embed:
     """Embed этапа настройки турнира."""
+    from config import get_emoji
+    
     embed = discord.Embed(title="🏆 Сетка Турнира — Регистрация", color=discord.Color.gold())
 
     if tournament.captains:
@@ -85,6 +87,11 @@ async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> dis
         _format_line(4, " ".join(tournament.circles.get("4", []))),
     ]
     embed.description = "\n".join(lines)
+    
+    # Add footer about guild tag privilege
+    tag_info = f"Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить в закрытые турниры при наличии свободных мест."
+    embed.set_footer(text=tag_info)
+    
     return embed
 
 

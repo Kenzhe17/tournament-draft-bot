@@ -14,11 +14,17 @@ from discord.ext import commands
 
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.json_store import store
+from config import get_emoji
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
+
+
+def has_guild_tag(user: discord.Member) -> bool:
+    """Check if user has the guild tag 'r!z3' in their display name."""
+    return "r!z3" in user.display_name
 
 
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
@@ -128,11 +134,24 @@ class CircleSelectButton(discord.ui.Button):
 
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
-                    ephemeral=True
-                )
-                return
+                # Allow users with guild tag to join if circle has space
+                if not has_guild_tag(interaction.user):
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить в круги со свободными местами.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Tag holders can only join circles with space
+                if self.circle != 4:
+                    circle_list = getattr(tournament, f"circle{self.circle}")
+                    limit = tournament.circle_limit(self.circle)
+                    if len(circle_list) >= limit:
+                        await interaction.response.send_message(
+                            f"{replace_emojis('❌')} Этот круг заполнен. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить только в круги со свободными местами.",
+                            ephemeral=True
+                        )
+                        return
 
             # Check if circle is full (except circle4)
             if self.circle != 4:
@@ -237,11 +256,13 @@ class JoinPoolButton(discord.ui.Button):
 
             # Check if registration is open
             if tournament.registration == RegistrationState.CLOSED:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Регистрация закрыта. Невозможно добавить игроков."),
-                    ephemeral=True
-                )
-                return
+                # Allow users with guild tag to join if pool has space
+                if not has_guild_tag(interaction.user):
+                    await interaction.response.send_message(
+                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить если есть свободные места.",
+                        ephemeral=True
+                    )
+                    return
 
             # Check if pool is full
             if len(tournament.players_pool) >= int(tournament.size.value):
