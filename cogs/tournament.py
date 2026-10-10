@@ -25,7 +25,7 @@ from storage.user_bank_store import user_bank_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org, is_bot_owner
-from config import BOT_OWNER_ID, replace_emojis, WELCOME_BANNER_URL
+from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
 from views.org_role_view import setup_org_role_message
 
 if TYPE_CHECKING:
@@ -305,7 +305,7 @@ class TournamentCog(commands.Cog):
         # Профиль пользователя
         embed.add_field(
             name=replace_emojis("⚪ Ваш профиль:"),
-            value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {replace_emojis('money')}\n"
+            value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n"
                   f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
                   f"{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}",
             inline=False
@@ -483,7 +483,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -954,7 +954,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} СТАТИСТИКА СТАВОК | /bet",
-            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
+            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {get_emoji('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1212,13 +1212,13 @@ class TournamentCog(commands.Cog):
             desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Худшая серия поражений:** <@{best_loss_streak_20.user_id}> `({best_loss_streak_20.best_loss_streak} подряд)`"
 
         # Financial records
-        desc += f"\n\n{replace_emojis('white_dot')} **{replace_emojis('money')} Финансовые рекорды:**"
+        desc += f"\n\n{replace_emojis('white_dot')} **{get_emoji('money')} Финансовые рекорды:**"
         if richest_player:
-            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Богатейший игрок:** <@{richest_player.user_id}> `({max_balance:,}` {replace_emojis('money')}`)`"
+            desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Богатейший игрок:** <@{richest_player.user_id}> `({max_balance:,}` {get_emoji('money')}`)`"
         if best_bettor:
             bet_stats = await betting_stats_store.get(interaction.guild_id, best_bettor.user_id)
             bet_winrate = f"{(bet_stats.bets_won / bet_stats.total_bets * 100):.1f}%" if bet_stats and bet_stats.total_bets > 0 else "0%"
-            desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Лучший беттер:** <@{best_bettor.user_id}> `({max_single_win:,}` {replace_emojis('money')} ` / {bet_winrate}%)`"
+            desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Лучший беттер:** <@{best_bettor.user_id}> `({max_single_win:,}` {get_emoji('money')} ` / {bet_winrate}%)`"
 
         desc += f"\n\n{replace_emojis('a_dot_smaller')} Статистика обновляется автоматически после каждого турнирного матча "
 
@@ -1242,7 +1242,7 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(replace_emojis(f"✅ ELO игрока {player.display_name} изменен на {elo}."), delete_after=10)
 
-    @app_commands.command(name="edit", description=f"Изменить ELO или {replace_emojis('money')} игрока")
+    @app_commands.command(name="edit", description=f"Изменить ELO или {get_emoji('money')} игрока")
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",
@@ -1609,8 +1609,8 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {replace_emojis('money')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {replace_emojis('money')}"
-            embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {replace_emojis('money')}", inline=False)
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}"
+            embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
             
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
@@ -1648,7 +1648,7 @@ class TournamentCog(commands.Cog):
         sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if sender_balance < fee:
             await interaction.response.send_message(
-                replace_emojis(f"⚪ Недостаточно монет для комиссии. Нужно: {fee} {replace_emojis('money')}, есть: {sender_balance} {replace_emojis('money')}"),
+                replace_emojis(f"⚪ Недостаточно монет для комиссии. Нужно: {fee} {get_emoji('money')}, есть: {sender_balance} {get_emoji('money')}"),
                 ephemeral=True
             )
             return
@@ -1700,7 +1700,7 @@ class TournamentCog(commands.Cog):
 
             embed = discord.Embed(
                 title="Передача предмета",
-                description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** 10% ({fee} {replace_emojis('money')})\n• **Стоимость:** {item.price} {replace_emojis('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}",
+                description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** 10% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1917,7 +1917,7 @@ class TournamentCog(commands.Cog):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
-                description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
+                description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {get_emoji('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -2219,7 +2219,7 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "shop":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: МАГАЗИН  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Покупка товаров и инвентарь**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n{replace_emojis('white_dot')} **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic {replace_emojis('white_arrow')} `700` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Premium {replace_emojis('white_arrow')} `1,750` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Elite {replace_emojis('white_arrow')} `3,500` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Special {replace_emojis('white_arrow')} `5,950` {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Покупка товаров и инвентарь**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n{replace_emojis('white_dot')} **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic {replace_emojis('white_arrow')} `700` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Premium {replace_emojis('white_arrow')} `1,750` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Elite {replace_emojis('white_arrow')} `3,500` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Special {replace_emojis('white_arrow')} `5,950` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="shop")
@@ -2402,7 +2402,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "shop":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: МАГАЗИН  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Покупка товаров и инвентарь**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n{replace_emojis('white_dot')} **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic {replace_emojis('white_arrow')} `700` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Premium {replace_emojis('white_arrow')} `1,750` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Elite {replace_emojis('white_arrow')} `3,500` {replace_emojis('money')}\n{replace_emojis('a_dot_smaller')} Special {replace_emojis('white_arrow')} `5,950` {replace_emojis('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Покупка товаров и инвентарь**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n{replace_emojis('white_dot')} **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic {replace_emojis('white_arrow')} `700` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Premium {replace_emojis('white_arrow')} `1,750` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Elite {replace_emojis('white_arrow')} `3,500` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Special {replace_emojis('white_arrow')} `5,950` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="shop")

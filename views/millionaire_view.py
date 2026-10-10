@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 """View для Кто хочет стать миллионером."""
 
 import discord
@@ -32,7 +32,7 @@ class MillionaireView(discord.ui.View):
         prize = question_data["prize"]
 
         embed = discord.Embed(
-            title=replace_emojis("money") + " Кто хочет стать миллионером",
+            title=get_emoji("money") + " Кто хочет стать миллионером",
             description=f"**Ставка:** {self.bet} 🪙\n**Множитель:** {self.multiplier}x\n\n**Вопрос {self.current_question + 1}/{len(self.questions)}**\n{question}",
             color=discord.Color.gold()
         )

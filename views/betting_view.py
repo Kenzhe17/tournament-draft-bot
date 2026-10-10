@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 import logging
 from typing import TYPE_CHECKING
@@ -313,7 +313,7 @@ class BettingButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label=replace_emojis("money") + " Сделать ставку",
+            label=get_emoji('money') + " Сделать ставку",
             style=discord.ButtonStyle.primary,
             custom_id=f"betting_main:{guild_id}"
         )
@@ -325,7 +325,7 @@ class BettingButton(discord.ui.Button):
         match_view = MatchSelectView(self.guild_id, self.tournament)
 
         embed = discord.Embed(
-            title=replace_emojis("money") + " Ставки на турнир",
+            title=get_emoji('money') + " Ставки на турнир",
             description="Выберите матч для ставки:",
             color=discord.Color.gold()
         )

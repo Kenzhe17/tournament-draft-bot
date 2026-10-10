@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 """Views for betting system."""
 
 import discord
@@ -165,16 +165,16 @@ class ViewBetsButton(Button):
             match_text += f"{replace_emojis('white_dot')} `Ставки:`\n"
 
             if team_a_bets:
-                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_a_bets]
+                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {get_emoji('money')})" for b in team_a_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {replace_emojis('money')} - {users_str}\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {get_emoji('money')} - {users_str}\n"
             else:
                 match_text += f"> {replace_emojis('white_dot')} **{name_a}**: *Нет ставок*\n"
 
             if team_b_bets:
-                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {replace_emojis('money')})" for b in team_b_bets]
+                users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {get_emoji('money')})" for b in team_b_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {replace_emojis('money')} - {users_str}\n"
+                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {get_emoji('money')} - {users_str}\n"
             else:
                 match_text += f"> {replace_emojis('white_dot')} **{name_b}**: *Нет ставок*\n"
             

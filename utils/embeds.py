@@ -1182,7 +1182,7 @@ async def build_winner_embed(
         f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player} ({best_kd:.2f})\n"
         f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player} ({best_avg:.1f})\n"
         f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player} ({best_kills})\n"
-        f"{replace_emojis('sub_directory')} **Лучший Лудик:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
+        f"{replace_emojis('sub_directory')} **Лучший Лудик:** {max_payout_player} ({max_payout:,} {get_emoji('money')})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
@@ -1315,7 +1315,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             # Format name with cosmetics
             formatted_name = format_player_name(guild_id, player.user_id, player.name)
 
-            line = f"{rank_emoji} {formatted_name} — {balance:,} {replace_emojis('money')}"
+            line = f"{rank_emoji} {formatted_name} — {balance:,} {get_emoji('money')}"
             lines.append(line)
     else:
         for i, player in enumerate(players):

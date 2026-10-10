@@ -1,5 +1,5 @@
 """View для редактирования профиля."""
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 import discord
 from storage.player_stats_store import player_stats_store
@@ -181,7 +181,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Экономика
         description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} " + replace_emojis("money"))
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} " + get_emoji("money"))
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 

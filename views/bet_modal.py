@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 """Modal for entering bet amount."""
 
 import discord
@@ -60,7 +60,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
             if balance < amount:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} ") + replace_emojis("money"),
+                    replace_emojis("❌ Недостаточно средств. Ваш баланс: {balance} ") + get_emoji('money'),
                     ephemeral=True
                 )
                 return
@@ -145,7 +145,7 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             await bot.update_tournament_message(interaction.guild, self.tournament)
             
             await interaction.response.send_message(
-                replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + replace_emojis("money") + f" → {self.team_name} `({actual_odds:.2f}x)`"),
+                replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + get_emoji('money') + f" → {self.team_name} `({actual_odds:.2f}x)`"),
                 ephemeral=True
             )
         except Exception as e:
