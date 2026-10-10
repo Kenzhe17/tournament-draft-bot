@@ -42,8 +42,27 @@ class CaseStore:
             
             # Проверить и обновить старые drop_rates
             self._update_drop_rates_if_needed()
+            
+            # Обновить названия кейсов - убрать стандартные эмодзи
+            self._update_case_names()
         except (json.JSONDecodeError, KeyError):
             self._initialize_default_cases()
+    
+    def _update_case_names(self) -> None:
+        """Обновить названия кейсов - убрать стандартные эмодзи."""
+        name_mapping = {
+            "📦 Basic Case": "Basic",
+            "🎁 Premium Case": "Premium",
+            "💎 Elite Case": "Elite",
+            "✨ Special Case": "Special",
+        }
+        updated = False
+        for case_id, case in self._cases.items():
+            if case.name in name_mapping:
+                case.name = name_mapping[case.name]
+                updated = True
+        if updated:
+            self.save()
 
     def _update_drop_rates_if_needed(self) -> None:
         """Обновить drop_rates если они старого формата."""
