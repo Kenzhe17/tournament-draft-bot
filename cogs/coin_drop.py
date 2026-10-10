@@ -150,15 +150,16 @@ class CoinDropCog(commands.Cog):
 
         # Каждые 100 сообщений проверяем можно ли запустить ивент
         if CHANNEL_MESSAGE_COUNTERS[channel_id] >= 100:
-            CHANNEL_MESSAGE_COUNTERS[channel_id] = 0  # Сбрасываем счетчик
-
-            # Проверяем 10-минутный cooldown
+            # Не сбрасываем счетчик сразу, проверяем cooldown
+            # Проверяем 30-минутный cooldown
             last_event = LAST_EVENT_TIME.get(channel_id)
             if last_event:
                 time_since_last = datetime.now() - last_event
-                if time_since_last < timedelta(minutes=10):
-                    return  # Пропускаем, прошло меньше 10 минут
+                if time_since_last < timedelta(minutes=30):
+                    return  # Пропускаем, прошло меньше 30 минут
 
+            # КД прошел, запускаем ивент и сбрасываем счетчик
+            CHANNEL_MESSAGE_COUNTERS[channel_id] = 0
             await self.trigger_drop(message.channel)
 
     async def trigger_drop(self, channel: discord.TextChannel):
