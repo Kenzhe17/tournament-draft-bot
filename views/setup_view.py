@@ -733,6 +733,148 @@ class SwapPlayersButton(discord.ui.Button):
             pass
 
 
+class MovePlayerButton(discord.ui.Button):
+    """Кнопка для перемещения игрока в другой круг (только для org)."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="↕️ Переместить",
+            custom_id=f"move_player:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут перемещать игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament or tournament.phase != TournamentPhase.SETUP:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Турнир не в фазе настройки."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Get list of all players
+        if tournament.formation_mode == FormationMode.RANDOM:
+            players = list(tournament.players_pool)
+        else:
+            players = list(tournament.all_players)
+
+        if not players:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет зарегистрированных игроков."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Create select menu for player
+        view = PlayerSelectView(players, self.guild_id, "move")
+        view.refresh_view()
+
+        select = view.children[0]
+
+        async def select_callback(interaction: discord.Interaction):
+            await interaction.response.defer()
+            player = select.values[0]
+            
+            # Create circle select menu
+            circle_options = [
+                discord.SelectOption(label="Капитаны", value="captains"),
+                discord.SelectOption(label="Круг 1", value="circle1"),
+                discord.SelectOption(label="Круг 2", value="circle2"),
+                discord.SelectOption(label="Круг 3", value="circle3"),
+                discord.SelectOption(label="Круг 4", value="circle4"),
+            ]
+            
+            circle_select = discord.ui.Select(
+                placeholder="Выберите круг для перемещения",
+                options=circle_options,
+                custom_id="circle_select"
+            )
+            
+            view2 = discord.ui.View()
+            view2.add_item(circle_select)
+            
+            async def circle_callback(interaction: discord.Interaction):
+                await interaction.response.defer()
+                target_circle = circle_select.values[0]
+                
+                # Remove player from current location
+                for circle in range(1, 5):
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    if player in circle_list:
+                        circle_list.remove(player)
+                        break
+                
+                if player in tournament.captains:
+                    tournament.captains.remove(player)
+                
+                # Add to target circle
+                if target_circle == "captains":
+                    tournament.captains.append(player)
+                else:
+                    circle_list = getattr(tournament, target_circle)
+                    circle_list.append(player)
+                
+                # Save
+                store.set(tournament)
+                
+                # Update message
+                bot: TournamentBot = interaction.client  # type: ignore[assignment]
+                await bot.update_tournament_message(interaction.guild, tournament)
+                
+                circle_names = {
+                    "captains": "Капитаны",
+                    "circle1": "Круг 1",
+                    "circle2": "Круг 2",
+                    "circle3": "Круг 3",
+                    "circle4": "Круг 4",
+                }
+                
+                await interaction.followup.send(
+                    replace_emojis(f"✅ Игрок `{player}` перемещён в {circle_names[target_circle]}!"),
+                    ephemeral=True
+                )
+
+            circle_select.callback = circle_callback
+
+            try:
+                await interaction.followup.send(
+                    f"Выберите круг для перемещения игрока `{player}`:",
+                    view=view2,
+                    ephemeral=True
+                )
+            except discord.InteractionResponded:
+                pass
+
+        select.callback = select_callback
+
+        try:
+            await interaction.response.send_message(
+                "Выберите игрока для перемещения:",
+                view=view,
+                ephemeral=True
+            )
+        except discord.InteractionResponded:
+            pass
+
+
 class AdminAddButton(discord.ui.Button):
     """Кнопка для админа добавления игрока в конкретный круг."""
 
@@ -1134,6 +1276,10 @@ class SetupView(discord.ui.View):
         # Add swap button
         swap_button = SwapPlayersButton(tournament.guild_id)
         self.add_item(swap_button)
+
+        # Add move button
+        move_button = MovePlayerButton(tournament.guild_id)
+        self.add_item(move_button)
 
         # Add exit button
         exit_button = ExitButton(tournament.guild_id)
