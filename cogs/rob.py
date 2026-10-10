@@ -205,8 +205,7 @@ class RobStartButton(discord.ui.Button):
                         color=0x2B2D31
                     )
 
-                    await interaction.response.edit_message(view=None)
-                    await interaction.followup.send(embed=embed)
+                    await interaction.response.edit_message(embed=embed, view=None)
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
@@ -228,8 +227,7 @@ class RobStartButton(discord.ui.Button):
                 color=0x2B2D31
             )
 
-            await interaction.response.edit_message(view=None)
-            await interaction.followup.send(embed=embed)
+            await interaction.response.edit_message(embed=embed, view=None)
 
         # Установить cooldown только если поймали (провал)
         if not success and self.robber_id != BOT_OWNER_ID:
