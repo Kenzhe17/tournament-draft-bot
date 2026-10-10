@@ -5,6 +5,7 @@ from __future__ import annotations
 import discord
 
 from bot.models import DraftState, Tournament, TournamentPhase
+from config import replace_emojis
 
 
 async def captain_mention(guild: discord.Guild, captain_id: int) -> str:
@@ -86,7 +87,7 @@ async def build_setup_embed(guild: discord.Guild, tournament: Tournament) -> dis
         _format_line(3, " ".join(tournament.circles.get("3", []))),
         _format_line(4, " ".join(tournament.circles.get("4", []))),
     ]
-    embed.description = "\n".join(lines) + f"\n\nУчастники с тегом r!z3 {get_emoji('guild_tag')} могут входить в закрытые турниры при наличии свободных мест."
+    embed.description = "\n".join(lines) + f"\n\nУчастники с тегом r!z3 {replace_emojis('🏷️')} могут входить в закрытые турниры при наличии свободных мест."
     
     return embed
 

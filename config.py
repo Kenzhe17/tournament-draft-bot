@@ -368,17 +368,17 @@ def get_emoji(emoji_name: str) -> str:
     import logging
     logger = logging.getLogger(__name__)
     
-    # Check rank emojis
-    if emoji_name in RANK_EMOJIS:
-        custom_id = RANK_EMOJIS[emoji_name]
+    # Check game emojis first (includes guild_tag, settings, etc.)
+    if emoji_name in GAME_EMOJIS:
+        custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
         return result
     
-    # Check game emojis
-    if emoji_name in GAME_EMOJIS:
-        custom_id = GAME_EMOJIS[emoji_name]
+    # Check rank emojis
+    if emoji_name in RANK_EMOJIS:
+        custom_id = RANK_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
@@ -450,7 +450,7 @@ def replace_emojis(text: str) -> str:
         "📌": "pin",
         "📢": "announce",
         "👁️": "eye",
-        "🏷️": "tag",
+        "🏷️": "guild_tag",
         "🚪": "room",
         "guild_tag": "guild_tag",
 
