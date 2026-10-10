@@ -12,6 +12,7 @@ from typing import Optional
 
 from storage.user_balance_store import user_balance_store
 from utils.embeds import replace_emojis
+from config import get_emoji
 from utils.permissions import is_bot_owner
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ class CoinFlipView(discord.ui.View):
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
                 value=f"• Режим: **{mode}**\n"
                       f"• Игрок: <@{self.game.initiator_id}>\n"
-                      f"• Ставка: **{self.game.bet}** {replace_emojis('money')}\n"
+                      f"• Ставка: **{self.game.bet}** {get_emoji('money')}\n"
                       f"• Множитель: **2.0x**",
                 inline=False
             )
@@ -111,7 +112,7 @@ class CoinFlipView(discord.ui.View):
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"• Выпало: **{result_text}**\n"
-                          f"• Победитель: <@{self.game.winner}> (+**{self.game.bet * 2}** {replace_emojis('money')})",
+                          f"• Победитель: <@{self.game.winner}> (+**{self.game.bet * 2}** {get_emoji('money')})",
                     inline=False
                 )
             else:
@@ -125,7 +126,7 @@ class CoinFlipView(discord.ui.View):
                         name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                         value=f"• Ваша ставка: **{initiator_text}**\n"
                               f"• Выпало: **{result_text}**\n"
-                              f"• Итог: Вы выиграли **{self.game.bet * 2}** {replace_emojis('money')}!",
+                              f"• Итог: Вы выиграли **{self.game.bet * 2}** {get_emoji('money')}!",
                         inline=False
                     )
                 else:
@@ -133,7 +134,7 @@ class CoinFlipView(discord.ui.View):
                         name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                         value=f"• Ваша ставка: **{initiator_text}**\n"
                               f"• Выпало: **{result_text}**\n"
-                              f"• Итог: Вы проиграли **{self.game.bet}** {replace_emojis('money')}.",
+                              f"• Итог: Вы проиграли **{self.game.bet}** {get_emoji('money')}.",
                         inline=False
                     )
 

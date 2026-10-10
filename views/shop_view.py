@@ -723,11 +723,11 @@ class BuyButton(discord.ui.Button):
     """Кнопка покупки товара."""
 
     def __init__(self, item_id: str, price: int, item_type: str = "icon"):
-        label_text = f"✔ Купить за {price} " + replace_emojis("money")
+        label_text = f"✔ Купить за {price} " + get_emoji("money")
         if item_type == "tag":
-            label_text = f"✔ Примерить и купить за {price} " + replace_emojis("money")
+            label_text = f"✔ Примерить и купить за {price} " + get_emoji("money")
         elif item_type == "role":
-            label_text = f"✔ Купить роль за {price} " + replace_emojis("money")
+            label_text = f"✔ Купить роль за {price} " + get_emoji("money")
         
         super().__init__(
             style=discord.ButtonStyle.success,
@@ -854,7 +854,7 @@ class BuyCaseButton(discord.ui.Button):
     def __init__(self, case_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"🎯 Открыть кейс за {price} " + replace_emojis("money"),
+            label=f"🎯 Открыть кейс за {price} " + get_emoji("money"),
             custom_id=f"buy_case_{case_id}"
         )
         self.case_id = case_id
@@ -1414,7 +1414,7 @@ class RolesButton(discord.ui.Button):
             can_buy = user_level >= role.required_level
             level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
 
-            label = f"{role.name} - {role.price} " + replace_emojis("money") + level_req
+            label = f"{role.name} - {role.price} " + get_emoji("money") + level_req
             button = RoleBuyButton(role.id, label, can_buy)
             view.add_item(button)
 

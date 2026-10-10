@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 """View для системы кейсов."""
 
 import asyncio
@@ -29,7 +29,7 @@ class CaseOpenButton(discord.ui.Button):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {replace_emojis('money')}"),
+                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {get_emoji('money')}"),
                 ephemeral=True
             )
             return
@@ -80,7 +80,7 @@ class CaseOpenButton(discord.ui.Button):
             color = discord.Color.dark_red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
-            message = f"{replace_emojis('money')} Выпало {result['value']} {replace_emojis('money')}!",
+            message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
             color = discord.Color.dark_gold()
             reaction_emoji = "money"
         elif result["type"] == "item":
@@ -144,7 +144,7 @@ class CaseSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=case.name,
                     value=case.id,
-                    description=f"Цена: {case.price} {replace_emojis('money')} - {case.description}"
+                    description=f"Цена: {case.price} {get_emoji('money')} - {case.description}"
                 )
             )
 
@@ -168,7 +168,7 @@ class CaseSelect(discord.ui.Select):
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if balance < case.price:
             await interaction.response.send_message(
-                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {replace_emojis('money')}"),
+                replace_emojis(f"cross Недостаточно монет. Нужно: {case.price} {get_emoji('money')}"),
                 ephemeral=True
             )
             return
@@ -219,7 +219,7 @@ class CaseSelect(discord.ui.Select):
             color = discord.Color.dark_red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
-            message = f"{replace_emojis('money')} Выпало {result['value']} {replace_emojis('money')}!",
+            message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
             color = discord.Color.dark_gold()
             reaction_emoji = "money"
         elif result["type"] == "item":

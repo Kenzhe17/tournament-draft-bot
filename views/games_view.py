@@ -1,5 +1,5 @@
 """Enhanced view for mini-games menu with categories and game cards."""
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 import discord
 from discord.ui import Button, View, Select
@@ -187,7 +187,7 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {game.name.upper()} | Игровой режим",
-            description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Режим: `[{mode_text}]`\n{replace_emojis('sub_middle')} Команда: `/{game.command}`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {replace_emojis('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {replace_emojis('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Режим: `[{mode_text}]`\n{replace_emojis('sub_middle')} Команда: `/{game.command}`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {get_emoji('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -361,7 +361,7 @@ class BackToMainMenuButton(Button):
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {replace_emojis('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
