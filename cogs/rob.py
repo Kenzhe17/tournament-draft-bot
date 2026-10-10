@@ -481,6 +481,24 @@ class RobGroupStartButton(discord.ui.Button):
             )
             return
 
+        # Проверка cooldown лидера
+        now = datetime.now()
+        if self.guild_id not in _robgroup_cooldowns:
+            _robgroup_cooldowns[self.guild_id] = {}
+
+        if self.game_view.leader_id != BOT_OWNER_ID:
+            if self.game_view.leader_id in _robgroup_cooldowns[self.guild_id]:
+                last_rob = _robgroup_cooldowns[self.guild_id][self.game_view.leader_id]
+                if now - last_rob < timedelta(hours=2):
+                    remaining = timedelta(hours=2) - (now - last_rob)
+                    hours, remainder = divmod(remaining.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    await interaction.response.send_message(
+                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                        ephemeral=True
+                    )
+                    return
+
         # Проверка: минимум 2 участника
         if len(self.game_view.members) < 2:
             await interaction.response.send_message(
