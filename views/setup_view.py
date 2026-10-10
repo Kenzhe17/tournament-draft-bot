@@ -1270,36 +1270,92 @@ class SetupView(discord.ui.View):
                 button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
                 self.add_item(button)
 
-            # Add auto-distribute buttons based on formation mode
-            if tournament.formation_mode == FormationMode.ELO:
-                auto_distribute_button = AutoDistributeButton(tournament.guild_id)
-                self.add_item(auto_distribute_button)
-            elif tournament.formation_mode == FormationMode.SKILL:
-                auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)
-                self.add_item(auto_distribute_avg_button)
+        # Add org menu button
+        org_menu_button = OrgMenuButton(tournament.guild_id)
+        self.add_item(org_menu_button)
 
-        # Add management buttons (Start, Toggle Registration)
+        # Add exit button
+        exit_button = ExitButton(tournament.guild_id)
+        self.add_item(exit_button)
+
+
+class OrgMenuButton(discord.ui.Button):
+    """Кнопка для открытия организаторского меню."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="⚙️ Орг Меню",
+            custom_id=f"org_menu:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут открывать орг меню."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        tournament = store.get(interaction.guild_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Create org menu view
+        view = OrgMenuView(tournament)
+        
+        try:
+            await interaction.response.send_message(
+                "Организаторское меню:",
+                view=view,
+                ephemeral=True
+            )
+        except discord.InteractionResponded:
+            pass
+
+
+class OrgMenuView(discord.ui.View):
+    """View с организаторскими кнопками."""
+
+    def __init__(self, tournament: Tournament):
+        super().__init__(timeout=None)
+        self.tournament = tournament
+
+        # Add all org buttons
+        delete_button = DeletePlayerButton(tournament.guild_id)
+        self.add_item(delete_button)
+
+        swap_button = SwapPlayersButton(tournament.guild_id)
+        self.add_item(swap_button)
+
+        move_button = MovePlayerButton(tournament.guild_id)
+        self.add_item(move_button)
+
+        # Add auto-distribute buttons based on formation mode
+        if tournament.formation_mode == FormationMode.ELO:
+            auto_distribute_button = AutoDistributeButton(tournament.guild_id)
+            self.add_item(auto_distribute_button)
+        elif tournament.formation_mode == FormationMode.SKILL:
+            auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)
+            self.add_item(auto_distribute_avg_button)
+
         start_button = StartTournamentButton(tournament.guild_id)
         self.add_item(start_button)
 
         toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
         self.add_item(toggle_button)
-
-        # Add org-only buttons
-        delete_button = DeletePlayerButton(tournament.guild_id)
-        self.add_item(delete_button)
-
-        # Add swap button
-        swap_button = SwapPlayersButton(tournament.guild_id)
-        self.add_item(swap_button)
-
-        # Add move button
-        move_button = MovePlayerButton(tournament.guild_id)
-        self.add_item(move_button)
-
-        # Add exit button
-        exit_button = ExitButton(tournament.guild_id)
-        self.add_item(exit_button)
 
 
 def build_setup_view(tournament: Tournament) -> SetupView:
