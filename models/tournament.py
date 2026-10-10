@@ -962,13 +962,14 @@ class Tournament:
             earnings = self.calculate_earnings(player_name, position)
             earnings_map[player_name] = earnings
 
-            # Add to balance
-            await user_balance_store.add_balance(guild_id, user_id, earnings)
+            # Add to balance with daily limit
+            actual_earned = await user_balance_store.add_tournament_earnings(guild_id, user_id, earnings)
+            earnings_map[player_name] = actual_earned  # Track actual amount earned (capped by daily limit)
 
-            # Update player stats total earnings and XP
+            # Update player stats total earnings and XP (use actual earned amount)
             stats = await player_stats_store.get(guild_id, user_id)
             if stats:
-                stats.total_earnings += earnings
+                stats.total_earnings += actual_earned  # Track actual earned coins
                 stats.tournament_participations += 1
 
                 # Add XP rewards

@@ -190,6 +190,17 @@ async def init_db() -> None:
             )
         """)
 
+        # Create daily_earnings table for daily coin limit
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS daily_earnings (
+                guild_id BIGINT,
+                user_id BIGINT,
+                date DATE DEFAULT CURRENT_DATE,
+                earned_amount INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, user_id, date)
+            )
+        """)
+
         # Create user_bank table for bank system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_bank (

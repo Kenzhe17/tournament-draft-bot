@@ -244,6 +244,67 @@ class UserBalanceStore:
             self.save()
             return balance
 
+    async def get_daily_earned(self, guild_id: int, user_id: int) -> int:
+        """Get total coins earned today from tournaments."""
+        if not self._use_db:
+            return 0  # JSON fallback: no daily limit
+
+        from storage.db import get_pool
+        from datetime import date
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            today = date.today()
+            row = await conn.fetchrow(
+                "SELECT COALESCE(earned_amount, 0) FROM daily_earnings WHERE guild_id = $1 AND user_id = $2 AND date = $3",
+                guild_id, user_id, today
+            )
+            return row[0] if row else 0
+
+    async def add_daily_earned(self, guild_id: int, user_id: int, amount: int) -> None:
+        """Add coins to daily earnings tracker."""
+        if not self._use_db:
+            return  # JSON fallback: no daily limit
+
+        from storage.db import get_pool
+        from datetime import date
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            today = date.today()
+            await conn.execute(
+                """
+                INSERT INTO daily_earnings (guild_id, user_id, date, earned_amount)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, user_id, date)
+                DO UPDATE SET earned_amount = daily_earnings.earned_amount + $4
+                """,
+                guild_id, user_id, today, amount
+            )
+
+    async def add_tournament_earnings(self, guild_id: int, user_id: int, amount: int) -> int:
+        """Add tournament earnings with daily limit of 500 coins. Returns actual amount added."""
+        if amount < 0:
+            raise ValueError("Amount must be positive")
+
+        DAILY_LIMIT = 500
+
+        # Check daily limit
+        today_earned = await self.get_daily_earned(guild_id, user_id)
+        remaining = DAILY_LIMIT - today_earned
+        
+        if remaining <= 0:
+            return 0  # Already reached daily limit
+        
+        # Cap amount at remaining limit
+        actual_amount = min(amount, remaining)
+        
+        # Add to balance
+        new_balance = await self.add_balance(guild_id, user_id, actual_amount)
+        
+        # Track daily earnings
+        await self.add_daily_earned(guild_id, user_id, actual_amount)
+        
+        return actual_amount
+
     async def transfer_balance(self, from_guild: int, from_user: int, to_guild: int, to_user: int, amount: int, fee_percent: float = 0.1) -> dict:
         """Transfer coins from one user to another with fee.
         
