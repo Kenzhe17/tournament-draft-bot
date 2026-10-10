@@ -242,13 +242,13 @@ ICON_EMOJIS = {
 STANDARD_EMOJIS = {
     # Ranks
     "Radiant": "👑",
-    "Immortal": "",
-    "Ascendant": "",
-    "Diamond": "",
-    "Platinum": "",
-    "Gold": "",
-    "Silver": "",
-    "Bronze": "",
+    "Immortal": "🔱",
+    "Ascendant": "🎯",
+    "Diamond": "💎",
+    "Platinum": "🌪️",
+    "Gold": "🥇",
+    "Silver": "🥈",
+    "Bronze": "🥉",
     
     # Games
     "game": "🎮",
@@ -391,8 +391,6 @@ STANDARD_EMOJIS = {
 
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
-    import logging
-    logger = logging.getLogger(__name__)
 
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
@@ -413,13 +411,13 @@ def get_emoji(emoji_name: str) -> str:
     # Check game emojis
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
-        logger.info(f"Game emoji {emoji_name} found with ID: '{custom_id}' (type: {type(custom_id)})")
         if custom_id:
-            logger.info(f"Using custom emoji {emoji_name} with ID {custom_id}")
+            # Use animated format for emojis starting with "a_"
+            if emoji_name.startswith("a_"):
+                return f"<a:{emoji_name}:{custom_id}>"
             return f"<:{emoji_name}:{custom_id}>"
         # Don't fallback to standard emoji for custom emoji names like 'money'
         # Return empty string if custom ID is not set
-        logger.warning(f"Custom emoji {emoji_name} ID not set, returning empty string")
         return ""
 
     # Fallback to standard emoji

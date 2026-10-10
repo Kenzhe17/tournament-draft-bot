@@ -87,7 +87,7 @@ class PlayerSelectView(discord.ui.View):
         if self.total_pages > 1:
             # Previous button
             prev_btn = discord.ui.Button(
-                label="⬅️",
+                label="Предыдущая",
                 style=discord.ButtonStyle.secondary,
                 disabled=self.page == 1,
                 custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.page}"
@@ -97,7 +97,7 @@ class PlayerSelectView(discord.ui.View):
 
             # Next button
             next_btn = discord.ui.Button(
-                label="➡️",
+                label="Следующая",
                 style=discord.ButtonStyle.secondary,
                 disabled=self.page == self.total_pages,
                 custom_id=f"player_next:{self.action}:{self.guild_id}:{self.page}"
@@ -518,7 +518,7 @@ class DeletePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label="🗑️ Удалить",
+            label="Удалить",
             custom_id=f"delete_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -780,7 +780,7 @@ class MovePlayerButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="↕️ Переместить",
+            label="Переместить",
             custom_id=f"move_player:{guild_id}",
         )
         self.guild_id = guild_id
@@ -955,7 +955,7 @@ class AutoDistributeButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🎯 Распределить по ELO",
+            label="Распределить по ELO",
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
@@ -1028,7 +1028,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🎯 Распределить по Skill Rating",
+            label="Распределить по Skill Rating",
             custom_id=f"auto_distribute_avg:{guild_id}",
         )
         self.guild_id = guild_id
@@ -1310,7 +1310,7 @@ class OrgMenuButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="⚙️ Орг Меню",
+            label="Орг Меню",
             custom_id=f"org_menu:{guild_id}",
         )
         self.guild_id = guild_id

@@ -118,7 +118,7 @@ class PvEChoiceView(RPSView):
     async def btn_paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.PAPER)
 
-    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.success, custom_id="rps:scissors")
+    @discord.ui.button(label="Ножницы", style=discord.ButtonStyle.success, custom_id="rps:scissors")
     async def btn_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.SCISSORS)
     
@@ -259,7 +259,7 @@ class PvPChallengeView(RPSView):
         if self.game_id in active_games:
             del active_games[self.game_id]
     
-    @discord.ui.button(label="Принять", emoji="⚔️", style=discord.ButtonStyle.success, custom_id="rps:accept")
+    @discord.ui.button(label="Принять", style=discord.ButtonStyle.success, custom_id="rps:accept")
     async def btn_accept(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_accept(interaction)
     
@@ -516,7 +516,7 @@ class PvPChoiceView(RPSView):
     async def btn_paper(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.PAPER)
 
-    @discord.ui.button(label="Ножницы", emoji="✂️", style=discord.ButtonStyle.success, custom_id="rps:scissors")
+    @discord.ui.button(label="Ножницы", style=discord.ButtonStyle.success, custom_id="rps:scissors")
     async def btn_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_choice(interaction, Move.SCISSORS)
     

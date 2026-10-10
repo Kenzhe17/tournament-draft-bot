@@ -2090,15 +2090,8 @@ def get_rank_emoji(level: int) -> str:
     # Get the base rank name (without tier) for emoji lookup
     base_rank = rank_name.split()[0] if " " in rank_name else rank_name
     
-    # Get custom emoji from RANK_EMOJIS (not GAME_EMOJIS)
-    from config import RANK_EMOJIS
-    custom_id = RANK_EMOJIS.get(base_rank, "")
-    if custom_id:
-        emoji = f"<:{base_rank}:{custom_id}>"
-    else:
-        # Fallback to standard emoji if custom not set
-        from config import STANDARD_EMOJIS
-        emoji = STANDARD_EMOJIS.get(base_rank, "")
+    # Get custom or standard emoji
+    emoji = get_emoji(base_rank)
     
     return f"{emoji} {rank_name}"
 

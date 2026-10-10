@@ -28,7 +28,7 @@ class ShopCategorySelect(discord.ui.Select):
                 description="Косметические иконы профиля"
             ),
             discord.SelectOption(
-                label="🏷️ Теги",
+                label="Теги",
                 value="tags",
                 description="Префиксы для никнейма в чате"
             ),
@@ -854,7 +854,7 @@ class BuyCaseButton(discord.ui.Button):
     def __init__(self, case_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"🎯 Открыть кейс за {price} " + get_emoji("money"),
+            label=f"Открыть кейс за {price}",
             custom_id=f"buy_case_{case_id}"
         )
         self.case_id = case_id
@@ -957,7 +957,7 @@ class ShopBackButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="⬅️ Назад в главное меню",
+            label="Назад в главное меню",
             custom_id="shop_back"
         )
 
@@ -1147,7 +1147,7 @@ class RarityBackButton(discord.ui.Button):
     def __init__(self, category: str):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="↩️ Назад",
+            label="Назад",
             custom_id=f"shop_rarity_back:{category}"
         )
         self.category = category

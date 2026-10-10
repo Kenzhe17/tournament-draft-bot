@@ -25,7 +25,7 @@ class SettingsButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="⚙️ Настройки",
+            label="Настройки",
             custom_id=f"profile_settings:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -51,7 +51,7 @@ class ProfileEditButton(discord.ui.Button):
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="✏️ Изменить профиль",
+            label="Изменить профиль",
             custom_id=f"profile_edit:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id

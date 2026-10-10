@@ -87,7 +87,7 @@ class PlayerStatsStore:
                 await conn.execute(
                     """
                     INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                     ON CONFLICT (guild_id, user_id)
                     DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, best_match_kills = $13, total_elo_change = $14, last_elo_change = $15, xp = $16, level = $17, xp_to_next_level = $18, total_earnings = $19, tournament_participations = $20, description = $21, daily_tournament_coins = $22, daily_coins_date = $23
                     """,

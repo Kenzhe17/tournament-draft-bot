@@ -21,7 +21,7 @@ class CaptainFillButton(Button):
         team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
         team_name = tournament.team_names.get(team_index, team.get("captain", f"Team {team_index}"))
         super().__init__(
-            label=f"✏️ {team_name}",
+            label=f"{team_name}",
             style=discord.ButtonStyle.primary,
             custom_id=f"captain_fill:{guild_id}:{match_type}:{match_index}:{team_index}"
         )
@@ -180,7 +180,7 @@ class AdminFillButton(Button):
 
     def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label="✏️ Заполнить статистику (Админ)",
+            label="Заполнить статистику (Админ)",
             style=discord.ButtonStyle.secondary,
             custom_id=f"admin_fill:{guild_id}"
         )
@@ -580,7 +580,7 @@ class AdminConfirmView(View):
 
         # Add only edit button (no winner selection - that's done via "Выбрать победителя" panel)
         logging.info("Adding edit button to view")
-        edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
+        edit_btn = Button(label="Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         self.add_item(edit_btn)
         logging.info("=== AdminConfirmView.__init__ END ===")
@@ -668,7 +668,7 @@ class AdminConfirmView(View):
         confirm_btn.callback = self._show_winner_selection
         view.add_item(confirm_btn)
 
-        edit_btn = Button(label="✏️ Изменить", style=discord.ButtonStyle.secondary)
+        edit_btn = Button(label="Изменить", style=discord.ButtonStyle.secondary)
         edit_btn.callback = self.edit_callback
         view.add_item(edit_btn)
 

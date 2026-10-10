@@ -41,7 +41,7 @@ class HelpBackButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="↩️ В меню",
+            label="В меню",
             custom_id="help_back"
         )
 
