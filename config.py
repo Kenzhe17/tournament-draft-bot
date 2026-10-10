@@ -242,13 +242,13 @@ ICON_EMOJIS = {
 STANDARD_EMOJIS = {
     # Ranks
     "Radiant": "👑",
-    "Immortal": "🔱",
-    "Ascendant": "🎯",
-    "Diamond": "💎",
-    "Platinum": "🌪️",
-    "Gold": "🥇",
-    "Silver": "🥈",
-    "Bronze": "🥉",
+    "Immortal": "",
+    "Ascendant": "",
+    "Diamond": "",
+    "Platinum": "",
+    "Gold": "",
+    "Silver": "",
+    "Bronze": "",
     
     # Games
     "game": "🎮",
@@ -412,9 +412,6 @@ def get_emoji(emoji_name: str) -> str:
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
-            # Use animated format for emojis starting with "a_"
-            if emoji_name.startswith("a_"):
-                return f"<a:{emoji_name}:{custom_id}>"
             return f"<:{emoji_name}:{custom_id}>"
         # Don't fallback to standard emoji for custom emoji names like 'money'
         # Return empty string if custom ID is not set
