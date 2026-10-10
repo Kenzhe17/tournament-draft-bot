@@ -417,9 +417,11 @@ def get_emoji(emoji_name: str) -> str:
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
+            logger.info(f"Using custom emoji {emoji_name} with ID {custom_id}")
             return f"<:{emoji_name}:{custom_id}>"
         # Don't fallback to standard emoji for custom emoji names like 'money'
         # Return empty string if custom ID is not set
+        logger.warning(f"Custom emoji {emoji_name} ID not set, returning empty string")
         return ""
 
     # Fallback to standard emoji
