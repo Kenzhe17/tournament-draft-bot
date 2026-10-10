@@ -48,7 +48,12 @@ class PlayerSelectView(discord.ui.View):
         self.page = 1
         self.per_page = 16
         self.total_pages = (len(self.players) + self.per_page - 1) // self.per_page
+        self.selected_callback = None  # Will be set by parent
         self.refresh_view()
+
+    def set_callback(self, callback):
+        """Set the callback for when a player is selected."""
+        self.selected_callback = callback
 
     def get_current_players(self) -> list[str]:
         """Получить игроков для текущей страницы."""
@@ -69,6 +74,13 @@ class PlayerSelectView(discord.ui.View):
             options=[discord.SelectOption(label=player, value=player) for player in current_players]
         )
         select.custom_id = f"player_select:{self.action}:{self.guild_id}:{self.page}"
+        
+        # Set the callback to call the selected_callback with the chosen player
+        async def select_callback(interaction: discord.Interaction):
+            if self.selected_callback:
+                await self.selected_callback(interaction, select.values[0])
+        
+        select.callback = select_callback
         self.add_item(select)
 
         # Add pagination buttons if needed
@@ -552,14 +564,10 @@ class DeletePlayerButton(discord.ui.Button):
 
         # Create select menu with pagination
         view = PlayerSelectView(players, self.guild_id, "delete")
-        view.refresh_view()
-
-        # Handle selection
-        select = view.children[0]  # The select menu
-
-        async def select_callback(interaction: discord.Interaction):
+        
+        # Define the callback for player selection
+        async def delete_callback(interaction: discord.Interaction, player_name: str):
             await interaction.response.defer()
-            player_name = select.values[0]
             
             # Reload tournament from store to get fresh data
             tournament = store.get(self.guild_id)
@@ -610,7 +618,7 @@ class DeletePlayerButton(discord.ui.Button):
             except discord.NotFound:
                 pass
 
-        select.callback = select_callback
+        view.set_callback(delete_callback)
 
         try:
             await interaction.response.send_message(
@@ -674,24 +682,15 @@ class SwapPlayersButton(discord.ui.Button):
 
         # Create select menu for first player
         view = PlayerSelectView(players, self.guild_id, "swap_first")
-        view.refresh_view()
-
-        select = view.children[0]
-
-        async def select_callback(interaction: discord.Interaction):
-            first_player = select.values[0]
-            
+        
+        # Define the callback for first player selection
+        async def swap_first_callback(interaction: discord.Interaction, first_player: str):
             # Create second select menu (excluding first player)
             remaining_players = [p for p in players if p != first_player]
             view2 = PlayerSelectView(remaining_players, self.guild_id, "swap_second", first_player)
-            view2.refresh_view()
-
-            select2 = view2.children[0]
-
-            async def select2_callback(interaction: discord.Interaction):
-                second_player = select2.values[0]
-                
-                # Acknowledge the interaction immediately
+            
+            # Define the callback for second player selection
+            async def swap_second_callback(interaction: discord.Interaction, second_player: str):
                 await interaction.response.defer()
                 
                 # Reload tournament from store to get fresh data
@@ -752,7 +751,7 @@ class SwapPlayersButton(discord.ui.Button):
                     ephemeral=True
                 )
 
-            select2.callback = select2_callback
+            view2.set_callback(swap_second_callback)
 
             try:
                 await interaction.response.send_message(
@@ -763,7 +762,7 @@ class SwapPlayersButton(discord.ui.Button):
             except discord.InteractionResponded:
                 pass
 
-        select.callback = select_callback
+        view.set_callback(swap_first_callback)
 
         try:
             await interaction.response.send_message(
@@ -827,13 +826,9 @@ class MovePlayerButton(discord.ui.Button):
 
         # Create select menu for player
         view = PlayerSelectView(players, self.guild_id, "move")
-        view.refresh_view()
-
-        select = view.children[0]
-
-        async def select_callback(interaction: discord.Interaction):
-            player = select.values[0]
-            
+        
+        # Define the callback for player selection
+        async def move_callback(interaction: discord.Interaction, selected_player: str):
             # Create circle select menu
             circle_options = [
                 discord.SelectOption(label="Круг 1", value="circle1"),
@@ -854,7 +849,6 @@ class MovePlayerButton(discord.ui.Button):
             async def circle_callback(interaction: discord.Interaction):
                 target_circle = circle_select.values[0]
                 
-                # Acknowledge the interaction immediately
                 await interaction.response.defer()
                 
                 # Reload tournament from store to get fresh data
@@ -869,16 +863,16 @@ class MovePlayerButton(discord.ui.Button):
                 # Remove player from current location (including captains/circle1)
                 for circle in range(1, 5):
                     circle_list = getattr(tournament, f"circle{circle}")
-                    if player in circle_list:
-                        circle_list.remove(player)
+                    if selected_player in circle_list:
+                        circle_list.remove(selected_player)
                         break
                 
-                if player in tournament.captains:
-                    tournament.captains.remove(player)
+                if selected_player in tournament.captains:
+                    tournament.captains.remove(selected_player)
                 
                 # Add to target circle
                 circle_list = getattr(tournament, target_circle)
-                circle_list.append(player)
+                circle_list.append(selected_player)
                 
                 # Save
                 store.set(tournament)
@@ -895,7 +889,7 @@ class MovePlayerButton(discord.ui.Button):
                 }
                 
                 await interaction.followup.send(
-                    replace_emojis(f"✅ Игрок `{player}` перемещён в {circle_names[target_circle]}!"),
+                    replace_emojis(f"✅ Игрок `{selected_player}` перемещён в {circle_names[target_circle]}!"),
                     ephemeral=True
                 )
 
@@ -903,14 +897,14 @@ class MovePlayerButton(discord.ui.Button):
 
             try:
                 await interaction.response.send_message(
-                    f"Выберите круг для перемещения игрока `{player}`:",
+                    f"Выберите круг для перемещения игрока `{selected_player}`:",
                     view=view2,
                     ephemeral=True
                 )
             except discord.InteractionResponded:
                 pass
 
-        select.callback = select_callback
+        view.set_callback(move_callback)
 
         try:
             await interaction.response.send_message(
