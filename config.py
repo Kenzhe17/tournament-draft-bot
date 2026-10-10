@@ -231,6 +231,10 @@ STANDARD_EMOJIS = {
     "cross": "❌",
     "settings": "⚙️",
     "room": "🚪",
+    "tag": "🏷️",
+    "guild_tag": "🏷️",
+    "eye": "👁️",
+    "profile": "👤",
 
     # Medals
     "gold_medal": "🥇",
