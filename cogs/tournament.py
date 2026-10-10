@@ -1403,6 +1403,14 @@ class TournamentCog(commands.Cog):
             "P6-0", "P6-1", "P6-2", "P6-3",
             "P7-0", "P7-1", "P7-2", "P7-3",
             "P8-0", "P8-1", "P8-2", "P8-3",
+            # Player bots
+            "Player1", "Player2", "Player3", "Player4", "Player5",
+            "Player6", "Player7", "Player8", "Player9", "Player10",
+            "Player11", "Player12", "Player13", "Player14", "Player15",
+            "Player16", "Player17", "Player18", "Player19", "Player20",
+            "Player21", "Player22", "Player23", "Player24", "Player25",
+            "Player26", "Player27", "Player28", "Player29", "Player30",
+            "Player31", "Player32",
         ]
 
         pool = await get_pool()
