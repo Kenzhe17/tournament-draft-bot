@@ -242,13 +242,13 @@ ICON_EMOJIS = {
 STANDARD_EMOJIS = {
     # Ranks
     "Radiant": "👑",
-    "Immortal": "🔱",
-    "Ascendant": "🎯",
-    "Diamond": "💎",
-    "Platinum": "🌪️",
-    "Gold": "🥇",
-    "Silver": "🥈",
-    "Bronze": "🥉",
+    "Immortal": "",
+    "Ascendant": "",
+    "Diamond": "",
+    "Platinum": "",
+    "Gold": "",
+    "Silver": "",
+    "Bronze": "",
     
     # Games
     "game": "🎮",
