@@ -640,14 +640,14 @@ class PvPChoiceView(RPSView):
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"{replace_emojis('🤝')} Ничья! Оба игрока получают возврат ставки.\n"
-                          f"{replace_emojis('{replace_emojis('money')}')} <@{game.initiator_id}>: {balance_change_p1}\n"
-                          f"{replace_emojis('{replace_emojis('money')}')} <@{game.opponent_id}>: {balance_change_p2}")
+                          f"{replace_emojis('money')} <@{game.initiator_id}>: {balance_change_p1}\n"
+                          f"{replace_emojis('money')} <@{game.opponent_id}>: {balance_change_p2}")
         else:
             winner_name = f"<@{winner_id}>"
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"{replace_emojis('🏆')} Победитель: {winner_name}!\n"
-                          f"{replace_emojis('{replace_emojis('money')}')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
+                          f"{replace_emojis('money')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
 
         embed = discord.Embed(
             title=title,
