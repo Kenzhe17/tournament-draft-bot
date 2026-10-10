@@ -476,6 +476,14 @@ class RobGroupJoinButton(discord.ui.Button):
                 )
                 return
 
+            # Проверка: нельзя участвовать в ограблении себя
+            if user_id == self.game_view.victim_id:
+                await interaction.response.send_message(
+                    f"{replace_emojis('❌')} Нельзя участвовать в ограблении самого себя!",
+                    ephemeral=True
+                )
+                return
+
             # Проверка: лимит участников
             if len(self.game_view.members) >= 6:
                 await interaction.response.send_message(
@@ -762,8 +770,19 @@ class RobGroupStartButton(discord.ui.Button):
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
             embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Жертва",
+                value=f"<@{victim_id}>",
+                inline=False
+            )
+            embed.add_field(
                 name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Штраф",
                 value=f"Банда выплатила штраф **{collected}** {get_emoji('money')} жертве.",
+                inline=False
+            )
+            party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+            embed.add_field(
+                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Состав банды ({len(members)})",
+                value=party_list,
                 inline=False
             )
             embed.add_field(

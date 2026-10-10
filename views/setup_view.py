@@ -33,11 +33,12 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
 class PlayerSelectView(discord.ui.View):
     """View с пагинацией для выбора игрока."""
 
-    def __init__(self, players: list[str], guild_id: int, action: str):
+    def __init__(self, players: list[str], guild_id: int, action: str, first_player: str = None):
         super().__init__(timeout=None)
         self.players = sorted(players)
         self.guild_id = guild_id
-        self.action = action  # "delete" or "replace"
+        self.action = action  # "delete", "swap_first", or "swap_second"
+        self.first_player = first_player  # For swap_second, the first selected player
         self.page = 1
         self.per_page = 16
         self.total_pages = (len(self.players) + self.per_page - 1) // self.per_page
@@ -589,14 +590,14 @@ class DeletePlayerButton(discord.ui.Button):
             pass
 
 
-class ReplacePlayerButton(discord.ui.Button):
-    """Кнопка для замены игрока в турнире (только для org)."""
+class SwapPlayersButton(discord.ui.Button):
+    """Кнопка для обмена местами игроков в турнире (только для org)."""
 
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🔄 Заменить",
-            custom_id=f"replace_player:{guild_id}",
+            label="🔄 Поменять",
+            custom_id=f"swap_players:{guild_id}",
         )
         self.guild_id = guild_id
 
@@ -605,7 +606,7 @@ class ReplacePlayerButton(discord.ui.Button):
         if not is_org_check(interaction.user, interaction.guild):
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут заменять игроков."),
+                    replace_emojis("❌ Только организаторы (роль 'org') могут менять местами игроков."),
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -639,140 +640,97 @@ class ReplacePlayerButton(discord.ui.Button):
                 pass
             return
 
-        # Create select menu with pagination
-        view = PlayerSelectView(players, self.guild_id, "replace")
+        # Create select menu for first player
+        view = PlayerSelectView(players, self.guild_id, "swap_first")
         view.refresh_view()
 
-        # Handle selection
-        select = view.children[0]  # The select menu
+        select = view.children[0]
 
         async def select_callback(interaction: discord.Interaction):
             await interaction.response.defer()
+            first_player = select.values[0]
             
-            old_player = select.values[0]
-            # Show modal for new player
-            modal = ReplacePlayerModal(self.guild_id, old_player)
+            # Create second select menu (excluding first player)
+            remaining_players = [p for p in players if p != first_player]
+            view2 = PlayerSelectView(remaining_players, self.guild_id, "swap_second", first_player)
+            view2.refresh_view()
+
+            select2 = view2.children[0]
+
+            async def select2_callback(interaction: discord.Interaction):
+                await interaction.response.defer()
+                second_player = select2.values[0]
+                
+                # Swap the players
+                # Find where both players are
+                player1_pos = {}
+                player2_pos = {}
+                
+                for circle in range(1, 5):
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    if first_player in circle_list:
+                        player1_pos[circle] = circle_list.index(first_player)
+                    if second_player in circle_list:
+                        player2_pos[circle] = circle_list.index(second_player)
+                
+                if not player1_pos or not player2_pos:
+                    await interaction.followup.send(
+                        replace_emojis("❌ Не удалось найти позиции обоих игроков."),
+                        ephemeral=True
+                    )
+                    return
+                
+                # Swap - temporarily remove both, then re-add at swapped positions
+                for circle, idx in player1_pos.items():
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    del circle_list[idx]
+                
+                for circle, idx in player2_pos.items():
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    del circle_list[idx]
+                
+                # Re-add at swapped positions
+                for circle, idx in player1_pos.items():
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    circle_list.insert(idx, second_player)
+                
+                for circle, idx in player2_pos.items():
+                    circle_list = getattr(tournament, f"circle{circle}")
+                    circle_list.insert(idx, first_player)
+                
+                # Save
+                store.set(tournament)
+                
+                # Update message
+                bot: TournamentBot = interaction.client  # type: ignore[assignment]
+                await bot.update_tournament_message(interaction.guild, tournament)
+                
+                await interaction.followup.send(
+                    replace_emojis(f"✅ Игроки `{first_player}` и `{second_player}` успешно поменялись местами!"),
+                    ephemeral=True
+                )
+
+            select2.callback = select2_callback
+
             try:
-                await interaction.followup.send_modal(modal)
-            except discord.NotFound:
+                await interaction.followup.send(
+                    f"Выберите игрока для обмена с `{first_player}`:",
+                    view=view2,
+                    ephemeral=True
+                )
+            except discord.InteractionResponded:
                 pass
 
         select.callback = select_callback
 
         try:
             await interaction.response.send_message(
-                "Выберите игрока для замены:",
+                "Выберите первого игрока для обмена:",
                 view=view,
                 ephemeral=True
             )
         except discord.InteractionResponded:
-            pass  # Interaction уже был отвечен
-
-
-class ReplacePlayerModal(discord.ui.Modal, title="Заменить игрока"):
-    """Модальное окно для замены игрока."""
-
-    def __init__(self, guild_id: int, old_player: str):
-        super().__init__()
-        self.guild_id = guild_id
-        self.old_player = old_player
-
-        self.new_player_input = discord.ui.TextInput(
-            label="Новый игрок (@упоминание)",
-            placeholder="@NewPlayer",
-            required=True,
-            max_length=50,
-        )
-        self.add_item(self.new_player_input)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
-        if not tournament or tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Handle @mentions - extract display name if it's a mention
-        new_name_input = self.new_player_input.value.strip()
-        old_name = self.old_player
-
-        # Check if new_player is a mention and extract the name
-        if new_name_input.startswith("<@") and new_name_input.endswith(">"):
-            user_id = int(new_name_input.strip("<@!>"))
-            member = interaction.guild.get_member(user_id)
-            if member:
-                from utils.cosmetics import clean_nickname
-                new_name = clean_nickname(member.display_name)
-                new_user_id = user_id
-            else:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Новый игрок не найден на сервере."),
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-        else:
-            # Use the input directly as the player name
-            from utils.cosmetics import clean_nickname
-            new_name = clean_nickname(new_name_input)
-            new_user_id = 0
-            # Try to find user_id by name
-            for member in interaction.guild.members:
-                if clean_nickname(member.display_name) == new_name:
-                    new_user_id = member.id
-                    break
-
-        # Check if old player exists
-        if tournament.formation_mode == FormationMode.RANDOM:
-            if old_name not in tournament.players_pool:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Игрок `{old_name}` не найден.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-
-            # Replace in pool
-            idx = tournament.players_pool.index(old_name)
-            tournament.players_pool[idx] = new_name
-            tournament.player_user_ids[new_name] = new_user_id
-            if old_name in tournament.player_user_ids:
-                del tournament.player_user_ids[old_name]
-        else:
-            if old_name not in tournament.all_players:
-                await interaction.response.send_message(
-                    f"{replace_emojis('❌')} Игрок `{old_name}` не найден.",
-                    ephemeral=True
-                )
-                asyncio.create_task(_delete_ephemeral_later(interaction))
-                return
-
-            # Replace in circles
-            for circle in range(1, 5):
-                circle_list = getattr(tournament, f"circle{circle}")
-                if old_name in circle_list:
-                    idx = circle_list.index(old_name)
-                    circle_list[idx] = new_name
-                    break
-
-            # Update player_user_ids
-            tournament.player_user_ids[new_name] = new_user_id
-            if old_name in tournament.player_user_ids:
-                del tournament.player_user_ids[old_name]
-
-        store.set(tournament)
-
-        bot: TournamentBot = interaction.client  # type: ignore[assignment]
-        await bot.update_tournament_message(interaction.guild, tournament)
-
-        await interaction.response.send_message(
-            f"{replace_emojis('✅')} Игрок `{old_name}` заменен на `{new_name}`.",
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
+            pass
 
 
 class AdminAddButton(discord.ui.Button):
@@ -1173,8 +1131,9 @@ class SetupView(discord.ui.View):
         delete_button = DeletePlayerButton(tournament.guild_id)
         self.add_item(delete_button)
 
-        replace_button = ReplacePlayerButton(tournament.guild_id)
-        self.add_item(replace_button)
+        # Add swap button
+        swap_button = SwapPlayersButton(tournament.guild_id)
+        self.add_item(swap_button)
 
         # Add exit button
         exit_button = ExitButton(tournament.guild_id)
