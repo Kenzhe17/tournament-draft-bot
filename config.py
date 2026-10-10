@@ -341,14 +341,26 @@ STANDARD_EMOJIS = {
     "emoji_special_case": "✨",
 
     # Shop & UI
-    "tag": "",
-    "guild_tag": "",
-    "settings": "",
-    "eye": "",
-    "arrow_left": "",
-    "arrow_right": "",
-    "room": "",
-    "winner": "",
+    "tag": os.getenv("EMOJI_TAG", ""),
+    "guild_tag": os.getenv("EMOJI_GUILD_TAG", ""),
+    "settings": os.getenv("EMOJI_SETTINGS", ""),
+    "eye": os.getenv("EMOJI_EYE", ""),
+    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
+    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
+    "room": os.getenv("EMOJI_ROOM", ""),
+    "winner": os.getenv("EMOJI_WINNER", "")
+}
+
+GAME_EMOJIS = {
+    # Shop & UI
+    "tag": os.getenv("EMOJI_TAG", ""),
+    "guild_tag": os.getenv("EMOJI_GUILD_TAG", ""),
+    "settings": os.getenv("EMOJI_SETTINGS", ""),
+    "eye": os.getenv("EMOJI_EYE", ""),
+    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
+    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
+    "room": os.getenv("EMOJI_ROOM", ""),
+    "winner": os.getenv("EMOJI_WINNER", ""),
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -381,6 +393,29 @@ def replace_emojis(text: str) -> str:
     """Replace all standard emojis in text with custom emojis if IDs are available."""
     if not text:
         return text
+
+    # First, handle :emoji_name: syntax
+    import re
+    pattern = r':([a-zA-Z0-9_]+):'
+    
+    def replace_custom_syntax(match):
+        emoji_name = match.group(1)
+        if emoji_name in GAME_EMOJIS:
+            custom_id = GAME_EMOJIS[emoji_name]
+            if custom_id:
+                return f"<:{emoji_name}:{custom_id}>"
+        elif emoji_name in RANK_EMOJIS:
+            custom_id = RANK_EMOJIS[emoji_name]
+            if custom_id:
+                return f"<:{emoji_name}:{custom_id}>"
+        elif emoji_name in ICON_EMOJIS:
+            custom_id = ICON_EMOJIS[emoji_name]
+            if custom_id:
+                return f"<:{emoji_name}:{custom_id}>"
+        # Fallback to standard emoji or keep original
+        return STANDARD_EMOJIS.get(emoji_name, match.group(0))
+    
+    text = re.sub(pattern, replace_custom_syntax, text)
 
     # Emoji mapping: standard emoji -> custom emoji name
     emoji_map = {
@@ -417,6 +452,7 @@ def replace_emojis(text: str) -> str:
         "👁️": "eye",
         "🏷️": "tag",
         "🚪": "room",
+        "guild_tag": "guild_tag",
 
         # Emotions
         "🔥": "fire",
