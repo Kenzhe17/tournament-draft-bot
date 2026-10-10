@@ -89,18 +89,10 @@ GAME_EMOJIS = {
     "light_bulb": os.getenv("EMOJI_LIGHT_BULB", ""),
     "flash": os.getenv("EMOJI_FLASH", ""),
     
-# Economy
+    # Economy
     "money": os.getenv("EMOJI_MONEY", ""),
     "shop": os.getenv("EMOJI_SHOP", ""),
     "gift": os.getenv("EMOJI_GIFT", ""),
-}
-
-# Debug: Check if EMOJI_MONEY is loaded
-import logging
-config_logger = logging.getLogger(__name__)
-money_id = os.getenv("EMOJI_MONEY", "")
-config_logger.info(f"EMOJI_MONEY env var loaded: '{money_id}' (type: {type(money_id)})")
-config_logger.info(f"GAME_EMOJIS['money'] after load: '{GAME_EMOJIS.get('money', 'NOT FOUND')}'")
     
     # Interface
     "success": os.getenv("EMOJI_SUCCESS", ""),
