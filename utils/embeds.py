@@ -1167,7 +1167,7 @@ async def build_winner_embed(
         f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player} ({best_kd:.2f})\n"
         f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player} ({best_avg:.1f})\n"
         f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player} ({best_kills})\n"
-        f"{replace_emojis('sub_directory')} **Max Actual Payout:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
+        f"{replace_emojis('sub_directory')} **Лучший Лудик:** {max_payout_player} ({max_payout:,} {replace_emojis('money')})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
