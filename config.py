@@ -89,7 +89,7 @@ GAME_EMOJIS = {
     "light_bulb": os.getenv("EMOJI_LIGHT_BULB", ""),
     "flash": os.getenv("EMOJI_FLASH", ""),
     
-    # Economy
+# Economy
     "money": os.getenv("EMOJI_MONEY", ""),
     "shop": os.getenv("EMOJI_SHOP", ""),
     "gift": os.getenv("EMOJI_GIFT", ""),
@@ -416,6 +416,7 @@ def get_emoji(emoji_name: str) -> str:
     # Check game emojis
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
+        logger.info(f"Game emoji {emoji_name} found with ID: '{custom_id}' (type: {type(custom_id)})")
         if custom_id:
             logger.info(f"Using custom emoji {emoji_name} with ID {custom_id}")
             return f"<:{emoji_name}:{custom_id}>"
