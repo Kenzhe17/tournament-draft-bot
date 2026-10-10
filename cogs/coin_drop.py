@@ -9,11 +9,18 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import get_emoji
+from config import get_emoji, BOT_OWNER_ID
 from storage.user_balance_store import user_balance_store
 
 if TYPE_CHECKING:
     from bot import TournamentBot
+
+
+# Custom check for bot owner
+def is_bot_owner():
+    def predicate(interaction: discord.Interaction):
+        return interaction.user.id == BOT_OWNER_ID
+    return app_commands.check(predicate)
 
 
 # Глобальный словарь для отслеживания количества сообщений по каналам: {channel_id: message_count}
@@ -93,6 +100,7 @@ class RaffleDropView(discord.ui.View):
             description=(
                 f"{get_emoji('a_sparkle')} В чате разыгрывается мешок с монетами!\n"
                 f"{get_emoji('white_arrow')} Нажмите кнопку, чтобы участвовать в розыгрыше.\n"
+                f"{get_emoji('white_arrow')} Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
                 f"{get_emoji('white_arrow')} Участников: **`{len(self.participants)}`**\n\n"
                 f"{get_emoji('white_dot')} *Победитель решится случайно через 60 секунд!*"
             ),
@@ -198,7 +206,7 @@ class CoinDropCog(commands.Cog):
             if not view.participants:
                 no_p_embed = discord.Embed(
                     title=f"{get_emoji('a_star')} **ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
-                    description=f"{get_emoji('white_dot')} Никто не успел принять участие за 60 секунд. Монеты сгорели!",
+                    description=f"{get_emoji('white_dot')} Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
                     color=0xED4245
                 )
                 try:
@@ -234,8 +242,8 @@ class CoinDropCog(commands.Cog):
                         pass
 
     # Админ-команда для принудительного вызова ивента
-    @app_commands.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Админ)")
-    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
+    @is_bot_owner()
     async def force_drop(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.trigger_drop(interaction.channel)
