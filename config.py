@@ -29,6 +29,9 @@ REDIS_URL = os.getenv("REDIS_URL", "")
 # Organizer role ID
 ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 
+# Guild ID for server tag checking
+GUILD_ID = int(os.getenv("GUILD_ID", "1196165488565289012"))
+
 # Welcome banner URL
 WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430577132961823/image.png?ex=6abcdbc9&is=6abb8a49&hm=668a5650450e51905a99ec6ed624eb0cc51c019d91c786d228e5e2f821fc5260&")
 

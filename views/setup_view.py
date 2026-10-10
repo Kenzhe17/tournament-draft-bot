@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from config import replace_emojis
+from config import replace_emojis, GUILD_ID
 
 import asyncio
 import logging
@@ -23,12 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def has_guild_tag(user: discord.Member) -> bool:
-    """Check if user has the guild tag 'r!z3' in their display name, nick, or username (case-insensitive)."""
-    tag = "r!z3"
-    display = user.display_name.lower()
-    nick = user.nick.lower() if user.nick else ""
-    name = user.name.lower()
-    return tag in display or tag in nick or tag in name
+    """Check if user has the guild tag for our server (primary_guild check)."""
+    return user.primary_guild and user.primary_guild.id == GUILD_ID
 
 
 async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float = 4.0) -> None:
