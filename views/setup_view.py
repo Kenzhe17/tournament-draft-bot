@@ -137,7 +137,7 @@ class CircleSelectButton(discord.ui.Button):
                 # Allow users with guild tag to join if circle has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить в круги со свободными местами.",
+                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить в круги со свободными местами.",
                         ephemeral=True
                     )
                     return
@@ -148,7 +148,7 @@ class CircleSelectButton(discord.ui.Button):
                     limit = tournament.circle_limit(self.circle)
                     if len(circle_list) >= limit:
                         await interaction.response.send_message(
-                            f"{replace_emojis('❌')} Этот круг заполнен. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить только в круги со свободными местами.",
+                            f"{replace_emojis('❌')} Этот круг заполнен. Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить только в круги со свободными местами.",
                             ephemeral=True
                         )
                         return
@@ -259,7 +259,7 @@ class JoinPoolButton(discord.ui.Button):
                 # Allow users with guild tag to join if pool has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
-                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом {get_emoji('guild_tag')} r!z3 могут входить если есть свободные места.",
+                        f"{replace_emojis('❌')} Регистрация закрыта. Участники с тегом r!z3 {get_emoji('guild_tag')} могут входить если есть свободные места.",
                         ephemeral=True
                     )
                     return
