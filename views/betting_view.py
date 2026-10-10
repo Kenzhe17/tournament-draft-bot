@@ -313,7 +313,7 @@ class BettingButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, tournament: Tournament):
         super().__init__(
-            label="💰 Сделать ставку",
+            label=replace_emojis("money") + " Сделать ставку",
             style=discord.ButtonStyle.primary,
             custom_id=f"betting_main:{guild_id}"
         )
@@ -325,7 +325,7 @@ class BettingButton(discord.ui.Button):
         match_view = MatchSelectView(self.guild_id, self.tournament)
 
         embed = discord.Embed(
-            title=replace_emojis("💰 Ставки на турнир"),
+            title=replace_emojis("money") + " Ставки на турнир",
             description="Выберите матч для ставки:",
             color=discord.Color.gold()
         )

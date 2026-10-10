@@ -192,7 +192,7 @@ class PvEChoiceView(RPSView):
             title=title,
             description=f"Ваш ход: {move.emoji} {move.display_name}\n"
                        f"Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
-                       f"{replace_emojis('💰')} Изменение баланса: {balance_change}",
+                       f"{replace_emojis('money')} Изменение баланса: {balance_change}",
             color=discord.Color.blue()
         )
 
@@ -481,7 +481,7 @@ class PvPChallengeView(RPSView):
         embed = discord.Embed(
             title=replace_emojis("⚔️ Выберите ваш ход"),
             description=f"<@{self.initiator_id}> vs <@{self.opponent_id}>\n\n"
-                          f"{replace_emojis('💰')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                          f"{replace_emojis('money')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
                           f"{replace_emojis('⏱️')} У вас есть 40 секунд чтобы сделать выбор!\n\n"
                           f"Сделайте выбор. Результат будет опубликован здесь!",
             color=discord.Color.blue()
@@ -640,14 +640,14 @@ class PvPChoiceView(RPSView):
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"{replace_emojis('🤝')} Ничья! Оба игрока получают возврат ставки.\n"
-                          f"{replace_emojis('💰')} <@{game.initiator_id}>: {balance_change_p1}\n"
-                          f"{replace_emojis('💰')} <@{game.opponent_id}>: {balance_change_p2}")
+                          f"{replace_emojis('{replace_emojis('money')}')} <@{game.initiator_id}>: {balance_change_p1}\n"
+                          f"{replace_emojis('{replace_emojis('money')}')} <@{game.opponent_id}>: {balance_change_p2}")
         else:
             winner_name = f"<@{winner_id}>"
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
                           f"{replace_emojis('🏆')} Победитель: {winner_name}!\n"
-                          f"{replace_emojis('💰')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
+                          f"{replace_emojis('{replace_emojis('money')}')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
 
         embed = discord.Embed(
             title=title,
@@ -809,7 +809,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                 embed = discord.Embed(
                     title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
                     description=f"<@{self.initiator_id}> вызывает <@{self.opponent_id}> на дуэль!\n\n"
-                                  f"{replace_emojis('💰')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                                  f"{replace_emojis('{replace_emojis('money')}')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
                                   f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
                                   f"<@{self.opponent_id}>, примите вызов в течение 60 секунд.",
                     color=discord.Color.gold()

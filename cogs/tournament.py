@@ -1212,7 +1212,7 @@ class TournamentCog(commands.Cog):
             desc += f"\n{replace_emojis('sub_directory')} {replace_emojis('white_arrow')} **Худшая серия поражений:** <@{best_loss_streak_20.user_id}> `({best_loss_streak_20.best_loss_streak} подряд)`"
 
         # Financial records
-        desc += f"\n\n{replace_emojis('white_dot')} **💰 Финансовые рекорды:**"
+        desc += f"\n\n{replace_emojis('white_dot')} **{replace_emojis('money')} Финансовые рекорды:**"
         if richest_player:
             desc += f"\n{replace_emojis('sub_middle')} {replace_emojis('white_arrow')} **Богатейший игрок:** <@{richest_player.user_id}> `({max_balance:,}` {replace_emojis('money')}`)`"
         if best_bettor:

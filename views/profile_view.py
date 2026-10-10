@@ -181,7 +181,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Экономика
         description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} 💰")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} " + replace_emojis("money"))
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 

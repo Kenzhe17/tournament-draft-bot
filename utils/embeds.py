@@ -110,7 +110,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
             ]
         },
         "economy": {
-            "emoji": "💰",
+            "emoji": replace_emojis("money"),
             "title": "Экономика",
             "color": discord.Color.dark_green(),
             "commands": [

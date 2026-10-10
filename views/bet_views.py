@@ -260,7 +260,7 @@ class BetButton(Button):
         # Check if betting is open for this phase
         is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
-            label="💰 Сделать ставку",
+            label=replace_emojis("money") + " Сделать ставку",
             style=discord.ButtonStyle.success,
             custom_id="place_bet",
             disabled=not is_open
