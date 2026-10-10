@@ -809,7 +809,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                 embed = discord.Embed(
                     title=replace_emojis("⚔️ Вызов на дуэль: Камень-Ножницы-Бумага"),
                     description=f"<@{self.initiator_id}> вызывает <@{self.opponent_id}> на дуэль!\n\n"
-                                  f"{replace_emojis('{replace_emojis('money')}')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                                  f"{replace_emojis('money')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
                                   f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
                                   f"<@{self.opponent_id}>, примите вызов в течение 60 секунд.",
                     color=discord.Color.gold()
