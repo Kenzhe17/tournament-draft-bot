@@ -370,6 +370,34 @@ class TournamentBot(commands.Bot):
         from utils.logging import log_guild_join
         await log_guild_join(self, guild)
 
+    async def on_member_join(self, member: discord.Member) -> None:
+        """Send welcome message when a member joins the server."""
+        WELCOME_CHANNEL_ID = 1200125075156910181
+
+        # Only send for the specific server
+        if member.guild.id != 1196165488565289012:
+            return
+
+        # Get the welcome channel
+        channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
+        if not channel:
+            try:
+                channel = await member.guild.fetch_channel(WELCOME_CHANNEL_ID)
+            except discord.HTTPException:
+                logger.error(f"Welcome channel {WELCOME_CHANNEL_ID} not found")
+                return
+
+        # Calculate member count (current count + 1 for the new member)
+        member_count = member.guild.member_count + 1
+
+        # Send plain text welcome message
+        await channel.send(
+            f"₊˚⊹♡ **Добро пожаловать на сервер**, {member.mention}!\n\n"
+            f"ты стал(а) нашим **{member_count:,}-м** участником ♡\n"
+            f"чувствуй себя как дома, поприветствуй всех и заглядывай в чат!\n\n"
+            f"୨୧ надеемся, тебе у нас понравится ୨୧"
+        )
+
 
 def main() -> None:
     """Запуск бота."""
