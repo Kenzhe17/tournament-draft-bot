@@ -559,7 +559,6 @@ class DeletePlayerButton(discord.ui.Button):
 
         async def select_callback(interaction: discord.Interaction):
             await interaction.response.defer()
-            
             player_name = select.values[0]
             
             # Reload tournament from store to get fresh data
@@ -680,7 +679,6 @@ class SwapPlayersButton(discord.ui.Button):
         select = view.children[0]
 
         async def select_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
             first_player = select.values[0]
             
             # Create second select menu (excluding first player)
@@ -691,13 +689,12 @@ class SwapPlayersButton(discord.ui.Button):
             select2 = view2.children[0]
 
             async def select2_callback(interaction: discord.Interaction):
-                await interaction.response.defer()
                 second_player = select2.values[0]
                 
                 # Reload tournament from store to get fresh data
                 tournament = store.get(self.guild_id)
                 if not tournament:
-                    await interaction.followup.send(
+                    await interaction.response.send_message(
                         replace_emojis("❌ Турнир не найден."),
                         ephemeral=True
                     )
@@ -716,7 +713,7 @@ class SwapPlayersButton(discord.ui.Button):
                         player2_pos[circle] = circle_list.index(second_player)
                 
                 if not player1_pos or not player2_pos:
-                    await interaction.followup.send(
+                    await interaction.response.send_message(
                         replace_emojis("❌ Не удалось найти позиции обоих игроков."),
                         ephemeral=True
                     )
@@ -747,7 +744,7 @@ class SwapPlayersButton(discord.ui.Button):
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
                 await bot.update_tournament_message(interaction.guild, tournament)
                 
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis(f"✅ Игроки `{first_player}` и `{second_player}` успешно поменялись местами!"),
                     ephemeral=True
                 )
@@ -755,7 +752,7 @@ class SwapPlayersButton(discord.ui.Button):
             select2.callback = select2_callback
 
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"Выберите игрока для обмена с `{first_player}`:",
                     view=view2,
                     ephemeral=True
@@ -832,7 +829,6 @@ class MovePlayerButton(discord.ui.Button):
         select = view.children[0]
 
         async def select_callback(interaction: discord.Interaction):
-            await interaction.response.defer()
             player = select.values[0]
             
             # Create circle select menu
@@ -853,13 +849,12 @@ class MovePlayerButton(discord.ui.Button):
             view2.add_item(circle_select)
             
             async def circle_callback(interaction: discord.Interaction):
-                await interaction.response.defer()
                 target_circle = circle_select.values[0]
                 
                 # Reload tournament from store to get fresh data
                 tournament = store.get(self.guild_id)
                 if not tournament:
-                    await interaction.followup.send(
+                    await interaction.response.send_message(
                         replace_emojis("❌ Турнир не найден."),
                         ephemeral=True
                     )
@@ -893,7 +888,7 @@ class MovePlayerButton(discord.ui.Button):
                     "circle4": "Круг 4",
                 }
                 
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     replace_emojis(f"✅ Игрок `{player}` перемещён в {circle_names[target_circle]}!"),
                     ephemeral=True
                 )
@@ -901,7 +896,7 @@ class MovePlayerButton(discord.ui.Button):
             circle_select.callback = circle_callback
 
             try:
-                await interaction.followup.send(
+                await interaction.response.send_message(
                     f"Выберите круг для перемещения игрока `{player}`:",
                     view=view2,
                     ephemeral=True
