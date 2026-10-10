@@ -42,6 +42,10 @@ class PlayerStats:
     total_earnings: int = 0  # Total coins earned
     tournament_participations: int = 0
     description: str = ""  # User profile description
+    
+    # Daily tournament coin limit
+    daily_tournament_coins: int = 0  # Coins earned from tournaments today
+    daily_coins_date: str = ""  # Date string for daily tracking (YYYY-MM-DD)
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализация в словарь."""
@@ -74,6 +78,8 @@ class PlayerStats:
             "total_earnings": self.total_earnings,
             "tournament_participations": self.tournament_participations,
             "description": self.description,
+            "daily_tournament_coins": self.daily_tournament_coins,
+            "daily_coins_date": self.daily_coins_date,
         }
 
     @classmethod
@@ -109,6 +115,8 @@ class PlayerStats:
             total_earnings=data.get("total_earnings", 0),
             tournament_participations=data.get("tournament_participations", 0),
             description=data.get("description", ""),
+            daily_tournament_coins=data.get("daily_tournament_coins", 0),
+            daily_coins_date=data.get("daily_coins_date", ""),
         )
 
     @property

@@ -180,6 +180,17 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # Add daily tournament coin limit columns
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS daily_tournament_coins INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS daily_coins_date TEXT DEFAULT ''")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create user_balance table for economy system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (
@@ -187,17 +198,6 @@ async def init_db() -> None:
                 user_id BIGINT,
                 balance INTEGER DEFAULT 100,
                 PRIMARY KEY (guild_id, user_id)
-            )
-        """)
-
-        # Create daily_earnings table for daily coin limit
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS daily_earnings (
-                guild_id BIGINT,
-                user_id BIGINT,
-                date DATE DEFAULT CURRENT_DATE,
-                earned_amount INTEGER DEFAULT 0,
-                PRIMARY KEY (guild_id, user_id, date)
             )
         """)
 

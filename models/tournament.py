@@ -939,8 +939,11 @@ class Tournament:
         """Распределить награды всем участникам турнира. Возвращает словарь {player_name: earnings}."""
         from storage.user_balance_store import user_balance_store
         from storage.player_stats_store import player_stats_store
+        from datetime import datetime
 
         earnings_map = {}
+        today = datetime.now().strftime("%Y-%m-%d")
+        DAILY_LIMIT = 500
 
         # Distribute to all players based on their final position
         for player_name, user_id in self.player_user_ids.items():
@@ -960,16 +963,35 @@ class Tournament:
 
             # Calculate earnings
             earnings = self.calculate_earnings(player_name, position)
-            earnings_map[player_name] = earnings
-
-            # Add to balance with daily limit
-            actual_earned = await user_balance_store.add_tournament_earnings(guild_id, user_id, earnings)
-            earnings_map[player_name] = actual_earned  # Track actual amount earned (capped by daily limit)
-
-            # Update player stats total earnings and XP (use actual earned amount)
+            
+            # Check daily limit
             stats = await player_stats_store.get(guild_id, user_id)
             if stats:
-                stats.total_earnings += actual_earned  # Track actual earned coins
+                # Reset daily counter if it's a new day
+                if stats.daily_coins_date != today:
+                    stats.daily_tournament_coins = 0
+                    stats.daily_coins_date = today
+                
+                # Calculate remaining allowance
+                remaining = DAILY_LIMIT - stats.daily_tournament_coins
+                if remaining <= 0:
+                    earnings = 0  # Already hit daily limit
+                elif earnings > remaining:
+                    earnings = remaining  # Cap at remaining allowance
+                
+                # Update daily counter
+                stats.daily_tournament_coins += earnings
+                await player_stats_store.set(stats)
+            
+            earnings_map[player_name] = earnings
+
+            # Add to balance (only if earnings > 0)
+            if earnings > 0:
+                await user_balance_store.add_balance(guild_id, user_id, earnings)
+
+            # Update player stats total earnings and XP
+            if stats:
+                stats.total_earnings += earnings
                 stats.tournament_participations += 1
 
                 # Add XP rewards
