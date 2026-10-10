@@ -392,6 +392,13 @@ GAME_EMOJIS = {
     "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
 }
 
+# Debug: Log EMOJI_MONEY value
+import logging
+logger = logging.getLogger(__name__)
+money_value = os.getenv("EMOJI_MONEY", "NOT_SET")
+logger.info(f"EMOJI_MONEY env var: '{money_value}'")
+logger.info(f"GAME_EMOJIS['money']: '{GAME_EMOJIS.get('money', 'NOT_IN_DICT')}'")
+
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
     import logging
