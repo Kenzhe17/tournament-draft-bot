@@ -274,21 +274,6 @@ STANDARD_EMOJIS = {
     "fire": "🔥",
     "ice": "❄️",
 
-    # Special
-    "white_dot": "",
-    "sub_directory": "",
-    "sub_middle": "",
-    "room": "",
-    "white_arrow": "",
-    "arrow_left": "",
-    "arrow_right": "",
-    "settings": "",
-    "winner": "",
-    "a_sparkle": "",
-    "a_star": "",
-    "a_triple_dots": "",
-    "a_dot_smaller": "",
-
     # Case emojis
     "case_basic": "",
     "case_premium": "",
@@ -357,6 +342,16 @@ GAME_EMOJIS = {
     "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
     "room": os.getenv("EMOJI_ROOM", ""),
     "winner": os.getenv("EMOJI_WINNER", ""),
+    
+    # Special UI emojis
+    "white_dot": os.getenv("EMOJI_WHITE_DOT", ""),
+    "sub_directory": os.getenv("EMOJI_SUB_DIRECTORY", ""),
+    "sub_middle": os.getenv("EMOJI_SUB_MIDDLE", ""),
+    "white_arrow": os.getenv("EMOJI_WHITE_ARROW", ""),
+    "a_sparkle": os.getenv("EMOJI_A_SPARKLE", ""),
+    "a_star": os.getenv("EMOJI_A_STAR", ""),
+    "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
+    "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
 }
 
 def get_emoji(emoji_name: str) -> str:
