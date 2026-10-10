@@ -40,7 +40,7 @@ class PlayerSelectView(discord.ui.View):
     """View с пагинацией для выбора игрока."""
 
     def __init__(self, players: list[str], guild_id: int, action: str, first_player: str = None):
-        super().__init__(timeout=None)
+        super().__init__(timeout=180)  # 3 minutes timeout instead of None
         self.players = sorted(players)
         self.guild_id = guild_id
         self.action = action  # "delete", "swap_first", or "swap_second"
@@ -691,10 +691,13 @@ class SwapPlayersButton(discord.ui.Button):
             async def select2_callback(interaction: discord.Interaction):
                 second_player = select2.values[0]
                 
+                # Acknowledge the interaction immediately
+                await interaction.response.defer()
+                
                 # Reload tournament from store to get fresh data
                 tournament = store.get(self.guild_id)
                 if not tournament:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis("❌ Турнир не найден."),
                         ephemeral=True
                     )
@@ -713,7 +716,7 @@ class SwapPlayersButton(discord.ui.Button):
                         player2_pos[circle] = circle_list.index(second_player)
                 
                 if not player1_pos or not player2_pos:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis("❌ Не удалось найти позиции обоих игроков."),
                         ephemeral=True
                     )
@@ -744,7 +747,7 @@ class SwapPlayersButton(discord.ui.Button):
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
                 await bot.update_tournament_message(interaction.guild, tournament)
                 
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis(f"✅ Игроки `{first_player}` и `{second_player}` успешно поменялись местами!"),
                     ephemeral=True
                 )
@@ -851,10 +854,13 @@ class MovePlayerButton(discord.ui.Button):
             async def circle_callback(interaction: discord.Interaction):
                 target_circle = circle_select.values[0]
                 
+                # Acknowledge the interaction immediately
+                await interaction.response.defer()
+                
                 # Reload tournament from store to get fresh data
                 tournament = store.get(self.guild_id)
                 if not tournament:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         replace_emojis("❌ Турнир не найден."),
                         ephemeral=True
                     )
@@ -888,7 +894,7 @@ class MovePlayerButton(discord.ui.Button):
                     "circle4": "Круг 4",
                 }
                 
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     replace_emojis(f"✅ Игрок `{player}` перемещён в {circle_names[target_circle]}!"),
                     ephemeral=True
                 )
