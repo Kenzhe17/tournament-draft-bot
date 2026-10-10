@@ -83,7 +83,8 @@ class SpeedDropView(discord.ui.View):
             ),
             color=0x2ECC71
         )
-        await interaction.edit_original_response(embed=result_embed, view=None)
+        await interaction.edit_original_response(view=None)
+        await interaction.followup.send(embed=result_embed)
 
 
 # 2. Режим «Розыгрыш / 60 секунд» (Raffle Drop)
@@ -209,7 +210,8 @@ class CoinDropCog(commands.Cog):
                     color=0xED4245
                 )
                 try:
-                    await msg.edit(embed=no_p_embed, view=None)
+                    await msg.edit(view=None)
+                    await msg.reply(embed=no_p_embed)
                 except discord.HTTPException:
                     pass
             else:
@@ -236,7 +238,8 @@ class CoinDropCog(commands.Cog):
                         color=0x2ECC71
                     )
                     try:
-                        await msg.edit(embed=result_embed, view=None)
+                        await msg.edit(view=None)
+                        await msg.reply(embed=result_embed)
                     except discord.HTTPException:
                         pass
 

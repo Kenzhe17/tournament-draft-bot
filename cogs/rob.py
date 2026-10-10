@@ -232,7 +232,8 @@ class RobStartButton(discord.ui.Button):
                         inline=False
                     )
 
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message(view=None)
+                    await interaction.followup.send(embed=embed)
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
@@ -264,7 +265,8 @@ class RobStartButton(discord.ui.Button):
                 inline=False
             )
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(view=None)
+            await interaction.followup.send(embed=embed)
 
         # Установить cooldown только если поймали (провал)
         if not success and self.robber_id != BOT_OWNER_ID:
@@ -761,7 +763,8 @@ class RobGroupStartButton(discord.ui.Button):
             )
             embed.set_footer(text=f"{get_emoji('white_dot')} Монеты в сейфе жертвы защищены от ограбления.")
             
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(view=None)
+            await interaction.followup.send(embed=embed)
         else:
             # Failure embed
             embed = discord.Embed(
@@ -791,7 +794,8 @@ class RobGroupStartButton(discord.ui.Button):
                 inline=False
             )
             
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message(view=None)
+            await interaction.followup.send(embed=embed)
             
             # Установить cooldown для всех участников только если поймали (провал)
             for member_id in members:
