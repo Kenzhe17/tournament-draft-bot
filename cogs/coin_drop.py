@@ -99,7 +99,6 @@ class RaffleDropView(discord.ui.View):
             title=f"{get_emoji('a_star')} **СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
             description=(
                 f"{get_emoji('a_sparkle')} В чате разыгрывается мешок с монетами!\n"
-                f"{get_emoji('white_arrow')} Нажмите кнопку, чтобы участвовать в розыгрыше.\n"
                 f"{get_emoji('white_arrow')} Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
                 f"{get_emoji('white_arrow')} Участников: **`{len(self.participants)}`**\n\n"
                 f"{get_emoji('white_dot')} *Победитель решится случайно через 60 секунд!*"
