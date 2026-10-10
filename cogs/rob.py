@@ -305,10 +305,10 @@ class RobCog(commands.Cog):
         view.add_item(RobGroupCancelButton(interaction.guild_id, view))
 
         embed = view.build_embed()
-        message = await interaction.response.send_message(embed=embed, view=view)
-        
+        await interaction.response.send_message(embed=embed, view=view)
+
         # Сохранить message_id и original_message для лобби
-        original_response = await message.original_response()
+        original_response = await interaction.original_response()
         view.message_id = original_response.id
         view.original_message = original_response
         _robgroup_lobbies[view.message_id] = {
@@ -682,9 +682,8 @@ class RobGroupStartButton(discord.ui.Button):
                 ),
                 color=0x2B2D31
             )
-            
-            await interaction.response.edit_message(view=None)
-            await interaction.followup.send(embed=embed)
+
+            await interaction.response.edit_message(embed=embed, view=None)
         else:
             # Failure embed
             party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
@@ -698,9 +697,8 @@ class RobGroupStartButton(discord.ui.Button):
                 ),
                 color=0x2B2D31
             )
-            
-            await interaction.response.edit_message(view=None)
-            await interaction.followup.send(embed=embed)
+
+            await interaction.response.edit_message(embed=embed, view=None)
             
             # Установить cooldown для всех участников только если поймали (провал)
             for member_id in members:
