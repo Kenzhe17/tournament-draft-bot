@@ -185,6 +185,31 @@ GAME_EMOJIS = {
     "icon_zzz": os.getenv("EMOJI_ICON_ZZZ", ""),
 }
 
+# Custom emoji IDs for icons/profile elements
+ICON_EMOJIS = {
+    "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
+    "icon_paw": os.getenv("EMOJI_ICON_PAW", ""),
+    "icon_bluestacks": os.getenv("EMOJI_ICON_BLUESTACKS", ""),
+    "icon_brazil_flag": os.getenv("EMOJI_ICON_BRAZIL_FLAG", ""),
+    "icon_japan_flag": os.getenv("EMOJI_ICON_JAPAN_FLAG", ""),
+    "icon_germany_flag": os.getenv("EMOJI_ICON_GERMANY_FLAG", ""),
+    "icon_spain_flag": os.getenv("EMOJI_ICON_SPAIN_FLAG", ""),
+    "icon_gray_cat": os.getenv("EMOJI_ICON_GRAY_CAT", ""),
+    "icon_teacup": os.getenv("EMOJI_ICON_TEACUP", ""),
+    "icon_ribbon": os.getenv("EMOJI_ICON_RIBBON", ""),
+    "icon_18plus": os.getenv("EMOJI_ICON_18PLUS", ""),
+    "icon_heart": os.getenv("EMOJI_ICON_HEART", ""),
+    "icon_white_sword": os.getenv("EMOJI_ICON_WHITE_SWORD", ""),
+    "icon_v_badge": os.getenv("EMOJI_ICON_V_BADGE", ""),
+    "icon_cards": os.getenv("EMOJI_ICON_CARDS", ""),
+    "icon_cat_ears": os.getenv("EMOJI_ICON_CAT_EARS", ""),
+    "icon_bunny": os.getenv("EMOJI_ICON_BUNNY", ""),
+    "icon_wing": os.getenv("EMOJI_ICON_WING", ""),
+    "icon_black_rose": os.getenv("EMOJI_ICON_BLACK_ROSE", ""),
+    "icon_fuck_you": os.getenv("EMOJI_ICON_FUCK_YOU", ""),
+    "icon_zzz": os.getenv("EMOJI_ICON_ZZZ", ""),
+}
+
 # Standard emojis as fallback when custom emojis are not set
 STANDARD_EMOJIS = {
     # Ranks
@@ -275,16 +300,10 @@ STANDARD_EMOJIS = {
     "ice": "❄️",
 
     # Case emojis
-    "case_basic": "",
-    "case_premium": "",
-    "case_elite": "",
-    "case_special": "",
-
-    # Case name emojis (for display before case names)
-    "emoji_basic_case": "📦",
-    "emoji_premium_case": "🎁",
-    "emoji_elite_case": "💎",
-    "emoji_special_case": "✨",
+    "case_basic": "📦",
+    "case_premium": "🎁",
+    "case_elite": "�",
+    "case_special": "✨",
 
     # Rare emojis
     "rare_basic": "",
@@ -322,14 +341,24 @@ STANDARD_EMOJIS = {
     "emoji_special_case": "✨",
 
     # Shop & UI
-    "tag": os.getenv("EMOJI_TAG", ""),
-    "guild_tag": os.getenv("EMOJI_GUILD_TAG", ""),
-    "settings": os.getenv("EMOJI_SETTINGS", ""),
-    "eye": os.getenv("EMOJI_EYE", ""),
-    "arrow_left": os.getenv("EMOJI_ARROW_LEFT", ""),
-    "arrow_right": os.getenv("EMOJI_ARROW_RIGHT", ""),
-    "room": os.getenv("EMOJI_ROOM", ""),
-    "winner": os.getenv("EMOJI_WINNER", ""),
+    "tag": "🏷️",
+    "guild_tag": "🏷️",
+    "settings": "⚙️",
+    "eye": "👁️",
+    "arrow_left": "⬅️",
+    "arrow_right": "➡️",
+    "room": "🚪",
+    "winner": "🏆",
+    
+    # Special UI emojis
+    "white_dot": "•",
+    "sub_directory": "└",
+    "sub_middle": "├",
+    "white_arrow": "→",
+    "a_sparkle": "✨",
+    "a_star": "⭐",
+    "a_triple_dots": "⋮",
+    "a_dot_smaller": "⋮",
 }
 
 GAME_EMOJIS = {
@@ -352,6 +381,12 @@ GAME_EMOJIS = {
     "a_star": os.getenv("EMOJI_A_STAR", ""),
     "a_triple_dots": os.getenv("EMOJI_A_TRIPLE_DOTS", ""),
     "a_dot_smaller": os.getenv("EMOJI_A_DOT_SMALLER", ""),
+    
+    # Case emojis
+    "case_basic": os.getenv("EMOJI_CASE_BASIC", ""),
+    "case_premium": os.getenv("EMOJI_CASE_PREMIUM", ""),
+    "case_elite": os.getenv("EMOJI_CASE_ELITE", ""),
+    "case_special": os.getenv("EMOJI_CASE_SPECIAL", ""),
 }
 
 def get_emoji(emoji_name: str) -> str:
@@ -362,6 +397,14 @@ def get_emoji(emoji_name: str) -> str:
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]
+        if custom_id:
+            return f"<:{emoji_name}:{custom_id}>"
+        result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
+        return result
+    
+    # Check icon emojis
+    if emoji_name in ICON_EMOJIS:
+        custom_id = ICON_EMOJIS[emoji_name]
         if custom_id:
             return f"<:{emoji_name}:{custom_id}>"
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
