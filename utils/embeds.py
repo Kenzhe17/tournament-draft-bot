@@ -288,7 +288,11 @@ async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
                     total_elo += 1000  # Default ELO for new players
                     player_count += 1
 
-    avg_elo = total_elo // player_count if player_count > 0 else 1000
+    # If no players found, return default ELO
+    if player_count == 0:
+        return 1000
+    
+    avg_elo = total_elo // player_count
     return avg_elo
 
 
@@ -450,11 +454,22 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
                 odds_b = base_odds - odds_diff
             else:
                 # Team A has higher ELO -> Team A gets lower odds
-                odds_a = base_odds - abs(odds_diff)
-                odds_b = base_odds + abs(odds_diff)
+                odds_a = base_odds + odds_diff  # odds_diff is negative
+                odds_b = base_odds - odds_diff
 
             odds_a = max(1.1, min(2.7, odds_a))
             odds_b = max(1.1, min(2.7, odds_b))
+            
+            # Also ensure both odds sum to reasonable value
+            odds_sum = odds_a + odds_b
+            if odds_sum < 3.0:
+                scale = 3.0 / odds_sum
+                odds_a = min(2.7, odds_a * scale)
+                odds_b = min(2.7, odds_b * scale)
+            elif odds_sum > 5.0:
+                scale = 5.0 / odds_sum
+                odds_a = max(1.1, odds_a * scale)
+                odds_b = max(1.1, odds_b * scale)
 
         # Build field name
         star_emoji = replace_emojis("a_star")

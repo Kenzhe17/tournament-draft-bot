@@ -95,6 +95,20 @@ class BetStore:
         odds_a = max(1.1, min(2.7, odds_a))
         odds_b = max(1.1, min(2.7, odds_b))
 
+        # Also ensure both odds sum to reasonable value (around 2x for low difference)
+        # If sum is too high or too low, adjust both
+        odds_sum = odds_a + odds_b
+        if odds_sum < 3.0:
+            # Both too low, scale up
+            scale = 3.0 / odds_sum
+            odds_a = min(2.7, odds_a * scale)
+            odds_b = min(2.7, odds_b * scale)
+        elif odds_sum > 5.0:
+            # Both too high, scale down
+            scale = 5.0 / odds_sum
+            odds_a = max(1.1, odds_a * scale)
+            odds_b = max(1.1, odds_b * scale)
+
         self._odds[match_id] = MatchOdds(
             team_a_name=team_a_name,
             team_b_name=team_b_name,
