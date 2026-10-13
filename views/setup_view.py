@@ -1308,11 +1308,13 @@ class ToggleRegistrationButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
+        # Update the org menu with new button state
+        new_view = OrgMenuView(tournament)
         action = "закрыта" if new_state == RegistrationState.CLOSED else "открыта"
         try:
-            await interaction.response.send_message(
-                f"{replace_emojis('🔒')} Регистрация {action}!",
-                ephemeral=True
+            await interaction.response.edit_message(
+                content="Организаторское меню:",
+                view=new_view
             )
         except discord.NotFound:
             pass
@@ -1368,11 +1370,13 @@ class ToggleIsolationButton(discord.ui.Button):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
+        # Update the org menu with new button state
+        new_view = OrgMenuView(tournament)
         action = "отключена" if new_state == RegistrationState.OPEN else "включена"
         try:
-            await interaction.response.send_message(
-                f"{replace_emojis('🔒')} Изоляция {action}!",
-                ephemeral=True
+            await interaction.response.edit_message(
+                content="Организаторское меню:",
+                view=new_view
             )
         except discord.NotFound:
             pass
