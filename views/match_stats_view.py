@@ -769,6 +769,10 @@ class AdminConfirmView(View):
 
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
             winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
+
+            # Log winner confirmation
+            from utils.logging import log_winner_confirmed
+            await log_winner_confirmed(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, winning_team_name)
             
             # Calculate winning_team_index (0 or 1) based on match teams
             if self.match_type == "qualifier":
@@ -786,6 +790,14 @@ class AdminConfirmView(View):
                 payouts, payouts_by_name = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index_resolved)
                 import logging
                 logging.info(f"Received payouts from bet resolution: {payouts}")
+                
+                # Calculate total payout
+                total_payout = sum(payout for payout in payouts.values() if payout > 0)
+                
+                # Log bet resolution
+                from utils.logging import log_bets_resolved
+                await log_bets_resolved(interaction.client, interaction.guild, self.match_type, self.match_index, winning_team_name, total_payout)
+                
                 for user_id, payout in payouts.items():
                     logging.info(f"Adding balance: user_id={user_id}, payout={payout}")
                     if payout > 0:

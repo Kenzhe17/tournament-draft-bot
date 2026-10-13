@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 from typing import TYPE_CHECKING
 
@@ -106,6 +106,18 @@ class ProcessMatchButton(discord.ui.Button):
 
         # Update match_info with K/D data from tournament
         self.match_info['temp_kd_data'] = tournament.temp_kd_data
+
+        # Log stats filling
+        from utils.logging import log_stats_filled
+        match_type = self.match_info.get('match_type', 'unknown')
+        match_index = self.match_info.get('match_index', 0)
+        
+        # Build stats summary
+        stats_summary = ""
+        for player, kd in tournament.temp_kd_data.items():
+            stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+        
+        await log_stats_filled(interaction.client, interaction.guild, interaction.user, match_type, match_index, stats_summary)
 
         # Process the match result with new rating system
         await process_match_result(self.guild_id, tournament, self.match_info, interaction)

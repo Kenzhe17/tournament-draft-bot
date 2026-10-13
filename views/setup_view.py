@@ -605,6 +605,10 @@ class DeletePlayerButton(discord.ui.Button):
                         pass
                     return
 
+            # Log player removal
+            from utils.logging import log_player_removed
+            await log_player_removed(interaction.client, interaction.guild, interaction.user, player_name)
+
             store.set(tournament)
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
@@ -738,6 +742,10 @@ class SwapPlayersButton(discord.ui.Button):
                 for circle, idx in player2_pos.items():
                     circle_list = getattr(tournament, f"circle{circle}")
                     circle_list.insert(idx, first_player)
+
+                # Log player swap
+                from utils.logging import log_players_swapped
+                await log_players_swapped(interaction.client, interaction.guild, interaction.user, first_player, second_player)
                 
                 # Save
                 store.set(tournament)
@@ -861,18 +869,32 @@ class MovePlayerButton(discord.ui.Button):
                     return
                 
                 # Remove player from current location (including captains/circle1)
+                from_circle = None
                 for circle in range(1, 5):
                     circle_list = getattr(tournament, f"circle{circle}")
                     if selected_player in circle_list:
                         circle_list.remove(selected_player)
+                        from_circle = f"Круг {circle}"
                         break
                 
                 if selected_player in tournament.captains:
                     tournament.captains.remove(selected_player)
+                    from_circle = "Капитаны"
                 
                 # Add to target circle
                 circle_list = getattr(tournament, target_circle)
                 circle_list.append(selected_player)
+
+                # Log player movement
+                from utils.logging import log_player_moved
+                circle_names = {
+                    "circle1": "Круг 1",
+                    "circle2": "Круг 2",
+                    "circle3": "Круг 3",
+                    "circle4": "Круг 4",
+                }
+                to_circle = circle_names.get(target_circle, target_circle)
+                await log_player_moved(interaction.client, interaction.guild, interaction.user, selected_player, from_circle or "Неизвестно", to_circle)
                 
                 # Save
                 store.set(tournament)
@@ -1010,6 +1032,11 @@ class AutoDistributeButton(discord.ui.Button):
         await tournament.distribute_by_elo(self.guild_id)
         store.set(tournament)
 
+        # Log player distribution
+        from utils.logging import log_players_distributed
+        team_names = [tournament.team_names.get(i, f"Team {i}") for i in range(len(tournament.teams))]
+        await log_players_distributed(interaction.client, interaction.guild, interaction.user, "elo", team_names)
+
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
@@ -1083,6 +1110,11 @@ class AutoDistributeAvgButton(discord.ui.Button):
         # Distribute by Skill Rating
         await tournament.distribute_by_skill_rating(self.guild_id)
         store.set(tournament)
+
+        # Log player distribution
+        from utils.logging import log_players_distributed
+        team_names = [tournament.team_names.get(i, f"Team {i}") for i in range(len(tournament.teams))]
+        await log_players_distributed(interaction.client, interaction.guild, interaction.user, "skill_rating", team_names)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
@@ -1185,6 +1217,10 @@ class StartTournamentButton(discord.ui.Button):
                 pass
         else:
             # ELO/SKILL modes: shuffle circles and start draft
+            # Log draft start
+            from utils.logging import log_draft_started
+            await log_draft_started(interaction.client, interaction.guild, interaction.user)
+
             tournament.shuffle_circles()
             tournament.start_draft()
             store.set(tournament)

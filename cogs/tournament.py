@@ -115,7 +115,7 @@ class TournamentCog(commands.Cog):
 
         # Log tournament creation
         from utils.logging import log_tournament_created
-        await log_tournament_created(self.bot, interaction.guild, interaction.user, f"Турнир {size} ({formation})")
+        await log_tournament_created(self.bot, interaction.guild, interaction.user, size, formation)
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_org()
@@ -142,6 +142,10 @@ class TournamentCog(commands.Cog):
 
         store.delete(interaction.guild_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
+
+        # Log tournament deletion
+        from utils.logging import log_tournament_deleted
+        await log_tournament_deleted(self.bot, interaction.guild, interaction.user)
 
         await interaction.response.send_message(
             "🗑️ **Турнир успешно удален.**",

@@ -326,6 +326,8 @@ class TournamentBot(commands.Bot):
                             else:
                                 # Draft complete
                                 logger.info(f"Draft completed automatically for guild {guild.id}")
+                                from utils.logging import log_draft_completed
+                                await log_draft_completed(self, guild)
             except Exception as e:
                 logger.error(f"Error in draft timer loop: {e}", exc_info=True)
 
