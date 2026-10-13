@@ -800,10 +800,10 @@ class AdminConfirmView(View):
                 
                 # Calculate total payout
                 total_payout = sum(payout for payout in payouts.values() if payout > 0)
-                
-                # Log bet resolution
+
+                # Log bet resolution with individual payouts
                 from utils.logging import log_bets_resolved
-                await log_bets_resolved(interaction.client, interaction.guild, self.match_type, self.match_index, winning_team_name, total_payout)
+                await log_bets_resolved(interaction.client, interaction.guild, self.match_type, self.match_index, winning_team_name, total_payout, payouts_by_name)
                 
                 for user_id, payout in payouts.items():
                     logging.info(f"Adding balance: user_id={user_id}, payout={payout}")

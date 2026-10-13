@@ -133,13 +133,24 @@ async def log_winner_confirmed(bot: discord.Client, guild: discord.Guild, user: 
     await send_log(bot, "Победитель подтвержден", description, 0x57F287, guild)
 
 
-async def log_bets_resolved(bot: discord.Client, guild: discord.Guild, match_type: str, match_index: int, winning_team: str, total_payout: int) -> None:
+async def log_bets_resolved(bot: discord.Client, guild: discord.Guild, match_type: str, match_index: int, winning_team: str, total_payout: int, payouts_by_name: dict = None) -> None:
     """Log bet resolution."""
     description = (
         f"{get_emoji('a_sparkle')} **Матч:** {match_type} #{match_index}\n"
         f"{get_emoji('white_arrow')} **Победитель:** {winning_team}\n"
         f"{get_emoji('white_dot')} **Выплачено:** {total_payout} {get_emoji('money')}\n"
     )
+
+    # Add individual payouts if provided
+    if payouts_by_name:
+        payouts_display = []
+        for player_name, payout in payouts_by_name.items():
+            if payout > 0:
+                payouts_display.append(f"{get_emoji('sub_middle')} {player_name}: {payout} {get_emoji('money')}")
+        if payouts_display:
+            description += f"\n{get_emoji('white_dot')} **Выплаты по игрокам:**\n" + "\n".join(payouts_display[:10])
+            if len(payouts_display) > 10:
+                description += f"\n{get_emoji('sub_middle')} ... и ещё {len(payouts_display) - 10} игроков"
 
     await send_log(bot, "Ставки разрешены", description, 0x2B2D31, guild)
 
