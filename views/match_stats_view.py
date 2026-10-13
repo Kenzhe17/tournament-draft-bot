@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 
 from typing import TYPE_CHECKING
 
@@ -733,6 +733,13 @@ class AdminConfirmView(View):
             temp_stats = tournament.temp_match_stats.get(match_id, {})
 
             logging.info(f"Processing match result: match_id={match_id}, temp_stats={temp_stats}")
+
+            # Log stats filling
+            from utils.logging import log_stats_filled
+            stats_summary = ""
+            for player, kd in temp_stats.items():
+                stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+            await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
 
             # Process the match with statistics (this applies ELO and stats immediately)
             await process_match_result(self.guild_id, tournament, {
