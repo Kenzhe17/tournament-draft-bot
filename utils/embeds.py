@@ -530,7 +530,10 @@ async def build_setup_embed(
     """Embed настройки турнира."""
     status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
     formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "ELO" if tournament.formation_mode == FormationMode.ELO else "RANDOM"
-    status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
+    if tournament.registration == RegistrationState.ISOLATED:
+        status_text = "Изолирован для всех(даже тем у кого есть тег)"
+    else:
+        status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
 
     # Get organizer info
     organizer_id = tournament.organizer_id

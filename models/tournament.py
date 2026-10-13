@@ -47,6 +47,7 @@ class RegistrationState(str, Enum):
 
     CLOSED = "closed"
     OPEN = "open"
+    ISOLATED = "isolated"
 
 
 class FormationMode(str, Enum):

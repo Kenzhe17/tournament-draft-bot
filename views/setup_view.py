@@ -145,7 +145,14 @@ class CircleSelectButton(discord.ui.Button):
                 return
 
             # Check if registration is open
-            if tournament.registration == RegistrationState.CLOSED:
+            if tournament.registration == RegistrationState.ISOLATED:
+                # Isolated mode - nobody can join
+                await interaction.response.send_message(
+                    f"{replace_emojis('❌')} Турнир изолирован, подождите пока Админ отменить действие.",
+                    ephemeral=True
+                )
+                return
+            elif tournament.registration == RegistrationState.CLOSED:
                 # Allow users with guild tag to join if circle has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
@@ -267,7 +274,14 @@ class JoinPoolButton(discord.ui.Button):
                 return
 
             # Check if registration is open
-            if tournament.registration == RegistrationState.CLOSED:
+            if tournament.registration == RegistrationState.ISOLATED:
+                # Isolated mode - nobody can join
+                await interaction.response.send_message(
+                    f"{replace_emojis('❌')} Турнир изолирован, подождите пока Админ отменить действие.",
+                    ephemeral=True
+                )
+                return
+            elif tournament.registration == RegistrationState.CLOSED:
                 # Allow users with guild tag to join if pool has space
                 if not has_guild_tag(interaction.user):
                     await interaction.response.send_message(
@@ -1304,6 +1318,66 @@ class ToggleRegistrationButton(discord.ui.Button):
             pass
 
 
+class ToggleIsolationButton(discord.ui.Button):
+    """Кнопка для переключения изоляции (Включить S/Отключить S)."""
+
+    def __init__(self, guild_id: int, is_isolated: bool):
+        self.is_isolated = is_isolated
+        label = "Отключить S" if is_isolated else "Включить S"
+        style = discord.ButtonStyle.primary if is_isolated else discord.ButtonStyle.danger
+        super().__init__(
+            style=style,
+            label=label,
+            custom_id=f"toggle_isolation:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут менять изоляцию."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        if self.is_isolated:
+            # Отключить изоляцию - вернуть предыдущее состояние
+            new_state = RegistrationState.OPEN
+        else:
+            # Включить изоляцию - закрыть для всех
+            new_state = RegistrationState.ISOLATED
+
+        tournament.registration = new_state
+        store.set(tournament)
+
+        bot: TournamentBot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
+
+        action = "отключена" if new_state == RegistrationState.OPEN else "включена"
+        try:
+            await interaction.response.send_message(
+                f"{replace_emojis('🔒')} Изоляция {action}!",
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
+
+
 class SetupView(discord.ui.View):
     """View с кнопками выбора круга для добавления игроков."""
 
@@ -1415,8 +1489,14 @@ class OrgMenuView(discord.ui.View):
         start_button = StartTournamentButton(tournament.guild_id)
         self.add_item(start_button)
 
-        toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
-        self.add_item(toggle_button)
+        # Show toggle registration button only if not isolated
+        if tournament.registration != RegistrationState.ISOLATED:
+            toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
+            self.add_item(toggle_button)
+
+        # Show isolation button
+        isolation_button = ToggleIsolationButton(tournament.guild_id, tournament.registration == RegistrationState.ISOLATED)
+        self.add_item(isolation_button)
 
 
 def build_setup_view(tournament: Tournament) -> SetupView:
