@@ -19,6 +19,20 @@ from config import get_emoji
 if TYPE_CHECKING:
     from bot import TournamentBot
 
+
+async def safe_send_message(interaction: discord.Interaction, content: str, ephemeral: bool = True) -> None:
+    """Safely send a message, handling rate limits and expired interactions."""
+    try:
+        await interaction.response.send_message(content, ephemeral=ephemeral)
+    except discord.NotFound:
+        # Interaction expired (rate limit), try followup
+        try:
+            await interaction.followup.send(content, ephemeral=ephemeral)
+        except:
+            pass
+    except Exception:
+        pass
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,25 +242,12 @@ class CircleSelectButton(discord.ui.Button):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            if was_moved:
-                await interaction.response.send_message(
-                    f"{replace_emojis('✅')} Вы перемещены в {circle_names[self.circle]}!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    f"{replace_emojis('✅')} Вы добавлены в {circle_names[self.circle]}!",
-                    ephemeral=True
-                )
+            message = f"{replace_emojis('✅')} Вы перемещены в {circle_names[self.circle]}!" if was_moved else f"{replace_emojis('✅')} Вы добавлены в {circle_names[self.circle]}!"
+
+            await safe_send_message(interaction, message, ephemeral=True)
         except Exception as e:
             logger.error(f"Error in CircleSelectButton callback: {e}", exc_info=True)
-            try:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Произошла ошибка при добавлении игрока."),
-                    ephemeral=True
-                )
-            except:
-                pass
+            await safe_send_message(interaction, replace_emojis("❌ Произошла ошибка при добавлении игрока."), ephemeral=True)
 
 
 class JoinPoolButton(discord.ui.Button):
@@ -325,26 +326,15 @@ class JoinPoolButton(discord.ui.Button):
             tournament.player_user_ids[user_name] = interaction.user.id
             store.set(tournament)
 
-            # Send response
-            await interaction.response.send_message(
-                replace_emojis("✅ Вы добавлены в турнир!"),
-                ephemeral=True
-            )
-
             # Update message using bot from interaction
             bot = interaction.client
             await bot.update_tournament_message(interaction.guild, tournament)
+
+            # Send response
+            await safe_send_message(interaction, replace_emojis("✅ Вы добавлены в турнир!"), ephemeral=True)
         except Exception as e:
             logger.error(f"Error in JoinPoolButton callback: {e}", exc_info=True)
-            try:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Произошла ошибка при добавлении игрока."),
-                    ephemeral=True
-                )
-            except discord.NotFound:
-                pass
-            except:
-                pass
+            await safe_send_message(interaction, replace_emojis("❌ Произошла ошибка при добавлении игрока."), ephemeral=True)
 
 
 circle_names = {

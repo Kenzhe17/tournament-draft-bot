@@ -160,6 +160,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             tournament.temp_match_stats[match_id].update(stats)
             store.set(tournament)
 
+            # Log stats filling
+            from utils.logging import log_stats_filled
+            stats_summary = ""
+            for player, kd in stats.items():
+                stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+            await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
+
             # Update tournament message to refresh view
             from bot import TournamentBot
             bot = interaction.client  # type: ignore[assignment]
