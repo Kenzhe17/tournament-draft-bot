@@ -195,20 +195,15 @@ class BetStore:
             else:
                 raise ValueError(f"Invalid team name: {bet.team_name}")
 
-            # Check if user already has a bet
+            # Check if user already has a bet (should not happen due to UI check, but double-check)
             existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
             if existing_bet:
-                # Update existing bet, keep original odds
-                additional_amount = bet.amount - existing_bet.amount
-                bet.amount += existing_bet.amount  # Update to total amount
-                bet.odds = existing_bet.odds
-                # Always shift odds by absolute amount (even when decreasing)
-                # Any bet on a team decreases its odds, regardless of amount change
-                shift_amount = abs(additional_amount)
-            else:
-                # New bet, use current odds
-                bet.odds = current_bet_odds
-                shift_amount = bet.amount
+                # User already has a bet - reject (should have been caught in UI)
+                return
+
+            # New bet, use current odds
+            bet.odds = current_bet_odds
+            shift_amount = bet.amount
 
             # Calculate odds shift: 500 coins = 0.1x shift (more responsive)
             shift_odds = shift_amount / 500 * 0.1
@@ -365,6 +360,28 @@ class BetStore:
             for bet in bets:
                 if bet.user_id == user_id and bet.guild_id == guild_id and bet.tournament_id == tournament_id:
                     return bet
+            return None
+
+    async def get_user_bet_in_phase(self, guild_id: int, user_id: int, tournament_id: str, match_type: str) -> Bet | None:
+        """Получить ставку пользователя на любой матч в этапе (qualifiers/semifinal/final)."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_id LIKE $4",
+                    guild_id, user_id, tournament_id, f"{match_type}_%"
+                )
+                if row:
+                    return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], tournament_id=row["tournament_id"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"])
+                return None
+        else:
+            # Check all bets for any match in this phase
+            for key, bets in self._bets.items():
+                if key.startswith(f"{tournament_id}:{match_type}_"):
+                    for bet in bets:
+                        if bet.user_id == user_id and bet.guild_id == guild_id and bet.tournament_id == tournament_id:
+                            return bet
             return None
 
     async def delete_bets_by_match(self, tournament_id: str, match_id: str) -> None:

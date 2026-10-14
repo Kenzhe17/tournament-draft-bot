@@ -78,18 +78,28 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
             # Get match ID early for bet checking
             match_id = f"{self.match_type}_{self.match_index}"
 
-            # Check if user already has a bet on this match
-            existing_bet = await bet_store.get_user_bet(self.guild_id, interaction.user.id, self.tournament.id, match_id)
+            # Check if user already has a bet in this phase (qualifiers/semifinal/final)
+            existing_bet = await bet_store.get_user_bet_in_phase(self.guild_id, interaction.user.id, self.tournament.id, self.match_type)
             if existing_bet:
-                # User already has a bet - reject any changes
+                # User already has a bet in this phase - reject
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы уже сделали ставку на этот матч! Только одна ставка на матч."),
+                    replace_emojis("❌ Можно ставить только 1 раз за этап."),
                     ephemeral=True
                 )
                 return
-            else:
-                # New bet - deduct full amount
-                await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+
+            # Check if user is playing in the match
+            user_team_index = self._get_user_team_index(interaction.user.id)
+            if user_team_index is not None:
+                if user_team_index != self.team_index:
+                    await interaction.response.send_message(
+                        replace_emojis("❌ Вы не можете ставить против своей команды."),
+                        ephemeral=True
+                    )
+                    return
+
+            # New bet - deduct full amount
+            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
 
             # Get match teams for odds initialization
             if self.match_type == "qualifiers":
