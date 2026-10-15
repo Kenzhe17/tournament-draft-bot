@@ -20,12 +20,12 @@ class MatchHistory(BaseModel):
     # Команда игрока
     team_index: int
     team_name: str
-    teammates: List[dict]  # [{"name": "player1", "kd": 2.5}, ...]
+    teammates: List[dict]  # [{"name": "player1", "kills": 10, "deaths": 5}, ...]
 
     # Противники
     opponent_team_index: int
     opponent_team_name: str
-    opponents: List[dict]  # [{"name": "player2", "kd": 1.2}, ...]
+    opponents: List[dict]  # [{"name": "player2", "kills": 8, "deaths": 6}, ...]
 
     # Статистика игрока
     kills: int

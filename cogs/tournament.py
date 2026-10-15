@@ -991,9 +991,14 @@ class TournamentCog(commands.Cog):
         # Получить статистику за последние 10 матчей
         stats = await match_history_store.get_recent_stats(interaction.guild_id, target_user.id, limit=10)
 
+        # Получить имя пользователя для отображения
+        from storage.player_stats_store import player_stats_store
+        user_stats = await player_stats_store.get(interaction.guild_id, target_user.id)
+        user_name = user_stats.name if user_stats else target_user.display_name
+
         # Создать view и embed
-        view = HistoryView(interaction.guild_id, target_user.id, matches, stats)
-        embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0)
+        view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name)
+        embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name)
 
         await interaction.response.send_message(embed=embed, view=view)
 

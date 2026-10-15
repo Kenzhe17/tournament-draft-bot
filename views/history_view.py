@@ -11,19 +11,20 @@ from models.match_history import MatchHistory
 class HistoryView(discord.ui.View):
     """View для навигации по истории матчей."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict):
+    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.user_id = user_id
         self.matches = matches
         self.stats = stats
+        self.user_name = user_name
         self.current_page = 0
         self.total_pages = len(matches)
 
         # Only show navigation buttons if there are matches
         if matches:
-            self.add_item(PrevButton(guild_id, user_id, matches, stats))
-            self.add_item(NextButton(guild_id, user_id, matches, stats))
+            self.add_item(PrevButton(guild_id, user_id, matches, stats, user_name))
+            self.add_item(NextButton(guild_id, user_id, matches, stats, user_name))
         else:
             self.add_item(NoMatchesButton())
 
@@ -31,7 +32,7 @@ class HistoryView(discord.ui.View):
 class PrevButton(discord.ui.Button):
     """Кнопка 'Предыдущая'."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict):
+    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="◀️ Предыдущая",
@@ -41,6 +42,7 @@ class PrevButton(discord.ui.Button):
         self.user_id = user_id
         self.matches = matches
         self.stats = stats
+        self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти к предыдущему матчу."""
@@ -48,7 +50,7 @@ class PrevButton(discord.ui.Button):
         if view and hasattr(view, 'current_page'):
             if view.current_page > 0:
                 view.current_page -= 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page)
+                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page, self.user_name)
                 await interaction.response.edit_message(embed=embed, view=view)
             else:
                 await interaction.response.defer()
@@ -57,7 +59,7 @@ class PrevButton(discord.ui.Button):
 class NextButton(discord.ui.Button):
     """Кнопка 'Следующая'."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict):
+    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Следующая ▶️",
@@ -67,6 +69,7 @@ class NextButton(discord.ui.Button):
         self.user_id = user_id
         self.matches = matches
         self.stats = stats
+        self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти к следующему матчу."""
@@ -74,7 +77,7 @@ class NextButton(discord.ui.Button):
         if view and hasattr(view, 'current_page'):
             if view.current_page < len(self.matches) - 1:
                 view.current_page += 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page)
+                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page, self.user_name)
                 await interaction.response.edit_message(embed=embed, view=view)
             else:
                 await interaction.response.defer()
@@ -95,7 +98,7 @@ class NoMatchesButton(discord.ui.Button):
         pass
 
 
-def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0) -> discord.Embed:
+def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "") -> discord.Embed:
     """Создать embed для истории матчей."""
 
     # Форматирование даты
@@ -104,14 +107,13 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             date = datetime.fromisoformat(date)
         return date.strftime("%d.%m.%Y %H:%M")
 
-    # Форматирование списка игроков с K/D
+    # Форматирование списка игроков с Kill/Death
     def format_players(players: List[dict]) -> str:
         if not players:
             return "Нет данных"
         formatted = []
         for p in players:
-            kd = p.get("kd", 0)
-            formatted.append(f"{p.get('name', 'Unknown')} `({kd:.1f})`")
+            formatted.append(f"{p.get('name', 'Unknown')} `({p.get('kills', 0)}/{p.get('deaths', 0)})`")
         return ", ".join(formatted)
 
     # Если это первая страница (index 0), показываем статистику
@@ -123,17 +125,18 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Матчей: {stats['total_matches']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Побед: {stats['wins']} | Поражений: {stats['losses']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Винрейт: {stats['win_rate']:.1f}%")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats['kd_ratio']:.2f}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} Kill/Death: {stats['total_kills']}/{stats['total_deaths']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats['avg_kills']:.2f}")
         description_parts.append("")
 
         if matches:
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Нажмите 'Следующая ▶️' для просмотра последнего матча")
         else:
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не игррал в турниры")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
 
+        title = f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ"
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ",
+            title=title,
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -168,12 +171,11 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             description_parts.append("")
 
             # Статистика игрока
-            kd = match.kills / match.deaths if match.deaths > 0 else 0
             result_emoji = "🏆" if match.result == "win" else "💔"
             result_text = "Победа" if match.result == "win" else "Поражение"
 
             description_parts.append(f"{replace_emojis('⚪')} **Ваша статистика:**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D: {match.kills}/{match.deaths} `({kd:.2f})`")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Kill/Death: {match.kills}/{match.deaths}")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Результат: {result_emoji} {result_text}")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} ELO: {match.elo_change:+d}")
 
