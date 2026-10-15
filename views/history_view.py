@@ -125,7 +125,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Матчей: {stats['total_matches']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Побед: {stats['wins']} | Поражений: {stats['losses']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Винрейт: {stats['win_rate']:.1f}%")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Kill/Death: {stats['total_kills']}/{stats['total_deaths']}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats['kd_ratio']:.2f}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats['avg_kills']:.2f}")
         description_parts.append("")
 
