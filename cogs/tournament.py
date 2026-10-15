@@ -288,6 +288,76 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=False)
 
+    @app_commands.command(name="check2fa", description="Найти роли и каналы, из-за которых просит 2FA")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def check2fa(self, interaction: discord.Interaction):
+        """Проверить права ролей и каналов на предмет требований 2FA."""
+        await interaction.response.defer(thinking=True)
+        guild = interaction.guild
+        report = []
+
+        # 1. Проверка ролей
+        role_issues = []
+        for role in guild.roles:
+            perms = role.permissions
+            dangerous_found = [
+                name
+                for key, name in DANGEROUS_PERMS.items()
+                if getattr(perms, key, False)
+            ]
+            if dangerous_found:
+                role_issues.append(
+                    f"• Роль **{role.name}**: {', '.join(dangerous_found)}"
+                )
+
+        if role_issues:
+            report.append(
+                "**Опасные права в ролях:**\n" + "\n".join(role_issues[:10])
+            )
+
+        # 2. Проверка каналов (переопределения)
+        channel_issues = []
+        for channel in guild.channels:
+            for target, overwrite in channel.overwrites.items():
+                if isinstance(target, discord.Role):
+                    channel_dangerous = [
+                        name
+                        for key, name in DANGEROUS_PERMS.items()
+                        if getattr(overwrite, key, None) is True
+                    ]
+                    if channel_dangerous:
+                        channel_issues.append(
+                            f"• Канал `{channel.name}` (роль **{target.name}**): {', '.join(channel_dangerous)}"
+                        )
+
+        if channel_issues:
+            report.append(
+                "\n**Опасные права в каналах:**\n"
+                + "\n".join(channel_issues[:10])
+            )
+
+        if not report:
+            await interaction.followup.send(
+                "✅ Опасных прав у ролей и каналов не обнаружено!"
+            )
+        else:
+            full_text = "\n".join(report)
+            if len(full_text) > 1900:
+                full_text = (
+                    full_text[:1900] + "\n\n*(Список слишком длинный, обрезан)*"
+                )
+            await interaction.followup.send(
+                f"🔍 **Результаты проверки:**\n\n{full_text}"
+            )
+
+    @check2fa.error
+    async def check2fa_error(self, interaction: discord.Interaction, error):
+        if isinstance(error, app_commands.errors.MissingPermissions):
+            await interaction.response.send_message(
+                "У вас нет прав администратора для использования этой команды.",
+                ephemeral=True,
+            )
+
     @app_commands.command(name="shop", description="Магазин")
     async def shop(self, interaction: discord.Interaction) -> None:
         """Показать магазин."""
@@ -2489,77 +2559,6 @@ class HelpGuideView(discord.ui.View):
     def __init__(self, current=None):
         super().__init__(timeout=None)
         self.add_item(HelpGuideSelectMenu(current=current))
-
-
-    @app_commands.command(name="check2fa", description="Найти роли и каналы, из-за которых просит 2FA")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def check2fa(self, interaction: discord.Interaction):
-        """Проверить права ролей и каналов на предмет требований 2FA."""
-        await interaction.response.defer(thinking=True)
-        guild = interaction.guild
-        report = []
-
-        # 1. Проверка ролей
-        role_issues = []
-        for role in guild.roles:
-            perms = role.permissions
-            dangerous_found = [
-                name
-                for key, name in DANGEROUS_PERMS.items()
-                if getattr(perms, key, False)
-            ]
-            if dangerous_found:
-                role_issues.append(
-                    f"• Роль **{role.name}**: {', '.join(dangerous_found)}"
-                )
-
-        if role_issues:
-            report.append(
-                "**Опасные права в ролях:**\n" + "\n".join(role_issues[:10])
-            )
-
-        # 2. Проверка каналов (переопределения)
-        channel_issues = []
-        for channel in guild.channels:
-            for target, overwrite in channel.overwrites.items():
-                if isinstance(target, discord.Role):
-                    channel_dangerous = [
-                        name
-                        for key, name in DANGEROUS_PERMS.items()
-                        if getattr(overwrite, key, None) is True
-                    ]
-                    if channel_dangerous:
-                        channel_issues.append(
-                            f"• Канал `{channel.name}` (роль **{target.name}**): {', '.join(channel_dangerous)}"
-                        )
-
-        if channel_issues:
-            report.append(
-                "\n**Опасные права в каналах:**\n"
-                + "\n".join(channel_issues[:10])
-            )
-
-        if not report:
-            await interaction.followup.send(
-                "✅ Опасных прав у ролей и каналов не обнаружено!"
-            )
-        else:
-            full_text = "\n".join(report)
-            if len(full_text) > 1900:
-                full_text = (
-                    full_text[:1900] + "\n\n*(Список слишком длинный, обрезан)*"
-                )
-            await interaction.followup.send(
-                f"🔍 **Результаты проверки:**\n\n{full_text}"
-            )
-
-    @check2fa.error
-    async def check2fa_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.errors.MissingPermissions):
-            await interaction.response.send_message(
-                "У вас нет прав администратора для использования этой команды.",
-                ephemeral=True,
-            )
 
 
 async def setup(bot: TournamentBot) -> None:
