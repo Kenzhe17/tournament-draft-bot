@@ -53,7 +53,7 @@ async def log_tournament_created(bot: discord.Client, guild: discord.Guild, user
     """Log when a tournament is created."""
     description = (
         f"{get_emoji('a_sparkle')} **Организатор:** {user.mention}\n"
-        f"{get_emoji('white_arrow')} **Размер:** {size}x{size}\n"
+        f"{get_emoji('white_arrow')} **Размер:** {size}\n"
         f"{get_emoji('white_arrow')} **Формат:** {formation}\n"
     )
 
@@ -90,16 +90,6 @@ async def log_players_distributed(bot: discord.Client, guild: discord.Guild, use
     )
 
     await send_log(bot, "Игроки распределены", description, 0x2B2D31, guild)
-
-
-async def log_draft_started(bot: discord.Client, guild: discord.Guild, user: discord.Member) -> None:
-    """Log draft start."""
-    description = (
-        f"{get_emoji('a_sparkle')} **Организатор:** {user.mention}\n"
-        f"{get_emoji('white_arrow')} **Действие:** Начало драфта\n"
-    )
-
-    await send_log(bot, "Драфт начат", description, 0x2B2D31, guild)
 
 
 async def log_draft_completed(bot: discord.Client, guild: discord.Guild) -> None:
@@ -153,39 +143,6 @@ async def log_bets_resolved(bot: discord.Client, guild: discord.Guild, match_typ
                 description += f"\n{get_emoji('sub_middle')} ... и ещё {len(payouts_display) - 10} игроков"
 
     await send_log(bot, "Ставки разрешены", description, 0x2B2D31, guild)
-
-
-async def log_player_removed(bot: discord.Client, guild: discord.Guild, user: discord.Member, player_name: str) -> None:
-    """Log player removal."""
-    description = (
-        f"{get_emoji('a_sparkle')} **Удалил:** {user.mention}\n"
-        f"{get_emoji('white_arrow')} **Игрок:** {player_name}\n"
-    )
-
-    await send_log(bot, "Игрок удален", description, 0xED4245, guild)
-
-
-async def log_player_moved(bot: discord.Client, guild: discord.Guild, user: discord.Member, player_name: str, from_circle: str, to_circle: str) -> None:
-    """Log player movement."""
-    description = (
-        f"{get_emoji('a_sparkle')} **Переместил:** {user.mention}\n"
-        f"{get_emoji('white_arrow')} **Игрок:** {player_name}\n"
-        f"{get_emoji('white_dot')} **Из:** {from_circle}\n"
-        f"{get_emoji('white_dot')} **В:** {to_circle}\n"
-    )
-
-    await send_log(bot, "Игрок перемещен", description, 0x2B2D31, guild)
-
-
-async def log_players_swapped(bot: discord.Client, guild: discord.Guild, user: discord.Member, player1: str, player2: str) -> None:
-    """Log player swap."""
-    description = (
-        f"{get_emoji('a_sparkle')} **Поменял:** {user.mention}\n"
-        f"{get_emoji('white_arrow')} **Игрок 1:** {player1}\n"
-        f"{get_emoji('white_arrow')} **Игрок 2:** {player2}\n"
-    )
-
-    await send_log(bot, "Игроки поменялись", description, 0x2B2D31, guild)
 
 
 async def log_tournament_completed(bot: discord.Client, guild: discord.Guild, tournament_name: str, winner_name: str, participant_count: int, duration_minutes: int) -> None:
