@@ -164,7 +164,7 @@ class RobStartButton(discord.ui.Button):
                         f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
                         f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}\n"
                     ),
-                    color=0x2B2D31
+                    color=0x2ECC71  # Green for success
                 )
 
                 await interaction.response.edit_message(embed=embed, view=None)
@@ -179,7 +179,7 @@ class RobStartButton(discord.ui.Button):
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Результат:** У жертвы 0 {get_emoji('money')}\n"
                         ),
-                        color=0x2B2D31
+                        color=0xE74C3C  # Red for failure
                     )
                     
                     await interaction.response.edit_message(embed=embed, view=None)
@@ -202,7 +202,7 @@ class RobStartButton(discord.ui.Button):
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}\n"
                         ),
-                        color=0x2B2D31
+                        color=0x2ECC71  # Green for success
                     )
 
                     await interaction.response.edit_message(embed=embed, view=None)
@@ -224,7 +224,7 @@ class RobStartButton(discord.ui.Button):
                     f"{get_emoji('white_dot')} **Штраф:** `{penalty}` {get_emoji('money')}\n"
                     f"{get_emoji('white_dot')} **Тюрьма:** 2 часа\n"
                 ),
-                color=0x2B2D31
+                color=0xE74C3C  # Red for failure
             )
 
             await interaction.response.edit_message(embed=embed, view=None)
@@ -618,7 +618,7 @@ class RobGroupStartButton(discord.ui.Button):
                             f"{get_emoji('white_arrow')} **Результат:** У жертвы 0 {get_emoji('money')}\n"
                             f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
                         ),
-                        color=0x2B2D31
+                        color=0xE74C3C  # Red for failure
                     )
                     
                     await interaction.response.edit_message(embed=embed, view=None)
@@ -698,7 +698,7 @@ class RobGroupStartButton(discord.ui.Button):
                     f"{get_emoji('white_arrow')} **Доля каждого:** `{share}` {get_emoji('money')}\n"
                     f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
                 ),
-                color=0x2B2D31
+                color=0x2ECC71  # Green for success
             )
 
             await interaction.response.edit_message(embed=embed, view=None)
@@ -713,7 +713,7 @@ class RobGroupStartButton(discord.ui.Button):
                     f"{get_emoji('white_arrow')} **Тюрьма:** 2 часа\n"
                     f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
                 ),
-                color=0x2B2D31
+                color=0xE74C3C  # Red for failure
             )
 
             await interaction.response.edit_message(embed=embed, view=None)
