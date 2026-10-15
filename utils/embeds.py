@@ -531,7 +531,7 @@ async def build_setup_embed(
     status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
     formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "ELO" if tournament.formation_mode == FormationMode.ELO else "RANDOM"
     if tournament.registration == RegistrationState.ISOLATED:
-        status_text = "Изолирован для всех(даже тем у кого есть тег)"
+        status_text = "Изолирован"
     else:
         status_text = "Открыто" if tournament.registration == RegistrationState.OPEN else "Закрыто"
 
@@ -769,7 +769,7 @@ async def build_qualifiers_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** ({int(avg_elo_a)} ELO) vs  **{name_b}:** ({int(avg_elo_b)} ELO){winner_info}"
+            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** vs  **{name_b}:** {winner_info}"
         )
 
     # Build footer
@@ -866,7 +866,7 @@ async def build_semifinals_embed(
                 winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}"
+            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} vs {name_b}{winner_info}"
         )
 
     # Build footer
@@ -967,7 +967,7 @@ async def build_final_embed(
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} ({int(avg_elo_a)} ELO) vs {name_b} ({int(avg_elo_b)} ELO){winner_info}\n\n\n\n"
+        f"{replace_emojis('white_arrow')} **Финал:** {name_a} vs {name_b}{winner_info}\n\n\n\n"
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 

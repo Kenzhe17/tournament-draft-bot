@@ -614,14 +614,6 @@ class DeletePlayerButton(discord.ui.Button):
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
-            try:
-                await interaction.followup.send(
-                    f"{replace_emojis('✅')} Игрок `{player_name}` удален.",
-                    ephemeral=True
-                )
-            except discord.NotFound:
-                pass
-
         view.set_callback(delete_callback)
 
         try:
@@ -640,7 +632,7 @@ class SwapPlayersButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="🔄 Поменять",
+            label="Поменять",
             custom_id=f"swap_players:{guild_id}",
         )
         self.guild_id = guild_id
@@ -745,15 +737,10 @@ class SwapPlayersButton(discord.ui.Button):
 
                 # Save
                 store.set(tournament)
-                
+
                 # Update message
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
                 await bot.update_tournament_message(interaction.guild, tournament)
-                
-                await interaction.followup.send(
-                    replace_emojis(f"✅ Игроки `{first_player}` и `{second_player}` успешно поменялись местами!"),
-                    ephemeral=True
-                )
 
             view2.set_callback(swap_second_callback)
 
@@ -883,22 +870,10 @@ class MovePlayerButton(discord.ui.Button):
 
                 # Save
                 store.set(tournament)
-                
+
                 # Update message
                 bot: TournamentBot = interaction.client  # type: ignore[assignment]
                 await bot.update_tournament_message(interaction.guild, tournament)
-                
-                circle_names = {
-                    "circle1": "Круг 1",
-                    "circle2": "Круг 2",
-                    "circle3": "Круг 3",
-                    "circle4": "Круг 4",
-                }
-                
-                await interaction.followup.send(
-                    replace_emojis(f"✅ Игрок `{selected_player}` перемещён в {circle_names[target_circle]}!"),
-                    ephemeral=True
-                )
 
             circle_select.callback = circle_callback
 
@@ -1119,7 +1094,7 @@ class StartTournamentButton(discord.ui.Button):
     def __init__(self, guild_id: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label="🚀 Старт",
+            label="Старт",
             custom_id=f"start_tournament:{guild_id}",
         )
         self.guild_id = guild_id
@@ -1235,7 +1210,7 @@ class ToggleRegistrationButton(discord.ui.Button):
 
     def __init__(self, guild_id: int, is_open: bool):
         self.is_open = is_open
-        label = "🔒 Закрыть" if is_open else "🔓 Открыть"
+        label = "Закрыть" if is_open else "Открыть"
         style = discord.ButtonStyle.danger if is_open else discord.ButtonStyle.primary
         super().__init__(
             style=style,
@@ -1468,6 +1443,115 @@ class OrgMenuView(discord.ui.View):
         # Show isolation button
         isolation_button = ToggleIsolationButton(tournament.guild_id, tournament.registration == RegistrationState.ISOLATED)
         self.add_item(isolation_button)
+
+        # Add limit button
+        limit_button = LimitButton(tournament.guild_id)
+        self.add_item(limit_button)
+
+
+class LimitButton(discord.ui.Button):
+    """Кнопка для настройки лимитов кругов."""
+
+    def __init__(self, guild_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Лимит",
+            custom_id=f"limit:{guild_id}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_org_check
+        if not is_org_check(interaction.user, interaction.guild):
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Только организаторы (роль 'org') могут менять лимиты."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Create limit settings view
+        view = LimitSettingsView(tournament)
+        await interaction.response.send_message(
+            "Настройка лимитов кругов:",
+            view=view,
+            ephemeral=True
+        )
+
+
+class LimitSettingsView(discord.ui.View):
+    """View для настройки лимитов кругов."""
+
+    def __init__(self, tournament: Tournament):
+        super().__init__(timeout=None)
+        self.tournament = tournament
+
+        # Add limit toggle buttons for circles 2, 3, 4
+        for circle in [2, 3, 4]:
+            is_enabled = tournament.circle_limits_enabled.get(circle, True)
+            button = LimitToggleButton(tournament.guild_id, circle, is_enabled)
+            self.add_item(button)
+
+
+class LimitToggleButton(discord.ui.Button):
+    """Кнопка для переключения лимита конкретного круга."""
+
+    def __init__(self, guild_id: int, circle: int, is_enabled: bool):
+        self.circle = circle
+        self.is_enabled = is_enabled
+        label = f"Круг {circle}: {'Вкл' if is_enabled else 'Выкл'}"
+        style = discord.ButtonStyle.primary if is_enabled else discord.ButtonStyle.secondary
+        super().__init__(
+            style=style,
+            label=label,
+            custom_id=f"limit_toggle:{guild_id}:{circle}",
+        )
+        self.guild_id = guild_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Toggle limit
+        new_status = not tournament.circle_limits_enabled.get(self.circle, True)
+        tournament.circle_limits_enabled[self.circle] = new_status
+        store.set(tournament)
+
+        # Update view with new button state
+        new_view = LimitSettingsView(tournament)
+        try:
+            await interaction.response.edit_message(
+                content="Настройка лимитов кругов:",
+                view=new_view
+            )
+        except discord.NotFound:
+            pass
+
+        # Update tournament message
+        from bot import TournamentBot
+        bot = interaction.client  # type: ignore[assignment]
+        await bot.update_tournament_message(interaction.guild, tournament)
 
 
 def build_setup_view(tournament: Tournament) -> SetupView:

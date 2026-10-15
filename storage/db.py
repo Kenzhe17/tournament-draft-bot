@@ -529,6 +529,38 @@ async def init_db() -> None:
 
         # Initialize cases in database (not just JSON)
         from storage.case_store import case_store
+
+        # Create match_history table for player match history
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_history (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                match_id TEXT NOT NULL,
+                tournament_id TEXT NOT NULL,
+                date TIMESTAMP NOT NULL,
+                match_type TEXT NOT NULL,
+                match_index INTEGER NOT NULL,
+                team_index INTEGER NOT NULL,
+                team_name TEXT NOT NULL,
+                teammates JSON NOT NULL,
+                opponent_team_index INTEGER NOT NULL,
+                opponent_team_name TEXT NOT NULL,
+                opponents JSON NOT NULL,
+                kills INTEGER NOT NULL,
+                deaths INTEGER NOT NULL,
+                result TEXT NOT NULL,
+                elo_change INTEGER NOT NULL,
+                bet_amount INTEGER DEFAULT 0,
+                bet_win INTEGER DEFAULT 0,
+                bet_team TEXT DEFAULT ''
+            )
+        """)
+
+        # Create index for match_history queries
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_match_history_user_date
+            ON match_history(guild_id, user_id, date DESC)
+        """)
         # Force initialization to ensure cases exist
         if not case_store.get_all_cases():
             case_store._initialize_default_cases()

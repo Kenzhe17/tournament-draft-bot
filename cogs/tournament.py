@@ -964,7 +964,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {target_user.display_name}",
+            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -972,6 +972,28 @@ class TournamentCog(commands.Cog):
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
+
+        await interaction.response.send_message(embed=embed, view=view)
+
+    @app_commands.command(name="history", description="Показать историю матчей")
+    @app_commands.describe(user="Пользователь (пусто = ваша история)")
+    async def history(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+        """Показать историю матчей игрока."""
+        from storage.match_history_store import match_history_store
+        from views.history_view import HistoryView, create_history_embed
+
+        # Если пользователь не указан, показываем историю автора
+        target_user = user if user else interaction.user
+
+        # Получить историю матчей
+        matches = await match_history_store.get(interaction.guild_id, target_user.id)
+
+        # Получить статистику за последние 10 матчей
+        stats = await match_history_store.get_recent_stats(interaction.guild_id, target_user.id, limit=10)
+
+        # Создать view и embed
+        view = HistoryView(interaction.guild_id, target_user.id, matches, stats)
+        embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0)
 
         await interaction.response.send_message(embed=embed, view=view)
 
@@ -1052,63 +1074,63 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
-    @app_commands.describe(
-        circle="Номер круга (2, 3 или 4)",
-        status="on для включения лимита, off для отключения"
-    )
-    @is_org()
-    async def set_circle_limit(
-        self,
-        interaction: discord.Interaction,
-        circle: int,
-        status: str
-    ) -> None:
-        """Включить или выключить лимит для круга."""
-        if circle not in [2, 3, 4]:
-            await interaction.response.send_message(
-                replace_emojis("❌ Круг должен быть 2, 3 или 4."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        if status.lower() not in ["on", "off"]:
-            await interaction.response.send_message(
-                replace_emojis("❌ Статус должен быть 'on' или 'off'."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        tournament = store.get(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нет активного турнира."),
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        if tournament.phase != TournamentPhase.SETUP:
-            await interaction.response.send_message(
-                replace_emojis("❌ Лимиты можно менять только в фазе настройки."),
-                ephemeral=True
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        tournament.circle_limits_enabled[circle] = (status.lower() == "on")
-        store.set(tournament)
-
-        status_text = "включен" if tournament.circle_limits_enabled[circle] else "отключен"
-        await interaction.response.send_message(
-            replace_emojis("✅ Лимит для круга {circle} {status_text}."),
-            ephemeral=True
-        )
-        asyncio.create_task(_delete_ephemeral_later(interaction))
-
-        await self.bot.update_tournament_message(interaction.guild, tournament)
+    # @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
+    # @app_commands.describe(
+    #     circle="Номер круга (2, 3 или 4)",
+    #     status="on для включения лимита, off для отключения"
+    # )
+    # @is_org()
+    # async def set_circle_limit(
+    #     self,
+    #     interaction: discord.Interaction,
+    #     circle: int,
+    #     status: str
+    # ) -> None:
+    #     """Включить или выключить лимит для круга."""
+    #     if circle not in [2, 3, 4]:
+    #         await interaction.response.send_message(
+    #             replace_emojis("❌ Круг должен быть 2, 3 или 4."),
+    #             ephemeral=True
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
+    #
+    #     if status.lower() not in ["on", "off"]:
+    #         await interaction.response.send_message(
+    #             replace_emojis("❌ Статус должен быть 'on' или 'off'."),
+    #             ephemeral=True
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
+    #
+    #     tournament = store.get(interaction.guild_id)
+    #     if not tournament:
+    #         await interaction.response.send_message(
+    #             replace_emojis("❌ Нет активного турнира."),
+    #             ephemeral=True,
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
+    #
+    #     if tournament.phase != TournamentPhase.SETUP:
+    #         await interaction.response.send_message(
+    #             replace_emojis("❌ Лимиты можно менять только в фазе настройки."),
+    #             ephemeral=True
+    #         )
+    #         asyncio.create_task(_delete_ephemeral_later(interaction))
+    #         return
+    #
+    #     tournament.circle_limits_enabled[circle] = (status.lower() == "on")
+    #     store.set(tournament)
+    #
+    #     status_text = "включен" if tournament.circle_limits_enabled[circle] else "отключен"
+    #     await interaction.response.send_message(
+    #         replace_emojis("✅ Лимит для круга {circle} {status_text}."),
+    #         ephemeral=True
+    #     )
+    #     asyncio.create_task(_delete_ephemeral_later(interaction))
+    #
+    #     await self.bot.update_tournament_message(interaction.guild, tournament)
 
     # @app_commands.command(name="setbio", description="Установить описание профиля")
     # @app_commands.describe(bio="Короткое описание (максимум 100 символов)")
@@ -2300,7 +2322,7 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "profile":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ПРОФИЛЬ  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Управление персональным аккаунтом**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Управление персональным аккаунтом**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/history [user]` — История матчей с навигацией\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="profile")
@@ -2483,7 +2505,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "profile":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ПРОФИЛЬ  {replace_emojis('a_star')}",
-                description=f"{replace_emojis('white_arrow')} **Управление персональным аккаунтом**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                description=f"{replace_emojis('white_arrow')} **Управление персональным аккаунтом**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/history [user]` — История матчей с навигацией\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="profile")
