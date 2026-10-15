@@ -1,10 +1,11 @@
 """Модель для хранения истории матчей игрока."""
 from datetime import datetime
 from typing import List, Optional
-from pydantic import BaseModel
+from dataclasses import dataclass, field
 
 
-class MatchHistory(BaseModel):
+@dataclass
+class MatchHistory:
     """Запись об одном матче в истории игрока."""
 
     guild_id: int
@@ -71,9 +72,10 @@ class MatchHistory(BaseModel):
         return cls(**data)
 
 
-class MatchHistoryList(BaseModel):
+@dataclass
+class MatchHistoryList:
     """Список историй матчей для пользователя."""
 
     guild_id: int
     user_id: int
-    matches: List[MatchHistory] = []
+    matches: List[MatchHistory] = field(default_factory=list)
