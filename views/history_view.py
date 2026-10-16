@@ -23,8 +23,8 @@ class HistoryView(discord.ui.View):
 
         # Only show navigation buttons if there are matches
         if matches:
-            self.add_item(PrevButton(guild_id, user_id, matches, stats, user_name))
-            self.add_item(NextButton(guild_id, user_id, matches, stats, user_name))
+            self.add_item(PrevButton())
+            self.add_item(NextButton())
         else:
             self.add_item(NoMatchesButton())
 
@@ -32,17 +32,11 @@ class HistoryView(discord.ui.View):
 class PrevButton(discord.ui.Button):
     """Кнопка 'Назад'."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
+    def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="◀️ Назад",
-            custom_id=f"history_prev:{guild_id}:{user_id}"
+            label="◀️ Назад"
         )
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.matches = matches
-        self.stats = stats
-        self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти назад."""
@@ -51,7 +45,7 @@ class PrevButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page > 0:
                 parent_view.current_page -= 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, parent_view.current_page, self.user_name)
+                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -60,26 +54,20 @@ class PrevButton(discord.ui.Button):
 class NextButton(discord.ui.Button):
     """Кнопка 'Вперед'."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
+    def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="Вперед ▶️",
-            custom_id=f"history_next:{guild_id}:{user_id}"
+            label="Вперед ▶️"
         )
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.matches = matches
-        self.stats = stats
-        self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти вперед."""
         # Get the parent view
         parent_view = self.view
         if parent_view and hasattr(parent_view, 'current_page'):
-            if parent_view.current_page < len(self.matches) - 1:
+            if parent_view.current_page < len(parent_view.matches):
                 parent_view.current_page += 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, parent_view.current_page, self.user_name)
+                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
