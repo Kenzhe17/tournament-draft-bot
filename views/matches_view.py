@@ -324,43 +324,21 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 logging.warning(f"Player {player_name} not found in either team")
                 continue
 
-            # Get user_id from player name - need to find it from tournament data
-            # Search in all teams for this player name
-            user_id = None
-            for team_idx in range(len(self.tournament.teams)):
-                team = self.tournament.teams[team_idx]
-                if team.get("captain") == player_name:
-                    # Search all guild members to find user_id by name
-                    guild = interaction.guild
-                    for member in guild.members:
-                        if member.display_name == player_name or member.name == player_name:
-                            user_id = member.id
-                            break
-                    break
-                # Also check players list
-                for circle in range(1, 5):
-                    player = team.get(f"circle{circle}")
-                    if player == player_name:
-                        guild = interaction.guild
-                        for member in guild.members:
-                            if member.display_name == player_name or member.name == player_name:
-                                user_id = member.id
-                                break
-                        break
-                if user_id:
+            # Get user_id from player stats - search by name
+            # player_stats_store.get expects user_id, so we need to search differently
+            all_stats = await player_stats_store.get_all(self.guild_id)
+            user_stats = None
+            for stat in all_stats:
+                if stat.name == player_name:
+                    user_stats = stat
                     break
 
-            if not user_id:
-                logging.warning(f"Could not find user_id for player {player_name}")
+            if not user_stats:
+                logging.warning(f"No stats found for player {player_name}")
                 continue
 
+            user_id = user_stats.user_id
             logging.info(f"Found user_id {user_id} for player {player_name}")
-
-            # Get user stats to get elo_change
-            stats = await player_stats_store.get(self.guild_id, user_id)
-            if not stats:
-                logging.warning(f"No stats found for user_id {user_id}")
-                continue
 
             # Determine team and opponent
             if is_team_a:
