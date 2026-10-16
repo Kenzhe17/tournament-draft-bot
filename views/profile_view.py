@@ -174,17 +174,18 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('white_dot')} Ранг: {rank_title}")
-        description_parts.append(f"{replace_emojis('white_dot')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('white_dot')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append(f"{replace_emojis('sub_directory')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
         description_parts.append("")
 
         # Экономика
         description_parts.append(f"{replace_emojis('white_dot')} Баланс: {balance:,} " + get_emoji("money"))
-        description_parts.append(f"{replace_emojis('white_dot')} Предметов: {inventory_count} шт.")
+        description_parts.append(f"{replace_emojis('sub_directory')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 
         # Статистика игр
-        description_parts.append(f"{replace_emojis('white_dot')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
+        description_parts.append(f"{replace_emojis('white_dot')} Сыграно: {total_games_played} игр")
+        description_parts.append(f"{replace_emojis('sub_directory')} Побед: {total_games_won} `({win_rate:.1f}%)`")
 
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
