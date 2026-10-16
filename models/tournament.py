@@ -338,18 +338,27 @@ class Tournament:
     def add_player_to_circle(self, circle: int, name: str, user_id: int | None = None) -> bool:
         """Добавить игрока в конкретный круг. Возвращает True если успешно."""
         name = name.strip()
+        import logging
+        logging.info(f"add_player_to_circle: circle={circle}, name='{name}', user_id={user_id}")
+        logging.info(f"  all_players: {self.all_players}")
+        logging.info(f"  name in all_players: {name in self.all_players}")
+        
         if not name or name in self.all_players:
+            logging.warning(f"  FAILED: name is empty or already in all_players")
             return False
 
         circle_players = self.circle_list(circle)
         limit = self.circle_limit(circle)
+        logging.info(f"  circle_players: {circle_players}, limit={limit}, len={len(circle_players)}")
 
         # Check limit if not unlimited
         if limit != float('inf') and len(circle_players) >= limit:
+            logging.warning(f"  FAILED: circle is full")
             return False
 
         circle_players.append(name)
         self.set_circle_list(circle, circle_players)
+        logging.info(f"  SUCCESS: added to circle {circle}")
 
         # Register user_id if provided
         if user_id is not None:
