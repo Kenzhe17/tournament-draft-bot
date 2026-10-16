@@ -855,14 +855,14 @@ class AdminConfirmView(View):
                 if is_team_a:
                     my_team_idx = team_a_idx
                     my_team_name = team_a_name
-                    my_teammates = [p for p in team_a_players if p["name"] != player_name]
+                    my_teammates = team_a_players  # Включить всех игроков включая себя
                     opp_team_idx = team_b_idx
                     opp_team_name = team_b_name
                     opponents = team_b_players
                 else:
                     my_team_idx = team_b_idx
                     my_team_name = team_b_name
-                    my_teammates = [p for p in team_b_players if p["name"] != player_name]
+                    my_teammates = team_b_players  # Включить всех игроков включая себя
                     opp_team_idx = team_a_idx
                     opp_team_name = team_a_name
                     opponents = team_a_players
