@@ -453,6 +453,13 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
 
+        # Log stats filling
+        from utils.logging import log_stats_filled
+        stats_summary = ""
+        for player, kd in stats.items():
+            stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+        await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
+
         # Update tournament message to refresh view
         from bot import TournamentBot
         bot = interaction.client  # type: ignore[assignment]
@@ -730,7 +737,8 @@ class AdminConfirmView(View):
         from storage.bet_store import bet_store
         from storage.user_balance_store import user_balance_store
 
-        logging.info(f"confirm_callback called: match_type={self.match_type}, match_index={self.match_index}, winning_team_index={winning_team_index}")
+        logging.info(f"========== confirm_callback START ==========")
+        logging.info(f"match_type={self.match_type}, match_index={self.match_index}, winning_team_index={winning_team_index}")
 
         await interaction.response.defer(ephemeral=True)
 
