@@ -279,7 +279,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         team_b_name = self.tournament.team_names.get(team_b_idx, team_b.get("captain", f"Team {team_b_idx}"))
 
         # Prepare teammates and opponents with Kill/Death
-        def prepare_players_data(team_data: dict, temp_stats: dict) -> list:
+        def prepare_players_data(team_data: dict, temp_stats: dict, user_ids: dict) -> list:
             players = []
             captain = team_data.get("captain", "")
             players_list = team_data.get("players", [])
@@ -289,7 +289,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 kd_data = temp_stats.get(captain, {})
                 kills = kd_data.get("kills", 0)
                 deaths = kd_data.get("deaths", 0)
-                players.append({"name": captain, "kills": kills, "deaths": deaths})
+                players.append({"name": captain, "kills": kills, "deaths": deaths, "user_id": user_ids.get(captain)})
 
             # Add other players
             for player in players_list:
@@ -297,12 +297,16 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                     kd_data = temp_stats.get(player, {})
                     kills = kd_data.get("kills", 0)
                     deaths = kd_data.get("deaths", 0)
-                    players.append({"name": player, "kills": kills, "deaths": deaths})
+                    players.append({"name": player, "kills": kills, "deaths": deaths, "user_id": user_ids.get(player)})
 
             return players
 
-        team_a_players = prepare_players_data(team_a, temp_stats)
-        team_b_players = prepare_players_data(team_b, temp_stats)
+        # Build user_id mapping for all players
+        all_stats = await player_stats_store.get_all(self.guild_id)
+        user_ids = {stat.name: stat.user_id for stat in all_stats}
+
+        team_a_players = prepare_players_data(team_a, temp_stats, user_ids)
+        team_b_players = prepare_players_data(team_b, temp_stats, user_ids)
 
         # Determine winner
         if self.match_type == "qualifier":

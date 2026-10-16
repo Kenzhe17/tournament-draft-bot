@@ -931,32 +931,33 @@ class TournamentCog(commands.Cog):
         # Build description
         description_parts = ["Основная информация и статистика игрока:\n"]
 
-        # Игровой профиль
-        description_parts.append(f"{replace_emojis('⚪')} **Игровой профиль:**")
+        # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('sub_middle')} Ранг: {rank_title}")
         description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
+        description_parts.append(f"{replace_emojis('sub_middle')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append("")
+
+        # Экономика
+        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} " + get_emoji("money"))
+        description_parts.append(f"{replace_emojis('sub_middle')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 
         # Статистика игр
-        description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
-        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр")
-        description_parts.append(f"{replace_emojis('sub_middle')} Побед: {total_games_won} `({win_rate:.1f}%)`")
+        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
 
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
             description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
             description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
-            description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {stats.skill_rating:.1f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {stats.skill_rating:.1f}/10.0")
             description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
         else:
             description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
-        
+
         description_parts.append("")
 
         # Био
         if stats.description:
-            description_parts.append(f"{replace_emojis('⚪')} **О себе:**")
             description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
             description_parts.append("")
 
@@ -976,20 +977,25 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(name="history", description="Показать историю матчей")
-    @app_commands.describe(user="Пользователь (пусто = ваша история)")
-    async def history(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+    @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
+    async def history(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
         """Показать историю матчей игрока."""
         from storage.match_history_store import match_history_store
         from views.history_view import HistoryView, create_history_embed
+
+        # Ограничить limit до 30
+        limit = min(max(limit, 1), 30)
 
         # Если пользователь не указан, показываем историю автора
         target_user = user if user else interaction.user
 
         # Получить историю матчей
         matches = await match_history_store.get(interaction.guild_id, target_user.id)
+        # Ограничить количество матчей
+        matches = matches[:limit]
 
-        # Получить статистику за последние 10 матчей
-        stats = await match_history_store.get_recent_stats(interaction.guild_id, target_user.id, limit=10)
+        # Получить статистику за последние limit матчей
+        stats = await match_history_store.get_recent_stats(interaction.guild_id, target_user.id, limit=limit)
 
         # Получить имя пользователя для отображения
         from storage.player_stats_store import player_stats_store

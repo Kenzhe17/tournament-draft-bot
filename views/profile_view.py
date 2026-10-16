@@ -172,65 +172,54 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Build description (new style)
         description_parts = ["Основная информация и статистика игрока:\n"]
 
-        # Игровой профиль
-        description_parts.append(f"{replace_emojis('⚪')} **Игровой профиль:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Ранг: {rank_title}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        # Ранг, ELO, Уровень
+        description_parts.append(f"{replace_emojis('sub_middle')} Ранг: {rank_title}")
+        description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('sub_middle')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
         description_parts.append("")
 
         # Экономика
-        description_parts.append(f"{replace_emojis('⚪')} **Экономика:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Баланс: {balance:,} " + get_emoji("money"))
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Предметов: {inventory_count} шт.")
+        description_parts.append(f"{replace_emojis('sub_middle')} Баланс: {balance:,} " + get_emoji("money"))
+        description_parts.append(f"{replace_emojis('sub_middle')} Предметов: {inventory_count} шт.")
         description_parts.append("")
 
         # Статистика игр
-        description_parts.append(f"{replace_emojis('⚪')} **Статистика игр:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
-        
+        description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {total_games_played} игр `(Побед: {total_games_won} | {win_rate:.1f}%)`")
+
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
             try:
                 kd_ratio = stats.kd_ratio
             except AttributeError:
                 kd_ratio = 0.0
-            
+
             try:
                 avg_kills = stats.avg_kills
             except AttributeError:
                 avg_kills = 0.0
-            
+
             try:
                 skill_rating = stats.skill_rating
             except Exception as e:
-                import sys
-                print(f"[DEBUG] skill_rating error: {type(e).__name__}: {e}", file=sys.stderr)
-                print(f"[DEBUG] stats type: {type(stats)}", file=sys.stderr)
-                print(f"[DEBUG] has skill_rating: {hasattr(stats, 'skill_rating')}", file=sys.stderr)
-                print(f"[DEBUG] total_kills: {getattr(stats, 'total_kills', 'MISSING')}", file=sys.stderr)
-                print(f"[DEBUG] total_deaths: {getattr(stats, 'total_deaths', 'MISSING')}", file=sys.stderr)
-                print(f"[DEBUG] games: {getattr(stats, 'games', 'MISSING')}", file=sys.stderr)
                 skill_rating = 0.0
-            
+
             try:
                 best_match_kills = stats.best_match_kills
             except AttributeError:
                 best_match_kills = 0
-            
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {kd_ratio:.2f}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {avg_kills:.2f}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Skill Rating: {skill_rating}/10.0")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Max Kills: {best_match_kills}")
+
+            description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {skill_rating:.1f}/10.0")
+            description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {best_match_kills}")
         else:
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
-        
+            description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
+
         description_parts.append("")
 
         # Био
         if stats.description:
-            description_parts.append(f"{replace_emojis('⚪')} **О себе:**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {stats.description}")
+            description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
             description_parts.append("")
 
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")

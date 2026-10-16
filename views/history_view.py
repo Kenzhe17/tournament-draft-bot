@@ -98,12 +98,19 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         return date.strftime("%d.%m.%Y %H:%M")
 
     # Форматирование списка игроков с Kill/Death
-    def format_players(players: List[dict]) -> str:
+    def format_players(players: List[dict], user_id: int = None) -> str:
         if not players:
             return "Нет данных"
         formatted = []
         for p in players:
-            formatted.append(f"{p.get('name', 'Unknown')} `({p.get('kills', 0)}/{p.get('deaths', 0)})`")
+            name = p.get('name', 'Unknown')
+            kills = p.get('kills', 0)
+            deaths = p.get('deaths', 0)
+            # Если это просматриваемый игрок, выделяем его стату
+            if user_id and p.get('user_id') == user_id:
+                formatted.append(f"**{name}** `({kills}/{deaths})`")
+            else:
+                formatted.append(f"{name} `({kills}/{deaths})`")
         return ", ".join(formatted)
 
     # Если это первая страница (index 0), показываем статистику
@@ -150,21 +157,20 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
             # Команда игрока
             description_parts.append(f"{replace_emojis('⚪')} **Ваша команда ({match.team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.teammates)}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.teammates, user_id)}")
             description_parts.append("")
 
             # Противники
             description_parts.append(f"{replace_emojis('⚪')} **Противники ({match.opponent_team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.opponents)}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.opponents, user_id)}")
             description_parts.append("")
 
             # Статистика игрока
-            result_emoji = "🏆" if match.result == "win" else "💔"
             result_text = "Победа" if match.result == "win" else "Поражение"
 
             description_parts.append(f"{replace_emojis('⚪')} **Ваша статистика:**")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Kill/Death: {match.kills}/{match.deaths}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Результат: {result_emoji} {result_text}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} Результат: {result_text}")
             description_parts.append(f"{replace_emojis('a_dot_smaller')} ELO: {match.elo_change:+d}")
 
             # Ставки если есть
