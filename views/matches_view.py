@@ -334,7 +334,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                     break
 
             if not user_stats:
-                logging.warning(f"No stats found for player {player_name}")
+                logging.warning(f"No stats found for player {player_name}, skipping history save")
                 continue
 
             user_id = user_stats.user_id
@@ -361,7 +361,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             result = "win" if is_winner else "loss"
 
             # Get ELO change from last_elo_change
-            elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+            elo_change = user_stats.last_elo_change if hasattr(user_stats, 'last_elo_change') else 0
 
             # Create match history entry
             match_entry = MatchHistory(
