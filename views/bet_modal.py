@@ -61,7 +61,10 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             from bot import TournamentBot
             bot = interaction.client
             await bot.update_tournament_message(interaction.guild, self.tournament)
-            await interaction.response.send_message(replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + get_emoji('money') + f" → {self.team_name} `({actual_odds:.2f}x)`"), ephemeral=True)
+            await interaction.response.send_message(
+                replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + get_emoji('money') + f" → {self.team_name} `({actual_odds:.2f}x)`",
+                ephemeral=True
+            )
         except Exception as e:
             import logging
             logging.error(f"Error placing bet: {e}", exc_info=True)
