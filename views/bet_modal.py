@@ -47,7 +47,6 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             )
             return
 
-        # Get user balance
         from storage.user_balance_store import user_balance_store
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
 
@@ -58,10 +57,8 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             )
             return
 
-        # Check if user is participating in this match
         user_team_index = self._get_user_team_index(interaction.user.id)
         if user_team_index is not None:
-            # User is on one of the teams - check if betting against own team
             if (self.team_name == self.team_a_name and user_team_index == 1) or \
                (self.team_name == self.team_b_name and user_team_index == 0):
                 await interaction.response.send_message(
@@ -70,7 +67,6 @@ class BetAmountModal(Modal, title="Сумма ставки"):
                 )
                 return
 
-        # Check if user already has a bet in this phase
         from storage.bets_store import bets_store
         existing_bet = await bets_store.get_user_bet_in_phase(
             self.guild_id,
@@ -85,10 +81,8 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             )
             return
 
-        # Get match_id
         match_id = f"{self.match_type}_{self.match_index}"
 
-        # Get current odds
         odds_data = await bet_store.get_match_odds(self.guild_id, match_id)
         if odds_data:
             if self.team_name == self.team_a_name:
@@ -98,7 +92,6 @@ class BetAmountModal(Modal, title="Сумма ставки"):
         else:
             actual_odds = 1.9
 
-        # Create bet
         from models.bet import Bet
         bet = Bet(
             guild_id=self.guild_id,
@@ -116,12 +109,10 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             import logging
             logging.info(f"Placing bet: match_id={match_id}, team_name='{self.team_name}', amount={amount}, odds={actual_odds}, match_type={self.match_type}")
 
-            # Save the bet (this will update odds)
             await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
 
-            # Update tournament message
             from bot import TournamentBot
-            bot = interaction.client  # type: ignore[assignment]
+            bot = interaction.client
             await bot.update_tournament_message(interaction.guild, self.tournament)
 
             await interaction.response.send_message(
@@ -137,26 +128,22 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             )
 
     def _get_user_team_index(self, user_id: int) -> int | None:
-        """Get the team index if user is participating in this match, or None otherwise."""
-        # Get teams in this match
         if self.match_type == "qualifiers":
             match = self.tournament.qualifier_matches[self.match_index]
         elif self.match_type == "semifinal":
             match = self.tournament.semifinal_matches[self.match_index]
-        else:  # final
+        else:
             match = (self.tournament.final_teams[0], self.tournament.final_teams[1])
 
         team_a_index, team_b_index = match
         team_a = self.tournament.teams[team_a_index] if team_a_index < len(self.tournament.teams) else {}
         team_b = self.tournament.teams[team_b_index] if team_b_index < len(self.tournament.teams) else {}
 
-        # Check if user is in team A
         for circle in range(1, 5):
             player = team_a.get(f"circle{circle}")
             if player == str(user_id):
                 return 0
 
-        # Check if user is in team B
         for circle in range(1, 5):
             player = team_b.get(f"circle{circle}")
             if player == str(user_id):
