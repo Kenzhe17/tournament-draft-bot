@@ -188,3 +188,4 @@ class BetAmountModal(Modal, title="Введите сумму ставки"):
                     if player_user_id == user_id:
                         return team_index
         return None
+
