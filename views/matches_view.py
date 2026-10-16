@@ -326,7 +326,6 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
 
             # Get user_id from player stats - search by name
             all_stats = await player_stats_store.get_all(self.guild_id)
-            logging.info(f"Available stats in DB: {[s.name for s in all_stats]}")
             user_stats = None
             for stat in all_stats:
                 if stat.name == player_name:
@@ -699,11 +698,6 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         except Exception as e:
             import logging
             logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
-
-        await interaction.followup.send(
-            replace_emojis(f"✅ Статистика для {self.team_name} сохранена!"),
-            ephemeral=True
-        )
 
 
 class AdminPanelSelect(discord.ui.Select):

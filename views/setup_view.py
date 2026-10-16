@@ -1195,14 +1195,6 @@ class StartTournamentButton(discord.ui.Button):
                     draft_message = await interaction.channel.send(f"{replace_emojis('white_arrow')} {first_captain_name} - ваша очередь выбирать!")
                 tournament.draft_message_id = draft_message.id
                 store.set(tournament)
-            
-            try:
-                await interaction.response.send_message(
-                    replace_emojis("🚀 Турнир запущен! Драфт начался."),
-                    ephemeral=True
-                )
-            except discord.NotFound:
-                pass
 
 
 class ToggleRegistrationButton(discord.ui.Button):

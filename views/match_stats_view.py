@@ -175,11 +175,6 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             from bot import TournamentBot
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
-
-            await interaction.followup.send(
-                replace_emojis("✅ Данные отправлены\n\n⏳ Ожидается подтверждения администратора"),
-                ephemeral=True
-            )
         except Exception as e:
             import logging
             logging.error(f"Error in CaptainStatsModal.on_submit: {e}", exc_info=True)

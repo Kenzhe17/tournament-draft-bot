@@ -46,12 +46,13 @@ class PrevButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти к предыдущему матчу."""
-        view = interaction.message.view
-        if view and hasattr(view, 'current_page'):
-            if view.current_page > 0:
-                view.current_page -= 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page, self.user_name)
-                await interaction.response.edit_message(embed=embed, view=view)
+        # Get the parent view
+        parent_view = self.view
+        if parent_view and hasattr(parent_view, 'current_page'):
+            if parent_view.current_page > 0:
+                parent_view.current_page -= 1
+                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, parent_view.current_page, self.user_name)
+                await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
 
@@ -73,12 +74,13 @@ class NextButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перейти к следующему матчу."""
-        view = interaction.message.view
-        if view and hasattr(view, 'current_page'):
-            if view.current_page < len(self.matches) - 1:
-                view.current_page += 1
-                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, view.current_page, self.user_name)
-                await interaction.response.edit_message(embed=embed, view=view)
+        # Get the parent view
+        parent_view = self.view
+        if parent_view and hasattr(parent_view, 'current_page'):
+            if parent_view.current_page < len(self.matches) - 1:
+                parent_view.current_page += 1
+                embed = create_history_embed(self.guild_id, self.user_id, self.matches, self.stats, parent_view.current_page, self.user_name)
+                await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
 
@@ -129,9 +131,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats['avg_kills']:.2f}")
         description_parts.append("")
 
-        if matches:
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Нажмите 'Следующая ▶️' для просмотра последнего матча")
-        else:
+        if not matches:
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
 
         title = f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ"
