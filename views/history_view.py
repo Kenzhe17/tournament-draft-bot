@@ -21,6 +21,7 @@ class HistoryView(discord.ui.View):
         self.limit = limit
         self.current_page = 0
         self.total_pages = len(matches)
+        self.initial_embed = None
 
         # Only show navigation buttons if there are matches
         if matches:
@@ -46,7 +47,7 @@ class PrevButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page > 0:
                 parent_view.current_page -= 1
-                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
+                embed = await create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -68,7 +69,7 @@ class NextButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page < len(parent_view.matches):
                 parent_view.current_page += 1
-                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
+                embed = await create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -89,8 +90,13 @@ class NoMatchesButton(discord.ui.Button):
         pass
 
 
-def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "", limit: int = 10) -> discord.Embed:
+async def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "", limit: int = 10) -> discord.Embed:
     """Создать embed для истории матчей."""
+
+    # Получить актуальные имена всех игроков из player_stats
+    from storage.player_stats_store import player_stats_store
+    all_stats = await player_stats_store.get_all(guild_id)
+    user_id_to_name = {stat.user_id: stat.name for stat in all_stats}
 
     # Форматирование даты
     def format_date(date: datetime) -> str:
@@ -107,6 +113,10 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             name = p.get('name', 'Unknown')
             kills = p.get('kills', 0)
             deaths = p.get('deaths', 0)
+            # Получить актуальное имя из player_stats если есть user_id
+            if 'user_id' in p and p['user_id'] in user_id_to_name:
+                name = user_id_to_name[p['user_id']]
+
             # Если это просматриваемый игрок, выделяем его стату
             # Сначала проверяем по user_id, если есть и совпадает
             # Затем проверяем по имени (для старых записей)
