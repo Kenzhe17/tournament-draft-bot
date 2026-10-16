@@ -104,6 +104,7 @@ class MatchHistoryStore:
                         """,
                         guild_id, user_id
                     )
+                    import json
                     return [
                         MatchHistory(
                             guild_id=row["guild_id"],
@@ -115,10 +116,10 @@ class MatchHistoryStore:
                             match_index=row["match_index"],
                             team_index=row["team_index"],
                             team_name=row["team_name"],
-                            teammates=row["teammates"],
+                            teammates=json.loads(row["teammates"]) if isinstance(row["teammates"], str) else row["teammates"],
                             opponent_team_index=row["opponent_team_index"],
                             opponent_team_name=row["opponent_team_name"],
-                            opponents=row["opponents"],
+                            opponents=json.loads(row["opponents"]) if isinstance(row["opponents"], str) else row["opponents"],
                             kills=row["kills"],
                             deaths=row["deaths"],
                             result=row["result"],
@@ -147,6 +148,7 @@ class MatchHistoryStore:
         """Добавить запись о матче в историю."""
         if self._use_db:
             from storage.db import get_pool
+            import json
             pool = await get_pool()
             async with pool.acquire() as conn:
                 try:
@@ -162,8 +164,8 @@ class MatchHistoryStore:
                         """,
                         match.guild_id, match.user_id, match.match_id, match.tournament_id,
                         match.date, match.match_type, match.match_index, match.team_index,
-                        match.team_name, match.teammates, match.opponent_team_index,
-                        match.opponent_team_name, match.opponents, match.kills, match.deaths,
+                        match.team_name, json.dumps(match.teammates), match.opponent_team_index,
+                        match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                         match.result, match.elo_change, match.bet_amount, match.bet_win,
                         match.bet_team
                     )
@@ -183,8 +185,8 @@ class MatchHistoryStore:
                             """,
                             match.guild_id, match.user_id, match.match_id, match.tournament_id,
                             match.date, match.match_type, match.match_index, match.team_index,
-                            match.team_name, match.teammates, match.opponent_team_index,
-                            match.opponent_team_name, match.opponents, match.kills, match.deaths,
+                            match.team_name, json.dumps(match.teammates), match.opponent_team_index,
+                            match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                             match.result, match.elo_change, match.bet_amount, match.bet_win,
                             match.bet_team
                         )
