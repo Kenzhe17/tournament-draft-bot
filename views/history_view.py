@@ -11,13 +11,14 @@ from models.match_history import MatchHistory
 class HistoryView(discord.ui.View):
     """View для навигации по истории матчей."""
 
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
+    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = "", limit: int = 10):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.user_id = user_id
         self.matches = matches
         self.stats = stats
         self.user_name = user_name
+        self.limit = limit
         self.current_page = 0
         self.total_pages = len(matches)
 
@@ -45,7 +46,7 @@ class PrevButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page > 0:
                 parent_view.current_page -= 1
-                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name)
+                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -67,7 +68,7 @@ class NextButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page < len(parent_view.matches):
                 parent_view.current_page += 1
-                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name)
+                embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -88,7 +89,7 @@ class NoMatchesButton(discord.ui.Button):
         pass
 
 
-def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "") -> discord.Embed:
+def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "", limit: int = 10) -> discord.Embed:
     """Создать embed для истории матчей."""
 
     # Форматирование даты
@@ -123,7 +124,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
     # Если это первая страница (index 0), показываем статистику
     if page == 0:
-        description_parts = ["Статистика за последние 10 матчей:\n"]
+        description_parts = [f"Статистика за последние {limit} матчей:\n"]
 
         # Общая статистика
         description_parts.append(f"{replace_emojis('⚪')} **Общая статистика:**")
