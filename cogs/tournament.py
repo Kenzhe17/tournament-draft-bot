@@ -912,7 +912,6 @@ class TournamentCog(commands.Cog):
 
         # Ранг и уровень
         rank_title = get_rank_emoji(stats.level)
-        current_xp, xp_needed = stats.get_level_progress()
 
         # Инвентарь
         cosmetics = inventory_store.get_player_inventory(interaction.guild_id, target_user.id)
@@ -934,7 +933,7 @@ class TournamentCog(commands.Cog):
         # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('white_dot')} Ранг: {rank_title}")
         description_parts.append(f"{replace_emojis('sub_directory')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 
         # Экономика

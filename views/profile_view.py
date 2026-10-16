@@ -157,7 +157,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Get rank
         rank_title = get_rank_emoji(stats.level)
-        current_xp, xp_needed = stats.get_level_progress()
 
         # Используем статистику турниров вместо мини-игр
         total_games_played = stats.games
@@ -175,7 +174,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('white_dot')} Ранг: {rank_title}")
         description_parts.append(f"{replace_emojis('sub_directory')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level} `({current_xp:,} / {xp_needed:,} XP)`")
+        description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 
         # Экономика
