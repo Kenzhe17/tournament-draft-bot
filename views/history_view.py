@@ -113,7 +113,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             is_viewer = False
             if user_id and 'user_id' in p and p.get('user_id') == user_id:
                 is_viewer = True
-            elif user_name and name == user_name:
+            elif user_name and name.lower() == user_name.lower():
                 is_viewer = True
 
             if is_viewer:
