@@ -98,7 +98,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         return date.strftime("%d.%m.%Y %H:%M")
 
     # Форматирование списка игроков с Kill/Death
-    def format_players(players: List[dict], user_id: int = None) -> str:
+    def format_players(players: List[dict], user_id: int = None, user_name: str = None) -> str:
         if not players:
             return "Нет данных"
         formatted = []
@@ -107,7 +107,15 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             kills = p.get('kills', 0)
             deaths = p.get('deaths', 0)
             # Если это просматриваемый игрок, выделяем его стату
-            if user_id and p.get('user_id') == user_id:
+            # Сначала проверяем по user_id, если есть и совпадает
+            # Затем проверяем по имени (для старых записей)
+            is_viewer = False
+            if user_id and 'user_id' in p and p.get('user_id') == user_id:
+                is_viewer = True
+            elif user_name and name == user_name:
+                is_viewer = True
+
+            if is_viewer:
                 formatted.append(f"**{name}** `({kills}/{deaths})`")
             else:
                 formatted.append(f"{name} `({kills}/{deaths})`")
@@ -157,12 +165,12 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
             # Команда игрока
             description_parts.append(f"{replace_emojis('⚪')} **Ваша команда ({match.team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.teammates, user_id)}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.teammates, user_id, user_name)}")
             description_parts.append("")
 
             # Противники
             description_parts.append(f"{replace_emojis('⚪')} **Противники ({match.opponent_team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.opponents, user_id)}")
+            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.opponents, user_id, user_name)}")
             description_parts.append("")
 
             # Статистика игрока
