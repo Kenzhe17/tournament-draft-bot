@@ -325,13 +325,22 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 continue
 
             # Get user_id from player stats - search by name
-            # player_stats_store.get expects user_id, so we need to search differently
             all_stats = await player_stats_store.get_all(self.guild_id)
+            logging.info(f"Available stats in DB: {[s.name for s in all_stats]}")
             user_stats = None
             for stat in all_stats:
                 if stat.name == player_name:
                     user_stats = stat
                     break
+
+            if not user_stats:
+                logging.warning(f"No stats found for player {player_name} in player_stats (tried name: '{player_name}')")
+                # Try to find by display name (case-insensitive)
+                for stat in all_stats:
+                    if stat.name.lower() == player_name.lower():
+                        user_stats = stat
+                        logging.info(f"Found user_id {stat.user_id} for player {player_name} via case-insensitive match")
+                        break
 
             if not user_stats:
                 logging.warning(f"No stats found for player {player_name}, skipping history save")

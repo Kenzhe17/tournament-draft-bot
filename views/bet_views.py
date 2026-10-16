@@ -86,10 +86,9 @@ class TeamSelectView(View):
         modal = BetAmountModal(
             self.guild_id,
             self.tournament,
+            self.match_type,
             self.match_index,
             self.team_a,
-            self.name_a,
-            self.match_type,
             self.name_a,
             self.name_b
         )
@@ -101,10 +100,9 @@ class TeamSelectView(View):
         modal = BetAmountModal(
             self.guild_id,
             self.tournament,
+            self.match_type,
             self.match_index,
             self.team_b,
-            self.name_b,
-            self.match_type,
             self.name_a,
             self.name_b
         )
