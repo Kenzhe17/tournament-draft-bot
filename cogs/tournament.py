@@ -961,8 +961,6 @@ class TournamentCog(commands.Cog):
             description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
             description_parts.append("")
 
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")
-
         # Создать embed
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
@@ -1004,7 +1002,7 @@ class TournamentCog(commands.Cog):
 
         # Создать view и embed
         view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
-        embed = await create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
+        embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
 
         await interaction.response.send_message(embed=embed, view=view)
 

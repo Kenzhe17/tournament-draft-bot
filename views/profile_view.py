@@ -222,8 +222,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
             description_parts.append("")
 
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени")
-
         # Create new embed (new style)
         import discord
         embed = discord.Embed(
