@@ -30,12 +30,12 @@ class HistoryView(discord.ui.View):
 
 
 class PrevButton(discord.ui.Button):
-    """Кнопка 'Предыдущая'."""
+    """Кнопка 'Назад'."""
 
     def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="◀️ Предыдущая",
+            label="◀️ Назад",
             custom_id=f"history_prev:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -45,7 +45,7 @@ class PrevButton(discord.ui.Button):
         self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Перейти к предыдущему матчу."""
+        """Перейти назад."""
         # Get the parent view
         parent_view = self.view
         if parent_view and hasattr(parent_view, 'current_page'):
@@ -58,12 +58,12 @@ class PrevButton(discord.ui.Button):
 
 
 class NextButton(discord.ui.Button):
-    """Кнопка 'Следующая'."""
+    """Кнопка 'Вперед'."""
 
     def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, user_name: str = ""):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="Следующая ▶️",
+            label="Вперед ▶️",
             custom_id=f"history_next:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -73,7 +73,7 @@ class NextButton(discord.ui.Button):
         self.user_name = user_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Перейти к следующему матчу."""
+        """Перейти вперед."""
         # Get the parent view
         parent_view = self.view
         if parent_view and hasattr(parent_view, 'current_page'):
