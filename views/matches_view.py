@@ -253,6 +253,134 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             "temp_kd_data": temp_stats
         }, None)
 
+        # Save match to history for all players
+        from storage.match_history_store import match_history_store
+        from models.match_history import MatchHistory
+        from datetime import datetime
+        from storage.player_stats_store import player_stats_store
+        import logging
+
+        logging.info(f"========== Saving match history from ConfirmFinalWinnerButton ==========")
+        logging.info(f"match_type={self.match_type}, match_index={self.match_index}, winning_team_index={self.team_index}")
+
+        # Get match teams
+        if self.match_type == "qualifier":
+            match = self.tournament.qualifier_matches[self.match_index]
+        elif self.match_type == "semifinal":
+            match = self.tournament.semifinal_matches[self.match_index]
+        else:  # final
+            match = (self.tournament.final_teams[0], self.tournament.final_teams[1])
+
+        team_a_idx, team_b_idx = match
+        team_a = self.tournament.teams[team_a_idx] if team_a_idx < len(self.tournament.teams) else {}
+        team_b = self.tournament.teams[team_b_idx] if team_b_idx < len(self.tournament.teams) else {}
+
+        team_a_name = self.tournament.team_names.get(team_a_idx, team_a.get("captain", f"Team {team_a_idx}"))
+        team_b_name = self.tournament.team_names.get(team_b_idx, team_b.get("captain", f"Team {team_b_idx}"))
+
+        # Prepare teammates and opponents with Kill/Death
+        def prepare_players_data(team_data: dict, temp_stats: dict) -> list:
+            players = []
+            captain = team_data.get("captain", "")
+            players_list = team_data.get("players", [])
+
+            # Add captain
+            if captain:
+                kd_data = temp_stats.get(captain, {})
+                kills = kd_data.get("kills", 0)
+                deaths = kd_data.get("deaths", 0)
+                players.append({"name": captain, "kills": kills, "deaths": deaths})
+
+            # Add other players
+            for player in players_list:
+                if player != captain:  # Avoid duplicate captain
+                    kd_data = temp_stats.get(player, {})
+                    kills = kd_data.get("kills", 0)
+                    deaths = kd_data.get("deaths", 0)
+                    players.append({"name": player, "kills": kills, "deaths": deaths})
+
+            return players
+
+        team_a_players = prepare_players_data(team_a, temp_stats)
+        team_b_players = prepare_players_data(team_b, temp_stats)
+
+        # Determine winner
+        if self.match_type == "qualifier":
+            winner_idx = self.tournament.qualifier_winners[self.match_index]
+        elif self.match_type == "semifinal":
+            winner_idx = self.tournament.semifinal_pending_winners[self.match_index]
+        else:
+            winner_idx = self.team_index
+
+        # Save history for each player
+        for player_name, kd_data in temp_stats.items():
+            logging.info(f"Processing history for player: {player_name}")
+
+            # Find which team the player is on
+            is_team_a = player_name in [p["name"] for p in team_a_players]
+            is_team_b = player_name in [p["name"] for p in team_b_players]
+
+            if not (is_team_a or is_team_b):
+                logging.warning(f"Player {player_name} not found in either team")
+                continue
+
+            # Get user_id from player stats
+            stats = await player_stats_store.get(self.guild_id, player_name)
+            if not stats:
+                logging.warning(f"No stats found for player {player_name}")
+                continue
+
+            user_id = stats.user_id
+            logging.info(f"Found user_id {user_id} for player {player_name}")
+
+            # Determine team and opponent
+            if is_team_a:
+                my_team_idx = team_a_idx
+                my_team_name = team_a_name
+                my_teammates = [p for p in team_a_players if p["name"] != player_name]
+                opp_team_idx = team_b_idx
+                opp_team_name = team_b_name
+                opponents = team_b_players
+            else:
+                my_team_idx = team_b_idx
+                my_team_name = team_b_name
+                my_teammates = [p for p in team_b_players if p["name"] != player_name]
+                opp_team_idx = team_a_idx
+                opp_team_name = team_a_name
+                opponents = team_a_players
+
+            # Determine result
+            is_winner = (my_team_idx == winner_idx)
+            result = "win" if is_winner else "loss"
+
+            # Get ELO change from last_elo_change
+            elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+
+            # Create match history entry
+            match_entry = MatchHistory(
+                guild_id=self.guild_id,
+                user_id=user_id,
+                match_id=f"{self.tournament.id}_{self.match_type}_{self.match_index}",
+                tournament_id=self.tournament.id,
+                date=datetime.now(),
+                match_type=self.match_type,
+                match_index=self.match_index,
+                team_index=my_team_idx,
+                team_name=my_team_name,
+                teammates=my_teammates,
+                opponent_team_index=opp_team_idx,
+                opponent_team_name=opp_team_name,
+                opponents=opponents,
+                kills=kd_data.get("kills", 0),
+                deaths=kd_data.get("deaths", 0),
+                result=result,
+                elo_change=elo_change
+            )
+
+            logging.info(f"Saving match history for {player_name}: result={result}, kills={match_entry.kills}, deaths={match_entry.deaths}")
+            await match_history_store.add(match_entry)
+            logging.info(f"Successfully saved match history for {player_name}")
+
         # Confirm winner
         tournament = store.get(self.guild_id)
         if not tournament:
