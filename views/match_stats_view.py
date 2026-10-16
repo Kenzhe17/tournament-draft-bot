@@ -770,6 +770,8 @@ class AdminConfirmView(View):
             from datetime import datetime
             from storage.player_stats_store import player_stats_store
 
+            logging.info(f"Starting to save match history for {len(temp_stats)} players")
+
             # Get match teams
             if self.match_type == "qualifier":
                 match = tournament.qualifier_matches[self.match_index]
@@ -823,19 +825,24 @@ class AdminConfirmView(View):
 
             # Save history for each player
             for player_name, kd_data in temp_stats.items():
+                logging.info(f"Processing history for player: {player_name}")
+
                 # Find which team the player is on
                 is_team_a = player_name in [p["name"] for p in team_a_players]
                 is_team_b = player_name in [p["name"] for p in team_b_players]
 
                 if not (is_team_a or is_team_b):
+                    logging.warning(f"Player {player_name} not found in either team")
                     continue
 
                 # Get user_id from player stats
                 stats = await player_stats_store.get(self.guild_id, player_name)
                 if not stats:
+                    logging.warning(f"No stats found for player {player_name}")
                     continue
 
                 user_id = stats.user_id
+                logging.info(f"Found user_id {user_id} for player {player_name}")
 
                 # Determine team and opponent
                 if is_team_a:
@@ -881,7 +888,9 @@ class AdminConfirmView(View):
                     elo_change=elo_change
                 )
 
+                logging.info(f"Saving match history for {player_name}: result={result}, kills={match_entry.kills}, deaths={match_entry.deaths}")
                 await match_history_store.add(match_entry)
+                logging.info(f"Successfully saved match history for {player_name}")
 
             # Store tournament after stats are processed
             store.set(tournament)
