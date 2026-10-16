@@ -932,7 +932,7 @@ class TournamentCog(commands.Cog):
 
         # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('white_dot')} Ранг: {rank_title}")
-        description_parts.append(f"{replace_emojis('sub_directory')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
         description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 
@@ -943,7 +943,7 @@ class TournamentCog(commands.Cog):
 
         # Статистика игр
         description_parts.append(f"{replace_emojis('white_dot')} Сыграно: {total_games_played} игр")
-        description_parts.append(f"{replace_emojis('sub_directory')} Побед: {total_games_won} `({win_rate:.1f}%)`")
+        description_parts.append(f"{replace_emojis('sub_middle')} Побед: {total_games_won} `({win_rate:.1f}%)`")
 
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
