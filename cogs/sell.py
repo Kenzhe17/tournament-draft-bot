@@ -84,7 +84,17 @@ class SellCog(commands.Cog):
 
         # 3. Расчёт стоимости продажи (50% от стоимости предмета в магазине)
         base_price = item.price
-        sell_price = math.floor(base_price * 0.5)
+        base_sell_percent = 0.5
+
+        # Применить бонус питомца (Чёрный рынок / Торговый нюх)
+        from services.pet_ability_service import pet_ability_service
+        pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, interaction.user.id, "sell")
+        if pet_bonus["bonus_applied"]:
+            # Снижение комиссии до 35-45% от исходной
+            fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.45
+            base_sell_percent = base_sell_percent * (1 - fee_reduction)
+
+        sell_price = math.floor(base_price * base_sell_percent)
 
         # 4. Удаляем предмет и начисляем монеты
         await remove_user_item(guild_id, interaction.user.id, item.id)

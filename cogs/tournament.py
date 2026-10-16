@@ -1718,30 +1718,42 @@ class TournamentCog(commands.Cog):
     async def pay(self, interaction: discord.Interaction, user: discord.User, amount: int) -> None:
         """Передать монеты с комиссией 10%."""
         from storage.user_balance_store import user_balance_store
-        
+
         if amount < 100:
             await interaction.response.send_message(replace_emojis("❌ Минимальная сумма: 100 🪙"), ephemeral=True)
             return
-        
+
         if user.id == interaction.user.id:
             await interaction.response.send_message(replace_emojis("❌ Нельзя передать самому себе"), ephemeral=True)
             return
-        
+
+        # Базовая комиссия 10%
+        base_fee_percent = 0.1
+
+        # Применить бонус питомца (Щедрый перевод)
+        from services.pet_ability_service import pet_ability_service
+        pet_bonus = await pet_ability_service.get_pet_bonus(interaction.guild_id, interaction.user.id, "pay")
+        if pet_bonus["bonus_applied"]:
+            # Снижение комиссии до 25% от исходной
+            fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.25
+            base_fee_percent = base_fee_percent * (1 - fee_reduction)
+
         try:
             result = await user_balance_store.transfer_balance(
                 interaction.guild_id, interaction.user.id,
                 interaction.guild_id, user.id,
-                amount, 0.1
+                amount, base_fee_percent
             )
-            
+
+            fee_display = int(base_fee_percent * 100)
             embed = discord.Embed(
                 title=replace_emojis("Передача монет"),
                 color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}"
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
-            
+
             await interaction.response.send_message(embed=embed)
         except ValueError as e:
             await interaction.response.send_message(replace_emojis(f"❌ {str(e)}"), ephemeral=True)

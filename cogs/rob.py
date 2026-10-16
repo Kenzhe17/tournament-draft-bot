@@ -142,18 +142,62 @@ class RobStartButton(discord.ui.Button):
         has_items = len(stealable_items) > 0
         use_item_steal = has_items and random.random() < 0.5  # 50% шанс кражи предмета
 
+        # Базовый шанс успеха 50%
+        base_success_chance = 0.5
+
+        # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы / Охотник за вещами)
+        from services.pet_ability_service import pet_ability_service
+        pet_bonus = await pet_ability_service.get_pet_bonus(self.guild_id, self.robber_id, "rob")
+        if pet_bonus["bonus_applied"]:
+            base_success_chance += pet_bonus["bonus_value"] / 100  # до +10%
+
+        # Применить защиту жертвы (Крепкий панцирь)
+        victim_defense = await pet_ability_service.get_rob_defense_bonus(self.guild_id, self.victim_id)
+        if victim_defense["has_pet"]:
+            base_success_chance -= victim_defense["defense_bonus"] / 100  # до -20%
+
+        # Ограничить шанс 0-100%
+        base_success_chance = max(0.0, min(1.0, base_success_chance))
+
         # Бросок на успех/провал
-        success = random.random() < 0.5  # 50% шанс
+        success = random.random() < base_success_chance
 
         if success:
             if use_item_steal:
-                # Кража предмета
-                stolen_item = random.choice(stealable_items)
-                inventory_store.remove_item(self.guild_id, self.victim_id, stolen_item.id)
+                # Проверить защиту предмета жертвы (Цепкие когти)
+                item_protected = False
+                if victim_defense["has_pet"] and victim_defense["item_protection_chance"] > 0:
+                    if random.random() < (victim_defense["item_protection_chance"] / 100):
+                        item_protected = True
 
-                # Продажа за 30% стоимости
-                sale_price = int(stolen_item.price * 0.3)
-                await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
+                if item_protected:
+                    # Предмет защищён - украсть монеты вместо предмета
+                    percent = random.uniform(0.1, 0.5)
+                    potential = int(victim_balance * percent)
+                    stolen = min(potential, robber_balance)
+
+                    await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
+                    await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
+
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        description=(
+                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
+                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
+                            f"{get_emoji('white_dot')} **Предмет защищён питомцем!**\n"
+                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}\n"
+                        ),
+                        color=0x2ECC71
+                    )
+                    await interaction.response.edit_message(embed=embed, view=None)
+                else:
+                    # Кража предмета
+                    stolen_item = random.choice(stealable_items)
+                    inventory_store.remove_item(self.guild_id, self.victim_id, stolen_item.id)
+
+                    # Продажа за 30% стоимости
+                    sale_price = int(stolen_item.price * 0.3)
+                    await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
 
                 # Build success embed
                 embed = discord.Embed(
@@ -189,7 +233,17 @@ class RobStartButton(discord.ui.Button):
                     # Кража монет
                     percent = random.uniform(0.1, 0.5)  # 10% - 50%
                     potential = int(victim_balance * percent)
+
+                    # Применить бонус к добыче (Чужой кошелёк)
+                    if pet_bonus["bonus_applied"]:
+                        potential = int(potential * (1 + pet_bonus["bonus_value"] / 100))  # до +25%
+
                     stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
+
+                    # Применить снижение потерь жертвы (Сохранность капитала)
+                    if victim_defense["has_pet"] and victim_defense["loss_reduction"] > 0:
+                        loss_reduction = victim_defense["loss_reduction"] / 100
+                        stolen = int(stolen * (1 - loss_reduction))
 
                     await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
                     await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
@@ -211,6 +265,11 @@ class RobStartButton(discord.ui.Button):
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
             potential = int(victim_balance * percent)
             penalty = min(potential, int(robber_balance * 0.7))  # Максимум 70% от баланса грабителя
+
+            # Применить снижение штрафа (План отхода / Сохранность капитала)
+            if pet_bonus["bonus_applied"]:
+                penalty_reduction = pet_bonus["bonus_value"] / 100  # до 40%
+                penalty = int(penalty * (1 - penalty_reduction))
 
             await user_balance_store.subtract_balance(self.guild_id, self.robber_id, penalty)
             await user_balance_store.add_balance(self.guild_id, self.victim_id, penalty)

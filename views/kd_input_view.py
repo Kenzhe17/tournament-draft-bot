@@ -235,6 +235,13 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 leaderboard_rank=leaderboard_rank
             )
 
+            # Apply pet ability bonus to ELO change (Arena Wolf)
+            from services.pet_ability_service import pet_ability_service
+            final_elo_change = await pet_ability_service.apply_elo_bonus(
+                guild_id, user_id, elo_change, team_won
+            )
+            elo_change = final_elo_change
+
             # Update stats
             updated_stats = update_player_stats_from_match(
                 stats=stats,

@@ -235,6 +235,15 @@ class CaseStore:
             result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         elif drop_type.startswith("coins_"):
             coins_amount = int(drop_type.split("_")[1])
+
+            # Применить бонус питомца к монетам (Золотая лапа)
+            from services.pet_ability_service import pet_ability_service
+            pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_open")
+            if pet_bonus["bonus_applied"]:
+                bonus_percent = pet_bonus["bonus_value"]  # до 15%
+                bonus_coins = int(coins_amount * (bonus_percent / 100))
+                coins_amount += bonus_coins
+
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common"}
         elif drop_type.startswith("item_"):
@@ -287,6 +296,29 @@ class CaseStore:
 
         # Записать в историю
         self._add_to_history(guild_id, user_id, case_id, result)
+
+        # Проверить дополнительную награду от питомца (Секретный тайник)
+        from services.pet_ability_service import pet_ability_service
+        extra_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_extra_reward")
+        if extra_bonus["bonus_applied"]:
+            import random
+            bonus_chance = extra_bonus["bonus_value"]  # до 20%
+            if random.random() < (bonus_chance / 100):
+                # Дополнительная награда: 25-50% от базовой
+                if result["type"] == "coins":
+                    base_value = result["value"]
+                    extra_percent = random.uniform(0.25, 0.50)
+                    extra_value = int(base_value * extra_percent)
+                    await user_balance_store.add_balance(guild_id, user_id, extra_value)
+                    result["extra_reward"] = extra_value
+                elif result["type"] == "item":
+                    # Добавить монеты стоимостью 25-50% от предмета
+                    item = shop_store.get_item(result.get("item_id", ""))
+                    if item:
+                        extra_percent = random.uniform(0.25, 0.50)
+                        extra_value = int(item.price * extra_percent)
+                        await user_balance_store.add_balance(guild_id, user_id, extra_value)
+                        result["extra_reward"] = extra_value
 
         return result
 
