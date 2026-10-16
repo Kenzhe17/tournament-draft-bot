@@ -564,3 +564,63 @@ async def init_db() -> None:
         # Force initialization to ensure cases exist
         if not case_store.get_all_cases():
             case_store._initialize_default_cases()
+
+        # Create pets table
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pets (
+                pet_id BIGSERIAL PRIMARY KEY,
+                owner_1_id BIGINT NOT NULL,
+                owner_2_id BIGINT NULL,
+                pet_type TEXT NOT NULL,
+                rarity TEXT NOT NULL,
+                pet_name TEXT NOT NULL,
+                level INTEGER NOT NULL CHECK (level >= 1 AND level <= 10),
+                exp INTEGER NOT NULL CHECK (exp >= 0),
+                fullness INTEGER NOT NULL CHECK (fullness >= 0 AND fullness <= 100),
+                energy INTEGER NOT NULL CHECK (energy >= 0 AND energy <= 100),
+                last_fed_at TIMESTAMPTZ NOT NULL,
+                last_energy_update_at TIMESTAMPTZ NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                protected_item_id TEXT NULL,
+                CHECK (owner_2_id IS NULL OR owner_2_id != owner_1_id)
+            )
+        """)
+
+        # Create pet_care_slots table (ensures one pet per user)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pet_care_slots (
+                user_id BIGINT PRIMARY KEY,
+                pet_id BIGINT NOT NULL REFERENCES pets(pet_id) ON DELETE CASCADE
+            )
+        """)
+
+        # Create pet_invitations table for co-ownership
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS pet_invitations (
+                invitation_id BIGSERIAL PRIMARY KEY,
+                inviter_id BIGINT NOT NULL,
+                invitee_id BIGINT NOT NULL,
+                pet_type TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                UNIQUE (inviter_id, invitee_id, status)
+            )
+        """)
+
+        # Create indexes for pets
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pets_owner_1
+            ON pets(owner_1_id)
+        """)
+
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pets_owner_2
+            ON pets(owner_2_id)
+        """)
+
+        # Create index for pet_invitations
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_pet_invitations_invitee
+            ON pet_invitations(invitee_id, status)
+        """)

@@ -42,6 +42,11 @@ class ShopCategorySelect(discord.ui.Select):
                 value="cases",
                 description="Награды и удача"
             ),
+            discord.SelectOption(
+                label="🐾 Питомцы",
+                value="pets",
+                description="RPG-питомцы с способностями"
+            ),
         ]
         super().__init__(
             placeholder="Выберите категорию товаров...",
@@ -60,6 +65,9 @@ class ShopCategorySelect(discord.ui.Select):
         elif category == "roles":
             # Показать роли
             await show_roles_list(interaction)
+        elif category == "pets":
+            # Показать питомцев
+            await show_pets_category(interaction)
         else:
             # Показать редкость для значков/тегов
             await show_rarity_selection(interaction, category)
@@ -1439,6 +1447,371 @@ class RoleBuyButton(discord.ui.Button):
             disabled=not can_buy
         )
         self.item_id = item_id
+
+
+async def show_pets_category(interaction: discord.Interaction) -> None:
+    """Показать категорию питомцев."""
+    from storage.pet_store import pet_catalog
+    from models.pet import PetRarity, RARITY_PRICES
+
+    # Создать embed с описанием системы питомцев
+    embed = discord.Embed(
+        title=replace_emojis("🐾 МАГАЗИН ПИТОМЦЕВ"),
+        description=(
+            f"{replace_emojis('a_sparkle')} **Питомцы** — ваши верные спутники, которые помогают в экономике, "
+            f"ограблениях и Elo-матчах!\n\n"
+            f"{replace_emojis('white_dot')} **Правило:** У каждого игрока может быть только **один** питомец "
+            f"(включая совместное владение).\n\n"
+            f"{replace_emojis('white_dot')} **Таинственное яйцо** — 1,000 {get_emoji('money')}\n"
+            f"   Шанс питомца: 20% (80% пустое)\n"
+            f"   - Обычный: 12%\n"
+            f"   - Необычный: 5%\n"
+            f"   - Эпический: 2.4%\n"
+            f"   - Легендарный: 0.6%\n\n"
+            f"{replace_emojis('white_dot')} **Цены по редкости:**\n"
+            f"   - Обычный: 3,000 {get_emoji('money')}\n"
+            f"   - Необычный: 5,000 {get_emoji('money')}\n"
+            f"   - Эпический: 10,000 {get_emoji('money')}\n"
+            f"   - Легендарный: 20,000 {get_emoji('money')}"
+        ),
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    # Создать View с выбором редкости
+    view = discord.ui.View(timeout=180)
+    view.add_item(PetRaritySelect())
+    view.add_item(ShopBackButton())
+
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+class PetRaritySelect(discord.ui.Select):
+    """Выбор редкости питомцев."""
+
+    def __init__(self):
+        options = [
+            discord.SelectOption(
+                label="Обычные питомцы",
+                value="common",
+                description="3,000 монет • 3 питомца"
+            ),
+            discord.SelectOption(
+                label="Необычные питомцы",
+                value="uncommon",
+                description="5,000 монет • 2 питомца"
+            ),
+            discord.SelectOption(
+                label="Эпические питомцы",
+                value="epic",
+                description="10,000 монет • 2 питомца"
+            ),
+            discord.SelectOption(
+                label="Легендарные питомцы",
+                value="legendary",
+                description="20,000 монет • 1 питомец"
+            ),
+            discord.SelectOption(
+                label="🥚 Таинственное яйцо",
+                value="egg",
+                description="1,000 монет • Случайный питомец"
+            ),
+        ]
+        super().__init__(
+            placeholder="Выберите редкость...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать выбор редкости."""
+        rarity = self.values[0]
+
+        if rarity == "egg":
+            await show_mystery_egg(interaction)
+        else:
+            await show_pets_by_rarity(interaction, rarity)
+
+
+async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> None:
+    """Показать питомцев выбранной редкости."""
+    from storage.pet_store import pet_catalog
+    from models.pet import PetRarity
+
+    pet_rarity = PetRarity(rarity)
+    pets = pet_catalog.get_pets_by_rarity(pet_rarity)
+
+    if not pets:
+        await interaction.response.send_message(
+            replace_emojis("❌ Нет питомцев этой редкости."),
+            ephemeral=True
+        )
+        return
+
+    # Названия редкостей
+    rarity_names = {
+        "common": "Обычные",
+        "uncommon": "Необычные",
+        "epic": "Эпические",
+        "legendary": "Легендарные",
+    }
+
+    # Создать embed
+    embed = discord.Embed(
+        title=replace_emojis(f"🐾 {rarity_names.get(rarity, rarity)} питомцы"),
+        description=f"Выберите питомца для просмотра подробностей",
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    # Создать View с выбором питомца
+    view = discord.ui.View(timeout=180)
+    view.add_item(PetSelect(pets))
+    view.add_item(ShopBackButton())
+
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+class PetSelect(discord.ui.Select):
+    """Выбор питомца."""
+
+    def __init__(self, pets):
+        options = [
+            discord.SelectOption(
+                label=pet.name,
+                value=pet.pet_type.value,
+                description=pet.specialization
+            )
+            for pet in pets
+        ]
+        super().__init__(
+            placeholder="Выберите питомца...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.pets = {pet.pet_type.value: pet for pet in pets}
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать выбор питомца."""
+        pet_type = self.values[0]
+        pet = self.pets[pet_type]
+        await show_pet_card(interaction, pet)
+
+
+async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
+    """Показать карточку питомца."""
+    from models.pet import PetRarity
+
+    # Цвета по редкости
+    rarity_colors = {
+        PetRarity.COMMON: discord.Color.light_grey(),
+        PetRarity.UNCOMMON: discord.Color.green(),
+        PetRarity.EPIC: discord.Color.purple(),
+        PetRarity.LEGENDARY: discord.Color.gold(),
+    }
+
+    # Названия редкостей
+    rarity_names = {
+        "common": "Обычный",
+        "uncommon": "Необычный",
+        "epic": "Эпический",
+        "legendary": "Легендарный",
+    }
+
+    embed = discord.Embed(
+        title=replace_emojis(f"🐾 {pet_def.name}"),
+        description=(
+            f"{replace_emojis('sub_middle')} **Редкость:** {rarity_names.get(pet_def.rarity.value, pet_def.rarity.value)}\n"
+            f"{replace_emojis('sub_middle')} **Специализация:** {pet_def.specialization}\n"
+            f"{replace_emojis('sub_middle')} **Цена:** {pet_def.price:,} {get_emoji('money')}\n\n"
+            f"{replace_emojis('white_arrow')} **Способность 1 (ур. {pet_def.ability_1.unlock_level}+):**\n"
+            f"{pet_def.ability_1.description}\n\n"
+            f"{replace_emojis('white_arrow')} **Способность 2 (ур. {pet_def.ability_2.unlock_level}+):**\n"
+            f"{pet_def.ability_2.description}"
+        ),
+        color=rarity_colors.get(pet_def.rarity, discord.Color.from_rgb(69, 69, 69))
+    )
+
+    if pet_def.image_url:
+        embed.set_thumbnail(url=pet_def.image_url)
+
+    # Создать View с кнопками
+    view = discord.ui.View(timeout=180)
+    view.add_item(BuyPetButton(pet_def.pet_type.value, pet_def.price))
+    view.add_item(ShopBackButton())
+
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+async def show_mystery_egg(interaction: discord.Interaction) -> None:
+    """Показать карточку таинственного яйца."""
+    embed = discord.Embed(
+        title=replace_emojis("🥚 Таинственное яйцо"),
+        description=(
+            f"{replace_emojis('sub_middle')} **Цена:** 1,000 {get_emoji('money')}\n\n"
+            f"{replace_emojis('white_arrow')} **Шансы выпадения:**\n"
+            f"   - Пустое яйцо: 80%\n"
+            f"   - Обычный питомец: 12%\n"
+            f"   - Необычный питомец: 5%\n"
+            f"   - Эпический питомец: 2.4%\n"
+            f"   - Легендарный питомец: 0.6%\n\n"
+            f"{replace_emojis('warning')} **Важно:** Проверьте свободный слот перед открытием!"
+        ),
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    view = discord.ui.View(timeout=180)
+    view.add_item(OpenEggButton())
+    view.add_item(ShopBackButton())
+
+    await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BuyPetButton(discord.ui.Button):
+    """Кнопка покупки питомца."""
+
+    def __init__(self, pet_type: str, price: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label=f"Купить за {price:,} {get_emoji('money')}",
+            custom_id=f"buy_pet:{pet_type}"
+        )
+        self.pet_type = pet_type
+        self.price = price
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать покупку питомца."""
+        from storage.user_balance_store import user_balance_store
+        from storage.pet_store import pet_store
+
+        # Проверить свободный слот
+        has_slot = await pet_store.has_pet_slot(interaction.user.id)
+        if not has_slot:
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас уже есть питомец! Правило: один питомец на пользователя."),
+                ephemeral=True
+            )
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < self.price:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Недостаточно монет. Нужно: {self.price:,} {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
+                ephemeral=True
+            )
+            return
+
+        # Списать деньги
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
+
+        # Создать питомца
+        try:
+            pet = await pet_store.create_pet(
+                owner_1_id=interaction.user.id,
+                owner_2_id=None,
+                pet_type=self.pet_type,
+                pet_name=self.pet_type.replace("_", " ").title()
+            )
+
+            embed = discord.Embed(
+                title=replace_emojis("✅ Питомец куплен!"),
+                description=(
+                    f"{replace_emojis('a_sparkle')} **Питомец:** {pet.pet_name}\n"
+                    f"{replace_emojis('white_dot')} **Уровень:** {pet.level}\n"
+                    f"{replace_emojis('white_dot')} **Сытость:** {pet.fullness}/100\n"
+                    f"{replace_emojis('white_dot')} **Энергия:** {pet.energy}/100\n\n"
+                    f"Используйте `/pet profile` для управления питомцем."
+                ),
+                color=discord.Color.green()
+            )
+
+            await interaction.response.edit_message(embed=embed, view=None)
+        except Exception as e:
+            # Вернуть деньги при ошибке
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Ошибка при создании питомца: {str(e)}"),
+                ephemeral=True
+            )
+
+
+class OpenEggButton(discord.ui.Button):
+    """Кнопка открытия таинственного яйца."""
+
+    def __init__(self):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label=f"Открыть за 1,000 {get_emoji('money')}",
+            custom_id="open_egg"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать открытие яйца."""
+        from storage.user_balance_store import user_balance_store
+        from storage.pet_store import pet_store
+
+        # Проверить свободный слот
+        has_slot = await pet_store.has_pet_slot(interaction.user.id)
+        if not has_slot:
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас уже есть питомец! Освободите слот перед открытием яйца."),
+                ephemeral=True
+            )
+            return
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+        if balance < 1000:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Недостаточно монет. Нужно: 1,000 {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
+                ephemeral=True
+            )
+            return
+
+        # Списать деньги
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 1000)
+
+        # Открыть яйцо
+        result = await pet_store.open_mystery_egg()
+
+        if result["type"] == "nothing":
+            embed = discord.Embed(
+                title=replace_emojis("😔 Пустое яйцо"),
+                description="Вам не выпал питомец. Попробуйте ещё раз!",
+                color=discord.Color.red()
+            )
+            await interaction.response.edit_message(embed=embed, view=None)
+        else:
+            pet_def = result["pet"]
+            # Создать питомца
+            try:
+                pet = await pet_store.create_pet(
+                    owner_1_id=interaction.user.id,
+                    owner_2_id=None,
+                    pet_type=pet_def.pet_type.value,
+                    pet_name=pet_def.name
+                )
+
+                embed = discord.Embed(
+                    title=replace_emojis("🎉 Питомец выпал!"),
+                    description=(
+                        f"{replace_emojis('a_sparkle')} **Питомец:** {pet.pet_name}\n"
+                        f"{replace_emojis('white_dot')} **Редкость:** {pet_def.rarity.value}\n"
+                        f"{replace_emojis('white_dot')} **Уровень:** {pet.level}\n\n"
+                        f"Используйте `/pet profile` для управления питомцем."
+                    ),
+                    color=discord.Color.green()
+                )
+
+                await interaction.response.edit_message(embed=embed, view=None)
+            except Exception as e:
+                # Вернуть деньги при ошибке
+                await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 1000)
+                await interaction.response.send_message(
+                    replace_emojis(f"❌ Ошибка при создании питомца: {str(e)}"),
+                    ephemeral=True
+                )
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Купить роль."""
