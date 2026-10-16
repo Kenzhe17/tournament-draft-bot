@@ -1736,7 +1736,7 @@ class TournamentCog(commands.Cog):
             
             embed = discord.Embed(
                 title=replace_emojis("Передача монет"),
-                color=discord.Color.from_rgb(69, 69, 69)
+                color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
             embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** 10%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}"
@@ -1831,7 +1831,7 @@ class TournamentCog(commands.Cog):
             embed = discord.Embed(
                 title="Передача предмета",
                 description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** 10% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}",
-                color=discord.Color.from_rgb(69, 69, 69)
+                color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 

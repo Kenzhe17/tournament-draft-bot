@@ -77,21 +77,21 @@ class CaseOpenButton(discord.ui.Button):
         # Формировать результат
         if result["type"] == "nothing":
             message = "😢 Ничего не выпало!"
-            color = discord.Color.dark_red()
+            color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
             message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
-            color = discord.Color.dark_gold()
+            color = discord.Color.yellow()
             reaction_emoji = "money"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
             message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
-            color = discord.Color.dark_green()
+            color = discord.Color.green()
             reaction_emoji = "a_star"
         else:
             message = replace_emojis("cross Ошибка при открытии."),
-            color = discord.Color.dark_red()
+            color = discord.Color.red()
             reaction_emoji = "cross"
 
         # Показать результат
@@ -216,21 +216,21 @@ class CaseSelect(discord.ui.Select):
         # Формировать результат
         if result["type"] == "nothing":
             message = "😢 Ничего не выпало!"
-            color = discord.Color.dark_red()
+            color = discord.Color.red()
             reaction_emoji = "cross"
         elif result["type"] == "coins":
             message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
-            color = discord.Color.dark_gold()
+            color = discord.Color.yellow()
             reaction_emoji = "money"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
             message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
-            color = discord.Color.dark_green()
+            color = discord.Color.green()
             reaction_emoji = "a_star"
         else:
             message = replace_emojis("cross Ошибка при открытии."),
-            color = discord.Color.dark_red()
+            color = discord.Color.red()
             reaction_emoji = "cross"
 
         # Показать результат

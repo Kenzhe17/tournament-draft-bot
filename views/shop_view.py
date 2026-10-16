@@ -1223,11 +1223,13 @@ class ShopBuyButton(discord.ui.Button):
         )
         inventory_store.add_cosmetic(cosmetic)
 
-        await interaction.response.send_message(
-            f"{replace_emojis('check')} Вы купили **{item.name}** за {item.price} {get_emoji('money')}!\n\n"
+        embed = discord.Embed(
+            title=f"{replace_emojis('check')} Куплено!",
+            description=f"Вы купили **{item.name}** за {item.price} {get_emoji('money')}!\n\n"
             f"Используйте `/inventory` для экипировки.",
-            ephemeral=True
+            color=discord.Color.green()
         )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class InventoryEquipSelect(discord.ui.Select):
@@ -1326,10 +1328,12 @@ class InventoryEquipButton(discord.ui.Button):
         if success:
             item = shop_store.get_item(self.item_id)
             item_name = item.name if item else self.item_id
-            await interaction.response.send_message(
-                f"{replace_emojis('✅')} **{item_name}** экипирован!",
-                ephemeral=True
+            embed = discord.Embed(
+                title=f"{replace_emojis('✅')} Экипировано!",
+                description=f"**{item_name}** экипирован!",
+                color=discord.Color.green()
             )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
                 replace_emojis("❌ Не удалось экипировать предмет."),
@@ -1355,10 +1359,12 @@ class InventoryUnequipButton(discord.ui.Button):
         if success:
             item = shop_store.get_item(self.item_id)
             item_name = item.name if item else self.item_id
-            await interaction.response.send_message(
-                f"{replace_emojis('✅')} **{item_name}** снят.",
-                ephemeral=True
+            embed = discord.Embed(
+                title=f"{replace_emojis('✅')} Снято!",
+                description=f"**{item_name}** снят.",
+                color=discord.Color.green()
             )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             await interaction.response.send_message(
                 replace_emojis("❌ Не удалось снять предмет."),
