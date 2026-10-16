@@ -201,7 +201,11 @@ class CircleSelectButton(discord.ui.Button):
             user_name = interaction.user.display_name
             from utils.cosmetics import clean_nickname
             cleaned_name = clean_nickname(user_name)
-            
+
+            # Fallback: if cleaned_name is empty, use username
+            if not cleaned_name or cleaned_name.strip() == "":
+                cleaned_name = interaction.user.name
+
             # Automatically update user's nickname if it contains emojis
             if cleaned_name != user_name:
                 try:
@@ -303,7 +307,11 @@ class JoinPoolButton(discord.ui.Button):
             user_name = interaction.user.display_name
             from utils.cosmetics import clean_nickname
             cleaned_name = clean_nickname(user_name)
-            
+
+            # Fallback: if cleaned_name is empty, use username
+            if not cleaned_name or cleaned_name.strip() == "":
+                cleaned_name = interaction.user.name
+
             # Automatically update user's nickname if it contains emojis
             if cleaned_name != user_name:
                 try:
