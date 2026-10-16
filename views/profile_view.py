@@ -244,5 +244,6 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         )
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
-        # Update the original message
-        await interaction.response.edit_message(embed=embed)
+        # Update the original message with new embed and view
+        view = ProfileView(self.guild_id, self.user_id, True)
+        await interaction.response.edit_message(embed=embed, view=view)
