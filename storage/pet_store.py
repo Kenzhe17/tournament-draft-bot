@@ -1,21 +1,19 @@
 """Storage для системы питомцев."""
 
-import json
 import random
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from models.pet import (
-    Pet, PetDefinition, PetType, PetRarity, PetAbility,
+    Pet, PetType, PetRarity,
     EXP_REQUIREMENTS, RARITY_PRICES, ENERGY_COSTS
 )
 
 if TYPE_CHECKING:
     pass
 
-DATA_DIR = Path("data")
-PETS_CATALOG_FILE = DATA_DIR / "pets_catalog.json"
+# Импорт централизованного каталога
+from assets.pets_catalog import PETS_CATALOG, MYSTERY_EGG_DATA
 
 # Вероятности выпадения из таинственного яйца
 EGG_DROP_RATES = {
@@ -39,43 +37,19 @@ class PetCatalog:
     """Каталог питомцев."""
 
     def __init__(self) -> None:
-        self._pets: dict[str, PetDefinition] = {}
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.load()
+        self._pets = PETS_CATALOG
 
-    def load(self) -> None:
-        """Загрузить каталог из файла."""
-        if not PETS_CATALOG_FILE.exists():
-            return
-
-        try:
-            with open(PETS_CATALOG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for pet_type, pet_data in data.items():
-                    self._pets[pet_type] = PetDefinition.from_dict(pet_data)
-        except (json.JSONDecodeError, KeyError):
-            self._pets = {}
-
-    def save(self) -> None:
-        """Сохранить каталог в файл."""
-        data = {
-            pet_type: pet.to_dict()
-            for pet_type, pet in self._pets.items()
-        }
-        with open(PETS_CATALOG_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def get_pet(self, pet_type: str) -> PetDefinition | None:
+    def get_pet(self, pet_type: str) -> dict | None:
         """Получить определение питомца по типу."""
         return self._pets.get(pet_type)
 
-    def get_all_pets(self) -> list[PetDefinition]:
+    def get_all_pets(self) -> list[dict]:
         """Получить всех питомцев."""
         return list(self._pets.values())
 
-    def get_pets_by_rarity(self, rarity: PetRarity) -> list[PetDefinition]:
+    def get_pets_by_rarity(self, rarity: PetRarity) -> list[dict]:
         """Получить питомцев по редкости."""
-        return [pet for pet in self._pets.values() if pet.rarity == rarity]
+        return [pet for pet in self._pets.values() if pet["rarity_code"] == rarity.value]
 
 
 class PetStore:
@@ -140,7 +114,7 @@ class PetStore:
                     ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6)
                     RETURNING *
                     """,
-                    owner_1_id, owner_2_id, pet_type, pet_def.rarity.value,
+                    owner_1_id, owner_2_id, pet_type, pet_def["rarity_code"],
                     pet_name, now
                 )
 

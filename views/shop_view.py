@@ -1577,9 +1577,9 @@ class PetSelect(discord.ui.Select):
     def __init__(self, pets):
         options = [
             discord.SelectOption(
-                label=pet.name,
-                value=pet.pet_type.value,
-                description=pet.specialization
+                label=pet["name"],
+                value=pet["id"],
+                description=pet["rarity"]
             )
             for pet in pets
         ]
@@ -1589,7 +1589,7 @@ class PetSelect(discord.ui.Select):
             max_values=1,
             options=options
         )
-        self.pets = {pet.pet_type.value: pet for pet in pets}
+        self.pets = {pet["id"]: pet for pet in pets}
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать выбор питомца."""
@@ -1600,44 +1600,40 @@ class PetSelect(discord.ui.Select):
 
 async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     """Показать карточку питомца."""
-    from models.pet import PetRarity
+    # Цвет по редкости из каталога
+    color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
 
-    # Цвета по редкости
-    rarity_colors = {
-        PetRarity.COMMON: discord.Color.light_grey(),
-        PetRarity.UNCOMMON: discord.Color.green(),
-        PetRarity.EPIC: discord.Color.purple(),
-        PetRarity.LEGENDARY: discord.Color.gold(),
-    }
+    # Формирование описания способностей
+    ab1 = pet_def["abilities"][1]
+    ab2 = pet_def["abilities"][2]
 
-    # Названия редкостей
-    rarity_names = {
-        "common": "Обычный",
-        "uncommon": "Необычный",
-        "epic": "Эпический",
-        "legendary": "Легендарный",
-    }
+    # Способность 1
+    icon_1 = "🔓" if True else "🔒"  # Упрощено - всегда показываем как разблокирована для справки
+    desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** — {ab1['desc_template'].format(val=f\"{ab1['min_val']}–{ab1['max_val']}\")}"
+
+    # Способность 2
+    icon_2 = "🔓" if True else "🔒"
+    desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** — {ab2['desc_template'].format(val=f\"{ab2['min_val']}–{ab2['max_val']}\")}"
 
     embed = discord.Embed(
-        title=replace_emojis(f"🐾 {pet_def.name}"),
+        title=replace_emojis(f"🐾 {pet_def['title']}"),
         description=(
-            f"{replace_emojis('sub_middle')} **Редкость:** {rarity_names.get(pet_def.rarity.value, pet_def.rarity.value)}\n"
-            f"{replace_emojis('sub_middle')} **Специализация:** {pet_def.specialization}\n"
-            f"{replace_emojis('sub_middle')} **Цена:** {pet_def.price:,} {get_emoji('money')}\n\n"
-            f"{replace_emojis('white_arrow')} **Способность 1 (ур. {pet_def.ability_1.unlock_level}+):**\n"
-            f"{pet_def.ability_1.description}\n\n"
-            f"{replace_emojis('white_arrow')} **Способность 2 (ур. {pet_def.ability_2.unlock_level}+):**\n"
-            f"{pet_def.ability_2.description}"
+            f"{replace_emojis('a_sparkle')} **Редкость:** `{pet_def['rarity']}`\n"
+            f"{replace_emojis('white_arrow')} **Стоимость:** **`{pet_def['price']:,}`** {get_emoji('money')}\n\n"
+            f"📜 **Способности:**\n"
+            f"{replace_emojis('white_dot')} {desc_1}\n"
+            f"{replace_emojis('white_dot')} {desc_2}\n\n"
+            f"📖 **Описание:**\n*{pet_def['description']}*"
         ),
-        color=rarity_colors.get(pet_def.rarity, discord.Color.from_rgb(69, 69, 69))
+        color=color
     )
 
-    if pet_def.image_url:
-        embed.set_thumbnail(url=pet_def.image_url)
+    if pet_def.get("image_url"):
+        embed.set_image(url=pet_def["image_url"])
 
     # Создать View с кнопками
     view = discord.ui.View(timeout=180)
-    view.add_item(BuyPetButton(pet_def.pet_type.value, pet_def.price))
+    view.add_item(BuyPetButton(pet_def["id"], pet_def["price"]))
     view.add_item(ShopBackButton())
 
     await interaction.response.edit_message(embed=embed, view=view)
@@ -1645,6 +1641,8 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
 
 async def show_mystery_egg(interaction: discord.Interaction) -> None:
     """Показать карточку таинственного яйца."""
+    from assets.pets_catalog import MYSTERY_EGG_DATA
+
     embed = discord.Embed(
         title=replace_emojis("🥚 Таинственное яйцо"),
         description=(
@@ -1657,8 +1655,11 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
             f"   - Легендарный питомец: 0.6%\n\n"
             f"{replace_emojis('warning')} **Важно:** Проверьте свободный слот перед открытием!"
         ),
-        color=discord.Color.from_rgb(69, 69, 69)
+        color=MYSTERY_EGG_DATA["color"]
     )
+
+    if MYSTERY_EGG_DATA.get("image_url"):
+        embed.set_image(url=MYSTERY_EGG_DATA["image_url"])
 
     view = discord.ui.View(timeout=180)
     view.add_item(OpenEggButton())
@@ -1670,13 +1671,13 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
 class BuyPetButton(discord.ui.Button):
     """Кнопка покупки питомца."""
 
-    def __init__(self, pet_type: str, price: int):
+    def __init__(self, pet_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
             label=f"Купить за {price:,} {get_emoji('money')}",
-            custom_id=f"buy_pet:{pet_type}"
+            custom_id=f"buy_pet:{pet_id}"
         )
-        self.pet_type = pet_type
+        self.pet_id = pet_id
         self.price = price
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -1710,8 +1711,8 @@ class BuyPetButton(discord.ui.Button):
             pet = await pet_store.create_pet(
                 owner_1_id=interaction.user.id,
                 owner_2_id=None,
-                pet_type=self.pet_type,
-                pet_name=self.pet_type.replace("_", " ").title()
+                pet_type=self.pet_id,
+                pet_name=self.pet_id.replace("_", " ").title()
             )
 
             embed = discord.Embed(

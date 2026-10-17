@@ -75,47 +75,40 @@ class PetCog(commands.Cog):
             )
             return
 
-        # Цвета по редкости
-        rarity_colors = {
-            PetRarity.COMMON: discord.Color.light_grey(),
-            PetRarity.UNCOMMON: discord.Color.green(),
-            PetRarity.EPIC: discord.Color.purple(),
-            PetRarity.LEGENDARY: discord.Color.gold(),
-        }
+        # Цвет по редкости из каталога
+        color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
 
-        # Названия редкостей
-        rarity_names = {
-            "common": "Обычный",
-            "uncommon": "Необычный",
-            "epic": "Эпический",
-            "legendary": "Легендарный",
-        }
+        # Формирование описания способностей
+        ab1 = pet_def["abilities"][1]
+        ab2 = pet_def["abilities"][2]
 
-        # Статус способностей
-        ability_1_status = "🔓 Разблокировано" if pet.can_use_ability(pet_def.ability_1.unlock_level) else f"🔒 Ур. {pet_def.ability_1.unlock_level}+"
-        ability_2_status = "🔓 Разблокировано" if pet.can_use_ability(pet_def.ability_2.unlock_level) else f"🔒 Ур. {pet_def.ability_2.unlock_level}+"
+        # Способность 1
+        icon_1 = "🔓" if pet.can_use_ability(ab1["unlock_level"]) else f"🔒 Ур. {ab1['unlock_level']}+"
+        desc_1 = f"{icon_1} **{ab1['name']}** — {ab1['desc_template'].format(val=f\"{ab1['min_val']}–{ab1['max_val']}\")}"
+
+        # Способность 2
+        icon_2 = "🔓" if pet.can_use_ability(ab2["unlock_level"]) else f"🔒 Ур. {ab2['unlock_level']}+"
+        desc_2 = f"{icon_2} **{ab2['name']}** — {ab2['desc_template'].format(val=f\"{ab2['min_val']}–{ab2['max_val']}\")}"
 
         embed = discord.Embed(
             title=replace_emojis(f"🐾 {pet.pet_name}"),
             description=(
-                f"{replace_emojis('sub_middle')} **Вид:** {pet_def.name}\n"
-                f"{replace_emojis('sub_middle')} **Редкость:** {rarity_names.get(pet.rarity.value, pet.rarity.value)}\n"
+                f"{replace_emojis('sub_middle')} **Вид:** {pet_def['name']}\n"
+                f"{replace_emojis('sub_middle')} **Редкость:** {pet_def['rarity']}\n"
                 f"{replace_emojis('sub_middle')} **Уровень:** {pet.level}\n"
                 f"{replace_emojis('sub_middle')} **Опыт:** {pet.exp} / {pet.get_exp_to_next_level()}\n"
                 f"{replace_emojis('sub_middle')} **Сытость:** {pet.fullness}/100\n"
                 f"{replace_emojis('sub_middle')} **Энергия:** {pet.energy}/100\n\n"
-                f"{replace_emojis('white_arrow')} **Способность 1:** {pet_def.ability_1.name}\n"
-                f"{replace_emojis('sub_directory')} {ability_1_status}\n"
-                f"{replace_emojis('sub_directory')} {pet_def.ability_1.description}\n\n"
-                f"{replace_emojis('white_arrow')} **Способность 2:** {pet_def.ability_2.name}\n"
-                f"{replace_emojis('sub_directory')} {ability_2_status}\n"
-                f"{replace_emojis('sub_directory')} {pet_def.ability_2.description}"
+                f"{replace_emojis('white_arrow')} **Способность 1:**\n"
+                f"{replace_emojis('sub_directory')} {desc_1}\n\n"
+                f"{replace_emojis('white_arrow')} **Способность 2:**\n"
+                f"{replace_emojis('sub_directory')} {desc_2}"
             ),
-            color=rarity_colors.get(pet.rarity, discord.Color.from_rgb(69, 69, 69))
+            color=color
         )
 
-        if pet_def.image_url:
-            embed.set_thumbnail(url=pet_def.image_url)
+        if pet_def.get("image_url"):
+            embed.set_image(url=pet_def["image_url"])
 
         # Владельцы
         owner_info = f"<@{pet.owner_1_id}>"

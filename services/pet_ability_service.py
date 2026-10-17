@@ -66,12 +66,12 @@ class PetAbilityService:
             return result
 
         # Получить соответствующую способность
-        ability = self._get_ability_for_action(action_type, pet_def)
-        if not ability:
+        ability_data = self._get_ability_for_action(action_type, pet_def)
+        if not ability_data:
             return result
 
         # Проверить разблокировку способности
-        if not pet.can_use_ability(ability.unlock_level):
+        if not pet.can_use_ability(ability_data["unlock_level"]):
             return result
 
         # Проверить энергию
@@ -81,7 +81,9 @@ class PetAbilityService:
 
         # Рассчитать бонус
         effectiveness = pet.get_ability_effectiveness()
-        bonus_value = ability.max_value * effectiveness
+        min_val = ability_data.get("min_val", 0)
+        max_val = ability_data.get("max_val", 0)
+        bonus_value = min_val + (max_val - min_val) * effectiveness
 
         # Списать энергию
         await pet_store.use_energy(pet.pet_id, energy_cost)
@@ -101,35 +103,34 @@ class PetAbilityService:
 
         return result
 
-    def _get_ability_for_action(self, action_type: str, pet_def) -> Any:
+    def _get_ability_for_action(self, action_type: str, pet_def) -> dict | None:
         """Получить способность для типа действия."""
-        from models.pet import AbilityType
-
-        action_to_ability = {
-            "case_open": AbilityType.CASE_COIN_BONUS,
-            "case_extra_reward": AbilityType.CASE_EXTRA_REWARD,
-            "pay": AbilityType.PAY_FEE_REDUCTION,
-            "rob": AbilityType.ROB_SUCCESS_BONUS,
-            "rob_loot": AbilityType.ROB_LOOT_BONUS,
-            "rob_defense": AbilityType.ROB_DEFENSE,
-            "rob_item_protection": AbilityType.ROB_ITEM_PROTECTION,
-            "rob_loss_reduction": AbilityType.ROB_LOSS_REDUCTION,
-            "sell": AbilityType.SELL_FEE_REDUCTION,
-            "elo_match": AbilityType.ELO_WIN_BONUS,
-            "elo_loss": AbilityType.ELO_LOSS_REDUCTION,
+        # Сопоставление действий с названиями способностей
+        action_to_ability_name = {
+            "case_open": "Золотая лапа",
+            "case_extra_reward": "Секретный тайник",
+            "pay": "Щедрый перевод",
+            "rob": "Ловкие лапы",
+            "rob_loot": "Чужой кошелёк",
+            "rob_defense": "Крепкий панцирь",
+            "rob_item_protection": "Цепкие когти",
+            "rob_loss_reduction": "Сохранность капитала",
+            "sell": "Чёрный рынок",
+            "elo_match": "Жажда победы",
+            "elo_loss": "Несломленный дух",
         }
 
-        ability_type = action_to_ability.get(action_type)
-        if not ability_type:
+        ability_name = action_to_ability_name.get(action_type)
+        if not ability_name:
             return None
 
         # Проверить способность 1
-        if pet_def.ability_1.ability_type == ability_type:
-            return pet_def.ability_1
+        if pet_def["abilities"][1]["name"] == ability_name:
+            return pet_def["abilities"][1]
 
         # Проверить способность 2
-        if pet_def.ability_2.ability_type == ability_type:
-            return pet_def.ability_2
+        if pet_def["abilities"][2]["name"] == ability_name:
+            return pet_def["abilities"][2]
 
         return None
 
@@ -165,30 +166,28 @@ class PetAbilityService:
         effectiveness = pet.get_ability_effectiveness()
         energy_cost = ENERGY_COSTS.get("rob_defense", 9)
 
-        # Проверить способность защиты (Крепкий панцирь)
-        if pet.can_use_ability(pet_def.ability_1.unlock_level):
-            if pet_def.ability_1.ability_type == AbilityType.ROB_DEFENSE:
-                if pet.energy >= energy_cost:
-                    result["defense_bonus"] = pet_def.ability_1.max_value * effectiveness
-                    await pet_store.use_energy(pet.pet_id, energy_cost)
-                    result["energy_deducted"] = energy_cost
-                    await pet_store.add_exp(pet.pet_id, 3)
+        # Проверить способности по названию
+        for ability_num in [1, 2]:
+            ability = pet_def["abilities"][ability_num]
+            ability_name = ability["name"]
+            min_val = ability.get("min_val", 0)
+            max_val = ability.get("max_val", 0)
+            ability_value = min_val + (max_val - min_val) * effectiveness
 
-        # Проверить защиту от кражи предметов (Цепкие когти)
-        if pet.can_use_ability(pet_def.ability_2.unlock_level):
-            if pet_def.ability_2.ability_type == AbilityType.ROB_ITEM_PROTECTION:
+            if pet.can_use_ability(ability["unlock_level"]):
                 if pet.energy >= energy_cost:
-                    result["item_protection_chance"] = pet_def.ability_2.max_value * effectiveness
-                    await pet_store.use_energy(pet.pet_id, energy_cost)
-                    result["energy_deducted"] += energy_cost
-                    await pet_store.add_exp(pet.pet_id, 3)
-
-        # Проверить снижение потерь (Сохранность капитала / План отхода)
-        for ability in [pet_def.ability_1, pet_def.ability_2]:
-            if ability.ability_type == AbilityType.ROB_LOSS_REDUCTION:
-                if pet.can_use_ability(ability.unlock_level):
-                    if pet.energy >= energy_cost:
-                        result["loss_reduction"] = ability.max_value * effectiveness
+                    if ability_name == "Крепкий панцирь":
+                        result["defense_bonus"] = ability_value
+                        await pet_store.use_energy(pet.pet_id, energy_cost)
+                        result["energy_deducted"] = energy_cost
+                        await pet_store.add_exp(pet.pet_id, 3)
+                    elif ability_name == "Цепкие когти":
+                        result["item_protection_chance"] = ability_value
+                        await pet_store.use_energy(pet.pet_id, energy_cost)
+                        result["energy_deducted"] += energy_cost
+                        await pet_store.add_exp(pet.pet_id, 3)
+                    elif ability_name in ["Сохранность капитала", "План отхода"]:
+                        result["loss_reduction"] = ability_value
                         await pet_store.use_energy(pet.pet_id, energy_cost)
                         result["energy_deducted"] += energy_cost
                         await pet_store.add_exp(pet.pet_id, 3)
@@ -214,8 +213,9 @@ class PetAbilityService:
         if pet.protected_item_id == item_id:
             from storage.pet_store import pet_catalog
             pet_def = pet_catalog.get_pet(pet.pet_type.value)
-            if pet_def and pet_def.pet_type.value == "guardian_turtle":
-                if pet.can_use_ability(2):  # Способность 2 на уровне 7+
+            if pet_def and pet_def["id"] == "guardian_turtle":
+                ab2 = pet_def["abilities"][2]
+                if pet.can_use_ability(ab2["unlock_level"]):  # Способность 2 на уровне 7+
                     return True
 
         return False
@@ -258,18 +258,26 @@ class PetAbilityService:
             return elo_change
 
         # Проверить способности Волка арены
-        if pet_def.pet_type.value == "arena_wolf":
+        if pet_def["id"] == "arena_wolf":
             if is_win:
                 # Жажда победы
-                if pet.can_use_ability(pet_def.ability_1.unlock_level):
-                    bonus = int(elo_change * (pet_def.ability_1.max_value / 100 * effectiveness))
+                ab1 = pet_def["abilities"][1]
+                if pet.can_use_ability(ab1["unlock_level"]):
+                    min_val = ab1.get("min_val", 0)
+                    max_val = ab1.get("max_val", 0)
+                    bonus_percent = min_val + (max_val - min_val) * effectiveness
+                    bonus = int(elo_change * (bonus_percent / 100))
                     await pet_store.use_energy(pet.pet_id, energy_cost)
                     await pet_store.add_exp(pet.pet_id, 5)
                     return elo_change + bonus
             else:
                 # Несломленный дух
-                if pet.can_use_ability(pet_def.ability_2.unlock_level):
-                    reduction = int(abs(elo_change) * (pet_def.ability_2.max_value / 100 * effectiveness))
+                ab2 = pet_def["abilities"][2]
+                if pet.can_use_ability(ab2["unlock_level"]):
+                    min_val = ab2.get("min_val", 0)
+                    max_val = ab2.get("max_val", 0)
+                    reduction_percent = min_val + (max_val - min_val) * effectiveness
+                    reduction = int(abs(elo_change) * (reduction_percent / 100))
                     await pet_store.use_energy(pet.pet_id, energy_cost)
                     await pet_store.add_exp(pet.pet_id, 5)
                     # Снизить потерю, но не превратить в положительную
