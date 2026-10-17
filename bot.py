@@ -356,7 +356,7 @@ class TournamentBot(commands.Bot):
                             for row in rows:
                                 pet = pet_store._row_to_pet(row)
                                 # Check hunger for each pet
-                                is_dead, updated_pet = await pet_store.check_fullness_and_energy(pet.pet_id, guild.id)
+                                is_dead, updated_pet = await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
 
                                 if is_dead:
                                     # Pet ran away - send notification

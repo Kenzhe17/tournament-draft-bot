@@ -185,7 +185,7 @@ class PetStore:
 
             return new_exp
 
-    async def check_fullness_and_energy(self, pet_id: int, guild_id: int = None) -> tuple[bool, Pet | None]:
+    async def check_fullness_and_energy(self, pet_id: int, guild_id: int = None, bot=None) -> tuple[bool, Pet | None]:
         """Проверить сытость и энергию питомца. Возвращает (is_dead, pet)."""
         from storage.db import get_pool
 
@@ -206,6 +206,11 @@ class PetStore:
             energy_loss = int(hours_since_energy * 2)
             pet.energy = max(0, pet.energy - energy_loss)
 
+            # Восстановление энергии если сытость > 70 (10 в час)
+            if pet.fullness > 70:
+                energy_gain = int(hours_since_energy * 10)
+                pet.energy = min(100, pet.energy + energy_gain)
+
             # Пассивное уменьшение еды
             # Если энергии нет, еда уходит в 2 раза быстрее
             fullness_multiplier = 2 if pet.energy == 0 else 1
@@ -223,22 +228,39 @@ class PetStore:
                 if hours_hungry >= 24:
                     await self.delete_pet(pet_id)
                     # Отправить уведомление о побеге
-                    if guild_id:
+                    if guild_id and bot:
                         try:
                             import logging
                             logger = logging.getLogger(__name__)
                             logger.info(f"Pet {pet.pet_name} ran away from hunger after {hours_hungry:.1f} hours")
+                            hunger_channel = bot.get_channel(1551167853741219880)
+                            if hunger_channel:
+                                embed = discord.Embed(
+                                    title="🐾 Питомец сбежал",
+                                    description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекун: <@{pet.owner_1_id}>",
+                                    color=discord.Color.orange()
+                                )
+                                await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
                         except Exception as e:
                             pass
                     return True, None
 
             # Отправить уведомление о голоде если сытость только что достигла 0
-            if was_full and pet.fullness == 0 and guild_id:
+            if was_full and pet.fullness == 0 and guild_id and bot:
                 try:
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.info(f"Pet {pet.pet_name} is starving! Fullness reached 0%")
-                    # TODO: Send notification to channel 1551167853741219880
+
+                    # Отправить уведомление в канал голода
+                    hunger_channel = bot.get_channel(1551167853741219880)
+                    if hunger_channel:
+                        embed = discord.Embed(
+                            title="⚠️ Питомец голодает",
+                            description=f"Питомец **{pet.pet_name}** достиг 0% сытости!\n\nЕсли не покормить в течение 24 часов, питомец сбежит.\n\nОпекун: <@{pet.owner_1_id}>",
+                            color=discord.Color.yellow()
+                        )
+                        await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
                 except Exception as e:
                     pass
 

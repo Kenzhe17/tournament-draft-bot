@@ -105,8 +105,8 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             f"{emoji_arrow} **Уровень:** `{level}`\n"
             f"{emoji_arrow} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"{emoji_arrow} **Состояние:**\n"
-            f"{emoji_dot} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
-            f"{emoji_dot} ⚡ **Энергия:** `{energy}%` / `100%`\n"
+            f"{emoji_dot} 🍖 **Сытость:** `{fullness}%`\n"
+            f"{emoji_dot} ⚡ **Энергия:** `{energy}%`\n"
             f"{emoji_dot} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
             f"{emoji_arrow} **Текущие активные бонусы:**\n"
             f"{active_bonuses_text}\n\n"
@@ -503,7 +503,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     pet_dict = dict(pet_row)
 
     # Проверить сытость и энергию
-    is_dead, pet = await pet_store.check_fullness_and_energy(pet_dict["pet_id"], interaction.guild_id)
+    is_dead, pet = await pet_store.check_fullness_and_energy(pet_dict["pet_id"], interaction.guild_id, interaction.client)
     if is_dead:
         embed = discord.Embed(
             title=replace_emojis("💀 Питомец умер"),
