@@ -21,24 +21,15 @@ class PetCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(name="pet", description="Управление питомцами")
-    async def pet(self, interaction: discord.Interaction) -> None:
-        """Команда управления питомцами (меню)."""
-        embed = discord.Embed(
-            title=replace_emojis("🐾 Управление питомцами"),
-            description=(
-                f"{replace_emojis('sub_middle')} `/pet profile` — профиль питомца\n"
-                f"{replace_emojis('sub_middle')} `/pet release` — отпустить питомца\n"
-                f"{replace_emojis('sub_middle')} `/pet coowner add @user` — добавить со-опекуна\n"
-                f"{replace_emojis('sub_middle')} `/pet coowner remove` — убрать со-опекуна\n"
-                f"{replace_emojis('sub_directory')} `/pet top` — топ питомцев"
-            ),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+    pet = app_commands.Group(name="pet", description="Управление питомцами")
 
-    @app_commands.command(name="pet_release", description="Отпустить питомца на волю (удалить навсегда)")
-    async def pet_release(self, interaction: discord.Interaction) -> None:
+    @pet.command(name="profile", description="Показать профиль питомца")
+    async def pet_profile(self, interaction: discord.Interaction) -> None:
+        """Показать профиль питомца."""
+        await pet_profile_impl(interaction)
+
+    @pet.command(name="release", description="Отпустить питомца на волю (удалить навсегда)")
+    async def release(self, interaction: discord.Interaction) -> None:
         """Отпустить питомца."""
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -71,9 +62,9 @@ class PetCog(commands.Cog):
         view = PetDeleteConfirmView(owner_id=interaction.user.id, pet_row=pet_dict)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-    @app_commands.command(name="pet_coowner", description="Предложить игроку стать со-опекуном питомца")
+    @pet.command(name="coowner", description="Предложить игроку стать со-опекуном питомца")
     @app_commands.describe(target="Игрок, которому предлагаете со-опекунство")
-    async def pet_coowner(self, interaction: discord.Interaction, target: discord.Member) -> None:
+    async def coowner(self, interaction: discord.Interaction, target: discord.Member) -> None:
         """Предложить со-опекунство."""
         await interaction.response.defer()
 
@@ -140,8 +131,8 @@ class PetCog(commands.Cog):
 
         await interaction.followup.send(content=target.mention, embed=embed, view=view)
 
-    @app_commands.command(name="pet_coowner_remove", description="Убрать текущего со-опекуна питомца")
-    async def pet_coowner_remove(self, interaction: discord.Interaction) -> None:
+    @pet.command(name="coowner_remove", description="Убрать текущего со-опекуна питомца")
+    async def coowner_remove(self, interaction: discord.Interaction) -> None:
         """Убрать со-опекуна."""
         await interaction.response.defer()
 
@@ -177,7 +168,7 @@ class PetCog(commands.Cog):
         embed = discord.Embed(
             title=replace_emojis("СО-ОПЕКУН УБРАН"),
             description=(
-                f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
+                f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity}*).\n\n"
                 f"{replace_emojis('white_dot')} {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
                 f"{replace_emojis('white_dot')} Питомец снова находится под вашей единоличной опекой."
             ),
@@ -186,8 +177,8 @@ class PetCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="pet_top", description="Топ питомцев по уровню")
-    async def pet_top(self, interaction: discord.Interaction) -> None:
+    @pet.command(name="top", description="Топ питомцев по уровню")
+    async def top(self, interaction: discord.Interaction) -> None:
         """Показать топ питомцев."""
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -236,115 +227,117 @@ class PetCog(commands.Cog):
         )
 
         await interaction.response.send_message(embed=embed)
-        """Показать профиль питомца."""
-        pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
 
-        if not pet:
-            embed = discord.Embed(
-                title=replace_emojis("🐾 Питомец"),
-                description=(
-                    f"{replace_emojis('sub_middle')} У вас нет питомца.\n"
-                    f"{replace_emojis('sub_middle')} Используйте `/shop` → **Питомцы** для покупки."
-                ),
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
+async def pet_profile_impl(interaction: discord.Interaction) -> None:
+    """Показать профиль питомца."""
+    pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
 
-        # Проверить сытость и энергию
-        is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
-        if is_dead:
-            embed = discord.Embed(
-                title=replace_emojis("💀 Питомец умер"),
-                description=(
-                    f"{replace_emojis('sub_middle')} Ваш питомец умер от голода.\n"
-                    f"{replace_emojis('sub_middle')} Используйте `/shop` для нового питомца."
-                ),
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            return
-
-        # Получить определение питомца
-        pet_def = pet_catalog.get_pet(pet.pet_type.value)
-        if not pet_def:
-            await interaction.response.send_message(
-                replace_emojis("❌ Ошибка загрузки данных питомца."),
-                ephemeral=True
-            )
-            return
-
-        # Цвет по редкости из каталога
-        color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
-
-        # Формирование описания способностей
-        ab1 = pet_def["abilities"][1]
-        ab2 = pet_def["abilities"][2]
-
-        # Способность 1
-        icon_1 = "🔓" if pet.can_use_ability(ab1["unlock_level"]) else f"🔒 Ур. {ab1['unlock_level']}+"
-        val_range = f"{ab1['min_val']}-{ab1['max_val']}"
-        desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** - {ab1['desc_template'].format(val=val_range)}"
-
-        # Способность 2
-        icon_2 = "🔓" if pet.can_use_ability(ab2["unlock_level"]) else f"🔒 Ур. {ab2['unlock_level']}+"
-        val_range_2 = f"{ab2['min_val']}-{ab2['max_val']}"
-        desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** - {ab2['desc_template'].format(val=val_range_2)}"
-
-        # Владельцы
-        owner_info = f"<@{pet.owner_1_id}>"
-        if pet.owner_2_id:
-            owner_info += f" & <@{pet.owner_2_id}>"
-
-        # Опыт
-        max_exp = pet.get_exp_to_next_level()
-
-        # Активные бонусы
-        active_bonuses = []
-        if pet.energy <= 0:
-            active_bonuses_text = "⚠️ *Все пассивные бонусы заблокированы из-за отсутствия энергии! Покормите питомца.*"
-        elif pet.level < 3:
-            active_bonuses_text = "💤 *Пока нет активных бонусов. Достигните 3-го уровня, чтобы разблокировать первую способность!*"
-        else:
-            if pet.can_use_ability(ab1["unlock_level"]):
-                active_bonuses.append(f"🔥 **[{ab1['name']}]:** `{ab1['desc_template'].format(val=val_range)}`")
-            if pet.can_use_ability(ab2["unlock_level"]):
-                active_bonuses.append(f"🔥 **[{ab2['name']}]:** `{ab2['desc_template'].format(val=val_range_2)}`")
-            active_bonuses_text = "\n".join(f"• {bonus}" for bonus in active_bonuses) if active_bonuses else "💤 *Пока нет активных бонусов.*"
-
-        # Статус сытости
-        status_warning = ""
-        if pet.fullness <= 30:
-            status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умирает от голода!"
-        elif pet.fullness > 70:
-            status_warning = "\n\n✨ *Питомец сыт и восстанавливает энергию!*"
-
+    if not pet:
         embed = discord.Embed(
-            title=f"ПРОФИЛЬ ПИТОМЦА | {pet.pet_name.upper()}",
+            title=replace_emojis("🐾 Питомец"),
             description=(
-                f"**Вид:** **{pet_def['name']}** (*{pet_def['rarity']}*)\n"
-                f"**Уровень / Возраст:** `{pet.level} level` ({pet.level} лет)\n"
-                f"**Опекуны:** {owner_info}\n\n"
-                f"**Состояние:**\n"
-                f"🍖 **Сытость:** `{pet.fullness}%` / `100%`\n"
-                f"⚡ **Энергия:** `{pet.energy}%` / `100%`\n"
-                f"✨ **Опыт:** `{pet.exp}` / `{max_exp} EXP`\n\n"
-                f"⚡ **Текущие активные бонусы:**\n"
-                f"{active_bonuses_text}\n\n"
-                f"📜 **Все способности:**\n"
-                f"• {desc_1}\n"
-                f"• {desc_2}"
-                f"{status_warning}"
+                f"{replace_emojis('sub_middle')} У вас нет питомца.\n"
+                f"{replace_emojis('sub_middle')} Используйте `/shop` → **Питомцы** для покупки."
             ),
-            color=color
+            color=discord.Color.from_rgb(69, 69, 69)
         )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
 
-        if pet_def.get("image_url"):
-            embed.set_thumbnail(url=pet_def["image_url"])
+    # Проверить сытость и энергию
+    is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
+    if is_dead:
+        embed = discord.Embed(
+            title=replace_emojis("💀 Питомец умер"),
+            description=(
+                f"{replace_emojis('sub_middle')} Ваш питомец умер от голода.\n"
+                f"{replace_emojis('sub_middle')} Используйте `/shop` для нового питомца."
+            ),
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
 
-        # Создать View с кнопками
-        view = PetProfileView(pet, pet_def)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    # Получить определение питомца
+    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+    if not pet_def:
+        await interaction.response.send_message(
+            replace_emojis("❌ Ошибка загрузки данных питомца."),
+            ephemeral=True
+        )
+        return
+
+    # Цвет по редкости из каталога
+    color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
+
+    # Формирование описания способностей
+    ab1 = pet_def["abilities"][1]
+    ab2 = pet_def["abilities"][2]
+
+    # Способность 1
+    icon_1 = "🔓" if pet.can_use_ability(ab1["unlock_level"]) else f"🔒 Ур. {ab1['unlock_level']}+"
+    val_range = f"{ab1['min_val']}-{ab1['max_val']}"
+    desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** - {ab1['desc_template'].format(val=val_range)}"
+
+    # Способность 2
+    icon_2 = "🔓" if pet.can_use_ability(ab2["unlock_level"]) else f"🔒 Ур. {ab2['unlock_level']}+"
+    val_range_2 = f"{ab2['min_val']}-{ab2['max_val']}"
+    desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** - {ab2['desc_template'].format(val=val_range_2)}"
+
+    # Владельцы
+    owner_info = f"<@{pet.owner_1_id}>"
+    if pet.owner_2_id:
+        owner_info += f" & <@{pet.owner_2_id}>"
+
+    # Опыт
+    max_exp = pet.get_exp_to_next_level()
+
+    # Активные бонусы
+    active_bonuses = []
+    if pet.energy <= 0:
+        active_bonuses_text = "⚠️ *Все пассивные бонусы заблокированы из-за отсутствия энергии! Покормите питомца.*"
+    elif pet.level < 3:
+        active_bonuses_text = "💤 *Пока нет активных бонусов. Достигните 3-го уровня, чтобы разблокировать первую способность!*"
+    else:
+        if pet.can_use_ability(ab1["unlock_level"]):
+            active_bonuses.append(f"🔥 **[{ab1['name']}]:** `{ab1['desc_template'].format(val=val_range)}`")
+        if pet.can_use_ability(ab2["unlock_level"]):
+            active_bonuses.append(f"🔥 **[{ab2['name']}]:** `{ab2['desc_template'].format(val=val_range_2)}`")
+        active_bonuses_text = "\n".join(f"• {bonus}" for bonus in active_bonuses) if active_bonuses else "💤 *Пока нет активных бонусов.*"
+
+    # Статус сытости
+    status_warning = ""
+    if pet.fullness <= 30:
+        status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умирает от голода!"
+    elif pet.fullness > 70:
+        status_warning = "\n\n✨ *Питомец сыт и восстанавливает энергию!*"
+
+    embed = discord.Embed(
+        title=f"ПРОФИЛЬ ПИТОМЦА | {pet.pet_name.upper()}",
+        description=(
+            f"**Вид:** **{pet_def['name']}** (*{pet_def['rarity']}*)\n"
+            f"**Уровень / Возраст:** `{pet.level} level` ({pet.level} лет)\n"
+            f"**Опекуны:** {owner_info}\n\n"
+            f"**Состояние:**\n"
+            f"🍖 **Сытость:** `{pet.fullness}%` / `100%`\n"
+            f"⚡ **Энергия:** `{pet.energy}%` / `100%`\n"
+            f"✨ **Опыт:** `{pet.exp}` / `{max_exp} EXP`\n\n"
+            f"⚡ **Текущие активные бонусы:**\n"
+            f"{active_bonuses_text}\n\n"
+            f"📜 **Все способности:**\n"
+            f"• {desc_1}\n"
+            f"• {desc_2}"
+            f"{status_warning}"
+        ),
+        color=color
+    )
+
+    if pet_def.get("image_url"):
+        embed.set_thumbnail(url=pet_def["image_url"])
+
+    # Создать View с кнопками
+    view = PetProfileView(pet, pet_def)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class PetProfileView(discord.ui.View):
