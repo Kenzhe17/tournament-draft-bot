@@ -333,7 +333,6 @@ class CaseStore:
                 if pet_def and pet.level >= 3:  # Уровень разблокировки Секретного тайника
                     ability = pet_def["abilities"][1]
                     if ability["name"] == "Секретный тайник":
-                        import random
                         effectiveness = pet.get_ability_effectiveness()
                         min_val = ability.get("min_val", 0)
                         max_val = ability.get("max_val", 0)
