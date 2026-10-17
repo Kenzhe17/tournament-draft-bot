@@ -1,6 +1,7 @@
 """Storage для системы питомцев."""
 
 import random
+import asyncpg
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
