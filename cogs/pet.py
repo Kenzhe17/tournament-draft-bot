@@ -168,7 +168,7 @@ class PetCog(commands.Cog):
         embed = discord.Embed(
             title=replace_emojis("СО-ОПЕКУН УБРАН"),
             description=(
-                f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity}*).\n\n"
+                f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
                 f"{replace_emojis('white_dot')} {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
                 f"{replace_emojis('white_dot')} Питомец снова находится под вашей единоличной опекой."
             ),
