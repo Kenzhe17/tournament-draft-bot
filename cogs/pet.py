@@ -577,13 +577,15 @@ class RenamePetModal(discord.ui.Modal):
         self.pet_dict["pet_name"] = new_name
         new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
 
-        # Получаем исходное сообщение
-        original_message = await interaction.original_response()
-
-        if new_file:
-            await original_message.edit(embed=new_embed, attachments=[new_file])
-        else:
-            await original_message.edit(embed=new_embed)
+        # Обновляем сообщение профиля через сохранённый message объект
+        if self.message:
+            try:
+                if new_file:
+                    await self.message.edit(embed=new_embed, attachments=[new_file])
+                else:
+                    await self.message.edit(embed=new_embed)
+            except Exception as e:
+                logger.error(f"Failed to edit pet profile message: {e}")
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Питомец переименован в {new_name}"),
