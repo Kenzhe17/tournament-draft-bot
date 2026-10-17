@@ -62,15 +62,15 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
         color=pet["color"]
     )
 
-    # Прикрепление файла арта питомца (thumbnail справа сверху)
+    # Прикрепление файла арта питомца (image внизу, текст поверх)
     file = None
     local_image_path = f"assets/pets/{pet_id}.png"
     if os.path.exists(local_image_path):
         filename = os.path.basename(local_image_path)
         file = discord.File(local_image_path, filename=filename)
-        embed.set_thumbnail(url=f"attachment://{filename}")
+        embed.set_image(url=f"attachment://{filename}")
     elif pet.get("image_url"):
-        embed.set_thumbnail(url=pet["image_url"])
+        embed.set_image(url=pet["image_url"])
 
     return embed, file
 

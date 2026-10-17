@@ -117,15 +117,15 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         color=color
     )
 
-    # Прикрепляем арт (thumbnail справа сверху)
+    # Прикрепляем арт (image внизу, текст поверх)
     file = None
     local_image_path = f"assets/pets/{pet_type}.png"
     if os.path.exists(local_image_path):
         filename = os.path.basename(local_image_path)
         file = discord.File(local_image_path, filename=filename)
-        embed.set_thumbnail(url=f"attachment://{filename}")
+        embed.set_image(url=f"attachment://{filename}")
     elif image_url:
-        embed.set_thumbnail(url=image_url)
+        embed.set_image(url=image_url)
 
     return embed, file
 
