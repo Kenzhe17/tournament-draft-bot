@@ -232,24 +232,15 @@ class TournamentCog(commands.Cog):
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
     @app_commands.command(name="top", description="Показать таблицу лидеров")
-    @app_commands.describe(type="Тип лидерборда (level/money/elo)")
-    async def top(self, interaction: discord.Interaction, type: str = "elo") -> None:
+    async def top(self, interaction: discord.Interaction) -> None:
         """Показать таблицу лидеров сервера."""
         from utils.embeds import build_leaderboard_embed
-        from views.leaderboard_view import LeaderboardView
+        from views.leaderboard_view import UniversalLeaderboardView
 
-        # Validate type
-        valid_types = ["level", "money", "elo"]
-        if type not in valid_types:
-            await interaction.response.send_message(
-                replace_emojis(f"❌ Неверный тип. Доступные: {', '.join(valid_types)}"),
-                ephemeral=True
-            )
-            return
-
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type=type, user_id=interaction.user.id)
-        view = LeaderboardView(interaction.guild_id, page=1, leaderboard_type=type)
+        view = UniversalLeaderboardView(interaction.guild_id, interaction.user.id, "elo")
         await view.initialize()
+
+        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type="elo", user_id=interaction.user.id)
 
         try:
             await interaction.response.send_message(embed=embed, view=view)

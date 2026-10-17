@@ -1269,14 +1269,14 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | Level"
-        color = discord.Color.from_rgb(69, 69, 69)
+        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
+        color = discord.Color.from_rgb(155, 89, 182)  # Пастельно-фиолетовый
     elif leaderboard_type == "money":
-        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | Money"
-        color = discord.Color.from_rgb(69, 69, 69)
+        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
+        color = discord.Color.from_rgb(241, 196, 15)  # Пастельно-золотой
     else:  # elo
-        title = f"{replace_emojis('a_star')} ТАБЛИЦА ЛИДЕРОВ | ELO"
-        color = discord.Color.from_rgb(69, 69, 69)
+        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | ТУРНИРНЫЙ РЕЙТИНГ (ELO)"
+        color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
 
     total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
@@ -1305,15 +1305,15 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         for i, (player, balance) in enumerate(player_balances):
             rank = global_rank + i + 1
 
-            # Highlight top 3
+            # Highlight top 3 with custom medals
             if rank == 1:
-                rank_emoji = replace_emojis("gold_medal")
+                rank_emoji = get_emoji("gold_medal") or "🥇"
             elif rank == 2:
-                rank_emoji = replace_emojis("silver_medal")
+                rank_emoji = get_emoji("silver_medal") or "🥈"
             elif rank == 3:
-                rank_emoji = replace_emojis("bronze_medal")
+                rank_emoji = get_emoji("bronze_medal") or "🥉"
             else:
-                rank_emoji = f"{rank}."
+                rank_emoji = f"`{rank:2d}`"
 
             # Format name with cosmetics
             formatted_name = format_player_name(guild_id, player.user_id, player.name)
@@ -1324,15 +1324,15 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
         for i, player in enumerate(players):
             rank = global_rank + i + 1
 
-            # Highlight top 3
+            # Highlight top 3 with custom medals
             if rank == 1:
-                rank_emoji = replace_emojis("gold_medal")
+                rank_emoji = get_emoji("gold_medal") or "🥇"
             elif rank == 2:
-                rank_emoji = replace_emojis("silver_medal")
+                rank_emoji = get_emoji("silver_medal") or "🥈"
             elif rank == 3:
-                rank_emoji = replace_emojis("bronze_medal")
+                rank_emoji = get_emoji("bronze_medal") or "🥉"
             else:
-                rank_emoji = f"{rank}."
+                rank_emoji = f"`{rank:2d}`"
 
             # Format name with cosmetics - use stored name from stats
             formatted_name = format_player_name(guild_id, player.user_id, player.name)
