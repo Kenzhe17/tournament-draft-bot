@@ -234,6 +234,8 @@ class CaseStore:
             drop_type = "nothing"
 
         # Обработать результат
+        pet_bonus_info = {"golden_fox_bonus": 0, "golden_fox_name": None}
+
         if drop_type == "nothing":
             result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
         elif drop_type.startswith("coins_"):
@@ -243,11 +245,11 @@ class CaseStore:
             try:
                 from storage.pet_store import pet_store
                 pet = await pet_store.get_user_pet(guild_id, user_id)
-                
+
                 if pet and pet.fullness > 0:
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
-                    
+
                     if pet_def and pet.level >= 3:  # Уровень разблокировки Золотой лапы
                         ability = pet_def["abilities"][1]
                         if ability["name"] == "Золотая лапа":
@@ -257,11 +259,13 @@ class CaseStore:
                             bonus_percent = min_val + (max_val - min_val) * effectiveness
                             bonus_coins = int(coins_amount * (bonus_percent / 100))
                             coins_amount += bonus_coins
+                            pet_bonus_info["golden_fox_bonus"] = bonus_percent
+                            pet_bonus_info["golden_fox_name"] = pet.pet_name
             except Exception as e:
                 logger.error(f"Error applying pet bonus to case: {e}")
 
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
-            result = {"type": "coins", "value": coins_amount, "rarity": "common"}
+            result = {"type": "coins", "value": coins_amount, "rarity": "common", "pet_bonus": pet_bonus_info}
         elif drop_type.startswith("item_"):
             # Выбрать случайный предмет по редкости
             rarity_str = drop_type.replace("item_", "")
@@ -283,7 +287,7 @@ class CaseStore:
                 if not items:
                     fallback_coins = case.price // 2
                     await user_balance_store.add_balance(guild_id, user_id, fallback_coins)
-                    result = {"type": "coins", "value": fallback_coins, "rarity": "common"}
+                    result = {"type": "coins", "value": fallback_coins, "rarity": "common", "pet_bonus": pet_bonus_info}
                 else:
                     item = random.choice(items)
                     # Проверить есть ли уже этот предмет в инвентаре
@@ -293,7 +297,7 @@ class CaseStore:
                     if has_item:
                         # Предмет уже есть - выдать полную стоимость
                         await user_balance_store.add_balance(guild_id, user_id, item.price)
-                        result = {"type": "coins", "value": item.price, "rarity": "common"}
+                        result = {"type": "coins", "value": item.price, "rarity": "common", "pet_bonus": pet_bonus_info}
                     else:
                         # Добавить в инвентарь
                         from models.shop_item import PlayerCosmetic
@@ -304,11 +308,11 @@ class CaseStore:
                             equipped=False
                         )
                         inventory_store.add_cosmetic(cosmetic)
-                        result = {"type": "item", "value": item.name, "rarity": item.rarity.value, "item_id": item.id}
+                        result = {"type": "item", "value": item.name, "rarity": item.rarity.value, "item_id": item.id, "pet_bonus": pet_bonus_info}
             else:
-                result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
+                result = {"type": "nothing", "value": "Ничего", "rarity": "common", "pet_bonus": pet_bonus_info}
         else:
-            result = {"type": "nothing", "value": "Ничего", "rarity": "common"}
+            result = {"type": "nothing", "value": "Ничего", "rarity": "common", "pet_bonus": pet_bonus_info}
 
         # Записать в историю
         self._add_to_history(guild_id, user_id, case_id, result)

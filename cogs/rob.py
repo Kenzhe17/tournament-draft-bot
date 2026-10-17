@@ -145,34 +145,61 @@ class RobStartButton(discord.ui.Button):
         # Базовый шанс успеха 50%
         base_success_chance = 0.5
 
-        # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы / Охотник за вещами)
+        # Бонусы питомцев для отслеживания
+        pet_bonuses = {
+            "robber_success_bonus": 0,
+            "robber_success_name": None,
+            "robber_loot_bonus": 0,
+            "robber_loot_name": None,
+            "victim_defense_bonus": 0,
+            "victim_defense_name": None,
+            "victim_item_protect_chance": 0,
+            "victim_item_protect_name": None,
+        }
+
+        # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы)
         try:
             from storage.pet_store import pet_store
             pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
-            
+
             if pet and pet.fullness > 0:
                 from storage.pet_store import pet_catalog
                 pet_def = pet_catalog.get_pet(pet.pet_type.value)
-                
+
                 if pet_def and pet.level >= 3:
                     ability = pet_def["abilities"][1]
-                    if ability["name"] in ["Ловкие лапы", "Охотник за вещами"]:
+                    if ability["name"] == "Ловкие лапы":
                         effectiveness = pet.get_ability_effectiveness()
                         min_val = ability.get("min_val", 0)
                         max_val = ability.get("max_val", 0)
                         bonus_value = min_val + (max_val - min_val) * effectiveness
                         base_success_chance += bonus_value / 100
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+                        pet_bonuses["robber_success_bonus"] = bonus_value
+                        pet_bonuses["robber_success_name"] = pet.pet_name
         except Exception as e:
             logger.error(f"Error applying pet bonus to rob: {e}")
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
-        if pet_bonus["bonus_applied"]:
-            base_success_chance += pet_bonus["bonus_value"] / 100  # до +10%
 
         # Применить защиту жертвы (Крепкий панцирь)
-        victim_defense = await pet_ability_service.get_rob_defense_bonus(self.guild_id, self.victim_id)
-        if victim_defense["has_pet"]:
-            base_success_chance -= victim_defense["defense_bonus"] / 100  # до -20%
+        try:
+            from storage.pet_store import pet_store
+            victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
+
+            if victim_pet and victim_pet.fullness > 0:
+                from storage.pet_store import pet_catalog
+                victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+
+                if victim_pet_def and victim_pet.level >= 3:
+                    ability = victim_pet_def["abilities"][1]
+                    if ability["name"] == "Крепкий панцирь":
+                        effectiveness = victim_pet.get_ability_effectiveness()
+                        min_val = ability.get("min_val", 0)
+                        max_val = ability.get("max_val", 0)
+                        defense_value = min_val + (max_val - min_val) * effectiveness
+                        base_success_chance -= defense_value / 100
+                        pet_bonuses["victim_defense_bonus"] = defense_value
+                        pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+        except Exception as e:
+            logger.error(f"Error applying victim pet defense: {e}")
 
         # Ограничить шанс 0-100%
         base_success_chance = max(0.0, min(1.0, base_success_chance))
@@ -184,18 +211,67 @@ class RobStartButton(discord.ui.Button):
             if use_item_steal:
                 # Проверить защиту предмета жертвы (Цепкие когти)
                 item_protected = False
-                if victim_defense["has_pet"] and victim_defense["item_protection_chance"] > 0:
-                    if random.random() < (victim_defense["item_protection_chance"] / 100):
-                        item_protected = True
+                try:
+                    from storage.pet_store import pet_store
+                    victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
+
+                    if victim_pet and victim_pet.fullness > 0:
+                        from storage.pet_store import pet_catalog
+                        victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+
+                        if victim_pet_def and victim_pet.level >= 7:
+                            ability = victim_pet_def["abilities"][2]
+                            if ability["name"] == "Цепкие когти":
+                                effectiveness = victim_pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                protect_chance = min_val + (max_val - min_val) * effectiveness
+                                pet_bonuses["victim_item_protect_chance"] = protect_chance
+                                pet_bonuses["victim_item_protect_name"] = victim_pet.pet_name
+
+                                if random.random() < (protect_chance / 100):
+                                    item_protected = True
+                except Exception as e:
+                    logger.error(f"Error applying item protection: {e}")
 
                 if item_protected:
                     # Предмет защищён - украсть монеты вместо предмета
                     percent = random.uniform(0.1, 0.5)
                     potential = int(victim_balance * percent)
+
+                    # Применить бонус к добыче (Чужой кошелёк)
+                    try:
+                        from storage.pet_store import pet_store
+                        robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                        if robber_pet and robber_pet.fullness > 0:
+                            from storage.pet_store import pet_catalog
+                            robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                            if robber_pet_def and robber_pet.level >= 3:
+                                ability = robber_pet_def["abilities"][1]
+                                if ability["name"] == "Чужой кошелёк":
+                                    effectiveness = robber_pet.get_ability_effectiveness()
+                                    min_val = ability.get("min_val", 0)
+                                    max_val = ability.get("max_val", 0)
+                                    loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                    potential = int(potential * (1 + loot_bonus / 100))
+                                    pet_bonuses["robber_loot_bonus"] = loot_bonus
+                                    pet_bonuses["robber_loot_name"] = robber_pet.pet_name
+                    except Exception as e:
+                        logger.error(f"Error applying loot bonus: {e}")
+
                     stolen = min(potential, robber_balance)
 
                     await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
                     await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
+
+                    # Формировать текст бонусов
+                    bonus_text = ""
+                    if pet_bonuses["victim_item_protect_chance"] > 0:
+                        bonus_text += f"\n\n🐾 **Сова-казначей ({pet_bonuses['victim_item_protect_name']}):** Защитил предмет!"
+                    if pet_bonuses["robber_loot_bonus"] > 0:
+                        bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
 
                     embed = discord.Embed(
                         title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
@@ -203,7 +279,7 @@ class RobStartButton(discord.ui.Button):
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Предмет защищён питомцем!**\n"
-                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}\n"
+                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
                         ),
                         color=0x2ECC71
                     )
@@ -217,19 +293,19 @@ class RobStartButton(discord.ui.Button):
                     sale_price = int(stolen_item.price * 0.3)
                     await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
 
-                # Build success embed
-                embed = discord.Embed(
-                    title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
-                    description=(
-                        f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                        f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                        f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                        f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}\n"
-                    ),
-                    color=0x2ECC71  # Green for success
-                )
+                    # Build success embed
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
+                        description=(
+                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
+                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
+                            f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
+                            f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}\n"
+                        ),
+                        color=0x2ECC71  # Green for success
+                    )
 
-                await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message(embed=embed, view=None)
             else:
                 # Кража монет
                 if victim_balance == 0:
@@ -243,7 +319,7 @@ class RobStartButton(discord.ui.Button):
                         ),
                         color=0xE74C3C  # Red for failure
                     )
-                    
+
                     await interaction.response.edit_message(embed=embed, view=None)
                     # Не ставим кулдаун при неуспешном ограблении из-за отсутствия монет
                     return
@@ -253,18 +329,60 @@ class RobStartButton(discord.ui.Button):
                     potential = int(victim_balance * percent)
 
                     # Применить бонус к добыче (Чужой кошелёк)
-                    if pet_bonus["bonus_applied"]:
-                        potential = int(potential * (1 + pet_bonus["bonus_value"] / 100))  # до +25%
+                    try:
+                        from storage.pet_store import pet_store
+                        robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                        if robber_pet and robber_pet.fullness > 0:
+                            from storage.pet_store import pet_catalog
+                            robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                            if robber_pet_def and robber_pet.level >= 3:
+                                ability = robber_pet_def["abilities"][1]
+                                if ability["name"] == "Чужой кошелёк":
+                                    effectiveness = robber_pet.get_ability_effectiveness()
+                                    min_val = ability.get("min_val", 0)
+                                    max_val = ability.get("max_val", 0)
+                                    loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                    potential = int(potential * (1 + loot_bonus / 100))
+                                    pet_bonuses["robber_loot_bonus"] = loot_bonus
+                                    pet_bonuses["robber_loot_name"] = robber_pet.pet_name
+                    except Exception as e:
+                        logger.error(f"Error applying loot bonus: {e}")
 
                     stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
 
                     # Применить снижение потерь жертвы (Сохранность капитала)
-                    if victim_defense["has_pet"] and victim_defense["loss_reduction"] > 0:
-                        loss_reduction = victim_defense["loss_reduction"] / 100
-                        stolen = int(stolen * (1 - loss_reduction))
+                    try:
+                        from storage.pet_store import pet_store
+                        victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
+
+                        if victim_pet and victim_pet.fullness > 0:
+                            from storage.pet_store import pet_catalog
+                            victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+
+                            if victim_pet_def and victim_pet.level >= 3:
+                                ability = victim_pet_def["abilities"][1]
+                                if ability["name"] == "Сохранность капитала":
+                                    effectiveness = victim_pet.get_ability_effectiveness()
+                                    min_val = ability.get("min_val", 0)
+                                    max_val = ability.get("max_val", 0)
+                                    loss_reduction = min_val + (max_val - min_val) * effectiveness
+                                    stolen = int(stolen * (1 - loss_reduction / 100))
+                                    pet_bonuses["victim_defense_bonus"] = loss_reduction
+                                    pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+                    except Exception as e:
+                        logger.error(f"Error applying loss reduction: {e}")
 
                     await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
                     await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
+
+                    # Формировать текст бонусов
+                    bonus_text = ""
+                    if pet_bonuses["robber_loot_bonus"] > 0:
+                        bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
+                    if pet_bonuses["victim_defense_bonus"] > 0:
+                        bonus_text += f"\n\n🐾 **Сова-казначей ({pet_bonuses['victim_defense_name']}):** Защитил {pet_bonuses['victim_defense_bonus']:.1f}% монет!"
 
                     # Build success embed
                     embed = discord.Embed(
@@ -272,7 +390,7 @@ class RobStartButton(discord.ui.Button):
                         description=(
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}\n"
+                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
                         ),
                         color=0x2ECC71  # Green for success
                     )

@@ -972,10 +972,24 @@ class BuyCaseButton(discord.ui.Button):
                     break
 
             # Определить иконку и текст результата
+            pet_bonus_text = ""
             if result["type"] == "coins":
                 result_text = f"{result['value']} {get_emoji('money')}"
                 chance_text = "50%"
                 bottom_text = "Награда была зачислена на ваш баланс!"
+
+                # Добавить текст бонуса питомца
+                pet_bonus = result.get("pet_bonus", {})
+                if pet_bonus.get("golden_fox_bonus", 0) > 0:
+                    bonus_pct = pet_bonus["golden_fox_bonus"]
+                    pet_name = pet_bonus.get("golden_fox_name", "питомец")
+                    pet_bonus_text = f"\n\n🐾 **Золотой лис ({pet_name}):** Награда увеличена на **+{bonus_pct:.1f}%** благодаря «Золотой лапе»!"
+
+                # Добавить текст доп. награды от Мимика
+                if result.get("extra_reward"):
+                    extra = result["extra_reward"]
+                    pet_bonus_text += f"\n\n🐾 ✨ **Мимик-собиратель:** Сработал «Секретный тайник»! Питомец нашел еще **+{extra}** монет."
+
             elif result["type"] == "item":
                 # Получить icon emoji для предмета
                 icon_map = {
@@ -1004,7 +1018,7 @@ class BuyCaseButton(discord.ui.Button):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ОТКРЫТИЕ КЕЙСА | {case_rare_display} {replace_emojis(case_rare_emoji)}",
-                description=f"Кейс успешно открыт!\n\n{replace_emojis('⚪')} **Награда:**\n{replace_emojis('sub_middle')} Выигрыш: {result_text}\n{replace_emojis('sub_directory')} С шансом: {chance_text}\n\n{replace_emojis('⚪')} **Открыл:**\n{replace_emojis('white_arrow')} {interaction.user.mention} открыл за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} {bottom_text}",
+                description=f"Кейс успешно открыт!\n\n{replace_emojis('⚪')} **Награда:**\n{replace_emojis('sub_middle')} Выигрыш: {result_text}\n{replace_emojis('sub_directory')} С шансом: {chance_text}\n\n{replace_emojis('⚪')} **Открыл:**\n{replace_emojis('white_arrow')} {interaction.user.mention} открыл за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} {bottom_text}{pet_bonus_text}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)

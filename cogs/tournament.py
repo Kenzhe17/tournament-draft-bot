@@ -1720,17 +1720,18 @@ class TournamentCog(commands.Cog):
 
         # Базовая комиссия 10%
         base_fee_percent = 0.1
+        pet_bonus_text = ""
 
         # Применить бонус питомца (Щедрый перевод) через новый сервис
         try:
             from storage.pet_store import pet_store
             pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
-            
+
             if pet and pet.fullness > 0:
                 # Получаем каталог питомца
                 from storage.pet_store import pet_catalog
                 pet_def = pet_catalog.get_pet(pet.pet_type.value)
-                
+
                 if pet_def and pet.level >= 7:  # Уровень разблокировки Щедрого перевода
                     ability = pet_def["abilities"][2]
                     if ability["name"] == "Щедрый перевод":
@@ -1739,10 +1740,11 @@ class TournamentCog(commands.Cog):
                         min_val = ability.get("min_val", 0)
                         max_val = ability.get("max_val", 0)
                         bonus_value = min_val + (max_val - min_val) * effectiveness
-                        
+
                         fee_reduction = bonus_value / 100
                         base_fee_percent = base_fee_percent * (1 - fee_reduction)
                         logger.info(f"Applied pay fee reduction: {bonus_value}% from {pet.pet_name}")
+                        pet_bonus_text = f"\n\n🐾 **Золотой лис ({pet.pet_name}):** Скидка **-{bonus_value:.1f}%** на комиссию перевода!"
         except Exception as e:
             logger.error(f"Error getting pet bonus: {e}")
 
@@ -1759,7 +1761,7 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}"
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
             await interaction.response.send_message(embed=embed)
