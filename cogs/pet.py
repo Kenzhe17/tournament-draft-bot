@@ -27,12 +27,12 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         pet_title = pet_row["pet_name"]
         rarity_name = pet_row.get("rarity", "Обычный")
         color = 0xE67E22  # Пастельно-оранжевый по умолчанию
-        image_path = f"assets/pets/{pet_type}.png"
+        image_url = None
     else:
         pet_title = catalog_data["name"]
         rarity_name = catalog_data["rarity"]
         color = catalog_data["color"]
-        image_path = catalog_data["image_path"]
+        image_url = catalog_data.get("image_url")
 
     # Опекуны
     owner1 = guild.get_member(pet_row["owner_1_id"])
@@ -111,12 +111,15 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         color=color
     )
 
-    # Прикрепляем арт из assets/pets/{pet_type}.png
+    # Прикрепляем арт
     file = None
-    if os.path.exists(image_path):
-        filename = os.path.basename(image_path)
-        file = discord.File(image_path, filename=filename)
+    local_image_path = f"assets/pets/{pet_type}.png"
+    if os.path.exists(local_image_path):
+        filename = os.path.basename(local_image_path)
+        file = discord.File(local_image_path, filename=filename)
         embed.set_image(url=f"attachment://{filename}")
+    elif image_url:
+        embed.set_image(url=image_url)
 
     return embed, file
 

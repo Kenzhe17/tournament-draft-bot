@@ -20,16 +20,20 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
         "rarity": "Эпический",
         "price": 10000,
         "color": 0x3498DB,
-        "image_path": f"assets/pets/{pet_id}.png",
+        "image_url": None,
         "abilities": {
-            1: {"unlock_level": 3, "name": "Крепкий панцирь", "desc": "Повышает защиту при нападении"},
-            2: {"unlock_level": 5, "name": "Способность 2", "desc": "Описание способности..."}
+            1: {"unlock_level": 3, "name": "Крепкий панцирь", "desc_template": "Повышает защиту при нападении"},
+            2: {"unlock_level": 5, "name": "Способность 2", "desc_template": "Описание способности..."}
         }
     })
 
     title_action = "ВЫЛУПЛЕНИЕ ИЗ ЯЙЦА" if is_egg_drop else "УСПЕШНАЯ ПОКУПКА"
     ab1 = pet["abilities"][1]
     ab2 = pet["abilities"][2]
+
+    # Форматируем описания способностей
+    desc1 = ab1.get("desc_template", ab1.get("desc", ""))
+    desc2 = ab2.get("desc_template", ab2.get("desc", ""))
 
     embed = discord.Embed(
         title=f"{EMOJI_STAR} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",
@@ -38,8 +42,8 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
             f"{EMOJI_ARROW} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
             f"{EMOJI_ARROW} **Стоимость в магазине:** **`{pet['price']:,}`** {EMOJI_MONEY}\n\n"
             f"📜 **Первоначальные способности:**\n"
-            f"{EMOJI_DOT} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {ab1['desc']}\n"
-            f"{EMOJI_DOT} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {ab2['desc']}\n\n"
+            f"{EMOJI_DOT} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {desc1}\n"
+            f"{EMOJI_DOT} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {desc2}\n\n"
             f"> {EMOJI_DOT} *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
         ),
         color=pet["color"]
@@ -47,10 +51,13 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
 
     # Прикрепление файла арта питомца
     file = None
-    if os.path.exists(pet["image_path"]):
-        filename = os.path.basename(pet["image_path"])
-        file = discord.File(pet["image_path"], filename=filename)
+    local_image_path = f"assets/pets/{pet_id}.png"
+    if os.path.exists(local_image_path):
+        filename = os.path.basename(local_image_path)
+        file = discord.File(local_image_path, filename=filename)
         embed.set_image(url=f"attachment://{filename}")
+    elif pet.get("image_url"):
+        embed.set_image(url=pet["image_url"])
 
     return embed, file
 
