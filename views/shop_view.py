@@ -1600,15 +1600,27 @@ class PetSelect(discord.ui.Select):
 
 async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     """Показать карточку питомца."""
-    # Цвет по редкости из каталога
-    color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
+    # Получить баланс
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
 
     # Формирование описания способностей
     ab1 = pet_def["abilities"][1]
     ab2 = pet_def["abilities"][2]
 
     # Способность 1
-    icon_1 = "🔓" if True else "🔒"  # Упрощено - всегда показываем как разблокирована для справки
+    icon_1 = "🔓" if True else "🔒"
     val_range = f"{ab1['min_val']}-{ab1['max_val']}"
     desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** - {ab1['desc_template'].format(val=val_range)}"
 
@@ -1617,21 +1629,15 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     val_range_2 = f"{ab2['min_val']}-{ab2['max_val']}"
     desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** - {ab2['desc_template'].format(val=val_range_2)}"
 
-    embed = discord.Embed(
-        title=replace_emojis(f"🐾 {pet_def['title']}"),
-        description=(
-            f"{replace_emojis('a_sparkle')} **Редкость:** `{pet_def['rarity']}`\n"
-            f"{replace_emojis('white_arrow')} **Стоимость:** **`{pet_def['price']:,}`** {get_emoji('money')}\n\n"
-            f"📜 **Способности:**\n"
-            f"{replace_emojis('white_dot')} {desc_1}\n"
-            f"{replace_emojis('white_dot')} {desc_2}\n\n"
-            f"📖 **Описание:**\n*{pet_def['description']}*"
-        ),
-        color=color
-    )
+    # Цвет по редкости из каталога
+    color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
 
-    if pet_def.get("image_url"):
-        embed.set_thumbnail(url=pet_def["image_url"])
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} ПОКУПКА ПИТОМЦА | {pet_def['name']}",
+        description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Питомцы • {pet_def['rarity']}\n{replace_emojis('sub_directory')} Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n{replace_emojis('sub_middle')} {desc_1}\n{replace_emojis('sub_directory')} {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     # Создать View с кнопками
     view = discord.ui.View(timeout=180)
@@ -1644,24 +1650,27 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
 async def show_mystery_egg(interaction: discord.Interaction) -> None:
     """Показать карточку таинственного яйца."""
     from models.pets_catalog import MYSTERY_EGG_DATA
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
+
+    # Получить баланс
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
 
     embed = discord.Embed(
-        title=replace_emojis("🥚 Таинственное яйцо"),
-        description=(
-            f"{replace_emojis('sub_middle')} **Цена:** 1,000 {get_emoji('money')}\n\n"
-            f"{replace_emojis('white_arrow')} **Шансы выпадения:**\n"
-            f"   - Пустое яйцо: 80%\n"
-            f"   - Обычный питомец: 12%\n"
-            f"   - Необычный питомец: 5%\n"
-            f"   - Эпический питомец: 2.4%\n"
-            f"   - Легендарный питомец: 0.6%\n\n"
-            f"{replace_emojis('warning')} **Важно:** Проверьте свободный слот перед открытием!"
-        ),
-        color=MYSTERY_EGG_DATA["color"]
+        title=f"{replace_emojis('a_star')} ПОКУПКА ТАИНСТВЕННОГО ЯЙЦА",
+        description=f"Вы действительно хотите купить таинственное яйцо?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Лотерея компаньонов\n{replace_emojis('sub_directory')} Стоимость: {MYSTERY_EGG_DATA['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Пустое яйцо: 80%\n{replace_emojis('sub_middle')} Обычный питомец: 12%\n{replace_emojis('sub_middle')} Необычный питомец: 5%\n{replace_emojis('sub_middle')} Эпический питомец: 2.4%\n{replace_emojis('sub_directory')} Легендарный питомец: 0.6%\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{MYSTERY_EGG_DATA['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        color=discord.Color.from_rgb(69, 69, 69)
     )
-
-    if MYSTERY_EGG_DATA.get("image_url"):
-        embed.set_thumbnail(url=MYSTERY_EGG_DATA["image_url"])
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = discord.ui.View(timeout=180)
     view.add_item(OpenEggButton())
@@ -1676,7 +1685,7 @@ class BuyPetButton(discord.ui.Button):
     def __init__(self, pet_id: str, price: int):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"Купить за {price:,} {get_emoji('money')}",
+            label=f"Купить за {price:,}",
             custom_id=f"buy_pet:{pet_id}"
         )
         self.pet_id = pet_id
@@ -1745,7 +1754,7 @@ class OpenEggButton(discord.ui.Button):
     def __init__(self):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label=f"Открыть за 1,000 {get_emoji('money')}",
+            label="Открыть за 1,000",
             custom_id="open_egg"
         )
 
