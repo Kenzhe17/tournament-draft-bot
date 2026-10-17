@@ -1528,7 +1528,7 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"ограблениях и Elo-матчах!\n\n"
             f"{replace_emojis('white_dot')} **Правило:** У каждого игрока может быть только **один** питомец "
             f"(включая совместное владение).\n\n"
-            f"{replace_emojis('white_dot')} **Таинственное яйцо** — 800 {get_emoji('money')}\n"
+            f"{replace_emojis('white_dot')} **Таинственное яйцо** — 500 {get_emoji('money')}\n"
             f"   Шанс питомца: 20% (80% пустое)\n"
             f"   - Обычный: 12%\n"
             f"   - Необычный: 5%\n"

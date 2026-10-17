@@ -1725,9 +1725,15 @@ class TournamentCog(commands.Cog):
         try:
             from services.pet_ability_service import pet_ability_service
             pet_bonus = await pet_ability_service.get_pet_bonus(interaction.guild_id, interaction.user.id, "pay")
-        except ImportError:
+            logger.info(f"Pet bonus for pay: {pet_bonus}")
+        except ImportError as e:
             # Если сервис недоступен, пропускаем бонус
+            logger.error(f"Failed to import pet_ability_service: {e}")
             pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+        except Exception as e:
+            logger.error(f"Error getting pet bonus: {e}")
+            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+
         if pet_bonus["bonus_applied"]:
             # Снижение комиссии до 25% от исходной
             fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.25
