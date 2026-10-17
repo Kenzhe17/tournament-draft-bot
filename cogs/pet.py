@@ -13,7 +13,7 @@ from config import replace_emojis, get_emoji
 from storage.pet_store import pet_store, pet_catalog
 from storage.db import get_pool
 from models.pet import PetRarity
-from models.pets_catalog import PETS_CATALOG, EMOJI_STAR, EMOJI_SPARKLE, EMOJI_ARROW, EMOJI_DOT
+from models.pets_catalog import PETS_CATALOG
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,12 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     """Формирует аккуратную карточку профиля питомца в пастельной эстетике."""
     pet_type = pet_row["pet_type"]
     catalog_data = PETS_CATALOG.get(pet_type)
+
+    # Получаем реальные эмодзи через get_emoji
+    emoji_star = get_emoji("a_star") or "⭐"
+    emoji_sparkle = get_emoji("a_sparkle") or "✨"
+    emoji_arrow = get_emoji("white_arrow") or "➡️"
+    emoji_dot = get_emoji("white_dot") or "⚪"
 
     if not catalog_data:
         pet_title = pet_row["pet_name"]
@@ -77,11 +83,11 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
 
     # Текст активных бонусов
     if energy <= 0:
-        active_bonuses_text = f"{EMOJI_DOT} ⚠️ *Все пассивные бонусы заблокированы из-за отсутствия энергии!*"
+        active_bonuses_text = f"{emoji_dot} ⚠️ *Все пассивные бонусы заблокированы из-за отсутствия энергии!*"
     elif not active_effects:
-        active_bonuses_text = f"{EMOJI_DOT} 💤 *Пока нет активных бонусов. Достигните 3-го уровня, чтобы разблокировать первую способность!*"
+        active_bonuses_text = f"{emoji_dot} 💤 *Пока нет активных бонусов. Достигните 3-го уровня, чтобы разблокировать первую способность!*"
     else:
-        active_bonuses_text = "\n".join(f"{EMOJI_DOT} {effect}" for effect in active_effects)
+        active_bonuses_text = "\n".join(f"{emoji_dot} {effect}" for effect in active_effects)
 
     # Статус сытости
     status_warning = ""
@@ -90,36 +96,36 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     elif fullness > 70:
         status_warning = "\n\n✨ *Питомец сыт и восстанавливает энергию!*"
 
-    all_abilities_text = "\n".join(f"{EMOJI_DOT} {status}" for status in abilities_status)
+    all_abilities_text = "\n".join(f"{emoji_dot} {status}" for status in abilities_status)
 
     embed = discord.Embed(
-        title=f"{EMOJI_STAR} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
+        title=f"{emoji_star} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
         description=(
-            f"{EMOJI_SPARKLE} **Вид:** **{pet_title}** (*{rarity_name}*)\n"
-            f"{EMOJI_ARROW} **Уровень / Возраст:** `{level} level` ({level} лет)\n"
-            f"{EMOJI_ARROW} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
-            f"{EMOJI_ARROW} **Состояние:**\n"
-            f"{EMOJI_DOT} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
-            f"{EMOJI_DOT} ⚡ **Энергия:** `{energy}%` / `100%`\n"
-            f"{EMOJI_DOT} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
-            f"{EMOJI_ARROW} **Текущие активные бонусы:**\n"
+            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*)\n"
+            f"{emoji_arrow} **Уровень / Возраст:** `{level} level` ({level} лет)\n"
+            f"{emoji_arrow} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
+            f"{emoji_arrow} **Состояние:**\n"
+            f"{emoji_dot} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
+            f"{emoji_dot} ⚡ **Энергия:** `{energy}%` / `100%`\n"
+            f"{emoji_dot} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
+            f"{emoji_arrow} **Текущие активные бонусы:**\n"
             f"{active_bonuses_text}\n\n"
-            f"{EMOJI_ARROW} **Все способности:**\n"
+            f"{emoji_arrow} **Все способности:**\n"
             f"{all_abilities_text}"
             f"{status_warning}"
         ),
         color=color
     )
 
-    # Прикрепляем арт
+    # Прикрепляем арт (thumbnail справа сверху)
     file = None
     local_image_path = f"assets/pets/{pet_type}.png"
     if os.path.exists(local_image_path):
         filename = os.path.basename(local_image_path)
         file = discord.File(local_image_path, filename=filename)
-        embed.set_image(url=f"attachment://{filename}")
+        embed.set_thumbnail(url=f"attachment://{filename}")
     elif image_url:
-        embed.set_image(url=image_url)
+        embed.set_thumbnail(url=image_url)
 
     return embed, file
 
@@ -642,9 +648,15 @@ class CoOwnerInviteView(discord.ui.View):
 
     @discord.ui.button(label="Принять предложение", style=discord.ButtonStyle.success, custom_id="pet_coowner:accept")
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Получаем эмодзи
+        emoji_dot = get_emoji("white_dot") or "⚪"
+        emoji_star = get_emoji("a_star") or "⭐"
+        emoji_sparkle = get_emoji("a_sparkle") or "✨"
+        emoji_arrow = get_emoji("white_arrow") or "➡️"
+
         # Проверка: нажать может только тот, кого пригласили
         if interaction.user.id != self.target_id:
-            await interaction.response.send_message(f"{EMOJI_DOT} Это предложение адресовано не вам!", ephemeral=True)
+            await interaction.response.send_message(f"{emoji_dot} Это предложение адресовано не вам!", ephemeral=True)
             return
 
         pool = await get_pool()
@@ -656,7 +668,7 @@ class CoOwnerInviteView(discord.ui.View):
             )
             if existing_pet:
                 await interaction.response.send_message(
-                    f"{EMOJI_DOT} Вы не можете стать со-опекуном, так как у вас уже есть питомец или вы являетесь со-опекуном другого!", 
+                    f"{emoji_dot} Вы не можете стать со-опекуном, так как у вас уже есть питомец или вы являетесь со-опекуном другого!",
                     ephemeral=True
                 )
                 return
@@ -671,12 +683,12 @@ class CoOwnerInviteView(discord.ui.View):
         pet_name = self.pet_row["pet_name"]
 
         success_embed = discord.Embed(
-            title=f"{EMOJI_STAR} **НОВЫЙ СО-ОПЕКУН | УСПЕШНО**",
+            title=f"{emoji_star} **НОВЫЙ СО-ОПЕКУН | УСПЕШНО**",
             description=(
-                f"{EMOJI_SPARKLE} {interaction.user.mention} принял предложение и стал со-опекуном питомца **{pet_name}**!\n\n"
-                f"{EMOJI_ARROW} **Первый опекун:** {owner_mention}\n"
-                f"{EMOJI_ARROW} **Второй опекун:** {interaction.user.mention}\n\n"
-                f"{EMOJI_DOT} *Теперь вы оба можете кормить питомца и ухаживать за ним через `/pet profile`!*"
+                f"{emoji_sparkle} {interaction.user.mention} принял предложение и стал со-опекуном питомца **{pet_name}**!\n\n"
+                f"{emoji_arrow} **Первый опекун:** {owner_mention}\n"
+                f"{emoji_arrow} **Второй опекун:** {interaction.user.mention}\n\n"
+                f"{emoji_dot} *Теперь вы оба можете кормить питомца и ухаживать за ним через `/pet profile`!*"
             ),
             color=0x2ECC71  # Пастельно-зеленый
         )
@@ -689,16 +701,19 @@ class CoOwnerInviteView(discord.ui.View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.secondary, custom_id="pet_coowner:decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        emoji_dot = get_emoji("white_dot") or "⚪"
+        emoji_star = get_emoji("a_star") or "⭐"
+
         if interaction.user.id != self.target_id:
-            await interaction.response.send_message(f"{EMOJI_DOT} Это предложение адресовано не вам!", ephemeral=True)
+            await interaction.response.send_message(f"{emoji_dot} Это предложение адресовано не вам!", ephemeral=True)
             return
 
         owner_mention = f"<@{self.owner_id}>"
-        
+
         decline_embed = discord.Embed(
-            title=f"{EMOJI_STAR} **ПРЕДЛОЖЕНИЕ ОТКЛОНЕНО**",
+            title=f"{emoji_star} **ПРЕДЛОЖЕНИЕ ОТКЛОНЕНО**",
             description=(
-                f"{EMOJI_DOT} {interaction.user.mention} отклонил предложение стать со-опекуном питомца **{self.pet_row['pet_name']}**.\n\n"
+                f"{emoji_dot} {interaction.user.mention} отклонил предложение стать со-опекуном питомца **{self.pet_row['pet_name']}**.\n\n"
                 f"> {owner_mention}, ваш питомец остаётся под вашей единоличной опекой."
             ),
             color=0xE74C3C

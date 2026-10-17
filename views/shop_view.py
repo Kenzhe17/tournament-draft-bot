@@ -15,6 +15,8 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
     """
     Формирует публичную карточку успешного получения/покупки питомца.
     """
+    from config import get_emoji
+
     pet = PETS_CATALOG.get(pet_id, {
         "name": "Guardian Turtle",
         "rarity": "Эпический",
@@ -35,29 +37,36 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
     desc1 = ab1.get("desc_template", ab1.get("desc", ""))
     desc2 = ab2.get("desc_template", ab2.get("desc", ""))
 
+    # Получаем реальные эмодзи через get_emoji
+    emoji_star = get_emoji("a_star") or "⭐"
+    emoji_sparkle = get_emoji("a_sparkle") or "✨"
+    emoji_arrow = get_emoji("white_arrow") or "➡️"
+    emoji_dot = get_emoji("white_dot") or "⚪"
+    emoji_money = get_emoji("money") or "💰"
+
     embed = discord.Embed(
-        title=f"{EMOJI_STAR} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",
+        title=f"{emoji_star} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",
         description=(
-            f"{EMOJI_SPARKLE} **Поздравляем!** В вашей коллекции пополнение!\n"
-            f"{EMOJI_ARROW} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
-            f"{EMOJI_ARROW} **Стоимость в магазине:** **`{pet['price']:,}`** {EMOJI_MONEY}\n\n"
+            f"{emoji_sparkle} **Поздравляем!** В вашей коллекции пополнение!\n"
+            f"{emoji_arrow} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
+            f"{emoji_arrow} **Стоимость в магазине:** **`{pet['price']:,}`** {emoji_money}\n\n"
             f"📜 **Первоначальные способности:**\n"
-            f"{EMOJI_DOT} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {desc1}\n"
-            f"{EMOJI_DOT} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {desc2}\n\n"
-            f"> {EMOJI_DOT} *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
+            f"{emoji_dot} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {desc1}\n"
+            f"{emoji_dot} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {desc2}\n\n"
+            f"> {emoji_dot} *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
         ),
         color=pet["color"]
     )
 
-    # Прикрепление файла арта питомца
+    # Прикрепление файла арта питомца (thumbnail справа сверху)
     file = None
     local_image_path = f"assets/pets/{pet_id}.png"
     if os.path.exists(local_image_path):
         filename = os.path.basename(local_image_path)
         file = discord.File(local_image_path, filename=filename)
-        embed.set_image(url=f"attachment://{filename}")
+        embed.set_thumbnail(url=f"attachment://{filename}")
     elif pet.get("image_url"):
-        embed.set_image(url=pet["image_url"])
+        embed.set_thumbnail(url=pet["image_url"])
 
     return embed, file
 
