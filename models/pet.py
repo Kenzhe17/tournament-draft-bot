@@ -137,6 +137,7 @@ class Pet:
     last_energy_update_at: datetime  # Время последнего обновления энергии
     created_at: datetime
     protected_item_id: str | None = None  # ID защищаемого предмета (для Черепахи)
+    hunger_started_at: datetime | None = None  # Время когда сытость достигла 0
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -155,6 +156,7 @@ class Pet:
             "last_energy_update_at": self.last_energy_update_at.isoformat(),
             "created_at": self.created_at.isoformat(),
             "protected_item_id": self.protected_item_id,
+            "hunger_started_at": self.hunger_started_at.isoformat() if self.hunger_started_at else None,
         }
 
     @classmethod
@@ -175,6 +177,7 @@ class Pet:
             last_energy_update_at=datetime.fromisoformat(data.get("last_energy_update_at", datetime.now().isoformat())),
             created_at=datetime.fromisoformat(data.get("created_at", datetime.now().isoformat())),
             protected_item_id=data.get("protected_item_id"),
+            hunger_started_at=datetime.fromisoformat(data["hunger_started_at"]) if data.get("hunger_started_at") else None,
         )
 
     def get_exp_to_next_level(self) -> int:

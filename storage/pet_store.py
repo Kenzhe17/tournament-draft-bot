@@ -106,8 +106,8 @@ class PetStore:
                     INSERT INTO pets (
                         owner_1_id, owner_2_id, pet_type, rarity, pet_name,
                         level, exp, fullness, energy,
-                        last_fed_at, last_energy_update_at, created_at
-                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6)
+                        last_fed_at, last_energy_update_at, created_at, hunger_started_at
+                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6, NULL)
                     RETURNING *
                     """,
                     owner_1_id, owner_2_id, pet_type, pet_def["rarity_code"],
@@ -142,12 +142,13 @@ class PetStore:
                     energy = $6,
                     last_fed_at = $7,
                     last_energy_update_at = $8,
-                    protected_item_id = $9
+                    protected_item_id = $9,
+                    hunger_started_at = $10
                 WHERE pet_id = $1
                 """,
                 pet.pet_id, pet.pet_name, pet.level, pet.exp,
                 pet.fullness, pet.energy, pet.last_fed_at,
-                pet.last_energy_update_at, pet.protected_item_id
+                pet.last_energy_update_at, pet.protected_item_id, pet.hunger_started_at
             )
 
     async def add_exp(self, pet_id: int, exp: int, max_daily: int = 50) -> int:
@@ -184,7 +185,7 @@ class PetStore:
 
             return new_exp
 
-    async def check_fullness_and_energy(self, pet_id: int) -> tuple[bool, Pet | None]:
+    async def check_fullness_and_energy(self, pet_id: int, guild_id: int = None) -> tuple[bool, Pet | None]:
         """Проверить сытость и энергию питомца. Возвращает (is_dead, pet)."""
         from storage.db import get_pool
 
@@ -211,10 +212,35 @@ class PetStore:
             fullness_loss = int(hours_since_fed / 6 * 5 * fullness_multiplier)  # 5 каждые 6 часов (или 10 если нет энергии)
             pet.fullness = max(0, pet.fullness - fullness_loss)
 
-            # Проверить смерть
-            if pet.fullness <= 0:
-                await self.delete_pet(pet_id)
-                return True, None
+            # Проверить когда сытость достигла 0
+            was_full = pet.fullness > 0
+            if pet.fullness == 0 and pet.hunger_started_at is None:
+                pet.hunger_started_at = now
+
+            # Если сытость 0 более 24 часов - автоматический побег
+            if pet.fullness == 0 and pet.hunger_started_at:
+                hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
+                if hours_hungry >= 24:
+                    await self.delete_pet(pet_id)
+                    # Отправить уведомление о побеге
+                    if guild_id:
+                        try:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.info(f"Pet {pet.pet_name} ran away from hunger after {hours_hungry:.1f} hours")
+                        except Exception as e:
+                            pass
+                    return True, None
+
+            # Отправить уведомление о голоде если сытость только что достигла 0
+            if was_full and pet.fullness == 0 and guild_id:
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Pet {pet.pet_name} is starving! Fullness reached 0%")
+                    # TODO: Send notification to channel 1551167853741219880
+                except Exception as e:
+                    pass
 
             # Обновить таймстампы
             pet.last_fed_at = now
@@ -374,6 +400,7 @@ class PetStore:
             last_energy_update_at=row["last_energy_update_at"],
             created_at=row["created_at"],
             protected_item_id=row["protected_item_id"],
+            hunger_started_at=row.get("hunger_started_at"),
         )
 
 

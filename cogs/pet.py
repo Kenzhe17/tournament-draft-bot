@@ -503,7 +503,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     pet_dict = dict(pet_row)
 
     # Проверить сытость и энергию
-    is_dead, pet = await pet_store.check_fullness_and_energy(pet_dict["pet_id"])
+    is_dead, pet = await pet_store.check_fullness_and_energy(pet_dict["pet_id"], interaction.guild_id)
     if is_dead:
         embed = discord.Embed(
             title=replace_emojis("💀 Питомец умер"),

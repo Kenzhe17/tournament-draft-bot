@@ -591,6 +591,7 @@ async def init_db() -> None:
                     last_energy_update_at TIMESTAMPTZ NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL,
                     protected_item_id TEXT NULL,
+                    hunger_started_at TIMESTAMPTZ NULL,
                     CHECK (owner_2_id IS NULL OR owner_2_id != owner_1_id)
                 )
             """)

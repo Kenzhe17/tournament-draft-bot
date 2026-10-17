@@ -51,6 +51,8 @@ class TournamentBot(commands.Bot):
         self.loop.create_task(self.betting_timer_loop())
         # Start draft timer background task (for auto-random picks)
         self.loop.create_task(self.draft_timer_loop())
+        # Start pet hunger check background task
+        self.loop.create_task(self.pet_hunger_check_loop())
         
         # Initialize shop items
         try:
@@ -331,6 +333,48 @@ class TournamentBot(commands.Bot):
                                 await log_draft_completed(self, guild)
             except Exception as e:
                 logger.error(f"Error in draft timer loop: {e}", exc_info=True)
+
+    async def pet_hunger_check_loop(self) -> None:
+        """Background task to check pet hunger and send notifications."""
+        import asyncio
+
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(3600)  # Check every hour
+
+                # Get all guilds
+                for guild in self.guilds:
+                    try:
+                        from storage.pet_store import pet_store
+                        from storage.db import get_pool
+
+                        pool = await get_pool()
+                        async with pool.acquire() as conn:
+                            # Get all pets
+                            rows = await conn.fetch("SELECT * FROM pets")
+
+                            for row in rows:
+                                pet = pet_store._row_to_pet(row)
+                                # Check hunger for each pet
+                                is_dead, updated_pet = await pet_store.check_fullness_and_energy(pet.pet_id, guild.id)
+
+                                if is_dead:
+                                    # Pet ran away - send notification
+                                    try:
+                                        hunger_channel = self.get_channel(1551167853741219880)
+                                        if hunger_channel:
+                                            embed = discord.Embed(
+                                                title="🐾 Питомец сбежал",
+                                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекун: <@{pet.owner_1_id}>",
+                                                color=discord.Color.orange()
+                                            )
+                                            await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
+                                    except Exception as e:
+                                        logger.error(f"Error sending runaway notification: {e}")
+                    except Exception as e:
+                        logger.error(f"Error in pet hunger check for guild {guild.id}: {e}")
+            except Exception as e:
+                logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
