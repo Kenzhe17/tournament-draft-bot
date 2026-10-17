@@ -296,10 +296,18 @@ class PetCog(commands.Cog):
     @app_commands.describe(pet_type="Тип питомца (например: golden_fox, scout_fox)")
     async def test(self, interaction: discord.Interaction, pet_type: str) -> None:
         """Тестовый режим для проверки способностей."""
-        # Проверяем владельца
-        if interaction.user.id != self.bot.owner_id:
+        from config import BOT_OWNER_ID, ORG_ROLE_ID
+
+        # Проверяем владельца или организатора
+        has_permission = (
+            interaction.user.id == BOT_OWNER_ID or
+            interaction.user.id == self.bot.owner_id or
+            any(role.id == ORG_ROLE_ID for role in interaction.user.roles)
+        )
+
+        if not has_permission:
             await interaction.response.send_message(
-                replace_emojis("❌ Только владелец бота может использовать эту команду."),
+                replace_emojis("❌ Только владелец бота или организатор могут использовать эту команду."),
                 ephemeral=True
             )
             return
