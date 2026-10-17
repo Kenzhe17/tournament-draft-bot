@@ -512,7 +512,7 @@ class PetCatalogView(discord.ui.View):
         
         # Всегда редактируем сообщение (для кнопок навигации)
         if interaction.response.is_done():
-            await interaction.edit_original_message(embed=embed, view=self)
+            await interaction.edit_original_response(embed=embed, view=self)
         else:
             await interaction.response.edit_message(embed=embed, view=self)
 
