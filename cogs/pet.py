@@ -365,6 +365,7 @@ class PetCog(commands.Cog):
         description = ""
         for pet_id, pet_data in PETS_CATALOG.items():
             description += f"**{pet_data['name']}** (*{pet_data['rarity']}*) — `{pet_data['price']:,}` {get_emoji('money')}\n"
+            description += f"{get_emoji('white_dot')} **ID:** `{pet_id}`\n"
             description += f"{get_emoji('white_dot')} {pet_data['description']}\n"
 
             abilities = pet_data.get("abilities", {})
