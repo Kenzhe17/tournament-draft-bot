@@ -1858,11 +1858,25 @@ class OpenEggButton(discord.ui.Button):
                 await interaction.response.edit_message(embed=embed, view=None)
             except Exception as e:
                 # Вернуть деньги при ошибке
-                await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 1000)
+                await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
                 await interaction.response.send_message(
                     replace_emojis(f"❌ Ошибка при создании питомца: {str(e)}"),
                     ephemeral=True
                 )
+
+
+class RoleBuyButton(discord.ui.Button):
+    """Кнопка покупки роли (устаревшая)."""
+
+    def __init__(self, item_id: str, label: str, can_buy: bool):
+        style = discord.ButtonStyle.success if can_buy else discord.ButtonStyle.secondary
+        super().__init__(
+            style=style,
+            label=label,
+            custom_id=f"shop_buy_role:{item_id}",
+            disabled=not can_buy
+        )
+        self.item_id = item_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Купить роль."""
