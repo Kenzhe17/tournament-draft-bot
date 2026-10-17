@@ -65,20 +65,10 @@ class PetStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Найти слот пользователя
-            slot_row = await conn.fetchrow(
-                "SELECT pet_id FROM pet_care_slots WHERE user_id = $1",
-                user_id
-            )
-            if not slot_row:
-                return None
-
-            pet_id = slot_row["pet_id"]
-
-            # Получить питомца
+            # Найти питомца пользователя (как owner_1 или owner_2)
             row = await conn.fetchrow(
-                "SELECT * FROM pets WHERE pet_id = $1",
-                pet_id
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                user_id
             )
             if not row:
                 return None
@@ -120,18 +110,7 @@ class PetStore:
 
                 pet = self._row_to_pet(row)
 
-                # Создать слот для основного владельца
-                await conn.execute(
-                    "INSERT INTO pet_care_slots (user_id, pet_id) VALUES ($1, $2)",
-                    owner_1_id, pet.pet_id
-                )
-
-                # Создать слот для совладельца если есть
-                if owner_2_id:
-                    await conn.execute(
-                        "INSERT INTO pet_care_slots (user_id, pet_id) VALUES ($1, $2)",
-                        owner_2_id, pet.pet_id
-                    )
+                # NOTE: pet_care_slots table removed - using direct owner checks
 
         return pet
 
@@ -320,8 +299,9 @@ class PetStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Проверяем есть ли у пользователя питомец (как owner_1 или owner_2)
             row = await conn.fetchrow(
-                "SELECT pet_id FROM pet_care_slots WHERE user_id = $1",
+                "SELECT pet_id FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
                 user_id
             )
             return row is None
