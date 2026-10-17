@@ -1535,10 +1535,10 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"   - Эпический: 2.4%\n"
             f"   - Легендарный: 0.6%\n\n"
             f"{replace_emojis('white_dot')} **Цены по редкости:**\n"
-            f"   - Обычный: 2,100 {get_emoji('money')}\n"
-            f"   - Необычный: 3,500 {get_emoji('money')}\n"
-            f"   - Эпический: 7,000 {get_emoji('money')}\n"
-            f"   - Легендарный: 14,000 {get_emoji('money')}\n"
+            f"   - Обычный: 3,000 {get_emoji('money')}\n"
+            f"   - Необычный: 8,000 {get_emoji('money')}\n"
+            f"   - Эпический: 15,000 {get_emoji('money')}\n"
+            f"   - Легендарный: 30,000 {get_emoji('money')}\n"
             f"   - Таинственное яйцо: 500 {get_emoji('money')}"
         ),
         color=discord.Color.from_rgb(69, 69, 69)
@@ -1560,22 +1560,22 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Обычные питомцы",
                 value="common",
-                description="2,100 • 3 питомца"
+                description="3,000 • 3 питомца"
             ),
             discord.SelectOption(
                 label="Необычные питомцы",
                 value="uncommon",
-                description="3,500 • 2 питомца"
+                description="5,000 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Эпические питомцы",
                 value="epic",
-                description="7,000 • 2 питомца"
+                description="10,000 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Легендарные питомцы",
                 value="legendary",
-                description="14,000 • 1 питомец"
+                description="20,000 • 1 питомец"
             ),
             discord.SelectOption(
                 label="Таинственное яйцо",
