@@ -332,6 +332,83 @@ class PlayerStatsStore:
             end = start + per_page
             return sorted_players[start:end]
 
+    async def get_player_rank(self, guild_id: int, user_id: int) -> int | None:
+        """Получить место игрока в ELO рейтинге."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                rank = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) + 1
+                    FROM player_stats
+                    WHERE guild_id = $1 AND games > 0 AND elo > (SELECT elo FROM player_stats WHERE guild_id = $1 AND user_id = $2)
+                    """,
+                    guild_id, user_id
+                )
+                return rank if rank > 0 else None
+        else:
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+            sorted_players = sorted(players_with_games, key=lambda p: p.elo, reverse=True)
+            for i, player in enumerate(sorted_players, 1):
+                if player.user_id == user_id:
+                    return i
+            return None
+
+    async def get_player_rank_by_level(self, guild_id: int, user_id: int) -> int | None:
+        """Получить место игрока в рейтинге по уровню."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                rank = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) + 1
+                    FROM player_stats
+                    WHERE guild_id = $1 AND games > 0 AND (level > (SELECT level FROM player_stats WHERE guild_id = $1 AND user_id = $2) OR (level = (SELECT level FROM player_stats WHERE guild_id = $1 AND user_id = $2) AND xp > (SELECT xp FROM player_stats WHERE guild_id = $1 AND user_id = $2)))
+                    """,
+                    guild_id, user_id
+                )
+                return rank if rank > 0 else None
+        else:
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+            sorted_players = sorted(players_with_games, key=lambda p: (p.level, p.xp), reverse=True)
+            for i, player in enumerate(sorted_players, 1):
+                if player.user_id == user_id:
+                    return i
+            return None
+
+    async def get_player_rank_by_earnings(self, guild_id: int, user_id: int) -> int | None:
+        """Получить место игрока в рейтинге по балансу."""
+        if self._use_db:
+            from storage.db import get_pool
+            from storage.user_balance_store import user_balance_store
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                user_balance = await user_balance_store.get_balance(guild_id, user_id)
+                rank = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) + 1
+                    FROM player_stats ps
+                    LEFT JOIN user_balance ub ON ps.guild_id = ub.guild_id AND ps.user_id = ub.user_id
+                    WHERE ps.guild_id = $1 AND ps.games > 0 AND COALESCE(ub.balance, 100) > $2
+                    """,
+                    guild_id, user_balance
+                )
+                return rank if rank > 0 else None
+        else:
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+            from storage.user_balance_store import user_balance_store
+            player_balances = {}
+            for player in players_with_games:
+                balance = await user_balance_store.get_balance(guild_id, player.user_id)
+                player_balances[player.user_id] = balance
+            sorted_players = sorted(players_with_games, key=lambda p: player_balances.get(p.user_id, 0), reverse=True)
+            for i, player in enumerate(sorted_players, 1):
+                if player.user_id == user_id:
+                    return i
+            return None
+
     async def reset(self, guild_id: int) -> None:
         """Сбросить всю статистику сервера."""
         if self._use_db:

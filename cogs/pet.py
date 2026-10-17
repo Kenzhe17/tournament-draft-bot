@@ -183,8 +183,28 @@ class PetCog(commands.Cog):
         pool = await get_pool()
         async with pool.acquire() as conn:
             pets = await conn.fetch(
-                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC LIMIT 10"
+                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC LIMIT 50"
             )
+
+            # Находим место текущего пользователя
+            user_pet = await conn.fetchrow(
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                interaction.user.id
+            )
+
+            user_rank_info = None
+            if user_pet:
+                rank = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) + 1
+                    FROM pets
+                    WHERE (level > $1) OR (level = $1 AND exp > $2)
+                    """,
+                    user_pet["level"], user_pet["exp"]
+                )
+                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
+            else:
+                user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
 
         if not pets:
             await interaction.response.send_message(
@@ -200,7 +220,6 @@ class PetCog(commands.Cog):
             pet_dict = dict(pet)
             pet_def = PETS_CATALOG.get(pet_dict["pet_type"], {})
             pet_display_name = pet_def.get("name", pet_dict["pet_name"])
-            pet_image = pet_def.get("image_url", "")
 
             owner_mention = f"<@{pet_dict['owner_1_id']}>"
             if pet_dict["owner_2_id"]:
@@ -208,22 +227,26 @@ class PetCog(commands.Cog):
 
             medal = ""
             if i == 1:
-                medal = "🥇"
+                medal = get_emoji("gold_medal") or "🥇"
             elif i == 2:
-                medal = "🥈"
+                medal = get_emoji("silver_medal") or "🥈"
             elif i == 3:
-                medal = "🥉"
+                medal = get_emoji("bronze_medal") or "🥉"
+            else:
+                medal = f"`{i:2d}`"
 
             description += (
-                f"{medal} **#{i} {pet_display_name}** (*{pet_dict['rarity']}*)\n"
-                f"   Уровень: `{pet_dict['level']}` | Опыт: `{pet_dict['exp']}`\n"
-                f"   Владелец: {owner_mention}\n\n"
+                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_display_name}** (*{pet_dict['rarity']}*)\n"
+                f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
+        if user_rank_info:
+            description += f"───\n{replace_emojis('white_dot')} {user_rank_info}"
+
         embed = discord.Embed(
-            title=replace_emojis("🏆 ТОП ПИТОМЦЕВ"),
+            title=f"{get_emoji('a_star')} **ТОП ПИТОМЦЕВ**",
             description=description,
-            color=discord.Color.gold()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         await interaction.response.send_message(embed=embed)

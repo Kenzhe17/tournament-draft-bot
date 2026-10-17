@@ -1241,7 +1241,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     return embed
 
 
-async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo") -> discord.Embed:
+async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo", user_id: int = None) -> discord.Embed:
     """Embed лидерборда с пагинацией."""
     from storage.player_stats_store import player_stats_store
     from storage.user_balance_store import user_balance_store
@@ -1348,6 +1348,27 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             lines.append(line)
 
     embed.description = "\n".join(lines)
+
+    # Add user rank info if user_id is provided
+    if user_id:
+        user_stats = await player_stats_store.get(guild_id, user_id)
+        if user_stats:
+            if leaderboard_type == "level":
+                user_rank = await player_stats_store.get_player_rank_by_level(guild_id, user_id)
+                user_value = f"lvl {user_stats.level}"
+            elif leaderboard_type == "money":
+                user_balance = await user_balance_store.get_balance(guild_id, user_id)
+                user_rank = await player_stats_store.get_player_rank_by_earnings(guild_id, user_id)
+                user_value = f"{user_balance:,} {get_emoji('money')}"
+            else:  # elo
+                user_rank = await player_stats_store.get_player_rank(guild_id, user_id)
+                user_value = f"{int(user_stats.elo)} ELO"
+
+            if user_rank:
+                embed.description += f"\n\n───\n{replace_emojis('white_dot')} **Ваше место:** **`#{user_rank}`** | **{user_value}**"
+            else:
+                embed.description += f"\n\n───\n{replace_emojis('white_dot')} Вы пока не в рейтинге. Сыграйте хотя бы один турнир!"
+
     embed.set_footer(text=f"Страница {page}/{total_pages}")
 
     return embed

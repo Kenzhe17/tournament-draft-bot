@@ -247,7 +247,7 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type=type)
+        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type=type, user_id=interaction.user.id)
         view = LeaderboardView(interaction.guild_id, page=1, leaderboard_type=type)
         await view.initialize()
 
