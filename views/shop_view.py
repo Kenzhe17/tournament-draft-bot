@@ -1839,11 +1839,15 @@ class BuyPetButton(discord.ui.Button):
 
             # Используем новую функцию для создания embed
             embed, file = build_won_pet_embed(pet.pet_type.value, interaction.user, is_egg_drop=False)
-            
+
+            # Убираем кнопки из исходного сообщения
+            await interaction.response.edit_message(view=None)
+
+            # Отправляем новое сообщение с результатом (видно всем)
             if file:
-                await interaction.response.edit_message(embed=embed, view=None, attachments=[file])
+                await interaction.followup.send(embed=embed, file=file)
             else:
-                await interaction.response.edit_message(embed=embed, view=None)
+                await interaction.followup.send(embed=embed)
         except Exception as e:
             # Вернуть деньги при ошибке
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)

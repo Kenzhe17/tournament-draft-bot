@@ -577,10 +577,13 @@ class RenamePetModal(discord.ui.Modal):
         self.pet_dict["pet_name"] = new_name
         new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
 
+        # Получаем исходное сообщение
+        original_message = await interaction.original_response()
+
         if new_file:
-            await self.message.edit(embed=new_embed, attachments=[new_file])
+            await original_message.edit(embed=new_embed, attachments=[new_file])
         else:
-            await self.message.edit(embed=new_embed)
+            await original_message.edit(embed=new_embed)
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Питомец переименован в {new_name}"),
