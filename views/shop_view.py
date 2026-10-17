@@ -423,7 +423,7 @@ class CosmeticSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=display_name,
                     value=item.id,
-                    description=f"Цена: {item.price} {get_emoji('money')}"
+                    description=f"Цена: {item.price}"
                 )
             )
 
@@ -461,7 +461,7 @@ class CaseSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=case.name,
                     value=case.id,
-                    description=f"Цена: {case.price} {get_emoji('money')}"
+                    description=f"Цена: {case.price}"
                 )
             )
 
@@ -1089,7 +1089,7 @@ class ItemSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=display_name,
                     value=item.id,
-                    description=f"Цена: {item.price} {get_emoji('money')}"
+                    description=f"Цена: {item.price}"
                 )
             )
 
@@ -1493,27 +1493,27 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Обычные питомцы",
                 value="common",
-                description="3,000 монет • 3 питомца"
+                description="3,000 • 3 питомца"
             ),
             discord.SelectOption(
                 label="Необычные питомцы",
                 value="uncommon",
-                description="5,000 монет • 2 питомца"
+                description="5,000 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Эпические питомцы",
                 value="epic",
-                description="10,000 монет • 2 питомца"
+                description="10,000 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Легендарные питомцы",
                 value="legendary",
-                description="20,000 монет • 1 питомец"
+                description="20,000 • 1 питомец"
             ),
             discord.SelectOption(
                 label="🥚 Таинственное яйцо",
                 value="egg",
-                description="1,000 монет • Случайный питомец"
+                description="1,000 • Случайный питомец"
             ),
         ]
         super().__init__(
@@ -1537,6 +1537,9 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
     """Показать питомцев выбранной редкости."""
     from storage.pet_store import pet_catalog
     from models.pet import PetRarity
+    from storage.player_stats_store import player_stats_store
+    from storage.shop_store import inventory_store
+    from cogs.tournament import get_rank_emoji
 
     pet_rarity = PetRarity(rarity)
     pets = pet_catalog.get_pets_by_rarity(pet_rarity)
@@ -1548,6 +1551,17 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
         )
         return
 
+    # Получить баланс
+    balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
+    cosmetics = inventory_store.get_player_inventory(interaction.guild_id, interaction.user.id)
+    inventory_count = len(cosmetics)
+    max_inventory = 20
+
+    stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+    rank = "Без ранга"
+    if stats:
+        rank = get_rank_emoji(stats.level)
+
     # Названия редкостей
     rarity_names = {
         "common": "Обычные",
@@ -1556,12 +1570,32 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
         "legendary": "Легендарные",
     }
 
+    # Эмодзи редкости
+    rare_map = {
+        "common": "rare_basic",
+        "uncommon": "rare_premium",
+        "epic": "rare_elite",
+        "legendary": "rare_special",
+    }
+    rare_emoji = rare_map.get(rarity, "rare_basic")
+
+    # Сформировать список питомцев
+    pets_parts = []
+    for i, pet in enumerate(pets):
+        sub_emoji = "sub_middle" if i < len(pets) - 1 else "sub_directory"
+        pets_parts.append(
+            f"{replace_emojis(sub_emoji)} **{pet['name']}** • {pet['price']:,} {get_emoji('money')} {replace_emojis(rare_emoji)}"
+        )
+
+    pets_list = "\n".join(pets_parts)
+
     # Создать embed
     embed = discord.Embed(
-        title=replace_emojis(f"🐾 {rarity_names.get(rarity, rarity)} питомцы"),
-        description=f"Выберите питомца для просмотра подробностей",
+        title=f"{replace_emojis('a_star')} КАТАЛОГ | Питомцы — {rarity_names.get(rarity, rarity)}",
+        description=f"Выберите питомца из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные питомцы:**\n{pets_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите питомца в выпадающем меню для покупки",
         color=discord.Color.from_rgb(69, 69, 69)
     )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     # Создать View с выбором питомца
     view = discord.ui.View(timeout=180)
@@ -1579,7 +1613,7 @@ class PetSelect(discord.ui.Select):
             discord.SelectOption(
                 label=pet["name"],
                 value=pet["id"],
-                description=pet["rarity"]
+                description=f"{pet['price']:,}"
             )
             for pet in pets
         ]
