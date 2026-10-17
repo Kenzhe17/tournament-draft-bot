@@ -1637,7 +1637,8 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
         description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Питомцы • {pet_def['rarity']}\n{replace_emojis('sub_directory')} Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n{replace_emojis('sub_middle')} {desc_1}\n{replace_emojis('sub_directory')} {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    if pet_def.get("image_url"):
+        embed.set_thumbnail(url=pet_def["image_url"])
 
     # Создать View с кнопками
     view = discord.ui.View(timeout=180)
@@ -1670,7 +1671,8 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
         description=f"Вы действительно хотите купить таинственное яйцо?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Лотерея компаньонов\n{replace_emojis('sub_directory')} Стоимость: {MYSTERY_EGG_DATA['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Пустое яйцо: 80%\n{replace_emojis('sub_middle')} Обычный питомец: 12%\n{replace_emojis('sub_middle')} Необычный питомец: 5%\n{replace_emojis('sub_middle')} Эпический питомец: 2.4%\n{replace_emojis('sub_directory')} Легендарный питомец: 0.6%\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{MYSTERY_EGG_DATA['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
-    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    if MYSTERY_EGG_DATA.get("image_url"):
+        embed.set_thumbnail(url=MYSTERY_EGG_DATA["image_url"])
 
     view = discord.ui.View(timeout=180)
     view.add_item(OpenEggButton())
