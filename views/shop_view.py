@@ -38,11 +38,11 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
     desc2 = ab2.get("desc_template", ab2.get("desc", ""))
 
     # Получаем реальные эмодзи через get_emoji
-    emoji_star = get_emoji("a_star") or "⭐"
-    emoji_sparkle = get_emoji("a_sparkle") or "✨"
-    emoji_arrow = get_emoji("white_arrow") or "➡️"
-    emoji_dot = get_emoji("white_dot") or "⚪"
-    emoji_money = get_emoji("money") or "💰"
+    emoji_star = get_emoji("a_star")
+    emoji_sparkle = get_emoji("a_sparkle")
+    emoji_arrow = get_emoji("white_arrow")
+    emoji_dot = get_emoji("white_dot")
+    emoji_money = get_emoji("money")
 
     embed = discord.Embed(
         title=f"{emoji_star} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",

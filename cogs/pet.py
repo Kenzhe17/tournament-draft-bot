@@ -24,10 +24,10 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     catalog_data = PETS_CATALOG.get(pet_type)
 
     # Получаем реальные эмодзи через get_emoji
-    emoji_star = get_emoji("a_star") or "⭐"
-    emoji_sparkle = get_emoji("a_sparkle") or "✨"
-    emoji_arrow = get_emoji("white_arrow") or "➡️"
-    emoji_dot = get_emoji("white_dot") or "⚪"
+    emoji_star = get_emoji("a_star")
+    emoji_sparkle = get_emoji("a_sparkle")
+    emoji_arrow = get_emoji("white_arrow")
+    emoji_dot = get_emoji("white_dot")
 
     if not catalog_data:
         pet_title = pet_row["pet_name"]
@@ -649,10 +649,10 @@ class CoOwnerInviteView(discord.ui.View):
     @discord.ui.button(label="Принять предложение", style=discord.ButtonStyle.success, custom_id="pet_coowner:accept")
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Получаем эмодзи
-        emoji_dot = get_emoji("white_dot") or "⚪"
-        emoji_star = get_emoji("a_star") or "⭐"
-        emoji_sparkle = get_emoji("a_sparkle") or "✨"
-        emoji_arrow = get_emoji("white_arrow") or "➡️"
+        emoji_dot = get_emoji("white_dot")
+        emoji_star = get_emoji("a_star")
+        emoji_sparkle = get_emoji("a_sparkle")
+        emoji_arrow = get_emoji("white_arrow")
 
         # Проверка: нажать может только тот, кого пригласили
         if interaction.user.id != self.target_id:
@@ -701,8 +701,8 @@ class CoOwnerInviteView(discord.ui.View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.secondary, custom_id="pet_coowner:decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        emoji_dot = get_emoji("white_dot") or "⚪"
-        emoji_star = get_emoji("a_star") or "⭐"
+        emoji_dot = get_emoji("white_dot")
+        emoji_star = get_emoji("a_star")
 
         if interaction.user.id != self.target_id:
             await interaction.response.send_message(f"{emoji_dot} Это предложение адресовано не вам!", ephemeral=True)
