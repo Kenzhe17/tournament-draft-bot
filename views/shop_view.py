@@ -1904,7 +1904,7 @@ class OpenEggButton(discord.ui.Button):
             embed = discord.Embed(
                 title=f"{emoji_star} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",
                 description=(
-                    f"{emoji_sparkle} Вы аккуратно разбиваете скорлупу... 🥚✨\n"
+                    f"{emoji_sparkle} {interaction.user.mention} аккуратно разбивает скорлупу... 🥚✨\n"
                     f"{emoji_arrow} **Результат:** Эх, яйцо оказалось пустым!\n"
                     f"{emoji_dot} *Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
                 ),
