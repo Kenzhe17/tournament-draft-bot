@@ -233,7 +233,7 @@ class PetCog(commands.Cog):
             elif i == 3:
                 medal = get_emoji("bronze_medal") or "🥉"
             else:
-                medal = f"`{i:2d}`"
+                medal = f"{i}."
 
             description += (
                 f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_display_name}** (*{pet_dict['rarity']}*)\n"

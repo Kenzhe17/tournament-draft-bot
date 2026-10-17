@@ -22,7 +22,7 @@ class TopCategorySelect(discord.ui.Select):
     def __init__(self, view: "UniversalLeaderboardView"):
         options = [
             discord.SelectOption(
-                label="Топ по Эло (ELO)",
+                label="Топ по ELO",
                 value="elo",
                 description="Турнирный рейтинг и статистика побед",
                 emoji="⚔️"
