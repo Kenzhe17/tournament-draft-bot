@@ -1609,11 +1609,13 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
 
     # Способность 1
     icon_1 = "🔓" if True else "🔒"  # Упрощено - всегда показываем как разблокирована для справки
-    desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** — {ab1['desc_template'].format(val=f\"{ab1['min_val']}–{ab1['max_val']}\")}"
+    val_range = f"{ab1['min_val']}-{ab1['max_val']}"
+    desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** - {ab1['desc_template'].format(val=val_range)}"
 
     # Способность 2
     icon_2 = "🔓" if True else "🔒"
-    desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** — {ab2['desc_template'].format(val=f\"{ab2['min_val']}–{ab2['max_val']}\")}"
+    val_range_2 = f"{ab2['min_val']}-{ab2['max_val']}"
+    desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** - {ab2['desc_template'].format(val=val_range_2)}"
 
     embed = discord.Embed(
         title=replace_emojis(f"🐾 {pet_def['title']}"),
