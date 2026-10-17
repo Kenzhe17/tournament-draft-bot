@@ -2,11 +2,57 @@
 from config import replace_emojis, get_emoji
 
 import discord
+import os
 from storage.shop_store import shop_store
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
 from storage.case_store import case_store
 from models.shop_item import PlayerCosmetic, CosmeticRarity
+from models.pets_catalog import PETS_CATALOG, EMOJI_STAR, EMOJI_SPARKLE, EMOJI_ARROW, EMOJI_DOT, EMOJI_MONEY
+
+
+def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord.Embed, discord.File | None]:
+    """
+    Формирует публичную карточку успешного получения/покупки питомца.
+    """
+    pet = PETS_CATALOG.get(pet_id, {
+        "name": "Guardian Turtle",
+        "rarity": "Эпический",
+        "price": 10000,
+        "color": 0x3498DB,
+        "image_path": f"assets/pets/{pet_id}.png",
+        "abilities": {
+            1: {"unlock_level": 3, "name": "Крепкий панцирь", "desc": "Повышает защиту при нападении"},
+            2: {"unlock_level": 5, "name": "Способность 2", "desc": "Описание способности..."}
+        }
+    })
+
+    title_action = "ВЫЛУПЛЕНИЕ ИЗ ЯЙЦА" if is_egg_drop else "УСПЕШНАЯ ПОКУПКА"
+    ab1 = pet["abilities"][1]
+    ab2 = pet["abilities"][2]
+
+    embed = discord.Embed(
+        title=f"{EMOJI_STAR} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",
+        description=(
+            f"{EMOJI_SPARKLE} **Поздравляем!** В вашей коллекции пополнение!\n"
+            f"{EMOJI_ARROW} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
+            f"{EMOJI_ARROW} **Стоимость в магазине:** **`{pet['price']:,}`** {EMOJI_MONEY}\n\n"
+            f"📜 **Первоначальные способности:**\n"
+            f"{EMOJI_DOT} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {ab1['desc']}\n"
+            f"{EMOJI_DOT} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {ab2['desc']}\n\n"
+            f"> {EMOJI_DOT} *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
+        ),
+        color=pet["color"]
+    )
+
+    # Прикрепление файла арта питомца
+    file = None
+    if os.path.exists(pet["image_path"]):
+        filename = os.path.basename(pet["image_path"])
+        file = discord.File(pet["image_path"], filename=filename)
+        embed.set_image(url=f"attachment://{filename}")
+
+    return embed, file
 
 
 class ShopMainView(discord.ui.View):
@@ -1771,27 +1817,13 @@ class BuyPetButton(discord.ui.Button):
             pet_price = pet_data.get("price", 0)
             pet_display_name = pet_data.get("name", pet.pet_name)
 
-            # Способности
-            ab1 = pet_data.get("abilities", [{}])[1] if len(pet_data.get("abilities", [])) > 1 else {}
-            ab2 = pet_data.get("abilities", [{}])[2] if len(pet_data.get("abilities", [])) > 2 else {}
-
-            embed = discord.Embed(
-                title="ПИТОМЕЦ ПОЛУЧЕН | УСПЕШНАЯ ПОКУПКА",
-                description=(
-                    f"Поздравляем! В вашей коллекции пополнение!\n"
-                    f"**Питомец:** {pet.pet_name} (*{pet_rarity}*)\n"
-                    f"**Стоимость в магазине:** `{pet_price:,}` {get_emoji('money')}\n\n"
-                    f"**Первоначальные способности:**\n"
-                    f"🔒 **Ур. {ab1.get('unlock_level', 3)} | {ab1.get('name', 'Способность 1')}**\n"
-                    f"🔒 **Ур. {ab2.get('unlock_level', 5)} | {ab2.get('name', 'Способность 2')}**\n\n"
-                    f"> *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
-                ),
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            if pet_image:
-                embed.set_thumbnail(url=pet_image)
-
-            await interaction.response.edit_message(embed=embed, view=None)
+            # Используем новую функцию для создания embed
+            embed, file = build_won_pet_embed(pet.pet_type.value, is_egg_drop=False)
+            
+            if file:
+                await interaction.response.edit_message(embed=embed, view=None, attachments=[file])
+            else:
+                await interaction.response.edit_message(embed=embed, view=None)
         except Exception as e:
             # Вернуть деньги при ошибке
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
@@ -1844,11 +1876,11 @@ class OpenEggButton(discord.ui.Button):
 
         if result["type"] == "nothing":
             embed = discord.Embed(
-                title="ПУСТО",
+                title=f"{EMOJI_STAR} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",
                 description=(
-                    f"Вы аккуратно разбиваете скорлупу... 🥚✨\n\n"
-                    f"**Результат:** Эх, яйцо оказалось пустым!\n"
-                    f"*Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
+                    f"{EMOJI_SPARKLE} Вы аккуратно разбиваете скорлупу... 🥚✨\n"
+                    f"{EMOJI_ARROW} **Результат:** Эх, яйцо оказалось пустым!\n"
+                    f"{EMOJI_DOT} *Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -1870,28 +1902,13 @@ class OpenEggButton(discord.ui.Button):
                 pet_image = pet_def.get("image_url", "")
                 pet_price = pet_def.get("price", 0)
 
-                # Способности (безопасный доступ)
-                abilities = pet_def.get("abilities", [])
-                ab1 = abilities[1] if len(abilities) > 1 else {"name": "Способность 1", "unlock_level": 3}
-                ab2 = abilities[2] if len(abilities) > 2 else {"name": "Способность 2", "unlock_level": 5}
-
-                embed = discord.Embed(
-                    title="ПИТОМЕЦ ПОЛУЧЕН | ВЫЛУПЛЕНИЕ ИЗ ЯЙЦА",
-                    description=(
-                        f"Поздравляем! В вашей коллекции пополнение!\n"
-                        f"**Питомец:** {pet.pet_name} (*{pet_def['rarity']}*)\n"
-                        f"**Стоимость в магазине:** `{pet_price:,}` {get_emoji('money')}\n\n"
-                        f"**Первоначальные способности:**\n"
-                        f"🔒 **Ур. {ab1.get('unlock_level', 3)} | {ab1.get('name', 'Способность 1')}**\n"
-                        f"🔒 **Ур. {ab2.get('unlock_level', 5)} | {ab2.get('name', 'Способность 2')}**\n\n"
-                        f"> *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
-                    ),
-                    color=discord.Color.from_rgb(69, 69, 69)
-                )
-                if pet_image:
-                    embed.set_thumbnail(url=pet_image)
-
-                await interaction.response.send_message(embed=embed)
+                # Используем новую функцию для создания embed
+                embed, file = build_won_pet_embed(pet_def["id"], is_egg_drop=True)
+                
+                if file:
+                    await interaction.response.send_message(embed=embed, file=file)
+                else:
+                    await interaction.response.send_message(embed=embed)
             except Exception as e:
                 # Вернуть деньги при ошибке
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
