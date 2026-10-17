@@ -1832,7 +1832,7 @@ class OpenEggButton(discord.ui.Button):
                 description="Вам не выпал питомец. Попробуйте ещё раз!",
                 color=discord.Color.red()
             )
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.send_message(embed=embed)
         else:
             pet_def = result["pet"]
             # Создать питомца
@@ -1855,7 +1855,7 @@ class OpenEggButton(discord.ui.Button):
                     color=discord.Color.green()
                 )
 
-                await interaction.response.edit_message(embed=embed, view=None)
+                await interaction.response.send_message(embed=embed)
             except Exception as e:
                 # Вернуть деньги при ошибке
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
