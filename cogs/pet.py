@@ -102,7 +102,7 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         title=f"{emoji_star} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
         description=(
             f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*)\n"
-            f"{emoji_arrow} **Уровень / Возраст:** `{level} level` ({level} лет)\n"
+            f"{emoji_arrow} **Уровень:** `{level}`\n"
             f"{emoji_arrow} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"{emoji_arrow} **Состояние:**\n"
             f"{emoji_dot} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
@@ -317,7 +317,7 @@ class PetCog(commands.Cog):
                     """,
                     user_pet["level"], user_pet["exp"]
                 )
-                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
+                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
             else:
                 user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
 
@@ -334,7 +334,6 @@ class PetCog(commands.Cog):
         for i, pet in enumerate(pets, 1):
             pet_dict = dict(pet)
             pet_def = PETS_CATALOG.get(pet_dict["pet_type"], {})
-            pet_display_name = pet_def.get("name", pet_dict["pet_name"])
 
             owner_mention = f"<@{pet_dict['owner_1_id']}>"
             if pet_dict["owner_2_id"]:
@@ -351,7 +350,7 @@ class PetCog(commands.Cog):
                 medal = f"{i}."
 
             description += (
-                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_display_name}** (*{pet_dict['rarity']}*)\n"
+                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*)\n"
                 f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
@@ -415,22 +414,35 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     embed, file = await build_pet_profile_embed(pet_dict, interaction.guild)
 
     # Создать View с кнопками
-    view = PetProfileView(pet, pet_dict)
+    view = PetProfileView(pet, pet_dict, interaction)
     if file:
-        await interaction.response.send_message(embed=embed, view=view, file=file)
+        msg = await interaction.response.send_message(embed=embed, view=view, file=file)
     else:
-        await interaction.response.send_message(embed=embed, view=view)
+        msg = await interaction.response.send_message(embed=embed, view=view)
+
+    # Сохраняем сообщение в view
+    if msg:
+        view.message = msg
+        view.rename_button.message = msg
 
 
 class PetProfileView(discord.ui.View):
     """View для профиля питомца."""
 
-    def __init__(self, pet, pet_dict):
+    def __init__(self, pet, pet_dict, interaction: discord.Interaction):
         super().__init__(timeout=180)
         self.pet = pet
         self.pet_dict = pet_dict
+        self.interaction = interaction
+        self.message = None  # Will be set after response
+        self.rename_button = RenamePetButton(pet.pet_id, pet_dict, None)
         self.add_item(FeedPetButton(pet.pet_id, pet_dict))
-        self.add_item(RenamePetButton(pet.pet_id, pet_dict))
+        self.add_item(self.rename_button)
+
+    async def on_timeout(self) -> None:
+        """Remove buttons on timeout."""
+        if self.message:
+            await self.message.edit(view=None)
 
 
 class FeedPetButton(discord.ui.Button):
@@ -508,7 +520,7 @@ class FeedPetButton(discord.ui.Button):
 class RenamePetButton(discord.ui.Button):
     """Кнопка переименования питомца."""
 
-    def __init__(self, pet_id: int, pet_dict: dict):
+    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Переименовать",
@@ -516,6 +528,7 @@ class RenamePetButton(discord.ui.Button):
         )
         self.pet_id = pet_id
         self.pet_dict = pet_dict
+        self.message = message
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать модальное окно для переименования."""
@@ -527,15 +540,17 @@ class RenamePetButton(discord.ui.Button):
             )
             return
 
-        await interaction.response.send_modal(RenamePetModal(self.pet_id))
+        await interaction.response.send_modal(RenamePetModal(self.pet_id, self.message, self.pet_dict))
 
 
 class RenamePetModal(discord.ui.Modal):
     """Модальное окно переименования питомца."""
 
-    def __init__(self, pet_id: int):
+    def __init__(self, pet_id: int, message: discord.Message, pet_dict: dict):
         super().__init__(title="Переименовать питомца")
         self.pet_id = pet_id
+        self.message = message
+        self.pet_dict = pet_dict
 
         self.name_input = discord.ui.TextInput(
             label="Новое имя",
@@ -557,6 +572,15 @@ class RenamePetModal(discord.ui.Modal):
             return
 
         await pet_store.rename_pet(self.pet_id, new_name)
+
+        # Обновляем исходное сообщение с новым именем
+        self.pet_dict["pet_name"] = new_name
+        new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
+
+        if new_file:
+            await self.message.edit(embed=new_embed, attachments=[new_file])
+        else:
+            await self.message.edit(embed=new_embed)
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Питомец переименован в {new_name}"),
