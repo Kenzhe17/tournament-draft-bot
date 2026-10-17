@@ -43,14 +43,6 @@ class HistoryView(discord.ui.View):
             )
             self.add_item(disabled_button)
 
-        # Page indicator
-        indicator = discord.ui.Button(
-            label=f"{self.current_page + 1}/{self.total_pages}",
-            style=discord.ButtonStyle.secondary,
-            disabled=True
-        )
-        self.add_item(indicator)
-
         # Next button
         if self.current_page < self.total_pages - 1:
             next_button = NextButton()

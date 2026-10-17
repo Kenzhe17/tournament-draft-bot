@@ -109,14 +109,6 @@ class PlayerSelectView(discord.ui.View):
             prev_btn.callback = self.prev_callback
             self.add_item(prev_btn)
 
-            # Page indicator
-            indicator = discord.ui.Button(
-                label=f"{self.page}/{self.total_pages}",
-                style=discord.ButtonStyle.secondary,
-                disabled=True
-            )
-            self.add_item(indicator)
-
             # Next button
             next_btn = discord.ui.Button(
                 label="▶",

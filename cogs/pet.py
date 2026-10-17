@@ -455,14 +455,6 @@ class PetCatalogView(discord.ui.View):
             )
             self.add_item(disabled_button)
 
-        # Page indicator
-        indicator = discord.ui.Button(
-            label=f"{self.current_index + 1}/{len(self.pet_list)}",
-            style=discord.ButtonStyle.secondary,
-            disabled=True
-        )
-        self.add_item(indicator)
-
         # Next button
         if self.current_index < len(self.pet_list) - 1:
             next_button = discord.ui.Button(

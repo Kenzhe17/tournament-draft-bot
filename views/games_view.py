@@ -101,10 +101,9 @@ class GameCategorySelect(Select):
         view = GamesCategoryView(self.user_id, self.guild_id, category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, category, page))
 
-        # Кнопки навигации (всегда показываем 4 кнопки) - добавляем напрямую без ActionRow
+        # Кнопки навигации (всегда показываем 3 кнопки) - добавляем напрямую без ActionRow
         view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
         view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
-        view.add_item(PageIndicator(page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
 
         await interaction.response.edit_message(embed=embed, view=view)
@@ -371,17 +370,6 @@ class BackToMainMenuButton(Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
-class PageIndicator(Button):
-    """Индикатор страницы."""
-
-    def __init__(self, page: int, total_pages: int):
-        super().__init__(
-            label=f"{page}/{total_pages}",
-            style=discord.ButtonStyle.secondary,
-            disabled=True
-        )
-
-
 class BackButton(Button):
     """Кнопка назад для пагинации."""
 
@@ -432,7 +420,6 @@ class BackButton(Button):
             # Кнопки навигации - добавляем напрямую без ActionRow
             view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            view.add_item(PageIndicator(new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
 
             await interaction.response.edit_message(embed=embed, view=view)
@@ -488,7 +475,6 @@ class ForwardButton(Button):
             # Кнопки навигации - добавляем напрямую без ActionRow
             view.add_item(BackToMainMenuButton(self.user_id, self.guild_id))
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
-            view.add_item(PageIndicator(new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
 
             await interaction.response.edit_message(embed=embed, view=view)
