@@ -1511,7 +1511,7 @@ class PetRaritySelect(discord.ui.Select):
                 description="20,000 • 1 питомец"
             ),
             discord.SelectOption(
-                label="🥚 Таинственное яйцо",
+                label="Таинственное яйцо",
                 value="egg",
                 description="1,000 • Случайный питомец"
             ),
@@ -1668,7 +1668,7 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
 
     embed = discord.Embed(
         title=f"{replace_emojis('a_star')} ПОКУПКА ПИТОМЦА | {pet_def['name']}",
-        description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Питомцы • {pet_def['rarity']}\n{replace_emojis('sub_directory')} Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n{replace_emojis('sub_middle')} {desc_1}\n{replace_emojis('sub_directory')} {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Питомцы • {pet_def['rarity']}\n{replace_emojis('sub_directory')} Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n{replace_emojis('sub_directory')} {desc_1}\n{replace_emojis('sub_directory')} {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     if pet_def.get("image_url"):
