@@ -13,7 +13,7 @@ from config import replace_emojis, get_emoji
 from storage.pet_store import pet_store, pet_catalog
 from storage.db import get_pool
 from models.pet import PetRarity
-from data.pets_catalog import PETS_CATALOG, EMOJI_STAR, EMOJI_SPARKLE, EMOJI_ARROW, EMOJI_DOT
+from models.pets_catalog import PETS_CATALOG, EMOJI_STAR, EMOJI_SPARKLE, EMOJI_ARROW, EMOJI_DOT
 
 logger = logging.getLogger(__name__)
 
