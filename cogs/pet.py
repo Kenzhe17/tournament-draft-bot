@@ -553,6 +553,10 @@ class PetProfileView(discord.ui.View):
         self.add_item(FeedPetButton(pet.pet_id, pet_dict))
         self.add_item(self.rename_button)
 
+        # Добавить кнопку защиты предмета для Черепахи-хранителя (уровень 7+)
+        if pet.pet_type.value == "guardian_turtle" and pet.level >= 7:
+            self.add_item(ProtectItemButton(pet.pet_id, pet_dict, interaction))
+
     async def on_timeout(self) -> None:
         """Remove buttons on timeout."""
         if self.message:
@@ -565,7 +569,7 @@ class FeedPetButton(discord.ui.Button):
     def __init__(self, pet_id: int, pet_dict: dict):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Покормить (100 🪙)",
+            label="Покормить (50 🪙)",
             custom_id=f"feed_pet:{pet_id}"
         )
         self.pet_id = pet_id
@@ -593,15 +597,15 @@ class FeedPetButton(discord.ui.Button):
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < 100:
+        if balance < 50:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. Нужно: 100 🪙"),
+                replace_emojis("❌ Недостаточно монет. Нужно: 50 🪙"),
                 ephemeral=True
             )
             return
 
         # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 100)
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 50)
 
         # Покормить (обычная еда: +20 сытость, +5 энергия, +5 EXP)
         success, message = await pet_store.feed_pet(
@@ -624,7 +628,7 @@ class FeedPetButton(discord.ui.Button):
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             # Вернуть деньги
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 100)
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 50)
             await interaction.response.send_message(
                 replace_emojis(f"❌ {message}"),
                 ephemeral=True
@@ -705,6 +709,117 @@ class RenamePetModal(discord.ui.Modal):
             replace_emojis(f"✅ Питомец переименован в {new_name}"),
             ephemeral=True
         )
+
+
+class ProtectItemButton(discord.ui.Button):
+    """Кнопка защиты предмета (для Черепахи-хранителя)."""
+
+    def __init__(self, pet_id: int, pet_dict: dict, interaction: discord.Interaction):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="🛡️ Защитить предмет",
+            custom_id=f"protect_item:{pet_id}"
+        )
+        self.pet_id = pet_id
+        self.pet_dict = pet_dict
+        self.interaction = interaction
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Показать меню выбора предмета для защиты."""
+        # Проверить, является ли пользователь опекуном
+        if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
+            await interaction.response.send_message(
+                replace_emojis("❌ Только опекуны могут использовать защиту предмета!"),
+                ephemeral=True
+            )
+            return
+
+        # Получить инвентарь пользователя
+        from storage.shop_store import inventory_store
+        inventory = inventory_store.get_user_inventory(self.interaction.guild_id, interaction.user.id)
+
+        if not inventory:
+            await interaction.response.send_message(
+                replace_emojis("❌ У вас нет предметов для защиты!"),
+                ephemeral=True
+            )
+            return
+
+        # Создать селект-меню
+        from storage.shop_store import shop_store
+        options = []
+        for cosmetic in inventory:
+            item = shop_store.get_item(cosmetic.item_id)
+            if item:
+                # Проверить, не защищён ли этот предмет другим опекуном
+                from storage.pet_store import pet_store
+                is_protected = await pet_store.is_item_protected(self.pet_id, item.id)
+                if is_protected:
+                    continue
+
+                options.append(
+                    discord.SelectOption(
+                        label=item.name[:25],
+                        description=f"{item.rarity.value}",
+                        value=item.id
+                    )
+                )
+
+        if not options:
+            await interaction.response.send_message(
+                replace_emojis("❌ Все предметы уже защищены!"),
+                ephemeral=True
+            )
+            return
+
+        view = ProtectItemSelectView(self.pet_id, options, self.interaction)
+        await interaction.response.send_message(
+            "Выберите предмет для защиты:",
+            view=view,
+            ephemeral=True
+        )
+
+
+class ProtectItemSelectView(discord.ui.View):
+    """View для выбора предмета для защиты."""
+
+    def __init__(self, pet_id: int, options: list, interaction: discord.Interaction):
+        super().__init__(timeout=180)
+        self.pet_id = pet_id
+        self.interaction = interaction
+
+        select = discord.ui.Select(
+            placeholder="Выберите предмет...",
+            options=options[:25]  # Discord limit is 25
+        )
+        select.callback = self.select_callback
+        self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        """Обработка выбора предмета."""
+        if not interaction.data:
+            return
+
+        selected_item_id = interaction.data["values"][0]
+
+        # Установить защищаемый предмет
+        from storage.pet_store import pet_store
+        success = await pet_store.set_protected_item(self.pet_id, selected_item_id)
+
+        if success:
+            # Получить информацию о предмете
+            from storage.shop_store import shop_store
+            item = shop_store.get_item(selected_item_id)
+
+            await interaction.response.edit_message(
+                content=replace_emojis(f"✅ Предмет **{item.name}** теперь защищён питомцем!"),
+                view=None
+            )
+        else:
+            await interaction.response.edit_message(
+                content=replace_emojis("❌ Не удалось защитить предмет."),
+                view=None
+            )
 
 
 class PetDeleteConfirmView(discord.ui.View):

@@ -1532,7 +1532,9 @@ class RoleBuyButton(discord.ui.Button):
 async def show_pets_category(interaction: discord.Interaction) -> None:
     """Показать категорию питомцев."""
     from storage.pet_store import pet_catalog
-    from models.pet import PetRarity, RARITY_PRICES
+
+    # Получить всех питомцев
+    all_pets = pet_catalog.get_all_pets()
 
     # Создать embed с описанием системы питомцев
     embed = discord.Embed(
@@ -1548,22 +1550,45 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"   - Необычный: 5%\n"
             f"   - Эпический: 2.4%\n"
             f"   - Легендарный: 0.6%\n\n"
-            f"{replace_emojis('white_dot')} **Цены по редкости:**\n"
-            f"   - Обычный: 3,000 {get_emoji('money')}\n"
-            f"   - Необычный: 8,000 {get_emoji('money')}\n"
-            f"   - Эпический: 15,000 {get_emoji('money')}\n"
-            f"   - Легендарный: 30,000 {get_emoji('money')}\n"
-            f"   - Таинственное яйцо: 500 {get_emoji('money')}"
+            f"{replace_emojis('a_dot_smaller')} Выберите питомца в меню ниже:"
         ),
         color=discord.Color.from_rgb(69, 69, 69)
     )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-    # Создать View с выбором редкости
+    # Создать View с выбором питомца
     view = discord.ui.View(timeout=180)
-    view.add_item(PetRaritySelect())
+    view.add_item(PetDirectSelect(all_pets))
     view.add_item(ShopBackButton())
 
     await interaction.response.edit_message(embed=embed, view=view)
+
+
+class PetDirectSelect(discord.ui.Select):
+    """Прямой выбор питомца из списка."""
+
+    def __init__(self, pets):
+        options = [
+            discord.SelectOption(
+                label=f"{pet['name']} ({pet['rarity']})",
+                value=pet["id"],
+                description=f"{pet['price']:,} монет"
+            )
+            for pet in pets
+        ]
+        super().__init__(
+            placeholder="Выберите питомца...",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+        self.pets = {pet["id"]: pet for pet in pets}
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Обработать выбор питомца."""
+        pet_type = self.values[0]
+        pet = self.pets[pet_type]
+        await show_pet_card(interaction, pet)
 
 
 class PetRaritySelect(discord.ui.Select):
@@ -1753,7 +1778,7 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
         color=discord.Color.from_rgb(69, 69, 69)
     )
     if pet_def.get("image_url"):
-        embed.set_thumbnail(url=pet_def["image_url"])
+        embed.set_image(url=pet_def["image_url"])
 
     # Создать View с кнопками
     view = discord.ui.View(timeout=180)

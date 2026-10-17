@@ -378,6 +378,20 @@ class PetStore:
             )
             return True
 
+    async def is_item_protected(self, pet_id: int, item_id: str) -> bool:
+        """Проверить защищён ли предмет данным питомцем."""
+        from storage.db import get_pool
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT protected_item_id FROM pets WHERE pet_id = $1",
+                pet_id
+            )
+            if row and row["protected_item_id"] == item_id:
+                return True
+        return False
+
     async def has_pet_slot(self, user_id: int) -> bool:
         """Проверить есть ли свободный слот у пользователя."""
         from storage.db import get_pool
