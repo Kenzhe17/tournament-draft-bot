@@ -2,7 +2,8 @@
 
 import logging
 import os
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 import discord
@@ -345,6 +346,79 @@ class PetCog(commands.Cog):
         # Показать первого питомца
         await view.show_pet(interaction, 0)
 
+    @pet.command(name="top", description="Топ питомцев по уровню")
+    async def top(self, interaction: discord.Interaction) -> None:
+        """Показать топ питомцев."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            pets = await conn.fetch(
+                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC LIMIT 50"
+            )
+
+            # Находим место текущего пользователя
+            user_pet = await conn.fetchrow(
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                interaction.user.id
+            )
+
+            user_rank_info = None
+            if user_pet:
+                rank = await conn.fetchval(
+                    """
+                    SELECT COUNT(*) + 1
+                    FROM pets
+                    WHERE (level > $1) OR (level = $1 AND exp > $2)
+                    """,
+                    user_pet["level"], user_pet["exp"]
+                )
+                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
+            else:
+                user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
+
+        if not pets:
+            await interaction.response.send_message(
+                replace_emojis("❌ Пока нет питомцев."),
+                ephemeral=True
+            )
+            return
+
+        from models.pets_catalog import PETS_CATALOG
+
+        description = ""
+        for i, pet in enumerate(pets, 1):
+            pet_dict = dict(pet)
+            pet_def = PETS_CATALOG.get(pet_dict["pet_type"], {})
+
+            owner_mention = f"<@{pet_dict['owner_1_id']}>"
+            if pet_dict["owner_2_id"]:
+                owner_mention += f" & <@{pet_dict['owner_2_id']}>"
+
+            medal = ""
+            if i == 1:
+                medal = get_emoji("gold_medal") or "🥇"
+            elif i == 2:
+                medal = get_emoji("silver_medal") or "🥈"
+            elif i == 3:
+                medal = get_emoji("bronze_medal") or "🥉"
+            else:
+                medal = f"{i}."
+
+            description += (
+                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*)\n"
+                f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
+            )
+
+        if user_rank_info:
+            description += f"───\n{replace_emojis('white_dot')} {user_rank_info}"
+
+        embed = discord.Embed(
+            title=f"{get_emoji('a_star')} **ТОП ПИТОМЦЕВ**",
+            description=description,
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        await interaction.response.send_message(embed=embed)
+
 
 class PetCatalogView(discord.ui.View):
     """View для навигации по каталогу питомцев."""
@@ -424,78 +498,6 @@ class PetCatalogView(discord.ui.View):
             self.current_index += 1
             await self.show_pet(interaction, self.current_index)
 
-    @pet.command(name="top", description="Топ питомцев по уровню")
-    async def top(self, interaction: discord.Interaction) -> None:
-        """Показать топ питомцев."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            pets = await conn.fetch(
-                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC LIMIT 50"
-            )
-
-            # Находим место текущего пользователя
-            user_pet = await conn.fetchrow(
-                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
-                interaction.user.id
-            )
-
-            user_rank_info = None
-            if user_pet:
-                rank = await conn.fetchval(
-                    """
-                    SELECT COUNT(*) + 1
-                    FROM pets
-                    WHERE (level > $1) OR (level = $1 AND exp > $2)
-                    """,
-                    user_pet["level"], user_pet["exp"]
-                )
-                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
-            else:
-                user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
-
-        if not pets:
-            await interaction.response.send_message(
-                replace_emojis("❌ Пока нет питомцев."),
-                ephemeral=True
-            )
-            return
-
-        from models.pets_catalog import PETS_CATALOG
-
-        description = ""
-        for i, pet in enumerate(pets, 1):
-            pet_dict = dict(pet)
-            pet_def = PETS_CATALOG.get(pet_dict["pet_type"], {})
-
-            owner_mention = f"<@{pet_dict['owner_1_id']}>"
-            if pet_dict["owner_2_id"]:
-                owner_mention += f" & <@{pet_dict['owner_2_id']}>"
-
-            medal = ""
-            if i == 1:
-                medal = get_emoji("gold_medal") or "🥇"
-            elif i == 2:
-                medal = get_emoji("silver_medal") or "🥈"
-            elif i == 3:
-                medal = get_emoji("bronze_medal") or "🥉"
-            else:
-                medal = f"{i}."
-
-            description += (
-                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*)\n"
-                f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
-            )
-
-        if user_rank_info:
-            description += f"───\n{replace_emojis('white_dot')} {user_rank_info}"
-
-        embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ТОП ПИТОМЦЕВ**",
-            description=description,
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-
-        await interaction.response.send_message(embed=embed)
 
 async def pet_profile_impl(interaction: discord.Interaction) -> None:
     """Показать профиль питомца."""
