@@ -567,6 +567,7 @@ async def init_db() -> None:
 
         # Create pets table
         try:
+            logger.info("Attempting to create pets table...")
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pets (
                     pet_id BIGSERIAL PRIMARY KEY,
@@ -586,9 +587,9 @@ async def init_db() -> None:
                     CHECK (owner_2_id IS NULL OR owner_2_id != owner_1_id)
                 )
             """)
-            logger.info("Pets table created/verified")
+            logger.info("Pets table created/verified successfully")
         except Exception as e:
-            logger.error(f"Error creating pets table: {e}")
+            logger.error(f"Error creating pets table: {e}", exc_info=True)
 
         # Create indexes for pets
         try:
