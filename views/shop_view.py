@@ -11,7 +11,7 @@ from models.shop_item import PlayerCosmetic, CosmeticRarity
 from models.pets_catalog import PETS_CATALOG
 
 
-def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord.Embed, discord.File | None]:
+def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool = False) -> tuple[discord.Embed, discord.File | None]:
     """
     Формирует публичную карточку успешного получения/покупки питомца.
     """
@@ -47,7 +47,7 @@ def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord
     embed = discord.Embed(
         title=f"{emoji_star} **ПИТОМЕЦ ПОЛУЧЕН | {title_action}**",
         description=(
-            f"{emoji_sparkle} **Поздравляем!** В вашей коллекции пополнение!\n"
+            f"{emoji_sparkle} **Поздравляем, {user.mention}!** В вашей коллекции пополнение!\n"
             f"{emoji_arrow} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
             f"{emoji_arrow} **Стоимость в магазине:** **`{pet['price']:,}`** {emoji_money}\n\n"
             f"📜 **Первоначальные способности:**\n"
@@ -1834,7 +1834,7 @@ class BuyPetButton(discord.ui.Button):
             pet_display_name = pet_data.get("name", pet.pet_name)
 
             # Используем новую функцию для создания embed
-            embed, file = build_won_pet_embed(pet.pet_type.value, is_egg_drop=False)
+            embed, file = build_won_pet_embed(pet.pet_type.value, interaction.user, is_egg_drop=False)
             
             if file:
                 await interaction.response.edit_message(embed=embed, view=None, attachments=[file])
@@ -1925,7 +1925,7 @@ class OpenEggButton(discord.ui.Button):
                 pet_price = pet_def.get("price", 0)
 
                 # Используем новую функцию для создания embed
-                embed, file = build_won_pet_embed(pet_def["id"], is_egg_drop=True)
+                embed, file = build_won_pet_embed(pet_def["id"], interaction.user, is_egg_drop=True)
                 
                 if file:
                     await interaction.response.send_message(embed=embed, file=file)
