@@ -583,7 +583,14 @@ class PetDeleteConfirmView(discord.ui.View):
 
         pet_name = self.pet_row["pet_name"]
         rarity = self.pet_row["rarity"]
-        
+        pet_type = self.pet_row["pet_type"]
+
+        # Получить изображение питомца из каталога
+        catalog_data = PETS_CATALOG.get(pet_type)
+        image_path = None
+        if catalog_data:
+            image_path = catalog_data.get("image_path")
+
         public_embed = discord.Embed(
             title=replace_emojis("ПИТОМЕЦ ОТПУЩЕН НА ВОЛЮ"),
             description=(
@@ -593,8 +600,18 @@ class PetDeleteConfirmView(discord.ui.View):
             ),
             color=discord.Color.from_rgb(149, 165, 166)
         )
-        
-        await interaction.channel.send(embed=public_embed)
+
+        # Прикрепить изображение если есть
+        file = None
+        if image_path and os.path.exists(image_path):
+            filename = os.path.basename(image_path)
+            file = discord.File(image_path, filename=filename)
+            public_embed.set_image(url=f"attachment://{filename}")
+
+        if file:
+            await interaction.channel.send(embed=public_embed, file=file)
+        else:
+            await interaction.channel.send(embed=public_embed)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary, custom_id="pet_delete:cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
