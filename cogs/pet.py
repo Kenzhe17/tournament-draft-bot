@@ -292,6 +292,63 @@ class PetCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+    @pet.command(name="test", description="Тестовый режим: получить питомца с максимальным уровнем")
+    @app_commands.describe(pet_type="Тип питомца (например: golden_fox, scout_fox)")
+    async def test(self, interaction: discord.Interaction, pet_type: str) -> None:
+        """Тестовый режим для проверки способностей."""
+        # Проверяем владельца
+        if interaction.user.id != self.bot.owner_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Только владелец бота может использовать эту команду."),
+                ephemeral=True
+            )
+            return
+
+        # Проверяем, есть ли уже питомец
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            existing_pet = await conn.fetchrow(
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                interaction.user.id
+            )
+            if existing_pet:
+                await conn.execute("DELETE FROM pets WHERE pet_id = $1", existing_pet["pet_id"])
+
+        # Проверяем, существует ли тип питомца
+        if pet_type not in PETS_CATALOG:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Неизвестный тип питомца: {pet_type}"),
+                ephemeral=True
+            )
+            return
+
+        # Создаём питомца с максимальным уровнем
+        pet_data = PETS_CATALOG[pet_type]
+        try:
+            pet = await pet_store.create_pet(
+                owner_1_id=interaction.user.id,
+                owner_2_id=None,
+                pet_type=pet_type,
+                pet_name=pet_data["name"]
+            )
+
+            # Устанавливаем максимальный уровень
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE pets SET level = 10, exp = 500, fullness = 100, energy = 100 WHERE pet_id = $1",
+                    pet.pet_id
+                )
+
+            await interaction.response.send_message(
+                replace_emojis(f"✅ Тестовый питомец **{pet_data['name']}** создан с уровнем 10!"),
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Ошибка при создании тестового питомца: {str(e)}"),
+                ephemeral=True
+            )
+
     @pet.command(name="catalog", description="Показать каталог всех питомцев и их способностей")
     async def catalog(self, interaction: discord.Interaction) -> None:
         """Показать каталог всех питомцев."""
@@ -695,14 +752,11 @@ class PetDeleteConfirmView(discord.ui.View):
             public_embed.set_thumbnail(url=f"attachment://{filename}")
         elif image_url:
             public_embed.set_thumbnail(url=image_url)
-            filename = os.path.basename(image_path)
-            file = discord.File(image_path, filename=filename)
-            public_embed.set_image(url=f"attachment://{filename}")
 
         if file:
-            await interaction.channel.send(embed=public_embed, file=file)
+            await interaction.followup.send(embed=public_embed, file=file)
         else:
-            await interaction.channel.send(embed=public_embed)
+            await interaction.followup.send(embed=public_embed)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary, custom_id="pet_delete:cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
