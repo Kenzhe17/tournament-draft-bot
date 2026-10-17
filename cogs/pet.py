@@ -292,6 +292,54 @@ class PetCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+    @pet.command(name="catalog", description="Показать каталог всех питомцев и их способностей")
+    async def catalog(self, interaction: discord.Interaction) -> None:
+        """Показать каталог всех питомцев."""
+        emoji_star = get_emoji("a_star")
+
+        description = ""
+        for pet_id, pet_data in PETS_CATALOG.items():
+            description += f"**{pet_data['name']}** (*{pet_data['rarity']}*) — `{pet_data['price']:,}` {get_emoji('money')}\n"
+            description += f"{get_emoji('white_dot')} {pet_data['description']}\n"
+
+            abilities = pet_data.get("abilities", {})
+            for ab_key in (1, 2):
+                if ab_key in abilities:
+                    ab = abilities[ab_key]
+                    desc_template = ab.get("desc_template", "")
+                    desc = desc_template.replace("{val}", f"{ab.get('min_val', 0)}-{ab.get('max_val', 0)}")
+                    description += f"{get_emoji('white_arrow')} **Ур. {ab['unlock_level']} | {ab['name']}:** {desc}\n"
+
+            description += "\n"
+
+        # Разбиваем на части если слишком длинно
+        if len(description) > 4000:
+            parts = []
+            current_part = ""
+            for line in description.split("\n"):
+                if len(current_part) + len(line) > 3900:
+                    parts.append(current_part)
+                    current_part = line + "\n"
+                else:
+                    current_part += line + "\n"
+            if current_part:
+                parts.append(current_part)
+
+            for i, part in enumerate(parts):
+                embed = discord.Embed(
+                    title=f"{emoji_star} **КАТАЛОГ ПИТОМЦЕВ** (Часть {i+1}/{len(parts)})",
+                    description=part,
+                    color=discord.Color.from_rgb(69, 69, 69)
+                )
+                await interaction.response.send_message(embed=embed) if i == 0 else await interaction.followup.send(embed=embed)
+        else:
+            embed = discord.Embed(
+                title=f"{emoji_star} **КАТАЛОГ ПИТОМЦЕВ**",
+                description=description,
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            await interaction.response.send_message(embed=embed)
+
     @pet.command(name="top", description="Топ питомцев по уровню")
     async def top(self, interaction: discord.Interaction) -> None:
         """Показать топ питомцев."""
@@ -620,28 +668,33 @@ class PetDeleteConfirmView(discord.ui.View):
         )
 
         pet_name = self.pet_row["pet_name"]
-        rarity = self.pet_row["rarity"]
         pet_type = self.pet_row["pet_type"]
 
         # Получить изображение питомца из каталога
         catalog_data = PETS_CATALOG.get(pet_type)
-        image_path = None
+        image_url = None
         if catalog_data:
-            image_path = catalog_data.get("image_path")
+            image_url = catalog_data.get("image_url")
 
         public_embed = discord.Embed(
             title=replace_emojis("ПИТОМЕЦ ОТПУЩЕН НА ВОЛЮ"),
             description=(
-                f"{replace_emojis('a_sparkle')} Опекун {interaction.user.mention} снял ошейник и попрощался с питомцем **{pet_name}** (*{rarity}*).\n\n"
+                f"{replace_emojis('a_sparkle')} Опекун {interaction.user.mention} снял ошейник и попрощался с питомцем **{pet_name}**.\n\n"
                 f"{replace_emojis('white_dot')} Питомец радостно побежал в дикую природу к своим сородичам.\n"
                 f"{replace_emojis('white_dot')} Слот освободился. Новый питомец ждет вас в магазине (`/shop`)."
             ),
             color=discord.Color.from_rgb(149, 165, 166)
         )
 
-        # Прикрепить изображение если есть
+        # Прикрепить изображение как аватарку
         file = None
-        if image_path and os.path.exists(image_path):
+        local_image_path = f"assets/pets/{pet_type}.png"
+        if os.path.exists(local_image_path):
+            filename = os.path.basename(local_image_path)
+            file = discord.File(local_image_path, filename=filename)
+            public_embed.set_thumbnail(url=f"attachment://{filename}")
+        elif image_url:
+            public_embed.set_thumbnail(url=image_url)
             filename = os.path.basename(image_path)
             file = discord.File(image_path, filename=filename)
             public_embed.set_image(url=f"attachment://{filename}")
