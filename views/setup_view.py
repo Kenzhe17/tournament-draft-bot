@@ -101,18 +101,26 @@ class PlayerSelectView(discord.ui.View):
         if self.total_pages > 1:
             # Previous button
             prev_btn = discord.ui.Button(
-                label="Предыдущая",
-                style=discord.ButtonStyle.secondary,
+                label="◀",
+                style=discord.ButtonStyle.primary,
                 disabled=self.page == 1,
                 custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.page}"
             )
             prev_btn.callback = self.prev_callback
             self.add_item(prev_btn)
 
+            # Page indicator
+            indicator = discord.ui.Button(
+                label=f"{self.page}/{self.total_pages}",
+                style=discord.ButtonStyle.secondary,
+                disabled=True
+            )
+            self.add_item(indicator)
+
             # Next button
             next_btn = discord.ui.Button(
-                label="Следующая",
-                style=discord.ButtonStyle.secondary,
+                label="▶",
+                style=discord.ButtonStyle.primary,
                 disabled=self.page == self.total_pages,
                 custom_id=f"player_next:{self.action}:{self.guild_id}:{self.page}"
             )

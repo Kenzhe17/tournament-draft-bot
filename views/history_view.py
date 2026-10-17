@@ -20,14 +20,48 @@ class HistoryView(discord.ui.View):
         self.user_name = user_name
         self.limit = limit
         self.current_page = 0
-        self.total_pages = len(matches)
+        self.total_pages = len(matches) + 1  # +1 for stats page
 
-        # Only show navigation buttons if there are matches
-        if matches:
-            self.add_item(PrevButton())
-            self.add_item(NextButton())
+        self.refresh_buttons()
+
+    def refresh_buttons(self):
+        """Обновляет состояние кнопок навигации."""
+        # Remove existing navigation buttons
+        for item in self.children[:]:
+            if isinstance(item, discord.ui.Button):
+                self.remove_item(item)
+
+        # Previous button
+        if self.current_page > 0:
+            prev_button = PrevButton()
+            self.add_item(prev_button)
         else:
-            self.add_item(NoMatchesButton())
+            disabled_button = discord.ui.Button(
+                label="◀",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
+
+        # Page indicator
+        indicator = discord.ui.Button(
+            label=f"{self.current_page + 1}/{self.total_pages}",
+            style=discord.ButtonStyle.secondary,
+            disabled=True
+        )
+        self.add_item(indicator)
+
+        # Next button
+        if self.current_page < self.total_pages - 1:
+            next_button = NextButton()
+            self.add_item(next_button)
+        else:
+            disabled_button = discord.ui.Button(
+                label="▶",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
 
 
 class PrevButton(discord.ui.Button):
@@ -35,8 +69,8 @@ class PrevButton(discord.ui.Button):
 
     def __init__(self):
         super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label="◀️ Назад"
+            style=discord.ButtonStyle.primary,
+            label="◀"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -46,6 +80,7 @@ class PrevButton(discord.ui.Button):
         if parent_view and hasattr(parent_view, 'current_page'):
             if parent_view.current_page > 0:
                 parent_view.current_page -= 1
+                parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
@@ -57,8 +92,8 @@ class NextButton(discord.ui.Button):
 
     def __init__(self):
         super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label="Вперед ▶️"
+            style=discord.ButtonStyle.primary,
+            label="▶"
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -66,27 +101,13 @@ class NextButton(discord.ui.Button):
         # Get the parent view
         parent_view = self.view
         if parent_view and hasattr(parent_view, 'current_page'):
-            if parent_view.current_page < len(parent_view.matches):
+            if parent_view.current_page < parent_view.total_pages - 1:
                 parent_view.current_page += 1
+                parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
-
-
-class NoMatchesButton(discord.ui.Button):
-    """Кнопка для случая когда нет матчей."""
-
-    def __init__(self):
-        super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label="Нет матчей",
-            disabled=True
-        )
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        """Ничего не делать."""
-        pass
 
 
 def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "", limit: int = 10) -> discord.Embed:
@@ -197,9 +218,5 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 description="Матч не найден",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-
-    # Page indicator
-    footer_text = f"Страница {page + 1}/{len(matches) + 1 if matches else 1}"
-    embed.set_footer(text=footer_text)
 
     return embed

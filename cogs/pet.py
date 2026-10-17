@@ -429,21 +429,56 @@ class PetCatalogView(discord.ui.View):
         self.user_id = user_id
         self.current_index = 0
         
-        self.prev_button = discord.ui.Button(
+        self.refresh_buttons()
+
+    def refresh_buttons(self):
+        """Обновляет состояние кнопок навигации."""
+        # Remove existing navigation buttons
+        for item in self.children[:]:
+            if isinstance(item, discord.ui.Button):
+                self.remove_item(item)
+
+        # Previous button
+        if self.current_index > 0:
+            prev_button = discord.ui.Button(
+                style=discord.ButtonStyle.primary,
+                label="◀",
+                custom_id="catalog_prev"
+            )
+            prev_button.callback = self.prev_callback
+            self.add_item(prev_button)
+        else:
+            disabled_button = discord.ui.Button(
+                label="◀",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
+
+        # Page indicator
+        indicator = discord.ui.Button(
+            label=f"{self.current_index + 1}/{len(self.pet_list)}",
             style=discord.ButtonStyle.secondary,
-            label="◀",
-            custom_id="catalog_prev"
+            disabled=True
         )
-        self.prev_button.callback = self.prev_callback
-        self.add_item(self.prev_button)
-        
-        self.next_button = discord.ui.Button(
-            style=discord.ButtonStyle.secondary,
-            label="▶",
-            custom_id="catalog_next"
-        )
-        self.next_button.callback = self.next_callback
-        self.add_item(self.next_button)
+        self.add_item(indicator)
+
+        # Next button
+        if self.current_index < len(self.pet_list) - 1:
+            next_button = discord.ui.Button(
+                style=discord.ButtonStyle.primary,
+                label="▶",
+                custom_id="catalog_next"
+            )
+            next_button.callback = self.next_callback
+            self.add_item(next_button)
+        else:
+            disabled_button = discord.ui.Button(
+                label="▶",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
 
     async def show_pet(self, interaction, index):
         """Показать страницу с питомцем."""
@@ -460,7 +495,7 @@ class PetCatalogView(discord.ui.View):
                 abilities_text += f"{get_emoji('white_arrow')} **Ур. {ab['unlock_level']} | {ab['name']}:** {desc}\n"
         
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **КАТАЛОГ ПИТОМЦЕВ** ({index + 1}/{len(self.pet_list)})",
+            title=f"{get_emoji('a_star')} **КАТАЛОГ ПИТОМЦЕВ**",
             description=(
                 f"{get_emoji('a_sparkle')} **{pet_data['name']}** (*{pet_data['rarity']}*)\n\n"
                 f"{get_emoji('white_dot')} **ID:** `{pet_id}`\n"
@@ -478,8 +513,7 @@ class PetCatalogView(discord.ui.View):
             embed.set_image(url=image_url)
         
         # Обновить кнопки
-        self.prev_button.disabled = (index == 0)
-        self.next_button.disabled = (index == len(self.pet_list) - 1)
+        self.refresh_buttons()
         
         if interaction.response.is_done():
             await interaction.edit_original_message(embed=embed, view=self)
