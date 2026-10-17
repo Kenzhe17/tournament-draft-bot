@@ -336,52 +336,93 @@ class PetCog(commands.Cog):
 
     @pet.command(name="catalog", description="Показать каталог всех питомцев и их способностей")
     async def catalog(self, interaction: discord.Interaction) -> None:
-        """Показать каталог всех питомцев."""
-        emoji_star = get_emoji("a_star")
+        """Показать каталог всех питомцев с навигацией по страницам."""
+        from models.pets_catalog import PETS_CATALOG
 
-        description = ""
-        for pet_id, pet_data in PETS_CATALOG.items():
-            description += f"**{pet_data['name']}** (*{pet_data['rarity']}*) — `{pet_data['price']:,}` {get_emoji('money')}\n"
-            description += f"{get_emoji('white_dot')} **ID:** `{pet_id}`\n"
-            description += f"{get_emoji('white_dot')} {pet_data['description']}\n"
+        pet_list = list(PETS_CATALOG.items())
+        view = PetCatalogView(pet_list, interaction.user.id)
+        
+        # Показать первого питомца
+        await view.show_pet(interaction, 0)
 
-            abilities = pet_data.get("abilities", {})
-            for ab_key in (1, 2):
-                if ab_key in abilities:
-                    ab = abilities[ab_key]
-                    desc_template = ab.get("desc_template", "")
-                    desc = desc_template.replace("{val}", f"{ab.get('min_val', 0)}-{ab.get('max_val', 0)}")
-                    description += f"{get_emoji('white_arrow')} **Ур. {ab['unlock_level']} | {ab['name']}:** {desc}\n"
 
-            description += "\n"
+class PetCatalogView(discord.ui.View):
+    """View для навигации по каталогу питомцев."""
 
-        # Разбиваем на части если слишком длинно
-        if len(description) > 4000:
-            parts = []
-            current_part = ""
-            for line in description.split("\n"):
-                if len(current_part) + len(line) > 3900:
-                    parts.append(current_part)
-                    current_part = line + "\n"
-                else:
-                    current_part += line + "\n"
-            if current_part:
-                parts.append(current_part)
+    def __init__(self, pet_list, user_id):
+        super().__init__(timeout=180)
+        self.pet_list = pet_list
+        self.user_id = user_id
+        self.current_index = 0
+        
+        self.prev_button = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="◀",
+            custom_id="catalog_prev"
+        )
+        self.prev_button.callback = self.prev_callback
+        self.add_item(self.prev_button)
+        
+        self.next_button = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="▶",
+            custom_id="catalog_next"
+        )
+        self.next_button.callback = self.next_callback
+        self.add_item(self.next_button)
 
-            for i, part in enumerate(parts):
-                embed = discord.Embed(
-                    title=f"{emoji_star} **КАТАЛОГ ПИТОМЦЕВ** (Часть {i+1}/{len(parts)})",
-                    description=part,
-                    color=discord.Color.from_rgb(69, 69, 69)
-                )
-                await interaction.response.send_message(embed=embed) if i == 0 else await interaction.followup.send(embed=embed)
+    async def show_pet(self, interaction, index):
+        """Показать страницу с питомцем."""
+        pet_id, pet_data = self.pet_list[index]
+        
+        # Собрать описание способностей
+        abilities_text = ""
+        abilities = pet_data.get("abilities", {})
+        for ab_key in (1, 2):
+            if ab_key in abilities:
+                ab = abilities[ab_key]
+                desc_template = ab.get("desc_template", "")
+                desc = desc_template.replace("{val}", f"{ab.get('min_val', 0)}-{ab.get('max_val', 0)}")
+                abilities_text += f"{get_emoji('white_arrow')} **Ур. {ab['unlock_level']} | {ab['name']}:** {desc}\n"
+        
+        embed = discord.Embed(
+            title=f"{get_emoji('a_star')} **КАТАЛОГ ПИТОМЦЕВ** ({index + 1}/{len(self.pet_list)})",
+            description=(
+                f"{get_emoji('a_sparkle')} **{pet_data['name']}** (*{pet_data['rarity']}*)\n\n"
+                f"{get_emoji('white_dot')} **ID:** `{pet_id}`\n"
+                f"{get_emoji('white_dot')} **Класс:** `{pet_data['rarity']}`\n"
+                f"{get_emoji('white_dot')} **Стоимость:** `{pet_data['price']:,}` {get_emoji('money')}\n\n"
+                f"{get_emoji('white_dot')} **Описание:**\n{pet_data['description']}\n\n"
+                f"{get_emoji('white_dot')} **Способности:**\n{abilities_text}"
+            ),
+            color=pet_data.get("color", discord.Color.from_rgb(69, 69, 69))
+        )
+        
+        # Добавить изображение
+        image_url = pet_data.get("image_url")
+        if image_url:
+            embed.set_image(url=image_url)
+        
+        # Обновить кнопки
+        self.prev_button.disabled = (index == 0)
+        self.next_button.disabled = (index == len(self.pet_list) - 1)
+        
+        if interaction.response.is_done():
+            await interaction.edit_original_message(embed=embed, view=self)
         else:
-            embed = discord.Embed(
-                title=f"{emoji_star} **КАТАЛОГ ПИТОМЦЕВ**",
-                description=description,
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message(embed=embed, view=self)
+
+    async def prev_callback(self, interaction: discord.Interaction):
+        """Предыдущий питомец."""
+        if self.current_index > 0:
+            self.current_index -= 1
+            await self.show_pet(interaction, self.current_index)
+
+    async def next_callback(self, interaction: discord.Interaction):
+        """Следующий питомец."""
+        if self.current_index < len(self.pet_list) - 1:
+            self.current_index += 1
+            await self.show_pet(interaction, self.current_index)
 
     @pet.command(name="top", description="Топ питомцев по уровню")
     async def top(self, interaction: discord.Interaction) -> None:
