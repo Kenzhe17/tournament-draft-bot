@@ -2,7 +2,7 @@
 
 import random
 import asyncpg
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from models.pet import (
@@ -95,7 +95,7 @@ class PetStore:
         if not pet_def:
             raise ValueError(f"Unknown pet type: {pet_type}")
 
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -195,7 +195,7 @@ class PetStore:
                 return False, None
 
             pet = self._row_to_pet(row)
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
 
             # Рассчитать прошедшее время с последнего кормления
             hours_since_fed = (now - pet.last_fed_at).total_seconds() / 3600
@@ -245,7 +245,7 @@ class PetStore:
             # Обновить сытость и энергию
             pet.fullness = min(100, pet.fullness + fullness_gain)
             pet.energy = min(100, pet.energy + energy_gain)
-            pet.last_fed_at = datetime.now()
+            pet.last_fed_at = datetime.now(timezone.utc)
 
             await self.update_pet(pet)
 
