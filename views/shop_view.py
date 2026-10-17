@@ -1841,9 +1841,7 @@ class OpenEggButton(discord.ui.Button):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1560907251412238396/1560935450800029756/output-removebg-preview.png?ex=6ad485ec&is=6ad3346c&hm=6ecda6ff1780bf054b2727904fa9115ee51a889dffbb049b36139be1b7772153&")
-            # Удалить ephemeral сообщение и отправить публичное
-            await interaction.response.edit_message(content="❌", embed=None, view=None)
-            await interaction.followup.send(embed=embed)
+            await interaction.response.send_message(embed=embed)
         else:
             pet_def = result["pet"]
             # Создать питомца
@@ -1873,9 +1871,7 @@ class OpenEggButton(discord.ui.Button):
                 if pet_image:
                     embed.set_thumbnail(url=pet_image)
 
-                # Удалить ephemeral сообщение и отправить публичное
-                await interaction.response.edit_message(content="✅", embed=None, view=None)
-                await interaction.followup.send(embed=embed)
+                await interaction.response.send_message(embed=embed)
             except Exception as e:
                 # Вернуть деньги при ошибке
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
