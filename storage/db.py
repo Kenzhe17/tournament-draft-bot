@@ -600,6 +600,15 @@ async def init_db() -> None:
             logger.error(f"Error creating pets table: {e}", exc_info=True)
             raise  # Re-raise to see full error
 
+        # Add hunger_started_at column if it doesn't exist (for existing tables)
+        try:
+            await conn.execute("""
+                ALTER TABLE pets ADD COLUMN IF NOT EXISTS hunger_started_at TIMESTAMPTZ NULL
+            """)
+            logger.info("hunger_started_at column added/verified")
+        except Exception as e:
+            logger.error(f"Error adding hunger_started_at column: {e}")
+
         # Create indexes for pets
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_pets_owner_1 ON pets(owner_1_id)")
