@@ -252,4 +252,5 @@ ENERGY_COSTS = {
     "rob_defense": 9,
     "elo_match": 15,
     "sell": 8,
+    "gift": 8,
 }

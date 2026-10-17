@@ -1805,7 +1805,38 @@ class TournamentCog(commands.Cog):
             return
 
         # Calculate fee
-        fee = int(item.price * 0.1)  # 10% комиссия
+        base_fee_percent = 0.1  # 10% комиссия
+
+        # Применить бонус питомца (Торговый нюх)
+        pet_bonus_text = ""
+        try:
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
+
+            if pet and pet.fullness > 0:
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "gift")
+
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                    if pet_def and pet.level >= 7:  # Уровень разблокировки Торгового нюха
+                        ability = pet_def["abilities"][2]
+                        if ability["name"] == "Торговый нюх":
+                            effectiveness = pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            bonus_value = min_val + (max_val - min_val) * effectiveness
+
+                            fee_reduction = bonus_value / 100
+                            base_fee_percent = base_fee_percent * (1 - fee_reduction)
+                            logger.info(f"Applied gift fee reduction: {bonus_value}% from {pet.pet_name}")
+                            pet_bonus_text = f"\n\n🐾 **Мимик-собиратель ({pet.pet_name}):** Торговый сбор уменьшен на **-{bonus_value:.1f}%**!"
+        except Exception as e:
+            logger.error(f"Error getting pet bonus for gift: {e}")
+
+        fee = int(item.price * base_fee_percent)
 
         # Check sender has enough balance for fee
         sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -1863,7 +1894,7 @@ class TournamentCog(commands.Cog):
 
             embed = discord.Embed(
                 title="Передача предмета",
-                description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** 10% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}",
+                description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** {int(base_fee_percent * 100)}% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}{pet_bonus_text}",
                 color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)

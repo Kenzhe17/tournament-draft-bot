@@ -785,6 +785,82 @@ class RobGroupStartButton(discord.ui.Button):
         bonus = (member_count - 1) * 6
         success_chance = min(base_chance + bonus, 90) / 100
 
+        # Бонусы питомцев для группового ограбления
+        group_pet_bonuses = {
+            "success_bonus": 0,
+            "success_names": [],
+            "loot_bonus": 0,
+            "loot_names": [],
+            "victim_defense_bonus": 0,
+            "victim_defense_name": None,
+        }
+
+        # Применить бонусы питомцев каждого участника
+        for member_id in members:
+            try:
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(guild_id, member_id)
+
+                if pet and pet.fullness > 0:
+                    # Списать энергию за использование способности
+                    energy_consumed = await pet_store.consume_energy_for_ability(guild_id, member_id, "rob")
+
+                    if energy_consumed:
+                        from storage.pet_store import pet_catalog
+                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                        if pet_def and pet.level >= 3:
+                            ability = pet_def["abilities"][1]
+                            if ability["name"] == "Ловкие лапы":
+                                effectiveness = pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                bonus_value = min_val + (max_val - min_val) * effectiveness
+                                group_pet_bonuses["success_bonus"] += bonus_value
+                                group_pet_bonuses["success_names"].append(pet.pet_name)
+
+                            if ability["name"] == "Чужой кошелёк":
+                                effectiveness = pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                group_pet_bonuses["loot_bonus"] += loot_bonus
+                                group_pet_bonuses["loot_names"].append(pet.pet_name)
+            except Exception as e:
+                logger.error(f"Error applying group pet bonus: {e}")
+
+        # Применить итоговый бонус к шансу успеха
+        success_chance += group_pet_bonuses["success_bonus"] / 100
+        success_chance = min(1.0, success_chance)  # Максимум 100%
+
+        # Применить защиту жертвы
+        try:
+            from storage.pet_store import pet_store
+            victim_pet = await pet_store.get_user_pet(guild_id, victim_id)
+
+            if victim_pet and victim_pet.fullness > 0:
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(guild_id, victim_id, "rob_defense")
+
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+
+                    if victim_pet_def and victim_pet.level >= 3:
+                        ability = victim_pet_def["abilities"][1]
+                        if ability["name"] == "Крепкий панцирь":
+                            effectiveness = victim_pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            defense_value = min_val + (max_val - min_val) * effectiveness
+                            success_chance -= defense_value / 100
+                            group_pet_bonuses["victim_defense_bonus"] = defense_value
+                            group_pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+        except Exception as e:
+            logger.error(f"Error applying victim pet defense in group rob: {e}")
+
+        success_chance = max(0.0, success_chance)  # Минимум 0%
+
         # Проверка инвентаря жертвы (по балансу лидера)
         leader_balance = await user_balance_store.get_balance(guild_id, leader_id)
         victim_inventory = inventory_store.get_player_inventory(guild_id, victim_id)
@@ -847,7 +923,17 @@ class RobGroupStartButton(discord.ui.Button):
                     # Кража монет
                     percent = random.uniform(0.1, 0.5)
                     potential = int(victim_balance * percent)
+
+                    # Применить бонус к добыче от питомцев участников
+                    if group_pet_bonuses["loot_bonus"] > 0:
+                        potential = int(potential * (1 + group_pet_bonuses["loot_bonus"] / 100))
+
                     loot = min(potential, group_cap)
+
+                    # Применить снижение потерь жертвы (Сохранность капитала)
+                    if group_pet_bonuses["victim_defense_bonus"] > 0:
+                        loss_reduction = group_pet_bonuses["victim_defense_bonus"] / 100
+                        loot = int(loot * (1 - loss_reduction))
 
                     await user_balance_store.subtract_balance(guild_id, victim_id, loot)
 
@@ -909,13 +995,25 @@ class RobGroupStartButton(discord.ui.Button):
                 stolen_amount = sale_price
             else:
                 stolen_amount = loot
+
+            # Формировать текст бонусов питомцев
+            bonus_text = ""
+            if group_pet_bonuses["success_bonus"] > 0:
+                names = ", ".join(group_pet_bonuses["success_names"])
+                bonus_text += f"\n\n🐾 **Лисы-разведчики ({names}):** +{group_pet_bonuses['success_bonus']:.1f}% к шансу успеха!"
+            if group_pet_bonuses["loot_bonus"] > 0:
+                names = ", ".join(group_pet_bonuses["loot_names"])
+                bonus_text += f"\n\n🐾 **Еноты-грабители ({names}):** +{group_pet_bonuses['loot_bonus']:.1f}% к кушу!"
+            if group_pet_bonuses["victim_defense_bonus"] > 0:
+                bonus_text += f"\n\n🐾 **{group_pet_bonuses['victim_defense_name']}:** Защитил {group_pet_bonuses['victim_defense_bonus']:.1f}% монет!"
+
             embed = discord.Embed(
                 title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
                 description=(
                     f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
                     f"{get_emoji('white_arrow')} **Украдено:** `{stolen_amount}` {get_emoji('money')}\n"
                     f"{get_emoji('white_arrow')} **Доля каждого:** `{share}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
+                    f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}{bonus_text}"
                 ),
                 color=0x2ECC71  # Green for success
             )
