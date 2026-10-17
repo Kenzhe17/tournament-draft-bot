@@ -20,7 +20,7 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
     pet = PETS_CATALOG.get(pet_id, {
         "name": "Guardian Turtle",
         "rarity": "Эпический",
-        "price": 10000,
+        "price": 7000,
         "color": 0x3498DB,
         "image_url": None,
         "abilities": {
@@ -1580,7 +1580,7 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Таинственное яйцо",
                 value="egg",
-                description="800 • Случайный питомец"
+                description="500 • Случайный питомец"
             ),
         ]
         super().__init__(
