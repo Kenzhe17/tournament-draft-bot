@@ -1851,8 +1851,8 @@ class OpenEggButton(discord.ui.Button):
                 pet = await pet_store.create_pet(
                     owner_1_id=interaction.user.id,
                     owner_2_id=None,
-                    pet_type=pet_def.pet_type.value,
-                    pet_name=pet_def.name
+                    pet_type=pet_def["id"],
+                    pet_name=pet_def["name"]
                 )
 
                 # Получить изображение питомца из каталога
@@ -1864,7 +1864,7 @@ class OpenEggButton(discord.ui.Button):
                     description=(
                         f"{replace_emojis('⚪')} **Информация:**\n"
                         f"{replace_emojis('sub_middle')} Питомец: {pet.pet_name}\n"
-                        f"{replace_emojis('sub_middle')} Редкость: {pet_def.rarity.value}\n"
+                        f"{replace_emojis('sub_middle')} Редкость: {pet_def['rarity']}\n"
                         f"{replace_emojis('sub_directory')} Уровень: {pet.level}\n\n"
                         f"{replace_emojis('a_dot_smaller')} Используйте `/pet profile` для управления питомцем."
                     ),
