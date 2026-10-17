@@ -363,14 +363,41 @@ class TournamentBot(commands.Bot):
                                     try:
                                         hunger_channel = self.get_channel(1551167853741219880)
                                         if hunger_channel:
+                                            # Пинг всех опекунов
+                                            mentions = f"<@{pet.owner_1_id}>"
+                                            if pet.owner_2_id:
+                                                mentions += f" <@{pet.owner_2_id}>"
+
                                             embed = discord.Embed(
                                                 title="🐾 Питомец сбежал",
-                                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекун: <@{pet.owner_1_id}>",
+                                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
                                                 color=discord.Color.orange()
                                             )
-                                            await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
+                                            await hunger_channel.send(mentions, embed=embed)
                                     except Exception as e:
                                         logger.error(f"Error sending runaway notification: {e}")
+                                elif updated_pet and updated_pet.fullness == 0 and updated_pet.hunger_started_at:
+                                    # Check if pet just started starving (less than 1 hour ago)
+                                    from datetime import datetime, timezone
+                                    now = datetime.now(timezone.utc)
+                                    hours_hungry = (now - updated_pet.hunger_started_at).total_seconds() / 3600
+                                    if hours_hungry < 1:
+                                        try:
+                                            hunger_channel = self.get_channel(1551167853741219880)
+                                            if hunger_channel:
+                                                # Пинг всех опекунов
+                                                mentions = f"<@{updated_pet.owner_1_id}>"
+                                                if updated_pet.owner_2_id:
+                                                    mentions += f" <@{updated_pet.owner_2_id}>"
+
+                                                embed = discord.Embed(
+                                                    title="⚠️ Питомец голодает",
+                                                    description=f"Питомец **{updated_pet.pet_name}** достиг 0% сытости!\n\nЕсли не покормить в течение 24 часов, питомец сбежит.\n\nОпекуны: {mentions}",
+                                                    color=discord.Color.yellow()
+                                                )
+                                                await hunger_channel.send(mentions, embed=embed)
+                                        except Exception as e:
+                                            logger.error(f"Error sending hunger notification: {e}")
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}")
             except Exception as e:

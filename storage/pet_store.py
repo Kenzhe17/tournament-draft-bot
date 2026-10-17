@@ -236,47 +236,34 @@ class PetStore:
                             logger.info(f"Pet {pet.pet_name} ran away from hunger after {hours_hungry:.1f} hours")
                             hunger_channel = bot.get_channel(1551167853741219880)
                             if hunger_channel:
+                                # Пинг всех опекунов
+                                mentions = f"<@{pet.owner_1_id}>"
+                                if pet.owner_2_id:
+                                    mentions += f" <@{pet.owner_2_id}>"
+
                                 embed = discord.Embed(
                                     title="🐾 Питомец сбежал",
-                                    description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекун: <@{pet.owner_1_id}>",
+                                    description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
                                     color=discord.Color.orange()
                                 )
-                                await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
+                                await hunger_channel.send(mentions, embed=embed)
                         except Exception as e:
                             pass
                     return True, None
 
             # Отправить уведомление о голоде если сытость только что достигла 0 или началась голодовка недавно
-            if pet.fullness == 0 and guild_id and bot:
-                # Отправить если только что достигла 0 или если голодовка началась менее 1 часа назад и уведомление ещё не было
-                send_notification = False
-                if was_full:
-                    send_notification = True
-                elif pet.hunger_started_at:
-                    hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
-                    if hours_hungry < 1:  # Если голодовка началась менее часа назад
-                        send_notification = True
-
-                if send_notification:
-                    try:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.info(f"Pet {pet.pet_name} is starving! Fullness reached 0%")
-
-                        # Отправить уведомление в канал голода
-                        hunger_channel = bot.get_channel(1551167853741219880)
-                        if hunger_channel:
-                            embed = discord.Embed(
-                                title="⚠️ Питомец голодает",
-                                description=f"Питомец **{pet.pet_name}** достиг 0% сытости!\n\nЕсли не покормить в течение 24 часов, питомец сбежит.\n\nОпекун: <@{pet.owner_1_id}>",
-                                color=discord.Color.yellow()
-                            )
-                            await hunger_channel.send(f"<@{pet.owner_1_id}>", embed=embed)
-                            logger.info(f"Sent hunger notification for pet {pet.pet_name}")
-                        else:
-                            logger.warning(f"Could not get hunger channel 1551167853741219880")
-                    except Exception as e:
-                        logger.error(f"Error sending hunger notification: {e}")
+            # Уведомления отправляются в фоновой задаче bot.py, здесь только логируем
+            if pet.fullness == 0 and guild_id:
+                try:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    if was_full:
+                        logger.info(f"Pet {pet.pet_name} just reached 0% fullness")
+                    elif pet.hunger_started_at:
+                        hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
+                        logger.info(f"Pet {pet.pet_name} starving for {hours_hungry:.1f} hours")
+                except Exception as e:
+                    pass
 
             # Обновить таймстампы
             pet.last_fed_at = now

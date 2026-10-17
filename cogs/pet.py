@@ -621,7 +621,7 @@ class FeedPetButton(discord.ui.Button):
                 ),
                 color=discord.Color.green()
             )
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             # Вернуть деньги
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 100)
