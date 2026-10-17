@@ -705,3 +705,8 @@ class CoOwnerInviteView(discord.ui.View):
             child.disabled = True
 
         await interaction.response.edit_message(embed=decline_embed, view=self)
+
+
+async def setup(bot: commands.Bot) -> None:
+    """Setup function for the pet cog."""
+    await bot.add_cog(PetCog(bot))
