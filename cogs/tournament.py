@@ -1721,23 +1721,21 @@ class TournamentCog(commands.Cog):
         # Базовая комиссия 10%
         base_fee_percent = 0.1
 
-        # Применить бонус питомца (Щедрый перевод)
+        # Применить бонус питомца (Щедрый перевод) через новый сервис
         try:
-            from services.pet_ability_service import pet_ability_service
-            pet_bonus = await pet_ability_service.get_pet_bonus(interaction.guild_id, interaction.user.id, "pay")
-            logger.info(f"Pet bonus for pay: {pet_bonus}")
+            from services.pet_effects import get_user_active_pet_bonuses
+            bonuses = await get_user_active_pet_bonuses(interaction.user.id)
+            logger.info(f"Pet bonuses for pay: {bonuses}")
+            
+            if bonuses["has_pet"] and bonuses["pay_fee_reduction_pct"] > 0:
+                fee_reduction = bonuses["pay_fee_reduction_pct"] / 100
+                base_fee_percent = base_fee_percent * (1 - fee_reduction)
+                pet_name = bonuses["pet_name"]
+                logger.info(f"Applied pay fee reduction: {bonuses['pay_fee_reduction_pct']}% from {pet_name}")
         except ImportError as e:
-            # Если сервис недоступен, пропускаем бонус
-            logger.error(f"Failed to import pet_ability_service: {e}")
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+            logger.error(f"Failed to import pet_effects: {e}")
         except Exception as e:
-            logger.error(f"Error getting pet bonus: {e}")
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
-
-        if pet_bonus["bonus_applied"]:
-            # Снижение комиссии до 25% от исходной
-            fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.25
-            base_fee_percent = base_fee_percent * (1 - fee_reduction)
+            logger.error(f"Error getting pet bonuses: {e}")
 
         try:
             result = await user_balance_store.transfer_balance(
