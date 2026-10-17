@@ -1763,20 +1763,28 @@ class BuyPetButton(discord.ui.Button):
                 pet_name=self.pet_id.replace("_", " ").title()
             )
 
-            # Получить изображение питомца из каталога
+            # Получить данные питомца из каталога
             from models.pets_catalog import PETS_CATALOG
             pet_data = PETS_CATALOG.get(self.pet_id, {})
             pet_image = pet_data.get("image_url", "")
+            pet_rarity = pet_data.get("rarity", "")
+            pet_price = pet_data.get("price", 0)
+            pet_display_name = pet_data.get("name", pet.pet_name)
+
+            # Способности
+            ab1 = pet_data.get("abilities", [{}])[1] if len(pet_data.get("abilities", [])) > 1 else {}
+            ab2 = pet_data.get("abilities", [{}])[2] if len(pet_data.get("abilities", [])) > 2 else {}
 
             embed = discord.Embed(
-                title=replace_emojis("✅ Питомец куплен!"),
+                title="ПИТОМЕЦ ПОЛУЧЕН | УСПЕШНАЯ ПОКУПКА",
                 description=(
-                    f"{replace_emojis('⚪')} **Информация:**\n"
-                    f"{replace_emojis('sub_middle')} Питомец: {pet.pet_name}\n"
-                    f"{replace_emojis('sub_middle')} Уровень: {pet.level}\n"
-                    f"{replace_emojis('sub_middle')} Сытость: {pet.fullness}/100\n"
-                    f"{replace_emojis('sub_directory')} Энергия: {pet.energy}/100\n\n"
-                    f"{replace_emojis('a_dot_smaller')} Используйте `/pet profile` для управления питомцем."
+                    f"Поздравляем! В вашей коллекции пополнение!\n"
+                    f"**Питомец:** {pet.pet_name} (*{pet_rarity}*)\n"
+                    f"**Стоимость в магазине:** `{pet_price:,}` {get_emoji('money')}\n\n"
+                    f"**Первоначальные способности:**\n"
+                    f"🔒 **Ур. {ab1.get('unlock_level', 3)} | {ab1.get('name', 'Способность 1')}**\n"
+                    f"🔒 **Ур. {ab2.get('unlock_level', 5)} | {ab2.get('name', 'Способность 2')}**\n\n"
+                    f"> *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -1836,8 +1844,12 @@ class OpenEggButton(discord.ui.Button):
 
         if result["type"] == "nothing":
             embed = discord.Embed(
-                title=replace_emojis("😔 Пустое яйцо"),
-                description=f"{replace_emojis('white_dot')} Вам не выпал питомец. Попробуйте ещё раз!\n\n{replace_emojis('a_dot_smaller')} Шанс питомца: 20%",
+                title="ПУСТО",
+                description=(
+                    f"Вы аккуратно разбиваете скорлупу... 🥚✨\n\n"
+                    f"**Результат:** Эх, яйцо оказалось пустым!\n"
+                    f"*Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
+                ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1560907251412238396/1560935450800029756/output-removebg-preview.png?ex=6ad485ec&is=6ad3346c&hm=6ecda6ff1780bf054b2727904fa9115ee51a889dffbb049b36139be1b7772153&")
@@ -1856,15 +1868,23 @@ class OpenEggButton(discord.ui.Button):
                 # Получить изображение питомца из каталога
                 from models.pets_catalog import PETS_CATALOG
                 pet_image = pet_def.get("image_url", "")
+                pet_price = pet_def.get("price", 0)
+
+                # Способности (безопасный доступ)
+                abilities = pet_def.get("abilities", [])
+                ab1 = abilities[1] if len(abilities) > 1 else {"name": "Способность 1", "unlock_level": 3}
+                ab2 = abilities[2] if len(abilities) > 2 else {"name": "Способность 2", "unlock_level": 5}
 
                 embed = discord.Embed(
-                    title=replace_emojis("🎉 Питомец выпал!"),
+                    title="ПИТОМЕЦ ПОЛУЧЕН | ВЫЛУПЛЕНИЕ ИЗ ЯЙЦА",
                     description=(
-                        f"{replace_emojis('⚪')} **Информация:**\n"
-                        f"{replace_emojis('sub_middle')} Питомец: {pet.pet_name}\n"
-                        f"{replace_emojis('sub_middle')} Редкость: {pet_def['rarity']}\n"
-                        f"{replace_emojis('sub_directory')} Уровень: {pet.level}\n\n"
-                        f"{replace_emojis('a_dot_smaller')} Используйте `/pet profile` для управления питомцем."
+                        f"Поздравляем! В вашей коллекции пополнение!\n"
+                        f"**Питомец:** {pet.pet_name} (*{pet_def['rarity']}*)\n"
+                        f"**Стоимость в магазине:** `{pet_price:,}` {get_emoji('money')}\n\n"
+                        f"**Первоначальные способности:**\n"
+                        f"🔒 **Ур. {ab1.get('unlock_level', 3)} | {ab1.get('name', 'Способность 1')}**\n"
+                        f"🔒 **Ур. {ab2.get('unlock_level', 5)} | {ab2.get('name', 'Способность 2')}**\n\n"
+                        f"> *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
                     ),
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
