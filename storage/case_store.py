@@ -342,15 +342,6 @@ class CaseStore:
         except Exception as e:
             logger.error(f"Error applying pet extra reward: {e}")
 
-        elif result["type"] == "item":
-            # Добавить монеты стоимостью 25-50% от предмета
-            item = shop_store.get_item(result.get("item_id", ""))
-            if item:
-                extra_percent = random.uniform(0.25, 0.50)
-                extra_value = int(item.price * extra_percent)
-                await user_balance_store.add_balance(guild_id, user_id, extra_value)
-                result["extra_reward"] = extra_value
-
         return result
 
     def _add_to_history(self, guild_id: int, user_id: int, case_id: str, result: dict[str, Any]) -> None:
