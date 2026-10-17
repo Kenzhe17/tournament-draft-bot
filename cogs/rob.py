@@ -217,8 +217,11 @@ class RobStartButton(discord.ui.Button):
 
         if success:
             if use_item_steal:
-                # Проверить защиту предмета жертвы (Цепкие когти)
+                # Проверить защиту предмета жертвы (Тайный сейф - абсолютная защита, Цепкие когти - шанс защиты)
                 item_protected = False
+                absolute_protected = False
+                protect_pet_name = None
+
                 try:
                     from storage.pet_store import pet_store
                     victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
@@ -232,8 +235,13 @@ class RobStartButton(discord.ui.Button):
                             victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
                             if victim_pet_def and victim_pet.level >= 7:
+                                # Проверить Тайный сейф (Guardian Turtle) - абсолютная защита
                                 ability = victim_pet_def["abilities"][2]
-                                if ability["name"] == "Цепкие когти":
+                                if ability["name"] == "Тайный сейф":
+                                    absolute_protected = True
+                                    protect_pet_name = victim_pet.pet_name
+                                # Проверить Цепкие когти (Treasury Owl) - шанс защиты
+                                elif ability["name"] == "Цепкие когти":
                                     effectiveness = victim_pet.get_ability_effectiveness()
                                     min_val = ability.get("min_val", 0)
                                     max_val = ability.get("max_val", 0)
@@ -245,6 +253,59 @@ class RobStartButton(discord.ui.Button):
                                         item_protected = True
                 except Exception as e:
                     logger.error(f"Error applying item protection: {e}")
+
+                if absolute_protected:
+                    # Абсолютная защита - предмет точно защищён
+                    percent = random.uniform(0.1, 0.5)
+                    potential = int(victim_balance * percent)
+
+                    # Применить бонус к добыче (Чужой кошелёк)
+                    try:
+                        from storage.pet_store import pet_store
+                        robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                        if robber_pet and robber_pet.fullness > 0:
+                            # Списать энергию за использование способности
+                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
+
+                            if energy_consumed:
+                                from storage.pet_store import pet_catalog
+                                robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                                if robber_pet_def and robber_pet.level >= 7:
+                                    ability = robber_pet_def["abilities"][1]
+                                    if ability["name"] == "Чужой кошелёк":
+                                        effectiveness = robber_pet.get_ability_effectiveness()
+                                        min_val = ability.get("min_val", 0)
+                                        max_val = ability.get("max_val", 0)
+                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        pet_bonuses["robber_loot_bonus"] = loot_bonus
+                                        pet_bonuses["robber_loot_name"] = robber_pet.pet_name
+                                        potential = int(potential * (1 + loot_bonus / 100))
+                    except Exception as e:
+                        logger.error(f"Error applying loot bonus: {e}")
+
+                    stolen = min(potential, robber_balance)
+
+                    await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
+                    await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
+
+                    # Формировать текст бонусов
+                    bonus_text = f"\n\n🐾 **Черепаха-хранитель ({protect_pet_name}):** Абсолютная защита предмета!"
+                    if pet_bonuses["robber_loot_bonus"] > 0:
+                        bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
+
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        description=(
+                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
+                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
+                            f"{get_emoji('white_dot')} **Предмет защищён (абсолютно)!**\n"
+                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
+                        ),
+                        color=0x2ECC71
+                    )
+                    await interaction.response.edit_message(embed=embed, view=None)
 
                 if item_protected:
                     # Предмет защищён - украсть монеты вместо предмета
@@ -426,22 +487,74 @@ class RobStartButton(discord.ui.Button):
             potential = int(victim_balance * percent)
             penalty = min(potential, int(robber_balance * 0.7))  # Максимум 70% от баланса грабителя
 
-            # Применить снижение штрафа (План отхода / Сохранность капитала)
-            if pet_bonus["bonus_applied"]:
-                penalty_reduction = pet_bonus["bonus_value"] / 100  # до 40%
-                penalty = int(penalty * (1 - penalty_reduction))
+            # Применить снижение штрафа (План отхода)
+            penalty_reduction_pct = 0
+            try:
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                if pet and pet.fullness > 0:
+                    # Списать энергию за использование способности
+                    energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
+
+                    if energy_consumed:
+                        from storage.pet_store import pet_catalog
+                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                        if pet_def and pet.level >= 3:
+                            ability = pet_def["abilities"][1]
+                            if ability["name"] == "План отхода":
+                                effectiveness = pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                penalty_reduction_pct = min_val + (max_val - min_val) * effectiveness
+                                penalty = int(penalty * (1 - penalty_reduction_pct / 100))
+            except Exception as e:
+                logger.error(f"Error applying penalty reduction: {e}")
 
             await user_balance_store.subtract_balance(self.guild_id, self.robber_id, penalty)
             await user_balance_store.add_balance(self.guild_id, self.victim_id, penalty)
 
+            # Применить снижение времени тюрьмы (Побег из тюрьмы)
+            jail_hours = 2
+            jail_reduction_pct = 0
+            try:
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                if pet and pet.fullness > 0:
+                    # Списать энергию за использование способности
+                    energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
+
+                    if energy_consumed:
+                        from storage.pet_store import pet_catalog
+                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                        if pet_def and pet.level >= 7:
+                            ability = pet_def["abilities"][2]
+                            if ability["name"] == "Побег из тюрьмы":
+                                effectiveness = pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                jail_reduction_pct = min_val + (max_val - min_val) * effectiveness
+                                jail_hours = int(jail_hours * (1 - jail_reduction_pct / 100))
+            except Exception as e:
+                logger.error(f"Error applying jail reduction: {e}")
+
             # Build failure embed
+            bonus_text = ""
+            if penalty_reduction_pct > 0:
+                bonus_text += f"\n\n🐾 **Ворон-контрабандист ({pet.pet_name}):** Снизил штраф на -{penalty_reduction_pct:.1f}%!"
+            if jail_reduction_pct > 0:
+                bonus_text += f"\n\n🐾 **Лис-разведчик ({pet.pet_name}):** Сократил срок тюрьмы на -{jail_reduction_pct:.1f}%!"
+
             embed = discord.Embed(
                 title=f"{get_emoji('a_star')} **ОГРАБЛЕНИЕ ПРОВАЛЕНО** | `/rob`",
                 description=(
                     f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                     f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                     f"{get_emoji('white_dot')} **Штраф:** `{penalty}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_dot')} **Тюрьма:** 2 часа\n"
+                    f"{get_emoji('white_dot')} **Тюрьма:** {jail_hours} часа{bonus_text}"
                 ),
                 color=0xE74C3C  # Red for failure
             )
@@ -1022,12 +1135,50 @@ class RobGroupStartButton(discord.ui.Button):
         else:
             # Failure embed
             party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+
+            # Apply jail time reduction from pets (Scout Fox - Побег из тюрьмы)
+            jail_hours = 2
+            jail_reduction_pct = 0
+            jail_pet_name = None
+
+            for member_id in members:
+                try:
+                    from storage.pet_store import pet_store
+                    pet = await pet_store.get_user_pet(guild_id, member_id)
+
+                    if pet and pet.fullness > 0:
+                        # Списать энергию за использование способности
+                        energy_consumed = await pet_store.consume_energy_for_ability(guild_id, member_id, "rob")
+
+                        if energy_consumed:
+                            from storage.pet_store import pet_catalog
+                            pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                            if pet_def and pet.level >= 7:
+                                ability = pet_def["abilities"][2]
+                                if ability["name"] == "Побег из тюрьмы":
+                                    effectiveness = pet.get_ability_effectiveness()
+                                    min_val = ability.get("min_val", 0)
+                                    max_val = ability.get("max_val", 0)
+                                    reduction = min_val + (max_val - min_val) * effectiveness
+                                    if reduction > jail_reduction_pct:
+                                        jail_reduction_pct = reduction
+                                        jail_pet_name = pet.pet_name
+                except Exception as e:
+                    logger.error(f"Error applying jail reduction in group rob: {e}")
+
+            jail_hours = int(jail_hours * (1 - jail_reduction_pct / 100))
+
+            jail_text = f"{jail_hours} часа"
+            if jail_reduction_pct > 0:
+                jail_text += f" (-{jail_reduction_pct:.1f}% от {jail_pet_name})"
+
             embed = discord.Embed(
                 title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ ПРОВАЛ** | `/robgroup`",
                 description=(
                     f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
                     f"{get_emoji('white_arrow')} **Штраф:** `{collected}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_arrow')} **Тюрьма:** 2 часа\n"
+                    f"{get_emoji('white_arrow')} **Тюрьма:** {jail_text}\n"
                     f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
                 ),
                 color=0xE74C3C  # Red for failure
