@@ -8,7 +8,7 @@ from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
 from storage.case_store import case_store
 from models.shop_item import PlayerCosmetic, CosmeticRarity
-from models.pets_catalog import PETS_CATALOG, EMOJI_STAR, EMOJI_SPARKLE, EMOJI_ARROW, EMOJI_DOT, EMOJI_MONEY
+from models.pets_catalog import PETS_CATALOG
 
 
 def build_won_pet_embed(pet_id: str, is_egg_drop: bool = False) -> tuple[discord.Embed, discord.File | None]:
@@ -1891,12 +1891,18 @@ class OpenEggButton(discord.ui.Button):
         result = await pet_store.open_mystery_egg()
 
         if result["type"] == "nothing":
+            from config import get_emoji
+            emoji_star = get_emoji("a_star")
+            emoji_sparkle = get_emoji("a_sparkle")
+            emoji_arrow = get_emoji("white_arrow")
+            emoji_dot = get_emoji("white_dot")
+
             embed = discord.Embed(
-                title=f"{EMOJI_STAR} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",
+                title=f"{emoji_star} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",
                 description=(
-                    f"{EMOJI_SPARKLE} Вы аккуратно разбиваете скорлупу... 🥚✨\n"
-                    f"{EMOJI_ARROW} **Результат:** Эх, яйцо оказалось пустым!\n"
-                    f"{EMOJI_DOT} *Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
+                    f"{emoji_sparkle} Вы аккуратно разбиваете скорлупу... 🥚✨\n"
+                    f"{emoji_arrow} **Результат:** Эх, яйцо оказалось пустым!\n"
+                    f"{emoji_dot} *Внутри ничего не нашлось. Удача обязательно улыбнётся в следующий раз!*"
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
