@@ -1723,21 +1723,28 @@ class TournamentCog(commands.Cog):
 
         # Применить бонус питомца (Щедрый перевод) через новый сервис
         try:
-            import sys
-            sys.path.insert(0, '.')
-            from services.pet_effects import get_user_active_pet_bonuses
-            bonuses = await get_user_active_pet_bonuses(interaction.user.id)
-            logger.info(f"Pet bonuses for pay: {bonuses}")
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
             
-            if bonuses["has_pet"] and bonuses["pay_fee_reduction_pct"] > 0:
-                fee_reduction = bonuses["pay_fee_reduction_pct"] / 100
-                base_fee_percent = base_fee_percent * (1 - fee_reduction)
-                pet_name = bonuses["pet_name"]
-                logger.info(f"Applied pay fee reduction: {bonuses['pay_fee_reduction_pct']}% from {pet_name}")
-        except ImportError as e:
-            logger.error(f"Failed to import pet_effects: {e}")
+            if pet and pet.fullness > 0:
+                # Получаем каталог питомца
+                from storage.pet_store import pet_catalog
+                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                
+                if pet_def and pet.level >= 7:  # Уровень разблокировки Щедрого перевода
+                    ability = pet_def["abilities"][2]
+                    if ability["name"] == "Щедрый перевод":
+                        # Рассчитываем бонус
+                        effectiveness = pet.get_ability_effectiveness()
+                        min_val = ability.get("min_val", 0)
+                        max_val = ability.get("max_val", 0)
+                        bonus_value = min_val + (max_val - min_val) * effectiveness
+                        
+                        fee_reduction = bonus_value / 100
+                        base_fee_percent = base_fee_percent * (1 - fee_reduction)
+                        logger.info(f"Applied pay fee reduction: {bonus_value}% from {pet.pet_name}")
         except Exception as e:
-            logger.error(f"Error getting pet bonuses: {e}")
+            logger.error(f"Error getting pet bonus: {e}")
 
         try:
             result = await user_balance_store.transfer_balance(
