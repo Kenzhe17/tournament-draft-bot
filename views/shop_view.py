@@ -1462,7 +1462,7 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"ограблениях и Elo-матчах!\n\n"
             f"{replace_emojis('white_dot')} **Правило:** У каждого игрока может быть только **один** питомец "
             f"(включая совместное владение).\n\n"
-            f"{replace_emojis('white_dot')} **Таинственное яйцо** — 1,000 {get_emoji('money')}\n"
+            f"{replace_emojis('white_dot')} **Таинственное яйцо** — 800 {get_emoji('money')}\n"
             f"   Шанс питомца: 20% (80% пустое)\n"
             f"   - Обычный: 12%\n"
             f"   - Необычный: 5%\n"
@@ -1472,7 +1472,8 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"   - Обычный: 3,000 {get_emoji('money')}\n"
             f"   - Необычный: 5,000 {get_emoji('money')}\n"
             f"   - Эпический: 10,000 {get_emoji('money')}\n"
-            f"   - Легендарный: 20,000 {get_emoji('money')}"
+            f"   - Легендарный: 20,000 {get_emoji('money')}\n"
+            f"   - Таинственное яйцо: 800 {get_emoji('money')}"
         ),
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -1513,7 +1514,7 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Таинственное яйцо",
                 value="egg",
-                description="1,000 • Случайный питомец"
+                description="800 • Случайный питомец"
             ),
         ]
         super().__init__(
@@ -1788,11 +1789,13 @@ class OpenEggButton(discord.ui.Button):
     """Кнопка открытия таинственного яйца."""
 
     def __init__(self):
+        from models.pets_catalog import MYSTERY_EGG_DATA
         super().__init__(
             style=discord.ButtonStyle.success,
-            label="Открыть за 1,000",
+            label=f"Открыть за {MYSTERY_EGG_DATA['price']:,}",
             custom_id="open_egg"
         )
+        self.price = MYSTERY_EGG_DATA['price']
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать открытие яйца."""
@@ -1810,15 +1813,15 @@ class OpenEggButton(discord.ui.Button):
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < 1000:
+        if balance < self.price:
             await interaction.response.send_message(
-                replace_emojis(f"❌ Недостаточно монет. Нужно: 1,000 {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
+                replace_emojis(f"❌ Недостаточно монет. Нужно: {self.price:,} {get_emoji('money')}, есть: {balance:,} {get_emoji('money')}"),
                 ephemeral=True
             )
             return
 
         # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 1000)
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.price)
 
         # Открыть яйцо
         result = await pet_store.open_mystery_egg()

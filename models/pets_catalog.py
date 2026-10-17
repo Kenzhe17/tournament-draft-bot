@@ -279,7 +279,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
 MYSTERY_EGG_DATA = {
     "title": "МАГАЗИН | ЗАГАДОЧНОЕ ЯЙЦО",
     "category": "Лотерея компаньонов",
-    "price": 1000,
+    "price": 800,
     "color": 0xF1C40F,
     "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560918277125967963/mythic_egg_92177005617456119468743173808181512483.png?ex=6ad475ed&is=6ad3246d&hm=20b7ccdec0639377dacd5758f1e3fb8812070d872676d70f1e7326c2e9676a3d&=&format=webp&quality=lossless",
     "description": (
