@@ -88,9 +88,25 @@ class SellCog(commands.Cog):
 
         # Применить бонус питомца (Чёрный рынок / Торговый нюх)
         try:
-            from services.pet_ability_service import pet_ability_service
-            pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, interaction.user.id, "sell")
-        except ImportError:
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(guild_id, interaction.user.id)
+            
+            if pet and pet.fullness > 0:
+                from storage.pet_store import pet_catalog
+                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                
+                if pet_def and pet.level >= 7:  # Уровень разблокировки Чёрного рынка
+                    ability = pet_def["abilities"][2]
+                    if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
+                        effectiveness = pet.get_ability_effectiveness()
+                        min_val = ability.get("min_val", 0)
+                        max_val = ability.get("max_val", 0)
+                        bonus_value = min_val + (max_val - min_val) * effectiveness
+                        fee_reduction = bonus_value / 100
+                        base_sell_percent = base_sell_percent * (1 - fee_reduction)
+            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+        except Exception as e:
+            logger.error(f"Error applying pet bonus to sell: {e}")
             pet_bonus = {"bonus_applied": False, "bonus_value": 0}
         if pet_bonus["bonus_applied"]:
             # Снижение комиссии до 35-45% от исходной

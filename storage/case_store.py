@@ -238,14 +238,24 @@ class CaseStore:
 
             # Применить бонус питомца к монетам (Золотая лапа)
             try:
-                from services.pet_ability_service import pet_ability_service
-                pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_open")
-            except ImportError:
-                pet_bonus = {"bonus_applied": False, "bonus_value": 0}
-            if pet_bonus["bonus_applied"]:
-                bonus_percent = pet_bonus["bonus_value"]  # до 15%
-                bonus_coins = int(coins_amount * (bonus_percent / 100))
-                coins_amount += bonus_coins
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(guild_id, user_id)
+                
+                if pet and pet.fullness > 0:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                    
+                    if pet_def and pet.level >= 3:  # Уровень разблокировки Золотой лапы
+                        ability = pet_def["abilities"][1]
+                        if ability["name"] == "Золотая лапа":
+                            effectiveness = pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            bonus_percent = min_val + (max_val - min_val) * effectiveness
+                            bonus_coins = int(coins_amount * (bonus_percent / 100))
+                            coins_amount += bonus_coins
+            except Exception as e:
+                logger.error(f"Error applying pet bonus to case: {e}")
 
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common"}
@@ -302,21 +312,32 @@ class CaseStore:
 
         # Проверить дополнительную награду от питомца (Секретный тайник)
         try:
-            from services.pet_ability_service import pet_ability_service
-            extra_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_extra_reward")
-        except ImportError:
-            extra_bonus = {"bonus_applied": False, "bonus_value": 0}
-        if extra_bonus["bonus_applied"]:
-            import random
-            bonus_chance = extra_bonus["bonus_value"]  # до 20%
-            if random.random() < (bonus_chance / 100):
-                # Дополнительная награда: 25-50% от базовой
-                if result["type"] == "coins":
-                    base_value = result["value"]
-                    extra_percent = random.uniform(0.25, 0.50)
-                    extra_value = int(base_value * extra_percent)
-                    await user_balance_store.add_balance(guild_id, user_id, extra_value)
-                    result["extra_reward"] = extra_value
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(guild_id, user_id)
+            
+            if pet and pet.fullness > 0:
+                from storage.pet_store import pet_catalog
+                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                
+                if pet_def and pet.level >= 3:  # Уровень разблокировки Секретного тайника
+                    ability = pet_def["abilities"][1]
+                    if ability["name"] == "Секретный тайник":
+                        import random
+                        effectiveness = pet.get_ability_effectiveness()
+                        min_val = ability.get("min_val", 0)
+                        max_val = ability.get("max_val", 0)
+                        bonus_chance = min_val + (max_val - min_val) * effectiveness
+                        
+                        if random.random() < (bonus_chance / 100):
+                            # Дополнительная награда: 25-50% от базовой
+                            if result["type"] == "coins":
+                                base_value = result["value"]
+                                extra_percent = random.uniform(0.25, 0.50)
+                                extra_value = int(base_value * extra_percent)
+                                await user_balance_store.add_balance(guild_id, user_id, extra_value)
+                                result["extra_reward"] = extra_value
+        except Exception as e:
+            logger.error(f"Error applying pet extra reward: {e}")
                 elif result["type"] == "item":
                     # Добавить монеты стоимостью 25-50% от предмета
                     item = shop_store.get_item(result.get("item_id", ""))
