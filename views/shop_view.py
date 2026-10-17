@@ -496,7 +496,7 @@ class RoleSelect(discord.ui.Select):
                 discord.SelectOption(
                     label=role.name,
                     value=role.id,
-                    description=f"{role.price} {get_emoji('money')}{level_req}"
+                    description=f"{role.price}{level_req}"
                 )
             )
 
