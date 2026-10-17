@@ -1,6 +1,7 @@
 """Storage для системы кейсов."""
 
 import json
+import logging
 import random
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -10,6 +11,8 @@ from models.shop_item import CosmeticRarity
 from storage.shop_store import shop_store
 from storage.user_balance_store import user_balance_store
 from storage.shop_store import inventory_store
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -338,14 +341,15 @@ class CaseStore:
                                 result["extra_reward"] = extra_value
         except Exception as e:
             logger.error(f"Error applying pet extra reward: {e}")
-                elif result["type"] == "item":
-                    # Добавить монеты стоимостью 25-50% от предмета
-                    item = shop_store.get_item(result.get("item_id", ""))
-                    if item:
-                        extra_percent = random.uniform(0.25, 0.50)
-                        extra_value = int(item.price * extra_percent)
-                        await user_balance_store.add_balance(guild_id, user_id, extra_value)
-                        result["extra_reward"] = extra_value
+
+        elif result["type"] == "item":
+            # Добавить монеты стоимостью 25-50% от предмета
+            item = shop_store.get_item(result.get("item_id", ""))
+            if item:
+                extra_percent = random.uniform(0.25, 0.50)
+                extra_value = int(item.price * extra_percent)
+                await user_balance_store.add_balance(guild_id, user_id, extra_value)
+                result["extra_reward"] = extra_value
 
         return result
 
