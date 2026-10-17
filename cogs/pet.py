@@ -343,6 +343,9 @@ class PetCog(commands.Cog):
         pet_list = list(PETS_CATALOG.items())
         view = PetCatalogView(pet_list, interaction.user.id)
         
+        # Откладываем ответ перед редактированием
+        await interaction.response.defer()
+        
         # Показать первого питомца
         await view.show_pet(interaction, 0)
 
@@ -507,10 +510,11 @@ class PetCatalogView(discord.ui.View):
         # Обновить кнопки
         self.refresh_buttons()
         
+        # Всегда редактируем сообщение (для кнопок навигации)
         if interaction.response.is_done():
             await interaction.edit_original_message(embed=embed, view=self)
         else:
-            await interaction.response.send_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=self)
 
     async def prev_callback(self, interaction: discord.Interaction):
         """Предыдущий питомец."""
