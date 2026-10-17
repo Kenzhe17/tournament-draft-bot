@@ -546,7 +546,7 @@ class FeedPetButton(discord.ui.Button):
     def __init__(self, pet_id: int, pet_dict: dict):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Покормить (50 🪙)",
+            label="Покормить (30 🪙)",
             custom_id=f"feed_pet:{pet_id}"
         )
         self.pet_id = pet_id
@@ -574,15 +574,15 @@ class FeedPetButton(discord.ui.Button):
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < 50:
+        if balance < 30:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. Нужно: 50 🪙"),
+                replace_emojis("❌ Недостаточно монет. Нужно: 30 🪙"),
                 ephemeral=True
             )
             return
 
         # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 50)
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 30)
 
         # Покормить (обычная еда: +20 сытость, +5 энергия, +5 EXP)
         success, message = await pet_store.feed_pet(
@@ -605,7 +605,7 @@ class FeedPetButton(discord.ui.Button):
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             # Вернуть деньги
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 50)
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 30)
             await interaction.response.send_message(
                 replace_emojis(f"❌ {message}"),
                 ephemeral=True
