@@ -90,7 +90,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.sell")
         await self.load_extension("cogs.thread")
         await self.load_extension("cogs.coin_drop")
-        await self.load_extension("cogs.pet")
+        # await self.load_extension("cogs.pet")  # Temporarily disabled - pets table not created in Railway DB
         
         # Sync commands globally
         try:
