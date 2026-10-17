@@ -815,9 +815,13 @@ class AdminConfirmView(View):
 
                 return players
 
-            # Build user_id mapping for all players
+            # Build user_id mapping for all players - combine tournament's player_user_ids with current player_stats
+            # This handles nickname changes: tournament has old names, player_stats has new names
+            user_ids = {}
+            user_ids.update(tournament.player_user_ids)  # Add old names from tournament structure
             all_stats = await player_stats_store.get_all(self.guild_id)
-            user_ids = {stat.name: stat.user_id for stat in all_stats}
+            for stat in all_stats:
+                user_ids[stat.name] = stat.user_id  # Add/update with current names from player_stats
 
             team_a_players = prepare_players_data(team_a, temp_stats, user_ids)
             team_b_players = prepare_players_data(team_b, temp_stats, user_ids)
@@ -842,13 +846,12 @@ class AdminConfirmView(View):
                     logging.warning(f"Player {player_name} not found in either team")
                     continue
 
-                # Get user_id from player stats
-                stats = await player_stats_store.get(self.guild_id, player_name)
-                if not stats:
-                    logging.warning(f"No stats found for player {player_name}")
+                # Get user_id from user_ids mapping (built from player_stats_store.get_all)
+                user_id = user_ids.get(player_name)
+                if not user_id:
+                    logging.warning(f"No user_id found for player {player_name}")
                     continue
 
-                user_id = stats.user_id
                 logging.info(f"Found user_id {user_id} for player {player_name}")
 
                 # Determine team and opponent
@@ -871,8 +874,9 @@ class AdminConfirmView(View):
                 is_winner = (my_team_idx == winner_idx)
                 result = "win" if is_winner else "loss"
 
-                # Get ELO change from last_elo_change
-                elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+                # Get ELO change from player stats
+                player_stats = await player_stats_store.get(self.guild_id, user_id)
+                elo_change = player_stats.last_elo_change if player_stats and hasattr(player_stats, 'last_elo_change') else 0
 
                 # Create match history entry
                 match_entry = MatchHistory(

@@ -301,9 +301,13 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
 
             return players
 
-        # Build user_id mapping for all players
+        # Build user_id mapping for all players - combine tournament's player_user_ids with current player_stats
+        # This handles nickname changes: tournament has old names, player_stats has new names
+        user_ids = {}
+        user_ids.update(self.tournament.player_user_ids)  # Add old names from tournament structure
         all_stats = await player_stats_store.get_all(self.guild_id)
-        user_ids = {stat.name: stat.user_id for stat in all_stats}
+        for stat in all_stats:
+            user_ids[stat.name] = stat.user_id  # Add/update with current names from player_stats
 
         team_a_players = prepare_players_data(team_a, temp_stats, user_ids)
         team_b_players = prepare_players_data(team_b, temp_stats, user_ids)
@@ -328,28 +332,12 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 logging.warning(f"Player {player_name} not found in either team")
                 continue
 
-            # Get user_id from player stats - search by name
-            all_stats = await player_stats_store.get_all(self.guild_id)
-            user_stats = None
-            for stat in all_stats:
-                if stat.name == player_name:
-                    user_stats = stat
-                    break
-
-            if not user_stats:
-                logging.warning(f"No stats found for player {player_name} in player_stats (tried name: '{player_name}')")
-                # Try to find by display name (case-insensitive)
-                for stat in all_stats:
-                    if stat.name.lower() == player_name.lower():
-                        user_stats = stat
-                        logging.info(f"Found user_id {stat.user_id} for player {player_name} via case-insensitive match")
-                        break
-
-            if not user_stats:
-                logging.warning(f"No stats found for player {player_name}, skipping history save")
+            # Get user_id from user_ids mapping
+            user_id = user_ids.get(player_name)
+            if not user_id:
+                logging.warning(f"No user_id found for player {player_name}, skipping history save")
                 continue
 
-            user_id = user_stats.user_id
             logging.info(f"Found user_id {user_id} for player {player_name}")
 
             # Determine team and opponent
@@ -372,8 +360,9 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             is_winner = (my_team_idx == winner_idx)
             result = "win" if is_winner else "loss"
 
-            # Get ELO change from last_elo_change
-            elo_change = user_stats.last_elo_change if hasattr(user_stats, 'last_elo_change') else 0
+            # Get ELO change from player stats
+            player_stats = await player_stats_store.get(self.guild_id, user_id)
+            elo_change = player_stats.last_elo_change if player_stats and hasattr(player_stats, 'last_elo_change') else 0
 
             # Create match history entry
             match_entry = MatchHistory(
