@@ -1735,23 +1735,27 @@ class TournamentCog(commands.Cog):
             pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
 
             if pet and pet.fullness > 0:
-                # Получаем каталог питомца
-                from storage.pet_store import pet_catalog
-                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "pay")
 
-                if pet_def and pet.level >= 7:  # Уровень разблокировки Щедрого перевода
-                    ability = pet_def["abilities"][2]
-                    if ability["name"] == "Щедрый перевод":
-                        # Рассчитываем бонус
-                        effectiveness = pet.get_ability_effectiveness()
-                        min_val = ability.get("min_val", 0)
-                        max_val = ability.get("max_val", 0)
-                        bonus_value = min_val + (max_val - min_val) * effectiveness
+                if energy_consumed:
+                    # Получаем каталог питомца
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        fee_reduction = bonus_value / 100
-                        base_fee_percent = base_fee_percent * (1 - fee_reduction)
-                        logger.info(f"Applied pay fee reduction: {bonus_value}% from {pet.pet_name}")
-                        pet_bonus_text = f"\n\n🐾 **Золотой лис ({pet.pet_name}):** Скидка **-{bonus_value:.1f}%** на комиссию перевода!"
+                    if pet_def and pet.level >= 7:  # Уровень разблокировки Щедрого перевода
+                        ability = pet_def["abilities"][2]
+                        if ability["name"] == "Щедрый перевод":
+                            # Рассчитываем бонус
+                            effectiveness = pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            bonus_value = min_val + (max_val - min_val) * effectiveness
+
+                            fee_reduction = bonus_value / 100
+                            base_fee_percent = base_fee_percent * (1 - fee_reduction)
+                            logger.info(f"Applied pay fee reduction: {bonus_value}% from {pet.pet_name}")
+                            pet_bonus_text = f"\n\n🐾 **Золотой лис ({pet.pet_name}):** Скидка **-{bonus_value:.1f}%** на комиссию перевода!"
         except Exception as e:
             logger.error(f"Error getting pet bonus: {e}")
 

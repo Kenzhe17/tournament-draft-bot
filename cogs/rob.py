@@ -163,19 +163,23 @@ class RobStartButton(discord.ui.Button):
             pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
             if pet and pet.fullness > 0:
-                from storage.pet_store import pet_catalog
-                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
-                if pet_def and pet.level >= 3:
-                    ability = pet_def["abilities"][1]
-                    if ability["name"] == "Ловкие лапы":
-                        effectiveness = pet.get_ability_effectiveness()
-                        min_val = ability.get("min_val", 0)
-                        max_val = ability.get("max_val", 0)
-                        bonus_value = min_val + (max_val - min_val) * effectiveness
-                        base_success_chance += bonus_value / 100
-                        pet_bonuses["robber_success_bonus"] = bonus_value
-                        pet_bonuses["robber_success_name"] = pet.pet_name
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                    if pet_def and pet.level >= 3:
+                        ability = pet_def["abilities"][1]
+                        if ability["name"] == "Ловкие лапы":
+                            effectiveness = pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            base_success_chance += bonus_value / 100
+                            pet_bonuses["robber_success_bonus"] = bonus_value
+                            pet_bonuses["robber_success_name"] = pet.pet_name
         except Exception as e:
             logger.error(f"Error applying pet bonus to rob: {e}")
 
@@ -185,19 +189,23 @@ class RobStartButton(discord.ui.Button):
             victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
             if victim_pet and victim_pet.fullness > 0:
-                from storage.pet_store import pet_catalog
-                victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
 
-                if victim_pet_def and victim_pet.level >= 3:
-                    ability = victim_pet_def["abilities"][1]
-                    if ability["name"] == "Крепкий панцирь":
-                        effectiveness = victim_pet.get_ability_effectiveness()
-                        min_val = ability.get("min_val", 0)
-                        max_val = ability.get("max_val", 0)
-                        defense_value = min_val + (max_val - min_val) * effectiveness
-                        base_success_chance -= defense_value / 100
-                        pet_bonuses["victim_defense_bonus"] = defense_value
-                        pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+
+                    if victim_pet_def and victim_pet.level >= 3:
+                        ability = victim_pet_def["abilities"][1]
+                        if ability["name"] == "Крепкий панцирь":
+                            effectiveness = victim_pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            defense_value = min_val + (max_val - min_val) * effectiveness
+                            base_success_chance -= defense_value / 100
+                            pet_bonuses["victim_defense_bonus"] = defense_value
+                            pet_bonuses["victim_defense_name"] = victim_pet.pet_name
         except Exception as e:
             logger.error(f"Error applying victim pet defense: {e}")
 
@@ -216,21 +224,25 @@ class RobStartButton(discord.ui.Button):
                     victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
                     if victim_pet and victim_pet.fullness > 0:
-                        from storage.pet_store import pet_catalog
-                        victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+                        # Списать энергию за использование способности
+                        energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
 
-                        if victim_pet_def and victim_pet.level >= 7:
-                            ability = victim_pet_def["abilities"][2]
-                            if ability["name"] == "Цепкие когти":
-                                effectiveness = victim_pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                protect_chance = min_val + (max_val - min_val) * effectiveness
-                                pet_bonuses["victim_item_protect_chance"] = protect_chance
-                                pet_bonuses["victim_item_protect_name"] = victim_pet.pet_name
+                        if energy_consumed:
+                            from storage.pet_store import pet_catalog
+                            victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                                if random.random() < (protect_chance / 100):
-                                    item_protected = True
+                            if victim_pet_def and victim_pet.level >= 7:
+                                ability = victim_pet_def["abilities"][2]
+                                if ability["name"] == "Цепкие когти":
+                                    effectiveness = victim_pet.get_ability_effectiveness()
+                                    min_val = ability.get("min_val", 0)
+                                    max_val = ability.get("max_val", 0)
+                                    protect_chance = min_val + (max_val - min_val) * effectiveness
+                                    pet_bonuses["victim_item_protect_chance"] = protect_chance
+                                    pet_bonuses["victim_item_protect_name"] = victim_pet.pet_name
+
+                                    if random.random() < (protect_chance / 100):
+                                        item_protected = True
                 except Exception as e:
                     logger.error(f"Error applying item protection: {e}")
 
@@ -245,19 +257,23 @@ class RobStartButton(discord.ui.Button):
                         robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
                         if robber_pet and robber_pet.fullness > 0:
-                            from storage.pet_store import pet_catalog
-                            robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+                            # Списать энергию за использование способности
+                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
-                            if robber_pet_def and robber_pet.level >= 3:
-                                ability = robber_pet_def["abilities"][1]
-                                if ability["name"] == "Чужой кошелёк":
-                                    effectiveness = robber_pet.get_ability_effectiveness()
-                                    min_val = ability.get("min_val", 0)
-                                    max_val = ability.get("max_val", 0)
-                                    loot_bonus = min_val + (max_val - min_val) * effectiveness
-                                    potential = int(potential * (1 + loot_bonus / 100))
-                                    pet_bonuses["robber_loot_bonus"] = loot_bonus
-                                    pet_bonuses["robber_loot_name"] = robber_pet.pet_name
+                            if energy_consumed:
+                                from storage.pet_store import pet_catalog
+                                robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                                if robber_pet_def and robber_pet.level >= 3:
+                                    ability = robber_pet_def["abilities"][1]
+                                    if ability["name"] == "Чужой кошелёк":
+                                        effectiveness = robber_pet.get_ability_effectiveness()
+                                        min_val = ability.get("min_val", 0)
+                                        max_val = ability.get("max_val", 0)
+                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        potential = int(potential * (1 + loot_bonus / 100))
+                                        pet_bonuses["robber_loot_bonus"] = loot_bonus
+                                        pet_bonuses["robber_loot_name"] = robber_pet.pet_name
                     except Exception as e:
                         logger.error(f"Error applying loot bonus: {e}")
 
@@ -334,19 +350,23 @@ class RobStartButton(discord.ui.Button):
                         robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
                         if robber_pet and robber_pet.fullness > 0:
-                            from storage.pet_store import pet_catalog
-                            robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+                            # Списать энергию за использование способности
+                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
-                            if robber_pet_def and robber_pet.level >= 3:
-                                ability = robber_pet_def["abilities"][1]
-                                if ability["name"] == "Чужой кошелёк":
-                                    effectiveness = robber_pet.get_ability_effectiveness()
-                                    min_val = ability.get("min_val", 0)
-                                    max_val = ability.get("max_val", 0)
-                                    loot_bonus = min_val + (max_val - min_val) * effectiveness
-                                    potential = int(potential * (1 + loot_bonus / 100))
-                                    pet_bonuses["robber_loot_bonus"] = loot_bonus
-                                    pet_bonuses["robber_loot_name"] = robber_pet.pet_name
+                            if energy_consumed:
+                                from storage.pet_store import pet_catalog
+                                robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                                if robber_pet_def and robber_pet.level >= 3:
+                                    ability = robber_pet_def["abilities"][1]
+                                    if ability["name"] == "Чужой кошелёк":
+                                        effectiveness = robber_pet.get_ability_effectiveness()
+                                        min_val = ability.get("min_val", 0)
+                                        max_val = ability.get("max_val", 0)
+                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        potential = int(potential * (1 + loot_bonus / 100))
+                                        pet_bonuses["robber_loot_bonus"] = loot_bonus
+                                        pet_bonuses["robber_loot_name"] = robber_pet.pet_name
                     except Exception as e:
                         logger.error(f"Error applying loot bonus: {e}")
 
@@ -358,8 +378,12 @@ class RobStartButton(discord.ui.Button):
                         victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
                         if victim_pet and victim_pet.fullness > 0:
-                            from storage.pet_store import pet_catalog
-                            victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+                            # Списать энергию за использование способности
+                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
+
+                            if energy_consumed:
+                                from storage.pet_store import pet_catalog
+                                victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
                             if victim_pet_def and victim_pet.level >= 3:
                                 ability = victim_pet_def["abilities"][1]

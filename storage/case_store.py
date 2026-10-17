@@ -247,20 +247,24 @@ class CaseStore:
                 pet = await pet_store.get_user_pet(guild_id, user_id)
 
                 if pet and pet.fullness > 0:
-                    from storage.pet_store import pet_catalog
-                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                    # Списать энергию за использование способности
+                    energy_consumed = await pet_store.consume_energy_for_ability(guild_id, user_id, "case_open")
 
-                    if pet_def and pet.level >= 3:  # Уровень разблокировки Золотой лапы
-                        ability = pet_def["abilities"][1]
-                        if ability["name"] == "Золотая лапа":
-                            effectiveness = pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            bonus_percent = min_val + (max_val - min_val) * effectiveness
-                            bonus_coins = int(coins_amount * (bonus_percent / 100))
-                            coins_amount += bonus_coins
-                            pet_bonus_info["golden_fox_bonus"] = bonus_percent
-                            pet_bonus_info["golden_fox_name"] = pet.pet_name
+                    if energy_consumed:
+                        from storage.pet_store import pet_catalog
+                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                        if pet_def and pet.level >= 3:  # Уровень разблокировки Золотой лапы
+                            ability = pet_def["abilities"][1]
+                            if ability["name"] == "Золотая лапа":
+                                effectiveness = pet.get_ability_effectiveness()
+                                min_val = ability.get("min_val", 0)
+                                max_val = ability.get("max_val", 0)
+                                bonus_percent = min_val + (max_val - min_val) * effectiveness
+                                bonus_coins = int(coins_amount * (bonus_percent / 100))
+                                coins_amount += bonus_coins
+                                pet_bonus_info["golden_fox_bonus"] = bonus_percent
+                                pet_bonus_info["golden_fox_name"] = pet.pet_name
             except Exception as e:
                 logger.error(f"Error applying pet bonus to case: {e}")
 

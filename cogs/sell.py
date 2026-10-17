@@ -95,21 +95,25 @@ class SellCog(commands.Cog):
             pet = await pet_store.get_user_pet(guild_id, interaction.user.id)
 
             if pet and pet.fullness > 0:
-                from storage.pet_store import pet_catalog
-                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(guild_id, interaction.user.id, "sell")
 
-                if pet_def and pet.level >= 7:  # Уровень разблокировки Чёрного рынка
-                    ability = pet_def["abilities"][2]
-                    if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
-                        effectiveness = pet.get_ability_effectiveness()
-                        min_val = ability.get("min_val", 0)
-                        max_val = ability.get("max_val", 0)
-                        bonus_value = min_val + (max_val - min_val) * effectiveness
-                        fee_reduction = bonus_value / 100
-                        base_sell_percent = base_sell_percent * (1 - fee_reduction)
-                        pet_bonus_info["bonus_value"] = bonus_value
-                        pet_bonus_info["pet_name"] = pet.pet_name
-                        pet_bonus_info["ability_name"] = ability["name"]
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                    if pet_def and pet.level >= 7:  # Уровень разблокировки Чёрного рынка
+                        ability = pet_def["abilities"][2]
+                        if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
+                            effectiveness = pet.get_ability_effectiveness()
+                            min_val = ability.get("min_val", 0)
+                            max_val = ability.get("max_val", 0)
+                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            fee_reduction = bonus_value / 100
+                            base_sell_percent = base_sell_percent * (1 - fee_reduction)
+                            pet_bonus_info["bonus_value"] = bonus_value
+                            pet_bonus_info["pet_name"] = pet.pet_name
+                            pet_bonus_info["ability_name"] = ability["name"]
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Error applying pet bonus to sell: {e}")

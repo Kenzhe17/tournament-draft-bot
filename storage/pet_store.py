@@ -197,21 +197,24 @@ class PetStore:
             pet = self._row_to_pet(row)
             now = datetime.now(timezone.utc)
 
-            # Рассчитать прошедшее время с последнего кормления
+            # Рассчитать прошедшее время с последнего обновления
             hours_since_fed = (now - pet.last_fed_at).total_seconds() / 3600
-            fullness_loss = int(hours_since_fed / 6 * 5)  # 5 каждые 6 часов
+            hours_since_energy = (now - pet.last_energy_update_at).total_seconds() / 3600
+
+            # Пассивное уменьшение энергии (2 в час)
+            energy_loss = int(hours_since_energy * 2)
+            pet.energy = max(0, pet.energy - energy_loss)
+
+            # Пассивное уменьшение еды
+            # Если энергии нет, еда уходит в 2 раза быстрее
+            fullness_multiplier = 2 if pet.energy == 0 else 1
+            fullness_loss = int(hours_since_fed / 6 * 5 * fullness_multiplier)  # 5 каждые 6 часов (или 10 если нет энергии)
             pet.fullness = max(0, pet.fullness - fullness_loss)
 
             # Проверить смерть
             if pet.fullness <= 0:
                 await self.delete_pet(pet_id)
                 return True, None
-
-            # Восстановление энергии (только если сытость > 70)
-            if pet.fullness > 70:
-                hours_since_energy = (now - pet.last_energy_update_at).total_seconds() / 3600
-                energy_gain = int(hours_since_energy * 10)  # 10 в час
-                pet.energy = min(100, pet.energy + energy_gain)
 
             # Обновить таймстампы
             pet.last_fed_at = now
@@ -270,8 +273,27 @@ class PetStore:
                 return False
 
             pet.energy -= amount
+            pet.last_energy_update_at = datetime.now(timezone.utc)
             await self.update_pet(pet)
             return True
+
+    async def consume_energy_for_ability(self, guild_id: int, user_id: int, action: str) -> bool:
+        """Списать энергию за использование способности.
+
+        action может быть: 'case_open', 'pay', 'rob', 'rob_defense', 'elo_match'
+        Возвращает True если энергии хватило и она была списана.
+        """
+        from models.pet import ENERGY_COSTS
+
+        energy_cost = ENERGY_COSTS.get(action, 0)
+        if energy_cost == 0:
+            return True  # Без затрат энергии
+
+        pet = await self.get_user_pet(guild_id, user_id)
+        if not pet or pet.energy < energy_cost:
+            return False
+
+        return await self.use_energy(pet.pet_id, energy_cost)
 
     async def rename_pet(self, pet_id: int, new_name: str) -> bool:
         """Переименовать питомца."""
