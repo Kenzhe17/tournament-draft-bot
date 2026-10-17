@@ -1723,6 +1723,8 @@ class TournamentCog(commands.Cog):
 
         # Применить бонус питомца (Щедрый перевод) через новый сервис
         try:
+            import sys
+            sys.path.insert(0, '.')
             from services.pet_effects import get_user_active_pet_bonuses
             bonuses = await get_user_active_pet_bonuses(interaction.user.id)
             logger.info(f"Pet bonuses for pay: {bonuses}")
