@@ -55,10 +55,8 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     exp = pet_row["exp"]
     max_exp = level * 50  # Динамический порог опыта
 
-    # Формирование блока способностей
-    active_effects = []
-    abilities_status = []
-
+    # Собираем способности в одну лаконичную строку
+    abilities_list = []
     if catalog_data:
         for ab_key in (1, 2):
             ab = catalog_data["abilities"][ab_key]
@@ -67,51 +65,30 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             desc_val = ab["desc_template"].format(val=f"{val:.1f}")
 
             if energy <= 0:
-                abilities_status.append(
-                    f"⚠️ **Ур. {ab['unlock_level']} | {ab['name']}** — *Блокировка (0% энергии)*"
-                )
+                abilities_list.append(f"⚠️ **Ур. {ab['unlock_level']} | {ab['name']}** — *Блокировка (0% энергии)*")
+            elif unlocked:
+                abilities_list.append(f"🔓 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val}")
             else:
-                if unlocked:
-                    abilities_status.append(
-                        f"🔓 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val}"
-                    )
-                    active_effects.append(f"🔥 **[{ab['name']}]:** `{desc_val}`")
-                else:
-                    abilities_status.append(
-                        f"🔒 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val} *(Откроется на {ab['unlock_level']} ур.)*"
-                    )
+                abilities_list.append(f"🔒 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val} *(Откроется на {ab['unlock_level']} ур.)*")
 
-    # Текст активных бонусов
-    if energy <= 0:
-        active_bonuses_text = f"{emoji_dot} ⚠️ *Все пассивные бонусы заблокированы из-за отсутствия энергии!*"
-    elif not active_effects:
-        active_bonuses_text = f"{emoji_dot} 💤 *Пока нет активных бонусов. Достигните 3-го уровня, чтобы разблокировать первую способность!*"
-    else:
-        active_bonuses_text = "\n".join(f"{emoji_dot} {effect}" for effect in active_effects)
+    abilities_formatted = "\n".join(f"{emoji_dot} {item}" for item in abilities_list)
 
     # Статус сытости
     status_warning = ""
-    if fullness <= 30:
+    if fullness <= 0:
+        status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умер от голода!"
+    elif fullness <= 30:
         status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
     elif fullness > 70:
         status_warning = "\n\n✨ *Питомец сыт и восстанавливает энергию!*"
 
-    all_abilities_text = "\n".join(f"{emoji_dot} {status}" for status in abilities_status)
-
     embed = discord.Embed(
         title=f"{emoji_star} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
         description=(
-            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*)\n"
-            f"{emoji_arrow} **Уровень:** `{level}`\n"
-            f"{emoji_arrow} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
-            f"{emoji_arrow} **Состояние:**\n"
-            f"{emoji_dot} 🍖 **Сытость:** `{fullness}%`\n"
-            f"{emoji_dot} ⚡ **Энергия:** `{energy}%`\n"
-            f"{emoji_dot} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
-            f"{emoji_arrow} **Текущие активные бонусы:**\n"
-            f"{active_bonuses_text}\n\n"
-            f"{emoji_arrow} **Все способности:**\n"
-            f"{all_abilities_text}"
+            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*) | **Ур:** `{level}` | **Опекун:** {owner1_mention}{owner2_mention}\n"
+            f"🍖 **Сытость:** `{fullness}%` | ⚡ **Энергия:** `{energy}%` | ✨ **Опыт:** `{exp}/{max_exp} EXP`\n\n"
+            f"📜 **Способности:**\n"
+            f"{abilities_formatted}"
             f"{status_warning}"
         ),
         color=color
