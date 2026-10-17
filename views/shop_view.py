@@ -1560,22 +1560,22 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Обычные питомцы",
                 value="common",
-                description="3,000 • 3 питомца"
+                description="2,100 • 3 питомца"
             ),
             discord.SelectOption(
                 label="Необычные питомцы",
                 value="uncommon",
-                description="5,000 • 2 питомца"
+                description="3,500 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Эпические питомцы",
                 value="epic",
-                description="10,000 • 2 питомца"
+                description="7,000 • 2 питомца"
             ),
             discord.SelectOption(
                 label="Легендарные питомцы",
                 value="legendary",
-                description="20,000 • 1 питомец"
+                description="14,000 • 1 питомец"
             ),
             discord.SelectOption(
                 label="Таинственное яйцо",
