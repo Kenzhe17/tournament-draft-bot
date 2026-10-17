@@ -34,8 +34,12 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
     ab2 = pet["abilities"][2]
 
     # Форматируем описания способностей
-    desc1 = ab1.get("desc_template", ab1.get("desc", ""))
-    desc2 = ab2.get("desc_template", ab2.get("desc", ""))
+    desc1_template = ab1.get("desc_template", ab1.get("desc", ""))
+    desc2_template = ab2.get("desc_template", ab2.get("desc", ""))
+
+    # Заменяем {val} на базовые значения (min_val)
+    desc1 = desc1_template.replace("{val}", str(ab1.get("min_val", 0)))
+    desc2 = desc2_template.replace("{val}", str(ab2.get("min_val", 0)))
 
     # Получаем реальные эмодзи через get_emoji
     emoji_star = get_emoji("a_star")
