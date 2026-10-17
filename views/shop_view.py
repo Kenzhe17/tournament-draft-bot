@@ -1763,17 +1763,25 @@ class BuyPetButton(discord.ui.Button):
                 pet_name=self.pet_id.replace("_", " ").title()
             )
 
+            # Получить изображение питомца из каталога
+            from models.pets_catalog import PETS_CATALOG
+            pet_data = PETS_CATALOG.get(self.pet_id, {})
+            pet_image = pet_data.get("image_url", "")
+
             embed = discord.Embed(
                 title=replace_emojis("✅ Питомец куплен!"),
                 description=(
-                    f"{replace_emojis('a_sparkle')} **Питомец:** {pet.pet_name}\n"
-                    f"{replace_emojis('white_dot')} **Уровень:** {pet.level}\n"
-                    f"{replace_emojis('white_dot')} **Сытость:** {pet.fullness}/100\n"
-                    f"{replace_emojis('white_dot')} **Энергия:** {pet.energy}/100\n\n"
-                    f"Используйте `/pet profile` для управления питомцем."
+                    f"{replace_emojis('⚪')} **Информация:**\n"
+                    f"{replace_emojis('sub_middle')} Питомец: {pet.pet_name}\n"
+                    f"{replace_emojis('sub_middle')} Уровень: {pet.level}\n"
+                    f"{replace_emojis('sub_middle')} Сытость: {pet.fullness}/100\n"
+                    f"{replace_emojis('sub_directory')} Энергия: {pet.energy}/100\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Используйте `/pet profile` для управления питомцем."
                 ),
-                color=discord.Color.green()
+                color=discord.Color.from_rgb(69, 69, 69)
             )
+            if pet_image:
+                embed.set_thumbnail(url=pet_image)
 
             await interaction.response.edit_message(embed=embed, view=None)
         except Exception as e:
@@ -1829,9 +1837,10 @@ class OpenEggButton(discord.ui.Button):
         if result["type"] == "nothing":
             embed = discord.Embed(
                 title=replace_emojis("😔 Пустое яйцо"),
-                description="Вам не выпал питомец. Попробуйте ещё раз!",
-                color=discord.Color.red()
+                description=f"{replace_emojis('white_dot')} Вам не выпал питомец. Попробуйте ещё раз!\n\n{replace_emojis('a_dot_smaller')} Шанс питомца: 20%",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
+            embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1560907251412238396/1560935450800029756/output-removebg-preview.png?ex=6ad485ec&is=6ad3346c&hm=6ecda6ff1780bf054b2727904fa9115ee51a889dffbb049b36139be1b7772153&")
             # Удалить ephemeral сообщение и отправить публичное
             await interaction.response.edit_message(content="❌", embed=None, view=None)
             await interaction.followup.send(embed=embed)
@@ -1846,16 +1855,23 @@ class OpenEggButton(discord.ui.Button):
                     pet_name=pet_def.name
                 )
 
+                # Получить изображение питомца из каталога
+                from models.pets_catalog import PETS_CATALOG
+                pet_image = pet_def.get("image_url", "")
+
                 embed = discord.Embed(
                     title=replace_emojis("🎉 Питомец выпал!"),
                     description=(
-                        f"{replace_emojis('a_sparkle')} **Питомец:** {pet.pet_name}\n"
-                        f"{replace_emojis('white_dot')} **Редкость:** {pet_def.rarity.value}\n"
-                        f"{replace_emojis('white_dot')} **Уровень:** {pet.level}\n\n"
-                        f"Используйте `/pet profile` для управления питомцем."
+                        f"{replace_emojis('⚪')} **Информация:**\n"
+                        f"{replace_emojis('sub_middle')} Питомец: {pet.pet_name}\n"
+                        f"{replace_emojis('sub_middle')} Редкость: {pet_def.rarity.value}\n"
+                        f"{replace_emojis('sub_directory')} Уровень: {pet.level}\n\n"
+                        f"{replace_emojis('a_dot_smaller')} Используйте `/pet profile` для управления питомцем."
                     ),
-                    color=discord.Color.green()
+                    color=discord.Color.from_rgb(69, 69, 69)
                 )
+                if pet_image:
+                    embed.set_thumbnail(url=pet_image)
 
                 # Удалить ephemeral сообщение и отправить публичное
                 await interaction.response.edit_message(content="✅", embed=None, view=None)
