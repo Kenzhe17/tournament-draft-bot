@@ -444,17 +444,17 @@ async def init_db() -> None:
                 "SELECT EXISTS (SELECT 1 FROM db_migrations WHERE migration_name = 'reset_betting_stats_2024')"
             )
             if migration_exists:
-                return  # Migration already run
+                pass  # Migration already run, skip but continue with table creation
+            else:
+                # Apply migration: reset betting statistics
+                await conn.execute("TRUNCATE TABLE betting_stats")
 
-        # Apply migration: reset betting statistics
-        await conn.execute("TRUNCATE TABLE betting_stats")
-
-        # Record migration
-        await conn.execute("""
-            INSERT INTO db_migrations (migration_name)
-            VALUES ('reset_betting_stats_2024')
-            ON CONFLICT (migration_name) DO NOTHING
-        """)
+                # Record migration
+                await conn.execute("""
+                    INSERT INTO db_migrations (migration_name)
+                    VALUES ('reset_betting_stats_2024')
+                    ON CONFLICT (migration_name) DO NOTHING
+                """)
 
         # Create minigames table
         await conn.execute("""
