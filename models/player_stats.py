@@ -28,6 +28,7 @@ class PlayerStats:
     best_match_kills: int = 0
     total_elo_change: int = 0
     last_elo_change: int = 0  # Sum of all ELO changes
+    last_pet_elo_bonus: int = 0  # Pet bonus applied to last ELO change
 
     # Stats for last 20 matches only
     last_20_kills: int = 0
@@ -68,6 +69,7 @@ class PlayerStats:
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
             "last_elo_change": self.last_elo_change,
+            "last_pet_elo_bonus": self.last_pet_elo_bonus,
             "last_20_kills": self.last_20_kills,
             "last_20_deaths": self.last_20_deaths,
             "last_20_wins": self.last_20_wins,
@@ -105,6 +107,7 @@ class PlayerStats:
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
             last_elo_change=data.get("last_elo_change", 0),
+            last_pet_elo_bonus=data.get("last_pet_elo_bonus", 0),
             last_20_kills=data.get("last_20_kills", 0),
             last_20_deaths=data.get("last_20_deaths", 0),
             last_20_wins=data.get("last_20_wins", 0),

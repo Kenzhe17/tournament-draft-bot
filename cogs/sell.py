@@ -86,15 +86,18 @@ class SellCog(commands.Cog):
         base_price = item.price
         base_sell_percent = 0.5
 
+        # Бонусы питомцев для отслеживания
+        pet_bonus_info = {"bonus_value": 0, "pet_name": None, "ability_name": None}
+
         # Применить бонус питомца (Чёрный рынок / Торговый нюх)
         try:
             from storage.pet_store import pet_store
             pet = await pet_store.get_user_pet(guild_id, interaction.user.id)
-            
+
             if pet and pet.fullness > 0:
                 from storage.pet_store import pet_catalog
                 pet_def = pet_catalog.get_pet(pet.pet_type.value)
-                
+
                 if pet_def and pet.level >= 7:  # Уровень разблокировки Чёрного рынка
                     ability = pet_def["abilities"][2]
                     if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
@@ -104,14 +107,12 @@ class SellCog(commands.Cog):
                         bonus_value = min_val + (max_val - min_val) * effectiveness
                         fee_reduction = bonus_value / 100
                         base_sell_percent = base_sell_percent * (1 - fee_reduction)
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
+                        pet_bonus_info["bonus_value"] = bonus_value
+                        pet_bonus_info["pet_name"] = pet.pet_name
+                        pet_bonus_info["ability_name"] = ability["name"]
         except Exception as e:
-            logger.error(f"Error applying pet bonus to sell: {e}")
-            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
-        if pet_bonus["bonus_applied"]:
-            # Снижение комиссии до 35-45% от исходной
-            fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.45
-            base_sell_percent = base_sell_percent * (1 - fee_reduction)
+            import logging
+            logging.getLogger(__name__).error(f"Error applying pet bonus to sell: {e}")
 
         sell_price = math.floor(base_price * base_sell_percent)
 
@@ -119,7 +120,19 @@ class SellCog(commands.Cog):
         await remove_user_item(guild_id, interaction.user.id, item.id)
         await add_balance(guild_id, interaction.user.id, sell_price)
 
-        # 5. Красивый Embed ответа
+        # 5. Формировать текст бонуса питомца
+        pet_bonus_text = ""
+        if pet_bonus_info["bonus_value"] > 0:
+            pet_name = pet_bonus_info["pet_name"]
+            ability_name = pet_bonus_info["ability_name"]
+            bonus_value = pet_bonus_info["bonus_value"]
+
+            if ability_name == "Чёрный рынок":
+                pet_bonus_text = f"\n\n🐾 **Енот-грабитель ({pet_name}):** Комиссия Чёрного рынка снижена на **-{bonus_value:.1f}%**!"
+            elif ability_name == "Торговый нюх":
+                pet_bonus_text = f"\n\n🐾 **Мимик-собиратель ({pet_name}):** Торговый сбор уменьшен на **-{bonus_value:.1f}%**!"
+
+        # 6. Красивый Embed ответа
         embed = discord.Embed(
             title=f"{get_emoji('a_star')} **ПРОДАЖА ПРЕДМЕТА**",
             description=(
@@ -127,7 +140,7 @@ class SellCog(commands.Cog):
                 f"{get_emoji('white_arrow')} **Продан предмет:** `{item.name}`\n"
                 f"{get_emoji('white_arrow')} **Цена в магазине:** `{base_price:,}` {get_emoji('money')}\n"
                 f"{get_emoji('white_arrow')} **Выручка (50%):** **`{sell_price:,}`** {get_emoji('money')}\n\n"
-                f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс.*"
+                f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс.*{pet_bonus_text}"
             ),
             color=0x2ECC71
         )

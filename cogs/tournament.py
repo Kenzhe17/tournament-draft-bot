@@ -917,13 +917,20 @@ class TournamentCog(commands.Cog):
 
         # Last ELO Change
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
+        pet_elo_bonus = stats.last_pet_elo_bonus if hasattr(stats, 'last_pet_elo_bonus') else 0
+
+        # Format ELO change with bonus
+        if pet_elo_bonus != 0:
+            elo_display = f"(Last: {elo_change:+d}{pet_elo_bonus:+d})"
+        else:
+            elo_display = f"(Last: {elo_change:+d})"
 
         # Build description
         description_parts = ["Основная информация и статистика игрока:\n"]
 
         # Ранг, ELO, Уровень
         description_parts.append(f"{replace_emojis('white_dot')} Ранг: {rank_title}")
-        description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
+        description_parts.append(f"{replace_emojis('sub_middle')} ELO: {int(stats.elo):,} `{elo_display}`")
         description_parts.append(f"{replace_emojis('sub_directory')} Уровень: Level {stats.level}")
         description_parts.append("")
 

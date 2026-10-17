@@ -236,30 +236,35 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             )
 
             # Apply pet ability bonus to ELO change (Arena Wolf)
+            pet_elo_bonus = 0
             try:
                 from storage.pet_store import pet_store
                 pet = await pet_store.get_user_pet(guild_id, user_id)
-                
+
                 if pet and pet.fullness > 0:
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
-                    
+
                     if pet_def:
                         ability = pet_def["abilities"][1] if team_won else pet_def["abilities"][2]
                         ability_name = ability["name"]
-                        
+
                         if ((team_won and ability_name == "Жажда победы" and pet.level >= 3) or
                             (not team_won and ability_name == "Несломленный дух" and pet.level >= 7)):
                             effectiveness = pet.get_ability_effectiveness()
                             min_val = ability.get("min_val", 0)
                             max_val = ability.get("max_val", 0)
                             bonus_percent = min_val + (max_val - min_val) * effectiveness
-                            
+
                             if team_won:
+                                original_elo = elo_change
                                 elo_change = int(elo_change * (1 + bonus_percent / 100))
+                                pet_elo_bonus = elo_change - original_elo
                             else:
+                                original_elo = elo_change
                                 loss_reduction = bonus_percent / 100
                                 elo_change = int(elo_change * (1 - loss_reduction))
+                                pet_elo_bonus = elo_change - original_elo
             except Exception as e:
                 logger.error(f"Error applying pet ELO bonus: {e}")
 
@@ -271,6 +276,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 elo_change=elo_change,
                 team_won=team_won
             )
+
+            # Save pet ELO bonus for profile display
+            updated_stats.last_pet_elo_bonus = pet_elo_bonus
 
             # Increment games count for this match
             updated_stats.games += 1
