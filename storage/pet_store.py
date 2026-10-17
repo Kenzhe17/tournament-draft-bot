@@ -225,13 +225,14 @@ class PetStore:
             # Если сытость 0 более 24 часов - автоматический побег
             if pet.fullness == 0 and pet.hunger_started_at:
                 hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Pet {pet.pet_name} fullness=0, hours_hungry={hours_hungry:.1f}")
                 if hours_hungry >= 24:
                     await self.delete_pet(pet_id)
                     # Отправить уведомление о побеге
                     if guild_id and bot:
                         try:
-                            import logging
-                            logger = logging.getLogger(__name__)
                             logger.info(f"Pet {pet.pet_name} ran away from hunger after {hours_hungry:.1f} hours")
                             hunger_channel = bot.get_channel(1551167853741219880)
                             if hunger_channel:
@@ -301,10 +302,6 @@ class PetStore:
             is_dead, pet = await self.check_fullness_and_energy(pet_id)
             if is_dead or not pet:
                 return False, "Питомец умер"
-
-            if pet.fullness <= 0:
-                await self.delete_pet(pet_id)
-                return False, "Питомец умер от голода"
 
             # Обновить сытость и энергию
             pet.fullness = min(100, pet.fullness + fullness_gain)
