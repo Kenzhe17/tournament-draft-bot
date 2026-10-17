@@ -639,26 +639,26 @@ class CoOwnerInviteView(discord.ui.View):
 
     @discord.ui.button(label="Принять предложение", style=discord.ButtonStyle.success, custom_id="pet_coowner:accept")
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Проверка: нажать может только тот, кого пригласили
         if interaction.user.id != self.target_id:
-            await interaction.response.send_message(
-                replace_emojis("❌ Это предложение адресовано не вам!"),
-                ephemeral=True
-            )
+            await interaction.response.send_message(f"{EMOJI_DOT} Это предложение адресовано не вам!", ephemeral=True)
             return
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Проверяем, не появился ли у целевого пользователя уже свой питомец
             existing_pet = await conn.fetchrow(
                 "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
                 self.target_id
             )
             if existing_pet:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Вы не можете стать со-опекуном, так как у вас уже есть питомец!"),
+                    f"{EMOJI_DOT} Вы не можете стать со-опекуном, так как у вас уже есть питомец или вы являетесь со-опекуном другого!", 
                     ephemeral=True
                 )
                 return
 
+            # Обновляем запись в БД (записываем второго владельца)
             await conn.execute(
                 "UPDATE pets SET owner_2_id = $1 WHERE pet_id = $2",
                 self.target_id, self.pet_row["pet_id"]
@@ -668,16 +668,17 @@ class CoOwnerInviteView(discord.ui.View):
         pet_name = self.pet_row["pet_name"]
 
         success_embed = discord.Embed(
-            title=replace_emojis("НОВЫЙ СО-ОПЕКУН | УСПЕШНО"),
+            title=f"{EMOJI_STAR} **НОВЫЙ СО-ОПЕКУН | УСПЕШНО**",
             description=(
-                f"{replace_emojis('a_sparkle')} {interaction.user.mention} принял предложение и стал со-опекуном питомца **{pet_name}**!\n\n"
-                f"**Первый опекун:** {owner_mention}\n"
-                f"**Второй опекун:** {interaction.user.mention}\n\n"
-                f"{replace_emojis('white_dot')} *Теперь вы оба можете кормить питомца и ухаживать за ним через `/pet profile`!*"
+                f"{EMOJI_SPARKLE} {interaction.user.mention} принял предложение и стал со-опекуном питомца **{pet_name}**!\n\n"
+                f"{EMOJI_ARROW} **Первый опекун:** {owner_mention}\n"
+                f"{EMOJI_ARROW} **Второй опекун:** {interaction.user.mention}\n\n"
+                f"{EMOJI_DOT} *Теперь вы оба можете кормить питомца и ухаживать за ним через `/pet profile`!*"
             ),
-            color=discord.Color.green()
+            color=0x2ECC71  # Пастельно-зеленый
         )
 
+        # Отключаем кнопки и обновляем публичное сообщение
         for child in self.children:
             child.disabled = True
 
@@ -686,29 +687,21 @@ class CoOwnerInviteView(discord.ui.View):
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.secondary, custom_id="pet_coowner:decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.target_id:
-            await interaction.response.send_message(
-                replace_emojis("❌ Это предложение адресовано не вам!"),
-                ephemeral=True
-            )
+            await interaction.response.send_message(f"{EMOJI_DOT} Это предложение адресовано не вам!", ephemeral=True)
             return
 
         owner_mention = f"<@{self.owner_id}>"
         
         decline_embed = discord.Embed(
-            title=replace_emojis("ПРЕДЛОЖЕНИЕ ОТКЛОНЕНО"),
+            title=f"{EMOJI_STAR} **ПРЕДЛОЖЕНИЕ ОТКЛОНЕНО**",
             description=(
-                f"{replace_emojis('white_dot')} {interaction.user.mention} отклонил предложение стать со-опекуном питомца **{self.pet_row['pet_name']}**.\n\n"
+                f"{EMOJI_DOT} {interaction.user.mention} отклонил предложение стать со-опекуном питомца **{self.pet_row['pet_name']}**.\n\n"
                 f"> {owner_mention}, ваш питомец остаётся под вашей единоличной опекой."
             ),
-            color=discord.Color.red()
+            color=0xE74C3C
         )
 
         for child in self.children:
             child.disabled = True
 
         await interaction.response.edit_message(embed=decline_embed, view=self)
-
-
-async def setup(bot: commands.Bot) -> None:
-    """Настроить cog."""
-    await bot.add_cog(PetCog(bot))
