@@ -281,7 +281,7 @@ MYSTERY_EGG_DATA = {
     "category": "Лотерея компаньонов",
     "price": 1000,
     "color": 0xF1C40F,
-    "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909867575672842/Eight_Fantasy_Creature_Portraits-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=abe44e294e68eb90b03f096fe3cbe3a933912797b24850d7fd5a79cdf09fdf5d&=&format=webp&quality=lossless",
+    "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560918277125967963/mythic_egg_92177005617456119468743173808181512483.png?ex=6ad475ed&is=6ad3246d&hm=20b7ccdec0639377dacd5758f1e3fb8812070d872676d70f1e7326c2e9676a3d&=&format=webp&quality=lossless",
     "description": (
         "Испытай удачу! Внутри может оказаться питомец любой редкости — от обычного "
         "Золотого лиса до легендарного Волка арены. Но будь осторожен: яйцо может оказаться пустым."

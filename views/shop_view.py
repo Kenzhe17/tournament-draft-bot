@@ -1631,7 +1631,7 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     )
 
     if pet_def.get("image_url"):
-        embed.set_image(url=pet_def["image_url"])
+        embed.set_thumbnail(url=pet_def["image_url"])
 
     # Создать View с кнопками
     view = discord.ui.View(timeout=180)
@@ -1661,7 +1661,7 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
     )
 
     if MYSTERY_EGG_DATA.get("image_url"):
-        embed.set_image(url=MYSTERY_EGG_DATA["image_url"])
+        embed.set_thumbnail(url=MYSTERY_EGG_DATA["image_url"])
 
     view = discord.ui.View(timeout=180)
     view.add_item(OpenEggButton())

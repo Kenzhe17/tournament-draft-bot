@@ -110,7 +110,7 @@ class PetCog(commands.Cog):
         )
 
         if pet_def.get("image_url"):
-            embed.set_image(url=pet_def["image_url"])
+            embed.set_thumbnail(url=pet_def["image_url"])
 
         # Владельцы
         owner_info = f"<@{pet.owner_1_id}>"
