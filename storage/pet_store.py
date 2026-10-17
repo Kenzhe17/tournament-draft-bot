@@ -326,7 +326,7 @@ class PetStore:
             return True
 
     async def consume_energy_for_ability(self, guild_id: int, user_id: int, action: str) -> bool:
-        """Списать энергию за использование способности.
+        """Списать энергию и сытость за использование способности.
 
         action может быть: 'case_open', 'pay', 'rob', 'rob_defense', 'elo_match'
         Возвращает True если энергии хватило и она была списана.
@@ -341,7 +341,21 @@ class PetStore:
         if not pet or pet.energy < energy_cost:
             return False
 
-        return await self.use_energy(pet.pet_id, energy_cost)
+        # Списать энергию
+        success = await self.use_energy(pet.pet_id, energy_cost)
+        if not success:
+            return False
+
+        # Списать сытость (2 единицы за использование способности)
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE pets SET fullness = GREATEST(0, fullness - 2) WHERE pet_id = $1",
+                pet.pet_id
+            )
+
+        return True
 
     async def rename_pet(self, pet_id: int, new_name: str) -> bool:
         """Переименовать питомца."""
