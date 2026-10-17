@@ -84,11 +84,11 @@ class PetCog(commands.Cog):
 
         # Способность 1
         icon_1 = "🔓" if pet.can_use_ability(ab1["unlock_level"]) else f"🔒 Ур. {ab1['unlock_level']}+"
-        desc_1 = f"{icon_1} **{ab1['name']}** — {ab1['desc_template'].format(val=f\"{ab1['min_val']}–{ab1['max_val']}\")}"
+        desc_1 = f"{icon_1} **{ab1['name']}** — {ab1['desc_template'].format(val=f\"{ab1['min_val']}-{ab1['max_val']}\")}"
 
         # Способность 2
         icon_2 = "🔓" if pet.can_use_ability(ab2["unlock_level"]) else f"🔒 Ур. {ab2['unlock_level']}+"
-        desc_2 = f"{icon_2} **{ab2['name']}** — {ab2['desc_template'].format(val=f\"{ab2['min_val']}–{ab2['max_val']}\")}"
+        desc_2 = f"{icon_2} **{ab2['name']}** — {ab2['desc_template'].format(val=f\"{ab2['min_val']}-{ab2['max_val']}\")}"
 
         embed = discord.Embed(
             title=replace_emojis(f"🐾 {pet.pet_name}"),
