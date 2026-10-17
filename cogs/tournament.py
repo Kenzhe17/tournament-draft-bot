@@ -2292,7 +2292,7 @@ def get_rank_emoji(level: int) -> str:
 
 class GuideSelectMenu(discord.ui.Select):
     """Выпадающее меню для гайда."""
-    
+
     def __init__(self, current=None):
         self.current = current
         options = [
@@ -2315,6 +2315,11 @@ class GuideSelectMenu(discord.ui.Select):
                 label="Магазин",
                 description="Покупка ролей и инвентарь",
                 value="shop"
+            ),
+            discord.SelectOption(
+                label="Питомцы",
+                description="RPG-питомцы с способностями",
+                value="pets"
             ),
             discord.SelectOption(
                 label="Мини-игры",
@@ -2419,6 +2424,15 @@ class GuideSelectMenu(discord.ui.Select):
             view = GuideView(current="shop")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+        elif self.values[0] == "pets":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ПИТОМЦЫ  {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **RPG-система питомцев с уникальными способностями**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet profile` — Профиль питомца, сытость, энергия и способности\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet release` — Отпустить питомца (удалить навсегда)\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet coowner @игрок` — Предложить со-опекунство\n\n{replace_emojis('white_dot')} **Покупка и уход:**\n{replace_emojis('a_dot_smaller')} Питомцы покупаются через `/shop` → Питомцы\n{replace_emojis('a_dot_smaller')} Кормление стоит 50 монет (+20 сытость, +5 энергия, +5 EXP)\n{replace_emojis('a_dot_smaller')} Таинственное яйцо (500 монет) — шанс 20% на питомца\n\n{replace_emojis('white_dot')} **Цены по редкости:**\n{replace_emojis('a_dot_smaller')} Обычный {replace_emojis('white_arrow')} `3,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Необычный {replace_emojis('white_arrow')} `8,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Эпический {replace_emojis('white_arrow')} `15,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Легендарный {replace_emojis('white_arrow')} `30,000` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = GuideView(current="pets")
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
         elif self.values[0] == "games":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: МИНИ-ИГРЫ  {replace_emojis('a_star')}",
@@ -2461,6 +2475,11 @@ class GuideSelectMenu(discord.ui.Select):
                 value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных мутов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Мут на 1 час**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
                 inline=False
             )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 3. Наказания за пред (предательство)",
+                value="**Пред** — капитан не заполнил статистику, ушёл AFK или вышел без причины по решению администратора.\n\nСистема наказаний за пред:\n\n• **1 пред:** Мут на **3 часа**\n• **2 пред:** Мут на **6 часов**\n• **3 пред:** Мут на **12 часов**\n• **4 пред:** Мут на **1 день**\n• **5 пред:** Мут на **3 дня**\n\n> 📝 **Примечание:** Администрация самостоятельно определяет, является ли поведение предом на основе наблюдений и обстоятельств.",
+                inline=False
+            )
             view = GuideView(current="rules")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -2498,6 +2517,11 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 label="Магазин",
                 description="Покупка ролей и инвентарь",
                 value="shop"
+            ),
+            discord.SelectOption(
+                label="Питомцы",
+                description="RPG-питомцы с способностями",
+                value="pets"
             ),
             discord.SelectOption(
                 label="Мини-игры",
@@ -2602,6 +2626,15 @@ class HelpGuideSelectMenu(discord.ui.Select):
             view = HelpGuideView(current="shop")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+        elif self.values[0] == "pets":
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')}  РАЗДЕЛ: ПИТОМЦЫ  {replace_emojis('a_star')}",
+                description=f"{replace_emojis('white_arrow')} **RPG-система питомцев с уникальными способностями**\n\n{replace_emojis('white_dot')} **Доступные команды:**\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet profile` — Профиль питомца, сытость, энергия и способности\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet release` — Отпустить питомца (удалить навсегда)\n{replace_emojis('a_dot_smaller')} {replace_emojis('white_arrow')} `/pet coowner @игрок` — Предложить со-опекунство\n\n{replace_emojis('white_dot')} **Покупка и уход:**\n{replace_emojis('a_dot_smaller')} Питомцы покупаются через `/shop` → Питомцы\n{replace_emojis('a_dot_smaller')} Кормление стоит 50 монет (+20 сытость, +5 энергия, +5 EXP)\n{replace_emojis('a_dot_smaller')} Таинственное яйцо (500 монет) — шанс 20% на питомца\n\n{replace_emojis('white_dot')} **Цены по редкости:**\n{replace_emojis('a_dot_smaller')} Обычный {replace_emojis('white_arrow')} `3,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Необычный {replace_emojis('white_arrow')} `8,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Эпический {replace_emojis('white_arrow')} `15,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Легендарный {replace_emojis('white_arrow')} `30,000` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            view = HelpGuideView(current="pets")
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
         elif self.values[0] == "games":
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')}  РАЗДЕЛ: МИНИ-ИГРЫ  {replace_emojis('a_star')}",
@@ -2642,6 +2675,11 @@ class HelpGuideSelectMenu(discord.ui.Select):
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 2. Регламент турниров",
                 value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных мутов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Мут на 12 часов**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Мут на 1 час**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} 3. Наказания за пред (предательство)",
+                value="**Пред** — капитан не заполнил статистику, ушёл AFK или вышел без причины по решению администратора.\n\nСистема наказаний за пред:\n\n• **1 пред:** Мут на **3 часа**\n• **2 пред:** Мут на **6 часов**\n• **3 пред:** Мут на **12 часов**\n• **4 пред:** Мут на **1 день**\n• **5 пред:** Мут на **3 дня**\n\n> 📝 **Примечание:** Администрация самостоятельно определяет, является ли поведение предом на основе наблюдений и обстоятельств.",
                 inline=False
             )
             view = HelpGuideView(current="rules")
