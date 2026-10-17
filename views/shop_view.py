@@ -731,12 +731,12 @@ class BuyButton(discord.ui.Button):
     """Кнопка покупки товара."""
 
     def __init__(self, item_id: str, price: int, item_type: str = "icon"):
-        label_text = f"✔ Купить за {price} " + get_emoji("money")
+        label_text = f"✔ Купить за {price}"
         if item_type == "tag":
-            label_text = f"✔ Примерить и купить за {price} " + get_emoji("money")
+            label_text = f"✔ Примерить и купить за {price}"
         elif item_type == "role":
-            label_text = f"✔ Купить роль за {price} " + get_emoji("money")
-        
+            label_text = f"✔ Купить роль за {price}"
+
         super().__init__(
             style=discord.ButtonStyle.success,
             label=label_text,
@@ -1428,7 +1428,7 @@ class RolesButton(discord.ui.Button):
             can_buy = user_level >= role.required_level
             level_req = f" (Lvl {role.required_level}+)" if role.required_level > 0 else ""
 
-            label = f"{role.name} - {role.price} " + get_emoji("money") + level_req
+            label = f"{role.name} - {role.price}{level_req}"
             button = RoleBuyButton(role.id, label, can_buy)
             view.add_item(button)
 
