@@ -65,11 +65,16 @@ class PetStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Найти питомца пользователя (как owner_1 или owner_2)
-            row = await conn.fetchrow(
-                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
-                user_id
-            )
+            try:
+                # Найти питомца пользователя (как owner_1 или owner_2)
+                row = await conn.fetchrow(
+                    "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                    user_id
+                )
+            except asyncpg.UndefinedTableError:
+                # Таблица ещё не создана
+                return None
+
             if not row:
                 return None
 
@@ -109,8 +114,6 @@ class PetStore:
                 )
 
                 pet = self._row_to_pet(row)
-
-                # NOTE: pet_care_slots table removed - using direct owner checks
 
         return pet
 
@@ -299,12 +302,16 @@ class PetStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Проверяем есть ли у пользователя питомец (как owner_1 или owner_2)
-            row = await conn.fetchrow(
-                "SELECT pet_id FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
-                user_id
-            )
-            return row is None
+            try:
+                # Проверяем есть ли у пользователя питомец (как owner_1 или owner_2)
+                row = await conn.fetchrow(
+                    "SELECT pet_id FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                    user_id
+                )
+                return row is None
+            except asyncpg.UndefinedTableError:
+                # Таблица ещё не создана - считаем что слот свободен
+                return True
 
     async def open_mystery_egg(self) -> dict:
         """Открыть таинственное яйцо. Возвращает результат."""
