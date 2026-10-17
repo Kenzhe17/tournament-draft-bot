@@ -565,6 +565,8 @@ async def init_db() -> None:
         if not case_store.get_all_cases():
             case_store._initialize_default_cases()
 
+        logger.info("Starting pets table creation...")
+
         # Create pets table
         try:
             logger.info("Attempting to create pets table...")
@@ -590,6 +592,7 @@ async def init_db() -> None:
             logger.info("Pets table created/verified successfully")
         except Exception as e:
             logger.error(f"Error creating pets table: {e}", exc_info=True)
+            raise  # Re-raise to see full error
 
         # Create indexes for pets
         try:
