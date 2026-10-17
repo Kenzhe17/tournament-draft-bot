@@ -24,8 +24,10 @@ async def close_pool() -> None:
 
 async def init_db() -> None:
     """Initialize database tables."""
+    logger.info("init_db() called - starting database initialization")
     pool = await get_pool()
     async with pool.acquire() as conn:
+        logger.info("Database connection acquired, starting table creation")
         # Check if table exists
         table_exists = await conn.fetchval("""
             SELECT EXISTS (
