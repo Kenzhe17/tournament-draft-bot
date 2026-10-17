@@ -586,14 +586,6 @@ async def init_db() -> None:
             )
         """)
 
-        # Create pet_care_slots table (ensures one pet per user)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS pet_care_slots (
-                user_id BIGINT PRIMARY KEY,
-                pet_id BIGINT NOT NULL REFERENCES pets(pet_id) ON DELETE CASCADE
-            )
-        """)
-
         # Create pet_invitations table for co-ownership
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS pet_invitations (
