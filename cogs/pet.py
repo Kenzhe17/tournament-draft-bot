@@ -406,37 +406,54 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     embed, file = await build_pet_profile_embed(pet_dict, interaction.guild)
 
     # Создать View с кнопками
-    view = PetProfileView(pet, pet_def)
+    view = PetProfileView(pet, pet_dict)
     if file:
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True, file=file)
+        await interaction.response.send_message(embed=embed, view=view, file=file)
     else:
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view)
 
 
 class PetProfileView(discord.ui.View):
     """View для профиля питомца."""
 
-    def __init__(self, pet, pet_def):
+    def __init__(self, pet, pet_dict):
         super().__init__(timeout=180)
         self.pet = pet
-        self.pet_def = pet_def
-        self.add_item(FeedPetButton(pet.pet_id))
-        self.add_item(RenamePetButton(pet.pet_id))
+        self.pet_dict = pet_dict
+        self.add_item(FeedPetButton(pet.pet_id, pet_dict))
+        self.add_item(RenamePetButton(pet.pet_id, pet_dict))
 
 
 class FeedPetButton(discord.ui.Button):
     """Кнопка кормления питомца."""
 
-    def __init__(self, pet_id: int):
+    def __init__(self, pet_id: int, pet_dict: dict):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Покормить (100 🪙)",
             custom_id=f"feed_pet:{pet_id}"
         )
         self.pet_id = pet_id
+        self.pet_dict = pet_dict
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать кормление."""
+        # Проверить, является ли пользователь опекуном
+        if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
+            await interaction.response.send_message(
+                replace_emojis("❌ Только опекуны могут кормить питомца!"),
+                ephemeral=True
+            )
+            return
+
+        # Проверить сытость
+        if self.pet_dict["fullness"] >= 100:
+            await interaction.response.send_message(
+                replace_emojis("❌ Питомец уже сыт! Сытость: 100%"),
+                ephemeral=True
+            )
+            return
+
         from storage.user_balance_store import user_balance_store
 
         # Проверить баланс
@@ -482,16 +499,25 @@ class FeedPetButton(discord.ui.Button):
 class RenamePetButton(discord.ui.Button):
     """Кнопка переименования питомца."""
 
-    def __init__(self, pet_id: int):
+    def __init__(self, pet_id: int, pet_dict: dict):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Переименовать",
             custom_id=f"rename_pet:{pet_id}"
         )
         self.pet_id = pet_id
+        self.pet_dict = pet_dict
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать модальное окно для переименования."""
+        # Проверить, является ли пользователь опекуном
+        if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
+            await interaction.response.send_message(
+                replace_emojis("❌ Только опекуны могут переименовывать питомца!"),
+                ephemeral=True
+            )
+            return
+
         await interaction.response.send_modal(RenamePetModal(self.pet_id))
 
 
