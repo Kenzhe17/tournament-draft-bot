@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     pass
 
 # Импорт централизованного каталога
-from assets.pets_catalog import PETS_CATALOG, MYSTERY_EGG_DATA
+from models.pets_catalog import PETS_CATALOG, MYSTERY_EGG_DATA
 
 # Вероятности выпадения из таинственного яйца
 EGG_DROP_RATES = {

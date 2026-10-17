@@ -1641,7 +1641,7 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
 
 async def show_mystery_egg(interaction: discord.Interaction) -> None:
     """Показать карточку таинственного яйца."""
-    from assets.pets_catalog import MYSTERY_EGG_DATA
+    from models.pets_catalog import MYSTERY_EGG_DATA
 
     embed = discord.Embed(
         title=replace_emojis("🥚 Таинственное яйцо"),
