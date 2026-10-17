@@ -238,10 +238,10 @@ EXP_REQUIREMENTS = {
 
 # Цены по редкости
 RARITY_PRICES = {
-    PetRarity.COMMON: 2100,
-    PetRarity.UNCOMMON: 3500,
-    PetRarity.EPIC: 7000,
-    PetRarity.LEGENDARY: 14000,
+    PetRarity.COMMON: 3000,
+    PetRarity.UNCOMMON: 8000,
+    PetRarity.EPIC: 15000,
+    PetRarity.LEGENDARY: 30000,
 }
 
 # Затраты энергии по действию

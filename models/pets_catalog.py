@@ -17,7 +17,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ЗОЛОТОЙ ЛИС",
         "rarity": "Обычный",
         "rarity_code": "common",
-        "price": 2100,
+        "price": 3000,
         "color": 0x2ECC71,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909867575672842/Eight_Fantasy_Creature_Portraits-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=abe44e294e68eb90b03f096fe3cbe3a933912797b24850d7fd5a79cdf09fdf5d&=&format=webp&quality=lossless",
         "description": (
@@ -49,7 +49,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ЛИС-РАЗВЕДЧИК",
         "rarity": "Обычный",
         "rarity_code": "common",
-        "price": 2100,
+        "price": 3000,
         "color": 0x2ECC71,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909867063976097/Eight_Fantasy_Creature_Portraits_1_-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=4828b42d01726d0aba8f212c8054a0562986702fff117e3817e76e4a448ec121&=&format=webp&quality=lossless",
         "description": (
@@ -81,7 +81,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | СОВА-КАЗНАЧЕЙ",
         "rarity": "Обычный",
         "rarity_code": "common",
-        "price": 2100,
+        "price": 3000,
         "color": 0x2ECC71,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909866044891267/Eight_Fantasy_Creature_Portraits_2_-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=6106d249b9eaf7fa7e581c9ca8dd436d711a5055b034ccbaa5072dd68e74c1ce&=&format=webp&quality=lossless",
         "description": (
@@ -113,7 +113,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ЕНОТ-ГРАБИТЕЛЬ",
         "rarity": "Необычный",
         "rarity_code": "uncommon",
-        "price": 3500,
+        "price": 8000,
         "color": 0x3498DB,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909865298296964/Eight_Fantasy_Creature_Portraits_3_-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=399f9c5d2ff2405a7df7ab202ceaa260587fa751bd5dc4cfef0b0c542ccd643d&=&format=webp&quality=lossless",
         "description": (
@@ -145,7 +145,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ВОРОН-КОНТРАБАНДИСТ",
         "rarity": "Необычный",
         "rarity_code": "uncommon",
-        "price": 3500,
+        "price": 8000,
         "color": 0x3498DB,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909864853577758/Eight_Fantasy_Creature_Portraits_4_-removebg-preview.png?ex=6ad46e18&is=6ad31c98&hm=812e7a25fc8c6545edef5a5869c68cb6e1d8b3afb5ec0ef41eea1f00416af8a9&=&format=webp&quality=lossless",
         "description": (
@@ -177,7 +177,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | МИМИК-СОБИРАТЕЛЬ",
         "rarity": "Эпический",
         "rarity_code": "epic",
-        "price": 7000,
+        "price": 15000,
         "color": 0x9B59B6,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909864367169546/Eight_Fantasy_Creature_Portraits_5_-removebg-preview.png?ex=6ad46e17&is=6ad31c97&hm=63b8677ae72debb9f2d75e564502306c1ed0c9ab0b76506ab03d9a3dfbccb7ee&=&format=webp&quality=lossless",
         "description": (
@@ -212,7 +212,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ЧЕРЕПАХА-ХРАНИТЕЛЬ",
         "rarity": "Эпический",
         "rarity_code": "epic",
-        "price": 7000,
+        "price": 15000,
         "color": 0x9B59B6,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909863893340271/Eight_Fantasy_Creature_Portraits_6_-removebg-preview.png?ex=6ad46e17&is=6ad31c97&hm=c9c4324602ccb360fac4b328be597d053beb9e7eebddf4758398ac9871cf58ca&=&format=webp&quality=lossless",
         "description": (
@@ -247,7 +247,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "title": "МАГАЗИН | ВОЛК АРЕНЫ",
         "rarity": "Легендарный",
         "rarity_code": "legendary",
-        "price": 14000,
+        "price": 30000,
         "color": 0xF1C40F,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909871325388841/Untitled_Design_2_-removebg-preview.png?ex=6ad46e19&is=6ad31c99&hm=7e382a14300a87550ddd5fdf036e73ea3ae7f64e111e31f73da1a112d8a72fc5&=&format=webp&quality=lossless",
         "description": (
