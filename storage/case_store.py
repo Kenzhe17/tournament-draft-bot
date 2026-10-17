@@ -237,8 +237,11 @@ class CaseStore:
             coins_amount = int(drop_type.split("_")[1])
 
             # Применить бонус питомца к монетам (Золотая лапа)
-            from services.pet_ability_service import pet_ability_service
-            pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_open")
+            try:
+                from services.pet_ability_service import pet_ability_service
+                pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_open")
+            except ImportError:
+                pet_bonus = {"bonus_applied": False, "bonus_value": 0}
             if pet_bonus["bonus_applied"]:
                 bonus_percent = pet_bonus["bonus_value"]  # до 15%
                 bonus_coins = int(coins_amount * (bonus_percent / 100))
@@ -298,8 +301,11 @@ class CaseStore:
         self._add_to_history(guild_id, user_id, case_id, result)
 
         # Проверить дополнительную награду от питомца (Секретный тайник)
-        from services.pet_ability_service import pet_ability_service
-        extra_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_extra_reward")
+        try:
+            from services.pet_ability_service import pet_ability_service
+            extra_bonus = await pet_ability_service.get_pet_bonus(guild_id, user_id, "case_extra_reward")
+        except ImportError:
+            extra_bonus = {"bonus_applied": False, "bonus_value": 0}
         if extra_bonus["bonus_applied"]:
             import random
             bonus_chance = extra_bonus["bonus_value"]  # до 20%

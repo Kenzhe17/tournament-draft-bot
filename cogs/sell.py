@@ -87,8 +87,11 @@ class SellCog(commands.Cog):
         base_sell_percent = 0.5
 
         # Применить бонус питомца (Чёрный рынок / Торговый нюх)
-        from services.pet_ability_service import pet_ability_service
-        pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, interaction.user.id, "sell")
+        try:
+            from services.pet_ability_service import pet_ability_service
+            pet_bonus = await pet_ability_service.get_pet_bonus(guild_id, interaction.user.id, "sell")
+        except ImportError:
+            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
         if pet_bonus["bonus_applied"]:
             # Снижение комиссии до 35-45% от исходной
             fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.45

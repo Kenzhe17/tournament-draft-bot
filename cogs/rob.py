@@ -146,8 +146,11 @@ class RobStartButton(discord.ui.Button):
         base_success_chance = 0.5
 
         # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы / Охотник за вещами)
-        from services.pet_ability_service import pet_ability_service
-        pet_bonus = await pet_ability_service.get_pet_bonus(self.guild_id, self.robber_id, "rob")
+        try:
+            from services.pet_ability_service import pet_ability_service
+            pet_bonus = await pet_ability_service.get_pet_bonus(self.guild_id, self.robber_id, "rob")
+        except ImportError:
+            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
         if pet_bonus["bonus_applied"]:
             base_success_chance += pet_bonus["bonus_value"] / 100  # до +10%
 

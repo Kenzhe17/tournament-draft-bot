@@ -1535,11 +1535,11 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
             f"   - Эпический: 2.4%\n"
             f"   - Легендарный: 0.6%\n\n"
             f"{replace_emojis('white_dot')} **Цены по редкости:**\n"
-            f"   - Обычный: 3,000 {get_emoji('money')}\n"
-            f"   - Необычный: 5,000 {get_emoji('money')}\n"
-            f"   - Эпический: 10,000 {get_emoji('money')}\n"
-            f"   - Легендарный: 20,000 {get_emoji('money')}\n"
-            f"   - Таинственное яйцо: 800 {get_emoji('money')}"
+            f"   - Обычный: 2,100 {get_emoji('money')}\n"
+            f"   - Необычный: 3,500 {get_emoji('money')}\n"
+            f"   - Эпический: 7,000 {get_emoji('money')}\n"
+            f"   - Легендарный: 14,000 {get_emoji('money')}\n"
+            f"   - Таинственное яйцо: 500 {get_emoji('money')}"
         ),
         color=discord.Color.from_rgb(69, 69, 69)
     )

@@ -1722,8 +1722,12 @@ class TournamentCog(commands.Cog):
         base_fee_percent = 0.1
 
         # Применить бонус питомца (Щедрый перевод)
-        from services.pet_ability_service import pet_ability_service
-        pet_bonus = await pet_ability_service.get_pet_bonus(interaction.guild_id, interaction.user.id, "pay")
+        try:
+            from services.pet_ability_service import pet_ability_service
+            pet_bonus = await pet_ability_service.get_pet_bonus(interaction.guild_id, interaction.user.id, "pay")
+        except ImportError:
+            # Если сервис недоступен, пропускаем бонус
+            pet_bonus = {"bonus_applied": False, "bonus_value": 0}
         if pet_bonus["bonus_applied"]:
             # Снижение комиссии до 25% от исходной
             fee_reduction = pet_bonus["bonus_value"] / 100  # до 0.25
