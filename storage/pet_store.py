@@ -339,6 +339,10 @@ class PetStore:
             pet.fullness = min(100, pet.fullness + fullness_gain)
             pet.energy = min(100, pet.energy + energy_gain)
             pet.last_fed_at = datetime.now(timezone.utc)
+            
+            # Сбросить флаг предупреждения если сытость поднялась выше 30
+            if pet.fullness > 30:
+                pet.hunger_warning_sent = False
 
             await self.update_pet(pet)
 
