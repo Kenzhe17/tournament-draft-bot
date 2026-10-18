@@ -77,6 +77,7 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%`\n"
             f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%`\n"
             f"{get_emoji('white_dot')} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
+            f"**Важно:** Способности питомца требуют энергию! Если энергия = 0%, способности не будут работать.\n\n"
             f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
             f"{status_text}"
