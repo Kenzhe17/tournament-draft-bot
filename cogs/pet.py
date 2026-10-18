@@ -993,7 +993,7 @@ class ProtectItemButton(discord.ui.Button):
 
         # Получить инвентарь пользователя
         from storage.shop_store import inventory_store
-        inventory = inventory_store.get_user_inventory(self.interaction.guild_id, interaction.user.id)
+        inventory = inventory_store.get_player_inventory(self.interaction.guild_id, interaction.user.id)
 
         if not inventory:
             await interaction.response.send_message(
