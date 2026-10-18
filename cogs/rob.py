@@ -52,14 +52,15 @@ class RobView(discord.ui.View):
         self.victim_id = victim_id
         self.victim_name = victim_name
 
-    def build_embed(self, status: str = "Взлом замка...") -> discord.Embed:
+    def build_embed(self, status: str = "Взлом замка...", success_chance: float = 0.5) -> discord.Embed:
         """Построить embed для ограбления."""
+        chance_percent = int(success_chance * 100)
         embed = discord.Embed(
             title=f"{get_emoji('a_star')} **ОГРАБЛЕНИЕ** | `/rob`",
             description=(
                 f"{get_emoji('a_sparkle')} **Жертва:** <@{self.victim_id}>\n"
                 f"{get_emoji('white_arrow')} **Грабитель:** <@{self.robber_id}>\n"
-                f"{get_emoji('white_arrow')} **Шанс:** `50%` | **Лимит:** до `100%` баланса\n"
+                f"{get_emoji('white_arrow')} **Шанс:** `{chance_percent}%` | **Лимит:** до `100%` баланса\n"
             ),
             color=0x2B2D31
         )
@@ -564,6 +565,22 @@ class RobCog(commands.Cog):
             )
             return
 
+        # Рассчитать базовый шанс успеха с учётом питомца
+        base_success_chance = 0.5
+        try:
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(interaction.guild_id, interaction.user.id)
+            if pet and pet.energy >= 7:  # Проверяем энергию для способности
+                from storage.pet_store import pet_catalog
+                pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                if pet_def:
+                    ability = pet_def["abilities"][1]
+                    if ability["name"] == "Ловкие лапы":
+                        bonus_value = ability.get("max_val", 0)
+                        base_success_chance += bonus_value / 100
+        except Exception as e:
+            logger.error(f"Error calculating success chance: {e}")
+
         # Создать view
         view = RobView(interaction.guild_id, interaction.user.id, user.id, user.display_name)
         
@@ -578,7 +595,7 @@ class RobCog(commands.Cog):
         )
         view.add_item(back_button)
 
-        embed = view.build_embed()
+        embed = view.build_embed(success_chance=base_success_chance)
 
         await interaction.response.send_message(embed=embed, view=view)
 

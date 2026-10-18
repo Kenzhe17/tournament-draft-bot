@@ -258,9 +258,13 @@ class PetCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-    @pet.command(name="test", description="Тестовый режим: получить питомца с максимальным уровнем")
-    @app_commands.describe(pet_type="Тип питомца (например: golden_fox, scout_fox)")
-    async def test(self, interaction: discord.Interaction, pet_type: str) -> None:
+    @pet.command(name="test", description="Тестовый режим: получить/отобрать питомца")
+    @app_commands.describe(
+        pet_type="Тип питомца (например: golden_fox, scout_fox)",
+        user="Пользователь (по умолчанию вы)",
+        action="Действие: give (дать) или remove (отобрать)"
+    )
+    async def test(self, interaction: discord.Interaction, pet_type: str, user: discord.User = None, action: str = "give") -> None:
         """Тестовый режим для проверки способностей."""
         from config import BOT_OWNER_ID, ORG_ROLE_ID
 
@@ -278,15 +282,29 @@ class PetCog(commands.Cog):
             )
             return
 
-        # Проверяем, есть ли уже питомец
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            existing_pet = await conn.fetchrow(
-                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
-                interaction.user.id
-            )
-            if existing_pet:
-                await conn.execute("DELETE FROM pets WHERE pet_id = $1", existing_pet["pet_id"])
+        # Если пользователь не указан, используем вызывающего
+        target_user = user if user else interaction.user
+
+        # Если действие - отобрать
+        if action == "remove":
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                existing_pet = await conn.fetchrow(
+                    "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                    target_user.id
+                )
+                if existing_pet:
+                    await conn.execute("DELETE FROM pets WHERE pet_id = $1", existing_pet["pet_id"])
+                    await interaction.response.send_message(
+                        replace_emojis(f"✅ Питомец пользователя {target_user.mention} удалён."),
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        replace_emojis(f"❌ У пользователя {target_user.mention} нет питомца."),
+                        ephemeral=True
+                    )
+            return
 
         # Проверяем, существует ли тип питомца
         if pet_type not in PETS_CATALOG:
@@ -296,17 +314,27 @@ class PetCog(commands.Cog):
             )
             return
 
-        # Создаём питомца с максимальным уровнем
+        # Проверяем, есть ли уже питомец у целевого пользователя
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            existing_pet = await conn.fetchrow(
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
+                target_user.id
+            )
+            if existing_pet:
+                await conn.execute("DELETE FROM pets WHERE pet_id = $1", existing_pet["pet_id"])
+
+        # Создаём питомца
         pet_data = PETS_CATALOG[pet_type]
         try:
             pet = await pet_store.create_pet(
-                owner_1_id=interaction.user.id,
+                owner_1_id=target_user.id,
                 owner_2_id=None,
                 pet_type=pet_type,
                 pet_name=pet_data["name"]
             )
 
-            # Устанавливаем возраст для теста
+            # Устанавливаем начальные значения
             async with pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE pets SET level = 1, exp = 0, fullness = 100, energy = 100 WHERE pet_id = $1",
@@ -314,12 +342,12 @@ class PetCog(commands.Cog):
                 )
 
             await interaction.response.send_message(
-                replace_emojis(f"✅ Тестовый питомец **{pet_data['name']}** создан!"),
+                replace_emojis(f"✅ Питомец **{pet_data['name']}** создан для {target_user.mention}!"),
                 ephemeral=True
             )
         except Exception as e:
             await interaction.response.send_message(
-                replace_emojis(f"❌ Ошибка при создании тестового питомца: {str(e)}"),
+                replace_emojis(f"❌ Ошибка при создании питомца: {str(e)}"),
                 ephemeral=True
             )
 
