@@ -36,7 +36,10 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     owner2_mention = ""
     if pet_row.get("owner_2_id"):
         owner2 = guild.get_member(pet_row["owner_2_id"])
-        owner2_mention = f" & {owner2.mention if owner2 else f'<@{pet_row[\"owner_2_id\"]}>'}"
+        if owner2:
+            owner2_mention = f" & {owner2.mention}"
+        else:
+            owner2_mention = f" & <@{pet_row['owner_2_id']}>"
 
     age = pet_row["level"]
     fullness = pet_row["fullness"]
