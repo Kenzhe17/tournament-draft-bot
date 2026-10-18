@@ -3,6 +3,7 @@
 import logging
 import random
 import asyncpg
+import discord
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
