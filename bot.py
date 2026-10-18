@@ -347,12 +347,14 @@ class TournamentBot(commands.Bot):
             try:
                 logger.info("Pet hunger check: waiting 5 minutes...")
                 await asyncio.sleep(300)  # Check every 5 minutes
-                logger.info("Pet hunger check: checking all pets")
+                logger.info("Pet hunger check: 5 minutes passed, starting check")
                 
                 # Check if bot is still connected
                 if not self.is_ready():
                     logger.warning("Bot not ready, skipping pet hunger check")
                     continue
+                
+                logger.info("Pet hunger check: bot is ready, checking all pets")
 
                 # Get all guilds
                 logger.info(f"Pet hunger check: checking {len(self.guilds)} guilds")
