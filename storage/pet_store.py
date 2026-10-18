@@ -191,6 +191,10 @@ class PetStore:
             pet = self._row_to_pet(row)
             now = datetime.now(timezone.utc)
 
+            # Сохраняем значения ДО изменений для проверок уведомлений
+            was_above_30 = pet.fullness > 30
+            was_full = pet.fullness > 0
+
             # Рассчитать прошедшее время с последнего обновления
             hours_since_fed = (now - pet.last_fed_at).total_seconds() / 3600
             hours_since_energy = (now - pet.last_energy_update_at).total_seconds() / 3600
@@ -211,8 +215,6 @@ class PetStore:
             pet.fullness = max(0, pet.fullness - fullness_loss)
 
             # Проверить когда сытость достигла 0
-            was_full = pet.fullness > 0
-            was_above_30 = pet.fullness > 30
             if pet.fullness == 0 and pet.hunger_started_at is None:
                 pet.hunger_started_at = now
 
