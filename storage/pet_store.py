@@ -1,9 +1,12 @@
 """Storage для системы питомцев."""
 
+import logging
 import random
 import asyncpg
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from models.pet import (
     Pet, PetType, PetRarity,
