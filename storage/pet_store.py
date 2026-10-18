@@ -110,8 +110,8 @@ class PetStore:
                     INSERT INTO pets (
                         owner_1_id, owner_2_id, pet_type, rarity, pet_name,
                         level, exp, fullness, energy,
-                        last_fed_at, last_energy_update_at, created_at, hunger_started_at, hunger_warning_sent
-                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6, NULL, FALSE)
+                        last_fed_at, last_energy_update_at, created_at, hunger_started_at, hunger_warning_sent, runaway_alert_sent
+                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6, NULL, FALSE, FALSE)
                     RETURNING *
                     """,
                     owner_1_id, owner_2_id, pet_type, pet_def["rarity_code"],
@@ -148,12 +148,13 @@ class PetStore:
                     last_energy_update_at = $8,
                     protected_item_id = $9,
                     hunger_started_at = $10,
-                    hunger_warning_sent = $11
+                    hunger_warning_sent = $11,
+                    runaway_alert_sent = $12
                 WHERE pet_id = $1
                 """,
                 pet.pet_id, pet.pet_name, pet.level, pet.exp,
                 pet.fullness, pet.energy, pet.last_fed_at,
-                pet.last_energy_update_at, pet.protected_item_id, pet.hunger_started_at, pet.hunger_warning_sent
+                pet.last_energy_update_at, pet.protected_item_id, pet.hunger_started_at, pet.hunger_warning_sent, pet.runaway_alert_sent
             )
 
     async def add_exp(self, pet_id: int, exp: int, max_daily: int = 50) -> int:
@@ -199,6 +200,7 @@ class PetStore:
             # Сохраняем значения ДО изменений для проверок уведомлений
             old_fullness = pet.fullness
             was_full = pet.fullness > 0
+            had_runaway_alert = pet.runaway_alert_sent
 
             # Рассчитать прошедшее время с последнего обновления
             hours_since_fed = (now - pet.last_fed_at).total_seconds() / 3600
@@ -225,10 +227,10 @@ class PetStore:
 
             # Если сытость 0 - автоматический побег
             if pet.fullness == 0:
-                logger.info(f"Pet {pet.pet_name} fullness reached 0, was_full={was_full}, guild_id={guild_id}, bot={bot is not None}")
-                await self.delete_pet(pet_id)
+                logger.info(f"Pet {pet.pet_name} fullness reached 0, was_full={was_full}, had_runaway_alert={had_runaway_alert}, guild_id={guild_id}, bot={bot is not None}")
+                
                 # Отправить уведомление о побеге с новым дизайном (только один раз)
-                if was_full and guild_id and bot:
+                if not had_runaway_alert and guild_id and bot:
                     try:
                         logger.info(f"Sending runaway alert for pet {pet.pet_name}")
                         from config import get_emoji
@@ -268,6 +270,8 @@ class PetStore:
                             logger.info(f"Sent runaway alert for pet {pet.pet_name}")
                     except Exception as e:
                         logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
+                
+                await self.delete_pet(pet_id)
                 return True, None
 
             # Уведомление при достижении сытости <= 30
@@ -505,6 +509,7 @@ class PetStore:
             protected_item_id=row["protected_item_id"],
             hunger_started_at=row.get("hunger_started_at"),
             hunger_warning_sent=row.get("hunger_warning_sent", False),
+            runaway_alert_sent=row.get("runaway_alert_sent", False),
         )
 
 

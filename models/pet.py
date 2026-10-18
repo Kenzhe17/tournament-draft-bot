@@ -136,6 +136,7 @@ class Pet:
     protected_item_id: str | None = None  # ID защищаемого предмета (для Черепахи)
     hunger_started_at: datetime | None = None  # Время когда сытость достигла 0
     hunger_warning_sent: bool = False  # Было ли отправлено предупреждение о голоде
+    runaway_alert_sent: bool = False  # Было ли отправлено уведомление о побеге
 
     def to_dict(self) -> dict[str, Any]:
         """Сериализовать в словарь."""
@@ -156,6 +157,7 @@ class Pet:
             "protected_item_id": self.protected_item_id,
             "hunger_started_at": self.hunger_started_at.isoformat() if self.hunger_started_at else None,
             "hunger_warning_sent": self.hunger_warning_sent,
+            "runaway_alert_sent": self.runaway_alert_sent,
         }
 
     @classmethod
@@ -178,6 +180,7 @@ class Pet:
             protected_item_id=data.get("protected_item_id"),
             hunger_started_at=_parse_datetime(data.get("hunger_started_at")),
             hunger_warning_sent=data.get("hunger_warning_sent", False),
+            runaway_alert_sent=data.get("runaway_alert_sent", False),
         )
 
     def get_exp_to_next_level(self) -> int:
