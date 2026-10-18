@@ -196,6 +196,7 @@ class PetStore:
             now = datetime.now(timezone.utc)
 
             # Сохраняем значения ДО изменений для проверок уведомлений
+            was_above_30 = pet.fullness > 30
             was_full = pet.fullness > 0
 
             # Рассчитать прошедшее время с последнего обновления
@@ -224,10 +225,13 @@ class PetStore:
             # Если сытость 0 - автоматический побег
             if pet.fullness == 0:
                 await self.delete_pet(pet_id)
-                # Отправить уведомление о побеге с новым дизайном
-                if guild_id and bot:
+                # Отправить уведомление о побеге с новым дизайном (только один раз)
+                if was_full and guild_id and bot:
                     try:
                         from config import get_emoji
+                        from models.pets_catalog import PETS_CATALOG
+                        import os
+                        
                         hunger_channel = bot.get_channel(1551167853741219880)
                         if hunger_channel:
                             # Пинг всех опекунов
@@ -235,12 +239,28 @@ class PetStore:
                             if pet.owner_2_id:
                                 mentions += f" <@{pet.owner_2_id}>"
 
+                            # Получить изображение питомца
+                            catalog_data = PETS_CATALOG.get(pet.pet_type.value, {})
+                            image_url = catalog_data.get("image_url")
+                            local_image_path = f"assets/pets/{pet.pet_type.value}.png"
+
                             embed = discord.Embed(
                                 title=f"{get_emoji('a_star')} **ПИТОМЕЦ СБЕЖАЛ ОТ ГОЛОДА**",
                                 description=f"{get_emoji('a_sparkle')} К сожалению, опекуны {mentions} забросили своего питомца...\n\n{get_emoji('white_arrow')} **Питомец:** **{pet.pet_name}** (*{pet.rarity.value if hasattr(pet, 'rarity') else 'Обычный'}*)\n{get_emoji('white_arrow')} **Причина:** Критический уровень сытости (`0%`) в течение длительного времени.\n\n{get_emoji('white_dot')} Питомец не выдержал голода, сорвал ошейник и убежал в тёмный лес к диким сородичам.\n{get_emoji('white_dot')} Слот питомца освобождён. Будьте внимательнее к следующему питомцу в `/petshop`!\n\n> {get_emoji('white_dot')} *История этого питомца завершена.*",
                                 color=0x960C0C
                             )
-                            await hunger_channel.send(mentions, embed=embed)
+                            
+                            # Добавить изображение справа сверху
+                            if os.path.exists(local_image_path):
+                                filename = os.path.basename(local_image_path)
+                                file = discord.File(local_image_path, filename=filename)
+                                embed.set_thumbnail(url=f"attachment://{filename}")
+                                await hunger_channel.send(mentions, embed=embed, file=file)
+                            elif image_url:
+                                embed.set_thumbnail(url=image_url)
+                                await hunger_channel.send(mentions, embed=embed)
+                            else:
+                                await hunger_channel.send(mentions, embed=embed)
                             logger.info(f"Sent runaway alert for pet {pet.pet_name}")
                     except Exception as e:
                         logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
@@ -248,24 +268,42 @@ class PetStore:
 
             # Уведомление при достижении сытости <= 30
             logger.info(f"Checking hunger alert: pet={pet.pet_name}, fullness={pet.fullness}, guild_id={guild_id}, bot={bot is not None}")
-            if pet.fullness <= 30 and guild_id and bot:
+            if pet.fullness <= 30 and was_above_30 and guild_id and bot:
                 try:
                     logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
-                    # Прямой код уведомления без отдельного модуля
+                    from config import get_emoji
+                    from models.pets_catalog import PETS_CATALOG
+                    import os
+                    
                     hunger_channel = bot.get_channel(1551167853741219880)
                     if hunger_channel:
-                        from config import get_emoji
                         # Пинг всех опекунов
                         mentions = f"<@{pet.owner_1_id}>"
                         if pet.owner_2_id:
                             mentions += f" <@{pet.owner_2_id}>"
 
+                        # Получить изображение питомца
+                        catalog_data = PETS_CATALOG.get(pet.pet_type.value, {})
+                        image_url = catalog_data.get("image_url")
+                        local_image_path = f"assets/pets/{pet.pet_type.value}.png"
+                        
                         embed = discord.Embed(
                             title=f"{get_emoji('a_star')} **ВНИМАНИЕ | ПИТОМЕЦ ГОЛОДЕН**",
                             description=f"{get_emoji('a_sparkle')} Опекуны {mentions}, ваш питомец проголодался!\n\n{get_emoji('white_arrow')} **Питомец:** **{pet.pet_name}**\n{get_emoji('white_arrow')} **Текущая сытость:** **`{pet.fullness}%`** / `100%` 🍖\n\n{get_emoji('white_dot')} Питомец чувствует слабость и требует ухода.\n{get_emoji('white_dot')} Покормите его вовремя, иначе он сорвёт ошейник и сбежет на волю!\n\n> {get_emoji('white_dot')} *Используйте профиль питомца (`/pet`), чтобы покормить.*",
                             color=0xE69500
                         )
-                        await hunger_channel.send(mentions, embed=embed)
+                        
+                        # Добавить изображение справа сверху
+                        if os.path.exists(local_image_path):
+                            filename = os.path.basename(local_image_path)
+                            file = discord.File(local_image_path, filename=filename)
+                            embed.set_thumbnail(url=f"attachment://{filename}")
+                            await hunger_channel.send(mentions, embed=embed, file=file)
+                        elif image_url:
+                            embed.set_thumbnail(url=image_url)
+                            await hunger_channel.send(mentions, embed=embed)
+                        else:
+                            await hunger_channel.send(mentions, embed=embed)
                         logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
