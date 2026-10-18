@@ -163,7 +163,7 @@ class RobStartButton(discord.ui.Button):
             from storage.pet_store import pet_store
             pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-            if pet and pet.fullness > 0:
+            if pet:
                 # Списать энергию за использование способности
                 energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -186,7 +186,7 @@ class RobStartButton(discord.ui.Button):
             from storage.pet_store import pet_store
             victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
-            if victim_pet and victim_pet.fullness > 0:
+            if victim_pet:
                 # Списать энергию за использование способности
                 energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
 
@@ -221,7 +221,7 @@ class RobStartButton(discord.ui.Button):
                     from storage.pet_store import pet_store
                     victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
-                    if victim_pet and victim_pet.fullness > 0:
+                    if victim_pet:
                         # Списать энергию за использование способности
                         energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
 
@@ -256,7 +256,7 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_store
                         robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-                        if robber_pet and robber_pet.fullness > 0:
+                        if robber_pet:
                             # Списать энергию за использование способности
                             energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -306,7 +306,7 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_store
                         robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-                        if robber_pet and robber_pet.fullness > 0:
+                        if robber_pet:
                             # Списать энергию за использование способности
                             energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -396,7 +396,7 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_store
                         robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-                        if robber_pet and robber_pet.fullness > 0:
+                        if robber_pet:
                             # Списать энергию за использование способности
                             energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -421,7 +421,7 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_store
                         victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
 
-                        if victim_pet and victim_pet.fullness > 0:
+                        if victim_pet:
                             # Списать энергию за использование способности
                             energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.victim_id, "rob_defense")
 
@@ -473,7 +473,7 @@ class RobStartButton(discord.ui.Button):
                 from storage.pet_store import pet_store
                 pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-                if pet and pet.fullness > 0:
+                if pet:
                     # Списать энергию за использование способности
                     energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -499,7 +499,7 @@ class RobStartButton(discord.ui.Button):
                 from storage.pet_store import pet_store
                 pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
 
-                if pet and pet.fullness > 0:
+                if pet:
                     # Списать энергию за использование способности
                     energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
 
@@ -904,7 +904,7 @@ class RobGroupStartButton(discord.ui.Button):
                 from storage.pet_store import pet_store
                 pet = await pet_store.get_user_pet(guild_id, member_id)
 
-                if pet and pet.fullness > 0:
+                if pet:
                     # Списать энергию за использование способности
                     energy_consumed = await pet_store.consume_energy_for_ability(guild_id, member_id, "rob")
 
@@ -935,7 +935,7 @@ class RobGroupStartButton(discord.ui.Button):
             from storage.pet_store import pet_store
             victim_pet = await pet_store.get_user_pet(guild_id, victim_id)
 
-            if victim_pet and victim_pet.fullness > 0:
+            if victim_pet:
                 # Списать энергию за использование способности
                 energy_consumed = await pet_store.consume_energy_for_ability(guild_id, victim_id, "rob_defense")
 
@@ -1127,7 +1127,7 @@ class RobGroupStartButton(discord.ui.Button):
                     from storage.pet_store import pet_store
                     pet = await pet_store.get_user_pet(guild_id, member_id)
 
-                    if pet and pet.fullness > 0:
+                    if pet:
                         # Списать энергию за использование способности
                         energy_consumed = await pet_store.consume_energy_for_ability(guild_id, member_id, "rob")
 
