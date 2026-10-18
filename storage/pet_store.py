@@ -212,49 +212,51 @@ class PetStore:
 
             # Проверить когда сытость достигла 0
             was_full = pet.fullness > 0
+            was_above_30 = pet.fullness > 30
             if pet.fullness == 0 and pet.hunger_started_at is None:
                 pet.hunger_started_at = now
 
-            # Если сытость 0 более 24 часов - автоматический побег
-            if pet.fullness == 0 and pet.hunger_started_at:
-                hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"Pet {pet.pet_name} fullness=0, hours_hungry={hours_hungry:.1f}")
-                if hours_hungry >= 24:
-                    await self.delete_pet(pet_id)
-                    # Отправить уведомление о побеге
-                    if guild_id and bot:
-                        try:
-                            logger.info(f"Pet {pet.pet_name} ran away from hunger after {hours_hungry:.1f} hours")
-                            hunger_channel = bot.get_channel(1551167853741219880)
-                            if hunger_channel:
-                                # Пинг всех опекунов
-                                mentions = f"<@{pet.owner_1_id}>"
-                                if pet.owner_2_id:
-                                    mentions += f" <@{pet.owner_2_id}>"
+            # Если сытость 0 - автоматический побег
+            if pet.fullness == 0:
+                await self.delete_pet(pet_id)
+                # Отправить уведомление о побеге
+                if guild_id and bot:
+                    try:
+                        logger.info(f"Pet {pet.pet_name} ran away from hunger")
+                        hunger_channel = bot.get_channel(1551167853741219880)
+                        if hunger_channel:
+                            # Пинг всех опекунов
+                            mentions = f"<@{pet.owner_1_id}>"
+                            if pet.owner_2_id:
+                                mentions += f" <@{pet.owner_2_id}>"
 
-                                embed = discord.Embed(
-                                    title="🐾 Питомец сбежал",
-                                    description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
-                                    color=discord.Color.orange()
-                                )
-                                await hunger_channel.send(mentions, embed=embed)
-                        except Exception as e:
-                            pass
-                    return True, None
+                            embed = discord.Embed(
+                                title="🐾 Питомец сбежал",
+                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
+                                color=discord.Color.orange()
+                            )
+                            await hunger_channel.send(mentions, embed=embed)
+                    except Exception as e:
+                        pass
+                return True, None
 
-            # Отправить уведомление о голоде если сытость только что достигла 0 или началась голодовка недавно
-            # Уведомления отправляются в фоновой задаче bot.py, здесь только логируем
-            if pet.fullness == 0 and guild_id:
+            # Уведомление при достижении сытости <= 30
+            if pet.fullness <= 30 and was_above_30 and guild_id and bot:
                 try:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    if was_full:
-                        logger.info(f"Pet {pet.pet_name} just reached 0% fullness")
-                    elif pet.hunger_started_at:
-                        hours_hungry = (now - pet.hunger_started_at).total_seconds() / 3600
-                        logger.info(f"Pet {pet.pet_name} starving for {hours_hungry:.1f} hours")
+                    logger.info(f"Pet {pet.pet_name} reached {pet.fullness}% fullness, sending warning")
+                    hunger_channel = bot.get_channel(1551167853741219880)
+                    if hunger_channel:
+                        # Пинг всех опекунов
+                        mentions = f"<@{pet.owner_1_id}>"
+                        if pet.owner_2_id:
+                            mentions += f" <@{pet.owner_2_id}>"
+
+                        embed = discord.Embed(
+                            title="⚠️ Питомец голоден",
+                            description=f"Питомец **{pet.pet_name}** голодает! Сытость: **{pet.fullness}%**\n\nПокормите его, иначе он сбежет!\n\nОпекуны: {mentions}",
+                            color=discord.Color.yellow()
+                        )
+                        await hunger_channel.send(mentions, embed=embed)
                 except Exception as e:
                     pass
 
