@@ -157,6 +157,8 @@ class RobStartButton(discord.ui.Button):
             "victim_defense_saved": 0,
             "victim_item_protect_chance": 0,
             "victim_item_protect_name": None,
+            "black_market_bonus": 0,
+            "black_market_name": None,
         }
 
         # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы)
@@ -320,16 +322,45 @@ class RobStartButton(discord.ui.Button):
 
                     # Продажа за 30% стоимости
                     sale_price = int(stolen_item.price * 0.3)
+                    
+                    # Применить способность Чёрный рынок (уменьшение комиссии = увеличение цены продажи)
+                    try:
+                        from storage.pet_store import pet_store
+                        robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+
+                        if robber_pet:
+                            # Списать энергию за использование способности
+                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
+
+                            if energy_consumed:
+                                from storage.pet_store import pet_catalog
+                                robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
+
+                                if robber_pet_def:  # Способности открыты с 1 возраста
+                                    ability = robber_pet_def["abilities"][2]
+                                    if ability["name"] == "Чёрный рынок":
+                                        commission_reduction = ability.get("max_val", 0)
+                                        # Уменьшение комиссии на 35% = увеличение цены продажи на 35%
+                                        sale_price = int(sale_price * (1 + commission_reduction / 100))
+                                        pet_bonuses["black_market_bonus"] = commission_reduction
+                                        pet_bonuses["black_market_name"] = robber_pet.pet_name
+                    except Exception as e:
+                        logger.error(f"Error applying black market bonus: {e}")
+                    
                     await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
 
                     # Build success embed
+                    bonus_text = ""
+                    if pet_bonuses.get("black_market_bonus", 0) > 0:
+                        bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['black_market_name']}):** Уменьшил комиссию на -{pet_bonuses['black_market_bonus']:.1f}%!"
+                    
                     embed = discord.Embed(
                         title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
                         description=(
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                            f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}\n"
+                            f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}{bonus_text}\n"
                         ),
                         color=0x2ECC71  # Green for success
                     )
