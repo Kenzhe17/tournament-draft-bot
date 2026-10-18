@@ -511,9 +511,15 @@ class RobStartButton(discord.ui.Button):
                             ability = pet_def["abilities"][2]
                             if ability["name"] == "Побег из тюрьмы":
                                 jail_reduction_pct = ability.get("max_val", 0)
-                                jail_hours = int(jail_hours * (1 - jail_reduction_pct / 100))
+                                jail_hours = jail_hours * (1 - jail_reduction_pct / 100)
             except Exception as e:
                 logger.error(f"Error applying jail reduction: {e}")
+
+            # Форматирование времени тюрьмы
+            if jail_hours >= 1:
+                jail_text = f"{int(jail_hours)}ч {int((jail_hours % 1) * 60)}мин"
+            else:
+                jail_text = f"{int(jail_hours * 60)}мин"
 
             # Build failure embed
             bonus_text = ""
@@ -528,7 +534,7 @@ class RobStartButton(discord.ui.Button):
                     f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                     f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                     f"{get_emoji('white_dot')} **Штраф:** `{penalty}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_dot')} **Тюрьма:** {jail_hours} часа{bonus_text}"
+                    f"{get_emoji('white_dot')} **Тюрьма:** {jail_text}{bonus_text}"
                 ),
                 color=0xE74C3C  # Red for failure
             )
@@ -1145,9 +1151,13 @@ class RobGroupStartButton(discord.ui.Button):
                 except Exception as e:
                     logger.error(f"Error applying jail reduction in group rob: {e}")
 
-            jail_hours = int(jail_hours * (1 - jail_reduction_pct / 100))
+            jail_hours = jail_hours * (1 - jail_reduction_pct / 100)
 
-            jail_text = f"{jail_hours} часа"
+            # Форматирование времени тюрьмы
+            if jail_hours >= 1:
+                jail_text = f"{int(jail_hours)}ч {int((jail_hours % 1) * 60)}мин"
+            else:
+                jail_text = f"{int(jail_hours * 60)}мин"
             if jail_reduction_pct > 0:
                 jail_text += f" (-{jail_reduction_pct:.1f}% от {jail_pet_name})"
 
