@@ -24,8 +24,8 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
         "color": 0x3498DB,
         "image_url": None,
         "abilities": {
-            1: {"unlock_level": 3, "name": "Крепкий панцирь", "desc_template": "Повышает защиту при нападении"},
-            2: {"unlock_level": 5, "name": "Способность 2", "desc_template": "Описание способности..."}
+            1: {"name": "Крепкий панцирь", "desc_template": "Повышает защиту при нападении"},
+            2: {"name": "Способность 2", "desc_template": "Описание способности..."}
         }
     })
 
@@ -37,9 +37,9 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
     desc1_template = ab1.get("desc_template", ab1.get("desc", ""))
     desc2_template = ab2.get("desc_template", ab2.get("desc", ""))
 
-    # Заменяем {val} на базовые значения (min_val)
-    desc1 = desc1_template.replace("{val}", str(ab1.get("min_val", 0)))
-    desc2 = desc2_template.replace("{val}", str(ab2.get("min_val", 0)))
+    # Заменяем {val} на максимальные значения
+    desc1 = desc1_template.replace("{val}", str(ab1.get("max_val", 0)))
+    desc2 = desc2_template.replace("{val}", str(ab2.get("max_val", 0)))
 
     # Получаем реальные эмодзи через get_emoji
     emoji_star = get_emoji("a_star")
@@ -54,9 +54,9 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
             f"{emoji_sparkle} **Поздравляем, {user.mention}!** В вашей коллекции пополнение!\n"
             f"{emoji_arrow} **Питомец:** **{pet['name']}** (*{pet['rarity']}*)\n"
             f"{emoji_arrow} **Стоимость в магазине:** **`{pet['price']:,}`** {emoji_money}\n\n"
-            f"📜 **Первоначальные способности:**\n"
-            f"{emoji_dot} 🔒 **Ур. {ab1['unlock_level']} | {ab1['name']}:** {desc1}\n"
-            f"{emoji_dot} 🔒 **Ур. {ab2['unlock_level']} | {ab2['name']}:** {desc2}\n\n"
+            f"📜 **Способности:**\n"
+            f"{emoji_dot} **{ab1['name']}:** {desc1}\n"
+            f"{emoji_dot} **{ab2['name']}:** {desc2}\n\n"
             f"> {emoji_dot} *Питомец успешно добавлен в ваш профиль! Ухаживайте за ним и кормите вовремя через `/pet profile`.*"
         ),
         color=pet["color"]
@@ -1760,14 +1760,14 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     ab2 = pet_def["abilities"][2]
 
     # Способность 1
-    icon_1 = "🔓" if True else "🔒"
-    val_range = f"{ab1['min_val']}-{ab1['max_val']}"
-    desc_1 = f"{icon_1} **Ур. {ab1['unlock_level']} | {ab1['name']}** - {ab1['desc_template'].format(val=val_range)}"
+    icon_1 = "🔓"
+    val_1 = f"{ab1['max_val']}"
+    desc_1 = f"{icon_1} **{ab1['name']}** - {ab1['desc_template'].format(val=val_1)}"
 
     # Способность 2
-    icon_2 = "🔓" if True else "🔒"
-    val_range_2 = f"{ab2['min_val']}-{ab2['max_val']}"
-    desc_2 = f"{icon_2} **Ур. {ab2['unlock_level']} | {ab2['name']}** - {ab2['desc_template'].format(val=val_range_2)}"
+    icon_2 = "🔓"
+    val_2 = f"{ab2['max_val']}"
+    desc_2 = f"{icon_2} **{ab2['name']}** - {ab2['desc_template'].format(val=val_2)}"
 
     # Цвет по редкости из каталога
     color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))

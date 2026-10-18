@@ -50,7 +50,6 @@ class PetAbility:
     description: str
     ability_type: AbilityType
     max_value: float  # Максимальное значение (процент или процентные пункты)
-    unlock_level: int  # Уровень разблокировки
     energy_cost: int  # Затраты энергии
 
     def to_dict(self) -> dict[str, Any]:
@@ -60,7 +59,6 @@ class PetAbility:
             "description": self.description,
             "ability_type": self.ability_type.value,
             "max_value": self.max_value,
-            "unlock_level": self.unlock_level,
             "energy_cost": self.energy_cost,
         }
 
@@ -72,7 +70,6 @@ class PetAbility:
             description=data.get("description", ""),
             ability_type=AbilityType(data.get("ability_type", "case_coin_bonus")),
             max_value=data.get("max_value", 0.0),
-            unlock_level=data.get("unlock_level", 3),
             energy_cost=data.get("energy_cost", 5),
         )
 
@@ -197,32 +194,16 @@ class Pet:
         return exp_requirements.get(self.level, 0)
 
     def is_max_level(self) -> bool:
-        """Достигнут ли максимальный уровень."""
-        return self.level >= 10
-
-    def can_use_ability(self, ability_level: int) -> bool:
-        """Может ли питомец использовать способность на данном уровне."""
-        if self.level < 3:
-            return False
-        if ability_level == 1 and self.level >= 3:
-            return True
-        if ability_level == 2 and self.level >= 7:
-            return True
+        """Возраст не ограничен."""
         return False
 
+    def can_use_ability(self, ability_level: int) -> bool:
+        """Способности открыты с 1 возраста."""
+        return True
+
     def get_ability_effectiveness(self) -> float:
-        """Получить эффективность способностей в зависимости от уровня."""
-        if self.level < 3:
-            return 0.0
-        if 3 <= self.level <= 4:
-            return 0.25
-        if 5 <= self.level <= 6:
-            return 0.5
-        if 7 <= self.level <= 8:
-            return 0.75
-        if 9 <= self.level <= 10:
-            return 1.0
-        return 0.0
+        """Способности всегда работают на полную мощность."""
+        return 1.0
 
 
 # Опыт для перехода между уровнями

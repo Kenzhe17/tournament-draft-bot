@@ -27,16 +27,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Золотая лапа",
-                "unlock_level": 3,
-                "min_val": 3,
+                "min_val": 15,
                 "max_val": 15,
                 "unit": "%",
                 "desc_template": "Увеличивает количество монет, получаемых из кейсов, на {val}%."
             },
             2: {
                 "name": "Щедрый перевод",
-                "unlock_level": 7,
-                "min_val": 5,
+                "min_val": 25,
                 "max_val": 25,
                 "unit": "%",
                 "desc_template": "Уменьшает комиссию /pay на {val}% от её исходного размера."
@@ -59,16 +57,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Ловкие лапы",
-                "unlock_level": 3,
-                "min_val": 2,
+                "min_val": 10,
                 "max_val": 10,
                 "unit": "проц. п.",
                 "desc_template": "Повышает базовый шанс успешного /rob на {val} процентных пунктов."
             },
             2: {
                 "name": "Побег из тюрьмы",
-                "unlock_level": 7,
-                "min_val": 5,
+                "min_val": 25,
                 "max_val": 25,
                 "unit": "%",
                 "desc_template": "Сокращает оставшееся время заключения на {val}%."
@@ -91,16 +87,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Сохранность капитала",
-                "unlock_level": 3,
-                "min_val": 5,
+                "min_val": 25,
                 "max_val": 25,
                 "unit": "%",
                 "desc_template": "Уменьшает потери наличных монет при успешном ограблении на {val}%."
             },
             2: {
                 "name": "Цепкие когти",
-                "unlock_level": 7,
-                "min_val": 5,
+                "min_val": 15,
                 "max_val": 15,
                 "unit": "%",
                 "desc_template": "Даёт {val}% шанс защитить предмет от кражи."
@@ -123,16 +117,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Чужой кошелёк",
-                "unlock_level": 3,
-                "min_val": 5,
+                "min_val": 25,
                 "max_val": 25,
                 "unit": "%",
                 "desc_template": "Увеличивает добычу при успешном ограблении на {val}%."
             },
             2: {
                 "name": "Чёрный рынок",
-                "unlock_level": 7,
-                "min_val": 10,
+                "min_val": 35,
                 "max_val": 35,
                 "unit": "%",
                 "desc_template": "Уменьшает комиссию продажи предметов на Чёрном рынке на {val}%."
@@ -155,16 +147,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "План отхода",
-                "unlock_level": 3,
-                "min_val": 10,
+                "min_val": 40,
                 "max_val": 40,
                 "unit": "%",
                 "desc_template": "Уменьшает штраф за неудачное ограбление на {val}%."
             },
             2: {
                 "name": "Охотник за вещами",
-                "unlock_level": 7,
-                "min_val": 3,
+                "min_val": 12,
                 "max_val": 12,
                 "unit": "проц. п.",
                 "desc_template": "Повышает шанс кражи предмета на {val} процентных пунктов."
@@ -187,8 +177,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Секретный тайник",
-                "unlock_level": 3,
-                "min_val": 5,
+                "min_val": 20,
                 "max_val": 20,
                 "unit": "%",
                 "desc_template": (
@@ -198,8 +187,7 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
             },
             2: {
                 "name": "Торговый нюх",
-                "unlock_level": 7,
-                "min_val": 15,
+                "min_val": 45,
                 "max_val": 45,
                 "unit": "%",
                 "desc_template": "Уменьшает поддерживаемые комиссии обмена и продажи предметов на {val}%."
@@ -222,15 +210,13 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Крепкий панцирь",
-                "unlock_level": 3,
-                "min_val": 5,
+                "min_val": 20,
                 "max_val": 20,
                 "unit": "проц. п.",
                 "desc_template": "Уменьшает шанс успешного ограбления владельца на {val} процентных пунктов."
             },
             2: {
                 "name": "Тайный сейф",
-                "unlock_level": 7,
                 "min_val": 1,
                 "max_val": 1,
                 "unit": "слот",
@@ -257,16 +243,14 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "abilities": {
             1: {
                 "name": "Жажда победы",
-                "unlock_level": 3,
-                "min_val": 3,
+                "min_val": 12,
                 "max_val": 12,
                 "unit": "%",
                 "desc_template": "Увеличивает положительное изменение Elo за победу в официальном матче на {val}%."
             },
             2: {
                 "name": "Несломленный дух",
-                "unlock_level": 7,
-                "min_val": 5,
+                "min_val": 20,
                 "max_val": 20,
                 "unit": "%",
                 "desc_template": "Уменьшает потерю Elo при поражении в официальном матче на {val}%."
@@ -298,17 +282,6 @@ MYSTERY_EGG_DATA = {
 
 
 def calculate_ability_power(pet_level: int, min_val: float, max_val: float) -> float:
-    """Вычисляет текущее значение силы способности исходя из уровня питомца."""
-    if pet_level < 3:
-        return 0.0
-    elif pet_level in (3, 4):
-        pct = 0.25
-    elif pet_level in (5, 6):
-        pct = 0.50
-    elif pet_level in (7, 8):
-        pct = 0.75
-    else:  # 9-10
-        pct = 1.00
-    
-    val = min_val + (max_val - min_val) * pct
-    return round(val, 1) if isinstance(min_val, float) or isinstance(max_val, float) else int(val)
+    """Вычисляет текущее значение силы способности - теперь всегда максимальное."""
+    # Способности теперь открыты с 1 уровня и всегда имеют максимальное значение
+    return max_val

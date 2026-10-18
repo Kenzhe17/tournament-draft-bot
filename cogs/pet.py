@@ -61,16 +61,13 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     if catalog_data:
         for ab_key in (1, 2):
             ab = catalog_data["abilities"][ab_key]
-            unlocked = level >= ab["unlock_level"]
-            val = ab["min_val"] + (ab["max_val"] - ab["min_val"]) * (level / 10)
+            val = ab["max_val"]  # Всегда максимальное значение
             desc_val = ab["desc_template"].format(val=f"{val:.1f}")
 
             if energy <= 0:
-                abilities_list.append(f"⚠️ **Ур. {ab['unlock_level']} | {ab['name']}** — *Блокировка (0% энергии)*")
-            elif unlocked:
-                abilities_list.append(f"🔓 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val}")
+                abilities_list.append(f"⚠️ **{ab['name']}** — *Блокировка (0% энергии)*")
             else:
-                abilities_list.append(f"🔒 **Ур. {ab['unlock_level']} | {ab['name']}:** {desc_val} *(Откроется на {ab['unlock_level']} ур.)*")
+                abilities_list.append(f"🔓 **{ab['name']}:** {desc_val}")
 
     abilities_formatted = "\n".join(f"{emoji_dot} {item}" for item in abilities_list)
 
@@ -86,7 +83,7 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     embed = discord.Embed(
         title=f"{emoji_star} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
         description=(
-            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*) | **Ур:** `{level}` | **Опекун:** {owner1_mention}{owner2_mention}\n"
+            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*) | **Возраст:** `{level}` | **Опекун:** {owner1_mention}{owner2_mention}\n"
             f"🍖 **Сытость:** `{fullness}%` | ⚡ **Энергия:** `{energy}%` | ✨ **Опыт:** `{exp}/{max_exp} EXP`\n\n"
             f"📜 **Способности:**\n"
             f"{abilities_formatted}"
@@ -318,15 +315,15 @@ class PetCog(commands.Cog):
                 pet_name=pet_data["name"]
             )
 
-            # Устанавливаем максимальный уровень
+            # Устанавливаем возраст для теста
             async with pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE pets SET level = 10, exp = 500, fullness = 100, energy = 100 WHERE pet_id = $1",
+                    "UPDATE pets SET level = 1, exp = 50, fullness = 100, energy = 100 WHERE pet_id = $1",
                     pet.pet_id
                 )
 
             await interaction.response.send_message(
-                replace_emojis(f"✅ Тестовый питомец **{pet_data['name']}** создан с уровнем 10!"),
+                replace_emojis(f"✅ Тестовый питомец **{pet_data['name']}** создан!"),
                 ephemeral=True
             )
         except Exception as e:
@@ -486,8 +483,8 @@ class PetCatalogView(discord.ui.View):
             if ab_key in abilities:
                 ab = abilities[ab_key]
                 desc_template = ab.get("desc_template", "")
-                desc = desc_template.replace("{val}", f"{ab.get('min_val', 0)}-{ab.get('max_val', 0)}")
-                abilities_text += f"{get_emoji('white_arrow')} **Ур. {ab['unlock_level']} | {ab['name']}:** {desc}\n"
+                desc = desc_template.replace("{val}", f"{ab.get('max_val', 0)}")
+                abilities_text += f"{get_emoji('white_arrow')} **{ab['name']}:** {desc}\n"
         
         embed = discord.Embed(
             title=f"{get_emoji('a_star')} **КАТАЛОГ ПИТОМЦЕВ**",
@@ -603,8 +600,8 @@ class PetProfileView(discord.ui.View):
         self.add_item(FeedPetButton(pet.pet_id, pet_dict))
         self.add_item(self.rename_button)
 
-        # Добавить кнопку защиты предмета для Черепахи-хранителя (уровень 7+)
-        if pet.pet_type.value == "guardian_turtle" and pet.level >= 7:
+        # Добавить кнопку защиты предмета для Черепахи-хранителя (с возраста 1, так как способность открыта)
+        if pet.pet_type.value == "guardian_turtle" and pet.level >= 1:
             self.add_item(ProtectItemButton(pet.pet_id, pet_dict, interaction))
 
     async def on_timeout(self) -> None:
