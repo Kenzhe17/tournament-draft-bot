@@ -377,10 +377,12 @@ class TournamentBot(commands.Bot):
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
                 logger.info("Pet hunger check: completed checking all guilds")
+                logger.info("Pet hunger check: waiting another 5 minutes...")
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
                 # Wait a bit before retrying
                 await asyncio.sleep(60)
+        logger.info("Pet hunger check loop ended (bot closed)")
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
