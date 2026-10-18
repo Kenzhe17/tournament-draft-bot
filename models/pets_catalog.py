@@ -265,7 +265,7 @@ MYSTERY_EGG_DATA = {
 }
 
 
-def calculate_ability_power(pet_level: int, min_val: float, max_val: float) -> float:
+def calculate_ability_power(pet_level: int, max_val: float) -> float:
     """Вычисляет текущее значение силы способности - теперь всегда максимальное."""
     # Способности теперь открыты с 1 уровня и всегда имеют максимальное значение
     return max_val

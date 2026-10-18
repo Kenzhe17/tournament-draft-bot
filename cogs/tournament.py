@@ -1743,14 +1743,10 @@ class TournamentCog(commands.Cog):
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                    if pet_def and pet.level >= 7:  # Уровень разблокировки Щедрого перевода
+                    if pet_def:  # Способности открыты с 1 возраста
                         ability = pet_def["abilities"][2]
                         if ability["name"] == "Щедрый перевод":
-                            # Рассчитываем бонус
-                            effectiveness = pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            bonus_value = ability.get("max_val", 0)
 
                             fee_reduction = bonus_value / 100
                             base_fee_percent = base_fee_percent * (1 - fee_reduction)
@@ -1821,13 +1817,10 @@ class TournamentCog(commands.Cog):
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                    if pet_def and pet.level >= 7:  # Уровень разблокировки Торгового нюха
+                    if pet_def:  # Способности открыты с 1 возраста
                         ability = pet_def["abilities"][2]
                         if ability["name"] == "Торговый нюх":
-                            effectiveness = pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            bonus_value = ability.get("max_val", 0)
 
                             fee_reduction = bonus_value / 100
                             base_fee_percent = base_fee_percent * (1 - fee_reduction)

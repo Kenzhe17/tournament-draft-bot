@@ -170,13 +170,10 @@ class RobStartButton(discord.ui.Button):
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                    if pet_def and pet.level >= 3:
+                    if pet_def:  # Способности открыты с 1 возраста
                         ability = pet_def["abilities"][1]
                         if ability["name"] == "Ловкие лапы":
-                            effectiveness = pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            bonus_value = ability.get("max_val", 0)
                             base_success_chance += bonus_value / 100
                             pet_bonuses["robber_success_bonus"] = bonus_value
                             pet_bonuses["robber_success_name"] = pet.pet_name
@@ -196,13 +193,10 @@ class RobStartButton(discord.ui.Button):
                     from storage.pet_store import pet_catalog
                     victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                    if victim_pet_def and victim_pet.level >= 3:
+                    if victim_pet_def:  # Способности открыты с 1 возраста
                         ability = victim_pet_def["abilities"][1]
                         if ability["name"] == "Крепкий панцирь":
-                            effectiveness = victim_pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            defense_value = min_val + (max_val - min_val) * effectiveness
+                            defense_value = ability.get("max_val", 0)
                             base_success_chance -= defense_value / 100
                             pet_bonuses["victim_defense_bonus"] = defense_value
                             pet_bonuses["victim_defense_name"] = victim_pet.pet_name
@@ -242,10 +236,7 @@ class RobStartButton(discord.ui.Button):
                                     protect_pet_name = victim_pet.pet_name
                                 # Проверить Цепкие когти (Treasury Owl) - шанс защиты
                                 elif ability["name"] == "Цепкие когти":
-                                    effectiveness = victim_pet.get_ability_effectiveness()
-                                    min_val = ability.get("min_val", 0)
-                                    max_val = ability.get("max_val", 0)
-                                    protect_chance = min_val + (max_val - min_val) * effectiveness
+                                    protect_chance = ability.get("max_val", 0)
                                     pet_bonuses["victim_item_protect_chance"] = protect_chance
                                     pet_bonuses["victim_item_protect_name"] = victim_pet.pet_name
 
@@ -272,13 +263,10 @@ class RobStartButton(discord.ui.Button):
                                 from storage.pet_store import pet_catalog
                                 robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
 
-                                if robber_pet_def and robber_pet.level >= 7:
+                                if robber_pet_def:  # Способности открыты с 1 возраста
                                     ability = robber_pet_def["abilities"][1]
                                     if ability["name"] == "Чужой кошелёк":
-                                        effectiveness = robber_pet.get_ability_effectiveness()
-                                        min_val = ability.get("min_val", 0)
-                                        max_val = ability.get("max_val", 0)
-                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        loot_bonus = ability.get("max_val", 0)
                                         pet_bonuses["robber_loot_bonus"] = loot_bonus
                                         pet_bonuses["robber_loot_name"] = robber_pet.pet_name
                                         potential = int(potential * (1 + loot_bonus / 100))
@@ -325,13 +313,10 @@ class RobStartButton(discord.ui.Button):
                                 from storage.pet_store import pet_catalog
                                 robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
 
-                                if robber_pet_def and robber_pet.level >= 3:
+                                if robber_pet_def:  # Способности открыты с 1 возраста
                                     ability = robber_pet_def["abilities"][1]
                                     if ability["name"] == "Чужой кошелёк":
-                                        effectiveness = robber_pet.get_ability_effectiveness()
-                                        min_val = ability.get("min_val", 0)
-                                        max_val = ability.get("max_val", 0)
-                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        loot_bonus = ability.get("max_val", 0)
                                         potential = int(potential * (1 + loot_bonus / 100))
                                         pet_bonuses["robber_loot_bonus"] = loot_bonus
                                         pet_bonuses["robber_loot_name"] = robber_pet.pet_name
@@ -418,13 +403,10 @@ class RobStartButton(discord.ui.Button):
                                 from storage.pet_store import pet_catalog
                                 robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
 
-                                if robber_pet_def and robber_pet.level >= 3:
+                                if robber_pet_def:  # Способности открыты с 1 возраста
                                     ability = robber_pet_def["abilities"][1]
                                     if ability["name"] == "Чужой кошелёк":
-                                        effectiveness = robber_pet.get_ability_effectiveness()
-                                        min_val = ability.get("min_val", 0)
-                                        max_val = ability.get("max_val", 0)
-                                        loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                        loot_bonus = ability.get("max_val", 0)
                                         potential = int(potential * (1 + loot_bonus / 100))
                                         pet_bonuses["robber_loot_bonus"] = loot_bonus
                                         pet_bonuses["robber_loot_name"] = robber_pet.pet_name
@@ -446,13 +428,10 @@ class RobStartButton(discord.ui.Button):
                                 from storage.pet_store import pet_catalog
                                 victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                            if victim_pet_def and victim_pet.level >= 3:
+                            if victim_pet_def:  # Способности открыты с 1 возраста
                                 ability = victim_pet_def["abilities"][1]
                                 if ability["name"] == "Сохранность капитала":
-                                    effectiveness = victim_pet.get_ability_effectiveness()
-                                    min_val = ability.get("min_val", 0)
-                                    max_val = ability.get("max_val", 0)
-                                    loss_reduction = min_val + (max_val - min_val) * effectiveness
+                                    loss_reduction = ability.get("max_val", 0)
                                     stolen = int(stolen * (1 - loss_reduction / 100))
                                     pet_bonuses["victim_defense_bonus"] = loss_reduction
                                     pet_bonuses["victim_defense_name"] = victim_pet.pet_name
@@ -501,13 +480,10 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_catalog
                         pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        if pet_def and pet.level >= 3:
+                        if pet_def:  # Способности открыты с 1 возраста
                             ability = pet_def["abilities"][1]
                             if ability["name"] == "План отхода":
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                penalty_reduction_pct = min_val + (max_val - min_val) * effectiveness
+                                penalty_reduction_pct = ability.get("max_val", 0)
                                 penalty = int(penalty * (1 - penalty_reduction_pct / 100))
             except Exception as e:
                 logger.error(f"Error applying penalty reduction: {e}")
@@ -530,13 +506,10 @@ class RobStartButton(discord.ui.Button):
                         from storage.pet_store import pet_catalog
                         pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        if pet_def and pet.level >= 7:
+                        if pet_def:  # Способности открыты с 1 возраста
                             ability = pet_def["abilities"][2]
                             if ability["name"] == "Побег из тюрьмы":
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                jail_reduction_pct = min_val + (max_val - min_val) * effectiveness
+                                jail_reduction_pct = ability.get("max_val", 0)
                                 jail_hours = int(jail_hours * (1 - jail_reduction_pct / 100))
             except Exception as e:
                 logger.error(f"Error applying jail reduction: {e}")
@@ -922,21 +895,15 @@ class RobGroupStartButton(discord.ui.Button):
                         from storage.pet_store import pet_catalog
                         pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        if pet_def and pet.level >= 3:
+                        if pet_def:  # Способности открыты с 1 возраста
                             ability = pet_def["abilities"][1]
                             if ability["name"] == "Ловкие лапы":
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                bonus_value = min_val + (max_val - min_val) * effectiveness
+                                bonus_value = ability.get("max_val", 0)
                                 group_pet_bonuses["success_bonus"] += bonus_value
                                 group_pet_bonuses["success_names"].append(pet.pet_name)
 
                             if ability["name"] == "Чужой кошелёк":
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                loot_bonus = min_val + (max_val - min_val) * effectiveness
+                                loot_bonus = ability.get("max_val", 0)
                                 group_pet_bonuses["loot_bonus"] += loot_bonus
                                 group_pet_bonuses["loot_names"].append(pet.pet_name)
             except Exception as e:
@@ -959,13 +926,10 @@ class RobGroupStartButton(discord.ui.Button):
                     from storage.pet_store import pet_catalog
                     victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                    if victim_pet_def and victim_pet.level >= 3:
+                    if victim_pet_def:  # Способности открыты с 1 возраста
                         ability = victim_pet_def["abilities"][1]
                         if ability["name"] == "Крепкий панцирь":
-                            effectiveness = victim_pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            defense_value = min_val + (max_val - min_val) * effectiveness
+                            defense_value = ability.get("max_val", 0)
                             success_chance -= defense_value / 100
                             group_pet_bonuses["victim_defense_bonus"] = defense_value
                             group_pet_bonuses["victim_defense_name"] = victim_pet.pet_name
@@ -1154,13 +1118,10 @@ class RobGroupStartButton(discord.ui.Button):
                             from storage.pet_store import pet_catalog
                             pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                            if pet_def and pet.level >= 7:
+                            if pet_def:  # Способности открыты с 1 возраста
                                 ability = pet_def["abilities"][2]
                                 if ability["name"] == "Побег из тюрьмы":
-                                    effectiveness = pet.get_ability_effectiveness()
-                                    min_val = ability.get("min_val", 0)
-                                    max_val = ability.get("max_val", 0)
-                                    reduction = min_val + (max_val - min_val) * effectiveness
+                                    reduction = ability.get("max_val", 0)
                                     if reduction > jail_reduction_pct:
                                         jail_reduction_pct = reduction
                                         jail_pet_name = pet.pet_name

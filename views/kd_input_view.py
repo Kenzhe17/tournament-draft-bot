@@ -249,16 +249,12 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                         from storage.pet_store import pet_catalog
                         pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        if pet_def:
+                        if pet_def:  # Способности открыты с 1 возраста
                             ability = pet_def["abilities"][1] if team_won else pet_def["abilities"][2]
                             ability_name = ability["name"]
 
-                            if ((team_won and ability_name == "Жажда победы" and pet.level >= 3) or
-                                (not team_won and ability_name == "Несломленный дух" and pet.level >= 7)):
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                bonus_percent = min_val + (max_val - min_val) * effectiveness
+                            if (team_won and ability_name == "Жажда победы") or (not team_won and ability_name == "Несломленный дух"):
+                                bonus_percent = ability.get("max_val", 0)
 
                                 if team_won:
                                     original_elo = elo_change

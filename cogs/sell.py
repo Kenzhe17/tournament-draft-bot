@@ -102,13 +102,10 @@ class SellCog(commands.Cog):
                     from storage.pet_store import pet_catalog
                     pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                    if pet_def and pet.level >= 7:  # Уровень разблокировки Чёрного рынка
+                    if pet_def:  # Способности открыты с 1 возраста
                         ability = pet_def["abilities"][2]
                         if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
-                            effectiveness = pet.get_ability_effectiveness()
-                            min_val = ability.get("min_val", 0)
-                            max_val = ability.get("max_val", 0)
-                            bonus_value = min_val + (max_val - min_val) * effectiveness
+                            bonus_value = ability.get("max_val", 0)
                             fee_reduction = bonus_value / 100
                             base_sell_percent = base_sell_percent * (1 - fee_reduction)
                             pet_bonus_info["bonus_value"] = bonus_value

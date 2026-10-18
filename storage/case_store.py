@@ -254,13 +254,10 @@ class CaseStore:
                         from storage.pet_store import pet_catalog
                         pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-                        if pet_def and pet.level >= 3:  # Уровень разблокировки Золотой лапы
+                        if pet_def:  # Способности открыты с 1 возраста
                             ability = pet_def["abilities"][1]
                             if ability["name"] == "Золотая лапа":
-                                effectiveness = pet.get_ability_effectiveness()
-                                min_val = ability.get("min_val", 0)
-                                max_val = ability.get("max_val", 0)
-                                bonus_percent = min_val + (max_val - min_val) * effectiveness
+                                bonus_percent = ability.get("max_val", 0)
                                 bonus_coins = int(coins_amount * (bonus_percent / 100))
                                 coins_amount += bonus_coins
                                 pet_bonus_info["golden_fox_bonus"] = bonus_percent
@@ -330,14 +327,11 @@ class CaseStore:
                 from storage.pet_store import pet_catalog
                 pet_def = pet_catalog.get_pet(pet.pet_type.value)
                 
-                if pet_def and pet.level >= 3:  # Уровень разблокировки Секретного тайника
+                if pet_def:  # Способности открыты с 1 возраста
                     ability = pet_def["abilities"][1]
                     if ability["name"] == "Секретный тайник":
-                        effectiveness = pet.get_ability_effectiveness()
-                        min_val = ability.get("min_val", 0)
-                        max_val = ability.get("max_val", 0)
-                        bonus_chance = min_val + (max_val - min_val) * effectiveness
-                        
+                        bonus_chance = ability.get("max_val", 0)
+
                         if random.random() < (bonus_chance / 100):
                             # Дополнительная награда: 25-50% от базовой
                             if result["type"] == "coins":
