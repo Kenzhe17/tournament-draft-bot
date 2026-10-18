@@ -399,6 +399,9 @@ class PetStore:
         if not success:
             return False
 
+        # Добавить опыт за использование способности
+        await self.add_exp(pet.pet_id, 3)  # 3 опыта за использование способности
+
         # Списать сытость (2 единицы за использование способности)
         from storage.db import get_pool
         pool = await get_pool()

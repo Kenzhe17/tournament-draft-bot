@@ -643,15 +643,23 @@ class FeedPetButton(discord.ui.Button):
     """Кнопка кормления питомца."""
 
     def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message, interaction: discord.Interaction):
+        # Рассчитать стоимость корма как 1% от цены питомца
+        from models.pets_catalog import PETS_CATALOG
+        pet_type = pet_dict["pet_type"]
+        pet_def = PETS_CATALOG.get(pet_type, {})
+        pet_price = pet_def.get("price", 3000)
+        feed_cost = int(pet_price * 0.01)  # 1% от цены
+        
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Покормить (30 🪙)",
+            label=f"Покормить ({feed_cost} 🪙)",
             custom_id=f"feed_pet:{pet_id}"
         )
         self.pet_id = pet_id
         self.pet_dict = pet_dict
         self.message = message
         self.interaction = interaction
+        self.feed_cost = feed_cost
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать кормление."""
@@ -675,15 +683,15 @@ class FeedPetButton(discord.ui.Button):
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
-        if balance < 30:
+        if balance < self.feed_cost:
             await interaction.response.send_message(
-                replace_emojis("❌ Недостаточно монет. Нужно: 30 🪙"),
+                replace_emojis(f"❌ Недостаточно монет. Нужно: {self.feed_cost} 🪙"),
                 ephemeral=True
             )
             return
 
         # Списать деньги
-        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, 30)
+        await user_balance_store.subtract_balance(interaction.guild_id, interaction.user.id, self.feed_cost)
 
         # Покормить (обычная еда: +20 сытость, +5 энергия, +5 EXP)
         success, message = await pet_store.feed_pet(
