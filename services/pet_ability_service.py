@@ -54,9 +54,9 @@ class PetAbilityService:
         result["has_pet"] = True
         result["pet_name"] = pet.pet_name
 
-        # Проверить сытость и энергию
-        is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
-        if is_dead or not pet:
+        # Проверить энергию
+        energy_cost = ENERGY_COSTS.get(action_type, 5)
+        if pet.energy < energy_cost:
             return result
 
         # Получить определение питомца
@@ -148,10 +148,6 @@ class PetAbilityService:
 
         result["has_pet"] = True
 
-        is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
-        if is_dead or not pet:
-            return result
-
         from storage.pet_store import pet_catalog
         pet_def = pet_catalog.get_pet(pet.pet_type.value)
         if not pet_def:
@@ -197,10 +193,6 @@ class PetAbilityService:
         if not pet:
             return False
 
-        is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
-        if is_dead or not pet:
-            return False
-
         # Проверить совпадение ID предмета
         if pet.protected_item_id == item_id:
             from storage.pet_store import pet_catalog
@@ -231,10 +223,6 @@ class PetAbilityService:
         """
         pet = await pet_store.get_user_pet(guild_id, user_id)
         if not pet:
-            return elo_change
-
-        is_dead, pet = await pet_store.check_fullness_and_energy(pet.pet_id)
-        if is_dead or not pet:
             return elo_change
 
         from storage.pet_store import pet_catalog
