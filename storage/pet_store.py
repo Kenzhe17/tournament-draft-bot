@@ -224,17 +224,24 @@ class PetStore:
             # Если сытость 0 - автоматический побег
             if pet.fullness == 0:
                 await self.delete_pet(pet_id)
-                # Отправить уведомление о побеге через новый сервис
+                # Отправить уведомление о побеге с новым дизайном
                 if guild_id and bot:
                     try:
-                        from services.pet_alerts import send_runaway_alert
-                        pet_dict = {
-                            'pet_name': pet.pet_name,
-                            'owner_1_id': pet.owner_1_id,
-                            'owner_2_id': pet.owner_2_id,
-                            'rarity': pet.rarity.value if hasattr(pet, 'rarity') else 'Обычный'
-                        }
-                        await send_runaway_alert(bot, pet_dict, bot.get_guild(guild_id))
+                        from config import get_emoji
+                        hunger_channel = bot.get_channel(1551167853741219880)
+                        if hunger_channel:
+                            # Пинг всех опекунов
+                            mentions = f"<@{pet.owner_1_id}>"
+                            if pet.owner_2_id:
+                                mentions += f" <@{pet.owner_2_id}>"
+
+                            embed = discord.Embed(
+                                title=f"{get_emoji('a_star')} **ПИТОМЕЦ СБЕЖАЛ ОТ ГОЛОДА**",
+                                description=f"{get_emoji('a_sparkle')} К сожалению, опекуны {mentions} забросили своего питомца...\n\n{get_emoji('white_arrow')} **Питомец:** **{pet.pet_name}** (*{pet.rarity.value if hasattr(pet, 'rarity') else 'Обычный'}*)\n{get_emoji('white_arrow')} **Причина:** Критический уровень сытости (`0%`) в течение длительного времени.\n\n{get_emoji('white_dot')} Питомец не выдержал голода, сорвал ошейник и убежал в тёмный лес к диким сородичам.\n{get_emoji('white_dot')} Слот питомца освобождён. Будьте внимательнее к следующему питомцу в `/petshop`!\n\n> {get_emoji('white_dot')} *История этого питомца завершена.*",
+                                color=0x960C0C
+                            )
+                            await hunger_channel.send(mentions, embed=embed)
+                            logger.info(f"Sent runaway alert for pet {pet.pet_name}")
                     except Exception as e:
                         logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
                 return True, None
@@ -244,15 +251,22 @@ class PetStore:
             if pet.fullness <= 30 and guild_id and bot:
                 try:
                     logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
-                    from services.pet_alerts import send_hunger_alert
-                    pet_dict = {
-                        'pet_name': pet.pet_name,
-                        'owner_1_id': pet.owner_1_id,
-                        'owner_2_id': pet.owner_2_id,
-                        'fullness': pet.fullness
-                    }
-                    await send_hunger_alert(bot, pet_dict, bot.get_guild(guild_id))
-                    logger.info(f"Successfully sent hunger alert for pet {pet.pet_name}")
+                    # Прямой код уведомления без отдельного модуля
+                    hunger_channel = bot.get_channel(1551167853741219880)
+                    if hunger_channel:
+                        from config import get_emoji
+                        # Пинг всех опекунов
+                        mentions = f"<@{pet.owner_1_id}>"
+                        if pet.owner_2_id:
+                            mentions += f" <@{pet.owner_2_id}>"
+
+                        embed = discord.Embed(
+                            title=f"{get_emoji('a_star')} **ВНИМАНИЕ | ПИТОМЕЦ ГОЛОДЕН**",
+                            description=f"{get_emoji('a_sparkle')} Опекуны {mentions}, ваш питомец проголодался!\n\n{get_emoji('white_arrow')} **Питомец:** **{pet.pet_name}**\n{get_emoji('white_arrow')} **Текущая сытость:** **`{pet.fullness}%`** / `100%` 🍖\n\n{get_emoji('white_dot')} Питомец чувствует слабость и требует ухода.\n{get_emoji('white_dot')} Покормите его вовремя, иначе он сорвёт ошейник и сбежет на волю!\n\n> {get_emoji('white_dot')} *Используйте профиль питомца (`/pet`), чтобы покормить.*",
+                            color=0xE69500
+                        )
+                        await hunger_channel.send(mentions, embed=embed)
+                        logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 
