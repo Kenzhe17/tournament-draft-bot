@@ -247,6 +247,7 @@ class PetStore:
                 try:
                     logger.info(f"Pet {pet.pet_name} reached {pet.fullness}% fullness, sending warning")
                     hunger_channel = bot.get_channel(1551167853741219880)
+                    logger.info(f"Got channel: {hunger_channel}")
                     if hunger_channel:
                         # Пинг всех опекунов
                         mentions = f"<@{pet.owner_1_id}>"
@@ -259,8 +260,16 @@ class PetStore:
                             color=discord.Color.yellow()
                         )
                         await hunger_channel.send(mentions, embed=embed)
+                        logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
+                    else:
+                        logger.warning(f"Could not get hunger channel 1551167853741219880")
                 except Exception as e:
-                    pass
+                    logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
+            else:
+                if pet.fullness <= 30:
+                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, was_above_30={was_above_30}, guild_id={guild_id}, bot={bot is not None}")
+                else:
+                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, no warning needed")
 
             # Обновить таймстампы
             pet.last_fed_at = now
