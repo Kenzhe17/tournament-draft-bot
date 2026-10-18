@@ -243,7 +243,7 @@ class PetStore:
             # Уведомление при достижении сытости <= 30
             if pet.fullness <= 30 and was_above_30 and guild_id and bot:
                 try:
-                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
+                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, was_above_30={was_above_30}, guild_id={guild_id}, bot={bot is not None}")
                     from services.pet_alerts import send_hunger_alert
                     pet_dict = {
                         'pet_name': pet.pet_name,
@@ -252,6 +252,7 @@ class PetStore:
                         'fullness': pet.fullness
                     }
                     await send_hunger_alert(bot, pet_dict, bot.get_guild(guild_id))
+                    logger.info(f"Successfully sent hunger alert for pet {pet.pet_name}")
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 
