@@ -110,8 +110,8 @@ class PetStore:
                     INSERT INTO pets (
                         owner_1_id, owner_2_id, pet_type, rarity, pet_name,
                         level, exp, fullness, energy,
-                        last_fed_at, last_energy_update_at, created_at, hunger_started_at
-                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6, NULL)
+                        last_fed_at, last_energy_update_at, created_at, hunger_started_at, hunger_warning_sent
+                    ) VALUES ($1, $2, $3, $4, $5, 1, 0, 100, 100, $6, $6, $6, NULL, FALSE)
                     RETURNING *
                     """,
                     owner_1_id, owner_2_id, pet_type, pet_def["rarity_code"],
@@ -147,12 +147,13 @@ class PetStore:
                     last_fed_at = $7,
                     last_energy_update_at = $8,
                     protected_item_id = $9,
-                    hunger_started_at = $10
+                    hunger_started_at = $10,
+                    hunger_warning_sent = $11
                 WHERE pet_id = $1
                 """,
                 pet.pet_id, pet.pet_name, pet.level, pet.exp,
                 pet.fullness, pet.energy, pet.last_fed_at,
-                pet.last_energy_update_at, pet.protected_item_id, pet.hunger_started_at
+                pet.last_energy_update_at, pet.protected_item_id, pet.hunger_started_at, pet.hunger_warning_sent
             )
 
     async def add_exp(self, pet_id: int, exp: int, max_daily: int = 50) -> int:
@@ -267,8 +268,8 @@ class PetStore:
                 return True, None
 
             # Уведомление при достижении сытости <= 30
-            logger.info(f"Checking hunger alert: pet={pet.pet_name}, fullness={pet.fullness}, old_fullness={old_fullness}, guild_id={guild_id}, bot={bot is not None}")
-            if pet.fullness <= 30 and old_fullness > 30 and guild_id and bot:
+            logger.info(f"Checking hunger alert: pet={pet.pet_name}, fullness={pet.fullness}, old_fullness={old_fullness}, hunger_warning_sent={pet.hunger_warning_sent}, guild_id={guild_id}, bot={bot is not None}")
+            if pet.fullness <= 30 and not pet.hunger_warning_sent and guild_id and bot:
                 try:
                     logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
                     from config import get_emoji
@@ -305,6 +306,7 @@ class PetStore:
                         else:
                             await hunger_channel.send(mentions, embed=embed)
                         logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
+                        pet.hunger_warning_sent = True
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 
@@ -495,6 +497,7 @@ class PetStore:
             created_at=row["created_at"],
             protected_item_id=row["protected_item_id"],
             hunger_started_at=row.get("hunger_started_at"),
+            hunger_warning_sent=row.get("hunger_warning_sent", False),
         )
 
 
