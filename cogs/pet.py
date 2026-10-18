@@ -662,10 +662,14 @@ class FeedPetButton(discord.ui.Button):
         )
 
         if success:
-            # Обновляем исходное сообщение профиля
-            self.pet_dict["fullness"] = min(100, self.pet_dict["fullness"] + 20)
-            self.pet_dict["energy"] = min(100, self.pet_dict["energy"] + 5)
-            self.pet_dict["exp"] = self.pet_dict["exp"] + 5
+            # Загружаем актуальные данные из базы
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                pet_row = await conn.fetchrow("SELECT * FROM pets WHERE pet_id = $1", self.pet_id)
+                if pet_row:
+                    self.pet_dict = dict(pet_row)
+
             new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
 
             if self.message:
@@ -762,8 +766,14 @@ class RenamePetModal(discord.ui.Modal):
 
         await pet_store.rename_pet(self.pet_id, new_name)
 
-        # Обновляем исходное сообщение с новым именем
-        self.pet_dict["pet_name"] = new_name
+        # Загружаем актуальные данные из базы
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            pet_row = await conn.fetchrow("SELECT * FROM pets WHERE pet_id = $1", self.pet_id)
+            if pet_row:
+                self.pet_dict = dict(pet_row)
+
         new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
 
         # Обновляем сообщение профиля через сохранённый message объект
