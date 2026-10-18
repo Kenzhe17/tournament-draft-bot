@@ -366,8 +366,9 @@ class TournamentBot(commands.Bot):
 
                         pool = await get_pool()
                         async with pool.acquire() as conn:
-                            # Get all pets
-                            rows = await conn.fetch("SELECT * FROM pets")
+                            # Get only pets from this guild
+                            rows = await conn.fetch("SELECT * FROM pets WHERE owner_1_id = ANY($1) OR owner_2_id = ANY($1)", 
+                                                    [member.id for member in guild.members])
                             logger.info(f"Pet hunger check: found {len(rows)} pets in guild {guild.id}")
 
                             for row in rows:
@@ -377,12 +378,8 @@ class TournamentBot(commands.Bot):
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
                 logger.info("Pet hunger check: completed checking all guilds")
-                logger.info("Pet hunger check: waiting another 5 minutes...")
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
-                # Wait a bit before retrying
-                await asyncio.sleep(60)
-        logger.info("Pet hunger check loop ended (bot closed)")
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
