@@ -170,11 +170,11 @@ class Pet:
             exp=data.get("exp", 0),
             fullness=data.get("fullness", 100),
             energy=data.get("energy", 100),
-            last_fed_at=datetime.fromisoformat(data.get("last_fed_at", datetime.now().isoformat())),
-            last_energy_update_at=datetime.fromisoformat(data.get("last_energy_update_at", datetime.now().isoformat())),
-            created_at=datetime.fromisoformat(data.get("created_at", datetime.now().isoformat())),
+            last_fed_at=_parse_datetime(data.get("last_fed_at")),
+            last_energy_update_at=_parse_datetime(data.get("last_energy_update_at")),
+            created_at=_parse_datetime(data.get("created_at")),
             protected_item_id=data.get("protected_item_id"),
-            hunger_started_at=datetime.fromisoformat(data["hunger_started_at"]) if data.get("hunger_started_at") else None,
+            hunger_started_at=_parse_datetime(data.get("hunger_started_at")),
         )
 
     def get_exp_to_next_level(self) -> int:
@@ -192,6 +192,17 @@ class Pet:
             10: 0,  # Максимальный уровень
         }
         return exp_requirements.get(self.level, 0)
+
+
+def _parse_datetime(value):
+    """Парсит datetime из строки или возвращает как есть если уже datetime."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return value
 
     def is_max_level(self) -> bool:
         """Возраст не ограничен."""
