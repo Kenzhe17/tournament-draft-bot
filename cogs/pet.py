@@ -20,26 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[discord.Embed, Optional[discord.File]]:
-    """Формирует аккуратную карточку профиля питомца в пастельной эстетике."""
+    """Формирует компактный профиль питомца с аватаркой в правом верхнем углу (thumbnail)."""
     pet_type = pet_row["pet_type"]
-    catalog_data = PETS_CATALOG.get(pet_type)
+    catalog_data = PETS_CATALOG.get(pet_type, {})
 
-    # Получаем реальные эмодзи через get_emoji
-    emoji_star = get_emoji("a_star")
-    emoji_sparkle = get_emoji("a_sparkle")
-    emoji_arrow = get_emoji("white_arrow")
-    emoji_dot = get_emoji("white_dot")
-
-    if not catalog_data:
-        pet_title = pet_row["pet_name"]
-        rarity_name = pet_row.get("rarity", "Обычный")
-        color = 0xE67E22  # Пастельно-оранжевый по умолчанию
-        image_url = None
-    else:
-        pet_title = catalog_data["name"]
-        rarity_name = catalog_data["rarity"]
-        color = catalog_data["color"]
-        image_url = catalog_data.get("image_url")
+    pet_name = pet_row["pet_name"]
+    pet_title = catalog_data.get("name", pet_name)
+    color = catalog_data.get("color", 0xF1C40F)
+    image_path = catalog_data.get("image_path", f"assets/pets/{pet_type}.png")
 
     # Опекуны
     owner1 = guild.get_member(pet_row["owner_1_id"])
@@ -48,15 +36,15 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     owner2_mention = ""
     if pet_row.get("owner_2_id"):
         owner2 = guild.get_member(pet_row["owner_2_id"])
-        owner2_mention = f" & {owner2.mention if owner2 else f'<@{pet_row['owner_2_id']}>'}"
+        owner2_mention = f" & {owner2.mention if owner2 else f'<@{pet_row[\'owner_2_id\']}>'}"
 
-    level = pet_row["level"]
+    age = pet_row["level"]
     fullness = pet_row["fullness"]
     energy = pet_row["energy"]
     exp = pet_row["exp"]
-    max_exp = level * 50  # Динамический порог опыта
+    max_exp = age * 50
 
-    # Собираем способности в одну лаконичную строку
+    # Сборка пассивных способностей
     abilities_list = []
     if catalog_data:
         for ab_key in (1, 2):
@@ -65,42 +53,43 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             desc_val = ab["desc_template"].format(val=f"{val:.1f}")
 
             if energy <= 0:
-                abilities_list.append(f"⚠️ **{ab['name']}** — *Блокировка (0% энергии)*")
+                abilities_list.append(f"**{ab['name']}:** *(Отключено: 0% энергии)*")
             else:
-                abilities_list.append(f"🔓 **{ab['name']}:** {desc_val}")
+                abilities_list.append(f"**{ab['name']}:** {desc_val}")
 
-    abilities_formatted = "\n".join(f"{emoji_dot} {item}" for item in abilities_list)
+    abilities_formatted = "\n".join(f"{get_emoji('white_dot')} {item}" for item in abilities_list)
 
     # Статус сытости
-    status_warning = ""
+    status_text = f"\n\n{get_emoji('a_sparkle')} *Питомец сыт и восстанавливает энергию!*"
     if fullness <= 0:
-        status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умер от голода!"
+        status_text = f"\n\n{get_emoji('white_dot')} **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умирает от голода!"
     elif fullness <= 30:
-        status_warning = "\n\n⚠️ **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
-    elif fullness > 70:
-        status_warning = "\n\n✨ *Питомец сыт и восстанавливает энергию!*"
+        status_text = f"\n\n{get_emoji('white_dot')} **ПЛОХОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
 
     embed = discord.Embed(
-        title=f"{emoji_star} **ПРОФИЛЬ ПИТОМЦА | {pet_row['pet_name'].upper()}**",
+        title=f"{get_emoji('a_star')} **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
         description=(
-            f"{emoji_sparkle} **Вид:** **{pet_title}** (*{rarity_name}*) | **Возраст:** `{level}` | **Опекун:** {owner1_mention}{owner2_mention}\n"
-            f"🍖 **Сытость:** `{fullness}%` | ⚡ **Энергия:** `{energy}%` | ✨ **Опыт:** `{exp}/{max_exp} EXP`\n\n"
-            f"📜 **Способности:**\n"
+            f"{get_emoji('a_sparkle')} **Имя:** **{pet_name}**\n"
+            f"{get_emoji('white_arrow')} **Вид:** **{pet_title}**\n"
+            f"{get_emoji('white_arrow')} **Возраст:** `{age} лет`\n"
+            f"{get_emoji('white_arrow')} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
+            f"**Состояние:**\n"
+            f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
+            f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%` / `100%`\n"
+            f"{get_emoji('white_dot')} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
+            f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
-            f"{status_warning}"
+            f"{status_text}"
         ),
         color=color
     )
 
-    # Прикрепляем арт (image внизу, текст поверх)
+    # Переносим арт питомца в верхний правый угол (thumbnail)
     file = None
-    local_image_path = f"assets/pets/{pet_type}.png"
-    if os.path.exists(local_image_path):
-        filename = os.path.basename(local_image_path)
-        file = discord.File(local_image_path, filename=filename)
-        embed.set_image(url=f"attachment://{filename}")
-    elif image_url:
-        embed.set_image(url=image_url)
+    if os.path.exists(image_path):
+        filename = os.path.basename(image_path)
+        file = discord.File(image_path, filename=filename)
+        embed.set_thumbnail(url=f"attachment://{filename}")
 
     return embed, file
 
