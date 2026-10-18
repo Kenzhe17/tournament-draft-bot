@@ -338,13 +338,18 @@ class TournamentBot(commands.Bot):
         """Background task to check pet hunger and send notifications."""
         import asyncio
 
+        logger.info("Starting pet hunger check loop")
         while not self.is_closed():
             try:
+                logger.info("Pet hunger check: waiting 5 minutes...")
                 await asyncio.sleep(300)  # Check every 5 minutes
+                logger.info("Pet hunger check: checking all pets")
 
                 # Get all guilds
+                logger.info(f"Pet hunger check: checking {len(self.guilds)} guilds")
                 for guild in self.guilds:
                     try:
+                        logger.info(f"Pet hunger check: checking guild {guild.id}")
                         from storage.pet_store import pet_store
                         from storage.db import get_pool
 
@@ -352,13 +357,15 @@ class TournamentBot(commands.Bot):
                         async with pool.acquire() as conn:
                             # Get all pets
                             rows = await conn.fetch("SELECT * FROM pets")
+                            logger.info(f"Pet hunger check: found {len(rows)} pets in guild {guild.id}")
 
                             for row in rows:
                                 pet = pet_store._row_to_pet(row)
                                 # Check hunger for each pet
                                 await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
                     except Exception as e:
-                        logger.error(f"Error in pet hunger check for guild {guild.id}: {e}")
+                        logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
+                logger.info("Pet hunger check: completed checking all guilds")
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
 
