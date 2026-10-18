@@ -568,9 +568,12 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     # Создать View с кнопками
     view = PetProfileView(pet, pet_dict, interaction)
     if file:
-        msg = await interaction.response.send_message(embed=embed, view=view, file=file)
+        await interaction.response.send_message(embed=embed, view=view, file=file)
     else:
-        msg = await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=view)
+
+    # Получаем исходное сообщение для редактирования
+    msg = await interaction.original_response()
 
     # Сохраняем сообщение в view
     if msg:
@@ -682,12 +685,20 @@ class FeedPetButton(discord.ui.Button):
                     )
                     new_view.message = self.message
 
-                    if new_file:
-                        await self.message.edit(embed=new_embed, view=new_view, attachments=[new_file])
-                    else:
-                        await self.message.edit(embed=new_embed, view=new_view)
+                    # Обновляем message в кнопках нового view
+                    new_view.rename_button.message = self.message
+                    new_view.rename_button.interaction = self.interaction
+                    for item in new_view.children:
+                        if isinstance(item, FeedPetButton):
+                            item.message = self.message
+                            item.interaction = self.interaction
+
+                    attachments = [new_file] if new_file else []
+
+                    await self.message.edit(embed=new_embed, view=new_view, attachments=attachments)
                 except Exception as e:
                     logger.error(f"Failed to edit pet profile message after feeding: {e}")
+                    logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
 
             embed = discord.Embed(
                 title=replace_emojis("✅ Питомец покормлен"),
@@ -787,12 +798,20 @@ class RenamePetModal(discord.ui.Modal):
                 )
                 new_view.message = self.message
 
-                if new_file:
-                    await self.message.edit(embed=new_embed, view=new_view, attachments=[new_file])
-                else:
-                    await self.message.edit(embed=new_embed, view=new_view)
+                # Обновляем message в кнопках нового view
+                new_view.rename_button.message = self.message
+                new_view.rename_button.interaction = interaction
+                for item in new_view.children:
+                    if isinstance(item, FeedPetButton):
+                        item.message = self.message
+                        item.interaction = interaction
+
+                attachments = [new_file] if new_file else []
+
+                await self.message.edit(embed=new_embed, view=new_view, attachments=attachments)
             except Exception as e:
                 logger.error(f"Failed to edit pet profile message: {e}")
+                logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Питомец переименован в {new_name}"),
