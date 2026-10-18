@@ -307,7 +307,8 @@ class RobStartButton(discord.ui.Button):
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                            f"{get_emoji('white_dot')} **Результат:** Предмет защищён совой-казначеем!\n"
+                            f"{get_emoji('white_dot')} **Результат:** Предмет защищён!\n\n"
+                            f"🐾 **Сова-казначей ({pet_bonuses['victim_item_protect_name']}):** Защитил предмет от кражи!"
                         ),
                         color=0x2ECC71  # Green for success
                     )
