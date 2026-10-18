@@ -262,13 +262,22 @@ class RobStartButton(discord.ui.Button):
 
                             if victim_pet_def:  # Способности открыты с 1 возраста
                                 # Проверить Тайный сейф (Guardian Turtle) - абсолютная защита
-                                ability = victim_pet_def["abilities"][2]
-                                if ability["name"] == "Тайный сейф":
-                                    absolute_protected = True
-                                    protect_pet_name = victim_pet.pet_name
+                                ability = victim_pet_def["abilities"].get(2)
+                                if ability and ability["name"] == "Тайный сейф":
+                                    # Проверить защищаемый предмет
+                                    protected_item_id = victim_pet.protected_item_id
+                                    if protected_item_id:
+                                        # Проверить будет ли украден защищаемый предмет
+                                        if stealable_items:
+                                            for item in stealable_items:
+                                                if item.id == protected_item_id:
+                                                    absolute_protected = True
+                                                    protect_pet_name = victim_pet.pet_name
+                                                    break
                                 # Проверить Цепкие когти (Treasury Owl) - шанс защиты
-                                elif ability["name"] == "Цепкие когти":
-                                    protect_chance = ability.get("max_val", 0)
+                                ability_1 = victim_pet_def["abilities"].get(1)
+                                if ability_1 and ability_1["name"] == "Цепкие когти":
+                                    protect_chance = ability_1.get("max_val", 0)
                                     pet_bonuses["victim_item_protect_chance"] = protect_chance
                                     pet_bonuses["victim_item_protect_name"] = victim_pet.pet_name
 
@@ -663,7 +672,7 @@ class RobCog(commands.Cog):
         view.add_item(RobGroupStartButton(interaction.guild_id, view))
         view.add_item(RobGroupCancelButton(interaction.guild_id, view))
 
-        embed = view.build_embed()
+        embed = await view.build_embed_async()
         await interaction.response.send_message(embed=embed, view=view)
 
         # Сохранить message_id и original_message для лобби
@@ -707,13 +716,26 @@ class RobGroupView(discord.ui.View):
             except:
                 pass
 
-    def build_embed(self) -> discord.Embed:
-        """Построить embed для группового ограбления."""
+    async def build_embed_async(self) -> discord.Embed:
+        """Построить embed для группового ограбления с учётом питомца жертвы."""
         # Рассчитать шанс успеха: 50% для 1 участника, +6% за каждого следующего
         member_count = len(self.members)
         base_chance = 50  # 50% для 1 участника
         bonus = (member_count - 1) * 6  # +6% за каждого дополнительного участника
         success_chance = min(base_chance + bonus, 90)  # Максимум 90%
+
+        # Проверить питомца жертвы (Крепкий панцирь)
+        from storage.pet_store import pet_store
+        victim_pet = await pet_store.get_user_pet(self.guild_id, self.victim_id)
+        defense_bonus = 0
+        if victim_pet:
+            from storage.pet_store import pet_catalog
+            victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+            if victim_pet_def:
+                ability = victim_pet_def["abilities"].get(1)
+                if ability and ability["name"] == "Крепкий панцирь":
+                    defense_bonus = ability.get("max_val", 0)
+                    success_chance = max(0, success_chance - defense_bonus)
 
         # Оставшееся время
         remaining = timedelta(seconds=120) - (datetime.now() - self.start_time)
@@ -814,7 +836,7 @@ class RobGroupJoinButton(discord.ui.Button):
             self.game_view.members.add(user_id)
 
             # Обновить embed
-            embed = self.game_view.build_embed()
+            embed = await self.game_view.build_embed_async()
             await interaction.response.edit_message(embed=embed)
 
 
@@ -1019,7 +1041,54 @@ class RobGroupStartButton(discord.ui.Button):
         success = random.random() < success_chance
 
         if success:
+            # Проверить Тайный сейф жертвы (Guardian Turtle)
+            absolute_protected = False
+            protect_pet_name = None
+            try:
+                from storage.pet_store import pet_store
+                victim_pet = await pet_store.get_user_pet(guild_id, victim_id)
+                if victim_pet:
+                    from storage.pet_store import pet_catalog
+                    victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
+                    if victim_pet_def:
+                        ability = victim_pet_def["abilities"].get(2)
+                        if ability and ability["name"] == "Тайный сейф":
+                            protected_item_id = victim_pet.protected_item_id
+                            if protected_item_id and stealable_items:
+                                for item in stealable_items:
+                                    if item.id == protected_item_id:
+                                        absolute_protected = True
+                                        protect_pet_name = victim_pet.pet_name
+                                        break
+            except Exception as e:
+                logger.error(f"Error checking safe in group rob: {e}")
+
             if use_item_steal:
+                # Проверить защищаем ли предмет
+                if absolute_protected:
+                    # Абсолютная защита - предмет не крадётся
+                    percent = random.uniform(0.1, 0.5)
+                    potential = int(leader_balance * percent)
+                    share = potential // len(members)
+                    
+                    for member_id in members:
+                        await user_balance_store.add_balance(guild_id, member_id, share)
+                    
+                    party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
+                        description=(
+                            f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
+                            f"{get_emoji('white_arrow')} **Результат:** Предмет защищён сейфом!\n"
+                            f"{get_emoji('white_dot')} **Получено:** `{share}` {get_emoji('money')} (каждому)\n"
+                            f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n\n"
+                            f"🐾 **Черепаха-хранитель ({protect_pet_name}):** Абсолютная защита предмета!"
+                        ),
+                        color=0x2ECC71
+                    )
+                    await interaction.response.edit_message(embed=embed, view=None)
+                    return
+                
                 # Кража предмета
                 stolen_item = random.choice(stealable_items)
                 inventory_store.remove_item(guild_id, victim_id, stolen_item.id)

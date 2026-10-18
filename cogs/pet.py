@@ -634,6 +634,10 @@ class PetProfileView(discord.ui.View):
         # Добавить кнопку защиты предмета для Черепахи-хранителя (с возраста 1, так как способность открыта)
         if pet.pet_type.value == "guardian_turtle" and pet.level >= 1:
             self.add_item(ProtectItemButton(pet.pet_id, pet_dict, interaction))
+        
+        # Добавить кнопку сейфа для Черепахи-хранителя (с возраста 1, так как способность открыта)
+        if pet.pet_type.value == "guardian_turtle" and pet.level >= 1:
+            self.add_item(SafeButton(pet.pet_id, pet_dict, interaction))
 
     async def on_timeout(self) -> None:
         """Remove buttons on timeout."""
@@ -751,11 +755,117 @@ class FeedPetButton(discord.ui.Button):
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             # Вернуть деньги
-            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, 30)
+            await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.feed_cost)
             await interaction.response.send_message(
                 replace_emojis(f"❌ {message}"),
                 ephemeral=True
             )
+
+
+class SafeButton(discord.ui.Button):
+    """Кнопка сейфа для Черепахи-хранителя."""
+
+    def __init__(self, pet_id: int, pet_dict: dict, interaction: discord.Interaction):
+        protected_item_id = pet_dict.get("protected_item_id")
+        label = "Сейф" if not protected_item_id else f"Сейф: {protected_item_id}"
+        
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=label,
+            custom_id=f"safe_pet:{pet_id}"
+        )
+        self.pet_id = pet_id
+        self.pet_dict = pet_dict
+        self.interaction = interaction
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        """Показать модальное окно для выбора предмета."""
+        # Проверить, является ли пользователь опекуном
+        if interaction.user.id not in [self.pet_dict["owner_1_id"], self.pet_dict.get("owner_2_id")]:
+            await interaction.response.send_message(
+                replace_emojis("❌ Только опекуны могут управлять сейфом!"),
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_modal(SafeModal(self.pet_id, self.pet_dict, interaction))
+
+
+class SafeModal(discord.ui.Modal):
+    """Модальное окно выбора предмета для сейфа."""
+
+    def __init__(self, pet_id: int, pet_dict: dict, interaction: discord.Interaction):
+        super().__init__(title="Управление сейфом")
+        self.pet_id = pet_id
+        self.pet_dict = pet_dict
+        self.interaction = interaction
+
+        current_item = pet_dict.get("protected_item_id", "Нет")
+        
+        self.item_input = discord.ui.TextInput(
+            label="ID предмета для защиты",
+            placeholder=f"Текущий: {current_item} (введите новый ID или 'clear' для очистки)",
+            max_length=100,
+            required=False
+        )
+        self.add_item(self.item_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """Обработать отправку формы."""
+        item_id = self.item_input.value.strip()
+        
+        # Если пусто или 'clear' - очистить сейф
+        if not item_id or item_id.lower() == "clear":
+            await pet_store.set_protected_item(self.pet_id, None)
+            await interaction.response.send_message(
+                replace_emojis("✅ Сейф очищен! Предмет не защищён."),
+                ephemeral=True
+            )
+        else:
+            # Установить защищаемый предмет
+            await pet_store.set_protected_item(self.pet_id, item_id)
+            await interaction.response.send_message(
+                replace_emojis(f"✅ Предмет `{item_id}` теперь защищён в сейфе!"),
+                ephemeral=True
+            )
+        
+        # Обновить профиль
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            pet_row = await conn.fetchrow("SELECT * FROM pets WHERE pet_id = $1", self.pet_id)
+            if pet_row:
+                self.pet_dict = dict(pet_row)
+
+        new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
+        
+        # Обновить сообщение профиля
+        message = await self.interaction.original_response()
+        if message:
+            try:
+                new_view = PetProfileView(
+                    Pet.from_dict(self.pet_dict),
+                    self.pet_dict,
+                    self.interaction
+                )
+                new_view.message = message
+                new_view.rename_button.message = message
+                new_view.rename_button.interaction = self.interaction
+                for item in new_view.children:
+                    if isinstance(item, FeedPetButton):
+                        item.message = message
+                        item.interaction = self.interaction
+                    elif isinstance(item, SafeButton):
+                        item.message = message
+                        item.interaction = self.interaction
+                        item.pet_dict = self.pet_dict
+                
+                if new_file:
+                    await message.edit(embed=new_embed, view=new_view, attachments=[new_file])
+                else:
+                    await message.edit(embed=new_embed, view=new_view)
+            except Exception as e:
+                logger.error(f"Error updating pet profile after safe change: {e}")
 
 
 class RenamePetButton(discord.ui.Button):
