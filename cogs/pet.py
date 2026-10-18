@@ -13,7 +13,7 @@ from discord.ext import commands
 from config import replace_emojis, get_emoji
 from storage.pet_store import pet_store, pet_catalog
 from storage.db import get_pool
-from models.pet import PetRarity
+from models.pet import PetRarity, Pet
 from models.pets_catalog import PETS_CATALOG
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,8 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     pet_name = pet_row["pet_name"]
     pet_title = catalog_data.get("name", pet_name)
     color = catalog_data.get("color", 0xF1C40F)
-    image_path = catalog_data.get("image_path", f"assets/pets/{pet_type}.png")
+    image_url = catalog_data.get("image_url")
+    local_image_path = f"assets/pets/{pet_type}.png"
 
     # Опекуны
     owner1 = guild.get_member(pet_row["owner_1_id"])
@@ -85,10 +86,12 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
 
     # Переносим арт питомца в верхний правый угол (thumbnail)
     file = None
-    if os.path.exists(image_path):
-        filename = os.path.basename(image_path)
-        file = discord.File(image_path, filename=filename)
+    if os.path.exists(local_image_path):
+        filename = os.path.basename(local_image_path)
+        file = discord.File(local_image_path, filename=filename)
         embed.set_thumbnail(url=f"attachment://{filename}")
+    elif image_url:
+        embed.set_thumbnail(url=image_url)
 
     return embed, file
 
@@ -573,10 +576,12 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     if msg:
         view.message = msg
         view.rename_button.message = msg
+        view.rename_button.interaction = interaction
         # Обновляем message в FeedPetButton
         for item in view.children:
             if isinstance(item, FeedPetButton):
                 item.message = msg
+                item.interaction = interaction
 
 
 class PetProfileView(discord.ui.View):
@@ -588,8 +593,8 @@ class PetProfileView(discord.ui.View):
         self.pet_dict = pet_dict
         self.interaction = interaction
         self.message = None  # Will be set after response
-        self.rename_button = RenamePetButton(pet.pet_id, pet_dict, None)
-        self.add_item(FeedPetButton(pet.pet_id, pet_dict, None))
+        self.rename_button = RenamePetButton(pet.pet_id, pet_dict, None, interaction)
+        self.add_item(FeedPetButton(pet.pet_id, pet_dict, None, interaction))
         self.add_item(self.rename_button)
 
         # Добавить кнопку защиты предмета для Черепахи-хранителя (с возраста 1, так как способность открыта)
@@ -605,7 +610,7 @@ class PetProfileView(discord.ui.View):
 class FeedPetButton(discord.ui.Button):
     """Кнопка кормления питомца."""
 
-    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message):
+    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message, interaction: discord.Interaction):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Покормить (30 🪙)",
@@ -614,6 +619,7 @@ class FeedPetButton(discord.ui.Button):
         self.pet_id = pet_id
         self.pet_dict = pet_dict
         self.message = message
+        self.interaction = interaction
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать кормление."""
@@ -664,10 +670,18 @@ class FeedPetButton(discord.ui.Button):
 
             if self.message:
                 try:
+                    # Создаём новый view с обновлёнными данными
+                    new_view = PetProfileView(
+                        Pet.from_dict(self.pet_dict),
+                        self.pet_dict,
+                        self.interaction
+                    )
+                    new_view.message = self.message
+
                     if new_file:
-                        await self.message.edit(embed=new_embed, attachments=[new_file])
+                        await self.message.edit(embed=new_embed, view=new_view, attachments=[new_file])
                     else:
-                        await self.message.edit(embed=new_embed)
+                        await self.message.edit(embed=new_embed, view=new_view)
                 except Exception as e:
                     logger.error(f"Failed to edit pet profile message after feeding: {e}")
 
@@ -693,7 +707,7 @@ class FeedPetButton(discord.ui.Button):
 class RenamePetButton(discord.ui.Button):
     """Кнопка переименования питомца."""
 
-    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message):
+    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message, interaction: discord.Interaction):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Переименовать",
@@ -702,6 +716,7 @@ class RenamePetButton(discord.ui.Button):
         self.pet_id = pet_id
         self.pet_dict = pet_dict
         self.message = message
+        self.interaction = interaction
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Показать модальное окно для переименования."""
@@ -713,17 +728,18 @@ class RenamePetButton(discord.ui.Button):
             )
             return
 
-        await interaction.response.send_modal(RenamePetModal(self.pet_id, self.message, self.pet_dict))
+        await interaction.response.send_modal(RenamePetModal(self.pet_id, self.message, self.pet_dict, interaction))
 
 
 class RenamePetModal(discord.ui.Modal):
     """Модальное окно переименования питомца."""
 
-    def __init__(self, pet_id: int, message: discord.Message, pet_dict: dict):
+    def __init__(self, pet_id: int, message: discord.Message, pet_dict: dict, interaction: discord.Interaction):
         super().__init__(title="Переименовать питомца")
         self.pet_id = pet_id
         self.message = message
         self.pet_dict = pet_dict
+        self.interaction = interaction
 
         self.name_input = discord.ui.TextInput(
             label="Новое имя",
@@ -753,10 +769,18 @@ class RenamePetModal(discord.ui.Modal):
         # Обновляем сообщение профиля через сохранённый message объект
         if self.message:
             try:
+                # Создаём новый view с обновлёнными данными
+                new_view = PetProfileView(
+                    Pet.from_dict(self.pet_dict),
+                    self.pet_dict,
+                    interaction
+                )
+                new_view.message = self.message
+
                 if new_file:
-                    await self.message.edit(embed=new_embed, attachments=[new_file])
+                    await self.message.edit(embed=new_embed, view=new_view, attachments=[new_file])
                 else:
-                    await self.message.edit(embed=new_embed)
+                    await self.message.edit(embed=new_embed, view=new_view)
             except Exception as e:
                 logger.error(f"Failed to edit pet profile message: {e}")
 
