@@ -52,7 +52,11 @@ class TournamentBot(commands.Bot):
         # Start draft timer background task (for auto-random picks)
         self.loop.create_task(self.draft_timer_loop())
         # Start pet hunger check background task
-        self.loop.create_task(self.pet_hunger_check_loop())
+        try:
+            self.loop.create_task(self.pet_hunger_check_loop())
+            logger.info("Pet hunger check loop task created")
+        except Exception as e:
+            logger.error(f"Failed to create pet hunger check loop task: {e}", exc_info=True)
         
         # Initialize shop items
         try:
@@ -344,6 +348,11 @@ class TournamentBot(commands.Bot):
                 logger.info("Pet hunger check: waiting 5 minutes...")
                 await asyncio.sleep(300)  # Check every 5 minutes
                 logger.info("Pet hunger check: checking all pets")
+                
+                # Check if bot is still connected
+                if not self.is_ready():
+                    logger.warning("Bot not ready, skipping pet hunger check")
+                    continue
 
                 # Get all guilds
                 logger.info(f"Pet hunger check: checking {len(self.guilds)} guilds")
