@@ -164,23 +164,16 @@ class PetStore:
 
             pet = self._row_to_pet(row)
 
-            if pet.is_max_level():
-                return pet.exp
-
             # Проверить дневной лимит (упрощённо - можно добавить таблицу для отслеживания)
             new_exp = min(pet.exp + exp, pet.exp + max_daily)
 
-            # Проверить повышение уровня
-            exp_needed = pet.get_exp_to_next_level()
-            while new_exp >= exp_needed and pet.level < 10:
-                new_exp -= exp_needed
-                pet.level += 1
-                exp_needed = pet.get_exp_to_next_level()
+            # Возраст = exp // 50 + 1 (каждые 50 опыта = +1 возраст)
+            new_level = new_exp // 50 + 1
 
             # Обновить
             await conn.execute(
                 "UPDATE pets SET exp = $2, level = $3 WHERE pet_id = $1",
-                pet_id, new_exp, pet.level
+                pet_id, new_exp, new_level
             )
 
             return new_exp

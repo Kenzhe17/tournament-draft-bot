@@ -46,7 +46,7 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     fullness = pet_row["fullness"]
     energy = pet_row["energy"]
     exp = pet_row["exp"]
-    max_exp = age * 50
+    max_exp = age * 50 - 1  # Возраст 1: 0-49, Возраст 2: 50-99, Возраст 3: 100-149
 
     # Сборка пассивных способностей (только названия)
     abilities_list = []
@@ -309,7 +309,7 @@ class PetCog(commands.Cog):
             # Устанавливаем возраст для теста
             async with pool.acquire() as conn:
                 await conn.execute(
-                    "UPDATE pets SET level = 1, exp = 50, fullness = 100, energy = 100 WHERE pet_id = $1",
+                    "UPDATE pets SET level = 1, exp = 0, fullness = 100, energy = 100 WHERE pet_id = $1",
                     pet.pet_id
                 )
 
