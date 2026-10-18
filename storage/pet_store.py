@@ -319,7 +319,7 @@ class PetStore:
             await self.update_pet(pet)
             return True
 
-    async def consume_energy_for_ability(self, guild_id: int, user_id: int, action: str) -> bool:
+    async def consume_energy_for_ability(self, guild_id: int, user_id: int, action: str, bot=None) -> bool:
         """Списать энергию и сытость за использование способности.
 
         action может быть: 'case_open', 'pay', 'rob', 'rob_defense', 'elo_match'
@@ -348,6 +348,10 @@ class PetStore:
                 "UPDATE pets SET fullness = GREATEST(0, fullness - 2) WHERE pet_id = $1",
                 pet.pet_id
             )
+
+        # Проверить сытость после использования способности для уведомлений
+        if bot:
+            await self.check_fullness_and_energy(pet.pet_id, guild_id, bot)
 
         return True
 

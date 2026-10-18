@@ -1736,7 +1736,7 @@ class TournamentCog(commands.Cog):
 
             if pet and pet.fullness > 0:
                 # Списать энергию за использование способности
-                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "pay")
+                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "pay", interaction.client)
 
                 if energy_consumed:
                     # Получаем каталог питомца
@@ -1811,7 +1811,7 @@ class TournamentCog(commands.Cog):
 
             if pet and pet.fullness > 0:
                 # Списать энергию за использование способности
-                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "gift")
+                energy_consumed = await pet_store.consume_energy_for_ability(interaction.guild_id, interaction.user.id, "gift", interaction.client)
 
                 if energy_consumed:
                     from storage.pet_store import pet_catalog
