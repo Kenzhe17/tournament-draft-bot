@@ -196,6 +196,7 @@ class PetStore:
             now = datetime.now(timezone.utc)
 
             # Сохраняем значения ДО изменений для проверок уведомлений
+            was_above_30 = pet.fullness > 30
             was_full = pet.fullness > 0
 
             # Рассчитать прошедшее время с последнего обновления
@@ -235,8 +236,8 @@ class PetStore:
                         logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
                 return True, None
 
-            # Уведомление при достижении сытости <= 30 через новый сервис
-            if pet.fullness <= 30 and guild_id and bot:
+            # Уведомление при достижении сытости <= 30 через новый сервис (только при переходе через порог)
+            if pet.fullness <= 30 and was_above_30 and guild_id and bot:
                 try:
                     from services.pet_alerts import send_hunger_alert
                     guild = bot.get_guild(guild_id)
