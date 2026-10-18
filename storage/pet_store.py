@@ -225,15 +225,18 @@ class PetStore:
 
             # Если сытость 0 - автоматический побег
             if pet.fullness == 0:
+                logger.info(f"Pet {pet.pet_name} fullness reached 0, was_full={was_full}, guild_id={guild_id}, bot={bot is not None}")
                 await self.delete_pet(pet_id)
                 # Отправить уведомление о побеге с новым дизайном (только один раз)
                 if was_full and guild_id and bot:
                     try:
+                        logger.info(f"Sending runaway alert for pet {pet.pet_name}")
                         from config import get_emoji
                         from models.pets_catalog import PETS_CATALOG
                         import os
                         
                         hunger_channel = bot.get_channel(1551167853741219880)
+                        logger.info(f"Got runaway channel: {hunger_channel}")
                         if hunger_channel:
                             # Пинг всех опекунов
                             mentions = f"<@{pet.owner_1_id}>"
