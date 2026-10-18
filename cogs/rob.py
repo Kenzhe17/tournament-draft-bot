@@ -141,7 +141,33 @@ class RobStartButton(discord.ui.Button):
                 stealable_items.append(item)
 
         has_items = len(stealable_items) > 0
-        use_item_steal = has_items and random.random() < 0.5  # 50% шанс кражи предмета
+        
+        # Базовый шанс кражи предмета 50%
+        base_item_steal_chance = 0.5
+        
+        # Применить бонус Охотник за вещами (увеличивает шанс кражи предмета)
+        try:
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
+            
+            if pet:
+                energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
+                
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+                    
+                    if pet_def:
+                        ability = pet_def["abilities"][2]
+                        if ability["name"] == "Охотник за вещами":
+                            item_steal_bonus = ability.get("max_val", 0)
+                            base_item_steal_chance += item_steal_bonus / 100
+                            pet_bonuses["item_steal_bonus"] = item_steal_bonus
+                            pet_bonuses["item_steal_name"] = pet.pet_name
+        except Exception as e:
+            logger.error(f"Error applying item steal bonus: {e}")
+        
+        use_item_steal = has_items and random.random() < base_item_steal_chance
 
         # Базовый шанс успеха 50%
         base_success_chance = 0.5
@@ -159,6 +185,8 @@ class RobStartButton(discord.ui.Button):
             "victim_item_protect_name": None,
             "black_market_bonus": 0,
             "black_market_name": None,
+            "item_steal_bonus": 0,
+            "item_steal_name": None,
         }
 
         # Применить бонус питомца грабителя к шансу успеха (Ловкие лапы)
@@ -351,6 +379,8 @@ class RobStartButton(discord.ui.Button):
 
                     # Build success embed
                     bonus_text = ""
+                    if pet_bonuses.get("item_steal_bonus", 0) > 0:
+                        bonus_text += f"\n\n🐾 **Ворон-контрабандист ({pet_bonuses['item_steal_name']}):** Повысил шанс кражи предмета на +{pet_bonuses['item_steal_bonus']:.1f}%!"
                     if pet_bonuses.get("black_market_bonus", 0) > 0:
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['black_market_name']}):** Уменьшил комиссию на -{pet_bonuses['black_market_bonus']:.1f}%!"
                     

@@ -107,7 +107,7 @@ class SellCog(commands.Cog):
                         if ability["name"] in ["Чёрный рынок", "Торговый нюх"]:
                             bonus_value = ability.get("max_val", 0)
                             fee_reduction = bonus_value / 100
-                            base_sell_percent = base_sell_percent * (1 - fee_reduction)
+                            base_sell_percent = base_sell_percent * (1 + fee_reduction)  # Уменьшение комиссии = увеличение цены
                             pet_bonus_info["bonus_value"] = bonus_value
                             pet_bonus_info["pet_name"] = pet.pet_name
                             pet_bonus_info["ability_name"] = ability["name"]
