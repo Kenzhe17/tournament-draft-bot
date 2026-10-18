@@ -413,7 +413,44 @@ class PetStore:
 
         # Проверить сытость после использования способности для уведомлений
         if bot:
-            await self.check_fullness_and_energy(pet.pet_id, guild_id, bot)
+            # Получить текущее состояние питомца после списания энергии/сытости
+            pet_after = await self.get_user_pet(guild_id, user_id)
+            if pet_after and pet_after.fullness <= 30 and not pet_after.hunger_warning_sent:
+                # Сытость упала ниже 30 и предупреждение ещё не отправлялось
+                from config import get_emoji
+                from models.pets_catalog import PETS_CATALOG
+                import os
+                
+                hunger_channel = bot.get_channel(1551167853741219880)
+                if hunger_channel:
+                    mentions = f"<@{pet_after.owner_1_id}>"
+                    if pet_after.owner_2_id:
+                        mentions += f" <@{pet_after.owner_2_id}>"
+
+                    catalog_data = PETS_CATALOG.get(pet_after.pet_type.value, {})
+                    image_url = catalog_data.get("image_url")
+                    local_image_path = f"assets/pets/{pet_after.pet_type.value}.png"
+
+                    embed = discord.Embed(
+                        title=f"{get_emoji('a_star')} **ВНИМАНИЕ | ПИТОМЕЦ ГОЛОДЕН**",
+                        description=f"{get_emoji('a_sparkle')} Опекуны {mentions}, ваш питомец проголодался!\n\n{get_emoji('white_arrow')} **Питомец:** **{pet_after.pet_name}**\n{get_emoji('white_arrow')} **Текущая сытость:** **`{pet_after.fullness}%`** / `100%` 🍖\n\n{get_emoji('white_dot')} Питомец чувствует слабость и требует ухода.\n{get_emoji('white_dot')} Покормите его вовремя, иначе он сорвёт ошейник и сбежет на волю!\n\n> {get_emoji('white_dot')} *Используйте профиль питомца (`/pet`), чтобы покормить.*",
+                        color=0xE69500
+                    )
+                    
+                    if os.path.exists(local_image_path):
+                        filename = os.path.basename(local_image_path)
+                        file = discord.File(local_image_path, filename=filename)
+                        embed.set_thumbnail(url=f"attachment://{filename}")
+                        await hunger_channel.send(mentions, embed=embed, file=file)
+                    elif image_url:
+                        embed.set_thumbnail(url=image_url)
+                        await hunger_channel.send(mentions, embed=embed)
+                    else:
+                        await hunger_channel.send(mentions, embed=embed)
+                    
+                    # Отметить что предупреждение отправлено
+                    pet_after.hunger_warning_sent = True
+                    await self.update_pet(pet_after)
 
         return True
 
