@@ -298,12 +298,8 @@ class RobStartButton(discord.ui.Button):
                     await interaction.response.edit_message(embed=embed, view=None)
 
                 if item_protected:
-                    # Цепкие когти - предмет остаётся у жертвы, грабитель получает монеты (15% шанс)
+                    # Цепкие когти - предмет остаётся у жертвы, грабитель ничего не получает (15% шанс)
                     stolen_item = random.choice(stealable_items)
-
-                    # Грабитель получает монеты равные 30% стоимости предмета
-                    sale_price = int(stolen_item.price * 0.3)
-                    await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
 
                     embed = discord.Embed(
                         title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
@@ -311,8 +307,7 @@ class RobStartButton(discord.ui.Button):
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
                             f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                            f"{get_emoji('white_dot')} **Получено:** `{sale_price}` {get_emoji('money')}\n"
-                            f"{get_emoji('white_dot')} **Способность:** Сова-казначей защитила предмет!\n"
+                            f"{get_emoji('white_dot')} **Результат:** Предмет защищён совой-казначеем!\n"
                         ),
                         color=0x2ECC71  # Green for success
                     )
