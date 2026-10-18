@@ -229,7 +229,7 @@ class RobStartButton(discord.ui.Button):
                             from storage.pet_store import pet_catalog
                             victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                            if victim_pet_def and victim_pet.level >= 7:
+                            if victim_pet_def:  # Способности открыты с 1 возраста
                                 # Проверить Тайный сейф (Guardian Turtle) - абсолютная защита
                                 ability = victim_pet_def["abilities"][2]
                                 if ability["name"] == "Тайный сейф":
@@ -297,54 +297,24 @@ class RobStartButton(discord.ui.Button):
                     await interaction.response.edit_message(embed=embed, view=None)
 
                 if item_protected:
-                    # Предмет защищён - украсть монеты вместо предмета
-                    percent = random.uniform(0.1, 0.5)
-                    potential = int(victim_balance * percent)
+                    # Цепкие когти - предмет превращается в монеты (15% шанс)
+                    stolen_item = random.choice(stealable_items)
+                    inventory_store.remove_item(self.guild_id, self.victim_id, stolen_item.id)
 
-                    # Применить бонус к добыче (Чужой кошелёк)
-                    try:
-                        from storage.pet_store import pet_store
-                        robber_pet = await pet_store.get_user_pet(self.guild_id, self.robber_id)
-
-                        if robber_pet:
-                            # Списать энергию за использование способности
-                            energy_consumed = await pet_store.consume_energy_for_ability(self.guild_id, self.robber_id, "rob")
-
-                            if energy_consumed:
-                                from storage.pet_store import pet_catalog
-                                robber_pet_def = pet_catalog.get_pet(robber_pet.pet_type.value)
-
-                                if robber_pet_def:  # Способности открыты с 1 возраста
-                                    ability = robber_pet_def["abilities"][1]
-                                    if ability["name"] == "Чужой кошелёк":
-                                        loot_bonus = ability.get("max_val", 0)
-                                        potential = int(potential * (1 + loot_bonus / 100))
-                                        pet_bonuses["robber_loot_bonus"] = loot_bonus
-                                        pet_bonuses["robber_loot_name"] = robber_pet.pet_name
-                    except Exception as e:
-                        logger.error(f"Error applying loot bonus: {e}")
-
-                    stolen = min(potential, robber_balance)
-
-                    await user_balance_store.subtract_balance(self.guild_id, self.victim_id, stolen)
-                    await user_balance_store.add_balance(self.guild_id, self.robber_id, stolen)
-
-                    # Формировать текст бонусов
-                    bonus_text = ""
-                    if pet_bonuses["victim_item_protect_chance"] > 0:
-                        bonus_text += f"\n\n🐾 **Сова-казначей ({pet_bonuses['victim_item_protect_name']}):** Защитил предмет!"
-                    if pet_bonuses["robber_loot_bonus"] > 0:
-                        bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
+                    # Продажа за 30% стоимости
+                    sale_price = int(stolen_item.price * 0.3)
+                    await user_balance_store.add_balance(self.guild_id, self.robber_id, sale_price)
 
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
                         description=(
                             f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
                             f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Предмет защищён питомцем!**\n"
-                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
+                            f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
+                            f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}\n"
+                            f"{get_emoji('white_dot')} **Способность:** Сова-казначей защитила предмет!\n"
                         ),
-                        color=0x2ECC71
+                        color=0x2ECC71  # Green for success
                     )
                     await interaction.response.edit_message(embed=embed, view=None)
                 else:
