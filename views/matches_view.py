@@ -356,13 +356,10 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 opp_team_name = team_a_name
                 opponents = team_a_players
 
-            # Determine result
-            is_winner = (my_team_idx == winner_idx)
-            result = "win" if is_winner else "loss"
-
-            # Get ELO change from player stats
+            # Determine result based on ELO change (more reliable than team comparison)
             player_stats = await player_stats_store.get(self.guild_id, user_id)
             elo_change = player_stats.last_elo_change if player_stats and hasattr(player_stats, 'last_elo_change') else 0
+            result = "win" if elo_change > 0 else "loss"
 
             # Create match history entry
             match_entry = MatchHistory(
