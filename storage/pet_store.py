@@ -284,6 +284,7 @@ class PetStore:
                     import os
                     
                     hunger_channel = bot.get_channel(1551167853741219880)
+                    logger.info(f"Got hunger channel: {hunger_channel}")
                     if hunger_channel:
                         # Пинг всех опекунов
                         mentions = f"<@{pet.owner_1_id}>"
@@ -314,6 +315,8 @@ class PetStore:
                             await hunger_channel.send(mentions, embed=embed)
                         logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
                         pet.hunger_warning_sent = True
+                    else:
+                        logger.error(f"Could not get hunger channel 1551167853741219880")
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 
@@ -402,8 +405,8 @@ class PetStore:
         if pet.fullness < 30:
             logger.info(f"Ability blocked: pet {pet.pet_name} fullness {pet.fullness}% < 30%")
             return False
-        if pet.energy < energy_cost:
-            logger.info(f"Ability blocked: pet {pet.pet_name} energy {pet.energy} < {energy_cost}")
+        if pet.energy <= 0:
+            logger.info(f"Ability blocked: pet {pet.pet_name} energy {pet.energy} <= 0")
             return False
 
         # Списать энергию

@@ -340,7 +340,7 @@ class TournamentBot(commands.Bot):
 
         while not self.is_closed():
             try:
-                await asyncio.sleep(3600)  # Check every hour
+                await asyncio.sleep(300)  # Check every 5 minutes
 
                 # Get all guilds
                 for guild in self.guilds:
@@ -356,48 +356,7 @@ class TournamentBot(commands.Bot):
                             for row in rows:
                                 pet = pet_store._row_to_pet(row)
                                 # Check hunger for each pet
-                                is_dead, updated_pet = await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
-
-                                if is_dead:
-                                    # Pet ran away - send notification
-                                    try:
-                                        hunger_channel = self.get_channel(1551167853741219880)
-                                        if hunger_channel:
-                                            # Пинг всех опекунов
-                                            mentions = f"<@{pet.owner_1_id}>"
-                                            if pet.owner_2_id:
-                                                mentions += f" <@{pet.owner_2_id}>"
-
-                                            embed = discord.Embed(
-                                                title="🐾 Питомец сбежал",
-                                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
-                                                color=discord.Color.orange()
-                                            )
-                                            await hunger_channel.send(mentions, embed=embed)
-                                    except Exception as e:
-                                        logger.error(f"Error sending runaway notification: {e}")
-                                elif updated_pet and updated_pet.fullness == 0 and updated_pet.hunger_started_at:
-                                    # Check if pet just started starving (less than 1 hour ago)
-                                    from datetime import datetime, timezone
-                                    now = datetime.now(timezone.utc)
-                                    hours_hungry = (now - updated_pet.hunger_started_at).total_seconds() / 3600
-                                    if hours_hungry < 1:
-                                        try:
-                                            hunger_channel = self.get_channel(1551167853741219880)
-                                            if hunger_channel:
-                                                # Пинг всех опекунов
-                                                mentions = f"<@{updated_pet.owner_1_id}>"
-                                                if updated_pet.owner_2_id:
-                                                    mentions += f" <@{updated_pet.owner_2_id}>"
-
-                                                embed = discord.Embed(
-                                                    title="⚠️ Питомец голодает",
-                                                    description=f"Питомец **{updated_pet.pet_name}** достиг 0% сытости!\n\nЕсли не покормить в течение 24 часов, питомец сбежит.\n\nОпекуны: {mentions}",
-                                                    color=discord.Color.yellow()
-                                                )
-                                                await hunger_channel.send(mentions, embed=embed)
-                                        except Exception as e:
-                                            logger.error(f"Error sending hunger notification: {e}")
+                                await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}")
             except Exception as e:
