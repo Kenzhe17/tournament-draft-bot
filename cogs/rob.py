@@ -154,6 +154,7 @@ class RobStartButton(discord.ui.Button):
             "robber_loot_name": None,
             "victim_defense_bonus": 0,
             "victim_defense_name": None,
+            "victim_defense_saved": 0,
             "victim_item_protect_chance": 0,
             "victim_item_protect_name": None,
         }
@@ -385,6 +386,7 @@ class RobStartButton(discord.ui.Button):
                         logger.error(f"Error applying loot bonus: {e}")
 
                     stolen = min(potential, robber_balance)  # Кап: максимум баланс грабителя
+                    original_stolen = stolen  # Сохраняем исходную сумму для расчёта сохранённых монет
 
                     # Применить снижение потерь жертвы (Сохранность капитала)
                     try:
@@ -399,13 +401,15 @@ class RobStartButton(discord.ui.Button):
                                 from storage.pet_store import pet_catalog
                                 victim_pet_def = pet_catalog.get_pet(victim_pet.pet_type.value)
 
-                            if victim_pet_def:  # Способности открыты с 1 возраста
-                                ability = victim_pet_def["abilities"][1]
-                                if ability["name"] == "Сохранность капитала":
-                                    loss_reduction = ability.get("max_val", 0)
-                                    stolen = int(stolen * (1 - loss_reduction / 100))
-                                    pet_bonuses["victim_defense_bonus"] = loss_reduction
-                                    pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+                                if victim_pet_def:  # Способности открыты с 1 возраста
+                                    ability = victim_pet_def["abilities"][1]
+                                    if ability["name"] == "Сохранность капитала":
+                                        loss_reduction = ability.get("max_val", 0)
+                                        saved_amount = int(original_stolen * loss_reduction / 100)
+                                        stolen = int(stolen * (1 - loss_reduction / 100))
+                                        pet_bonuses["victim_defense_bonus"] = loss_reduction
+                                        pet_bonuses["victim_defense_name"] = victim_pet.pet_name
+                                        pet_bonuses["victim_defense_saved"] = saved_amount
                     except Exception as e:
                         logger.error(f"Error applying loss reduction: {e}")
 
@@ -417,7 +421,8 @@ class RobStartButton(discord.ui.Button):
                     if pet_bonuses["robber_loot_bonus"] > 0:
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
                     if pet_bonuses["victim_defense_bonus"] > 0:
-                        bonus_text += f"\n\n🐾 **Сова-казначей ({pet_bonuses['victim_defense_name']}):** Защитил {pet_bonuses['victim_defense_bonus']:.1f}% монет!"
+                        saved_amount = pet_bonuses.get("victim_defense_saved", 0)
+                        bonus_text += f"\n\n🐾 **Сова-казначей ({pet_bonuses['victim_defense_name']}):** Защитил {saved_amount} {get_emoji('money')} ({pet_bonuses['victim_defense_bonus']:.1f}%)!"
 
                     # Build success embed
                     embed = discord.Embed(
