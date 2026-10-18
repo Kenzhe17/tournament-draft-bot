@@ -71,7 +71,7 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         title=f"{get_emoji('a_star')} **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
         description=(
             f"{get_emoji('a_sparkle')} **Имя:** **{pet_name}**\n"
-            f"{get_emoji('white_arrow')} **Возраст:** `{age} лет`\n"
+            f"{get_emoji('white_arrow')} **Уровень:** `{age}`\n"
             f"{get_emoji('white_arrow')} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"**Состояние:**\n"
             f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%`\n"
@@ -362,7 +362,7 @@ class PetCog(commands.Cog):
                     """,
                     user_pet["level"], user_pet["exp"]
                 )
-                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Возраст {user_pet['level']}** (`{user_pet['exp']} EXP`)"
+                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Уровень {user_pet['level']}** (`{user_pet['exp']} EXP`)"
             else:
                 user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
 
@@ -395,7 +395,7 @@ class PetCog(commands.Cog):
                 medal = f"{i}."
 
             description += (
-                f"{medal} **Возраст {pet_dict['level']}** — **{pet_dict['pet_name']}**\n"
+                f"{medal} **Уровень {pet_dict['level']}** — **{pet_dict['pet_name']}**\n"
                 f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
