@@ -83,6 +83,17 @@ class CaseOpenButton(discord.ui.Button):
             message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
             color = discord.Color.yellow()
             reaction_emoji = "money"
+            
+            # Добавить информацию о срабатывании Секретного тайника
+            pet_bonus = result.get("pet_bonus", {})
+            if pet_bonus.get("mimic_bonus", 0) > 0:
+                mimic_bonus = pet_bonus["mimic_bonus"]
+                mimic_name = pet_bonus["mimic_name"]
+                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+            if pet_bonus.get("golden_fox_bonus", 0) > 0:
+                fox_bonus = pet_bonus["golden_fox_bonus"]
+                fox_name = pet_bonus["golden_fox_name"]
+                message += f"\n\n🐾 **Золотой лис ({fox_name}):** Увеличил награду на +{fox_bonus}%!"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
@@ -222,6 +233,17 @@ class CaseSelect(discord.ui.Select):
             message = f"{get_emoji('money')} Выпало {result['value']} {get_emoji('money')}!",
             color = discord.Color.yellow()
             reaction_emoji = "money"
+            
+            # Добавить информацию о срабатывании Секретного тайника
+            pet_bonus = result.get("pet_bonus", {})
+            if pet_bonus.get("mimic_bonus", 0) > 0:
+                mimic_bonus = pet_bonus["mimic_bonus"]
+                mimic_name = pet_bonus["mimic_name"]
+                message += f"\n\n🐾 ✨ **Мимик-собиратель ({mimic_name}):** Сработал «Секретный тайник»! Питомец нашел еще +{mimic_bonus} монет."
+            if pet_bonus.get("golden_fox_bonus", 0) > 0:
+                fox_bonus = pet_bonus["golden_fox_bonus"]
+                fox_name = pet_bonus["golden_fox_name"]
+                message += f"\n\n🐾 **Золотой лис ({fox_name}):** Увеличил награду на +{fox_bonus}%!"
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
