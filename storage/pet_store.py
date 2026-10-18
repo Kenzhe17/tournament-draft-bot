@@ -196,7 +196,6 @@ class PetStore:
             now = datetime.now(timezone.utc)
 
             # Сохраняем значения ДО изменений для проверок уведомлений
-            was_above_30 = pet.fullness > 30
             was_full = pet.fullness > 0
 
             # Рассчитать прошедшее время с последнего обновления
@@ -241,9 +240,10 @@ class PetStore:
                 return True, None
 
             # Уведомление при достижении сытости <= 30
-            if pet.fullness <= 30 and was_above_30 and guild_id and bot:
+            logger.info(f"Checking hunger alert: pet={pet.pet_name}, fullness={pet.fullness}, guild_id={guild_id}, bot={bot is not None}")
+            if pet.fullness <= 30 and guild_id and bot:
                 try:
-                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, was_above_30={was_above_30}, guild_id={guild_id}, bot={bot is not None}")
+                    logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
                     from services.pet_alerts import send_hunger_alert
                     pet_dict = {
                         'pet_name': pet.pet_name,
