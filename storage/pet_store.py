@@ -224,48 +224,24 @@ class PetStore:
             # Если сытость 0 - автоматический побег
             if pet.fullness == 0:
                 await self.delete_pet(pet_id)
-                # Отправить уведомление о побеге
+                # Отправить уведомление о побеге через новый сервис
                 if guild_id and bot:
                     try:
-                        logger.info(f"Pet {pet.pet_name} ran away from hunger")
-                        hunger_channel = bot.get_channel(1551167853741219880)
-                        if hunger_channel:
-                            # Пинг всех опекунов
-                            mentions = f"<@{pet.owner_1_id}>"
-                            if pet.owner_2_id:
-                                mentions += f" <@{pet.owner_2_id}>"
-
-                            embed = discord.Embed(
-                                title="🐾 Питомец сбежал",
-                                description=f"Питомец **{pet.pet_name}** сбежал от голода.\n\nОпекуны: {mentions}",
-                                color=discord.Color.orange()
-                            )
-                            await hunger_channel.send(mentions, embed=embed)
+                        from services.pet_alerts import send_runaway_alert
+                        guild = bot.get_guild(guild_id)
+                        if guild:
+                            await send_runaway_alert(bot, dict(pet), guild)
                     except Exception as e:
-                        pass
+                        logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
                 return True, None
 
-            # Уведомление при достижении сытости <= 30
+            # Уведомление при достижении сытости <= 30 через новый сервис
             if pet.fullness <= 30 and guild_id and bot:
                 try:
-                    logger.info(f"Pet {pet.pet_name} reached {pet.fullness}% fullness, sending warning")
-                    hunger_channel = bot.get_channel(1551167853741219880)
-                    logger.info(f"Got channel: {hunger_channel}")
-                    if hunger_channel:
-                        # Пинг всех опекунов
-                        mentions = f"<@{pet.owner_1_id}>"
-                        if pet.owner_2_id:
-                            mentions += f" <@{pet.owner_2_id}>"
-
-                        embed = discord.Embed(
-                            title="⚠️ Питомец голоден",
-                            description=f"Питомец **{pet.pet_name}** голодает! Сытость: **{pet.fullness}%**\n\nПокормите его, иначе он сбежет!\n\nОпекуны: {mentions}",
-                            color=discord.Color.yellow()
-                        )
-                        await hunger_channel.send(mentions, embed=embed)
-                        logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
-                    else:
-                        logger.warning(f"Could not get hunger channel 1551167853741219880")
+                    from services.pet_alerts import send_hunger_alert
+                    guild = bot.get_guild(guild_id)
+                    if guild:
+                        await send_hunger_alert(bot, dict(pet), guild)
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 
