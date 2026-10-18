@@ -47,18 +47,15 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     exp = pet_row["exp"]
     max_exp = age * 50
 
-    # Сборка пассивных способностей
+    # Сборка пассивных способностей (только названия)
     abilities_list = []
     if catalog_data:
         for ab_key in (1, 2):
             ab = catalog_data["abilities"][ab_key]
-            val = ab["max_val"]  # Всегда максимальное значение
-            desc_val = ab["desc_template"].format(val=f"{val:.1f}")
-
             if energy <= 0:
-                abilities_list.append(f"**{ab['name']}:** *(Отключено: 0% энергии)*")
+                abilities_list.append(f"**{ab['name']}** *(Отключено)*")
             else:
-                abilities_list.append(f"**{ab['name']}:** {desc_val}")
+                abilities_list.append(f"**{ab['name']}**")
 
     abilities_formatted = "\n".join(f"{get_emoji('white_dot')} {item}" for item in abilities_list)
 
@@ -73,12 +70,11 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
         title=f"{get_emoji('a_star')} **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
         description=(
             f"{get_emoji('a_sparkle')} **Имя:** **{pet_name}**\n"
-            f"{get_emoji('white_arrow')} **Вид:** **{pet_title}**\n"
             f"{get_emoji('white_arrow')} **Возраст:** `{age} лет`\n"
             f"{get_emoji('white_arrow')} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"**Состояние:**\n"
-            f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%` / `100%`\n"
-            f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%` / `100%`\n"
+            f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%`\n"
+            f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%`\n"
             f"{get_emoji('white_dot')} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
             f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
@@ -363,7 +359,7 @@ class PetCog(commands.Cog):
                     """,
                     user_pet["level"], user_pet["exp"]
                 )
-                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **`Ур. {user_pet['level']}`** (`{user_pet['exp']} EXP`)"
+                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Возраст {user_pet['level']}** (`{user_pet['exp']} EXP`)"
             else:
                 user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
 
@@ -396,7 +392,7 @@ class PetCog(commands.Cog):
                 medal = f"{i}."
 
             description += (
-                f"{medal} **`Ур. {pet_dict['level']}`** — **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*)\n"
+                f"{medal} **Возраст {pet_dict['level']}** — **{pet_dict['pet_name']}**\n"
                 f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
@@ -577,6 +573,10 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     if msg:
         view.message = msg
         view.rename_button.message = msg
+        # Обновляем message в FeedPetButton
+        for item in view.children:
+            if isinstance(item, FeedPetButton):
+                item.message = msg
 
 
 class PetProfileView(discord.ui.View):
@@ -589,7 +589,7 @@ class PetProfileView(discord.ui.View):
         self.interaction = interaction
         self.message = None  # Will be set after response
         self.rename_button = RenamePetButton(pet.pet_id, pet_dict, None)
-        self.add_item(FeedPetButton(pet.pet_id, pet_dict))
+        self.add_item(FeedPetButton(pet.pet_id, pet_dict, None))
         self.add_item(self.rename_button)
 
         # Добавить кнопку защиты предмета для Черепахи-хранителя (с возраста 1, так как способность открыта)
@@ -605,7 +605,7 @@ class PetProfileView(discord.ui.View):
 class FeedPetButton(discord.ui.Button):
     """Кнопка кормления питомца."""
 
-    def __init__(self, pet_id: int, pet_dict: dict):
+    def __init__(self, pet_id: int, pet_dict: dict, message: discord.Message):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Покормить (30 🪙)",
@@ -613,6 +613,7 @@ class FeedPetButton(discord.ui.Button):
         )
         self.pet_id = pet_id
         self.pet_dict = pet_dict
+        self.message = message
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Обработать кормление."""
@@ -655,6 +656,21 @@ class FeedPetButton(discord.ui.Button):
         )
 
         if success:
+            # Обновляем исходное сообщение профиля
+            self.pet_dict["fullness"] = min(100, self.pet_dict["fullness"] + 20)
+            self.pet_dict["energy"] = min(100, self.pet_dict["energy"] + 5)
+            self.pet_dict["exp"] = self.pet_dict["exp"] + 5
+            new_embed, new_file = await build_pet_profile_embed(self.pet_dict, interaction.guild)
+
+            if self.message:
+                try:
+                    if new_file:
+                        await self.message.edit(embed=new_embed, attachments=[new_file])
+                    else:
+                        await self.message.edit(embed=new_embed)
+                except Exception as e:
+                    logger.error(f"Failed to edit pet profile message after feeding: {e}")
+
             embed = discord.Embed(
                 title=replace_emojis("✅ Питомец покормлен"),
                 description=(
