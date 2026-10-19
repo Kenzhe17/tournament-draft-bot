@@ -150,13 +150,13 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     if not channel:
         return
 
-    # Create ping string for all players (limit to 45 characters per line)
+    # Create ping string for all players (limit to 50 characters per line)
     all_members = team1_members + team2_members
     pings_list = [f"<@{uid}>" for uid in all_members] if all_members else []
     pings = ""
     current_line = ""
     for ping in pings_list:
-        if len(current_line) + len(ping) > 45:
+        if len(current_line) + len(ping) > 50:
             pings += current_line + "\n"
             current_line = ping + " "
         else:
