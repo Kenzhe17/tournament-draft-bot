@@ -115,12 +115,6 @@ class QuizLobbyView(discord.ui.View):
         from storage.user_balance_store import user_balance_store
         from config import get_emoji
 
-        # Удалить сообщение лобби
-        try:
-            await original_message.delete()
-        except:
-            pass
-
         players = self.players
         scores = {p.id: 0 for p in players}
         total_bank = len(players) * self.bet
@@ -139,36 +133,21 @@ class QuizLobbyView(discord.ui.View):
 
             examples.append((f"{num1} {operator} {num2}", answer))
 
-        # Отправить первое сообщение с первым примером
-        expression, correct_answer = examples[0]
-        leaderboard = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
-        round_embed = discord.Embed(
-            title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД 1/10**",
-            description=(
-                f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
-                f"### {get_emoji('white_dot')} Пример: **`{expression} = ?`**\n\n"
-                f"**Текущий счёт:**\n{leaderboard}"
-            ),
-            color=0xF1C40F
-        )
-        round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-        round_message = await interaction.channel.send(embed=round_embed)
-
         for round_idx in range(1, 11):
-            if round_idx > 1:
-                expression, correct_answer = examples[round_idx - 1]
-                leaderboard = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
-                round_embed = discord.Embed(
-                    title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
-                    description=(
-                        f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
-                        f"### {get_emoji('white_dot')} Пример: **`{expression} = ?`**\n\n"
-                        f"**Текущий счёт:**\n{leaderboard}"
-                    ),
-                    color=0xF1C40F
-                )
-                round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-                round_message = await interaction.channel.send(embed=round_embed)
+            expression, correct_answer = examples[round_idx - 1]
+
+            leaderboard = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
+            round_embed = discord.Embed(
+                title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
+                description=(
+                    f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
+                    f"### {get_emoji('white_dot')} Пример: **`{expression} = ?`**\n\n"
+                    f"**Текущий счёт:**\n{leaderboard}"
+                ),
+                color=0xF1C40F
+            )
+            round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
+            await original_message.edit(embed=round_embed, view=None)
 
             round_solved = False
 
@@ -197,9 +176,9 @@ class QuizLobbyView(discord.ui.View):
                         f"{get_emoji('white_arrow')} Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
                     )
 
-            # Удалить все сообщения в канале после round_message
+            # Удалить все сообщения в канале после round_embed (включая ответы участников)
             try:
-                async for msg in interaction.channel.history(after=round_message, limit=None):
+                async for msg in interaction.channel.history(after=original_message, limit=None):
                     try:
                         await msg.delete()
                     except:
@@ -234,14 +213,7 @@ class QuizLobbyView(discord.ui.View):
             ),
             color=0xF1C40F
         )
-        await interaction.channel.send(embed=final_embed)
-
-        # Удалить сообщение с результатом через 10 секунд
-        await asyncio.sleep(10)
-        try:
-            await interaction.channel.delete_messages([final_embed])
-        except:
-            pass
+        await original_message.edit(embed=final_embed)
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, custom_id="math_quiz_cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
