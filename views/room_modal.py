@@ -102,10 +102,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     all_members = team1_members + team2_members
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
-    embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} КОМНАТА ОТКРЫТА",
-        description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}\n\n{replace_emojis('white_dot')} **ID комнаты:** `{room_id}`\n{replace_emojis('white_dot')} **Пароль:** `{room_password}`",
-        color=discord.Color.from_rgb(69, 233, 233)
-    )
+    # Send simple message with room data (no embed, easier to copy on mobile)
+    message = f"{replace_emojis('a_star')} **КОМНАТА ОТКРЫТА**\n{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}\n\n`{room_id}`\n`{room_password}`"
 
-    await channel.send(content=pings, embed=embed)
+    await channel.send(content=f"{pings}\n{message}")
