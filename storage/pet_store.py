@@ -199,6 +199,7 @@ class PetStore:
 
             # Сохраняем значения ДО изменений для проверок уведомлений
             old_fullness = pet.fullness
+            old_energy = pet.energy
             was_full = pet.fullness > 0
             had_runaway_alert = pet.runaway_alert_sent
 
@@ -322,7 +323,8 @@ class PetStore:
 
             # Обновить таймстампы
             pet.last_fed_at = now
-            pet.last_energy_update_at = now
+            # НЕ обновляем last_energy_update_at здесь - это делается только при кормлении
+            # чтобы энергия восстанавливалась пассивно при каждом просмотре профиля
 
             await self.update_pet(pet)
 
@@ -377,7 +379,8 @@ class PetStore:
                 return False
 
             pet.energy -= amount
-            pet.last_energy_update_at = datetime.now(timezone.utc)
+            # НЕ обновляем last_energy_update_at при использовании энергии
+            # чтобы энергия восстанавливалась пассивно
             await self.update_pet(pet)
             return True
 
