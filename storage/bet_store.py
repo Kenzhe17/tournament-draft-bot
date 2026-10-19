@@ -205,8 +205,8 @@ class BetStore:
             bet.odds = current_bet_odds
             shift_amount = bet.amount
 
-            # Calculate odds shift: 500 coins = 0.1x shift (more responsive)
-            shift_odds = shift_amount / 500 * 0.1
+            # Calculate odds shift: 5000 coins = 0.1x shift (less responsive)
+            shift_odds = shift_amount / 5000 * 0.1
 
             # Apply dynamic odds with buffer logic
             if is_team_a:
@@ -220,13 +220,13 @@ class BetStore:
 
                     if remaining_bet > 0:
                         # Calculate shift for remaining amount
-                        remaining_shift = remaining_bet / 500 * 0.1
+                        remaining_shift = remaining_bet / 5000 * 0.1
 
                         # Apply shift with floor check
                         new_odds_a = current_odds.team_a_odds - remaining_shift
                         if new_odds_a < 1.1:
                             # Hit floor, remaining goes to buffer
-                            overflow = (1.1 - new_odds_a) / 0.1 * 500
+                            overflow = (1.1 - new_odds_a) / 0.1 * 5000
                             current_odds.team_a_odds = 1.1
                             current_odds.team_a_buffer += int(overflow)
                         else:
@@ -239,7 +239,7 @@ class BetStore:
                     new_odds_a = current_odds.team_a_odds - shift_odds
                     if new_odds_a < 1.1:
                         # Hit floor, remaining goes to buffer
-                        overflow = (1.1 - new_odds_a) / 0.1 * 500
+                        overflow = (1.1 - new_odds_a) / 0.1 * 5000
                         current_odds.team_a_odds = 1.1
                         current_odds.team_a_buffer += int(overflow)
                     else:
@@ -258,13 +258,13 @@ class BetStore:
 
                     if remaining_bet > 0:
                         # Calculate shift for remaining amount
-                        remaining_shift = remaining_bet / 500 * 0.1
+                        remaining_shift = remaining_bet / 5000 * 0.1
 
                         # Apply shift with floor check
                         new_odds_b = current_odds.team_b_odds - remaining_shift
                         if new_odds_b < 1.1:
                             # Hit floor, remaining goes to buffer
-                            overflow = (1.1 - new_odds_b) / 0.1 * 500
+                            overflow = (1.1 - new_odds_b) / 0.1 * 5000
                             current_odds.team_b_odds = 1.1
                             current_odds.team_b_buffer += int(overflow)
                         else:
@@ -277,7 +277,7 @@ class BetStore:
                     new_odds_b = current_odds.team_b_odds - shift_odds
                     if new_odds_b < 1.1:
                         # Hit floor, remaining goes to buffer
-                        overflow = (1.1 - new_odds_b) / 0.1 * 500
+                        overflow = (1.1 - new_odds_b) / 0.1 * 5000
                         current_odds.team_b_odds = 1.1
                         current_odds.team_b_buffer += int(overflow)
                     else:
