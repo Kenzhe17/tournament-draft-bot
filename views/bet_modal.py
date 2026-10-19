@@ -56,6 +56,9 @@ class BetAmountModal(Modal, title="Сумма ставки"):
         bet = Bet(guild_id=self.guild_id, user_id=interaction.user.id, user_name=interaction.user.display_name, tournament_id=self.tournament.id, match_id=match_id, team_name=str(self.team_name), team_index=0 if self.team_name == self.team_a_name else 1, amount=amount, odds=actual_odds)
 
         try:
+            # Deduct balance before saving bet
+            await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, amount)
+
             await bet_store.save_bet(bet, self.team_a_name, self.team_b_name)
             from bot import TournamentBot
             bot = interaction.client
