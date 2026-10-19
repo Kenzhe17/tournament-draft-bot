@@ -150,19 +150,28 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     if not channel:
         return
 
-    # Create ping string for all players
+    # Create ping string for all players (limit to 45 characters per line)
     all_members = team1_members + team2_members
-    pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
+    pings_list = [f"<@{uid}>" for uid in all_members] if all_members else []
+    pings = ""
+    current_line = ""
+    for ping in pings_list:
+        if len(current_line) + len(ping) > 45:
+            pings += current_line + "\n"
+            current_line = ping + " "
+        else:
+            current_line += ping + " "
+    pings += current_line.strip()
 
     # Send messages separately
-    # Message 1: GIF header
-    await channel.send(content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
+    # Message 1: Header
+    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n**Данные:**")
 
-    # Message 2: Header
-    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n⠀")
-
-    # Message 3: Room ID
+    # Message 2: Room ID
     await channel.send(content=room_id)
 
-    # Message 4: Password
+    # Message 3: Password
     await channel.send(content=room_password)
+
+    # Message 4: GIF
+    await channel.send(content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
