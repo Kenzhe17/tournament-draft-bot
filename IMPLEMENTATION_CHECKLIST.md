@@ -183,13 +183,18 @@
 ### 5.2 TypeError (duplicate class)
 **Примеры:**
 - `8feb403`: Duplicate CancelWinnerButton → удалён дубликат с другой сигнатурой
+- `71bc1a1`: Duplicate LotteryView в lottery.py → NameError при загрузке extension
+- `f161ecb`: Duplicate HighLowView в high_low.py → AttributeError 'create_embed' not found
 
 **Решение:**
 - Удалять дублирующиеся классы с разными сигнатурами
+- Убедиться что каждый класс определён только один раз в файле
+- Объединять методы в один класс вместо создания дубликатов
 
 **Preventive:**
 - Проверять что у каждого класса уникальное имя
 - Не переопределять классы в одном файле
+- После рефакторинга проверять что все методы определены в нужном классе
 
 ### 5.3 NameError: tournament not defined
 **Примеры:**
