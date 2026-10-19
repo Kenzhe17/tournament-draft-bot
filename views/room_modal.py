@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from models.tournament import Tournament
 
 
-# Cooldown для отправки комнаты (3 секунды)
+# Cooldown для отправки комнаты (2 секунды)
 room_submission_cooldowns = {}  # guild_id -> timestamp
 
 
@@ -41,14 +41,14 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         """Handle room ID and password submission."""
         from storage.json_store import store
 
-        # Check cooldown (3 seconds)
+        # Check cooldown (2 seconds)
         guild_id = interaction.guild_id
         current_time = time.time()
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
-            if elapsed < 3:
+            if elapsed < 2:
                 await interaction.response.send_message(
-                    f"❌ Подождите {3 - elapsed:.1f} секунд перед отправкой комнаты.",
+                    f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
                     ephemeral=True
                 )
                 return
@@ -56,6 +56,22 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
+            return
+
+        # Check if room data already exists for this match
+        existing_room = None
+        if self.match_type == "qualifier":
+            existing_room = tournament.qualifier_rooms.get(self.match_index)
+        elif self.match_type == "semifinal":
+            existing_room = tournament.semifinal_rooms.get(self.match_index)
+        elif self.match_type == "final":
+            existing_room = tournament.final_room
+
+        if existing_room:
+            await interaction.response.send_message(
+                replace_emojis("❌ Данные комнаты уже были отправлены другим пользователем."),
+                ephemeral=True
+            )
             return
 
         # Validate inputs
@@ -130,10 +146,10 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
 
     # Send messages separately
     # Message 1: Header
-    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}")
+    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n")
 
     # Message 2: Room ID
     await channel.send(content=room_id)
 
     # Message 3: Password
-    await channel.send(content=room_password)
+    await channel.send(content=room_password + "\n\n")

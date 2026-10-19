@@ -47,7 +47,7 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             return
 
         match_id = f"{self.match_type}_{self.match_index}"
-        odds_data = await bet_store.get_match_odds(self.guild_id, match_id)
+        odds_data = await bet_store.get_current_odds_db(match_id)
         if odds_data:
             actual_odds = odds_data.team_a_odds if self.team_name == self.team_a_name else odds_data.team_b_odds
         else:
