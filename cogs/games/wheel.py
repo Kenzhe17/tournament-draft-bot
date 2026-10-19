@@ -31,14 +31,14 @@ def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
 
 # Призы колеса с новыми шансами
 WHEEL_PRIZES = [
-    {"name": "0x Ставка", "multiplier": 0, "emoji": "�", "weight": 40},
-    {"name": "0.5x Ставка", "multiplier": 0.5, "emoji": "�", "weight": 25},
-    {"name": "1.5x Ставка", "multiplier": 1.5, "emoji": "�", "weight": 15},
-    {"name": "2x Ставка", "multiplier": 2, "emoji": "�", "weight": 10},
-    {"name": "3x Ставка", "multiplier": 3, "emoji": "🎁", "weight": 5},
-    {"name": "5x Ставка", "multiplier": 5, "emoji": "💎", "weight": 3},
-    {"name": "7x Ставка", "multiplier": 7, "emoji": "🔥", "weight": 1},
-    {"name": "10x Ставка", "multiplier": 10, "emoji": "🌟", "weight": 1},
+    {"name": "0x", "multiplier": 0, "weight": 40},
+    {"name": "0.5x", "multiplier": 0.5, "weight": 25},
+    {"name": "1.5x", "multiplier": 1.5, "weight": 15},
+    {"name": "2x", "multiplier": 2, "weight": 10},
+    {"name": "3x", "multiplier": 3, "weight": 5},
+    {"name": "5x", "multiplier": 5, "weight": 3},
+    {"name": "7x", "multiplier": 7, "weight": 1},
+    {"name": "10x", "multiplier": 10, "weight": 1},
 ]
 
 
@@ -69,7 +69,7 @@ class WheelView(discord.ui.View):
 
         if state == "menu":
             prizes_text = "\n".join([
-                f"{p['emoji']} {p['name']} - {p['weight']}%"
+                f"{replace_emojis('white_dot')} {p['name']}"
                 for p in WHEEL_PRIZES
             ])
             embed.add_field(
@@ -85,20 +85,19 @@ class WheelView(discord.ui.View):
 
         elif state == "result":
             winnings = int(self.bet * prize["multiplier"])
-            prize_emoji = prize["emoji"]
             prize_name = prize["name"]
 
             if winnings > 0:
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"{prize_emoji} **{prize_name}**\n"
+                    value=f"{replace_emojis('white_dot')} **{prize_name}**\n"
                           f"• Вы выиграли **{winnings}** {get_emoji('money')}!",
                     inline=False
                 )
             else:
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"{prize_emoji} **{prize_name}**\n"
+                    value=f"{replace_emojis('white_dot')} **{prize_name}**\n"
                           f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",
                     inline=False
                 )

@@ -82,7 +82,7 @@ class LotteryView(discord.ui.View):
             prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"🎉 Победитель: <@{winner}>\n"
+                value=f"Победитель: <@{winner}>\n"
                       f"• Выигрыш: **{prize_pool}** {get_emoji('money')}\n"
                       f"• Продано билетов: **{self.lottery.tickets_sold}**",
                 inline=False

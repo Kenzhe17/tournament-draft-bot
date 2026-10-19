@@ -85,7 +85,8 @@ class GameCategorySelect(Select):
         games_list = []
         for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{replace_emojis('sub_middle')} **{game.name}** • `[{mode}]`")
+            status = "✅" if game.status in ("ready", "available") else "🔨"
+            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}** • `[{mode}]`")
             games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
 
@@ -318,7 +319,8 @@ class BackToCategoryButton(Button):
         games_list = []
         for game in page_games:
             mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
-            games_list.append(f"{replace_emojis('sub_middle')} **{game.name}** • `[{mode}]`")
+            status = "✅" if game.status in ("ready", "available") else "🔨"
+            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}** • `[{mode}]`")
             games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
 
@@ -359,9 +361,15 @@ class BackToMainMenuButton(Button):
         # Получить баланс для главного экрана
         balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
 
+        # Получить список игр по статусу
+        from storage.games_config import get_all_games
+        all_games = get_all_games()
+        ready_games = [g for g in all_games if g.status in ("ready", "available")]
+        dev_games = [g for g in all_games if g.status == "dev"]
+
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} ✅ Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} 🔨 В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
