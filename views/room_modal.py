@@ -112,9 +112,6 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        # Defer interaction response to avoid timeout
-        await interaction.response.defer(ephemeral=True)
-
         # Send DM notifications to team members
         await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
 
