@@ -2020,7 +2020,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="daily", description="Получить ежедневный бонус (100 монет раз в 12 часов)")
+    @app_commands.command(name="daily", description="Получить ежедневный бонус (лимит 500 монет)")
     async def daily(self, interaction: discord.Interaction) -> None:
         """Получить ежедневный бонус с серией."""
         from storage.db import get_pool
@@ -2073,17 +2073,12 @@ class TournamentCog(commands.Cog):
                 else:
                     streak = 1
 
-            # Cap streak at 10
-            streak = min(streak, 10)
+            # Calculate reward: 100 on day 1, +10 for each additional day
+            # Day 1: 100, Day 2: 110, Day 3: 120, Day 10: 190, Day 11: 200, etc.
+            reward = 100 + (streak - 1) * 10
 
-            # Calculate reward: 100 on day 1, 200 on day 10, linear interpolation
-            if streak == 1:
-                reward = 100
-            elif streak >= 10:
-                reward = 200
-            else:
-                # Linear: 100 + (streak - 1) * (100 / 9)
-                reward = int(100 + (streak - 1) * (100 / 9))
+            # Cap reward at 500
+            reward = min(reward, 500)
 
             # Give the bonus
             await user_balance_store.add_balance(guild_id, user_id, reward)
