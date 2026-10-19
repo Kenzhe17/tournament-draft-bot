@@ -597,6 +597,24 @@ class RobCog(commands.Cog):
     @app_commands.default_permissions()
     async def rob(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Команда ограбления."""
+        # Проверка cooldown
+        now = datetime.now()
+        if interaction.guild_id not in _rob_cooldowns:
+            _rob_cooldowns[interaction.guild_id] = {}
+
+        if interaction.user.id != BOT_OWNER_ID:
+            if interaction.user.id in _rob_cooldowns[interaction.guild_id]:
+                last_rob = _rob_cooldowns[interaction.guild_id][interaction.user.id]
+                if now - last_rob < timedelta(hours=2):
+                    remaining = timedelta(hours=2) - (now - last_rob)
+                    hours, remainder = divmod(remaining.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    await interaction.response.send_message(
+                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                        ephemeral=True
+                    )
+                    return
+
         if user.id == interaction.user.id:
             await interaction.response.send_message(
                 f"{replace_emojis('❌')} Нельзя ограбить самого себя!",
@@ -650,6 +668,24 @@ class RobCog(commands.Cog):
     @app_commands.default_permissions()
     async def robgroup(self, interaction: discord.Interaction, user: discord.User) -> None:
         """Команда группового ограбления."""
+        # Проверка cooldown
+        now = datetime.now()
+        if interaction.guild_id not in _robgroup_cooldowns:
+            _robgroup_cooldowns[interaction.guild_id] = {}
+
+        if interaction.user.id != BOT_OWNER_ID:
+            if interaction.user.id in _robgroup_cooldowns[interaction.guild_id]:
+                last_rob = _robgroup_cooldowns[interaction.guild_id][interaction.user.id]
+                if now - last_rob < timedelta(hours=2):
+                    remaining = timedelta(hours=2) - (now - last_rob)
+                    hours, remainder = divmod(remaining.seconds, 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    await interaction.response.send_message(
+                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                        ephemeral=True
+                    )
+                    return
+
         if user.id == interaction.user.id:
             await interaction.response.send_message(
                 f"{replace_emojis('❌')} Нельзя ограбить самого себя!",

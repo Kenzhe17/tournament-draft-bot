@@ -217,8 +217,8 @@ class PetStore:
                 pet.energy = min(100, pet.energy + energy_gain)
 
             # Пассивное уменьшение еды
-            # Еда уходит каждые 6 часов (5 единиц)
-            fullness_loss = int(hours_since_fed / 6 * 5)
+            # Еда уходит 5 каждый час
+            fullness_loss = int(hours_since_fed * 5)
             pet.fullness = max(0, pet.fullness - fullness_loss)
 
             # Проверить когда сытость достигла 0
