@@ -29,17 +29,25 @@ def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
     return get_user_lock._locks[key]
 
 
-# Призы колеса
+# Призы колеса с новыми шансами
 WHEEL_PRIZES = [
-    {"name": "2x Ставка", "multiplier": 2, "emoji": "💰"},
-    {"name": "5x Ставка", "multiplier": 5, "emoji": "💎"},
-    {"name": "10x Ставка", "multiplier": 10, "emoji": "🌟"},
-    {"name": "0.5x Ставка", "multiplier": 0.5, "emoji": "😢"},
-    {"name": "0x Ставка", "multiplier": 0, "emoji": "💔"},
-    {"name": "3x Ставка", "multiplier": 3, "emoji": "🎁"},
-    {"name": "1.5x Ставка", "multiplier": 1.5, "emoji": "🎲"},
-    {"name": "7x Ставка", "multiplier": 7, "emoji": "🔥"},
+    {"name": "0x Ставка", "multiplier": 0, "emoji": "�", "weight": 40},
+    {"name": "0.5x Ставка", "multiplier": 0.5, "emoji": "�", "weight": 25},
+    {"name": "1.5x Ставка", "multiplier": 1.5, "emoji": "�", "weight": 15},
+    {"name": "2x Ставка", "multiplier": 2, "emoji": "�", "weight": 10},
+    {"name": "3x Ставка", "multiplier": 3, "emoji": "🎁", "weight": 5},
+    {"name": "5x Ставка", "multiplier": 5, "emoji": "💎", "weight": 3},
+    {"name": "7x Ставка", "multiplier": 7, "emoji": "🔥", "weight": 1},
+    {"name": "10x Ставка", "multiplier": 10, "emoji": "🌟", "weight": 1},
 ]
+
+
+def get_weighted_prize():
+    """Выбрать приз с учётом весов."""
+    weighted_prizes = []
+    for prize in WHEEL_PRIZES:
+        weighted_prizes.extend([prize] * prize["weight"])
+    return random.choice(weighted_prizes)
 
 
 class WheelView(discord.ui.View):
@@ -61,13 +69,12 @@ class WheelView(discord.ui.View):
 
         if state == "menu":
             prizes_text = "\n".join([
-                f"{p['emoji']} {p['name']}"
+                f"{p['emoji']} {p['name']} - {p['weight']}%"
                 for p in WHEEL_PRIZES
             ])
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
-                value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
-                      f"• Шанс каждого приза: **12.5%**",
+                value=f"• Ставка: **{self.bet}** {get_emoji('money')}",
                 inline=False
             )
             embed.add_field(
@@ -121,8 +128,8 @@ class WheelSpinButton(discord.ui.Button):
         # Отметить что вращение сделано
         self.game_view.spun = True
 
-        # Сгенерировать результат
-        prize = random.choice(WHEEL_PRIZES)
+        # Сгенерировать результат с учётом весов
+        prize = get_weighted_prize()
 
         # Обновить state view
         for item in self.game_view.children:

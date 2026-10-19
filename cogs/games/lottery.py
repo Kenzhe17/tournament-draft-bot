@@ -118,8 +118,10 @@ class LotteryView(discord.ui.View):
         async with lock:
             await user_balance_store.add_balance(self.lottery.guild_id, winner, prize_pool)
 
-        # Показать результат
+        # Создать embed результата
         result_embed = self.create_embed("won", winner)
+
+        # Показать результат как reply и виден всем
         await interaction.edit_original_response(embed=result_embed, view=None)
 
         del lotteries[self.lottery.guild_id]
@@ -136,6 +138,9 @@ class LotteryBuyButton(discord.ui.Button):
         if not self.lottery_view.lottery.active:
             await interaction.response.send_message("❌ Лотерея завершена.", ephemeral=True)
             return
+
+        # Defer interaction
+        await interaction.response.defer()
 
         guild_id = interaction.guild_id
         user_id = interaction.user.id
@@ -172,14 +177,15 @@ class LotteryBuyButton(discord.ui.Button):
         lottery.tickets_sold += 1
         lottery.participants[user_id] = lottery.participants.get(user_id, 0) + 1
 
-        await interaction.response.send_message(
+        # Обновить embed (редактируем основное сообщение)
+        updated_embed = self.lottery_view.create_embed("active")
+        await interaction.edit_original_response(embed=updated_embed)
+
+        # Отправить подтверждение в ephemeral
+        await interaction.followup.send(
             f"✅ Вы купили билет! Теперь у вас {lottery.participants[user_id]} билет(ов).",
             ephemeral=True
         )
-
-        # Обновить embed
-        updated_embed = self.lottery_view.create_embed("active")
-        await interaction.edit_original_response(embed=updated_embed)
 
         # Проверить если все билеты проданы
         if lottery.tickets_sold >= lottery.max_tickets:
@@ -214,6 +220,9 @@ class LotteryCancelButton(discord.ui.Button):
             embed=None,
             view=None
         )
+
+        # Удалить основное сообщение после отмены
+        await interaction.delete_original_response()
 
 
 class LotteryPlayAgainButton(discord.ui.Button):

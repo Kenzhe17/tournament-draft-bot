@@ -90,6 +90,64 @@ class HighLowView(discord.ui.View):
 
         return embed
 
+    async def handle_guess(self, interaction: discord.Interaction, guess: str) -> None:
+        """Обработать догадку."""
+        # Defer interaction
+        await interaction.response.defer()
+
+        # Сгенерировать следующее число
+        next_number = random.randint(1, 100)
+
+        # Проверить результат
+        correct = False
+        if guess == "higher" and next_number > self.current_number:
+            correct = True
+        elif guess == "lower" and next_number < self.current_number:
+            correct = True
+        elif next_number == self.current_number:
+            # Равные числа = автоматическая победа
+            correct = True
+
+        if correct:
+            self.wins += 1
+            await interaction.followup.send(f"✅ Правильно! Следующее число: {next_number}", ephemeral=True)
+        else:
+            self.game_over = True
+            await interaction.followup.send(f"❌ Неправильно! Следующее число: {next_number}", ephemeral=True)
+
+        # Обновить текущее число
+        self.current_number = next_number
+        self.round += 1
+
+        # Проверить конец игры
+        if self.game_over:
+            # Проигрыш
+            result_embed = self.create_embed("lost")
+            result_view = discord.ui.View(timeout=None)
+            result_view.add_item(HighLowPlayAgainButton(self.bet))
+            await interaction.edit_original_response(embed=result_embed, view=result_view)
+        elif self.round > self.max_rounds:
+            # Победа
+            self.game_over = True
+            final_prize = int(self.bet * (1.5 ** self.wins))
+
+            lock = get_user_lock(self.guild_id, self.user_id)
+            async with lock:
+                await user_balance_store.add_balance(
+                    self.guild_id,
+                    self.user_id,
+                    final_prize
+                )
+
+            result_embed = self.create_embed("won")
+            result_view = discord.ui.View(timeout=None)
+            result_view.add_item(HighLowPlayAgainButton(self.bet))
+            await interaction.edit_original_response(embed=result_embed, view=result_view)
+        else:
+            # Продолжить игру
+            updated_embed = self.create_embed("playing")
+            await interaction.edit_original_response(embed=updated_embed)
+
 
 class HighLowHigherButton(discord.ui.Button):
     """Кнопка выбора 'Выше'."""
@@ -201,79 +259,6 @@ class HighLowPlayAgainButton(discord.ui.Button):
 
         embed = game_view.create_embed("playing")
         await interaction.response.edit_message(embed=embed, view=game_view)
-
-
-class HighLowView(discord.ui.View):
-    """View для игры High-Low."""
-
-    def __init__(self, guild_id: int, user_id: int, bet: int):
-        super().__init__(timeout=60)
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.bet = bet
-        self.current_number = random.randint(1, 100)
-        self.round = 1
-        self.max_rounds = 5
-        self.wins = 0
-        self.game_over = False
-
-    async def handle_guess(self, interaction: discord.Interaction, guess: str) -> None:
-        """Обработать догадку."""
-        # Defer interaction
-        await interaction.response.defer()
-
-        # Сгенерировать следующее число
-        next_number = random.randint(1, 100)
-
-        # Проверить результат
-        correct = False
-        if guess == "higher" and next_number > self.current_number:
-            correct = True
-        elif guess == "lower" and next_number < self.current_number:
-            correct = True
-        elif next_number == self.current_number:
-            # Равные числа = автоматическая победа
-            correct = True
-
-        if correct:
-            self.wins += 1
-            await interaction.followup.send(f"✅ Правильно! Следующее число: {next_number}", ephemeral=True)
-        else:
-            self.game_over = True
-            await interaction.followup.send(f"❌ Неправильно! Следующее число: {next_number}", ephemeral=True)
-
-        # Обновить текущее число
-        self.current_number = next_number
-        self.round += 1
-
-        # Проверить конец игры
-        if self.game_over:
-            # Проигрыш
-            result_embed = self.create_embed("lost")
-            result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet))
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
-        elif self.round > self.max_rounds:
-            # Победа
-            self.game_over = True
-            final_prize = int(self.bet * (1.5 ** self.wins))
-
-            lock = get_user_lock(self.guild_id, self.user_id)
-            async with lock:
-                await user_balance_store.add_balance(
-                    self.guild_id,
-                    self.user_id,
-                    final_prize
-                )
-
-            result_embed = self.create_embed("won")
-            result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet))
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
-        else:
-            # Продолжить игру
-            updated_embed = self.create_embed("playing")
-            await interaction.edit_original_response(embed=updated_embed)
 
 
 class HighLowCog(commands.Cog):

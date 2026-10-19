@@ -57,7 +57,7 @@ class GuessNumberView(discord.ui.View):
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
                       f"• Диапазон: **{self.min_range} - {self.max_range}**\n"
                       f"• Попытки: **{self.attempts}/{self.max_attempts}**\n"
-                      f"• Множитель: **10.0x** (при угадывании)",
+                      f"• Множитель: **5.0x** (при угадывании)",
                 inline=False
             )
             embed.add_field(
@@ -137,7 +137,7 @@ class GuessNumberInput(discord.ui.Modal):
         if guess == self.game_view.secret_number:
             # Победа
             self.game_view.game_over = True
-            winnings = self.game_view.bet * 10
+            winnings = self.game_view.bet * 5
 
             lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
             async with lock:
