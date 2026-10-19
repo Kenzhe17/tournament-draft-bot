@@ -207,9 +207,9 @@ class PetStore:
             hours_since_fed = (now - pet.last_fed_at).total_seconds() / 3600
             hours_since_energy = (now - pet.last_energy_update_at).total_seconds() / 3600
 
-            # Пассивное уменьшение энергии (2 в час)
-            energy_loss = int(hours_since_energy * 2)
-            pet.energy = max(0, pet.energy - energy_loss)
+            # Пассивное уменьшение энергии УБРАНО - энергия тратится только при использовании способностей
+            # energy_loss = int(hours_since_energy * 2)
+            # pet.energy = max(0, pet.energy - energy_loss)
 
             # Восстановление энергии если сытость > 70 (10 в час)
             if pet.fullness > 70:
@@ -217,9 +217,8 @@ class PetStore:
                 pet.energy = min(100, pet.energy + energy_gain)
 
             # Пассивное уменьшение еды
-            # Если энергии нет, еда уходит в 2 раза быстрее
-            fullness_multiplier = 2 if pet.energy == 0 else 1
-            fullness_loss = int(hours_since_fed / 6 * 5 * fullness_multiplier)  # 5 каждые 6 часов (или 10 если нет энергии)
+            # Еда уходит каждые 6 часов (5 единиц)
+            fullness_loss = int(hours_since_fed / 6 * 5)
             pet.fullness = max(0, pet.fullness - fullness_loss)
 
             # Проверить когда сытость достигла 0

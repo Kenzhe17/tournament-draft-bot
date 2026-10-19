@@ -1561,6 +1561,11 @@ class PetRaritySelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(
+                label="Таинственное яйцо",
+                value="egg",
+                description="500 • Случайный питомец"
+            ),
+            discord.SelectOption(
                 label="Обычные питомцы",
                 value="common",
                 description="3,000 • 3 питомца"
@@ -1579,11 +1584,6 @@ class PetRaritySelect(discord.ui.Select):
                 label="Легендарные питомцы",
                 value="legendary",
                 description="30,000 • 1 питомец"
-            ),
-            discord.SelectOption(
-                label="Таинственное яйцо",
-                value="egg",
-                description="500 • Случайный питомец"
             ),
         ]
         super().__init__(
