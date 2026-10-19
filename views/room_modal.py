@@ -41,13 +41,16 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         """Handle room ID and password submission."""
         from storage.json_store import store
 
+        # Defer immediately to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Check cooldown (2 seconds)
         guild_id = interaction.guild_id
         current_time = time.time()
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
             if elapsed < 2:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
                     ephemeral=True
                 )
@@ -55,16 +58,13 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
 
         tournament = store.get(interaction.guild_id)
         if not tournament:
-            await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
         # Validate inputs
         if not self.room_id.value or not self.room_password.value:
-            await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
+            await interaction.followup.send(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
             return
-
-        # Defer immediately to avoid timeout
-        await interaction.response.defer(ephemeral=True)
 
         # Check if room data already exists for this match
         existing_room = None
@@ -81,6 +81,16 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
                 ephemeral=True
             )
             return
+
+        # Check cooldown (2 seconds)
+        if guild_id in room_submission_cooldowns:
+            elapsed = current_time - room_submission_cooldowns[guild_id]
+            if elapsed < 2:
+                await interaction.followup.send(
+                    f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
+                    ephemeral=True
+                )
+                return
 
         # Set cooldown BEFORE sending (to prevent simultaneous submissions)
         room_submission_cooldowns[guild_id] = time.time()
