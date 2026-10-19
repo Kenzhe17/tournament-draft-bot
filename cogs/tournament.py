@@ -117,6 +117,12 @@ class TournamentCog(commands.Cog):
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
 
+        # Send ephemeral confirmation first
+        await interaction.response.send_message(
+            replace_emojis("✅ Турнир создан"),
+            ephemeral=True
+        )
+
         # Send main tournament message through channel.send to unbind it
         message = await interaction.channel.send(embed=embed, view=view)
 
@@ -216,6 +222,12 @@ class TournamentCog(commands.Cog):
                 tournament.player_user_ids[player_name] = 4000 + i
 
         store.set(tournament)
+
+        await interaction.response.send_message(
+            f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска.",
+            ephemeral=True
+        )
+        asyncio.create_task(_delete_ephemeral_later(interaction))
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 

@@ -164,5 +164,5 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     # Message 3: Password
     await channel.send(content=room_password)
 
-    # Message 4: Empty message for spacing
-    await channel.send(content="")
+    # Message 4: Spacing (2 lines of invisible braille pattern blank)
+    await channel.send(content="⠀\n⠀")

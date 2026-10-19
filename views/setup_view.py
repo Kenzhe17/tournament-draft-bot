@@ -1175,6 +1175,14 @@ class StartTournamentButton(discord.ui.Button):
 
             bot: TournamentBot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
+
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
         else:
             # ELO/SKILL modes: shuffle circles and start draft
             tournament.shuffle_circles()
