@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from models.tournament import Tournament
 
 
-# Cooldown для отправки комнаты (2 секунды)
+# Cooldown для отправки комнаты (1 секунда)
 room_submission_cooldowns = {}  # guild_id -> timestamp
 
 
@@ -48,15 +48,15 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             # Interaction expired or server error, continue anyway
             pass
 
-        # Check cooldown (2 seconds)
+        # Check cooldown (1 second)
         guild_id = interaction.guild_id
         current_time = time.time()
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
-            if elapsed < 2:
+            if elapsed < 1:
                 try:
                     await interaction.followup.send(
-                        f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
+                        f"❌ Подождите {1 - elapsed:.1f} секунд перед отправкой комнаты.",
                         ephemeral=True
                     )
                 except (discord.NotFound, discord.DiscordServerError):
@@ -98,13 +98,13 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
                 pass
             return
 
-        # Check cooldown (2 seconds)
+        # Check cooldown (1 second)
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
-            if elapsed < 2:
+            if elapsed < 1:
                 try:
                     await interaction.followup.send(
-                        f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
+                        f"❌ Подождите {1 - elapsed:.1f} секунд перед отправкой комнаты.",
                         ephemeral=True
                     )
                 except (discord.NotFound, discord.DiscordServerError):
