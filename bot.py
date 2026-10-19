@@ -453,12 +453,21 @@ class TournamentBot(commands.Bot):
         # Calculate member count (current count + 1 for the new member)
         member_count = member.guild.member_count + 1
 
-        # Send plain text welcome message
+        # Create instruction embed
+        from utils.embeds import replace_emojis
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} **КАК НАЧАТЬ ИГРУ**",
+            description=f"{replace_emojis('a_sparkle')} Для участия в играх необходимо создать персональную ветку.\n\n{replace_emojis('white_arrow')} **Шаг 1. Перейдите в игровой канал:**\nПерейдите в канал <#1561707634938351728>\n\n{replace_emojis('white_arrow')} **Шаг 2. Откройте игровое пространство:**\nОтправьте команду `/thread` для создания личной ветки.\n\n{replace_emojis('white_arrow')} **Шаг 3. Запустите нужную игру внутри ветки:**\n`/dice_roll bet:100` (пример)\n\n{replace_emojis('white_arrow')} **Шаг 4. Завершение сессии:**\nПосле окончания игры обязательно отправьте команду `/delete` прямо внутри ветки, чтобы удалить её.\n\n> {replace_emojis('white_dot')} *Скопируйте нужную команду, подставьте свои значения и отправьте в чат ветки.*",
+            color=15105570
+        )
+
+        # Send welcome message with embed
         await channel.send(
             f"₊˚⊹♡ **Добро пожаловать на сервер**, {member.mention}!\n\n"
             f"ты стал(а) нашим **{member_count:,}-м** участником ♡\n"
             f"чувствуй себя как дома, поприветствуй всех и заглядывай в чат!\n\n"
-            f"୨୧ надеемся, тебе у нас понравится ୨୧"
+            f"୨୧ надеемся, тебе у нас понравится ୨୧",
+            embed=embed
         )
 
 

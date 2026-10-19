@@ -19,6 +19,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def get_instruction_embed(command: str, bet: int) -> discord.Embed:
+    """Создать embed с инструкцией как начать игру."""
+    return discord.Embed(
+        title=f"{replace_emojis('a_star')} **КАК НАЧАТЬ ИГРУ**",
+        description=f"{replace_emojis('a_sparkle')} Для участия в играх необходимо создать персональную ветку.\n\n{replace_emojis('white_arrow')} **Шаг 1. Перейдите в игровой канал:**\nПерейдите в канал <#1561707634938351728>\n\n{replace_emojis('white_arrow')} **Шаг 2. Откройте игровое пространство:**\nОтправьте команду `/thread` для создания личной ветки.\n\n{replace_emojis('white_arrow')} **Шаг 3. Запустите нужную игру внутри ветки:**\n`/{command} bet:{bet}`\n\n{replace_emojis('white_arrow')} **Шаг 4. Завершение сессии:**\nПосле окончания игры обязательно отправьте команду `/delete` прямо внутри ветки, чтобы удалить её.\n\n> {replace_emojis('white_dot')} *Скопируйте нужную команду, подставьте свои значения и отправьте в чат ветки.*",
+        color=15105570
+    )
+
+
 def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
     """Get or create a lock for user operations."""
     if not hasattr(get_user_lock, "_locks"):
@@ -209,16 +218,10 @@ class DiceRollPlayAgainButton(discord.ui.Button):
 
             await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
 
-        # Создать новую игру
-        game_view = DiceRollView(guild_id, user_id, self.bet)
+        # Создать embed с инструкцией
+        embed = get_instruction_embed("dice_roll", self.bet)
 
-        # Добавить кнопки
-        for i in range(1, 7):
-            game_view.add_item(DiceRollButton(i, game_view))
-        game_view.add_item(DiceRollCancelButton(game_view))
-
-        embed = game_view.create_embed("menu")
-        await interaction.response.edit_message(embed=embed, view=game_view)
+        await interaction.response.edit_message(embed=embed, view=None)
 
 
 class DiceRollCog(commands.Cog):
