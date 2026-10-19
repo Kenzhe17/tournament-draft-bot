@@ -100,7 +100,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
 
     # Get specific channel
-    channel = bot.get_channel(1200125075156910181)
+    channel = bot.get_channel(1561683314480255057)
     if not channel:
         return
 
@@ -109,6 +109,6 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
     # Send simple message with room data (no formatting, easiest to copy on mobile)
-    message = f"{replace_emojis('a_star')} КОМНАТА ОТКРЫТА\n{replace_emojis('white_dot')} Матч: {team1_name} vs {team2_name}\n\n{room_id}\n{room_password}"
+    message = f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n{room_id}\n{room_password}"
 
-    await channel.send(content=f"{pings}\n{message}")
+    await channel.send(content=message)
