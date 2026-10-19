@@ -1,11 +1,16 @@
 from config import replace_emojis
 """Modal form for entering room ID and password."""
 
+import time
 import discord
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from models.tournament import Tournament
+
+
+# Cooldown для отправки комнаты (3 секунды)
+room_submission_cooldowns = {}  # guild_id -> timestamp
 
 
 class RoomModal(discord.ui.Modal, title="Комната игры"):
@@ -36,6 +41,18 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         """Handle room ID and password submission."""
         from storage.json_store import store
 
+        # Check cooldown (3 seconds)
+        guild_id = interaction.guild_id
+        current_time = time.time()
+        if guild_id in room_submission_cooldowns:
+            elapsed = current_time - room_submission_cooldowns[guild_id]
+            if elapsed < 3:
+                await interaction.response.send_message(
+                    f"❌ Подождите {3 - elapsed:.1f} секунд перед отправкой комнаты.",
+                    ephemeral=True
+                )
+                return
+
         tournament = store.get(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
@@ -45,6 +62,9 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         if not self.room_id.value or not self.room_password.value:
             await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
             return
+
+        # Set cooldown BEFORE sending (to prevent simultaneous submissions)
+        room_submission_cooldowns[guild_id] = time.time()
 
         # Store room data based on match type
         room_data = {"id": self.room_id.value, "password": self.room_password.value}
@@ -108,7 +128,12 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     all_members = team1_members + team2_members
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
-    # Send simple message with room data (no formatting, easiest to copy on mobile)
-    message = f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n{room_id}\n{room_password}"
+    # Send messages separately
+    # Message 1: Header
+    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}")
 
-    await channel.send(content=message)
+    # Message 2: Room ID
+    await channel.send(content=room_id)
+
+    # Message 3: Password
+    await channel.send(content=room_password)
