@@ -104,10 +104,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
 
     embed = discord.Embed(
         title=f"{replace_emojis('a_star')} КОМНАТА ОТКРЫТА",
-        description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}",
+        description=f"{replace_emojis('white_arrow')} **Заходите в комнату!**\n{replace_emojis('white_dot')} **Матч:** {team1_name} vs {team2_name}\n\n{replace_emojis('white_dot')} **ID комнаты:** `{room_id}`\n{replace_emojis('white_dot')} **Пароль:** `{room_password}`",
         color=discord.Color.from_rgb(69, 233, 233)
     )
-    embed.add_field(name="ID комнаты", value=f"```\n{room_id}\n```", inline=True)
-    embed.add_field(name="Пароль", value=f"```\n{room_password}\n```", inline=True)
-    
+
     await channel.send(content=pings, embed=embed)
