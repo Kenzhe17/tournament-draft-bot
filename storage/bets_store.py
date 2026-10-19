@@ -124,6 +124,44 @@ class BetsStore:
                 return [b for b in self._bets if b.guild_id == guild_id and b.user_id == user_id and b.tournament_id == tournament_id]
             return [b for b in self._bets if b.guild_id == guild_id and b.user_id == user_id]
 
+    async def get_user_bet_in_phase(self, guild_id: int, user_id: int, tournament_id: str, match_type: str) -> Bet | None:
+        """Check if user has a bet in a specific phase (qualifier/semifinal/final)."""
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, guild_id, tournament_id, user_id, match_type, match_index, team_index, amount, status
+                    FROM bets
+                    WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_type = $4 AND status = 'pending'
+                    LIMIT 1
+                    """,
+                    guild_id, user_id, tournament_id, match_type
+                )
+                if row:
+                    return Bet(
+                        id=row["id"],
+                        guild_id=row["guild_id"],
+                        tournament_id=row["tournament_id"],
+                        user_id=row["user_id"],
+                        match_type=row["match_type"],
+                        match_index=row["match_index"],
+                        team_index=row["team_index"],
+                        amount=row["amount"],
+                        status=row["status"]
+                    )
+                return None
+        else:
+            for bet in self._bets:
+                if (bet.guild_id == guild_id 
+                    and bet.user_id == user_id 
+                    and bet.tournament_id == tournament_id 
+                    and bet.match_type == match_type 
+                    and bet.status == "pending"):
+                    return bet
+            return None
+
     async def get_match_bets(self, guild_id: int, tournament_id: str, match_type: str, match_index: int) -> list[Bet]:
         """Get all bets for a specific match."""
         if self._use_db:
