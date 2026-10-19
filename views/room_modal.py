@@ -155,14 +155,14 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
     # Send messages separately
-    # Message 1: Header
-    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n")
+    # Message 1: Spacing before header (2 lines of invisible braille pattern blank)
+    await channel.send(content="⠀\n⠀")
 
-    # Message 2: Room ID
+    # Message 2: Header
+    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n⠀")
+
+    # Message 3: Room ID
     await channel.send(content=room_id)
 
-    # Message 3: Password
+    # Message 4: Password
     await channel.send(content=room_password)
-
-    # Message 4: Spacing (2 lines of invisible braille pattern blank)
-    await channel.send(content="⠀\n⠀")
