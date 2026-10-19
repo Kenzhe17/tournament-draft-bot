@@ -351,6 +351,7 @@ class PetStore:
             pet.fullness = min(100, pet.fullness + fullness_gain)
             pet.energy = min(100, pet.energy + energy_gain)
             pet.last_fed_at = datetime.now(timezone.utc)
+            pet.last_energy_update_at = datetime.now(timezone.utc)  # Обновляем при кормлении
             
             # Сбросить флаг предупреждения если сытость поднялась выше 30
             if pet.fullness > 30:
