@@ -277,7 +277,10 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message(embed=embed, ephemeral=False)
+        try:
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+        except (discord.NotFound, discord.DiscordServerError):
+            pass
 
     @app_commands.command(name="check2fa", description="Найти роли и каналы, из-за которых просит 2FA")
     @app_commands.checks.has_permissions(administrator=True)
@@ -402,7 +405,10 @@ class TournamentCog(commands.Cog):
         # Создать View с выпадающим меню категорий
         view = ShopMainView()
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        try:
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        except (discord.NotFound, discord.DiscordServerError):
+            pass
 
     @app_commands.command(name="inventory", description="Ваш инвентарь")
     async def inventory(self, interaction: discord.Interaction) -> None:
@@ -1777,9 +1783,15 @@ class TournamentCog(commands.Cog):
             embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
-            await interaction.response.send_message(embed=embed)
+            try:
+                await interaction.response.send_message(embed=embed)
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
         except ValueError as e:
-            await interaction.response.send_message(replace_emojis(f"❌ {str(e)}"), ephemeral=True)
+            try:
+                await interaction.response.send_message(replace_emojis(f"❌ {str(e)}"), ephemeral=True)
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
 
     @app_commands.command(name="gift", description="Передать предмет другому игроку")
     @app_commands.describe(user="Игрок", item_id="ID предмета")

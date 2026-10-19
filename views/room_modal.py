@@ -42,7 +42,11 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         from storage.json_store import store
 
         # Defer immediately to avoid timeout
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except (discord.NotFound, discord.DiscordServerError):
+            # Interaction expired or server error, continue anyway
+            pass
 
         # Check cooldown (2 seconds)
         guild_id = interaction.guild_id
@@ -50,20 +54,29 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
             if elapsed < 2:
-                await interaction.followup.send(
-                    f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
-                    ephemeral=True
-                )
+                try:
+                    await interaction.followup.send(
+                        f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
+                        ephemeral=True
+                    )
+                except (discord.NotFound, discord.DiscordServerError):
+                    pass
                 return
 
         tournament = store.get(interaction.guild_id)
         if not tournament:
-            await interaction.followup.send(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
+            try:
+                await interaction.followup.send(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
             return
 
         # Validate inputs
         if not self.room_id.value or not self.room_password.value:
-            await interaction.followup.send(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
+            try:
+                await interaction.followup.send(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
             return
 
         # Check if room data already exists for this match
@@ -76,20 +89,26 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             existing_room = tournament.final_room
 
         if existing_room:
-            await interaction.followup.send(
-                replace_emojis("❌ Данные комнаты уже были отправлены другим пользователем."),
-                ephemeral=True
-            )
+            try:
+                await interaction.followup.send(
+                    replace_emojis("❌ Данные комнаты уже были отправлены другим пользователем."),
+                    ephemeral=True
+                )
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
             return
 
         # Check cooldown (2 seconds)
         if guild_id in room_submission_cooldowns:
             elapsed = current_time - room_submission_cooldowns[guild_id]
             if elapsed < 2:
-                await interaction.followup.send(
-                    f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
-                    ephemeral=True
-                )
+                try:
+                    await interaction.followup.send(
+                        f"❌ Подождите {2 - elapsed:.1f} секунд перед отправкой комнаты.",
+                        ephemeral=True
+                    )
+                except (discord.NotFound, discord.DiscordServerError):
+                    pass
                 return
 
         # Set cooldown BEFORE sending (to prevent simultaneous submissions)
@@ -116,7 +135,10 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         await send_room_dm_notifications(bot, tournament, self.team1_index, self.team2_index, self.room_id.value, self.room_password.value)
 
         # Confirm to user
-        await interaction.followup.send(replace_emojis("✅ Комната создана и данные отправлены."), ephemeral=True)
+        try:
+            await interaction.followup.send(replace_emojis("✅ Комната создана и данные отправлены."), ephemeral=True)
+        except (discord.NotFound, discord.DiscordServerError):
+            pass
 
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:

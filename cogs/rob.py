@@ -661,7 +661,10 @@ class RobCog(commands.Cog):
 
         embed = view.build_embed(success_chance=base_success_chance)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+        except (discord.NotFound, discord.DiscordServerError):
+            pass
 
     @app_commands.command(name="robgroup", description="Ограбить другого пользователя группой")
     @app_commands.describe(user="Пользователь, которого хотите ограбить")

@@ -431,11 +431,18 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         bot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
-        await interaction.response.edit_message(
-            content=f"✅ Победитель {self.team_name} подтверждён!",
-            embed=None,
-            view=None
-        )
+        try:
+            await interaction.response.edit_message(
+                content=f"✅ Победитель {self.team_name} подтверждён!",
+                embed=None,
+                view=None
+            )
+        except discord.NotFound:
+            # Interaction expired, use followup instead
+            await interaction.followup.send(
+                f"✅ Победитель {self.team_name} подтверждён!",
+                ephemeral=True
+            )
 
 
 class CancelWinnerButton(discord.ui.Button):

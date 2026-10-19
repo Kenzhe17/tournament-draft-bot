@@ -72,7 +72,14 @@ class RoomButton(discord.ui.Button):
         # Open modal (for both adding and editing)
         from views.room_modal import RoomModal
         modal = RoomModal(self.match_type, self.match_index, self.team1_index, self.team2_index)
-        await interaction.response.send_modal(modal)
+        try:
+            await interaction.response.send_modal(modal)
+        except discord.NotFound:
+            # Interaction expired, send followup message
+            await interaction.followup.send(
+                replace_emojis("❌ Время взаимодействия истекло. Попробуйте снова."),
+                ephemeral=True
+            )
 
 
 class AdminRoomsButton(discord.ui.Button):
