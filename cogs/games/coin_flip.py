@@ -269,13 +269,18 @@ class CoinFlipDeclineButton(discord.ui.Button):
 class CoinFlipPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
-    def __init__(self, bet: int, opponent_id: Optional[int] = None):
+    def __init__(self, bet: int, opponent_id: Optional[int] = None, user_id: int = None):
         super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
         self.opponent_id = opponent_id
+        self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перезапустить игру с теми же параметрами."""
+        if self.user_id and interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
         opponent = None
         if self.opponent_id:
             opponent = interaction.guild.get_member(self.opponent_id)
@@ -402,7 +407,7 @@ async def start_game(
 
     # Add play again button
     result_view = discord.ui.View(timeout=None)
-    result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id))
+    result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id, game.initiator_id))
 
     await interaction.edit_original_response(embed=result_embed, view=result_view)
 

@@ -198,7 +198,7 @@ class PvEChoiceView(RPSView):
 
         # Add play again button
         result_view = discord.ui.View(timeout=None)
-        result_view.add_item(RPSPlayAgainButton(bet, None))
+        result_view.add_item(RPSPlayAgainButton(bet, interaction.user.id, None))
 
         # Send public result message (not ephemeral)
         await interaction.edit_original_response(embed=embed, view=result_view)
@@ -687,6 +687,10 @@ class RPSPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """Перезапустить игру с теми же параметрами."""
+        if self.initiator_id and interaction.user.id != self.initiator_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 

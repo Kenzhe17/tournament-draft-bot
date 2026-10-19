@@ -228,12 +228,17 @@ class LotteryCancelButton(discord.ui.Button):
 class LotteryPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
-    def __init__(self, ticket_price: int, max_tickets: int):
+    def __init__(self, ticket_price: int, max_tickets: int, user_id: int):
         super().__init__(style=discord.ButtonStyle.primary, label="Новая лотерея")
         self.ticket_price = ticket_price
         self.max_tickets = max_tickets
+        self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 

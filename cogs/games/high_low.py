@@ -124,7 +124,7 @@ class HighLowView(discord.ui.View):
             # Проигрыш
             result_embed = self.create_embed("lost")
             result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet))
+            result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
             await interaction.edit_original_response(embed=result_embed, view=result_view)
         elif self.round > self.max_rounds:
             # Победа
@@ -141,7 +141,7 @@ class HighLowView(discord.ui.View):
 
             result_embed = self.create_embed("won")
             result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet))
+            result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
             await interaction.edit_original_response(embed=result_embed, view=result_view)
         else:
             # Продолжить игру
@@ -219,11 +219,16 @@ class HighLowCancelButton(discord.ui.Button):
 class HighLowPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
-    def __init__(self, bet: int):
+    def __init__(self, bet: int, user_id: int):
         super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
+        self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 

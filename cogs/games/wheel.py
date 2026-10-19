@@ -154,7 +154,7 @@ class WheelSpinButton(discord.ui.Button):
 
         # Добавить кнопку "Сыграть снова"
         result_view = discord.ui.View(timeout=None)
-        result_view.add_item(WheelPlayAgainButton(self.game_view.bet))
+        result_view.add_item(WheelPlayAgainButton(self.game_view.bet, self.game_view.user_id))
 
         await interaction.edit_original_response(embed=result_embed, view=result_view)
 
@@ -191,11 +191,16 @@ class WheelCancelButton(discord.ui.Button):
 class WheelPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
-    def __init__(self, bet: int):
+    def __init__(self, bet: int, user_id: int):
         super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
+        self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
