@@ -322,6 +322,12 @@ async def init_db() -> None:
         except Exception:
             pass  # Column might already exist
 
+        # Migration: add match_type column if it doesn't exist
+        try:
+            await conn.execute("ALTER TABLE bets ADD COLUMN IF NOT EXISTS match_type TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # Column might already exist
+
         # Migration: ensure PRIMARY KEY constraint exists on bets table
         try:
             # Drop existing primary key if it exists (might be different)

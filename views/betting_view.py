@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 import discord
 
 from models.tournament import TournamentPhase
-from storage.bets_store import bets_store
 from storage.user_balance_store import user_balance_store
 
 if TYPE_CHECKING:

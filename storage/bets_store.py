@@ -15,8 +15,7 @@ class Bet:
     guild_id: int = 0
     tournament_id: str = ""
     user_id: int = 0
-    match_type: str = ""  # "qualifier", "semifinal", "final"
-    match_index: int = 0
+    match_id: str = ""  # "qualifier_0", "semifinal_1", "final_0"
     team_index: int = 0
     amount: int = 0
     status: str = "pending"  # "pending", "won", "lost"
@@ -128,12 +127,12 @@ class BetsStore:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
-                    SELECT guild_id, tournament_id, user_id, match_type, match_index, team_index, amount, status
+                    SELECT guild_id, tournament_id, user_id, match_id, team_index, amount, status
                     FROM bets
-                    WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_type = $4 AND status = 'pending'
+                    WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_id LIKE $4 AND status = 'pending'
                     LIMIT 1
                     """,
-                    guild_id, user_id, tournament_id, match_type
+                    guild_id, user_id, tournament_id, f"{match_type}%"
                 )
                 if row:
                     return Bet(
@@ -141,8 +140,8 @@ class BetsStore:
                         guild_id=row["guild_id"],
                         tournament_id=row["tournament_id"],
                         user_id=row["user_id"],
-                        match_type=row["match_type"],
-                        match_index=row["match_index"],
+                        match_type=row["match_id"].split("_")[0] if "_" in row["match_id"] else "",
+                        match_index=int(row["match_id"].split("_")[1]) if "_" in row["match_id"] else 0,
                         team_index=row["team_index"],
                         amount=row["amount"],
                         status=row["status"]

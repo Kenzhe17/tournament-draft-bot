@@ -3,7 +3,6 @@ import discord
 from discord.ui import Modal, TextInput
 from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
-from storage.bets_store import bets_store
 from models.bet import Bet
 
 
@@ -42,7 +41,7 @@ class BetAmountModal(Modal, title="Сумма ставки"):
                 await interaction.response.send_message(replace_emojis("❌ Нельзя ставить против своей команды!"), ephemeral=True)
                 return
 
-        existing_bet = await bets_store.get_user_bet_in_phase(self.guild_id, interaction.user.id, self.tournament.id, self.match_type)
+        existing_bet = await bet_store.get_user_bet_in_phase(self.guild_id, interaction.user.id, self.tournament.id, self.match_type)
         if existing_bet:
             await interaction.response.send_message(replace_emojis("❌ Можно ставить только 1 раз за этап!"), ephemeral=True)
             return
