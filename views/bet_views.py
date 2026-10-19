@@ -88,7 +88,7 @@ class TeamSelectView(View):
             self.tournament,
             self.match_type,
             self.match_index,
-            self.team_a,
+            self.name_a,  # Team name, not index
             self.name_a,
             self.name_b
         )
@@ -102,7 +102,7 @@ class TeamSelectView(View):
             self.tournament,
             self.match_type,
             self.match_index,
-            self.team_b,
+            self.name_b,  # Team name, not index
             self.name_a,
             self.name_b
         )

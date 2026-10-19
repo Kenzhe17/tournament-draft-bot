@@ -58,6 +58,14 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
+        # Validate inputs
+        if not self.room_id.value or not self.room_password.value:
+            await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
+            return
+
+        # Defer immediately to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Check if room data already exists for this match
         existing_room = None
         if self.match_type == "qualifier":
@@ -68,15 +76,10 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             existing_room = tournament.final_room
 
         if existing_room:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 replace_emojis("❌ Данные комнаты уже были отправлены другим пользователем."),
                 ephemeral=True
             )
-            return
-
-        # Validate inputs
-        if not self.room_id.value or not self.room_password.value:
-            await interaction.response.send_message(replace_emojis("❌ ID и пароль комнаты не могут быть пустыми."), ephemeral=True)
             return
 
         # Set cooldown BEFORE sending (to prevent simultaneous submissions)
@@ -152,4 +155,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     await channel.send(content=room_id)
 
     # Message 3: Password
-    await channel.send(content=room_password + "\n\n")
+    await channel.send(content=room_password)
+
+    # Message 4: Empty message for spacing
+    await channel.send(content="")

@@ -150,7 +150,7 @@ class TeamButton(discord.ui.Button):
             self.tournament,
             self.match_type,
             self.match_index,
-            self.match_position,  # Use match position (0 or 1) instead of absolute team index
+            self.team_index,
             self.team_name,
             team_a_name,
             team_b_name
