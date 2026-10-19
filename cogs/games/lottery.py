@@ -46,6 +46,85 @@ class LotteryState:
         self.winner = None
 
 
+class LotteryView(discord.ui.View):
+    """View для игры Лотерея."""
+
+    def __init__(self, lottery_state: LotteryState):
+        super().__init__(timeout=300)
+        self.lottery = lottery_state
+
+    def create_embed(self, state: str = "active", winner: int = None) -> discord.Embed:
+        """Создать embed для разных состояний лотереи."""
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_sparkle')} **ЛОТЕРЕЯ | /lottery**",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        if state == "active":
+            prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
+            remaining = self.lottery.max_tickets - self.lottery.tickets_sold
+
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                value=f"• Цена билета: **{self.lottery.ticket_price}** {get_emoji('money')}\n"
+                      f"• Продано билетов: **{self.lottery.tickets_sold}/{self.lottery.max_tickets}**\n"
+                      f"• Призовой фонд: **{prize_pool}** {get_emoji('money')}\n"
+                      f"• Осталось билетов: **{remaining}**",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                value="Купите билет(ы) для участия. Когда все билеты будут проданы, будет выбран случайный победитель!",
+                inline=False
+            )
+
+        elif state == "won":
+            prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                value=f"🎉 Победитель: <@{winner}>\n"
+                      f"• Выигрыш: **{prize_pool}** {get_emoji('money')}\n"
+                      f"• Продано билетов: **{self.lottery.tickets_sold}**",
+                inline=False
+            )
+
+        return embed
+
+    async def draw_winner(self, interaction: discord.Interaction) -> None:
+        """Выбрать победителя."""
+        if not self.lottery.participants:
+            await interaction.edit_original_response(
+                content="❌ Нет участников. Деньги возвращены.",
+                embed=None,
+                view=None
+            )
+            self.lottery.active = False
+            del lotteries[self.lottery.guild_id]
+            return
+
+        # Создать взвешенный список участников (больше билетов = больше шанс)
+        weighted_participants = []
+        for user_id, ticket_count in self.lottery.participants.items():
+            weighted_participants.extend([user_id] * ticket_count)
+
+        # Выбрать победителя
+        winner = random.choice(weighted_participants)
+        self.lottery.winner = winner
+        self.lottery.active = False
+
+        # Выплатить приз
+        prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
+        lock = get_user_lock(self.lottery.guild_id, winner)
+        async with lock:
+            await user_balance_store.add_balance(self.lottery.guild_id, winner, prize_pool)
+
+        # Показать результат
+        result_embed = self.create_embed("won", winner)
+        await interaction.edit_original_response(embed=result_embed, view=None)
+
+        del lotteries[self.lottery.guild_id]
+
+
 class LotteryBuyButton(discord.ui.Button):
     """Кнопка покупки билета."""
 
@@ -137,83 +216,44 @@ class LotteryCancelButton(discord.ui.Button):
         )
 
 
-class LotteryView(discord.ui.View):
-    """View для игры Лотерея."""
+class LotteryPlayAgainButton(discord.ui.Button):
+    """Кнопка сыграть снова."""
 
-    def __init__(self, lottery_state: LotteryState):
-        super().__init__(timeout=300)
-        self.lottery = lottery_state
+    def __init__(self, ticket_price: int, max_tickets: int):
+        super().__init__(style=discord.ButtonStyle.primary, label="Новая лотерея")
+        self.ticket_price = ticket_price
+        self.max_tickets = max_tickets
 
-    def create_embed(self, state: str = "active", winner: int = None) -> discord.Embed:
-        """Создать embed для разных состояний лотереи."""
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **ЛОТЕРЕЯ | /lottery**",
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
+    async def callback(self, interaction: discord.Interaction) -> None:
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
 
-        if state == "active":
-            prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
-            remaining = self.lottery.max_tickets - self.lottery.tickets_sold
-
-            embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
-                value=f"• Цена билета: **{self.lottery.ticket_price}** {get_emoji('money')}\n"
-                      f"• Продано билетов: **{self.lottery.tickets_sold}/{self.lottery.max_tickets}**\n"
-                      f"• Призовой фонд: **{prize_pool}** {get_emoji('money')}\n"
-                      f"• Осталось билетов: **{remaining}**",
-                inline=False
+        # Проверить параметры
+        if self.ticket_price < 10 or self.ticket_price > 1000:
+            await interaction.response.send_message(
+                "❌ Цена билета должна быть от 10 до 1,000 монет.",
+                ephemeral=True
             )
-            embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                value="Купите билет(ы) для участия. Когда все билеты будут проданы, будет выбран случайный победитель!",
-                inline=False
-            )
-
-        elif state == "won":
-            prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
-            embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"🎉 Победитель: <@{winner}>\n"
-                      f"• Выигрыш: **{prize_pool}** {get_emoji('money')}\n"
-                      f"• Продано билетов: **{self.lottery.tickets_sold}**",
-                inline=False
-            )
-
-        return embed
-
-    async def draw_winner(self, interaction: discord.Interaction) -> None:
-        """Выбрать победителя."""
-        if not self.lottery.participants:
-            await interaction.edit_original_response(
-                content="❌ Нет участников. Деньги возвращены.",
-                embed=None,
-                view=None
-            )
-            self.lottery.active = False
-            del lotteries[self.lottery.guild_id]
             return
 
-        # Создать взвешенный список участников (больше билетов = больше шанс)
-        weighted_participants = []
-        for user_id, ticket_count in self.lottery.participants.items():
-            weighted_participants.extend([user_id] * ticket_count)
+        if self.max_tickets < 10 or self.max_tickets > 100:
+            await interaction.response.send_message(
+                "❌ Количество билетов должно быть от 10 до 100.",
+                ephemeral=True
+            )
+            return
 
-        # Выбрать победителя
-        winner = random.choice(weighted_participants)
-        self.lottery.winner = winner
-        self.lottery.active = False
+        # Создать новую лотерею
+        lottery_state = LotteryState(guild_id, self.ticket_price, self.max_tickets)
+        lotteries[guild_id] = lottery_state
 
-        # Выплатить приз
-        prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
-        lock = get_user_lock(self.lottery.guild_id, winner)
-        async with lock:
-            await user_balance_store.add_balance(self.lottery.guild_id, winner, prize_pool)
+        # Создать view
+        lottery_view = LotteryView(lottery_state)
+        lottery_view.add_item(LotteryBuyButton(lottery_view))
+        lottery_view.add_item(LotteryCancelButton(lottery_view))
 
-        # Показать результат
-        result_embed = self.create_embed("won", winner)
-        await interaction.edit_original_response(embed=result_embed, view=None)
-
-        del lotteries[self.lottery.guild_id]
+        embed = lottery_view.create_embed("active")
+        await interaction.response.edit_message(embed=embed, view=lottery_view)
 
 
 class LotteryCog(commands.Cog):
