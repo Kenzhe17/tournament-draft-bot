@@ -38,6 +38,8 @@ class SpinBottleView(discord.ui.View):
         self.user_id = user_id
         self.bet = bet
         self.spun = False
+        self.participants = set()  # Set of user IDs who joined
+        self.participants_list = []  # List of member objects for display
 
     def create_embed(self, state: str = "menu", target: str = None, winner: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
@@ -47,6 +49,7 @@ class SpinBottleView(discord.ui.View):
         )
 
         if state == "menu":
+            participants_text = ", ".join([f"<@{uid}>" for uid in self.participants]) if self.participants else "Нет участников"
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
@@ -55,8 +58,13 @@ class SpinBottleView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Участники ({len(self.participants)})",
+                value=participants_text,
+                inline=False
+            )
+            embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                value="Крутите бутылочку! Она выберет случайного игрока из треда. Случайный победитель забирает банк (2x).",
+                value="Нажмите 'Войти' чтобы участвовать. После этого нажмите 'Крутить' - бутылочка выберет случайного участника, который заберёт банк (2x).",
                 inline=False
             )
 
@@ -72,27 +80,52 @@ class SpinBottleView(discord.ui.View):
             else:
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"❌ В треде нет других игроков. Ставка возвращена.",
+                    value=f"❌ Нет участников. Ставка возвращена.",
                     inline=False
                 )
 
         return embed
 
 
-class SpinBottleButton(discord.ui.Button):
+class SpinBottleJoinButton(discord.ui.Button):
+    """Кнопка вступить в игру."""
+
+    def __init__(self, game_view: SpinBottleView):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Войти",
+            custom_id="spin_bottle_join"
+        )
+        self.game_view = game_view
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id in self.game_view.participants:
+            await interaction.response.send_message("❌ Вы уже участвуете.", ephemeral=True)
+            return
+
+        # Добавить участника
+        self.game_view.participants.add(interaction.user.id)
+        self.game_view.participants_list.append(interaction.user)
+
+        # Обновить embed
+        embed = self.game_view.create_embed("menu")
+        await interaction.response.edit_message(embed=embed)
+
+
+class SpinBottleSpinButton(discord.ui.Button):
     """Кнопка крутить бутылочку."""
 
     def __init__(self, game_view: SpinBottleView):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Крутить бутылочку",
+            label="Крутить",
             custom_id="spin_bottle_spin"
         )
         self.game_view = game_view
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Только инициатор может крутить.", ephemeral=True)
             return
 
         if self.game_view.spun:
@@ -105,23 +138,8 @@ class SpinBottleButton(discord.ui.Button):
         # Отметить что бросок сделан
         self.game_view.spun = True
 
-        # Получить игроков из треда
-        thread = interaction.channel
-        if not isinstance(thread, discord.Thread):
-            await interaction.edit_original_response(
-                content="❌ Ошибка: игра должна быть в треде.",
-                embed=None,
-                view=None
-            )
-            return
-
-        # Получить всех участников треда кроме инициатора
-        members = []
-        async for member in thread.fetch_members(limit=None):
-            if member.id != self.game_view.user_id and not member.bot:
-                members.append(member)
-
-        if not members:
+        # Проверить участников
+        if not self.game_view.participants:
             # Вернуть ставку
             lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
             async with lock:
@@ -135,8 +153,8 @@ class SpinBottleButton(discord.ui.Button):
             await interaction.edit_original_response(embed=result_embed, view=None)
             return
 
-        # Выбрать случайного игрока
-        target = random.choice(members)
+        # Выбрать случайного участника
+        target = random.choice(self.game_view.participants_list)
 
         # Случайный победитель между инициатором и целью
         winner_user = random.choice([interaction.user, target])
@@ -247,7 +265,8 @@ class SpinBottlePlayAgainButton(discord.ui.Button):
         game_view = SpinBottleView(guild_id, user_id, self.bet)
 
         # Добавить кнопки
-        game_view.add_item(SpinBottleButton(game_view))
+        game_view.add_item(SpinBottleJoinButton(game_view))
+        game_view.add_item(SpinBottleSpinButton(game_view))
         game_view.add_item(SpinBottleCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
@@ -313,7 +332,8 @@ class SpinBottleCog(commands.Cog):
         game_view = SpinBottleView(guild_id, user_id, bet)
 
         # Добавить кнопки
-        game_view.add_item(SpinBottleButton(game_view))
+        game_view.add_item(SpinBottleJoinButton(game_view))
+        game_view.add_item(SpinBottleSpinButton(game_view))
         game_view.add_item(SpinBottleCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
