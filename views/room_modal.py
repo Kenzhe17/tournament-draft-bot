@@ -155,8 +155,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
 
     # Send messages separately
-    # Message 1: Spacing before header (2 lines of invisible braille pattern blank)
-    await channel.send(content="⠀\n⠀")
+    # Message 1: GIF header
+    await channel.send(content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
 
     # Message 2: Header
     await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n⠀")
