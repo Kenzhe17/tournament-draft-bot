@@ -48,17 +48,16 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     exp = pet_row["exp"]
     max_exp = age * 50 - 1  # Возраст 1: 0-49, Возраст 2: 50-99, Возраст 3: 100-149
 
-    # Сборка пассивных способностей (только названия)
+    # Сборка пассивных способностей (только названия) - только если не в блоке
     abilities_list = []
     if catalog_data:
         for ab_key in (1, 2):
             ab = catalog_data["abilities"][ab_key]
-            if energy <= 0:
-                abilities_list.append(f"**{ab['name']}** *(Отключено)*")
-            else:
+            # Показываем только если энергия > 0
+            if energy > 0:
                 abilities_list.append(f"**{ab['name']}**")
 
-    abilities_formatted = "\n".join(f"{get_emoji('white_dot')} {item}" for item in abilities_list)
+    abilities_formatted = "\n".join(f"{get_emoji('white_dot')} {item}" for item in abilities_list) if abilities_list else f"{get_emoji('white_dot')} Нет активных способностей"
 
     # Статус сытости
     status_text = f"\n\n{get_emoji('a_sparkle')} *Питомец сыт и восстанавливает энергию!*"
@@ -77,9 +76,6 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%`\n"
             f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%`\n"
             f"{get_emoji('white_dot')} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
-            f"**Важно:**\n"
-            f"{get_emoji('white_dot')} Способности питомца требуют энергию! Если энергия = 0%, способности не будут работать.\n"
-            f"{get_emoji('white_dot')} Способности блокируются если сытость < 30%!\n\n"
             f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
             f"{status_text}"
