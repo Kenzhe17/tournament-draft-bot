@@ -341,15 +341,9 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             view.add_item(CoinFlipHeadsButton(game, game_view=view))
             view.add_item(CoinFlipTailsButton(game, game_view=view))
 
-        # Check if we're in a thread
-        if isinstance(interaction.channel, discord.Thread):
-            # Already in thread, just edit the message
-            embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-            await interaction.response.edit_message(embed=embed, view=view)
-        else:
-            # Not in thread (shouldn't happen), send in channel
-            embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-            await interaction.response.send_message(embed=embed, view=view)
+        # Edit the message
+        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 async def start_game(

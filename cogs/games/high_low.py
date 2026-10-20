@@ -229,7 +229,41 @@ class HighLowPlayAgainButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
-        await interaction.response.edit_message(view=None)
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+
+        # Проверить баланс
+        balance = await user_balance_store.get_balance(guild_id, user_id)
+        if balance < self.bet:
+            await interaction.response.send_message(
+                f"❌ Недостаточно монет. У вас: {balance}",
+                ephemeral=True
+            )
+            return
+
+        # Списать ставку
+        lock = get_user_lock(guild_id, user_id)
+        async with lock:
+            balance = await user_balance_store.get_balance(guild_id, user_id)
+            if balance < self.bet:
+                await interaction.response.send_message(
+                    f"❌ Недостаточно монет. У вас: {balance}",
+                    ephemeral=True
+                )
+                return
+
+            await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
+
+        # Создать игру
+        game_view = HighLowView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        game_view.add_item(HighLowHigherButton(game_view))
+        game_view.add_item(HighLowLowerButton(game_view))
+        game_view.add_item(HighLowCancelButton(game_view))
+
+        embed = game_view.create_embed("playing")
+        await interaction.response.edit_message(embed=embed, view=game_view)
 
 
 class HighLowCog(commands.Cog):

@@ -736,7 +736,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                               f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.edit_message(embed=embed, view=view)
         else:
             # PvP mode - wait for both players
             game_id = f"rps_play_again_{self.initiator_id}_{self.opponent_id}_{asyncio.get_event_loop().time()}"
