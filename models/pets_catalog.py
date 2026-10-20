@@ -151,37 +151,6 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
             }
         }
     },
-    "mimic_collector": {
-        "id": "mimic_collector",
-        "name": "Мимик-собиратель",
-        "title": "МАГАЗИН | МИМИК-СОБИРАТЕЛЬ",
-        "rarity": "Легендарный",
-        "rarity_code": "legendary",
-        "price": 30000,
-        "color": 0xF1C40F,
-        "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909864367169546/Eight_Fantasy_Creature_Portraits_5_-removebg-preview.png?ex=6ad46e17&is=6ad31c97&hm=63b8677ae72debb9f2d75e564502306c1ed0c9ab0b76506ab03d9a3dfbccb7ee&=&format=webp&quality=lossless",
-        "description": (
-            "Магический собиратель сокровищ. Иногда находит дополнительную награду "
-            "в кейсах и помогает сокращать торговые комиссии."
-        ),
-        "abilities": {
-            1: {
-                "name": "Секретный тайник",
-                "max_val": 20,
-                "unit": "%",
-                "desc_template": (
-                    "Даёт {val}% шанс получить дополнительную награду монет при открытии кейса. "
-                    "Размер дополнительной награды составляет 25–50% от базовой награды. Работает только на монеты."
-                )
-            },
-            2: {
-                "name": "Торговый нюх",
-                "max_val": 45,
-                "unit": "%",
-                "desc_template": "Уменьшает поддерживаемые комиссии обмена и продажи предметов на {val}%."
-            }
-        }
-    },
     "guardian_turtle": {
         "id": "guardian_turtle",
         "name": "Черепаха-хранитель",
@@ -238,6 +207,37 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
                 "max_val": 20,
                 "unit": "%",
                 "desc_template": "Уменьшает потерю Elo при поражении в официальном матче на {val}%."
+            }
+        }
+    },
+    "mimic_collector": {
+        "id": "mimic_collector",
+        "name": "Мимик-собиратель",
+        "title": "МАГАЗИН | МИМИК-СОБИРАТЕЛЬ",
+        "rarity": "Легендарный",
+        "rarity_code": "legendary",
+        "price": 30000,
+        "color": 0xF1C40F,
+        "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909864367169546/Eight_Fantasy_Creature_Portraits_5_-removebg-preview.png?ex=6ad46e17&is=6ad31c97&hm=63b8677ae72debb9f2d75e564502306c1ed0c9ab0b76506ab03d9a3dfbccb7ee&=&format=webp&quality=lossless",
+        "description": (
+            "Магический собиратель сокровищ. Иногда находит дополнительную награду "
+            "в кейсах и помогает сокращать торговые комиссии."
+        ),
+        "abilities": {
+            1: {
+                "name": "Секретный тайник",
+                "max_val": 20,
+                "unit": "%",
+                "desc_template": (
+                    "Даёт {val}% шанс получить дополнительную награду монет при открытии кейса. "
+                    "Размер дополнительной награды составляет 25–50% от базовой награды. Работает только на монеты."
+                )
+            },
+            2: {
+                "name": "Торговый нюх",
+                "max_val": 45,
+                "unit": "%",
+                "desc_template": "Уменьшает поддерживаемые комиссии обмена и продажи предметов на {val}%."
             }
         }
     }
