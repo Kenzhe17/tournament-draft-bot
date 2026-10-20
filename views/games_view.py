@@ -84,9 +84,8 @@ class GameCategorySelect(Select):
         # Создать список игр
         games_list = []
         for game in page_games:
-            mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
             status = "🔓" if game.status in ("ready", "available") else "🔒"
-            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}** • `[{mode}]`")
+            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}**")
             games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
 
@@ -178,17 +177,9 @@ class GameSelect(Select):
         else:
             status_text = "В разработке"
 
-        # Режим игры
-        if game.is_pvp and game.is_pve:
-            mode_text = "PvP/PvE"
-        elif game.is_pvp:
-            mode_text = "PvP"
-        else:
-            mode_text = "PvE"
-
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {game.name.upper()} | Игровой режим",
-            description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Режим: `[{mode_text}]`\n{replace_emojis('sub_middle')} Команда: `/{game.command}`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {get_emoji('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Канал: <#1561707634938351728>\n{replace_emojis('sub_middle')} Команда: `/{game.command} bet:100`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {get_emoji('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -260,28 +251,13 @@ class PlayButton(Button):
                 color=discord.Color.from_rgb(218, 165, 32)  # goldenrod
             )
         else:
-            pve_command = f"/{self.game.command} bet:100"
-            pvp_command = f"/{self.game.command} bet:100 opponent:@"
+            command = f"/{self.game.command} bet:100"
 
             embed = discord.Embed(
                 title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
-                description="",
-                color=discord.Color.blue()
+                description=f"Играйте на канале <#1561707634938351728>\n\n**Команда:** `{command}`\n\n{replace_emojis('💡')} Скопируйте команду, замените значение ставки и отправьте её в чат.",
+                color=discord.Color.from_rgb(69, 69, 69)
             )
-
-            embed.add_field(
-                name=replace_emojis("🤖 Игра с ботом (PvE)"),
-                value=pve_command,
-                inline=False
-            )
-
-            embed.add_field(
-                name=replace_emojis("⚔️ Дуэль с игроком (PvP)"),
-                value=pvp_command,
-                inline=False
-            )
-
-            embed.set_footer(text=replace_emojis("💡 Скопируйте команду, замените значения и отправьте её в чат."))
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -318,9 +294,8 @@ class BackToCategoryButton(Button):
         # Создать список игр
         games_list = []
         for game in page_games:
-            mode = "PvP/PvE" if game.is_pvp and game.is_pve else ("PvP" if game.is_pvp else "PvE")
             status = "🔓" if game.status in ("ready", "available") else "🔒"
-            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}** • `[{mode}]`")
+            games_list.append(f"{replace_emojis('sub_middle')} {status} **{game.name}**")
             games_list.append(f"{replace_emojis('sub_middle')} {game.short_description}")
             games_list.append("")  # Пустая строка между играми
 

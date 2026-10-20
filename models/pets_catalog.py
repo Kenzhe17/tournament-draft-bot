@@ -155,10 +155,10 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
         "id": "mimic_collector",
         "name": "Мимик-собиратель",
         "title": "МАГАЗИН | МИМИК-СОБИРАТЕЛЬ",
-        "rarity": "Эпический",
-        "rarity_code": "epic",
-        "price": 15000,
-        "color": 0x9B59B6,
+        "rarity": "Легендарный",
+        "rarity_code": "legendary",
+        "price": 30000,
+        "color": 0xF1C40F,
         "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909864367169546/Eight_Fantasy_Creature_Portraits_5_-removebg-preview.png?ex=6ad46e17&is=6ad31c97&hm=63b8677ae72debb9f2d75e564502306c1ed0c9ab0b76506ab03d9a3dfbccb7ee&=&format=webp&quality=lossless",
         "description": (
             "Магический собиратель сокровищ. Иногда находит дополнительную награду "

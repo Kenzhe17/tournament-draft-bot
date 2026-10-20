@@ -1578,12 +1578,12 @@ class PetRaritySelect(discord.ui.Select):
             discord.SelectOption(
                 label="Эпические питомцы",
                 value="epic",
-                description="15,000 • 2 питомца"
+                description="15,000 • 1 питомец"
             ),
             discord.SelectOption(
                 label="Легендарные питомцы",
                 value="legendary",
-                description="30,000 • 1 питомец"
+                description="30,000 • 2 питомца"
             ),
         ]
         super().__init__(
