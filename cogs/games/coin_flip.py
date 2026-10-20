@@ -420,14 +420,6 @@ async def create_coin_flip_game(
     guild_id = interaction.guild_id
     user_id = interaction.user.id
 
-    # Check if user is in a thread
-    if not isinstance(interaction.channel, discord.Thread):
-        await interaction.response.send_message(
-            "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда или `/delete` для удаления текущего.",
-            ephemeral=True
-        )
-        return
-
     # Validate bet
     if bet < 10 or bet > 10000:
         await interaction.response.send_message(

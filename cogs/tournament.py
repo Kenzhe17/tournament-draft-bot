@@ -2173,37 +2173,6 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="send_game_guide", description="Отправить гайд по играм в канал (только для владельца)")
-    @is_bot_owner()
-    async def send_game_guide(self, interaction: discord.Interaction) -> None:
-        """Отправить embed с инструкцией как начать игру."""
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} **КАК НАЧАТЬ ИГРУ**",
-            description=f"{replace_emojis('a_sparkle')} Для участия в играх необходимо создать персональную ветку.\n\n{replace_emojis('white_arrow')} **Шаг 1. Перейдите в игровой канал:**\nПерейдите в канал <#1561707634938351728>\n\n{replace_emojis('white_arrow')} **Шаг 2. Откройте игровое пространство:**\nОтправьте команду `/thread` для создания личной ветки.\n\n{replace_emojis('white_arrow')} **Шаг 3. Выберите игру и заведите команду:**\nВоспользуйтесь командой `/games`, чтобы просмотреть доступные игры и выбрать нужную, либо сразу используйте команду игры (например, `/spin_bottle bet:100`).\n\n{replace_emojis('white_arrow')} **Шаг 4. Завершение сессии:**\nПосле окончания игры обязательно отправьте команду `/delete` прямо внутри ветки, чтобы удалить её.\n\n> {replace_emojis('white_dot')} *Скопируйте нужную команду, подставьте свои значения и отправьте в чат ветки.*",
-            color=15105570
-        )
-
-        # Send to the specific channel
-        channel_id = 1561713148891889744
-        channel = self.bot.get_channel(channel_id)
-        if not channel:
-            try:
-                channel = await self.bot.fetch_channel(channel_id)
-            except discord.HTTPException:
-                await interaction.response.send_message(
-                    f"❌ Канал {channel_id} не найден",
-                    ephemeral=True
-                )
-                return
-
-        await channel.send(embed=embed)
-
-        # Send confirmation
-        await interaction.response.send_message(
-            replace_emojis("✅ Гайд по играм отправлен в канал"),
-            ephemeral=True
-        )
-
     @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
     @is_bot_owner()

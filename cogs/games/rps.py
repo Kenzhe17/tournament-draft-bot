@@ -193,7 +193,7 @@ class PvEChoiceView(RPSView):
             description=f"Ваш ход: {move.emoji} {move.display_name}\n"
                        f"Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
                        f"{get_emoji('money')} Изменение баланса: {balance_change}",
-            color=discord.Color.blue()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         # Add play again button
@@ -242,7 +242,7 @@ class PvPChallengeView(RPSView):
                 embed = discord.Embed(
                     title=replace_emojis("⏰ Время истекло"),
                     description=f"Вызов истёк и был автоматически отменён.",
-                    color=discord.Color.orange()
+                    color=discord.Color.from_rgb(69, 69, 69)
                 )
                 try:
                     await msg.edit(embed=embed, view=None)
@@ -414,7 +414,7 @@ class PvPChallengeView(RPSView):
         embed = discord.Embed(
             title=replace_emojis("❌ Вызов отклонён"),
             description=f"<@{interaction.user.id}> отклонил вызов от <@{self.initiator_id}>.",
-            color=discord.Color.red()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         for item in self.children:
@@ -457,7 +457,7 @@ class PvPChallengeView(RPSView):
         embed = discord.Embed(
             title=replace_emojis("🚫 Вызов отменён"),
             description=f"<@{self.initiator_id}> отменил свой вызов.",
-            color=discord.Color.orange()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
         
         for item in self.children:
@@ -484,7 +484,7 @@ class PvPChallengeView(RPSView):
                           f"{get_emoji('money')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
                           f"{replace_emojis('⏱️')} У вас есть 40 секунд чтобы сделать выбор!\n\n"
                           f"Сделайте выбор. Результат будет опубликован здесь!",
-            color=discord.Color.blue()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
         
         try:
@@ -580,7 +580,7 @@ class PvPChoiceView(RPSView):
                 embed = discord.Embed(
                     title=replace_emojis("⚔️ Ожидание выбора..."),
                     description=f"<@{waiting_for}> делает свой выбор...",
-                    color=discord.Color.yellow()
+                    color=discord.Color.from_rgb(69, 69, 69)
                 )
                 try:
                     await interaction.response.edit_message(embed=embed, view=self)
@@ -652,7 +652,7 @@ class PvPChoiceView(RPSView):
         embed = discord.Embed(
             title=title,
             description=description,
-            color=discord.Color.gold()
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         # Add play again button
@@ -728,27 +728,15 @@ class RPSPlayAgainButton(discord.ui.Button):
             active_games[game_id] = game
             active_users.add(user_id)
 
-            # Check if we're in a thread
-            if isinstance(interaction.channel, discord.Thread):
-                # Already in thread, just edit the message
-                view = PvEChoiceView(game_id, self.bet)
-                embed = discord.Embed(
-                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                    description=f"Ставка: {self.bet} {replace_emojis('🪙')}\n"
-                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                    color=discord.Color.blue()
-                )
-                await interaction.response.edit_message(embed=embed, view=view)
-            else:
-                # Not in thread, send new message
-                view = PvEChoiceView(game_id, self.bet)
-                embed = discord.Embed(
-                    title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
-                    description=f"Ставка: {self.bet} {replace_emojis('🪙')}\n"
-                                  f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
-                    color=discord.Color.blue()
-                )
-                await interaction.response.send_message(embed=embed, view=view)
+            # Send game message
+            view = PvEChoiceView(game_id, self.bet)
+            embed = discord.Embed(
+                title=replace_emojis("🎮 Камень-Ножницы-Бумага | Игра против ИИ"),
+                description=f"Ставка: {self.bet} {replace_emojis('🪙')}\n"
+                              f"Сделайте ваш ход, выбрав одну из кнопок ниже. У вас есть 30 секунд!",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            await interaction.response.send_message(embed=embed, view=view)
         else:
             # PvP mode - wait for both players
             game_id = f"rps_play_again_{self.initiator_id}_{self.opponent_id}_{asyncio.get_event_loop().time()}"
@@ -816,7 +804,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                                   f"{get_emoji('money')} Ставка: {self.bet} {replace_emojis('🪙')}\n"
                                   f"{replace_emojis('🏆')} Призовой фонд: {total_pot} {replace_emojis('🪙')} (комиссия 5%)\n\n"
                                   f"<@{self.opponent_id}>, примите вызов в течение 60 секунд.",
-                    color=discord.Color.gold()
+                    color=discord.Color.from_rgb(69, 69, 69)
                 )
 
                 # Edit the message with the challenge view
@@ -847,14 +835,6 @@ class RPSCog(commands.Cog):
         """Start RPS game against AI."""
         user_id = interaction.user.id
         guild_id = interaction.guild_id
-
-        # Check if user is in a thread
-        if not isinstance(interaction.channel, discord.Thread):
-            await interaction.response.send_message(
-                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда или `/delete` для удаления текущего.",
-                ephemeral=True
-            )
-            return
 
         # Validate bet
         if bet <= 0:

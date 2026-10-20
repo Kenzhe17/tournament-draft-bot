@@ -295,14 +295,6 @@ class GuessNumberCog(commands.Cog):
         bet: int,
     ):
         """Запустить игру Угадай число."""
-        # Проверить что в треде
-        if not isinstance(interaction.channel, discord.Thread):
-            await interaction.response.send_message(
-                "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда.",
-                ephemeral=True
-            )
-            return
-
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
