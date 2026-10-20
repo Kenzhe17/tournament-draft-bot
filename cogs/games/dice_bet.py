@@ -213,6 +213,12 @@ class DiceBetPlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = DiceBetView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        for i in range(2, 13):
+            view.add_item(DiceBetButton(i, view))
+        view.add_item(DiceBetCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 

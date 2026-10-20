@@ -387,6 +387,15 @@ class RoulettePlayAgainButton(discord.ui.Button):
 
         # Создать новую игру
         view = RouletteView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        view.add_item(RouletteRedButton(view))
+        view.add_item(RouletteBlackButton(view))
+        view.add_item(RouletteEvenButton(view))
+        view.add_item(RouletteOddButton(view))
+        view.add_item(RouletteSpinButton(view))
+        view.add_item(RouletteCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 

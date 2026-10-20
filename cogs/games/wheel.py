@@ -227,6 +227,11 @@ class WheelPlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = WheelView(guild_id, user_id, self.bet)
+
+        # Добавить кнопку
+        view.add_item(WheelSpinButton(view))
+        view.add_item(WheelCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 

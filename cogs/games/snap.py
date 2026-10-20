@@ -213,6 +213,11 @@ class SnapPlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = SnapView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        view.add_item(SnapPlayButton(view))
+        view.add_item(SnapCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 

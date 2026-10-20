@@ -211,6 +211,12 @@ class TripleChancePlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = TripleChanceView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        for i in range(1, 4):
+            view.add_item(TripleChanceButton(i, view))
+        view.add_item(TripleChanceCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 

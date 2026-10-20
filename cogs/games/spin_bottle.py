@@ -263,7 +263,13 @@ class SpinBottlePlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = SpinBottleView(guild_id, user_id, self.bet)
-        embed = view.create_embed("lobby")
+
+        # Добавить кнопки
+        view.add_item(SpinBottleJoinButton(view))
+        view.add_item(SpinBottleSpinButton(view))
+        view.add_item(SpinBottleCancelButton(view))
+
+        embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 
 

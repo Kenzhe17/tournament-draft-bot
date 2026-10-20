@@ -296,6 +296,12 @@ class CrapsPlayAgainButton(discord.ui.Button):
 
         # Создать игру
         view = CrapsView(guild_id, user_id, self.bet)
+
+        # Добавить кнопки
+        view.add_item(CrapsPassButton(view))
+        view.add_item(CrapsDontPassButton(view))
+        view.add_item(CrapsCancelButton(view))
+
         embed = view.create_embed("menu")
         await interaction.response.edit_message(embed=embed, view=view)
 
