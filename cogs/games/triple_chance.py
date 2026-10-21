@@ -61,7 +61,7 @@ class TripleChanceView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"{replace_emojis('white_arrow')} Загаданное число: **{result}**"
+            result_text = f"🎯 Загаданное число: **{result}**"
             if result == self.user_choice:
                 winnings = self.bet * 3
                 embed.color = discord.Color.green()

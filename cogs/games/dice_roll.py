@@ -61,7 +61,7 @@ class DiceRollView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"{replace_emojis('white_arrow')} Выпало: **{result}**"
+            result_text = f"🎲 Выпало: **{result}**"
             if result == self.user_choice:
                 winnings = self.bet * 6
                 embed.color = discord.Color.green()

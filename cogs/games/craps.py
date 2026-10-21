@@ -63,7 +63,7 @@ class CrapsView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"{replace_emojis('white_arrow')} Выпало: **{dice1} + {dice2} = {result}**"
+            result_text = f"🎲 Выпало: **{dice1} + {dice2} = {result}**"
             won = False
             winnings = 0
 

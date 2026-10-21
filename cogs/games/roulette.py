@@ -64,7 +64,7 @@ class RouletteView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"{replace_emojis('white_arrow')} Выпало: **{result}**"
+            result_text = f"🎰 Выпало: **{result}**"
             is_red = result in [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
             is_black = result in [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35]
             is_even = result % 2 == 0 and result != 0

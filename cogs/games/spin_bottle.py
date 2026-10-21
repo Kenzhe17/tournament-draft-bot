@@ -73,7 +73,7 @@ class SpinBottleView(discord.ui.View):
                 embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"{replace_emojis('white_arrow')} Бутылочка указала на: **{target}**\n"
+                    value=f"🍾 Бутылочка указала на: **{target}**\n"
                           f"• Победитель: **{winner}**\n"
                           f"• Выигрыш: **{self.bet * 2}** {get_emoji('money')}!",
                     inline=False

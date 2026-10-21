@@ -61,7 +61,7 @@ class DiceBetView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"{replace_emojis('white_arrow')} Выпало: **{dice1} + {dice2} = {result}**"
+            result_text = f"🎲 Выпало: **{dice1} + {dice2} = {result}**"
             if result == self.user_choice:
                 winnings = self.bet * 6
                 embed.color = discord.Color.green()

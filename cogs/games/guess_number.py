@@ -71,7 +71,7 @@ class GuessNumberView(discord.ui.View):
             embed.color = discord.Color.green()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Секретное число: **{self.secret_number}**\n"
+                value=f"• Секретное число: **{self.secret_number}**\n"
                       f"• Попыток: **{self.attempts}**\n"
                       f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
                 inline=False
@@ -81,7 +81,7 @@ class GuessNumberView(discord.ui.View):
             embed.color = discord.Color.red()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Секретное число: **{self.secret_number}**\n"
+                value=f"• Секретное число: **{self.secret_number}**\n"
                       f"• Попыток: **{self.attempts}**\n"
                       f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",
                 inline=False
