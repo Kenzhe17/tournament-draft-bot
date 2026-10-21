@@ -61,9 +61,10 @@ class TripleChanceView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"🎯 Загаданное число: **{result}**"
+            result_text = f"{replace_emojis('white_arrow')} Загаданное число: **{result}**"
             if result == self.user_choice:
                 winnings = self.bet * 3
+                embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"{result_text}\n"
@@ -72,6 +73,7 @@ class TripleChanceView(discord.ui.View):
                     inline=False
                 )
             else:
+                embed.color = discord.Color.red()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"{result_text}\n"

@@ -71,18 +71,20 @@ class HighLowView(discord.ui.View):
 
         elif state == "won":
             final_prize = int(self.bet * (1.5 ** self.wins))
+            embed.color = discord.Color.green()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"Вы прошли все раунды!\n"
+                value=f"{replace_emojis('white_arrow')} Вы прошли все раунды!\n"
                       f"• Побед: **{self.wins}/{self.max_rounds}**\n"
                       f"• Выигрыш: **{final_prize}** {get_emoji('money')}!",
                 inline=False
             )
 
         elif state == "lost":
+            embed.color = discord.Color.red()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"😢 Вы проиграли на раунде {self.round}!\n"
+                value=f"{replace_emojis('white_arrow')} Вы проиграли на раунде {self.round}!\n"
                       f"• Побед: **{self.wins}**\n"
                       f"• Проигрыш: **{self.bet}** {get_emoji('money')}.",
                 inline=False

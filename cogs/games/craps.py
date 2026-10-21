@@ -63,7 +63,7 @@ class CrapsView(discord.ui.View):
             )
 
         elif state == "result":
-            result_text = f"🎲 Выпало: **{dice1} + {dice2} = {result}**"
+            result_text = f"{replace_emojis('white_arrow')} Выпало: **{dice1} + {dice2} = {result}**"
             won = False
             winnings = 0
 
@@ -90,6 +90,7 @@ class CrapsView(discord.ui.View):
                     won = True
 
             if won:
+                embed.color = discord.Color.green()
                 if winnings == self.bet:
                     result_msg = f"• Ваш выбор: **{self.choice}**\n• Push - ставка возвращена."
                 else:
@@ -100,6 +101,7 @@ class CrapsView(discord.ui.View):
                     inline=False
                 )
             else:
+                embed.color = discord.Color.red()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"{result_text}\n"

@@ -178,22 +178,25 @@ class PvEChoiceView(RPSView):
             winnings = bet * 2
             await payout_winner(user_id, guild_id, winnings)
             balance_change = f"+{bet} {replace_emojis('🪙')}"
-            title = replace_emojis("🎉 Победа в игре против ИИ!")
+            title = replace_emojis("white_arrow") + " Победа в игре против ИИ!"
+            embed_color = discord.Color.green()
         elif result == "draw":
             await release_escrow(user_id, guild_id, bet)
             balance_change = f"0 {replace_emojis('🪙')} (возврат)"
-            title = replace_emojis("🤝 Ничья!")
+            title = replace_emojis("white_arrow") + " Ничья!"
+            embed_color = discord.Color.from_rgb(69, 69, 69)
         else:  # loss
             balance_change = f"-{bet} {replace_emojis('🪙')}"
-            title = replace_emojis("💥 Поражение против ИИ!")
-        
+            title = replace_emojis("white_arrow") + " Поражение против ИИ!"
+            embed_color = discord.Color.red()
+
         # Build result embed
         embed = discord.Embed(
             title=title,
-            description=f"Ваш ход: {move.emoji} {move.display_name}\n"
-                       f"Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
+            description=f"{replace_emojis('white_arrow')} Ваш ход: {move.emoji} {move.display_name}\n"
+                       f"{replace_emojis('white_arrow')} Ход ИИ: {bot_move.emoji} {bot_move.display_name}\n\n"
                        f"{get_emoji('money')} Изменение баланса: {balance_change}",
-            color=discord.Color.from_rgb(69, 69, 69)
+            color=embed_color
         )
 
         # Add play again button
@@ -633,26 +636,29 @@ class PvPChoiceView(RPSView):
             # Loser already lost escrow, no action needed
             balance_change_winner = f"+{winner_payout - bet} {replace_emojis('🪙')}"
             balance_change_loser = f"-{bet} {replace_emojis('🪙')}"
-            title = f"{replace_emojis('⚔️')} Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
-        
+            title = f"{replace_emojis('white_arrow')} Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
+            embed_color = discord.Color.green()
+
         # Build result embed
         if result == "draw":
-            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
-                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"{replace_emojis('🤝')} Ничья! Оба игрока получают возврат ставки.\n"
+            description = (f"{replace_emojis('white_arrow')} <@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
+                          f"{replace_emojis('white_arrow')} <@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
+                          f"{replace_emojis('white_arrow')} Ничья! Оба игрока получают возврат ставки.\n"
                           f"{get_emoji('money')} <@{game.initiator_id}>: {balance_change_p1}\n"
                           f"{get_emoji('money')} <@{game.opponent_id}>: {balance_change_p2}")
+            embed_color = discord.Color.from_rgb(69, 69, 69)
         else:
             winner_name = f"<@{winner_id}>"
-            description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
-                          f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"{replace_emojis('🏆')} Победитель: {winner_name}!\n"
+            description = (f"{replace_emojis('white_arrow')} <@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
+                          f"{replace_emojis('white_arrow')} <@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
+                          f"{replace_emojis('white_arrow')} Победитель: {winner_name}!\n"
                           f"{get_emoji('money')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
+            embed_color = discord.Color.green()
 
         embed = discord.Embed(
             title=title,
             description=description,
-            color=discord.Color.from_rgb(69, 69, 69)
+            color=embed_color
         )
 
         # Add play again button

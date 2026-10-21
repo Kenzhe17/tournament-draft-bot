@@ -88,6 +88,7 @@ class WheelView(discord.ui.View):
             prize_name = prize["name"]
 
             if winnings > 0:
+                embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"{replace_emojis('white_dot')} **{prize_name}**\n"
@@ -95,6 +96,7 @@ class WheelView(discord.ui.View):
                     inline=False
                 )
             else:
+                embed.color = discord.Color.red()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                     value=f"{replace_emojis('white_dot')} **{prize_name}**\n"

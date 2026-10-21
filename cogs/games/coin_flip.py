@@ -108,10 +108,10 @@ class CoinFlipView(discord.ui.View):
             if self.game.opponent_id:
                 # PvP result
                 result_text = "Орёл" if self.game.result == "heads" else "Решка"
-                winner_emoji = "✅" if self.game.winner == self.game.initiator_id else "❌"
+                embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"• Выпало: **{result_text}**\n"
+                    value=f"{replace_emojis('white_arrow')} Выпало: **{result_text}**\n"
                           f"• Победитель: <@{self.game.winner}> (+**{self.game.bet * 2}** {get_emoji('money')})",
                     inline=False
                 )
@@ -122,18 +122,20 @@ class CoinFlipView(discord.ui.View):
                 won = self.game.initiator_choice == self.game.result
 
                 if won:
+                    embed.color = discord.Color.green()
                     embed.add_field(
                         name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                        value=f"• Ваша ставка: **{initiator_text}**\n"
-                              f"• Выпало: **{result_text}**\n"
+                        value=f"{replace_emojis('white_arrow')} Ваша ставка: **{initiator_text}**\n"
+                              f"{replace_emojis('white_arrow')} Выпало: **{result_text}**\n"
                               f"• Итог: Вы выиграли **{self.game.bet * 2}** {get_emoji('money')}!",
                         inline=False
                     )
                 else:
+                    embed.color = discord.Color.red()
                     embed.add_field(
                         name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                        value=f"• Ваша ставка: **{initiator_text}**\n"
-                              f"• Выпало: **{result_text}**\n"
+                        value=f"{replace_emojis('white_arrow')} Ваша ставка: **{initiator_text}**\n"
+                              f"{replace_emojis('white_arrow')} Выпало: **{result_text}**\n"
                               f"• Итог: Вы проиграли **{self.game.bet}** {get_emoji('money')}.",
                         inline=False
                     )

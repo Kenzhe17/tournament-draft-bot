@@ -80,9 +80,10 @@ class LotteryView(discord.ui.View):
 
         elif state == "won":
             prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
+            embed.color = discord.Color.green()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"Победитель: <@{winner}>\n"
+                value=f"{replace_emojis('white_arrow')} Победитель: <@{winner}>\n"
                       f"• Выигрыш: **{prize_pool}** {get_emoji('money')}\n"
                       f"• Продано билетов: **{self.lottery.tickets_sold}**",
                 inline=False

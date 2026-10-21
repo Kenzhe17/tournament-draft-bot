@@ -67,18 +67,20 @@ class SnapView(discord.ui.View):
 
             if player_card > dealer_card:
                 winnings = self.bet * 2
+                embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"🃏 Ваша карта: **{player_card_name}**\n"
-                          f"🃏 Карта дилера: **{dealer_card_name}**\n"
+                    value=f"{replace_emojis('white_arrow')} Ваша карта: **{player_card_name}**\n"
+                          f"{replace_emojis('white_arrow')} Карта дилера: **{dealer_card_name}**\n"
                           f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
                     inline=False
                 )
             else:
+                embed.color = discord.Color.red()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"🃏 Ваша карта: **{player_card_name}**\n"
-                          f"🃏 Карта дилера: **{dealer_card_name}**\n"
+                    value=f"{replace_emojis('white_arrow')} Ваша карта: **{player_card_name}**\n"
+                          f"{replace_emojis('white_arrow')} Карта дилера: **{dealer_card_name}**\n"
                           f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",
                     inline=False
                 )

@@ -70,17 +70,19 @@ class SpinBottleView(discord.ui.View):
 
         elif state == "result":
             if winner:
+                embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"🍾 Бутылочка указала на: **{target}**\n"
+                    value=f"{replace_emojis('white_arrow')} Бутылочка указала на: **{target}**\n"
                           f"• Победитель: **{winner}**\n"
                           f"• Выигрыш: **{self.bet * 2}** {get_emoji('money')}!",
                     inline=False
                 )
             else:
+                embed.color = discord.Color.red()
                 embed.add_field(
                     name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                    value=f"❌ Нет участников. Ставка возвращена.",
+                    value=f"{replace_emojis('white_arrow')} Нет участников. Ставка возвращена.",
                     inline=False
                 )
 
