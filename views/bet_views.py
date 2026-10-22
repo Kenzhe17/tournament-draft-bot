@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 class MatchSelectView(View):
     """View for selecting a match to bet on."""
-    
+
     def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -42,6 +42,7 @@ class MatchSelectView(View):
         async def callback(interaction: discord.Interaction):
             team_view = TeamSelectView(
                 self.guild_id,
+                self.channel_id,
                 self.tournament,
                 match_index,
                 team_a,
@@ -60,10 +61,11 @@ class MatchSelectView(View):
 
 class TeamSelectView(View):
     """View for selecting a team to bet on."""
-    
-    def __init__(self, guild_id: int, tournament, match_index: int, team_a: int, team_b: int, name_a: str, name_b: str, match_type: str):
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, match_index: int, team_a: int, team_b: int, name_a: str, name_b: str, match_type: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_index = match_index
         self.team_a = team_a
@@ -83,6 +85,15 @@ class TeamSelectView(View):
     
     async def team_a_button(self, interaction: discord.Interaction):
         """Handle team A selection."""
+        # Проверка: игрок не может ставить против своей команды
+        user_team_index = self.tournament.get_player_team_index(interaction.user.id)
+        if user_team_index is not None and user_team_index == self.team_b:
+            await interaction.response.send_message(
+                "❌ Вы не можете ставить против своей команды.",
+                ephemeral=True
+            )
+            return
+
         from views.bet_modal import BetAmountModal
         modal = BetAmountModal(
             self.guild_id,
@@ -97,6 +108,15 @@ class TeamSelectView(View):
 
     async def team_b_button(self, interaction: discord.Interaction):
         """Handle team B selection."""
+        # Проверка: игрок не может ставить против своей команды
+        user_team_index = self.tournament.get_player_team_index(interaction.user.id)
+        if user_team_index is not None and user_team_index == self.team_a:
+            await interaction.response.send_message(
+                "❌ Вы не можете ставить против своей команды.",
+                ephemeral=True
+            )
+            return
+
         from views.bet_modal import BetAmountModal
         modal = BetAmountModal(
             self.guild_id,
@@ -112,14 +132,15 @@ class TeamSelectView(View):
 
 class ViewBetsButton(Button):
     """Button to view detailed bets for a match."""
-    
-    def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(
             label="📊 Посмотреть ставки",
             style=discord.ButtonStyle.secondary,
             custom_id="view_bets"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type
@@ -187,8 +208,8 @@ class ViewBetsButton(Button):
 
 class ToggleBettingButton(Button):
     """Button for admin to toggle betting open/close."""
-    
-    def __init__(self, guild_id: int, betting_open: bool):
+
+    def __init__(self, guild_id: int, channel_id: int, betting_open: bool):
         label = "🔒 Закрыть ставки" if betting_open else "🔓 Открыть ставки"
         style = discord.ButtonStyle.danger if betting_open else discord.ButtonStyle.success
         super().__init__(
@@ -197,6 +218,7 @@ class ToggleBettingButton(Button):
             custom_id="toggle_betting"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
     
     async def callback(self, interaction: discord.Interaction):
         """Toggle betting for the tournament."""
@@ -211,7 +233,7 @@ class ToggleBettingButton(Button):
                     ephemeral=True
                 )
                 return
-            
+
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
@@ -254,8 +276,8 @@ class ToggleBettingButton(Button):
 
 class BetButton(Button):
     """Button to open betting flow."""
-    
-    def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         # Check if betting is open for this phase
         is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
         super().__init__(
@@ -265,6 +287,7 @@ class BetButton(Button):
             disabled=not is_open
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type

@@ -80,12 +80,12 @@ class FinalWinnerButton(discord.ui.Button):
 class FinalView(discord.ui.View):
     """View с кнопками победителей финала."""
 
-    def __init__(self, guild_id: int, final_teams: list[int], tournament):
+    def __init__(self, guild_id: int, channel_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
         # Add admin panel select menu
         from views.matches_view import AdminPanelSelect
-        self.add_item(AdminPanelSelect(guild_id, tournament, "final"))
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "final"))
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -96,8 +96,8 @@ class FinalView(discord.ui.View):
         # Add betting buttons
         from views.bet_views import BetButton, ViewBetsButton
         final_matches = [(final_teams[0], final_teams[1])]
-        self.add_item(BetButton(guild_id, tournament, final_matches, "final"))
-        self.add_item(ViewBetsButton(guild_id, tournament, final_matches, "final"))
+        self.add_item(BetButton(guild_id, channel_id, tournament, final_matches, "final"))
+        self.add_item(ViewBetsButton(guild_id, channel_id, tournament, final_matches, "final"))
 
         # Add room button for final (only if not filled)
         if not tournament.final_room:

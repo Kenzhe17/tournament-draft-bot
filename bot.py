@@ -194,6 +194,7 @@ class TournamentBot(commands.Bot):
         if phase == TournamentPhase.QUALIFIERS:
             return QualifiersView(
                 gid,
+                tournament.channel_id,
                 tournament.qualifier_matches,
                 tournament.qualifier_winners,
                 tournament,
@@ -202,13 +203,14 @@ class TournamentBot(commands.Bot):
         if phase == TournamentPhase.SEMIFINALS:
             return SemifinalsView(
                 gid,
+                tournament.channel_id,
                 tournament.semifinal_matches,
                 tournament.semifinal_winners,
                 tournament,
             )
 
         if phase == TournamentPhase.FINAL:
-            return FinalView(gid, tournament.final_teams, tournament)
+            return FinalView(gid, tournament.channel_id, tournament.final_teams, tournament)
 
         if phase == TournamentPhase.COMPLETE:
             return None  # No buttons needed for completed tournament

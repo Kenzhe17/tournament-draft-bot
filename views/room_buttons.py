@@ -85,13 +85,14 @@ class RoomButton(discord.ui.Button):
 class AdminRoomsButton(discord.ui.Button):
     """Button for admins to edit all rooms."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="📋 Комнаты",
             custom_id=f"admin_rooms:{guild_id}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = None
         self.match_type = None
 
@@ -106,7 +107,7 @@ class AdminRoomsButton(discord.ui.Button):
             return
 
         from storage.json_store import store
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return

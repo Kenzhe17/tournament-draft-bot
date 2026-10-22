@@ -237,6 +237,33 @@ class Tournament:
         bracket_phases = [TournamentPhase.QUALIFIERS, TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]
         return self.phase in bracket_phases and team_index not in self.team_names_changed_teams
 
+    def get_player_team_index(self, user_id: int) -> int | None:
+        """Получить индекс команды игрока по его user_id.
+
+        Args:
+            user_id: Discord ID игрока
+
+        Returns:
+            Индекс команды или None если игрок не в команде
+        """
+        # Найти имя игрока по user_id
+        player_name = None
+        for name, uid in self.player_user_ids.items():
+            if uid == user_id:
+                player_name = name
+                break
+
+        if not player_name:
+            return None
+
+        # Найти команду игрока
+        for team_idx, team in enumerate(self.teams):
+            all_team_players = [team["captain"]] + team["players"]
+            if player_name in all_team_players:
+                return team_idx
+
+        return None
+
     def start_betting_phase(self, phase: str) -> None:
         """Start betting for a specific phase (qualifier/semifinal/final)."""
         import time

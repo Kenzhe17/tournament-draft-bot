@@ -701,7 +701,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
 class AdminPanelSelect(discord.ui.Select):
     """Select menu for admin functions."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str):
         options = [
             discord.SelectOption(
                 label="Выбрать победителя",
@@ -727,6 +727,7 @@ class AdminPanelSelect(discord.ui.Select):
             max_values=1
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
 
@@ -765,7 +766,7 @@ class AdminPanelSelect(discord.ui.Select):
 
         elif selected == "manage_rooms":
             # Trigger AdminRoomsButton callback
-            admin_rooms_btn = AdminRoomsButton(self.guild_id)
+            admin_rooms_btn = AdminRoomsButton(self.guild_id, self.channel_id)
             admin_rooms_btn.tournament = self.tournament
             admin_rooms_btn.match_type = self.match_type
             await admin_rooms_btn.callback(interaction)
@@ -1266,9 +1267,10 @@ class TeamWinnerButton(discord.ui.Button):
 class QualifiersView(discord.ui.View):
     """View с кнопками победителей отборочных матчей."""
 
-    def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
+    def __init__(self, guild_id: int, channel_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
 
         # Add admin panel select menu
@@ -1280,8 +1282,8 @@ class QualifiersView(discord.ui.View):
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
-        self.add_item(BetButton(guild_id, tournament, matches, "qualifiers"))
-        self.add_item(ViewBetsButton(guild_id, tournament, matches, "qualifiers"))
+        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
+        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
@@ -1323,9 +1325,10 @@ class QualifiersView(discord.ui.View):
 class SemifinalsView(discord.ui.View):
     """View с кнопками победителей полуфиналов."""
 
-    def __init__(self, guild_id: int, matches: list[tuple[int, int]], winners: list, tournament):
+    def __init__(self, guild_id: int, channel_id: int, matches: list[tuple[int, int]], winners: list, tournament):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
 
         # Add admin panel select menu
@@ -1337,8 +1340,8 @@ class SemifinalsView(discord.ui.View):
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
         # Add betting buttons
-        self.add_item(BetButton(guild_id, tournament, matches, "semifinal"))
-        self.add_item(ViewBetsButton(guild_id, tournament, matches, "semifinal"))
+        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
+        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
