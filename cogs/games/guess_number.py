@@ -39,7 +39,7 @@ class GuessNumberView(discord.ui.View):
         self.bet = bet
         self.secret_number = secret_number
         self.attempts = 0
-        self.max_attempts = 7
+        self.max_attempts = 5
         self.game_over = False
         self.min_range = 1
         self.max_range = 100
@@ -62,13 +62,20 @@ class GuessNumberView(discord.ui.View):
             )
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                value="Угадайте число от 1 до 100. У вас есть 7 попыток. Используйте бинарный поиск для максимального шанса!",
+                value="Угадайте число от 1 до 100. У вас есть 5 попыток. Используйте бинарный поиск для максимального шанса!",
                 inline=False
             )
 
         elif state == "won":
             winnings = self.bet * 5
             embed.color = discord.Color.green()
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                value=f"{replace_emojis('white_arrow')} Вы угадали число **{self.secret_number}**!\n"
+                      f"• Попыток: **{self.attempts}**\n"
+                      f"• Выигрыш: **{winnings}** {get_emoji('money')} (5x)",
+                inline=False
+            )
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
                 value=f"• Секретное число: **{self.secret_number}**\n"
@@ -81,9 +88,9 @@ class GuessNumberView(discord.ui.View):
             embed.color = discord.Color.red()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"• Секретное число: **{self.secret_number}**\n"
+                value=f"{replace_emojis('white_arrow')} Вы не угадали число **{self.secret_number}**.\n"
                       f"• Попыток: **{self.attempts}**\n"
-                      f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",
+                      f"• Проигрыш: **{self.bet}** {get_emoji('money')}.",
                 inline=False
             )
 
@@ -289,7 +296,7 @@ class GuessNumberCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100 (10x множитель)")
+    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100 (5x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def guess_number(
         self,
