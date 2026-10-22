@@ -33,7 +33,7 @@ class PlayerSelect(discord.ui.Select):
         self.guild_id = guild_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Турнир не найден."),

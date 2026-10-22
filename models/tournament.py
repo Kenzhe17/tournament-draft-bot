@@ -186,6 +186,7 @@ class Tournament:
     semifinal_winners: list[int | None] = field(default_factory=list)
     semifinal_pending_winners: list[int | None] = field(default_factory=list)  # Pending confirmation
     final_teams: list[int] = field(default_factory=list)
+    eliminated_teams: set[int] = field(default_factory=set)  # Индексы команд которые проиграли
 
     # Данные о комнатах (ID и пароль)
     qualifier_rooms: dict[int, dict[str, str]] = field(default_factory=dict)  # {match_index: {"id": "123", "password": "abc"}}
@@ -335,13 +336,30 @@ class Tournament:
 
         return added, rejected
 
-    def add_player_to_circle(self, circle: int, name: str, user_id: int | None = None) -> bool:
-        """Добавить игрока в конкретный круг. Возвращает True если успешно."""
+    def add_player_to_circle(self, circle: int, name: str, user_id: int | None = None, store=None) -> bool:
+        """Добавить игрока в конкретный круг с проверкой конфликтов.
+        
+        Args:
+            store: JsonStore instance for cross-tournament conflict checking
+        """
         name = name.strip()
         import logging
         logging.info(f"add_player_to_circle: circle={circle}, name='{name}', user_id={user_id}")
         logging.info(f"  all_players: {self.all_players}")
         logging.info(f"  name in all_players: {name in self.all_players}")
+        
+        # Check conflicts if store provided
+        if store and user_id:
+            all_tournaments = store.get_by_guild(self.guild_id)
+            for other_tournament in all_tournaments:
+                # Skip self
+                if other_tournament.id == self.id:
+                    continue
+                
+                # Check if player is active in other tournament
+                if other_tournament.is_player_active(user_id):
+                    logging.warning(f"  FAILED: player is active in another tournament")
+                    return False  # Conflict detected
         
         if not name or name in self.all_players:
             logging.warning(f"  FAILED: name is empty or already in all_players")
@@ -819,6 +837,13 @@ class Tournament:
         Подтвердить победителя отборочного матча с сохранением статистики.
         Возвращает True, если все отборочные матчи завершены.
         """
+        # Determine loser team
+        match = self.qualifier_matches[match_index]
+        loser_idx = match[0] if match[1] == team_index else match[1]
+        
+        # Mark loser as eliminated
+        self.eliminate_team(loser_idx)
+        
         # Winner is already set in qualifier_winners, this just confirms
         # Statistics should be saved before calling this
         # Clear pending winner for this match
@@ -866,6 +891,13 @@ class Tournament:
         Подтвердить победителя полуфинала с сохранением статистики.
         Возвращает True, если оба полуфинала завершены.
         """
+        # Determine loser team
+        match = self.semifinal_matches[match_index]
+        loser_idx = match[0] if match[1] == team_index else match[1]
+        
+        # Mark loser as eliminated
+        self.eliminate_team(loser_idx)
+        
         # Move from pending to confirmed
         if match_index in range(len(self.semifinal_winners)):
             self.semifinal_winners[match_index] = team_index
@@ -888,6 +920,12 @@ class Tournament:
 
     def confirm_final_winner(self, team_index: int) -> None:
         """Подтвердить победителя финала с сохранением статистики."""
+        # Determine loser team
+        loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
+        
+        # Mark loser as eliminated
+        self.eliminate_team(loser_idx)
+        
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
 
@@ -1018,6 +1056,38 @@ class Tournament:
 
         return earnings_map
 
+    def is_player_active(self, user_id: int) -> bool:
+        """Проверить активен ли игрок в этом турнире.
+        
+        Игрок активен если:
+        - Фаза SETUP или DRAFT и он зарегистрирован (в all_players)
+        - Фаза > DRAFT и он выбран в команду (в teams)
+        - Команда еще не проиграла (не в eliminated_teams)
+        """
+        # Phase SETUP or DRAFT: check if registered
+        if self.phase in [TournamentPhase.SETUP, TournamentPhase.DRAFT]:
+            return user_id in self.player_user_ids.values()
+        
+        # Phase > DRAFT: check if in a team that hasn't been eliminated
+        if self.phase in [TournamentPhase.TEAMS, TournamentPhase.QUALIFIERS, 
+                          TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]:
+            # Find which team the player is in
+            for team_idx, team in enumerate(self.teams):
+                if team_idx in self.eliminated_teams:
+                    continue  # Team already eliminated
+                
+                # Check if player is in this team
+                all_team_players = [team["captain"]] + team["players"]
+                for player_name in all_team_players:
+                    if self.player_user_ids.get(player_name) == user_id:
+                        return True  # Player in active team
+        
+        return False  # Player not active
+
+    def eliminate_team(self, team_index: int) -> None:
+        """Отметить команду как проигравшую."""
+        self.eliminated_teams.add(team_index)
+
     # --- Сериализация ---
 
     def to_dict(self) -> dict[str, Any]:
@@ -1058,6 +1128,7 @@ class Tournament:
             "final_room": self.final_room,
             "winner_team_index": self.winner_team_index,
             "organizer_id": self.organizer_id,
+            "eliminated_teams": list(self.eliminated_teams),
         }
 
     @classmethod
@@ -1103,5 +1174,6 @@ class Tournament:
             final_room=data.get("final_room", {}),
             winner_team_index=data.get("winner_team_index"),
             organizer_id=data.get("organizer_id", 0),
+            eliminated_teams=set(data.get("eliminated_teams", [])),
         )
         return t

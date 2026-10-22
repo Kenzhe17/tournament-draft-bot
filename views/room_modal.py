@@ -63,7 +63,7 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
                     pass
                 return
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             try:
                 await interaction.followup.send(replace_emojis("❌ Нет активного турнира."), ephemeral=True)

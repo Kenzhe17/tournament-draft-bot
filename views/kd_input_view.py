@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from config import replace_emojis, get_emoji
 
 from typing import TYPE_CHECKING
@@ -12,13 +14,16 @@ import discord
 if TYPE_CHECKING:
     from models.tournament import Tournament
 
+logger = logging.getLogger(__name__)
+
 
 class KDInputView(discord.ui.View):
     """View for inputting K/D statistics for both teams in a match."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_info: dict):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_info: dict):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_info = match_info
 
@@ -26,21 +31,22 @@ class KDInputView(discord.ui.View):
         team1_name = match_info.get('team1_name', 'Team 1')
         team2_name = match_info.get('team2_name', 'Team 2')
         
-        self.add_item(TeamKDButton(guild_id, tournament, match_info, 0, team1_name))
-        self.add_item(TeamKDButton(guild_id, tournament, match_info, 1, team2_name))
-        self.add_item(ProcessMatchButton(guild_id, tournament, match_info))
+        self.add_item(TeamKDButton(guild_id, channel_id, tournament, match_info, 0, team1_name))
+        self.add_item(TeamKDButton(guild_id, channel_id, tournament, match_info, 1, team2_name))
+        self.add_item(ProcessMatchButton(guild_id, channel_id, tournament, match_info))
 
 
 class TeamKDButton(discord.ui.Button):
     """Button to open K/D input modal for a team."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_info: dict, team_number: int, team_name: str):
         super().__init__(
             label=f"📊 {team_name} K/D",
             style=discord.ButtonStyle.primary,
             custom_id=f"team_kd:{guild_id}:{team_number}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_info = match_info
         self.team_number = team_number  # 0 or 1
@@ -68,20 +74,21 @@ class TeamKDButton(discord.ui.Button):
 class ProcessMatchButton(discord.ui.Button):
     """Button to process the match result after K/D is entered."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_info: dict):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_info: dict):
         super().__init__(
             label="✅ Обработать результат",
             style=discord.ButtonStyle.success,
             custom_id=f"process_match:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_info = match_info
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Get fresh tournament data with K/D
         from storage.json_store import store
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or not hasattr(tournament, 'temp_kd_data') or not tournament.temp_kd_data:
             await interaction.response.send_message(
                 replace_emojis("❌ Нет данных K/D для обработки. Сначала введите статистику для обеих команд."),

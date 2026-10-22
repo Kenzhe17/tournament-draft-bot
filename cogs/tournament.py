@@ -75,7 +75,7 @@ class TournamentCog(commands.Cog):
         self, interaction: discord.Interaction, size: str, formation: str = "elo"
     ) -> None:
         """Создать турнир с указанным размером."""
-        existing = store.get(interaction.guild_id)
+        existing = store.get(interaction.guild_id, interaction.channel_id)
         if existing and existing.phase != TournamentPhase.COMPLETE:
             await interaction.response.send_message(
                 replace_emojis("❌ На сервере уже есть активный турнир."),
@@ -138,7 +138,7 @@ class TournamentCog(commands.Cog):
     @is_org()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
-        existing = store.get(interaction.guild_id)
+        existing = store.get(interaction.guild_id, interaction.channel_id)
         if not existing:
             await interaction.response.send_message(
                 replace_emojis("❌ На этом сервере нет активного турнира."),
@@ -157,7 +157,7 @@ class TournamentCog(commands.Cog):
             except Exception as e:
                 logger.warning(f"Не удалось удалить сообщение турнира: {e}")
 
-        store.delete(interaction.guild_id)
+        store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
         # Log tournament deletion

@@ -16,9 +16,10 @@ if TYPE_CHECKING:
 class KDInputModal(discord.ui.Modal):
     """Modal for inputting Kills/Deaths for a player."""
 
-    def __init__(self, guild_id: int, player_name: str, circle: int, team_index: int):
+    def __init__(self, guild_id: int, channel_id: int, player_name: str, circle: int, team_index: int):
         super().__init__(title=f"Статистика: {player_name}")
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.player_name = player_name
         self.circle = circle
         self.team_index = team_index
@@ -60,7 +61,7 @@ class KDInputModal(discord.ui.Modal):
         # Store the K/D data temporarily (will be used when all players are entered)
         # For now, we'll use a simple approach: store in a temporary dict
         from storage.json_store import store
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if tournament:
             if not hasattr(tournament, 'temp_kd_data'):
                 tournament.temp_kd_data = {}
@@ -114,7 +115,7 @@ class TeamKDInputModal(discord.ui.Modal):
         """Process K/D input for all players in the team."""
         from storage.json_store import store
         
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Турнир не найден."),

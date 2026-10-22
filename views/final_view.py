@@ -26,13 +26,14 @@ logger = logging.getLogger(__name__)
 class FinalWinnerButton(discord.ui.Button):
     """Кнопка выбора победителя финала."""
 
-    def __init__(self, guild_id: int, team_index: int, label: str):
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, label: str):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.danger,
             custom_id=f"final_win:{guild_id}:{team_index}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -43,7 +44,7 @@ class FinalWinnerButton(discord.ui.Button):
             )
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.FINAL:
             await interaction.response.send_message(
                 replace_emojis("❌ Финал не активен."),

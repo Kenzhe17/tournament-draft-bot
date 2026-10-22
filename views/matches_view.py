@@ -28,9 +28,10 @@ logger = logging.getLogger(__name__)
 class AdminStatsMatchSelectView(discord.ui.View):
     """View for admin to select a match, then a team, then fill stats for that team."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
 
@@ -387,7 +388,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             logging.info(f"Successfully saved match history for {player_name}")
 
         # Confirm winner
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
@@ -670,7 +671,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
                 return
 
         # Store in tournament temp stats
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
@@ -816,7 +817,7 @@ class ConfirmWinnerButton(discord.ui.Button):
             return
 
         # Finalize winner selection
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
@@ -931,7 +932,7 @@ class GenerateMatchesButton(discord.ui.Button):
         await interaction.response.defer()
 
         try:
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.edit_original_response(
                     content=replace_emojis("❌ Турнир не найден."),
@@ -1029,7 +1030,7 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
             )
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if tournament:
             # Check if this team can still edit their name
             if not tournament.is_team_name_editable(self.team_index):

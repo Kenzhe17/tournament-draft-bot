@@ -36,7 +36,7 @@ class RoomButton(discord.ui.Button):
         # Check permissions (org role has same access as admin)
         is_admin = is_org_check(interaction.user, interaction.guild)
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return

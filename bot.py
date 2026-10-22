@@ -108,6 +108,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.thread")
         await self.load_extension("cogs.coin_drop")
         await self.load_extension("cogs.pet")
+        await self.load_extension("cogs.isolate")
         
         # Sync commands globally
         try:
@@ -256,23 +257,25 @@ class TournamentBot(commands.Bot):
 
                 # Get all guilds with active tournaments
                 for guild in self.guilds:
-                    tournament = store.get(guild.id)
-                    if not tournament:
-                        continue
+                    # Get all tournaments for this guild
+                    tournaments = store.get_by_guild(guild.id)
+                    for tournament in tournaments:
+                        if not tournament:
+                            continue
 
-                    tournament_key = f"{guild.id}_{tournament.betting_phase}"
+                        tournament_key = f"{guild.id}_{tournament.betting_phase}"
 
-                    if tournament.is_betting_open():
-                        # Update message to show countdown
-                        await self.update_tournament_message(guild, tournament)
-                        # Reset the updated flag since betting is open again
-                        if tournament_key in updated_after_close:
-                            updated_after_close.remove(tournament_key)
-                    elif tournament.betting_phase_start_time is not None:
-                        # Betting was open but now closed - update once to remove timer
-                        if tournament_key not in updated_after_close:
+                        if tournament.is_betting_open():
+                            # Update message to show countdown
                             await self.update_tournament_message(guild, tournament)
-                            updated_after_close.add(tournament_key)
+                            # Reset the updated flag since betting is open again
+                            if tournament_key in updated_after_close:
+                                updated_after_close.remove(tournament_key)
+                        elif tournament.betting_phase_start_time is not None:
+                            # Betting was open but now closed - update once to remove timer
+                            if tournament_key not in updated_after_close:
+                                await self.update_tournament_message(guild, tournament)
+                                updated_after_close.add(tournament_key)
             except Exception as e:
                 logger.error(f"Error in betting timer loop: {e}", exc_info=True)
 
@@ -286,13 +289,15 @@ class TournamentBot(commands.Bot):
 
                 # Get all guilds with active tournaments
                 for guild in self.guilds:
-                    tournament = store.get(guild.id)
-                    if not tournament:
-                        continue
+                    # Get all tournaments for this guild
+                    tournaments = store.get_by_guild(guild.id)
+                    for tournament in tournaments:
+                        if not tournament:
+                            continue
 
-                    # Only process if in draft phase
-                    if tournament.phase != TournamentPhase.DRAFT:
-                        continue
+                        # Only process if in draft phase
+                        if tournament.phase != TournamentPhase.DRAFT:
+                            continue
 
                     # Check if current picker exists
                     picker_pos = tournament.current_picker_position()

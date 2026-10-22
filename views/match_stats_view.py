@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class CaptainFillButton(Button):
     """Button for captains to fill match statistics."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
         team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
         team_name = tournament.team_names.get(team_index, team.get("captain", f"Team {team_index}"))
         super().__init__(
@@ -26,6 +26,7 @@ class CaptainFillButton(Button):
             custom_id=f"captain_fill:{guild_id}:{match_type}:{match_index}:{team_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -33,7 +34,7 @@ class CaptainFillButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.response.send_message(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
@@ -148,7 +149,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 }
 
             # Store in tournament temp stats
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return
@@ -437,7 +438,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             }
 
         # Store in tournament temp stats
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
             return
@@ -738,7 +739,7 @@ class AdminConfirmView(View):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return

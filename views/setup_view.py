@@ -53,10 +53,12 @@ async def _delete_ephemeral_later(interaction: discord.Interaction, delay: float
 class PlayerSelectView(discord.ui.View):
     """View с пагинацией для выбора игрока."""
 
-    def __init__(self, players: list[str], guild_id: int, action: str, first_player: str = None):
+    def __init__(self, players: list[str], guild_id: int, channel_id: int, action: str, first_player: str = None):
         super().__init__(timeout=180)  # 3 minutes timeout instead of None
         self.players = sorted(players)
         self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_id = channel_id
         self.action = action  # "delete", "swap_first", or "swap_second"
         self.first_player = first_player  # For swap_second, the first selected player
         self.page = 1
@@ -137,7 +139,7 @@ class PlayerSelectView(discord.ui.View):
 class CircleSelectButton(discord.ui.Button):
     """Кнопка для выбора круга при добавлении игрока."""
 
-    def __init__(self, guild_id: int, circle: int, circle_name: str, count: int = 0, limit: int = 0):
+    def __init__(self, guild_id: int, channel_id: int, circle: int, circle_name: str, count: int = 0, limit: int = 0):
         label = circle_name  # Убрали счётчики из label
         super().__init__(
             style=discord.ButtonStyle.primary,
@@ -145,12 +147,14 @@ class CircleSelectButton(discord.ui.Button):
             custom_id=f"circle_select:{guild_id}:{circle}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_id = channel_id
         self.circle = circle
         self.circle_name = circle_name
 
     async def callback(self, interaction: discord.Interaction) -> None:
         try:
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
                     replace_emojis("❌ Турнир не в фазе настройки."),
@@ -233,10 +237,10 @@ class CircleSelectButton(discord.ui.Button):
                         break
 
             # Add player with user_id
-            success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id)
+            success = tournament.add_player_to_circle(self.circle, user_name, interaction.user.id, store)
             if not success:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось добавить игрока."),
+                    replace_emojis("❌ Вы уже участвуете в другом активном турнире."),
                     ephemeral=True
                 )
                 return
@@ -257,7 +261,7 @@ class CircleSelectButton(discord.ui.Button):
 class JoinPoolButton(discord.ui.Button):
     """Кнопка для входа в players_pool в режиме RANDOM."""
 
-    def __init__(self, guild_id: int, current: int, limit: int):
+    def __init__(self, guild_id: int, channel_id: int, current: int, limit: int):
         label = f"Войти ({current}/{limit})"
         super().__init__(
             style=discord.ButtonStyle.primary,
@@ -265,12 +269,14 @@ class JoinPoolButton(discord.ui.Button):
             custom_id=f"join_pool:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_id = channel_id
         self.current = current
         self.limit = limit
 
     async def callback(self, interaction: discord.Interaction) -> None:
         try:
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament or tournament.phase != TournamentPhase.SETUP:
                 await interaction.response.send_message(
                     replace_emojis("❌ Турнир не в фазе настройки."),
@@ -356,9 +362,11 @@ circle_names = {
 class AdminAddModal(discord.ui.Modal):
     """Модальное окно для админа добавления игрока."""
 
-    def __init__(self, guild_id: int, circle: int):
+    def __init__(self, guild_id: int, channel_id: int, circle: int):
         super().__init__(title=f"Добавить в {circle_names[circle]}")
         self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.channel_id = channel_id
         self.circle = circle
 
         self.name_input = discord.ui.TextInput(
@@ -370,7 +378,7 @@ class AdminAddModal(discord.ui.Modal):
         self.add_item(self.name_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             await interaction.response.send_message(
                 replace_emojis("❌ Турнир не в фазе настройки."), ephemeral=True)
@@ -433,16 +441,17 @@ class AdminAddModal(discord.ui.Modal):
 class ExitButton(discord.ui.Button):
     """Кнопка для выхода из турнира."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="Выйти",
             custom_id=f"exit:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -527,13 +536,14 @@ class ExitButton(discord.ui.Button):
 class DeletePlayerButton(discord.ui.Button):
     """Кнопка для удаления игрока из турнира (только для org)."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="Удалить",
             custom_id=f"delete_player:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -547,7 +557,7 @@ class DeletePlayerButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
@@ -582,7 +592,7 @@ class DeletePlayerButton(discord.ui.Button):
             await interaction.response.defer()
             
             # Reload tournament from store to get fresh data
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 try:
                     await interaction.followup.send(
@@ -637,13 +647,14 @@ class DeletePlayerButton(discord.ui.Button):
 class SwapPlayersButton(discord.ui.Button):
     """Кнопка для обмена местами игроков в турнире (только для org)."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Поменять",
             custom_id=f"swap_players:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -657,7 +668,7 @@ class SwapPlayersButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
@@ -698,7 +709,7 @@ class SwapPlayersButton(discord.ui.Button):
                 await interaction.response.defer()
                 
                 # Reload tournament from store to get fresh data
-                tournament = store.get(self.guild_id)
+                tournament = store.get(self.guild_id, self.channel_id)
                 if not tournament:
                     await interaction.followup.send(
                         replace_emojis("❌ Турнир не найден."),
@@ -776,13 +787,14 @@ class SwapPlayersButton(discord.ui.Button):
 class MovePlayerButton(discord.ui.Button):
     """Кнопка для перемещения игрока в другой круг (только для org)."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Переместить",
             custom_id=f"move_player:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -796,7 +808,7 @@ class MovePlayerButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
@@ -851,7 +863,7 @@ class MovePlayerButton(discord.ui.Button):
                 await interaction.response.defer()
                 
                 # Reload tournament from store to get fresh data
-                tournament = store.get(self.guild_id)
+                tournament = store.get(self.guild_id, self.channel_id)
                 if not tournament:
                     await interaction.followup.send(
                         replace_emojis("❌ Турнир не найден."),
@@ -909,7 +921,7 @@ class MovePlayerButton(discord.ui.Button):
 class AdminAddButton(discord.ui.Button):
     """Кнопка для админа добавления игрока в конкретный круг."""
 
-    def __init__(self, guild_id: int, circle: int, circle_name: str):
+    def __init__(self, guild_id: int, channel_id: int, circle: int, circle_name: str):
         label = f"+ {circle_name}"
         super().__init__(
             style=discord.ButtonStyle.success,
@@ -917,6 +929,7 @@ class AdminAddButton(discord.ui.Button):
             custom_id=f"admin_add:{guild_id}:{circle}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.circle = circle
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -942,13 +955,14 @@ class AdminAddButton(discord.ui.Button):
 class AutoDistributeButton(discord.ui.Button):
     """Кнопка для автоматического распределения по ELO."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Распределить по ELO",
             custom_id=f"auto_distribute:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -962,7 +976,7 @@ class AutoDistributeButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
@@ -1020,13 +1034,14 @@ class AutoDistributeButton(discord.ui.Button):
 class AutoDistributeAvgButton(discord.ui.Button):
     """Кнопка для автоматического распределения по Skill Rating."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Распределить по Skill Rating",
             custom_id=f"auto_distribute_avg:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1040,7 +1055,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament or tournament.phase != TournamentPhase.SETUP:
             try:
                 await interaction.response.send_message(
@@ -1099,13 +1114,14 @@ class AutoDistributeAvgButton(discord.ui.Button):
 class StartTournamentButton(discord.ui.Button):
     """Кнопка для запуска турнира."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.success,
             label="Старт",
             custom_id=f"start_tournament:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1119,7 +1135,7 @@ class StartTournamentButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -1208,7 +1224,7 @@ class StartTournamentButton(discord.ui.Button):
 class ToggleRegistrationButton(discord.ui.Button):
     """Кнопка для переключения регистрации (открыть/закрыть)."""
 
-    def __init__(self, guild_id: int, is_open: bool):
+    def __init__(self, guild_id: int, channel_id: int, is_open: bool):
         self.is_open = is_open
         label = "Закрыть" if is_open else "Открыть"
         style = discord.ButtonStyle.danger if is_open else discord.ButtonStyle.primary
@@ -1218,6 +1234,7 @@ class ToggleRegistrationButton(discord.ui.Button):
             custom_id=f"toggle_registration:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1231,7 +1248,7 @@ class ToggleRegistrationButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -1265,7 +1282,7 @@ class ToggleRegistrationButton(discord.ui.Button):
 class ToggleIsolationButton(discord.ui.Button):
     """Кнопка для переключения изоляции (Включить S/Отключить S)."""
 
-    def __init__(self, guild_id: int, is_isolated: bool):
+    def __init__(self, guild_id: int, channel_id: int, is_isolated: bool):
         self.is_isolated = is_isolated
         label = "Отключить S" if is_isolated else "Включить S"
         style = discord.ButtonStyle.primary if is_isolated else discord.ButtonStyle.danger
@@ -1275,6 +1292,7 @@ class ToggleIsolationButton(discord.ui.Button):
             custom_id=f"toggle_isolation:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1288,7 +1306,7 @@ class ToggleIsolationButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -1337,7 +1355,7 @@ class SetupView(discord.ui.View):
             # RANDOM mode: single join button with counter
             current = len(tournament.players_pool)
             limit = int(tournament.size.value)
-            join_button = JoinPoolButton(tournament.guild_id, current, limit)
+            join_button = JoinPoolButton(tournament.guild_id, tournament.channel_id, current, limit)
             self.add_item(join_button)
         else:
             # ELO/SKILL modes: circle buttons
@@ -1348,28 +1366,29 @@ class SetupView(discord.ui.View):
             for circle in range(1, 5):
                 count = circle_counts[circle]
                 limit = tournament.circle_limit(circle) if circle != 4 else 0
-                button = CircleSelectButton(tournament.guild_id, circle, circle_names[circle], count, limit)
+                button = CircleSelectButton(tournament.guild_id, tournament.channel_id, circle, circle_names[circle], count, limit)
                 self.add_item(button)
 
         # Add org menu button
-        org_menu_button = OrgMenuButton(tournament.guild_id)
+        org_menu_button = OrgMenuButton(tournament.guild_id, tournament.channel_id)
         self.add_item(org_menu_button)
 
         # Add exit button
-        exit_button = ExitButton(tournament.guild_id)
+        exit_button = ExitButton(tournament.guild_id, tournament.channel_id)
         self.add_item(exit_button)
 
 
 class OrgMenuButton(discord.ui.Button):
     """Кнопка для открытия организаторского меню."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Орг Меню",
             custom_id=f"org_menu:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1383,7 +1402,7 @@ class OrgMenuButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -1452,13 +1471,14 @@ class OrgMenuView(discord.ui.View):
 class LimitButton(discord.ui.Button):
     """Кнопка для настройки лимитов кругов."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Лимит",
             custom_id=f"limit:{guild_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         from utils.permissions import is_org_check
@@ -1472,7 +1492,7 @@ class LimitButton(discord.ui.Button):
                 pass
             return
 
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(
@@ -1520,9 +1540,10 @@ class LimitToggleButton(discord.ui.Button):
             custom_id=f"limit_toggle:{guild_id}:{circle}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id)
+        tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
             try:
                 await interaction.response.send_message(

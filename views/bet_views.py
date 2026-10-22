@@ -12,9 +12,10 @@ if TYPE_CHECKING:
 class MatchSelectView(View):
     """View for selecting a match to bet on."""
     
-    def __init__(self, guild_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament, matches: list[tuple[int, int]], match_type: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.matches = matches
         self.match_type = match_type
@@ -211,7 +212,7 @@ class ToggleBettingButton(Button):
                 )
                 return
             
-            tournament = store.get(self.guild_id)
+            tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
                     replace_emojis("❌ Турнир не найден."),
