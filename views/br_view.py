@@ -752,6 +752,21 @@ class BRStatsModal(Modal):
             br_store.set(tournament)
 
             if tournament.phase == BRTournamentPhase.RESULTS:
+                # Снять роль с реальных игроков
+                guild = interaction.guild
+                role = guild.get_role(tournament.role_id)
+                if role:
+                    for player in tournament.players:
+                        user_id = player["id"]
+                        if user_id < 0:  # Пропускаем ботов
+                            continue
+                        try:
+                            member = guild.get_member(user_id)
+                            if member:
+                                await member.remove_roles(role)
+                        except Exception as e:
+                            logger.warning("Не удалось снять роль с пользователя %s: %s", user_id, e)
+
                 # Показать результаты
                 results = tournament.calculate_final_results()
 
