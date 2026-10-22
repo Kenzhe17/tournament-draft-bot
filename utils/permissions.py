@@ -3,6 +3,8 @@
 import discord
 from discord import app_commands
 
+from config import BOT_OWNER_ID
+
 
 def is_admin() -> app_commands.check:
     """Декоратор: только администратор сервера, роль 'org' или создатель бота."""
@@ -76,8 +78,8 @@ def is_bot_owner() -> app_commands.check:
     """Декоратор: только владелец бота."""
 
     async def predicate(interaction: discord.Interaction) -> bool:
-        # Проверяем конкретный Discord ID владельца бота
-        if interaction.user.id == 1032544122600423427:
+        # Проверяем конкретный Discord ID владельца бота из конфига
+        if interaction.user.id == BOT_OWNER_ID:
             return True
 
         raise app_commands.CheckFailure(

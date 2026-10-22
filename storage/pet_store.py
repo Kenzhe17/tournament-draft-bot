@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from models.pet import (
     Pet, PetType, PetRarity,
-    EXP_REQUIREMENTS, RARITY_PRICES, ENERGY_COSTS
+    get_exp_for_level, RARITY_PRICES, ENERGY_COSTS
 )
 
 if TYPE_CHECKING:
@@ -173,8 +173,9 @@ class PetStore:
             # Проверить дневной лимит (упрощённо - можно добавить таблицу для отслеживания)
             new_exp = min(pet.exp + exp, pet.exp + max_daily)
 
-            # Возраст = exp // 50 + 1 (каждые 50 опыта = +1 возраст)
-            new_level = new_exp // 50 + 1
+            # Уровень = exp // 50 + 1 (каждые 50 опыта = +1 уровень)
+            # Максимальный уровень = 100
+            new_level = min(new_exp // 50 + 1, 100)
 
             # Обновить
             await conn.execute(

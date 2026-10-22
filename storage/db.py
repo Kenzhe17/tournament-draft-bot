@@ -589,7 +589,7 @@ async def init_db() -> None:
                     pet_type TEXT NOT NULL,
                     rarity TEXT NOT NULL,
                     pet_name TEXT NOT NULL,
-                    level INTEGER NOT NULL CHECK (level >= 1 AND level <= 10),
+                    level INTEGER NOT NULL CHECK (level >= 1 AND level <= 100),
                     exp INTEGER NOT NULL CHECK (exp >= 0),
                     fullness INTEGER NOT NULL CHECK (fullness >= 0 AND fullness <= 100),
                     energy INTEGER NOT NULL CHECK (energy >= 0 AND energy <= 100),
@@ -614,6 +614,21 @@ async def init_db() -> None:
             logger.info("hunger_started_at column added/verified")
         except Exception as e:
             logger.error(f"Error adding hunger_started_at column: {e}")
+
+        # Migration: update level check constraint from 10 to 100
+        try:
+            # Drop old constraint if it exists
+            await conn.execute("ALTER TABLE pets DROP CONSTRAINT IF EXISTS pets_level_check")
+            logger.info("Old level constraint dropped")
+        except Exception as e:
+            logger.error(f"Error dropping old level constraint: {e}")
+
+        try:
+            # Add new constraint with level <= 100
+            await conn.execute("ALTER TABLE pets ADD CONSTRAINT pets_level_check CHECK (level >= 1 AND level <= 100)")
+            logger.info("New level constraint (1-100) added")
+        except Exception as e:
+            logger.error(f"Error adding new level constraint: {e}")
 
         # Create indexes for pets
         try:
