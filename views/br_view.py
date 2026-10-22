@@ -1,0 +1,824 @@
+"""Views for Battle Royale tournament."""
+
+import asyncio
+import logging
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+import discord
+from discord.ui import Modal, TextInput, View, Button, button, Select
+
+from config import BOT_OWNER_ID, replace_emojis, get_emoji
+from models.br_tournament import BRTournamentPhase
+from storage.br_store import br_store
+
+if TYPE_CHECKING:
+    from models.br_tournament import BRTournament
+
+logger = logging.getLogger(__name__)
+
+
+def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
+    """Get or create a lock for user operations."""
+    if not hasattr(get_user_lock, "_locks"):
+        get_user_lock._locks = {}
+    key = (guild_id, user_id)
+    if key not in get_user_lock._locks:
+        get_user_lock._locks[key] = asyncio.Lock()
+    return get_user_lock._locks[key]
+
+
+class BRRegistrationView(View):
+    """View для фазы регистрации BR турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Кнопка "Войти"
+        self.add_item(JoinBRButton(guild_id, channel_id))
+
+        # Кнопка "Выйти"
+        self.add_item(LeaveBRButton(guild_id, channel_id))
+
+        # Кнопка "Удалить" (только для владельца)
+        self.add_item(DeleteBRButton(guild_id, channel_id))
+
+        # Кнопка "Старт" (только для владельца)
+        self.add_item(StartBRButton(guild_id, channel_id))
+
+
+class JoinBRButton(Button):
+    """Кнопка для входа в BR турнир."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Войти",
+            custom_id=f"br_join:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        user_name = interaction.user.display_name
+        user_id = interaction.user.id
+
+        # Добавить игрока
+        if not tournament.add_player(user_name, user_id):
+            await interaction.response.send_message(
+                "❌ Не удалось присоединиться (лимит 48 или уже зарегистрирован).",
+                ephemeral=True
+            )
+            return
+
+        # Сохранить
+        br_store.set(tournament)
+
+        # Обновить embed
+        embed = interaction.message.embeds[0]
+        embed.description = f"Формат: **Random**\n" \
+                           f"Фаза: **Регистрация**\n" \
+                           f"Игроков: **{len(tournament.players)}/48**"
+        await interaction.response.edit_message(embed=embed)
+
+        await interaction.followup.send(
+            f"✅ Вы зарегистрированы как {user_name}!",
+            ephemeral=True
+        )
+
+
+class LeaveBRButton(Button):
+    """Кнопка для выхода из BR турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Выйти",
+            custom_id=f"br_leave:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        user_id = interaction.user.id
+
+        # Удалить игрока
+        if not tournament.remove_player(user_id):
+            await interaction.response.send_message(
+                "❌ Вы не зарегистрированы.",
+                ephemeral=True
+            )
+            return
+
+        # Сохранить
+        br_store.set(tournament)
+
+        # Обновить embed
+        embed = interaction.message.embeds[0]
+        embed.description = f"Формат: **Random**\n" \
+                           f"Фаза: **Регистрация**\n" \
+                           f"Игроков: **{len(tournament.players)}/48**"
+        await interaction.response.edit_message(embed=embed)
+
+        await interaction.followup.send(
+            "✅ Вы вышли из турнира.",
+            ephemeral=True
+        )
+
+
+class DeleteBRButton(Button):
+    """Кнопка для удаления BR турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Удалить",
+            custom_id=f"br_delete:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Проверка на владельца
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может удалить турнир.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Снять роль с реальных игроков
+        guild = interaction.guild
+        role = guild.get_role(tournament.role_id)
+        if role:
+            for player in tournament.players:
+                user_id = player["id"]
+                if user_id < 0:  # Пропускаем ботов
+                    continue
+                try:
+                    member = guild.get_member(user_id)
+                    if member:
+                        await member.remove_roles(role)
+                except Exception as e:
+                    logger.warning("Не удалось снять роль: %s", e)
+
+        # Удалить сообщение
+        if tournament.message_id:
+            try:
+                channel = guild.get_channel(tournament.channel_id)
+                if channel:
+                    message = await channel.fetch_message(tournament.message_id)
+                    await message.delete()
+            except Exception as e:
+                logger.warning("Не удалось удалить сообщение: %s", e)
+
+        # Удалить из хранилища
+        br_store.delete(self.guild_id, self.channel_id)
+
+        await interaction.response.send_message(
+            "✅ BR турнир удален.",
+            ephemeral=True
+        )
+
+
+class StartBRButton(Button):
+    """Кнопка для старта BR турнира."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Старт",
+            custom_id=f"br_start:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Проверка на владельца
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может начать турнир.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Проверка условий старта
+        if len(tournament.players) < 20 or len(tournament.players) % 4 != 0:
+            await interaction.response.send_message(
+                "❌ Нельзя начать: нужно 20+ игроков и количество должно делиться на 4.",
+                ephemeral=True
+            )
+            return
+
+        # Сформировать команды
+        if not tournament.form_teams_random():
+            await interaction.response.send_message(
+                "❌ Не удалось сформировать команды.",
+                ephemeral=True
+            )
+            return
+
+        # Выдать роль реальным игрокам
+        guild = interaction.guild
+        role = guild.get_role(tournament.role_id)
+        if role:
+            for player in tournament.players:
+                user_id = player["id"]
+                if user_id < 0:  # Пропускаем ботов
+                    continue
+                try:
+                    member = guild.get_member(user_id)
+                    if member:
+                        await member.add_roles(role)
+                except Exception as e:
+                    logger.warning("Не удалось выдать роль: %s", e)
+
+        # Сохранить
+        br_store.set(tournament)
+
+        # Создать view для фазы команд
+        view = BRTeamsView(self.guild_id, self.channel_id, tournament)
+
+        # Создать embed
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Команды**",
+            description=f"Команд сформировано: **{len(tournament.teams)}**\n"
+                       f"Капитаны могут изменить название команды (1 минута).",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        # Добавить информацию о командах
+        for i, team in enumerate(tournament.teams):
+            players_str = ", ".join(team["players"])
+            embed.add_field(
+                name=f"Команда {i + 1}: {team['name']}",
+                value=f"Капитан: {team['captain']}\nИгроки: {players_str}",
+                inline=False
+            )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BRTeamsView(View):
+    """View для фазы команд (переименование)."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Добавить кнопки переименования для каждой команды
+        for i, team in enumerate(tournament.teams):
+            if tournament.team_rename_remaining.get(i, False):
+                self.add_item(TeamNameButton(guild_id, channel_id, i, team["name"]))
+
+        # Запустить таймер для исчезновения кнопок
+        self.bot = None  # Будет установлен позже если нужно
+
+
+class TeamNameButton(Button):
+    """Кнопка для изменения названия команды."""
+
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, current_name: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=f"Team Name: {current_name}",
+            custom_id=f"br_team_name:{guild_id}:{channel_id}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != BRTournamentPhase.TEAMS:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе команд.",
+                ephemeral=True
+            )
+            return
+
+        team = tournament.teams[self.team_index]
+        captain_name = team["captain"]
+        user_name = interaction.user.display_name
+
+        # Проверка что пользователь капитан
+        if captain_name != user_name:
+            await interaction.response.send_message(
+                "❌ Только капитан может изменить название.",
+                ephemeral=True
+            )
+            return
+
+        # Показать modal
+        modal = TeamNameModal(self.guild_id, self.channel_id, self.team_index, captain_name)
+        await interaction.response.send_modal(modal)
+
+
+class TeamNameModal(Modal):
+    """Modal для ввода названия команды."""
+
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, captain_name: str):
+        super().__init__(title="Название команды")
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.team_index = team_index
+        self.captain_name = captain_name
+
+        self.name_input = TextInput(
+            label="Название команды",
+            placeholder="Введите название",
+            required=True,
+            max_length=50
+        )
+        self.add_item(self.name_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        new_name = self.name_input.value.strip()
+
+        if not new_name:
+            await interaction.response.send_message(
+                "❌ Название не может быть пустым.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Изменить название
+        if not tournament.rename_team(self.team_index, new_name, self.captain_name):
+            await interaction.response.send_message(
+                "❌ Не удалось изменить название (возможно уже переименовано).",
+                ephemeral=True
+            )
+            return
+
+        # Сохранить
+        br_store.set(tournament)
+
+        # Обновить view (убрать кнопку если больше нельзя переименовывать)
+        view = BRTeamsView(self.guild_id, self.channel_id, tournament)
+
+        # Обновить embed
+        embed = interaction.message.embeds[0]
+        # Обновить поле команды
+        for i, field in enumerate(embed.fields):
+            if f"Команда {self.team_index + 1}" in field.name:
+                team = tournament.teams[self.team_index]
+                players_str = ", ".join(team["players"])
+                embed.set_field_at(
+                    i,
+                    name=f"Команда {self.team_index + 1}: {team['name']}",
+                    value=f"Капитан: {team['captain']}\nИгроки: {players_str}"
+                )
+                break
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        await interaction.followup.send(
+            f"✅ Название изменено на '{new_name}'.",
+            ephemeral=True
+        )
+
+
+class BRMapSelectView(View):
+    """View для выбора карты и отправки данных."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Select menu для выбора карты/данных
+        select = MapSelectMenu(guild_id, channel_id, tournament)
+        self.add_item(select)
+
+
+class MapSelectMenu(Select):
+    """Select menu для выбора карты."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Опции в зависимости от текущей фазы
+        options = []
+        if tournament.phase == BRTournamentPhase.TEAMS:
+            options.append(discord.SelectOption(label="Бермуды", value="bermuda"))
+        elif tournament.phase == BRTournamentPhase.BERMUDA:
+            options.append(discord.SelectOption(label="Чистилище", value="purgatory"))
+        elif tournament.phase == BRTournamentPhase.PURGATORY:
+            options.append(discord.SelectOption(label="Калахари", value="kalahari"))
+
+        options.append(discord.SelectOption(label="Данные", value="data"))
+
+        super().__init__(
+            placeholder="Выберите действие",
+            options=options,
+            custom_id=f"br_map_select:{guild_id}:{channel_id}"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        value = self.values[0]
+
+        if value == "data":
+            # Отправить данные комнаты
+            tournament = br_store.get(self.guild_id, self.channel_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    "❌ BR турнир не найден.",
+                    ephemeral=True
+                )
+                return
+
+            guild = interaction.guild
+            role = guild.get_role(tournament.role_id)
+            channel = guild.get_channel(tournament.room_channel_id)
+
+            if not channel:
+                await interaction.response.send_message(
+                    "❌ Канал для данных не найден.",
+                    ephemeral=True
+                )
+                return
+
+            if role:
+                await channel.send(f"{role.mention} Данные комнаты для BR турнира!")
+            else:
+                await channel.send("Данные комнаты для BR турнира!")
+
+            await interaction.response.send_message(
+                "✅ Данные отправлены.",
+                ephemeral=True
+            )
+        else:
+            # Показать кнопки групп команд
+            tournament = br_store.get(self.guild_id, self.channel_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    "❌ BR турнир не найден.",
+                    ephemeral=True
+                )
+                return
+
+            # Обновить фазу
+            if value == "bermuda":
+                tournament.phase = BRTournamentPhase.BERMUDA
+                tournament.current_map = "bermuda"
+            elif value == "purgatory":
+                tournament.phase = BRTournamentPhase.PURGATORY
+                tournament.current_map = "purgatory"
+            elif value == "kalahari":
+                tournament.phase = BRTournamentPhase.KALAHARI
+                tournament.current_map = "kalahari"
+
+            br_store.set(tournament)
+
+            # Создать view с кнопками групп
+            view = BRTeamGroupView(self.guild_id, self.channel_id, tournament)
+
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {map_names.get(value, value)}**",
+                description="Выберите группу команд для ввода статистики.",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BRTeamGroupView(View):
+    """View с кнопками групп команд."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        team_count = len(tournament.teams)
+
+        # Кнопка "Команды 1-6"
+        if team_count >= 1:
+            self.add_item(TeamGroupButton(guild_id, channel_id, 0, 6, "Команды 1-6"))
+
+        # Кнопка "Команды 7-12"
+        if team_count >= 7:
+            self.add_item(TeamGroupButton(guild_id, channel_id, 6, 12, "Команды 7-12"))
+
+
+class TeamGroupButton(Button):
+    """Кнопка группы команд."""
+
+    def __init__(self, guild_id: int, channel_id: int, start_idx: int, end_idx: int, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label=label,
+            custom_id=f"br_team_group:{guild_id}:{channel_id}:{start_idx}:{end_idx}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.start_idx = start_idx
+        self.end_idx = end_idx
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Создать view с кнопками команд
+        view = BRTeamSelectView(self.guild_id, self.channel_id, tournament, self.start_idx, self.end_idx)
+
+        await interaction.response.edit_message(view=view)
+
+
+class BRTeamSelectView(View):
+    """View с кнопками названий команд."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament", start_idx: int, end_idx: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Добавить кнопки для команд в диапазоне
+        for i in range(start_idx, min(end_idx, len(tournament.teams))):
+            team = tournament.teams[i]
+            self.add_item(TeamButton(guild_id, channel_id, i, team["name"]))
+
+        # Кнопка "Назад"
+        self.add_item(BackToMapButton(guild_id, channel_id))
+
+
+class TeamButton(Button):
+    """Кнопка команды."""
+
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, team_name: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=team_name,
+            custom_id=f"br_team:{guild_id}:{channel_id}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Показать modal для ввода статистики
+        modal = BRStatsModal(self.guild_id, self.channel_id, self.team_index, tournament.current_map)
+        await interaction.response.send_modal(modal)
+
+
+class BackToMapButton(Button):
+    """Кнопка возврата к выбору карты."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Назад",
+            custom_id=f"br_back_map:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Вернуться к select menu
+        view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+
+        map_names = {
+            "bermuda": "Бермуды",
+            "purgatory": "Чистилище",
+            "kalahari": "Калахари"
+        }
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {map_names.get(tournament.current_map, tournament.current_map)}**",
+            description="Выберите действие.",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class BRStatsModal(Modal):
+    """Modal для ввода статистики команды."""
+
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, map_name: str):
+        super().__init__(title="Статистика команды")
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.team_index = team_index
+        self.map_name = map_name
+
+        self.stats_input = TextInput(
+            label="Статистика (место/киллы)",
+            placeholder="Пример: 1/23",
+            required=True,
+            max_length=10
+        )
+        self.add_item(self.stats_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        stats_str = self.stats_input.value.strip()
+
+        # Парсинг формата "место/киллы"
+        try:
+            parts = stats_str.split("/")
+            if len(parts) != 2:
+                raise ValueError("Неверный формат")
+
+            place = int(parts[0])
+            kills = int(parts[1])
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Неверный формат. Используйте: место/киллы (например: 1/23)",
+                ephemeral=True
+            )
+            return
+
+        # Валидация
+        if place < 1 or place > 12:
+            await interaction.response.send_message(
+                "❌ Место должно быть от 1 до 12.",
+                ephemeral=True
+            )
+            return
+
+        if kills < 0 or kills > 50:
+            await interaction.response.send_message(
+                "❌ Киллы должны быть от 0 до 50.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Сохранить статистику
+        if not tournament.set_team_stats(self.team_index, self.map_name, place, kills):
+            await interaction.response.send_message(
+                "❌ Не удалось сохранить статистику.",
+                ephemeral=True
+            )
+            return
+
+        # Сохранить
+        br_store.set(tournament)
+
+        # Проверить все ли команды заполнили статистику
+        if tournament.are_all_stats_complete(self.map_name):
+            # Переход к следующей фазе
+            if tournament.phase == BRTournamentPhase.BERMUDA:
+                tournament.phase = BRTournamentPhase.PURGATORY
+            elif tournament.phase == BRTournamentPhase.PURGATORY:
+                tournament.phase = BRTournamentPhase.KALAHARI
+            elif tournament.phase == BRTournamentPhase.KALAHARI:
+                tournament.phase = BRTournamentPhase.RESULTS
+
+            br_store.set(tournament)
+
+            if tournament.phase == BRTournamentPhase.RESULTS:
+                # Показать результаты
+                results = tournament.calculate_final_results()
+
+                embed = discord.Embed(
+                    title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Результаты**",
+                    color=discord.Color.gold()
+                )
+
+                for i, result in enumerate(results):
+                    medal = ""
+                    if i == 0:
+                        medal = "🥇 "
+                    elif i == 1:
+                        medal = "🥈 "
+                    elif i == 2:
+                        medal = "🥉 "
+
+                    embed.add_field(
+                        name=f"{medal}{i + 1}. {result['name']}",
+                        value=f"Очки: **{result['total_points']}**",
+                        inline=False
+                    )
+
+                view = BRResultsView(self.guild_id, self.channel_id)
+                await interaction.response.edit_message(embed=embed, view=view)
+            else:
+                # Вернуться к select menu следующей карты
+                view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+
+                map_names = {
+                    "bermuda": "Бермуды",
+                    "purgatory": "Чистилище",
+                    "kalahari": "Калахари"
+                }
+
+                next_map = ""
+                if tournament.phase == BRTournamentPhase.PURGATORY:
+                    next_map = "Чистилище"
+                elif tournament.phase == BRTournamentPhase.KALAHARI:
+                    next_map = "Калахари"
+
+                embed = discord.Embed(
+                    title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {next_map}**",
+                    description="Все команды заполнили статистику. Переход к следующей карте.",
+                    color=discord.Color.from_rgb(69, 69, 69)
+                )
+
+                await interaction.response.edit_message(embed=embed, view=view)
+        else:
+            # Вернуться к select menu
+            view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+
+            await interaction.response.edit_message(view=view)
+
+        await interaction.followup.send(
+            f"✅ Статистика сохранена: место {place}, киллы {kills}.",
+            ephemeral=True
+        )
+
+
+class BRResultsView(View):
+    """View для финальных результатов."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        # Кнопка "Удалить"
+        self.add_item(DeleteBRButton(guild_id, channel_id))

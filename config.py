@@ -29,6 +29,10 @@ REDIS_URL = os.getenv("REDIS_URL", "")
 # Organizer role ID
 ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 
+# Battle Royale settings
+BR_ROLE_ID = int(os.getenv("BR_ROLE_ID", "0"))
+BR_ROOM_CHANNEL_ID = int(os.getenv("BR_ROOM_CHANNEL_ID", "0"))
+
 # Guild ID for server tag checking
 GUILD_ID = int(os.getenv("GUILD_ID", "1196165488565289012"))
 
