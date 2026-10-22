@@ -139,13 +139,4 @@ async def get_user_active_pet_bonuses(user_id: int) -> Dict[str, Any]:
         )
         bonuses["has_absolute_item_shield"] = True
 
-    # --- Волк арены ---
-    elif pet_type == "arena_wolf":
-        bonuses["elo_gain_bonus_pct"] = calculate_ability_power(
-            level, abilities[1]["max_val"], abilities[1].get("unlock_level", 1)
-        )
-        bonuses["elo_loss_reduction_pct"] = calculate_ability_power(
-            level, abilities[2]["max_val"], abilities[2].get("unlock_level", 1)
-        )
-
     return bonuses

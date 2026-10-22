@@ -23,7 +23,6 @@ class PetType(str, Enum):
     RAVEN_SMUGGLER = "raven_smuggler"  # Ворон-контрабандист
     MIMIC_COLLECTOR = "mimic_collector"  # Мимик-собиратель
     GUARDIAN_TURTLE = "guardian_turtle"  # Черепаха-хранитель
-    ARENA_WOLF = "arena_wolf"  # Волк арены
 
 
 class AbilityType(str, Enum):
@@ -39,8 +38,6 @@ class AbilityType(str, Enum):
     SELL_FEE_REDUCTION = "sell_fee_reduction"  # Снижение комиссии продажи
     CASE_EXTRA_REWARD = "case_extra_reward"  # Дополнительная награда из кейса
     ITEM_PROTECTION = "item_protection"  # Защита выбранного предмета
-    ELO_WIN_BONUS = "elo_win_bonus"  # Бонус к Elo за победу
-    ELO_LOSS_REDUCTION = "elo_loss_reduction"  # Снижение потери Elo
 
 
 @dataclass

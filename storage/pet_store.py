@@ -34,7 +34,7 @@ PETS_BY_RARITY = {
     "common": ["golden_fox", "scout_fox", "treasury_owl"],
     "uncommon": ["raccoon_robber", "raven_smuggler"],
     "epic": ["guardian_turtle"],
-    "legendary": ["arena_wolf", "mimic_collector"],
+    "legendary": ["mimic_collector"],
 }
 
 

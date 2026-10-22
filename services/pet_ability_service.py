@@ -221,41 +221,7 @@ class PetAbilityService:
         Returns:
             Модифицированное изменение Elo
         """
-        pet = await pet_store.get_user_pet(guild_id, user_id)
-        if not pet:
-            return elo_change
-
-        from storage.pet_store import pet_catalog
-        pet_def = pet_catalog.get_pet(pet.pet_type.value)
-        if not pet_def:
-            return elo_change
-
-        energy_cost = ENERGY_COSTS.get("elo_match", 15)
-
-        if pet.energy < energy_cost:
-            return elo_change
-
-        # Проверить способности Волка арены
-        if pet_def["id"] == "arena_wolf":
-            if is_win:
-                # Жажда победы
-                ab1 = pet_def["abilities"][1]
-                bonus_percent = ab1.get("max_val", 0)  # Всегда максимальное
-                bonus = int(elo_change * (bonus_percent / 100))
-                await pet_store.use_energy(pet.pet_id, energy_cost)
-                await pet_store.add_exp(pet.pet_id, 5)
-                return elo_change + bonus
-            else:
-                # Несломленный дух
-                ab2 = pet_def["abilities"][2]
-                reduction_percent = ab2.get("max_val", 0)  # Всегда максимальное
-                reduction = int(abs(elo_change) * (reduction_percent / 100))
-                await pet_store.use_energy(pet.pet_id, energy_cost)
-                await pet_store.add_exp(pet.pet_id, 5)
-                # Снизить потерю, но не превратить в положительную
-                new_change = -max(0, abs(elo_change) - reduction)
-                return new_change
-
+        # Способности повышающие ELO больше не применяются
         return elo_change
 
 

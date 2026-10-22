@@ -182,34 +182,6 @@ PETS_CATALOG: Dict[str, Dict[str, Any]] = {
             }
         }
     },
-    "arena_wolf": {
-        "id": "arena_wolf",
-        "name": "Волк арены",
-        "title": "МАГАЗИН | ВОЛК АРЕНЫ",
-        "rarity": "Легендарный",
-        "rarity_code": "legendary",
-        "price": 30000,
-        "color": 0xF1C40F,
-        "image_url": "https://media.discordapp.net/attachments/1560907251412238396/1560909871325388841/Untitled_Design_2_-removebg-preview.png?ex=6ad46e19&is=6ad31c99&hm=7e382a14300a87550ddd5fdf036e73ea3ae7f64e111e31f73da1a112d8a72fc5&=&format=webp&quality=lossless",
-        "description": (
-            "Легендарный спутник бойцов арены. Помогает получать больше рейтинга "
-            "за победы и смягчает потерю Elo после поражений."
-        ),
-        "abilities": {
-            1: {
-                "name": "Жажда победы",
-                "max_val": 12,
-                "unit": "%",
-                "desc_template": "Увеличивает положительное изменение Elo за победу в официальном матче на {val}%."
-            },
-            2: {
-                "name": "Несломленный дух",
-                "max_val": 20,
-                "unit": "%",
-                "desc_template": "Уменьшает потерю Elo при поражении в официальном матче на {val}%."
-            }
-        }
-    },
     "mimic_collector": {
         "id": "mimic_collector",
         "name": "Мимик-собиратель",
