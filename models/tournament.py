@@ -412,8 +412,11 @@ class Tournament:
         return True
 
     def remove_player(self, name: str) -> bool:
-        """Удалить игрока из любого круга. Возвращает True если найден и удален."""
+        """Удалить игрока из любого круга и команды. Возвращает True если найден и удален."""
         name = name.strip()
+        removed = False
+
+        # Remove from circles
         for circle in range(1, 5):
             circle_players = self.circle_list(circle)
             # Case-insensitive search
@@ -421,8 +424,23 @@ class Tournament:
                 if player.strip().lower() == name.lower():
                     circle_players.pop(i)
                     self.set_circle_list(circle, circle_players)
-                    return True
-        return False
+                    removed = True
+
+        # Remove from teams if in TEAMS phase or later
+        user_id = self.player_user_ids.get(name)
+        if user_id:
+            for team_idx, team in enumerate(self.teams):
+                # Remove from captain
+                if team.get("captain") == name:
+                    team["captain"] = ""
+                    removed = True
+
+                # Remove from players list
+                if name in team.get("players", []):
+                    team["players"].remove(name)
+                    removed = True
+
+        return removed
 
     # --- Формирование кругов по ELO ---
 
