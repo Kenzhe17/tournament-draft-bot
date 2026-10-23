@@ -1289,7 +1289,7 @@ class ToggleIsolationButton(discord.ui.Button):
         super().__init__(
             style=style,
             label=label,
-            custom_id=f"toggle_isolation:{guild_id}",
+            custom_id=f"toggle_isolation:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1460,11 +1460,11 @@ class OrgMenuView(discord.ui.View):
             self.add_item(toggle_button)
 
         # Show isolation button
-        isolation_button = ToggleIsolationButton(tournament.guild_id, tournament.registration == RegistrationState.ISOLATED)
+        isolation_button = ToggleIsolationButton(tournament.guild_id, tournament.channel_id, tournament.registration == RegistrationState.ISOLATED)
         self.add_item(isolation_button)
 
         # Add limit button
-        limit_button = LimitButton(tournament.guild_id)
+        limit_button = LimitButton(tournament.guild_id, tournament.channel_id)
         self.add_item(limit_button)
 
 
@@ -1475,7 +1475,7 @@ class LimitButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Лимит",
-            custom_id=f"limit:{guild_id}",
+            custom_id=f"limit:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
