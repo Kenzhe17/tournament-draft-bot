@@ -1308,6 +1308,8 @@ class BRStatsReviewView(View):
                 self.add_item(BRConfirmPurgatoryButton(guild_id, channel_id, tournament))
             elif tournament.phase == BRTournamentPhase.PURGATORY:
                 self.add_item(BRConfirmKalahariButton(guild_id, channel_id, tournament))
+            elif tournament.phase == BRTournamentPhase.KALAHARI:
+                self.add_item(BRConfirmResultsButton(guild_id, channel_id, tournament))
 
 
 class BREditTeamStatsButton(Button):
@@ -1352,10 +1354,85 @@ class BRConfirmPurgatoryButton(Button):
         self.tournament.current_map = "purgatory"
         br_store.set(self.tournament)
 
-        await interaction.response.send_message(
-            "✅ Переход к Чистилище.",
-            ephemeral=True
-        )
+        # Close the ephemeral menu
+        await interaction.response.edit_message(content="✅ Переход к Чистилище", view=None)
+
+        # Update main message with Purgatory embed
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not self.tournament.message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(self.tournament.message_id)
+
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+
+            # Build teams section with current map points (sorted by points)
+            teams_with_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(self.tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate points for current map only
+                stats = team.get("stats", {})
+                map_points = 0
+                if "purgatory" in stats:
+                    map_stats = stats["purgatory"]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    if place > 0:
+                        map_points = (13 - place) + kills
+
+                teams_with_points.append({
+                    "captain": captain,
+                    "team_name": team_name,
+                    "players_str": players_str,
+                    "points": map_points,
+                    "index": i
+                })
+
+            # Sort by points descending
+            teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+            teams_text = []
+            for team_data in teams_with_points:
+                captain = team_data["captain"]
+                players_str = team_data["players_str"]
+                points = team_data["points"]
+                original_index = team_data["index"]
+                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+
+                teams_text.append(
+                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    + "\n".join(teams_text)
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            view = BRBermudaView(self.guild_id, self.channel_id)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating BR message for Purgatory: {e}")
 
 
 class BRConfirmKalahariButton(Button):
@@ -1377,10 +1454,197 @@ class BRConfirmKalahariButton(Button):
         self.tournament.current_map = "kalahari"
         br_store.set(self.tournament)
 
-        await interaction.response.send_message(
-            "✅ Переход к Калахари.",
-            ephemeral=True
+        # Close the ephemeral menu
+        await interaction.response.edit_message(content="✅ Переход к Калахари", view=None)
+
+        # Update main message with Kalahari embed
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not self.tournament.message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(self.tournament.message_id)
+
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+
+            # Build teams section with current map points (sorted by points)
+            teams_with_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(self.tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate points for current map only
+                stats = team.get("stats", {})
+                map_points = 0
+                if "kalahari" in stats:
+                    map_stats = stats["kalahari"]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    if place > 0:
+                        map_points = (13 - place) + kills
+
+                teams_with_points.append({
+                    "captain": captain,
+                    "team_name": team_name,
+                    "players_str": players_str,
+                    "points": map_points,
+                    "index": i
+                })
+
+            # Sort by points descending
+            teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+            teams_text = []
+            for team_data in teams_with_points:
+                captain = team_data["captain"]
+                players_str = team_data["players_str"]
+                points = team_data["points"]
+                original_index = team_data["index"]
+                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+
+                teams_text.append(
+                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('kalahari', 'kalahari')}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    + "\n".join(teams_text)
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            view = BRBermudaView(self.guild_id, self.channel_id)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating BR message for Kalahari: {e}")
+
+
+class BRConfirmResultsButton(Button):
+    """Button to confirm and show final results."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Показать итоги",
+            custom_id=f"br_confirm_results:{guild_id}:{channel_id}"
         )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Transition to RESULTS phase
+        self.tournament.phase = BRTournamentPhase.RESULTS
+        br_store.set(self.tournament)
+
+        # Close the ephemeral menu
+        await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+
+        # Update main message with final results embed
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not self.tournament.message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(self.tournament.message_id)
+
+            # Calculate total points for all maps
+            teams_with_total_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(self.tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate total points across all maps
+                stats = team.get("stats", {})
+                total_points = 0
+                for map_name in ["bermuda", "purgatory", "kalahari"]:
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            total_points += (13 - place) + kills
+
+                teams_with_total_points.append({
+                    "captain": captain,
+                    "team_name": team_name,
+                    "players_str": players_str,
+                    "total_points": total_points,
+                    "index": i
+                })
+
+            # Sort by total points descending
+            teams_with_total_points.sort(key=lambda x: x["total_points"], reverse=True)
+
+            teams_text = []
+            for i, team_data in enumerate(teams_with_total_points):
+                captain = team_data["captain"]
+                players_str = team_data["players_str"]
+                total_points = team_data["total_points"]
+                original_index = team_data["index"]
+                num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
+
+                # Add trophy for winner
+                if i == 0:
+                    teams_text.append(
+                        f"{get_emoji('trophy')} **{captain}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
+                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    )
+                else:
+                    teams_text.append(
+                        f"{num_emoji} {captain} ({total_points} очков)\n"
+                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | ИТОГИ",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_directory')} Финальные результаты\n\n"
+                    f"{replace_emojis('white_dot')} **Команды по очкам:**\n\n"
+                    + "\n".join(teams_text)
+                ),
+                color=discord.Color.gold()
+            )
+
+            view = BRResultsView(self.guild_id, self.channel_id)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating BR message for results: {e}")
+
+
+class BRResultsView(View):
+    """View for BR results phase."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        self.add_item(BROrganizerMenuButton(guild_id, channel_id))
 
 
 class BRPurgatoryButton(Button):
@@ -1483,7 +1747,28 @@ class BRPurgatoryButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        # Get the main BR message and edit it
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not tournament.message_id:
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            message = await channel.fetch_message(tournament.message_id)
+            await message.edit(embed=embed, view=view)
+            await interaction.response.send_message(
+                "✅ Переход к Чистилище.",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error updating BR message for Purgatory: {e}")
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
+            )
 
 
 class BRKalahariButton(Button):
@@ -1586,76 +1871,28 @@ class BRKalahariButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
-
-        map_names = {
-            "bermuda": "Бермуды",
-            "purgatory": "Чистилище",
-            "kalahari": "Калахари"
-        }
-
-        # Build teams section with current map points (sorted by points)
-        teams_with_points = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-
-        for i, team in enumerate(tournament.teams):
-            captain = team.get("captain", "Unknown")
-            team_name = team.get("name", f"Команда {i+1}")
-            players = team.get("players", [])
-            players_str = ", ".join(players) if players else ""
-
-            # Calculate points for current map only
-            stats = team.get("stats", {})
-            map_points = 0
-            if "bermuda" in stats:
-                map_stats = stats["bermuda"]
-                place = map_stats.get("place", 0)
-                kills = map_stats.get("kills", 0)
-                if place > 0:
-                    map_points = (13 - place) + kills
-
-            teams_with_points.append({
-                "captain": captain,
-                "team_name": team_name,
-                "players_str": players_str,
-                "points": map_points,
-                "index": i
-            })
-
-        # Sort by points descending
-        teams_with_points.sort(key=lambda x: x["points"], reverse=True)
-
-        teams_text = []
-        for team_data in teams_with_points:
-            captain = team_data["captain"]
-            players_str = team_data["players_str"]
-            points = team_data["points"]
-            original_index = team_data["index"]
-            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
-
-            teams_text.append(
-                f"{num_emoji} {captain} ({points} очков)\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+        # Get the main BR message and edit it
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not tournament.message_id:
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
             )
+            return
 
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('bermuda', 'bermuda')}",
-            description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
-                f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
-                + "\n".join(teams_text)
-            ),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-
-        # Create view with stats button
-        view = BRBermudaView(self.guild_id, self.channel_id)
-
-        await interaction.response.edit_message(embed=embed, view=view)
+        try:
+            message = await channel.fetch_message(tournament.message_id)
+            await message.edit(embed=embed, view=view)
+            await interaction.response.send_message(
+                "✅ Переход к Калахари.",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error updating BR message for Kalahari: {e}")
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
+            )
 
 
 class TeamNameButton(Button):
