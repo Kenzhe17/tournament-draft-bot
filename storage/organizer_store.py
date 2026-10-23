@@ -90,17 +90,30 @@ class ChannelOrganizers:
         Returns:
             True if successful, False if user not found
         """
-        if new_organizer_id not in self.all_organizers():
-            return False
+        # If new organizer is already in the list, just swap
+        if new_organizer_id in self.all_organizers():
+            # Swap: current main becomes additional, new user becomes main
+            if self.organizer_id and self.organizer_id != new_organizer_id:
+                if self.organizer_id not in self.additional_organizers:
+                    self.additional_organizers.append(self.organizer_id)
 
-        # Swap: current main becomes additional, new user becomes main
-        if self.organizer_id and self.organizer_id != new_organizer_id:
-            if self.organizer_id not in self.additional_organizers:
-                self.additional_organizers.append(self.organizer_id)
+            self.organizer_id = new_organizer_id
+            if new_organizer_id in self.additional_organizers:
+                self.additional_organizers.remove(new_organizer_id)
+        else:
+            # New organizer is not in the list - add them as main
+            # Keep current main as additional if they exist
+            if self.organizer_id and self.organizer_id != new_organizer_id:
+                if self.organizer_id not in self.additional_organizers:
+                    self.additional_organizers.append(self.organizer_id)
 
-        self.organizer_id = new_organizer_id
-        if new_organizer_id in self.additional_organizers:
-            self.additional_organizers.remove(new_organizer_id)
+            self.organizer_id = new_organizer_id
+
+        # Check limit after transfer
+        if len(self.all_organizers()) > 3:
+            # Remove the last additional organizer if over limit
+            if self.additional_organizers:
+                self.additional_organizers.pop()
 
         return True
 
