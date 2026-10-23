@@ -9,15 +9,9 @@ from discord.ext import commands
 from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
 from storage.organizer_store import organizer_store
 from storage.json_store import store
+from views.organizer_view import TOURNAMENT_CHANNELS
 
 logger = logging.getLogger(__name__)
-
-# Tournament channels
-TOURNAMENT_CHANNELS = [
-    1549809898643001484,
-    1563149967303118949,
-    1563149951033151609,
-]
 
 
 class OrganizerCog(commands.Cog):
@@ -49,8 +43,9 @@ class OrganizerCog(commands.Cog):
         embed = self._build_multi_channel_embed(interaction.guild)
 
         # Создать view для управления
-        from views.organizer_view import OrganizerMenuView
-        view = OrganizerMenuView(interaction.guild_id, interaction.channel_id)
+        from views.organizer_view import OrganizerManagementButton
+        view = View()
+        view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
 
         message = await interaction.response.send_message(embed=embed, view=view)
 

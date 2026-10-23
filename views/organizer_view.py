@@ -8,21 +8,60 @@ from discord.ui import Modal, TextInput, View, Button, button, Select
 from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
 from storage.organizer_store import organizer_store
 from storage.json_store import store
+from cogs.organizer import TOURNAMENT_CHANNELS
 
 logger = logging.getLogger(__name__)
+
+
+class ChannelSelect(Select):
+    """Select menu to choose tournament channel."""
+
+    def __init__(self, guild_id: int, guild: discord.Guild):
+        super().__init__(
+            placeholder="Выберите канал турнира",
+            custom_id="org_channel_select"
+        )
+        self.guild_id = guild_id
+        self.guild = guild
+
+        # Add options for each tournament channel
+        for channel_id in TOURNAMENT_CHANNELS:
+            channel = guild.get_channel(channel_id)
+            if channel:
+                self.add_option(
+                    label=channel.name,
+                    value=str(channel_id)
+                )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        channel_id = int(self.values[0])
+        view = OrganizerMenuView(self.guild_id, channel_id)
+        await interaction.response.edit_message(view=view)
+
+
+class ChannelSelectView(View):
+    """View to select which tournament channel to manage."""
+
+    def __init__(self, guild_id: int, guild: discord.Guild):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.guild = guild
+
+        # Add select menu for channel selection
+        self.add_item(ChannelSelect(guild_id, guild))
 
 
 class OrganizerManagementButton(Button):
     """Button to open organizer management menu."""
 
-    def __init__(self, guild_id: int, channel_id: int):
+    def __init__(self, guild_id: int, guild: discord.Guild):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Управление организаторами",
-            custom_id=f"org_manage:{guild_id}:{channel_id}"
+            custom_id=f"org_manage:{guild_id}"
         )
         self.guild_id = guild_id
-        self.channel_id = channel_id
+        self.guild = guild
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Check if user has MANAGER_ROLE_ID
@@ -34,8 +73,8 @@ class OrganizerManagementButton(Button):
             )
             return
 
-        # Open management view
-        view = OrganizerMenuView(self.guild_id, self.channel_id)
+        # Open channel selection view
+        view = ChannelSelectView(self.guild_id, self.guild)
         await interaction.response.send_message(view=view, ephemeral=True)
 
 
