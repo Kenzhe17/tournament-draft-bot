@@ -302,46 +302,46 @@ class TournamentBot(commands.Bot):
                         if tournament.phase != TournamentPhase.DRAFT:
                             continue
 
-                    # Check if current picker exists
-                    picker_pos = tournament.current_picker_position()
-                    if picker_pos is None:
-                        continue
+                        # Check if current picker exists
+                        picker_pos = tournament.current_picker_position()
+                        if picker_pos is None:
+                            continue
 
-                    # Check if time has expired
-                    remaining_time = tournament.get_draft_pick_remaining_time()
-                    if remaining_time > 0:
-                        # Update message to show countdown every 5 seconds
-                        await self.update_tournament_message(guild, tournament)
-                    else:
-                        # Time expired - make random pick
-                        logger.info(f"Draft timer expired for guild {guild.id}, making random pick")
-                        random_pick = tournament.pick_random_player()
-                        if random_pick:
-                            picker_pos, player = random_pick
-                            tournament.pick_player(picker_pos, player)
-                            draft_complete = tournament.advance_after_pick()
-                            store.set(tournament)
-                            
-                            # Update tournament message
+                        # Check if time has expired
+                        remaining_time = tournament.get_draft_pick_remaining_time()
+                        if remaining_time > 0:
+                            # Update message to show countdown every 5 seconds
                             await self.update_tournament_message(guild, tournament)
-                            
-                            # Delete old draft message if exists
-                            if tournament.draft_message_id > 0:
-                                try:
-                                    channel = guild.get_channel(tournament.channel_id)
-                                    if channel:
-                                        old_message = await channel.fetch_message(tournament.draft_message_id)
-                                        await old_message.delete()
-                                except Exception:
-                                    pass
-                            
-                            # Send new draft message with next captain ping if draft not complete
-                            if not draft_complete:
-                                next_picker_pos = tournament.current_picker_position()
-                                if next_picker_pos is not None:
-                                    next_captain_name = tournament.captains[tournament.captain_order[next_picker_pos]]
-                                    next_captain_id = tournament.player_user_ids.get(next_captain_name, 0)
-                                    channel = guild.get_channel(tournament.channel_id)
+                        else:
+                            # Time expired - make random pick
+                            logger.info(f"Draft timer expired for guild {guild.id}, making random pick")
+                            random_pick = tournament.pick_random_player()
+                            if random_pick:
+                                picker_pos, player = random_pick
+                                tournament.pick_player(picker_pos, player)
+                                draft_complete = tournament.advance_after_pick()
+                                store.set(tournament)
+
+                                # Update tournament message
+                                await self.update_tournament_message(guild, tournament)
+
+                                # Delete old draft message if exists
+                                if tournament.draft_message_id > 0:
+                                    try:
+                                        channel = guild.get_channel(tournament.channel_id)
+                                        if channel:
+                                            old_message = await channel.fetch_message(tournament.draft_message_id)
+                                            await old_message.delete()
+                                    except Exception:
+                                        pass
+
+                                # Send new draft message with next captain ping if draft not complete
+                                if not draft_complete:
+                                    next_picker_pos = tournament.current_picker_position()
+                                    if next_picker_pos is not None:
+                                        next_captain_name = tournament.captains[tournament.captain_order[next_picker_pos]]
+                                        next_captain_id = tournament.player_user_ids.get(next_captain_name, 0)
+                                        channel = guild.get_channel(tournament.channel_id)
                                     if channel:
                                         if next_captain_id > 0:
                                             new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n{replace_emojis('white_arrow')} <@{next_captain_id}> - ваша очередь выбирать!")
