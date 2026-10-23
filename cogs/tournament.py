@@ -24,7 +24,7 @@ from storage.user_balance_store import user_balance_store
 from storage.user_bank_store import user_bank_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
-from utils.permissions import is_admin, is_org, is_bot_owner
+from utils.permissions import is_admin, is_org, is_bot_owner, is_channel_organizer_decorator
 from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
 from views.org_role_view import setup_org_role_message
 
@@ -128,6 +128,16 @@ class TournamentCog(commands.Cog):
 
         tournament.message_id = message.id
         store.set(tournament)
+
+        # Add organizer to channel organizers
+        from storage.organizer_store import ChannelOrganizers, organizer_store
+        channel_orgs = organizer_store.get(interaction.guild_id, interaction.channel_id)
+        if not channel_orgs:
+            channel_orgs = ChannelOrganizers()
+        channel_orgs.organizer_id = interaction.user.id
+        channel_orgs.tournament_id = tournament.id
+        organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
+
         logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
         # Log tournament creation
@@ -135,7 +145,7 @@ class TournamentCog(commands.Cog):
         await log_tournament_created(self.bot, interaction.guild, interaction.user, size, formation)
 
     @tournament_group.command(name="delete", description="Удалить активный турнир")
-    @is_org()
+    @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
         existing = store.get(interaction.guild_id, interaction.channel_id)

@@ -18,22 +18,21 @@ if TYPE_CHECKING:
 DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 ORG_SLOT_FILE = DATA_DIR / "org_slot.json"
+MAX_ORG_ROLE_HOLDERS = 3
 
 
 class OrgSlotState:
     """Состояние слота организатора."""
 
     def __init__(self):
-        self.occupied = False
-        self.organizer_id = 0
+        self.organizers: list[int] = []  # List of organizer IDs
         self.guild_id = 0
         self.message_id = 0
         self.channel_id = 0
 
     def to_dict(self) -> dict:
         return {
-            "occupied": self.occupied,
-            "organizer_id": self.organizer_id,
+            "organizers": self.organizers,
             "guild_id": self.guild_id,
             "message_id": self.message_id,
             "channel_id": self.channel_id,
@@ -42,8 +41,7 @@ class OrgSlotState:
     @classmethod
     def from_dict(cls, data: dict) -> "OrgSlotState":
         state = cls()
-        state.occupied = data.get("occupied", False)
-        state.organizer_id = data.get("organizer_id", 0)
+        state.organizers = data.get("organizers", [])
         state.guild_id = data.get("guild_id", 0)
         state.message_id = data.get("message_id", 0)
         state.channel_id = data.get("channel_id", 0)
@@ -78,7 +76,7 @@ class TakeRoleButton(discord.ui.Button):
         super().__init__(
             label="Взять роль",
             style=discord.ButtonStyle.green,
-            disabled=state.occupied,
+            disabled=len(state.organizers) >= MAX_ORG_ROLE_HOLDERS,
             custom_id="org_take_role"
         )
         self.state = state
@@ -86,9 +84,16 @@ class TakeRoleButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
 
-        if state.occupied:
+        if interaction.user.id in state.organizers:
             await interaction.response.send_message(
-                f"❌ Слот организатора сейчас занят пользователем <@{state.organizer_id}>!",
+                "❌ У вас уже есть роль организатора!",
+                ephemeral=True
+            )
+            return
+
+        if len(state.organizers) >= MAX_ORG_ROLE_HOLDERS:
+            await interaction.response.send_message(
+                f"❌ Достигнут лимит организаторов ({MAX_ORG_ROLE_HOLDERS})!",
                 ephemeral=True
             )
             return
@@ -113,8 +118,7 @@ class TakeRoleButton(discord.ui.Button):
             await interaction.user.add_roles(role)
 
             # Update state
-            state.occupied = True
-            state.organizer_id = interaction.user.id
+            state.organizers.append(interaction.user.id)
             state.guild_id = interaction.guild.id
             state.channel_id = interaction.channel.id
             state.message_id = interaction.message.id
@@ -146,7 +150,7 @@ class ReleaseRoleButton(discord.ui.Button):
         super().__init__(
             label="Сдать роль",
             style=discord.ButtonStyle.red,
-            disabled=not state.occupied,
+            disabled=not state.organizers,
             custom_id="org_release_role"
         )
         self.state = state
@@ -154,13 +158,13 @@ class ReleaseRoleButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
 
-        # Check if user is the current organizer or admin
+        # Check if user is an organizer or admin
         is_admin = interaction.user.guild_permissions.administrator
-        is_organizer = interaction.user.id == state.organizer_id
+        is_organizer = interaction.user.id in state.organizers
 
         if not (is_admin or is_organizer):
             await interaction.response.send_message(
-                "❌ Вы не являетесь текущим организатором!",
+                "❌ Вы не являетесь организатором!",
                 ephemeral=True
             )
             return
@@ -173,17 +177,14 @@ class ReleaseRoleButton(discord.ui.Button):
             return
 
         try:
-            # Remove role from current organizer
-            if state.organizer_id > 0:
-                organizer = interaction.guild.get_member(state.organizer_id)
-                if organizer:
-                    role = interaction.guild.get_role(ORG_ROLE_ID)
-                    if role:
-                        await organizer.remove_roles(role)
+            # Remove role from user
+            role = interaction.guild.get_role(ORG_ROLE_ID)
+            if role and role in interaction.user.roles:
+                await interaction.user.remove_roles(role)
 
-            # Reset state
-            state.occupied = False
-            state.organizer_id = 0
+            # Update state
+            if interaction.user.id in state.organizers:
+                state.organizers.remove(interaction.user.id)
             save_state(state)
 
             # Rebuild view with updated state
@@ -241,8 +242,7 @@ class ResetButton(discord.ui.Button):
                         await member.remove_roles(role)
 
             # Reset state
-            state.occupied = False
-            state.organizer_id = 0
+            state.organizers = []
             save_state(state)
 
             # Rebuild view with updated state
@@ -282,24 +282,30 @@ class OrgRoleView(discord.ui.View):
 def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.Embed:
     """Построить embed для управления ролью организатора."""
     # Build status section
-    if state.occupied:
+    count = len(state.organizers)
+    if count > 0:
+        organizer_names = []
+        for org_id in state.organizers:
+            member = guild.get_member(org_id)
+            name = member.display_name if member else f"<@{org_id}>"
+            organizer_names.append(name)
         status_section = (
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Занят**\n"
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организатор:** <@{state.organizer_id}>"
+            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS})\n"
+            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:** {', '.join(organizer_names)}"
         )
     else:
         status_section = (
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Свободен**\n"
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организатор:** **Никого**"
+            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Свободен** (0/{MAX_ORG_ROLE_HOLDERS})\n"
+            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:** **Никого**"
         )
 
     description = (
         f"{replace_emojis('white_arrow')} **Система бронирования роли Организатора**\n\n"
-        f"Чтобы избежать багов и накладок, роль одновременно может удерживать только **1 Организатор**.\n\n"
+        f"Чтобы избежать багов и накладок, роль одновременно могут удерживать до **{MAX_ORG_ROLE_HOLDERS} Организаторов**.\n\n"
         f"{replace_emojis('a_sparkle')} **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Нажмите **«Взять роль»**, чтобы забронировать время и получить роль.\n"
         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} После завершения турнира обязательно нажмите **«Сдать роль»**.\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка заблокирована — слот занят другим организатором.\n\n"
+        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка заблокирована — слот полон ({MAX_ORG_ROLE_HOLDERS}).\n\n"
         f"{replace_emojis('a_sparkle')} **ТЕКУЩИЙ СТАТУС:**\n"
         f"{status_section}\n\n"
         f"{replace_emojis('a_sparkle')} *Администрация оставляет за собой право сбросить роль в любой момент.*"

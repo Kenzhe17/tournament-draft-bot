@@ -4,6 +4,7 @@ import discord
 from discord import app_commands
 
 from config import BOT_OWNER_ID
+from storage.organizer_store import organizer_store
 
 
 def is_admin() -> app_commands.check:
@@ -72,6 +73,37 @@ def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
         return True
 
     return False
+
+
+def is_channel_organizer(user: discord.Member, guild: discord.Guild, channel_id: int) -> bool:
+    """Проверка: является ли пользователь организатором канала."""
+    # Check if user is global org/admin
+    if is_org_check(user, guild):
+        return True
+
+    # Check channel organizers
+    channel_orgs = organizer_store.get(guild.id, channel_id)
+    if channel_orgs and channel_orgs.is_organizer(user.id):
+        return True
+
+    return False
+
+
+def is_channel_organizer_decorator() -> app_commands.check:
+    """Декоратор: только организатор канала или глобальный org/admin."""
+
+    async def predicate(interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            raise app_commands.CheckFailure("❌ Эта команда доступна только на сервере.")
+
+        if is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
+            return True
+
+        raise app_commands.CheckFailure(
+            "❌ Эта команда доступна только организаторам канала или глобальным организаторам."
+        )
+
+    return app_commands.check(predicate)
 
 
 def is_bot_owner() -> app_commands.check:
