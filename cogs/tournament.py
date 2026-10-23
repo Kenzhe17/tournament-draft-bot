@@ -243,8 +243,9 @@ class TournamentCog(commands.Cog):
         captain_count = tournament.captain_count
         required_players = int(tournament.size.value)
 
-        # Generate unique negative user_ids to avoid conflicts between tournaments
-        base_user_id = -(interaction.guild_id * 1000 + interaction.channel_id * 10)
+        # Generate unique negative user_ids within int64 range
+        # Use guild_id and channel_id to create unique base, but keep it small
+        base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
 
         if tournament.formation_mode == FormationMode.RANDOM:
             # RANDOM mode: fill players_pool

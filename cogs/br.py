@@ -224,8 +224,8 @@ class BRCog(commands.Cog):
         # Очистить существующих игроков
         tournament.clear_players()
 
-        # Generate unique negative user_ids based on guild/channel to avoid conflicts
-        base_user_id = -(interaction.guild_id * 1000 + interaction.channel_id * 10)
+        # Generate unique negative user_ids within int64 range
+        base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
 
         # Добавить 48 ботов
         for i in range(1, 49):

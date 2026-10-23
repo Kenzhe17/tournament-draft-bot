@@ -173,9 +173,14 @@ class PetStore:
             # Проверить дневной лимит (упрощённо - можно добавить таблицу для отслеживания)
             new_exp = min(pet.exp + exp, pet.exp + max_daily)
 
-            # Уровень = exp // 50 + 1 (каждые 50 опыта = +1 уровень)
-            # Максимальный уровень = 100
-            new_level = min(new_exp // 50 + 1, 100)
+            # Уровень: каждый уровень требует на 25 exp больше предыдущего
+            # Level 1: 75 exp, Level 2: 100 exp, Level 3: 125 exp, etc.
+            # Formula: level = 1 + (exp - 75) // 25, but only if exp >= 75
+            # Max level = 10
+            if new_exp >= 75:
+                new_level = min(1 + (new_exp - 75) // 25, 10)
+            else:
+                new_level = 1
 
             # Обновить
             await conn.execute(
