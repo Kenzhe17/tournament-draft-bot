@@ -972,10 +972,9 @@ class MapSelectMenu(Select):
                 "kalahari": "Калахари"
             }
 
-            # Build teams section with current points
-            teams_text = []
-            team_emojis = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
-                          7: "num_7", 8: "num_8", 9: "num_9", 10: "num_10", 11: "num_11", 12: "num_12"}
+            # Build teams section with current map points (sorted by points)
+            teams_with_points = []
+            num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
@@ -983,25 +982,30 @@ class MapSelectMenu(Select):
                 players = team.get("players", [])
                 all_players = [captain] + players
                 players_str = ", ".join(all_players)
-                emoji_key = team_emojis.get(i + 1, "num_1")
-                emoji = replace_emojis(emoji_key)
 
-                # Calculate total points so far
-                total_points = 0
+                # Calculate points for current map only
                 stats = team.get("stats", {})
-                for map_name in ["bermuda", "purgatory", "kalahari"]:
-                    if map_name in stats:
-                        map_stats = stats[map_name]
-                        place = map_stats.get("place", 0)
-                        kills = map_stats.get("kills", 0)
-                        # Points calculation: (13 - place) + kills
-                        if place > 0:
-                            total_points += (13 - place) + kills
+                map_points = 0
+                if value in stats:
+                    map_stats = stats[value]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    # Points calculation: (13 - place) + kills
+                    if place > 0:
+                        map_points = (13 - place) + kills
 
+                teams_with_points.append((map_points, i, captain, players_str))
+
+            # Sort by points (descending)
+            teams_with_points.sort(key=lambda x: x[0], reverse=True)
+
+            # Build display with sorted teams
+            teams_text = []
+            for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
-                    f"{emoji} **{team_name}** ({total_points} очков)\n"
-                    f"┣ **Капитан:** {captain}\n"
-                    f"┗ **Состав:** {players_str}\n"
+                    f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
             embed = discord.Embed(
@@ -1012,7 +1016,7 @@ class MapSelectMenu(Select):
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {map_names.get(value, value)}\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get(value, value)}\n\n"
-                    f"{replace_emojis('white_dot')} **Команды:**\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
                     f"{replace_emojis('white_dot')} **Правила:**\n"
                     f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
@@ -1272,10 +1276,9 @@ class BRStatsModal(Modal):
         # Сохранить
         br_store.set(tournament)
 
-        # Build teams section with current points
-        teams_text = []
-        team_emojis = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
-                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_10", 11: "num_11", 12: "num_12"}
+        # Build teams section with current map points (sorted by points)
+        teams_with_points = []
+        num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1283,25 +1286,30 @@ class BRStatsModal(Modal):
             players = team.get("players", [])
             all_players = [captain] + players
             players_str = ", ".join(all_players)
-            emoji_key = team_emojis.get(i + 1, "num_1")
-            emoji = replace_emojis(emoji_key)
 
-            # Calculate total points so far
-            total_points = 0
+            # Calculate points for current map only
             stats = team.get("stats", {})
-            for map_name in ["bermuda", "purgatory", "kalahari"]:
-                if map_name in stats:
-                    map_stats = stats[map_name]
-                    place = map_stats.get("place", 0)
-                    kills = map_stats.get("kills", 0)
-                    # Points calculation: (13 - place) + kills
-                    if place > 0:
-                        total_points += (13 - place) + kills
+            map_points = 0
+            if self.map_name in stats:
+                map_stats = stats[self.map_name]
+                place = map_stats.get("place", 0)
+                kills = map_stats.get("kills", 0)
+                # Points calculation: (13 - place) + kills
+                if place > 0:
+                    map_points = (13 - place) + kills
 
+            teams_with_points.append((map_points, i, captain, players_str))
+
+        # Sort by points (descending)
+        teams_with_points.sort(key=lambda x: x[0], reverse=True)
+
+        # Build display with sorted teams
+        teams_text = []
+        for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
             teams_text.append(
-                f"{emoji} **{team_name}** ({total_points} очков)\n"
-                f"┣ **Капитан:** {captain}\n"
-                f"┗ **Состав:** {players_str}\n"
+                f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
         # Проверить все ли команды заполнили статистику для текущей карты
@@ -1380,6 +1388,41 @@ class BRStatsModal(Modal):
                 elif tournament.phase == BRTournamentPhase.KALAHARI:
                     next_map = "Калахари"
 
+                # Build teams section with next map points (sorted)
+                teams_with_points = []
+                num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
+
+                for i, team in enumerate(tournament.teams):
+                    captain = team.get("captain", "Unknown")
+                    players = team.get("players", [])
+                    all_players = [captain] + players
+                    players_str = ", ".join(all_players)
+
+                    # Calculate points for next map only
+                    stats = team.get("stats", {})
+                    map_points = 0
+                    next_map_key = "purgatory" if tournament.phase == BRTournamentPhase.PURGATORY else "kalahari"
+                    if next_map_key in stats:
+                        map_stats = stats[next_map_key]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            map_points = (13 - place) + kills
+
+                    teams_with_points.append((map_points, i, captain, players_str))
+
+                # Sort by points (descending)
+                teams_with_points.sort(key=lambda x: x[0], reverse=True)
+
+                # Build display with sorted teams
+                teams_text = []
+                for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
+                    num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                    teams_text.append(
+                        f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    )
+
                 embed = discord.Embed(
                     title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {next_map}",
                     description=(
@@ -1388,7 +1431,7 @@ class BRStatsModal(Modal):
                         f"{replace_emojis('sub_middle')} Формат: Random\n"
                         f"{replace_emojis('sub_middle')} Фаза: {next_map}\n"
                         f"{replace_emojis('sub_directory')} Карта: {next_map}\n\n"
-                        f"{replace_emojis('white_dot')} **Команды:**\n"
+                        f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                         + "\n".join(teams_text) + "\n\n"
                         f"{replace_emojis('white_dot')} **Статус:**\n"
                         f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
@@ -1409,6 +1452,40 @@ class BRStatsModal(Modal):
 
             current_map_name = map_names.get(tournament.current_map, tournament.current_map)
 
+            # Build teams section with current map points (sorted)
+            teams_with_points = []
+            num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
+
+            for i, team in enumerate(tournament.teams):
+                captain = team.get("captain", "Unknown")
+                players = team.get("players", [])
+                all_players = [captain] + players
+                players_str = ", ".join(all_players)
+
+                # Calculate points for current map only
+                stats = team.get("stats", {})
+                map_points = 0
+                if tournament.current_map in stats:
+                    map_stats = stats[tournament.current_map]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    if place > 0:
+                        map_points = (13 - place) + kills
+
+                teams_with_points.append((map_points, i, captain, players_str))
+
+            # Sort by points (descending)
+            teams_with_points.sort(key=lambda x: x[0], reverse=True)
+
+            # Build display with sorted teams
+            teams_text = []
+            for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                teams_text.append(
+                    f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                )
+
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
                 description=(
@@ -1417,7 +1494,7 @@ class BRStatsModal(Modal):
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
                     f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
-                    f"{replace_emojis('white_dot')} **Команды:**\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
                     f"{replace_emojis('white_dot')} **Правила:**\n"
                     f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
