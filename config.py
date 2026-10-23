@@ -212,9 +212,9 @@ GAME_EMOJIS = {
     "num_7": os.getenv("EMOJI_NUM_7", ""),
     "num_8": os.getenv("EMOJI_NUM_8", ""),
     "num_9": os.getenv("EMOJI_NUM_9", ""),
-    "num_10": os.getenv("EMOJI_NUM_10", ""),
-    "num_11": os.getenv("EMOJI_NUM_11", ""),
-    "num_12": os.getenv("EMOJI_NUM_12", ""),
+    "num_10": os.getenv("EMOJI_NUM_TEN", ""),
+    "num_11": os.getenv("EMOJI_NUM_ELEVEN", ""),
+    "num_12": os.getenv("EMOJI_NUM_TWELVE", ""),
 
     # Icon emojis
     "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
