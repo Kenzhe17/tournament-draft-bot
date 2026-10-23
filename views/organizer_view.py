@@ -434,24 +434,36 @@ class TransferOrganizerButton(Button):
             )
             return
 
-        # Create select menu with other organizers
-        all_orgs = channel_orgs.all_organizers()
-        options = []
+        # Get all users with MANAGER_ROLE_ID
+        manager_role = interaction.guild.get_role(MANAGER_ROLE_ID)
+        if not manager_role:
+            await interaction.response.send_message(
+                "❌ MANAGER_ROLE_ID не настроен.",
+                ephemeral=True
+            )
+            return
 
-        for org_id in all_orgs:
-            if org_id != channel_orgs.organizer_id:
-                member = interaction.guild.get_member(org_id)
-                if member:
-                    options.append(
-                        discord.SelectOption(
-                            label=member.display_name,
-                            value=str(org_id)
-                        )
+        # Get all users who are organizers in any tournament channel
+        all_tournament_organizers = set()
+        for channel_id in TOURNAMENT_CHANNELS:
+            orgs = organizer_store.get(self.guild_id, channel_id)
+            if orgs:
+                all_tournament_organizers.update(orgs.all_organizers())
+
+        # Create options for users with MANAGER_ROLE_ID who are NOT tournament organizers
+        options = []
+        for member in manager_role.members:
+            if member.id not in all_tournament_organizers:
+                options.append(
+                    discord.SelectOption(
+                        label=member.display_name,
+                        value=str(member.id)
                     )
+                )
 
         if not options:
             await interaction.response.send_message(
-                "❌ Нет других организаторов для передачи прав.",
+                "❌ Нет свободных организаторов (все с MANAGER_ROLE_ID уже организаторы в турнирах).",
                 ephemeral=True
             )
             return
