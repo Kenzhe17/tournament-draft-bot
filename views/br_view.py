@@ -268,11 +268,6 @@ class StartBRButton(Button):
         view = BRTeamsView(tournament.guild_id, tournament.channel_id, tournament)
 
         await interaction.response.edit_message(embed=embed, view=view)
-
-        await interaction.followup.send(
-            "✅ BR турнир запущен!",
-            ephemeral=True
-        )
         logger.info("BR турнир запущен в канале %s сервера %s", self.channel_id, self.guild_id)
 
 
@@ -703,6 +698,69 @@ class BRTeamsView(View):
 
         # Add single dynamic Team Name button (only for captains who haven't renamed yet)
         self.add_item(TeamNameButton(guild_id, channel_id, tournament))
+
+        # Add Start Bermuda button (for bot owner)
+        self.add_item(StartBermudaButton(guild_id, channel_id))
+
+
+class StartBermudaButton(Button):
+    """Button to start Bermuda phase."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Start Bermuda",
+            custom_id=f"br_start_bermuda:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может начать Bermuda.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Transition to Bermuda phase
+        tournament.phase = BRTournamentPhase.BERMUDA
+        tournament.current_map = "bermuda"
+        br_store.set(tournament)
+
+        # Create view for map selection
+        view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+
+        map_names = {
+            "bermuda": "Бермуды",
+            "purgatory": "Чистилище",
+            "kalahari": "Калахари"
+        }
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get('bermuda', 'bermuda')}",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: {map_names.get('bermuda', 'bermuda')}\n"
+                f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class TeamNameButton(Button):
