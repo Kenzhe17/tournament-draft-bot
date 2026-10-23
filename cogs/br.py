@@ -94,6 +94,10 @@ class BRCog(commands.Cog):
         from views.br_view import BRRegistrationView
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
 
+        # Build player list for embed
+        player_names = [p["name"] for p in tournament.players]
+        players_text = ", ".join(player_names) if player_names else "*"
+
         # Создать embed в стиле tournament create
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
@@ -103,6 +107,8 @@ class BRCog(commands.Cog):
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('white_dot')} **Игроки:**\n"
+                f"{replace_emojis('white_arrow')} {players_text}\n\n"
                 f"{replace_emojis('white_dot')} **Правила:**\n"
                 f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"

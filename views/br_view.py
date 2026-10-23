@@ -43,6 +43,9 @@ class BRRegistrationView(View):
         # Кнопка "Выйти"
         self.add_item(LeaveBRButton(guild_id, channel_id))
 
+        # Кнопка "Удалить игрока" (только для владельца)
+        self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
+
         # Кнопка меню организатора (только для владельца)
         self.add_item(BROrganizerMenuButton(guild_id, channel_id))
 
@@ -274,7 +277,7 @@ class JoinBRButton(Button):
         # Добавить игрока
         if not tournament.add_player(user_name, user_id):
             await interaction.response.send_message(
-                "❌ Не удалось присоединиться (лимит 48 или уже зарегистрирован).",
+                "❌ Не удалось присоединиться (лимит 48 или уже зарегистрирован, или вы в другом турнире).",
                 ephemeral=True
             )
             return
@@ -282,12 +285,29 @@ class JoinBRButton(Button):
         # Сохранить
         br_store.set(tournament)
 
-        # Обновить embed
-        embed = interaction.message.embeds[0]
-        embed.description = f"Формат: **Random**\n" \
-                           f"Фаза: **Регистрация**\n" \
-                           f"Игроков: **{len(tournament.players)}/48**"
-        await interaction.response.edit_message(embed=embed)
+        # Обновить embed с текущим списком игроков
+        player_names = [p["name"] for p in tournament.players]
+        players_text = ", ".join(player_names) if player_names else "*"
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('white_dot')} **Игроки:**\n"
+                f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+        await interaction.response.edit_message(embed=embed, view=view)
 
         await interaction.followup.send(
             f"✅ Вы зарегистрированы как {user_name}!",
@@ -329,16 +349,154 @@ class LeaveBRButton(Button):
         # Сохранить
         br_store.set(tournament)
 
-        # Обновить embed
-        embed = interaction.message.embeds[0]
-        embed.description = f"Формат: **Random**\n" \
-                           f"Фаза: **Регистрация**\n" \
-                           f"Игроков: **{len(tournament.players)}/48**"
-        await interaction.response.edit_message(embed=embed)
+        # Обновить embed с текущим списком игроков
+        player_names = [p["name"] for p in tournament.players]
+        players_text = ", ".join(player_names) if player_names else "*"
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('white_dot')} **Игроки:**\n"
+                f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+        await interaction.response.edit_message(embed=embed, view=view)
 
         await interaction.followup.send(
             "✅ Вы вышли из турнира.",
             ephemeral=True
+        )
+
+
+class DeleteBRPlayerButton(Button):
+    """Кнопка для удаления игрока из BR турнира (владелец бота)."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Удалить игрока",
+            custom_id=f"br_delete_player:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check if bot owner
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может удалять игроков.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Create select menu with all players
+        if not tournament.players:
+            await interaction.response.send_message(
+                "❌ Нет зарегистрированных игроков.",
+                ephemeral=True
+            )
+            return
+
+        options = []
+        for player in tournament.players:
+            options.append(
+                discord.SelectOption(
+                    label=player["name"],
+                    value=str(player["id"])
+                )
+            )
+
+        select = RemoveBRPlayerSelect(self.guild_id, self.channel_id, options)
+        view = View()
+        view.add_item(select)
+
+        await interaction.response.send_message(
+            "Выберите игрока для удаления:",
+            view=view,
+            ephemeral=True
+        )
+
+
+class RemoveBRPlayerSelect(Select):
+    """Select menu to choose player to remove."""
+
+    def __init__(self, guild_id: int, channel_id: int, options: list):
+        super().__init__(
+            placeholder="Выберите игрока",
+            options=options,
+            custom_id=f"br_remove_player_select:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        user_id = int(self.values[0])
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Remove player
+        if not tournament.remove_player(user_id):
+            await interaction.response.send_message(
+                "❌ Игрок не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Save
+        br_store.set(tournament)
+
+        # Update embed with current player list
+        player_names = [p["name"] for p in tournament.players]
+        players_text = ", ".join(player_names) if player_names else "*"
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('white_dot')} **Игроки:**\n"
+                f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+        await interaction.message.edit(embed=embed, view=view)
+
+        await interaction.response.edit_message(
+            content="✅ Игрок удален.",
+            view=None
         )
 
 
