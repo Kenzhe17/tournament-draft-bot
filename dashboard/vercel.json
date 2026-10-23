@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "env": {
+    "DATABASE_URL": "@database_url",
+    "DISCORD_CLIENT_ID": "@discord_client_id",
+    "DISCORD_CLIENT_SECRET": "@discord_client_secret",
+    "NEXTAUTH_SECRET": "@nextauth_secret",
+    "NEXTAUTH_URL": "@nextauth_url"
+  }
+}
