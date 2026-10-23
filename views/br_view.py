@@ -174,8 +174,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -185,7 +184,7 @@ class StartBRButton(Button):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{num_emoji} {captain}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -846,8 +845,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -857,7 +855,7 @@ class StartBRButton(Button):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{num_emoji} {captain}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -956,6 +954,44 @@ class StartBermudaButton(Button):
         # Create view for map selection
         view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
 
+        await interaction.response.edit_message(view=view)
+
+
+class BRBermudaView(View):
+    """View for Bermuda phase with stats button."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        self.add_item(BRStatsButton(guild_id, channel_id))
+
+
+class BRStatsButton(Button):
+    """Button to open stats entry."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Статистика",
+            custom_id=f"br_stats:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Create view for map selection
+        view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+
         map_names = {
             "bermuda": "Бермуды",
             "purgatory": "Чистилище",
@@ -964,8 +1000,7 @@ class StartBermudaButton(Button):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1003,7 +1038,7 @@ class StartBermudaButton(Button):
             num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                f"{num_emoji} {captain} ({points} очков)\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -1019,6 +1054,74 @@ class StartBermudaButton(Button):
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        map_names = {
+            "bermuda": "Бермуды",
+            "purgatory": "Чистилище",
+            "kalahari": "Калахари"
+        }
+
+        # Build teams section with current map points (sorted by points)
+        teams_with_points = []
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            players_str = ", ".join(players) if players else ""
+
+            # Calculate points for current map only
+            stats = team.get("stats", {})
+            map_points = 0
+            if "bermuda" in stats:
+                map_stats = stats["bermuda"]
+                place = map_stats.get("place", 0)
+                kills = map_stats.get("kills", 0)
+                if place > 0:
+                    map_points = (13 - place) + kills
+
+            teams_with_points.append({
+                "captain": captain,
+                "team_name": team_name,
+                "players_str": players_str,
+                "points": map_points,
+                "index": i
+            })
+
+        # Sort by points descending
+        teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+        teams_text = []
+        for team_data in teams_with_points:
+            captain = team_data["captain"]
+            players_str = team_data["players_str"]
+            points = team_data["points"]
+            original_index = team_data["index"]
+            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+
+            teams_text.append(
+                f"{num_emoji} {captain} ({points} очков)\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+            )
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('bermuda', 'bermuda')}",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
+                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                + "\n".join(teams_text)
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        # Create view with stats button
+        view = BRBermudaView(self.guild_id, self.channel_id)
 
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -1122,8 +1225,7 @@ class TeamNameModal(Modal):
 
         # Build teams section
         teams_text = []
-        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1133,7 +1235,7 @@ class TeamNameModal(Modal):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{num_emoji} {captain}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -1283,8 +1385,7 @@ class MapSelectMenu(Select):
 
             # Build teams section with current map points (sorted by points)
             teams_with_points = []
-            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
@@ -1314,7 +1415,7 @@ class MapSelectMenu(Select):
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
-                    f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                    f"{num_emoji} {captain} ({points} очков)\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
@@ -1474,8 +1575,7 @@ class BackToMapButton(Button):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
             emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             # Calculate total points so far
@@ -1700,8 +1800,7 @@ class BRStatsModal(Modal):
 
                 # Build teams section with next map points (sorted)
                 teams_with_points = []
-                num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+                num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
                 for i, team in enumerate(tournament.teams):
                     captain = team.get("captain", "Unknown")
@@ -1730,7 +1829,7 @@ class BRStatsModal(Modal):
                 for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
                     num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                     teams_text.append(
-                        f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                        f"{num_emoji} {captain} ({points} очков)\n"
                         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                     )
 
@@ -1765,8 +1864,7 @@ class BRStatsModal(Modal):
 
             # Build teams section with current map points (sorted)
             teams_with_points = []
-            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
-                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
@@ -1794,7 +1892,7 @@ class BRStatsModal(Modal):
             for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
-                    f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                    f"{num_emoji} {captain} ({points} очков)\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
