@@ -6,10 +6,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
+from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS
 from storage.organizer_store import organizer_store
 from storage.json_store import store
-from views.organizer_view import TOURNAMENT_CHANNELS
 
 logger = logging.getLogger(__name__)
 

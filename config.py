@@ -32,6 +32,10 @@ ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 # Manager role ID (for channel organizer management)
 MANAGER_ROLE_ID = int(os.getenv("MANAGER_ROLE_ID", "1551609736258920538"))
 
+# Tournament channels for organizer management (comma-separated list)
+TOURNAMENT_CHANNELS_RAW = os.getenv("TOURNAMENT_CHANNELS", "1549809898643001484,1563149967303118949,1563149951033151609")
+TOURNAMENT_CHANNELS = [int(x.strip()) for x in TOURNAMENT_CHANNELS_RAW.split(",") if x.strip()]
+
 # Battle Royale settings
 BR_ROLE_ID = int(os.getenv("BR_ROLE_ID", "0"))
 BR_ROOM_CHANNEL_ID = int(os.getenv("BR_ROOM_CHANNEL_ID", "0"))

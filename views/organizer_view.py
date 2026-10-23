@@ -5,10 +5,9 @@ import logging
 import discord
 from discord.ui import Modal, TextInput, View, Button, button, Select
 
-from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
+from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS
 from storage.organizer_store import organizer_store
 from storage.json_store import store
-from cogs.organizer import TOURNAMENT_CHANNELS
 
 logger = logging.getLogger(__name__)
 
