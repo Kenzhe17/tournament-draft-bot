@@ -222,16 +222,29 @@ class AddOrganizerSelect(Select):
 
     async def _update_message(self, interaction: discord.Interaction) -> None:
         """Update the organizer management message."""
-        channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
-        if not channel_orgs or not channel_orgs.message_id:
+        # Find which channel has the message ID
+        from config import TOURNAMENT_CHANNELS
+        from storage.organizer_store import organizer_store
+
+        message_id = None
+        update_channel_id = None
+
+        for channel_id in TOURNAMENT_CHANNELS:
+            channel_orgs = organizer_store.get(self.guild_id, channel_id)
+            if channel_orgs and channel_orgs.message_id:
+                message_id = channel_orgs.message_id
+                update_channel_id = channel_id
+                break
+
+        if not message_id or not update_channel_id:
             return
 
         try:
-            channel = interaction.guild.get_channel(self.channel_id)
+            channel = interaction.guild.get_channel(update_channel_id)
             if not channel:
                 return
 
-            message = await channel.fetch_message(channel_orgs.message_id)
+            message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog
@@ -306,16 +319,29 @@ class RemoveOrganizerButton(Button):
 
     async def _update_message(self, interaction: discord.Interaction) -> None:
         """Update the organizer management message."""
-        channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
-        if not channel_orgs or not channel_orgs.message_id:
+        # Find which channel has the message ID
+        from config import TOURNAMENT_CHANNELS
+        from storage.organizer_store import organizer_store
+
+        message_id = None
+        update_channel_id = None
+
+        for channel_id in TOURNAMENT_CHANNELS:
+            channel_orgs = organizer_store.get(self.guild_id, channel_id)
+            if channel_orgs and channel_orgs.message_id:
+                message_id = channel_orgs.message_id
+                update_channel_id = channel_id
+                break
+
+        if not message_id or not update_channel_id:
             return
 
         try:
-            channel = interaction.guild.get_channel(self.channel_id)
+            channel = interaction.guild.get_channel(update_channel_id)
             if not channel:
                 return
 
-            message = await channel.fetch_message(channel_orgs.message_id)
+            message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog
@@ -442,16 +468,29 @@ class TransferOrganizerSelect(Select):
 
     async def _update_message(self, interaction: discord.Interaction) -> None:
         """Update the organizer management message."""
-        channel_orgs = organizer_store.get(self.guild_id, self.channel_id)
-        if not channel_orgs or not channel_orgs.message_id:
+        # Find which channel has the message ID
+        from config import TOURNAMENT_CHANNELS
+        from storage.organizer_store import organizer_store
+
+        message_id = None
+        update_channel_id = None
+
+        for channel_id in TOURNAMENT_CHANNELS:
+            channel_orgs = organizer_store.get(self.guild_id, channel_id)
+            if channel_orgs and channel_orgs.message_id:
+                message_id = channel_orgs.message_id
+                update_channel_id = channel_id
+                break
+
+        if not message_id or not update_channel_id:
             return
 
         try:
-            channel = interaction.guild.get_channel(self.channel_id)
+            channel = interaction.guild.get_channel(update_channel_id)
             if not channel:
                 return
 
-            message = await channel.fetch_message(channel_orgs.message_id)
+            message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog

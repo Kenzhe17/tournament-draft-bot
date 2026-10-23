@@ -49,6 +49,15 @@ class OrganizerCog(commands.Cog):
 
         message = await interaction.response.send_message(embed=embed, view=view)
 
+        # Save message ID for the first tournament channel (for updates)
+        if TOURNAMENT_CHANNELS:
+            channel_orgs = organizer_store.get(interaction.guild_id, TOURNAMENT_CHANNELS[0])
+            if not channel_orgs:
+                from storage.organizer_store import ChannelOrganizers
+                channel_orgs = ChannelOrganizers()
+            channel_orgs.message_id = message.id
+            organizer_store.set(interaction.guild_id, TOURNAMENT_CHANNELS[0], channel_orgs)
+
         logger.info("Создано сообщение управления организаторами для всех каналов сервера %s", interaction.guild_id)
 
     def _build_multi_channel_embed(self, guild: discord.Guild) -> discord.Embed:
