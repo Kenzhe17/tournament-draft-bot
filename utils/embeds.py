@@ -839,7 +839,11 @@ async def build_qualifiers_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        # Get emoji for team number
+        num_mapping = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_ten", 11: "num_eleven", 12: "num_twelve"}
+        emoji_name = num_mapping.get(team_idx + 1, "num_1")
+        num_emoji = replace_emojis(emoji_name)
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
     # Add empty field for gap before betting section
@@ -936,7 +940,11 @@ async def build_semifinals_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        # Get emoji for team number
+        num_mapping = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_ten", 11: "num_eleven", 12: "num_twelve"}
+        emoji_name = num_mapping.get(team_idx + 1, "num_1")
+        num_emoji = replace_emojis(emoji_name)
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}\n", inline=False)
 
     # Add empty field for gap before betting section
@@ -1026,7 +1034,11 @@ async def build_final_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        num_emoji = replace_emojis(f"num_{team_idx + 1}")
+        # Get emoji for team number
+        num_mapping = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_ten", 11: "num_eleven", 12: "num_twelve"}
+        emoji_name = num_mapping.get(team_idx + 1, "num_1")
+        num_emoji = replace_emojis(emoji_name)
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
