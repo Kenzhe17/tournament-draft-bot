@@ -109,8 +109,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.pet")
         await self.load_extension("cogs.isolate")
         await self.load_extension("cogs.br")
-        await self.load_extension("cogs.organizer")
-        
+
         # Sync commands globally
         try:
             synced = await self.tree.sync()
