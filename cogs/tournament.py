@@ -918,8 +918,8 @@ class TournamentCog(commands.Cog):
     #     await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
     @app_commands.command(name="profile", description="Показать ваш профиль")
-    @app_commands.describe(user="Пользователь (пусто = ваш профиль)")
-    async def profile(self, interaction: discord.Interaction, user: discord.Member = None) -> None:
+    @app_commands.describe(user="Пользователь (пусто = ваш профиль)", limit="Количество матчей для графика ELO (макс 30)")
+    async def profile(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
         """Показать детальный профиль игрока."""
         from storage.player_stats_store import player_stats_store
         from storage.user_balance_store import user_balance_store
@@ -1021,6 +1021,45 @@ class TournamentCog(commands.Cog):
         if stats.description:
             description_parts.append(f"{replace_emojis('sub_directory')} {stats.description}")
             description_parts.append("")
+
+        # ELO History Graph (last 10 matches)
+        if total_games_played > 0:
+            from storage.match_history_store import match_history_store
+            match_history = await match_history_store.get_user_history(interaction.guild_id, target_user.id, limit=limit)
+            
+            if match_history and len(match_history) > 1:
+                # Build ELO graph from match history
+                # Calculate cumulative ELO from 1000 base using elo_change
+                elo_points = [1000]
+                for m in match_history[:limit]:
+                    elo_points.append(elo_points[-1] + m.elo_change)
+                
+                # Find min/max for scaling
+                min_elo = min(elo_points)
+                max_elo = max(elo_points)
+                elo_range = max_elo - min_elo if max_elo != min_elo else 1
+                
+                # Build ASCII graph
+                graph_lines = []
+                graph_lines.append(f"{replace_emojis('white_dot')} ELO за последние {len(elo_points)-1} матчей:")
+                
+                # 5 lines for the graph
+                for line in range(5, 0, -1):
+                    line_value = min_elo + (elo_range * line / 5)
+                    graph_str = f"{int(line_value):4d} │"
+                    
+                    for elo in elo_points:
+                        if elo >= line_value:
+                            graph_str += "█"
+                        else:
+                            graph_str += " "
+                    
+                    graph_lines.append(graph_str)
+                
+                # Add to description
+                description_parts.append("")
+                description_parts.append("\n".join(graph_lines))
+                description_parts.append("")
 
         # Создать embed
         embed = discord.Embed(
