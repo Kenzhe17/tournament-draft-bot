@@ -673,10 +673,9 @@ class BRRoomButton(Button):
             )
             return
 
-        # Close the ephemeral menu and show modal
-        await interaction.response.edit_message(content="✅ Открыт ввод комнаты", view=None)
+        # Show modal directly
         view = BRRoomModal(self.guild_id, self.channel_id)
-        await interaction.followup.send_modal(view)
+        await interaction.response.send_modal(view)
 
 
 class BRDataButton(Button):
@@ -1090,87 +1089,298 @@ class BRStatsButton(Button):
             )
             return
 
-        # Close the ephemeral menu and update main message
+        # Close the ephemeral menu
         await interaction.response.edit_message(content="✅ Открыт ввод статистики", view=None)
 
-        # Get the main BR message
-        channel = interaction.guild.get_channel(self.channel_id)
-        if not channel or not tournament.message_id:
-            return
+        # Show team group selection view
+        view = BRTeamGroupSelectView(self.guild_id, self.channel_id, tournament)
+        await interaction.followup.send("Выберите группу команд:", view=view, ephemeral=True)
 
+
+class BRTeamGroupSelectView(View):
+    """View for selecting team groups for stats entry."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+        # Calculate number of teams
+        num_teams = len(tournament.teams)
+
+        # Add group buttons based on team count
+        if num_teams > 0:
+            self.add_item(BRTeamGroupButton(guild_id, channel_id, 0, min(4, num_teams), tournament))  # Teams 1-4
+        if num_teams > 4:
+            self.add_item(BRTeamGroupButton(guild_id, channel_id, 4, min(8, num_teams), tournament))  # Teams 5-8
+        if num_teams > 8:
+            self.add_item(BRTeamGroupButton(guild_id, channel_id, 8, min(12, num_teams), tournament))  # Teams 9-12
+
+
+class BRTeamGroupButton(Button):
+    """Button for a team group."""
+
+    def __init__(self, guild_id: int, channel_id: int, start_index: int, end_index: int, tournament):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label=f"Команды {start_index + 1}-{end_index}",
+            custom_id=f"br_team_group:{guild_id}:{channel_id}:{start_index}:{end_index}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.start_index = start_index
+        self.end_index = end_index
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check if all teams in this group have stats
+        all_have_stats = True
+        for i in range(self.start_index, self.end_index):
+            if i < len(self.tournament.teams):
+                team = self.tournament.teams[i]
+                if self.tournament.current_map not in team.get("stats", {}):
+                    all_have_stats = False
+                    break
+
+        if all_have_stats:
+            # Show stats review view
+            view = BRStatsReviewView(self.guild_id, self.channel_id, self.tournament, self.start_index, self.end_index)
+            await interaction.response.edit_message(view=view)
+        else:
+            # Show stats input modal for each team
+            view = BRStatsInputView(self.guild_id, self.channel_id, self.tournament, self.start_index, self.end_index)
+            await interaction.response.edit_message(view=view)
+
+
+class BRStatsInputView(View):
+    """View for inputting stats for a team group."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, start_index: int, end_index: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.start_index = start_index
+        self.end_index = end_index
+
+        # Add buttons for each team in the group
+        for i in range(start_index, end_index):
+            if i < len(tournament.teams):
+                team = tournament.teams[i]
+                captain = team.get("captain", f"Команда {i+1}")
+                has_stats = tournament.current_map in team.get("stats", {})
+                label = f"{captain} {'✅' if has_stats else '❌'}"
+                self.add_item(BRTeamStatsButton(guild_id, channel_id, tournament, i, label))
+
+        # Add back button
+        self.add_item(BRBackToGroupSelectButton(guild_id, channel_id, tournament))
+
+
+class BRTeamStatsButton(Button):
+    """Button to input stats for a specific team."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, team_index: int, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=label,
+            custom_id=f"br_team_stats:{guild_id}:{channel_id}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        team = self.tournament.teams[self.team_index]
+        captain = team.get("captain", f"Команда {self.team_index + 1}")
+
+        # Show modal for stats input
+        modal = BRSingleTeamStatsModal(self.guild_id, self.channel_id, self.tournament, self.team_index, captain)
+        await interaction.response.send_modal(modal)
+
+
+class BRSingleTeamStatsModal(Modal):
+    """Modal for inputting stats for a single team."""
+
+    place = TextInput(
+        label="Место (1-12)",
+        placeholder="1",
+        required=True,
+        max_length=2
+    )
+
+    kills = TextInput(
+        label="Убийства (0-50)",
+        placeholder="0",
+        required=True,
+        max_length=2
+    )
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, team_index: int, team_name: str):
+        super().__init__(title=f"Статистика: {team_name}")
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.team_index = team_index
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
         try:
-            message = await channel.fetch_message(tournament.message_id)
+            place = int(self.place.value)
+            kills = int(self.kills.value)
 
-            # Create view for map selection
-            view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
-
-            map_names = {
-                "bermuda": "Бермуды",
-                "purgatory": "Чистилище",
-                "kalahari": "Калахари"
-            }
-
-            # Build teams section with current map points (sorted by points)
-            teams_with_points = []
-            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-
-            for i, team in enumerate(tournament.teams):
-                captain = team.get("captain", "Unknown")
-                team_name = team.get("name", f"Команда {i+1}")
-                players = team.get("players", [])
-                players_str = ", ".join(players) if players else ""
-
-                # Calculate points for current map only
-                stats = team.get("stats", {})
-                map_points = 0
-                if tournament.current_map in stats:
-                    map_stats = stats[tournament.current_map]
-                    place = map_stats.get("place", 0)
-                    kills = map_stats.get("kills", 0)
-                    if place > 0:
-                        map_points = (13 - place) + kills
-
-                teams_with_points.append({
-                    "captain": captain,
-                    "team_name": team_name,
-                    "players_str": players_str,
-                    "points": map_points,
-                    "index": i
-                })
-
-            # Sort by points descending
-            teams_with_points.sort(key=lambda x: x["points"], reverse=True)
-
-            teams_text = []
-            for team_data in teams_with_points:
-                captain = team_data["captain"]
-                players_str = team_data["players_str"]
-                points = team_data["points"]
-                original_index = team_data["index"]
-                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
-
-                teams_text.append(
-                    f"{num_emoji} {captain} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+            if place < 1 or place > 12:
+                await interaction.response.send_message(
+                    "❌ Место должно быть от 1 до 12.",
+                    ephemeral=True
                 )
+                return
 
-            embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get(tournament.current_map, tournament.current_map)}",
-                description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_names.get(tournament.current_map, tournament.current_map)}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
-                    + "\n".join(teams_text)
-                ),
-                color=discord.Color.from_rgb(69, 69, 69)
+            if kills < 0 or kills > 50:
+                await interaction.response.send_message(
+                    "❌ Убийства должны быть от 0 до 50.",
+                    ephemeral=True
+                )
+                return
+
+            # Save stats
+            self.tournament.set_team_stats(self.team_index, self.tournament.current_map, place, kills)
+            br_store.set(self.tournament)
+
+            await interaction.response.send_message(
+                "✅ Статистика сохранена.",
+                ephemeral=True
             )
 
-            await message.edit(embed=embed, view=view)
-        except Exception as e:
-            logger.error(f"Error updating BR message for stats: {e}")
+            # Refresh the view
+            # Get current group range
+            view = BRStatsInputView(self.guild_id, self.channel_id, self.tournament, 0, min(4, len(self.tournament.teams)))
+            await interaction.followup.edit_message(view=view)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Введите корректные числа.",
+                ephemeral=True
+            )
+
+
+class BRBackToGroupSelectButton(Button):
+    """Button to go back to group selection."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Назад",
+            custom_id=f"br_back_group:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = BRTeamGroupSelectView(self.guild_id, self.channel_id, self.tournament)
+        await interaction.response.edit_message(view=view)
+
+
+class BRStatsReviewView(View):
+    """View for reviewing stats of a team group."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, start_index: int, end_index: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.start_index = start_index
+        self.end_index = end_index
+
+        # Add edit buttons for each team
+        for i in range(start_index, end_index):
+            if i < len(tournament.teams):
+                team = tournament.teams[i]
+                captain = team.get("captain", f"Команда {i+1}")
+                self.add_item(BREditTeamStatsButton(guild_id, channel_id, tournament, i, captain))
+
+        # Add back button
+        self.add_item(BRBackToGroupSelectButton(guild_id, channel_id, tournament))
+
+        # Add confirm button if all stats are complete
+        if tournament.are_all_stats_complete(tournament.current_map):
+            if tournament.phase == BRTournamentPhase.BERMUDA:
+                self.add_item(BRConfirmPurgatoryButton(guild_id, channel_id, tournament))
+            elif tournament.phase == BRTournamentPhase.PURGATORY:
+                self.add_item(BRConfirmKalahariButton(guild_id, channel_id, tournament))
+
+
+class BREditTeamStatsButton(Button):
+    """Button to edit stats for a team."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, team_index: int, team_name: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=f"Изменить: {team_name}",
+            custom_id=f"br_edit_stats:{guild_id}:{channel_id}:{team_index}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.team_index = team_index
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        team = self.tournament.teams[self.team_index]
+        captain = team.get("captain", f"Команда {self.team_index + 1}")
+
+        # Show modal for stats input
+        modal = BRSingleTeamStatsModal(self.guild_id, self.channel_id, self.tournament, self.team_index, captain)
+        await interaction.response.send_modal(modal)
+
+
+class BRConfirmPurgatoryButton(Button):
+    """Button to confirm and transition to Purgatory."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Подтвердить (Чистилище)",
+            custom_id=f"br_confirm_purgatory:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Transition to Purgatory
+        self.tournament.phase = BRTournamentPhase.PURGATORY
+        self.tournament.current_map = "purgatory"
+        br_store.set(self.tournament)
+
+        await interaction.response.send_message(
+            "✅ Переход к Чистилище.",
+            ephemeral=True
+        )
+
+
+class BRConfirmKalahariButton(Button):
+    """Button to confirm and transition to Kalahari."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Подтвердить (Калахари)",
+            custom_id=f"br_confirm_kalahari:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Transition to Kalahari
+        self.tournament.phase = BRTournamentPhase.KALAHARI
+        self.tournament.current_map = "kalahari"
+        br_store.set(self.tournament)
+
+        await interaction.response.send_message(
+            "✅ Переход к Калахари.",
+            ephemeral=True
+        )
 
 
 class BRPurgatoryButton(Button):
