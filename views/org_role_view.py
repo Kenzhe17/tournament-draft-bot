@@ -374,9 +374,9 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         holders = state.get_holders(role_id)
         count = len(holders)
         if count > 0:
-            holder_ids = [str(holder_id) for holder_id in holders]
+            holder_mentions = [f"<@{holder_id}>" for holder_id in holders]
             status_section += (
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_ids)}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_mentions)}\n"
             )
         else:
             status_section += (
