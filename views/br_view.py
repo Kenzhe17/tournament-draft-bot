@@ -896,7 +896,7 @@ class MapSelectMenu(Select):
         value = self.values[0]
 
         if value == "data":
-            # Отправить данные комнаты
+            # Отправить данные комнаты (пинг роли)
             tournament = br_store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
@@ -916,17 +916,35 @@ class MapSelectMenu(Select):
                 )
                 return
 
+            # Generate data message with current map stats
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+            current_map_name = map_names.get(tournament.current_map, tournament.current_map)
+
+            data_text = f"📊 **Данные BR турнира - {current_map_name}**\n\n"
+            for i, team in enumerate(tournament.teams):
+                team_name = team.get("name", f"Команда {i+1}")
+                stats = team.get("stats", {})
+                if tournament.current_map in stats:
+                    map_stats = stats[tournament.current_map]
+                    data_text += f"**{i+1}. {team_name}** - Место: {map_stats.get('place', '-')}, Убийства: {map_stats.get('kills', '-')}\n"
+                else:
+                    data_text += f"**{i+1}. {team_name}** - Нет данных\n"
+
             if role:
-                await channel.send(f"{role.mention} Данные комнаты для BR турнира!")
+                await channel.send(f"{role.mention}\n{data_text}")
             else:
-                await channel.send("Данные комнаты для BR турнира!")
+                await channel.send(data_text)
 
             await interaction.response.send_message(
                 "✅ Данные отправлены.",
                 ephemeral=True
             )
         else:
-            # Показать кнопки групп команд
+            # Показать кнопки групп команд для ввода статистики
             tournament = br_store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
@@ -957,6 +975,38 @@ class MapSelectMenu(Select):
                 "kalahari": "Калахари"
             }
 
+            # Build teams section with current points
+            teams_text = []
+            team_emojis = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                          7: "num_7", 8: "num_8", 9: "num_9", 10: "num_10", 11: "num_11", 12: "num_12"}
+
+            for i, team in enumerate(tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                all_players = [captain] + players
+                players_str = ", ".join(all_players)
+                emoji_key = team_emojis.get(i + 1, "num_1")
+                emoji = replace_emojis(emoji_key)
+
+                # Calculate total points so far
+                total_points = 0
+                stats = team.get("stats", {})
+                for map_name in ["bermuda", "purgatory", "kalahari"]:
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        # Points calculation: (13 - place) + kills
+                        if place > 0:
+                            total_points += (13 - place) + kills
+
+                teams_text.append(
+                    f"{emoji} **{team_name}** ({total_points} очков)\n"
+                    f"┣ **Капитан:** {captain}\n"
+                    f"┗ **Состав:** {players_str}\n"
+                )
+
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get(value, value)}",
                 description=(
@@ -965,6 +1015,8 @@ class MapSelectMenu(Select):
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {map_names.get(value, value)}\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get(value, value)}\n\n"
+                    f"{replace_emojis('white_dot')} **Команды:**\n"
+                    + "\n".join(teams_text) + "\n\n"
                     f"{replace_emojis('white_dot')} **Правила:**\n"
                     f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
                     f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
@@ -1090,7 +1142,7 @@ class BackToMapButton(Button):
             )
             return
 
-        # Вернуться к select menu
+        # Вернуться к select menu с обновленным embed
         view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
 
         map_names = {
@@ -1099,9 +1151,54 @@ class BackToMapButton(Button):
             "kalahari": "Калахари"
         }
 
+        current_map_name = map_names.get(tournament.current_map, tournament.current_map)
+
+        # Build teams section with current points
+        teams_text = []
+        team_emojis = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_10", 11: "num_11", 12: "num_12"}
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            all_players = [captain] + players
+            players_str = ", ".join(all_players)
+            emoji_key = team_emojis.get(i + 1, "num_1")
+            emoji = replace_emojis(emoji_key)
+
+            # Calculate total points so far
+            total_points = 0
+            stats = team.get("stats", {})
+            for map_name in ["bermuda", "purgatory", "kalahari"]:
+                if map_name in stats:
+                    map_stats = stats[map_name]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    # Points calculation: (13 - place) + kills
+                    if place > 0:
+                        total_points += (13 - place) + kills
+
+            teams_text.append(
+                f"{emoji} **{team_name}** ({total_points} очков)\n"
+                f"┣ **Капитан:** {captain}\n"
+                f"┗ **Состав:** {players_str}\n"
+            )
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {map_names.get(tournament.current_map, tournament.current_map)}**",
-            description="Выберите действие.",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
+                f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                + "\n".join(teams_text) + "\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Выберите действие для ввода статистики или отправки данных.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Данные пингуют роль BR игроков."
+            ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -1178,13 +1275,47 @@ class BRStatsModal(Modal):
         # Сохранить
         br_store.set(tournament)
 
-        # Проверить все ли команды заполнили статистику
+        # Build teams section with current points
+        teams_text = []
+        team_emojis = {1: "num_1", 2: "num_2", 3: "num_3", 4: "num_4", 5: "num_5", 6: "num_6",
+                      7: "num_7", 8: "num_8", 9: "num_9", 10: "num_10", 11: "num_11", 12: "num_12"}
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            all_players = [captain] + players
+            players_str = ", ".join(all_players)
+            emoji_key = team_emojis.get(i + 1, "num_1")
+            emoji = replace_emojis(emoji_key)
+
+            # Calculate total points so far
+            total_points = 0
+            stats = team.get("stats", {})
+            for map_name in ["bermuda", "purgatory", "kalahari"]:
+                if map_name in stats:
+                    map_stats = stats[map_name]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    # Points calculation: (13 - place) + kills
+                    if place > 0:
+                        total_points += (13 - place) + kills
+
+            teams_text.append(
+                f"{emoji} **{team_name}** ({total_points} очков)\n"
+                f"┣ **Капитан:** {captain}\n"
+                f"┗ **Состав:** {players_str}\n"
+            )
+
+        # Проверить все ли команды заполнили статистику для текущей карты
         if tournament.are_all_stats_complete(self.map_name):
             # Переход к следующей фазе
             if tournament.phase == BRTournamentPhase.BERMUDA:
                 tournament.phase = BRTournamentPhase.PURGATORY
+                tournament.current_map = "purgatory"
             elif tournament.phase == BRTournamentPhase.PURGATORY:
                 tournament.phase = BRTournamentPhase.KALAHARI
+                tournament.current_map = "kalahari"
             elif tournament.phase == BRTournamentPhase.KALAHARI:
                 tournament.phase = BRTournamentPhase.RESULTS
 
@@ -1259,7 +1390,9 @@ class BRStatsModal(Modal):
                         f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                         f"{replace_emojis('sub_middle')} Формат: Random\n"
                         f"{replace_emojis('sub_middle')} Фаза: {next_map}\n"
-                        f"{replace_emojis('sub_directory')} Следующая карта: {next_map}\n\n"
+                        f"{replace_emojis('sub_directory')} Карта: {next_map}\n\n"
+                        f"{replace_emojis('white_dot')} **Команды:**\n"
+                        + "\n".join(teams_text) + "\n\n"
                         f"{replace_emojis('white_dot')} **Статус:**\n"
                         f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
                     ),
@@ -1268,15 +1401,35 @@ class BRStatsModal(Modal):
 
                 await interaction.response.edit_message(embed=embed, view=view)
         else:
-            # Вернуться к select menu
-            view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
+            # Not all teams done yet - return to team group view with updated embed
+            view = BRTeamGroupView(self.guild_id, self.channel_id, tournament)
 
-            await interaction.response.edit_message(view=view)
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
 
-        await interaction.followup.send(
-            f"✅ Статистика сохранена: место {place}, киллы {kills}.",
-            ephemeral=True
-        )
+            current_map_name = map_names.get(tournament.current_map, tournament.current_map)
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
+                    f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
+                    f"{replace_emojis('white_dot')} **Команды:**\n"
+                    + "\n".join(teams_text) + "\n\n"
+                    f"{replace_emojis('white_dot')} **Правила:**\n"
+                    f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            await interaction.response.edit_message(embed=embed, view=view)
 
 
 class BRResultsView(View):
