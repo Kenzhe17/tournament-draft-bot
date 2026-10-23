@@ -243,12 +243,15 @@ class TournamentCog(commands.Cog):
         captain_count = tournament.captain_count
         required_players = int(tournament.size.value)
 
+        # Generate unique negative user_ids to avoid conflicts between tournaments
+        base_user_id = -(interaction.guild_id * 1000 + interaction.channel_id * 10)
+
         if tournament.formation_mode == FormationMode.RANDOM:
             # RANDOM mode: fill players_pool
             tournament.players_pool = [f"Player{i+1}" for i in range(required_players)]
-            # Add random user_ids
+            # Add unique user_ids based on guild/channel to avoid conflicts
             for i, player_name in enumerate(tournament.players_pool):
-                tournament.player_user_ids[player_name] = 1000 + i  # Fake user_ids
+                tournament.player_user_ids[player_name] = base_user_id - i  # Unique negative IDs
         else:
             # ELO/SKILL modes: fill circles
             tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
@@ -258,15 +261,15 @@ class TournamentCog(commands.Cog):
             # Add extra players to circle4 to reach required total
             remaining_players = required_players - (captain_count * 3)
             tournament.circle4.extend([f"P4-{i}" for i in range(remaining_players)])
-            # Add user_ids for all players
+            # Add unique user_ids for all players
             for i, player_name in enumerate(tournament.captains):
-                tournament.player_user_ids[player_name] = 1000 + i
+                tournament.player_user_ids[player_name] = base_user_id - i
             for i, player_name in enumerate(tournament.circle2):
-                tournament.player_user_ids[player_name] = 2000 + i
+                tournament.player_user_ids[player_name] = base_user_id - 100 - i
             for i, player_name in enumerate(tournament.circle3):
-                tournament.player_user_ids[player_name] = 3000 + i
+                tournament.player_user_ids[player_name] = base_user_id - 200 - i
             for i, player_name in enumerate(tournament.circle4):
-                tournament.player_user_ids[player_name] = 4000 + i
+                tournament.player_user_ids[player_name] = base_user_id - 300 - i
 
         store.set(tournament)
 

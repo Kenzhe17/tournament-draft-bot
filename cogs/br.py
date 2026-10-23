@@ -11,6 +11,7 @@ from config import BOT_OWNER_ID, BR_ROLE_ID, BR_ROOM_CHANNEL_ID
 from models.br_tournament import BRTournamentFormation, BRTournamentPhase
 from storage.br_store import br_store
 from utils.embeds import replace_emojis
+from views.br_view import BRRegistrationView
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -223,23 +224,45 @@ class BRCog(commands.Cog):
         # Очистить существующих игроков
         tournament.clear_players()
 
+        # Generate unique negative user_ids based on guild/channel to avoid conflicts
+        base_user_id = -(interaction.guild_id * 1000 + interaction.channel_id * 10)
+
         # Добавить 48 ботов
         for i in range(1, 49):
-            tournament.add_player(f"Bot {i}", -i)  # Отрицательные ID для ботов
+            tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
 
         # Сохранить
         br_store.set(tournament)
 
-        # Обновить сообщение
+        # Обновить сообщение с новым стилем
         try:
             channel = interaction.guild.get_channel(tournament.channel_id)
             if channel and tournament.message_id:
                 message = await channel.fetch_message(tournament.message_id)
-                embed = message.embeds[0]
-                embed.description = f"Формат: **Random**\n" \
-                                   f"Фаза: **Регистрация**\n" \
-                                   f"Игроков: **{len(tournament.players)}/48**"
-                await message.edit(embed=embed)
+
+                # Build player list
+                player_names = [p["name"] for p in tournament.players]
+                players_text = ", ".join(player_names) if player_names else "*"
+
+                embed = discord.Embed(
+                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+                    description=(
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                        f"{replace_emojis('sub_middle')} Формат: Random\n"
+                        f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                        f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                        f"{replace_emojis('white_dot')} **Игроки:**\n"
+                        f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                        f"{replace_emojis('white_dot')} **Правила:**\n"
+                        f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                        f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                    ),
+                    color=discord.Color.from_rgb(69, 69, 69)
+                )
+
+                view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+                await message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error("Ошибка при обновлении сообщения: %s", e)
 
