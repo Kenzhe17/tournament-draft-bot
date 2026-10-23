@@ -73,7 +73,6 @@ class OrganizerManagementButton(Button):
 
         # Check if user is an organizer in any tournament channel
         if not has_access:
-            from config import TOURNAMENT_CHANNELS
             for channel_id in TOURNAMENT_CHANNELS:
                 channel_orgs = organizer_store.get(self.guild_id, channel_id)
                 if channel_orgs and interaction.user.id in channel_orgs.all_organizers():
@@ -202,7 +201,6 @@ class AddOrganizerButton(Button):
             return True
 
         # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
-        from config import TOURNAMENT_CHANNELS
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if role and role in interaction.user.roles:
             for channel_id in TOURNAMENT_CHANNELS:
@@ -358,7 +356,6 @@ class RemoveOrganizerButton(Button):
             return True
 
         # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
-        from config import TOURNAMENT_CHANNELS
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if role and role in interaction.user.roles:
             for channel_id in TOURNAMENT_CHANNELS:
@@ -484,7 +481,6 @@ class TransferOrganizerButton(Button):
             return True
 
         # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
-        from config import TOURNAMENT_CHANNELS
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if role and role in interaction.user.roles:
             for channel_id in TOURNAMENT_CHANNELS:
