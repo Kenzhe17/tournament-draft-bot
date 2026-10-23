@@ -374,7 +374,7 @@ class Tournament:
         logging.info(f"add_player_to_circle: circle={circle}, name='{name}', user_id={user_id}")
         logging.info(f"  all_players: {self.all_players}")
         logging.info(f"  name in all_players: {name in self.all_players}")
-        
+
         # Check conflicts if store provided
         if store and user_id:
             all_tournaments = store.get_by_guild(self.guild_id)
@@ -382,11 +382,24 @@ class Tournament:
                 # Skip self
                 if other_tournament.id == self.id:
                     continue
-                
+
                 # Check if player is active in other tournament
                 if other_tournament.is_player_active(user_id):
                     logging.warning(f"  FAILED: player is active in another tournament")
                     return False  # Conflict detected
+
+            # Also check BR tournaments
+            try:
+                from storage.br_store import br_store
+                br_tournament = br_store.get(self.guild_id, self.channel_id)
+                if br_tournament and br_tournament.phase.value != "complete":
+                    # Check if player is in BR tournament
+                    for player in br_tournament.players:
+                        if player["id"] == user_id:
+                            logging.warning(f"  FAILED: player is active in BR tournament")
+                            return False
+            except Exception as e:
+                logging.warning(f"  Error checking BR tournament: {e}")
         
         if not name or name in self.all_players:
             logging.warning(f"  FAILED: name is empty or already in all_players")

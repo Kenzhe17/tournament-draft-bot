@@ -89,6 +89,17 @@ class BRTournament:
             if player["id"] == user_id:
                 return False
 
+        # Check if player is active in any regular tournament
+        try:
+            from storage.json_store import store
+            all_tournaments = store.get_by_guild(self.guild_id)
+            for tournament in all_tournaments:
+                if tournament.is_player_active(user_id):
+                    return False
+        except Exception as e:
+            import logging
+            logging.warning(f"Error checking regular tournaments for BR: {e}")
+
         self.players.append({"name": name, "id": user_id})
         return True
 
