@@ -594,7 +594,7 @@ class DeletePlayerButton(discord.ui.Button):
             return
 
         # Create select menu with pagination
-        view = PlayerSelectView(players, self.guild_id, "delete")
+        view = PlayerSelectView(players, self.guild_id, self.channel_id, "delete")
         
         # Define the callback for player selection
         async def delete_callback(interaction: discord.Interaction, player_name: str):
@@ -705,13 +705,13 @@ class SwapPlayersButton(discord.ui.Button):
             return
 
         # Create select menu for first player
-        view = PlayerSelectView(players, self.guild_id, "swap_first")
+        view = PlayerSelectView(players, self.guild_id, self.channel_id, "swap_first")
         
         # Define the callback for first player selection
         async def swap_first_callback(interaction: discord.Interaction, first_player: str):
             # Create second select menu (excluding first player)
             remaining_players = [p for p in players if p != first_player]
-            view2 = PlayerSelectView(remaining_players, self.guild_id, "swap_second", first_player)
+            view2 = PlayerSelectView(remaining_players, self.guild_id, self.channel_id, "swap_second", first_player)
             
             # Define the callback for second player selection
             async def swap_second_callback(interaction: discord.Interaction, second_player: str):
@@ -845,7 +845,7 @@ class MovePlayerButton(discord.ui.Button):
             return
 
         # Create select menu for player
-        view = PlayerSelectView(players, self.guild_id, "move")
+        view = PlayerSelectView(players, self.guild_id, self.channel_id, "move")
         
         # Define the callback for player selection
         async def move_callback(interaction: discord.Interaction, selected_player: str):

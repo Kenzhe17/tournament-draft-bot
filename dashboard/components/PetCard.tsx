@@ -101,7 +101,8 @@ export default function PetCard({ userId, guildId }: PetCardProps) {
   const fullnessPercent = pet.fullness;
   const energyPercent = pet.energy;
   // Each level requires 25 exp more than previous: Level 1 = 75, Level 2 = 100, etc.
-  const expForCurrentLevel = 50 + pet.level * 25;
+  // Exp resets to 0 after each level up
+  const expForCurrentLevel = 50 + (pet.level + 1) * 25;
   const expPercent = Math.min((pet.exp / expForCurrentLevel) * 100, 100);
 
   return (

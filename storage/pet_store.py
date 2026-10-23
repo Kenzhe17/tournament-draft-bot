@@ -174,13 +174,19 @@ class PetStore:
             new_exp = min(pet.exp + exp, pet.exp + max_daily)
 
             # Уровень: каждый уровень требует на 25 exp больше предыдущего
-            # Level 1: 75 exp, Level 2: 100 exp, Level 3: 125 exp, etc.
-            # Formula: level = 1 + (exp - 75) // 25, but only if exp >= 75
-            # Max level = 10
-            if new_exp >= 75:
-                new_level = min(1 + (new_exp - 75) // 25, 10)
-            else:
-                new_level = 1
+            # Level 1 needs 75 exp, Level 2 needs 100 exp, Level 3 needs 125 exp, etc.
+            # Formula: exp_needed = 50 + (level + 1) * 25
+            # When exp reaches requirement, level up and reset exp to 0
+            # Max level = 100
+            while pet.level < 100:
+                exp_needed = 50 + (pet.level + 1) * 25
+                if new_exp >= exp_needed:
+                    new_exp -= exp_needed  # Reset exp for next level
+                    pet.level += 1
+                else:
+                    break
+
+            new_level = pet.level
 
             # Обновить
             await conn.execute(

@@ -181,20 +181,10 @@ class Pet:
         )
 
     def get_exp_to_next_level(self) -> int:
-        """Получить опыт до следующего уровня."""
-        exp_requirements = {
-            1: 75,
-            2: 100,
-            3: 125,
-            4: 150,
-            5: 175,
-            6: 200,
-            7: 225,
-            8: 250,
-            9: 275,
-            10: 0,  # Максимальный уровень
-        }
-        return exp_requirements.get(self.level, 0)
+        """Получить опыт до следующего уровня (каждый уровень требует на 25 exp больше)."""
+        if self.level >= 100:
+            return 0  # Максимальный уровень
+        return 50 + (self.level + 1) * 25
 
 
 def _parse_datetime(value):
