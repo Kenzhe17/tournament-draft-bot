@@ -4,16 +4,12 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from config import BOT_OWNER_ID, DATA_DIR
-
-if TYPE_CHECKING:
-    from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +20,7 @@ ISOLATION_STATE_FILE = DATA_DIR / "isolation_state.json"
 class Isolate(commands.Cog):
     """Команда для экстренной изоляции сервера."""
 
-    def __init__(self, bot: TournamentBot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(name="isolate", description="Экстренная изоляция сервера")

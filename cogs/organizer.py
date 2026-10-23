@@ -1,7 +1,6 @@
 """Organizer management commands."""
 
 import logging
-from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -11,16 +10,13 @@ from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
 from storage.organizer_store import organizer_store
 from storage.json_store import store
 
-if TYPE_CHECKING:
-    from bot import TournamentBot
-
 logger = logging.getLogger(__name__)
 
 
 class OrganizerCog(commands.Cog):
     """Organizer management commands."""
 
-    def __init__(self, bot: "TournamentBot"):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(name="organizer_setup", description="Создать сообщение управления организаторами канала")
