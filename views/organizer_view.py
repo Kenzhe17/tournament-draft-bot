@@ -12,6 +12,76 @@ from storage.json_store import store
 logger = logging.getLogger(__name__)
 
 
+def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
+    """Построить embed с информацией о всех каналах турниров."""
+    description = f"{replace_emojis('a_sparkle')} **УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ ТУРНИРОВ**\n\n"
+
+    for i, channel_id in enumerate(TOURNAMENT_CHANNELS, 1):
+        channel = guild.get_channel(channel_id)
+        if not channel:
+            description += f"{replace_emojis('a_star')} **Канал {i}:** *Канал не найден*\n\n"
+            continue
+
+        # Получить турнир в канале
+        tournament = store.get(guild.id, channel_id)
+
+        # Информация о турнире
+        if tournament:
+            tournament_info = (
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир ID:** `{tournament.id}`\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Фаза:** {tournament.phase.value}\n"
+            )
+
+            # Получить организаторов канала только если есть турнир
+            channel_orgs = organizer_store.get(guild.id, channel_id)
+
+            # Организаторы
+            organizers_list = []
+            if channel_orgs:
+                all_orgs = channel_orgs.all_organizers()
+                if channel_orgs.organizer_id:
+                    main_member = guild.get_member(channel_orgs.organizer_id)
+                    main_name = main_member.display_name if main_member else f"<@{channel_orgs.organizer_id}>"
+                    organizers_list.append(f"{replace_emojis('a_star')} {main_name} (основной)")
+
+                for org_id in channel_orgs.additional_organizers:
+                    member = guild.get_member(org_id)
+                    name = member.display_name if member else f"<@{org_id}>"
+                    organizers_list.append(f"{replace_emojis('white_dot')} {name}")
+
+            if not organizers_list:
+                organizers_text = "*Нет организаторов*"
+            else:
+                organizers_text = "\n".join(organizers_list)
+
+            description += (
+                f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
+                f"{tournament_info}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:**\n"
+                f"{organizers_text}\n\n"
+            )
+        else:
+            # Нет турнира - не показываем организаторов
+            description += (
+                f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир:** *Нет активного турнира*\n\n"
+            )
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
+
+    from config import WELCOME_BANNER_URL
+    if WELCOME_BANNER_URL:
+        embed.set_image(url=WELCOME_BANNER_URL)
+
+    return embed
+
+
 class ChannelSelect(Select):
     """Select menu to choose tournament channel."""
 
@@ -147,6 +217,9 @@ class OrganizerMenuView(View):
             all_orgs = channel_orgs.all_organizers()
             for org_id in all_orgs:
                 self.add_item(RemoveOrganizerButton(guild_id, channel_id, org_id))
+
+        # Add BR management button (only for bot owner)
+        self.add_item(BRManagementButton(guild_id, channel_id))
 
 
 class NotificationButton(Button):
@@ -464,7 +537,7 @@ class AddOrganizerSelect(Select):
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_multi_channel_embed(interaction.guild)
+                embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
@@ -578,7 +651,7 @@ class RemoveOrganizerButton(Button):
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_multi_channel_embed(interaction.guild)
+                embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
@@ -586,6 +659,208 @@ class RemoveOrganizerButton(Button):
                 await message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)
+
+
+class BRManagementButton(Button):
+    """Button to open BR management menu (bot owner only)."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="BR Турнир",
+            custom_id=f"br_manage:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check if bot owner
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может управлять BR турниром.",
+                ephemeral=True
+            )
+            return
+
+        view = BRManagementMenuView(self.guild_id, self.channel_id)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class BRManagementMenuView(View):
+    """Menu for BR tournament management."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        self.add_item(DeleteBRButton(guild_id, channel_id))
+        self.add_item(StartBRButton(guild_id, channel_id))
+
+
+class DeleteBRButton(Button):
+    """Button to delete BR tournament."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Удалить BR",
+            custom_id=f"br_delete_menu:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.br_store import br_store
+        from config import BR_ROLE_ID
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Снять роль с реальных игроков
+        guild = interaction.guild
+        role = guild.get_role(tournament.role_id)
+        if role:
+            for player in tournament.players:
+                user_id = player["id"]
+                if user_id < 0:  # Пропускаем ботов
+                    continue
+                try:
+                    member = guild.get_member(user_id)
+                    if member:
+                        await member.remove_roles(role)
+                except Exception as e:
+                    logger.warning("Не удалось снять роль: %s", e)
+
+        # Удалить сообщение
+        if tournament.message_id:
+            try:
+                channel = guild.get_channel(tournament.channel_id)
+                if channel:
+                    message = await channel.fetch_message(tournament.message_id)
+                    await message.delete()
+            except Exception as e:
+                logger.warning("Не удалось удалить сообщение: %s", e)
+
+        # Удалить из хранилища
+        br_store.delete(self.guild_id, self.channel_id)
+
+        await interaction.response.send_message(
+            "✅ BR турнир удален.",
+            ephemeral=True
+        )
+        logger.info("BR турнир удален в канале %s сервера %s", self.channel_id, self.guild_id)
+
+
+class StartBRButton(Button):
+    """Button to start BR tournament."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Старт BR",
+            custom_id=f"br_start_menu:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.br_store import br_store
+        from models.br_tournament import BRTournamentPhase
+        from views.br_view import BRTeamsView
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        if tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        # Check player count requirements
+        player_count = len(tournament.players)
+        if player_count < 20:
+            await interaction.response.send_message(
+                f"❌ Нужно минимум 20 игроков (текущих: {player_count}).",
+                ephemeral=True
+            )
+            return
+
+        if player_count % 4 != 0:
+            await interaction.response.send_message(
+                f"❌ Количество игроков должно делиться на 4 (текущих: {player_count}).",
+                ephemeral=True
+            )
+            return
+
+        # Generate random teams of 4
+        import random
+        random.shuffle(tournament.players)
+
+        team_count = player_count // 4
+        tournament.teams = []
+        for i in range(team_count):
+            team_players = tournament.players[i*4:(i+1)*4]
+            captain = team_players[0]["name"]
+            tournament.teams.append({
+                "captain": captain,
+                "players": [p["name"] for p in team_players[1:]],
+                "name": f"Команда {i+1}",
+                "stats": {}
+            })
+            tournament.team_rename_remaining[i] = True
+
+        # Update phase
+        tournament.phase = BRTournamentPhase.TEAMS
+        tournament.team_rename_start_time = interaction.created_at.isoformat()
+
+        # Give BR role to real players
+        guild = interaction.guild
+        role = guild.get_role(tournament.role_id)
+        if role:
+            for player in tournament.players:
+                user_id = player["id"]
+                if user_id < 0:  # Skip bots
+                    continue
+                try:
+                    member = guild.get_member(user_id)
+                    if member:
+                        await member.add_roles(role)
+                except Exception as e:
+                    logger.warning("Не удалось выдать роль: %s", e)
+
+        # Save
+        br_store.set(tournament)
+
+        # Update embed
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Команды**",
+            description=f"**Фаза:** Команды\n**Команд:** {team_count}\n\n"
+                       f"Капитаны могут переименовать свои команды в течение 1 минуты.",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRTeamsView(tournament.guild_id, tournament.channel_id, tournament)
+
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        await interaction.followup.send(
+            "✅ BR турнир запущен!",
+            ephemeral=True
+        )
+        logger.info("BR турнир запущен в канале %s сервера %s", self.channel_id, self.guild_id)
 
 
 class TransferOrganizerButton(Button):
@@ -756,7 +1031,7 @@ class TransferOrganizerSelect(Select):
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_multi_channel_embed(interaction.guild)
+                embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)

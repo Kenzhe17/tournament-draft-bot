@@ -43,12 +43,6 @@ class BRRegistrationView(View):
         # Кнопка "Выйти"
         self.add_item(LeaveBRButton(guild_id, channel_id))
 
-        # Кнопка "Удалить" (только для владельца)
-        self.add_item(DeleteBRButton(guild_id, channel_id))
-
-        # Кнопка "Старт" (только для владельца)
-        self.add_item(StartBRButton(guild_id, channel_id))
-
 
 class JoinBRButton(Button):
     """Кнопка для входа в BR турнир."""
