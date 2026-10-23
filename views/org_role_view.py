@@ -353,10 +353,9 @@ class RoleSelectionView(discord.ui.View):
             if has_role:
                 # User has role - show release button
                 self.add_item(ReleaseRoleButton(state, role_id, role_name))
-            elif not is_full:
-                # Role is free - show take button
+            else:
+                # Always show take button, even if full (will show error in callback)
                 self.add_item(TakeRoleButton(state, role_id, role_name))
-            # If role is full and user doesn't have it, don't show button
 
 
 def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.Embed:
@@ -375,13 +374,9 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         holders = state.get_holders(role_id)
         count = len(holders)
         if count > 0:
-            holder_names = []
-            for holder_id in holders:
-                member = guild.get_member(holder_id)
-                name = member.display_name if member else f"<@{holder_id}>"
-                holder_names.append(name)
+            holder_ids = [str(holder_id) for holder_id in holders]
             status_section += (
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_names)}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_ids)}\n"
             )
         else:
             status_section += (
