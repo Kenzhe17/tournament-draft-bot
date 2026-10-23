@@ -43,9 +43,6 @@ class BRRegistrationView(View):
         # Кнопка "Выйти"
         self.add_item(LeaveBRButton(guild_id, channel_id))
 
-        # Кнопка "Удалить игрока" (только для владельца)
-        self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
-
         # Кнопка меню организатора (только для владельца)
         self.add_item(BROrganizerMenuButton(guild_id, channel_id))
 
@@ -83,66 +80,8 @@ class BRManagementMenuView(View):
         self.guild_id = guild_id
         self.channel_id = channel_id
 
-        self.add_item(DeleteBRButton(guild_id, channel_id))
+        self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
         self.add_item(StartBRButton(guild_id, channel_id))
-
-
-class DeleteBRButton(Button):
-    """Button to delete BR tournament."""
-
-    def __init__(self, guild_id: int, channel_id: int):
-        super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="Удалить BR",
-            custom_id=f"br_delete_menu:{guild_id}:{channel_id}"
-        )
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        from storage.br_store import br_store
-
-        tournament = br_store.get(self.guild_id, self.channel_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ BR турнир не найден.",
-                ephemeral=True
-            )
-            return
-
-        # Снять роль с реальных игроков
-        guild = interaction.guild
-        role = guild.get_role(tournament.role_id)
-        if role:
-            for player in tournament.players:
-                user_id = player["id"]
-                if user_id < 0:  # Пропускаем ботов
-                    continue
-                try:
-                    member = guild.get_member(user_id)
-                    if member:
-                        await member.remove_roles(role)
-                except Exception as e:
-                    logger.warning("Не удалось снять роль: %s", e)
-
-        # Удалить сообщение
-        if tournament.message_id:
-            try:
-                channel = guild.get_channel(tournament.channel_id)
-                if channel:
-                    message = await channel.fetch_message(tournament.message_id)
-                    await message.delete()
-            except Exception as e:
-                logger.warning("Не удалось удалить сообщение: %s", e)
-
-        # Удалить из хранилища
-        br_store.delete(self.guild_id, self.channel_id)
-
-        await interaction.response.send_message(
-            "✅ BR турнир удален.",
-            ephemeral=True
-        )
-        logger.info("BR турнир удален в канале %s сервера %s", self.channel_id, self.guild_id)
 
 
 class StartBRButton(Button):
@@ -491,29 +430,43 @@ class RemoveBRPlayerSelect(Select):
         # Save
         br_store.set(tournament)
 
-        # Update embed with current player list
-        player_names = [p["name"] for p in tournament.players]
-        players_text = ", ".join(player_names) if player_names else "*"
+        # Get the main BR message
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not tournament.message_id:
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
+            )
+            return
 
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
-            description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
-                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
-                f"{replace_emojis('white_dot')} **Игроки:**\n"
-                f"{replace_emojis('white_arrow')} {players_text}\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-            ),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
+        try:
+            message = await channel.fetch_message(tournament.message_id)
 
-        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.message.edit(embed=embed, view=view)
+            # Update embed with current player list
+            player_names = [p["name"] for p in tournament.players]
+            players_text = ", ".join(player_names) if player_names else "*"
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                    f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                    f"{replace_emojis('white_dot')} **Игроки:**\n"
+                    f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                    f"{replace_emojis('white_dot')} **Правила:**\n"
+                    f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error("Error updating BR message: %s", e)
 
         await interaction.response.edit_message(
             content="✅ Игрок удален.",
