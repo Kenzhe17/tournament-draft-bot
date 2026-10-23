@@ -7,7 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 from discord.ui import View
 
-from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS
+from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS, WELCOME_BANNER_URL
 from storage.organizer_store import organizer_store
 from storage.json_store import store
 
@@ -64,9 +64,6 @@ class OrganizerCog(commands.Cog):
             # Получить турнир в канале
             tournament = store.get(guild.id, channel_id)
 
-            # Получить организаторов канала
-            channel_orgs = organizer_store.get(guild.id, channel_id)
-
             # Информация о турнире
             if tournament:
                 tournament_info = (
@@ -74,43 +71,51 @@ class OrganizerCog(commands.Cog):
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир ID:** `{tournament.id}`\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Фаза:** {tournament.phase.value}\n"
                 )
-            else:
-                tournament_info = (
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир:** *Нет активного турнира*\n"
+
+                # Получить организаторов канала только если есть турнир
+                channel_orgs = organizer_store.get(guild.id, channel_id)
+
+                # Организаторы
+                organizers_list = []
+                if channel_orgs:
+                    all_orgs = channel_orgs.all_organizers()
+                    if channel_orgs.organizer_id:
+                        main_member = guild.get_member(channel_orgs.organizer_id)
+                        main_name = main_member.display_name if main_member else f"<@{channel_orgs.organizer_id}>"
+                        organizers_list.append(f"{replace_emojis('a_star')} {main_name} (основной)")
+
+                    for org_id in channel_orgs.additional_organizers:
+                        member = guild.get_member(org_id)
+                        name = member.display_name if member else f"<@{org_id}>"
+                        organizers_list.append(f"{replace_emojis('white_dot')} {name}")
+
+                if not organizers_list:
+                    organizers_text = "*Нет организаторов*"
+                else:
+                    organizers_text = "\n".join(organizers_list)
+
+                description += (
+                    f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
+                    f"{tournament_info}\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:**\n"
+                    f"{organizers_text}\n\n"
                 )
-
-            # Организаторы
-            organizers_list = []
-            if channel_orgs:
-                all_orgs = channel_orgs.all_organizers()
-                if channel_orgs.organizer_id:
-                    main_member = guild.get_member(channel_orgs.organizer_id)
-                    main_name = main_member.display_name if main_member else f"<@{channel_orgs.organizer_id}>"
-                    organizers_list.append(f"{replace_emojis('a_star')} {main_name} (основной)")
-
-                for org_id in channel_orgs.additional_organizers:
-                    member = guild.get_member(org_id)
-                    name = member.display_name if member else f"<@{org_id}>"
-                    organizers_list.append(f"{replace_emojis('white_dot')} {name}")
-
-            if not organizers_list:
-                organizers_text = "*Нет организаторов*"
             else:
-                organizers_text = "\n".join(organizers_list)
-
-            description += (
-                f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
-                f"{tournament_info}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:**\n"
-                f"{organizers_text}\n\n"
-            )
+                # Нет турнира - не показываем организаторов
+                description += (
+                    f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир:** *Нет активного турнира*\n\n"
+                )
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
+
+        if WELCOME_BANNER_URL:
+            embed.set_image(url=WELCOME_BANNER_URL)
 
         return embed
 
