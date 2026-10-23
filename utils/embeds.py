@@ -291,9 +291,35 @@ async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
     # If no players found, return default ELO
     if player_count == 0:
         return 1000
-    
+
     avg_elo = total_elo // player_count
     return avg_elo
+
+
+async def get_team_avg_skill(team: dict, tournament: Tournament) -> float:
+    """Рассчитать средний skill rating команды."""
+    total_skill = 0.0
+    player_count = 0
+
+    for circle in range(1, 5):
+        player_name = team.get(f"circle{circle}", "")
+        if player_name:
+            user_id = tournament.player_user_ids.get(player_name)
+            if user_id:
+                stats = await player_stats_store.get(tournament.guild_id, user_id)
+                if stats:
+                    total_skill += stats.skill_rating
+                    player_count += 1
+                else:
+                    total_skill += 5.0  # Default skill for new players (middle of 1.0-10.0)
+                    player_count += 1
+
+    # If no players found, return default skill
+    if player_count == 0:
+        return 5.0
+
+    avg_skill = total_skill / player_count
+    return round(avg_skill, 1)
 
 
 async def build_player_stats_embed(guild_id: int, user: discord.Member) -> discord.Embed:
@@ -440,26 +466,26 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             odds_a = current_odds.team_a_odds
             odds_b = current_odds.team_b_odds
         else:
-            # Fallback to ELO-based calculation if odds not initialized
-            avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-            avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
-            elo_diff = avg_elo_b - avg_elo_a
-            # 100 ELO difference = 0.1x odds difference
-            odds_diff = elo_diff * 0.001
+            # Fallback to skill-based calculation if odds not initialized
+            avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+            avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+            skill_diff = avg_skill_b - avg_skill_a
+            # 1.0 skill difference = 0.2x odds difference
+            odds_diff = skill_diff * 0.2
             base_odds = 1.9
 
-            if elo_diff >= 0:
-                # Team B has higher ELO -> Team B gets lower odds
+            if skill_diff >= 0:
+                # Team B has higher skill -> Team B gets lower odds
                 odds_a = base_odds + odds_diff
                 odds_b = base_odds - odds_diff
             else:
-                # Team A has higher ELO -> Team A gets lower odds
+                # Team A has higher skill -> Team A gets lower odds
                 odds_a = base_odds + odds_diff  # odds_diff is negative
                 odds_b = base_odds - odds_diff
 
             odds_a = max(1.1, min(2.7, odds_a))
             odds_b = max(1.1, min(2.7, odds_b))
-            
+
             # Also ensure both odds sum to reasonable value
             odds_sum = odds_a + odds_b
             if odds_sum < 3.0:
@@ -745,9 +771,9 @@ async def build_qualifiers_embed(
         name_a = tournament.team_names.get(team_a, captain_a)
         name_b = tournament.team_names.get(team_b, captain_b)
 
-        # Get average ELO for each team
-        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+        # Get average skill rating for each team
+        avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+        avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
 
         # Get room info
         # Not added to description anymore - will be added as embed fields later
@@ -844,9 +870,9 @@ async def build_semifinals_embed(
         name_a = tournament.team_names.get(team_a, captain_a)
         name_b = tournament.team_names.get(team_b, captain_b)
 
-        # Get average ELO for each team
-        avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-        avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+        # Get average skill rating for each team
+        avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+        avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
 
         # Get room info
         # Not added to description anymore - will be added as embed fields later
@@ -941,9 +967,9 @@ async def build_final_embed(
     name_a = tournament.team_names.get(team_a, captain_a)
     name_b = tournament.team_names.get(team_b, captain_b)
 
-    # Get average ELO for each team
-    avg_elo_a = await get_team_avg_elo(team_a_data, tournament)
-    avg_elo_b = await get_team_avg_elo(team_b_data, tournament)
+    # Get average skill rating for each team
+    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
 
     # Get room info (not displayed in embed, only sent via DM)
     room_data = tournament.final_room

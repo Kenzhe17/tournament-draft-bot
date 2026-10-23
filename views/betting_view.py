@@ -223,7 +223,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 
         # Initialize odds if not already done
         from models.bet import Bet
-        from utils.embeds import get_team_avg_elo
+        from utils.embeds import get_team_avg_skill
         current_odds = bet_store.get_current_odds(match_id)
 
         if not current_odds:
@@ -237,12 +237,12 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             else:
                 return
 
-            # Initialize odds based on ELO
+            # Initialize odds based on skill rating
             team_a_data = self.tournament.teams[match[0]] if match[0] < len(self.tournament.teams) else {}
             team_b_data = self.tournament.teams[match[1]] if match[1] < len(self.tournament.teams) else {}
-            avg_elo_a = await get_team_avg_elo(team_a_data, self.tournament)
-            avg_elo_b = await get_team_avg_elo(team_b_data, self.tournament)
-            bet_store.initialize_match_odds(match_id, self.team_a_name, self.team_b_name, avg_elo_a, avg_elo_b)
+            avg_skill_a = await get_team_avg_skill(team_a_data, self.tournament)
+            avg_skill_b = await get_team_avg_skill(team_b_data, self.tournament)
+            bet_store.initialize_match_odds(match_id, self.team_a_name, self.team_b_name, avg_skill_a, avg_skill_b)
 
         # Create bet (odds will be set dynamically in save_bet)
         bet = Bet(

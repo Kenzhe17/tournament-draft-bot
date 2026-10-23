@@ -73,21 +73,21 @@ class BetStore:
         with open(ODDS_FILE, "w", encoding="utf-8") as f:
             json.dump(odds_data, f, ensure_ascii=False, indent=2)
 
-    def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_elo_a: float, avg_elo_b: float) -> None:
-        """Initialize odds for a match based on ELO difference."""
-        # Calculate initial odds based on ELO
-        # Higher ELO team gets lower odds
-        # 100 ELO difference = 0.1x odds difference
-        elo_diff = avg_elo_b - avg_elo_a
-        odds_diff = elo_diff * 0.001
+    def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
+        """Initialize odds for a match based on skill rating difference."""
+        # Calculate initial odds based on skill rating
+        # Higher skill team gets lower odds
+        # Skill rating is 1.0-10.0, so 1.0 difference = 0.2x odds difference
+        skill_diff = avg_skill_b - avg_skill_a
+        odds_diff = skill_diff * 0.2
         base_odds = 1.9
 
-        if elo_diff >= 0:
-            # Team B has higher ELO -> Team B gets lower odds
+        if skill_diff >= 0:
+            # Team B has higher skill -> Team B gets lower odds
             odds_a = base_odds + odds_diff  # Team A gets higher odds
             odds_b = base_odds - odds_diff  # Team B gets lower odds
         else:
-            # Team A has higher ELO -> Team A gets lower odds
+            # Team A has higher skill -> Team A gets lower odds
             odds_a = base_odds + odds_diff  # Team A gets lower odds (odds_diff is negative)
             odds_b = base_odds - odds_diff  # Team B gets higher odds
 
