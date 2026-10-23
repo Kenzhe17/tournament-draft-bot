@@ -899,11 +899,6 @@ class TeamNameModal(Modal):
 
         await interaction.response.edit_message(embed=embed, view=view)
 
-        await interaction.followup.send(
-            f"✅ Название изменено на '{new_name}'.",
-            ephemeral=True
-        )
-
 
 class BRMapSelectView(View):
     """View для выбора карты и отправки данных."""
