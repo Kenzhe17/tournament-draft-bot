@@ -398,7 +398,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         elif self.match_type == "semifinal":
             tournament.confirm_semifinal_winner(self.match_index, self.team_index)
         elif self.match_type == "final":
-            tournament.confirm_final_winner(self.team_index)
+            await tournament.confirm_final_winner(self.team_index)
 
         store.set(tournament)
 

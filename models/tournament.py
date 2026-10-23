@@ -963,16 +963,45 @@ class Tournament:
         self.final_pending_winner = team_index
         # Don't set phase to COMPLETE yet, wait for confirmation
 
-    def confirm_final_winner(self, team_index: int) -> None:
+    async def confirm_final_winner(self, team_index: int) -> None:
         """Подтвердить победителя финала с сохранением статистики."""
         # Determine loser team
         loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
-        
+
         # Mark loser as eliminated
         self.eliminate_team(loser_idx)
-        
+
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
+
+        # Update organizer setup embed if it exists
+        try:
+            from config import TOURNAMENT_CHANNELS
+            from storage.organizer_store import organizer_store
+            bot = get_bot_instance()
+            if bot:
+                guild = bot.get_guild(self.guild_id)
+                if guild:
+                    for channel_id in TOURNAMENT_CHANNELS:
+                        orgs = organizer_store.get(self.guild_id, channel_id)
+                        if orgs and orgs.message_id:
+                            try:
+                                update_channel = guild.get_channel(channel_id)
+                                if update_channel:
+                                    update_message = await update_channel.fetch_message(orgs.message_id)
+                                    from cogs.organizer import OrganizerCog
+                                    cog = bot.get_cog("OrganizerCog")
+                                    if cog:
+                                        new_embed = cog._build_multi_channel_embed(guild)
+                                        from views.organizer_view import OrganizerManagementButton
+                                        from discord.ui import View
+                                        new_view = View()
+                                        new_view.add_item(OrganizerManagementButton(self.guild_id, guild))
+                                        await update_message.edit(embed=new_embed, view=new_view)
+                            except Exception:
+                                pass
+        except Exception:
+            pass
 
         # Log tournament completion
         try:

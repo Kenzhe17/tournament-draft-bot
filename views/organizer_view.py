@@ -23,14 +23,24 @@ class ChannelSelect(Select):
         self.guild_id = guild_id
         self.guild = guild
 
-        # Add options for each tournament channel
+        # Add options only for channels with active tournaments
+        from storage.json_store import store
+        has_tournaments = False
         for channel_id in TOURNAMENT_CHANNELS:
-            channel = guild.get_channel(channel_id)
-            if channel:
-                self.add_option(
-                    label=channel.name,
-                    value=str(channel_id)
-                )
+            tournament = store.get(guild_id, channel_id)
+            if tournament:
+                channel = guild.get_channel(channel_id)
+                if channel:
+                    has_tournaments = True
+                    self.add_option(
+                        label=channel.name,
+                        value=str(channel_id)
+                    )
+
+        # If no tournaments, disable the select
+        if not has_tournaments:
+            self.disabled = True
+            self.placeholder = "Нет активных турниров"
 
     async def callback(self, interaction: discord.Interaction) -> None:
         channel_id = int(self.values[0])

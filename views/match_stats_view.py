@@ -976,7 +976,7 @@ class AdminConfirmView(View):
             else:  # final
                 logging.info(f"Confirming final winner: team_index={winning_team_index}")
                 try:
-                    tournament.confirm_final_winner(winning_team_index)
+                    await tournament.confirm_final_winner(winning_team_index)
                     logging.info(f"Final winner confirmed, phase={tournament.phase.value}, winner_team_index={tournament.winner_team_index}")
                 except Exception as e:
                     import logging
