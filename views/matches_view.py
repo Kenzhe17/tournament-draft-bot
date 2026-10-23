@@ -796,7 +796,7 @@ class WinnerConfirmationView(discord.ui.View):
         self.match = match
 
         self.add_item(ConfirmFinalWinnerButton(guild_id, channel_id, tournament, match_type, match_index, team_index, team_name, match))
-        self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index, match))
+        self.add_item(CancelWinnerButton(guild_id, channel_id, tournament, match_type, match_index, match))
 
 
 class ConfirmWinnerButton(discord.ui.Button):

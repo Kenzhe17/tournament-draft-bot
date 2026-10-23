@@ -120,6 +120,9 @@ class BRManagementMenuView(View):
                         custom_id=f"br_kalahari_disabled:{guild_id}:{channel_id}"
                     )
                     self.add_item(btn)
+        elif tournament.phase == BRTournamentPhase.RESULTS:
+            # No buttons in results phase - tournament is complete
+            pass
 
 
 class StartBRButton(Button):
@@ -1248,14 +1251,9 @@ class BRSingleTeamStatsModal(Modal):
             br_store.set(self.tournament)
 
             await interaction.response.send_message(
-                "✅ Статистика сохранена.",
+                "✅ Статистика сохранена. Нажмите 'Назад' для проверки.",
                 ephemeral=True
             )
-
-            # Refresh the view
-            # Get current group range
-            view = BRStatsInputView(self.guild_id, self.channel_id, self.tournament, 0, min(4, len(self.tournament.teams)))
-            await interaction.followup.edit_message(view=view)
         except ValueError:
             await interaction.response.send_message(
                 "❌ Введите корректные числа.",
@@ -1382,21 +1380,22 @@ class BRConfirmPurgatoryButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate points for current map only
+                # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
-                map_points = 0
-                if "purgatory" in stats:
-                    map_stats = stats["purgatory"]
-                    place = map_stats.get("place", 0)
-                    kills = map_stats.get("kills", 0)
-                    if place > 0:
-                        map_points = (13 - place) + kills
+                cumulative_points = 0
+                for map_name in ["bermuda", "purgatory"]:
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            cumulative_points += (13 - place) + kills
 
                 teams_with_points.append({
                     "captain": captain,
                     "team_name": team_name,
                     "players_str": players_str,
-                    "points": map_points,
+                    "points": cumulative_points,
                     "index": i
                 })
 
@@ -1482,21 +1481,22 @@ class BRConfirmKalahariButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate points for current map only
+                # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
-                map_points = 0
-                if "kalahari" in stats:
-                    map_stats = stats["kalahari"]
-                    place = map_stats.get("place", 0)
-                    kills = map_stats.get("kills", 0)
-                    if place > 0:
-                        map_points = (13 - place) + kills
+                cumulative_points = 0
+                for map_name in ["bermuda", "purgatory"]:
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            cumulative_points += (13 - place) + kills
 
                 teams_with_points.append({
                     "captain": captain,
                     "team_name": team_name,
                     "players_str": players_str,
-                    "points": map_points,
+                    "points": cumulative_points,
                     "index": i
                 })
 
@@ -1608,7 +1608,7 @@ class BRConfirmResultsButton(Button):
                 # Add trophy for winner
                 if i == 0:
                     teams_text.append(
-                        f"{get_emoji('trophy')} **{captain}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
+                        f"{get_emoji('winner')} **{captain}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
                         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                     )
                 else:
@@ -1637,14 +1637,13 @@ class BRConfirmResultsButton(Button):
 
 
 class BRResultsView(View):
-    """View for BR results phase."""
+    """View for BR results phase - no buttons, tournament is complete."""
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
-
-        self.add_item(BROrganizerMenuButton(guild_id, channel_id))
+        # No buttons - tournament is complete
 
 
 class BRPurgatoryButton(Button):
