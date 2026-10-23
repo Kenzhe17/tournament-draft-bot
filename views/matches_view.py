@@ -592,16 +592,17 @@ class AdminStatsTeamButton(discord.ui.Button):
                 players.append(player)
 
         # Open modal with K/D fields for this team's players
-        modal = AdminStatsModal(self.guild_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, players)
+        modal = AdminStatsModal(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, players)
         await interaction.response.send_modal(modal)
 
 
 class AdminStatsModal(discord.ui.Modal, title="Статистика команды"):
     """Modal for admin to fill K/D for 4 players in a team."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, players: list):
+    def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, players: list):
         super().__init__(title=f"Статистика: {team_name}")
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index

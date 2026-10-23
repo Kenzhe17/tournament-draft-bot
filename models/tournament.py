@@ -873,18 +873,19 @@ class Tournament:
                             if captain_id:
                                 captain_mentions.append(f"<@{captain_id}>")
 
-                        if captain_mentions:
-                            message = (
-                                f"{replace_emojis('a_sparkle')} **КОМАНДЫ СФОРМИРОВАНЫ!** {replace_emojis('a_sparkle')}\n\n"
-                                f"{replace_emojis('white_arrow')} **Капитаны:** {', '.join(captain_mentions)}\n\n"
-                                f"{replace_emojis('white_dot')} **ВАЖНО:** Не забудьте заполнить статистику матчей!\n"
-                                f"{replace_emojis('white_dot')} После каждого матча нажмите на результат и введите:\n"
-                                f"{replace_emojis('a_dot_smaller')} Убийства (kills) для каждой команды\n"
-                                f"{replace_emojis('a_dot_smaller')} Это необходимо для правильного расчета ELO и статистики\n\n"
-                                f"{replace_emojis('a_star')} Удачи в турнире! {replace_emojis('a_star')}"
-                            )
-                            import asyncio
-                            asyncio.create_task(channel.send(message))
+                        # Commented out - not sending captain notification
+                        # if captain_mentions:
+                        #     message = (
+                        #         f"{replace_emojis('a_sparkle')} **КОМАНДЫ СФОРМИРОВАНЫ!** {replace_emojis('a_sparkle')}\n\n"
+                        #         f"{replace_emojis('white_arrow')} **Капитаны:** {', '.join(captain_mentions)}\n\n"
+                        #         f"{replace_emojis('white_dot')} **ВАЖНО:** Не забудьте заполнить статистику матчей!\n"
+                        #         f"{replace_emojis('white_dot')} После каждого матча нажмите на результат и введите:\n"
+                        #         f"{replace_emojis('a_dot_smaller')} Убийства (kills) для каждой команды\n"
+                        #         f"{replace_emojis('a_dot_smaller')} Это необходимо для правильного расчета ELO и статистики\n\n"
+                        #         f"{replace_emojis('a_star')} Удачи в турнире! {replace_emojis('a_star')}"
+                        #     )
+                        #     import asyncio
+                        #     asyncio.create_task(channel.send(message))
         except Exception:
             pass  # Don't break tournament build if notification fails
 

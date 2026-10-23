@@ -303,6 +303,7 @@ class BetButton(Button):
         
         match_view = MatchSelectView(
             self.guild_id,
+            self.channel_id,
             self.tournament,
             self.matches,
             self.match_type
