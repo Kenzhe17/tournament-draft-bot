@@ -540,7 +540,7 @@ class DeletePlayerButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="Удалить",
-            custom_id=f"delete_player:{guild_id}",
+            custom_id=f"delete_player:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -651,7 +651,7 @@ class SwapPlayersButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Поменять",
-            custom_id=f"swap_players:{guild_id}",
+            custom_id=f"swap_players:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -791,7 +791,7 @@ class MovePlayerButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Переместить",
-            custom_id=f"move_player:{guild_id}",
+            custom_id=f"move_player:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -959,7 +959,7 @@ class AutoDistributeButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Распределить по ELO",
-            custom_id=f"auto_distribute:{guild_id}",
+            custom_id=f"auto_distribute:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1038,7 +1038,7 @@ class AutoDistributeAvgButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Распределить по Skill Rating",
-            custom_id=f"auto_distribute_avg:{guild_id}",
+            custom_id=f"auto_distribute_avg:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1118,7 +1118,7 @@ class StartTournamentButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.success,
             label="Старт",
-            custom_id=f"start_tournament:{guild_id}",
+            custom_id=f"start_tournament:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1231,7 +1231,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         super().__init__(
             style=style,
             label=label,
-            custom_id=f"toggle_registration:{guild_id}",
+            custom_id=f"toggle_registration:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1434,29 +1434,29 @@ class OrgMenuView(discord.ui.View):
         self.tournament = tournament
 
         # Add all org buttons
-        delete_button = DeletePlayerButton(tournament.guild_id)
+        delete_button = DeletePlayerButton(tournament.guild_id, tournament.channel_id)
         self.add_item(delete_button)
 
-        swap_button = SwapPlayersButton(tournament.guild_id)
+        swap_button = SwapPlayersButton(tournament.guild_id, tournament.channel_id)
         self.add_item(swap_button)
 
-        move_button = MovePlayerButton(tournament.guild_id)
+        move_button = MovePlayerButton(tournament.guild_id, tournament.channel_id)
         self.add_item(move_button)
 
         # Add auto-distribute buttons based on formation mode
         if tournament.formation_mode == FormationMode.ELO:
-            auto_distribute_button = AutoDistributeButton(tournament.guild_id)
+            auto_distribute_button = AutoDistributeButton(tournament.guild_id, tournament.channel_id)
             self.add_item(auto_distribute_button)
         elif tournament.formation_mode == FormationMode.SKILL:
-            auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id)
+            auto_distribute_avg_button = AutoDistributeAvgButton(tournament.guild_id, tournament.channel_id)
             self.add_item(auto_distribute_avg_button)
 
-        start_button = StartTournamentButton(tournament.guild_id)
+        start_button = StartTournamentButton(tournament.guild_id, tournament.channel_id)
         self.add_item(start_button)
 
         # Show toggle registration button only if not isolated
         if tournament.registration != RegistrationState.ISOLATED:
-            toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.registration == RegistrationState.OPEN)
+            toggle_button = ToggleRegistrationButton(tournament.guild_id, tournament.channel_id, tournament.registration == RegistrationState.OPEN)
             self.add_item(toggle_button)
 
         # Show isolation button
