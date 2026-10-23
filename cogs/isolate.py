@@ -341,7 +341,7 @@ class Isolate(commands.Cog):
         logger.info(f"Права восстановлены для {len(snapshot['categories'])} категорий и {len(snapshot['channels'])} каналов")
 
 
-async def setup(bot: TournamentBot) -> None:
+async def setup(bot: commands.Bot) -> None:
     """Регистрация cog."""
     await bot.add_cog(Isolate(bot))
     logger.info("Cog 'isolate' загружен")

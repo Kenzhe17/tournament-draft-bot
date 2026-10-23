@@ -128,6 +128,6 @@ class OrganizerCog(commands.Cog):
         return embed
 
 
-async def setup(bot: "TournamentBot"):
+async def setup(bot: commands.Bot):
     """Setup the cog."""
     await bot.add_cog(OrganizerCog(bot))
