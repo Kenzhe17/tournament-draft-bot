@@ -22,15 +22,16 @@ logger = logging.getLogger(__name__)
 class PlayerSelect(discord.ui.Select):
     """Select Menu с доступными игроками текущего круга."""
 
-    def __init__(self, guild_id: int, options: list[discord.SelectOption]):
+    def __init__(self, guild_id: int, channel_id: int, options: list[discord.SelectOption]):
         super().__init__(
             placeholder="Выберите игрока...",
             min_values=1,
             max_values=1,
             options=options,
-            custom_id=f"draft_select:{guild_id}",
+            custom_id=f"draft_select:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id, self.channel_id)
@@ -136,13 +137,15 @@ class PlayerSelect(discord.ui.Select):
 class DraftView(discord.ui.View):
     """Persistent View с Select Menu для драфта."""
 
-    def __init__(self, guild_id: int, available_players: list[str]):
+    def __init__(self, guild_id: int, channel_id: int, available_players: list[str]):
         super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
         options = [
             discord.SelectOption(label=p, value=p) for p in available_players[:25]
         ]
         if options:
-            self.add_item(PlayerSelect(guild_id, options))
+            self.add_item(PlayerSelect(guild_id, channel_id, options))
         # Add warning if more than 25 players available
         if len(available_players) > 25:
             self._warning = replace_emojis(f"⚠️ Показано 25 из {len(available_players)} игроков")
@@ -160,4 +163,4 @@ def build_draft_view(tournament: Tournament) -> DraftView | None:
     picker_pos = tournament.current_picker_position()
     if picker_pos is None:
         return None
-    return DraftView(tournament.guild_id, available)
+    return DraftView(tournament.guild_id, tournament.channel_id, available)
