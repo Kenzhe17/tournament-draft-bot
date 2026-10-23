@@ -94,19 +94,20 @@ class BRCog(commands.Cog):
         from views.br_view import BRRegistrationView
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
 
-        # Создать embed
+        # Создать embed в стиле tournament create
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE**",
-            description=f"Формат: **Random**\n"
-                       f"Фаза: **Регистрация**\n"
-                       f"Игроков: **{len(tournament.players)}/48**",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{interaction.user.id}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
             color=discord.Color.from_rgb(69, 69, 69)
-        )
-        embed.add_field(
-            name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-            value="Нажмите кнопку 'Войти' для регистрации.\n"
-                  "Турнир начнется когда наберется 20+ игроков и количество будет делиться на 4.",
-            inline=False
         )
 
         message = await interaction.response.send_message(embed=embed, view=view)
