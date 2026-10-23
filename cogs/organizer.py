@@ -5,6 +5,7 @@ import logging
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View
 
 from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS
 from storage.organizer_store import organizer_store
