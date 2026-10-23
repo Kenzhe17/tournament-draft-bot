@@ -62,6 +62,7 @@ class BRTournament:
     room_channel_id: int = 0
     current_map: str = ""
     team_rename_remaining: dict[int, bool] = field(default_factory=dict)  # team_index: can_rename
+    room_data: dict[str, str] = field(default_factory=dict)  # {"id": str, "password": str}
     created_at: str = ""
     team_rename_start_time: str = ""  # Время начала фазы переименования
 
@@ -278,6 +279,7 @@ class BRTournament:
             "room_channel_id": self.room_channel_id,
             "current_map": self.current_map,
             "team_rename_remaining": self.team_rename_remaining,
+            "room_data": self.room_data,
             "created_at": self.created_at,
             "team_rename_start_time": self.team_rename_start_time,
         }
@@ -298,6 +300,7 @@ class BRTournament:
             room_channel_id=data.get("room_channel_id", 0),
             current_map=data.get("current_map", ""),
             team_rename_remaining=data.get("team_rename_remaining", {}),
+            room_data=data.get("room_data", {}),
             created_at=data.get("created_at", ""),
             team_rename_start_time=data.get("team_rename_start_time", ""),
         )

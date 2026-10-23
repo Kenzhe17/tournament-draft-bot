@@ -82,6 +82,8 @@ class BRManagementMenuView(View):
 
         self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
         self.add_item(StartBRButton(guild_id, channel_id))
+        self.add_item(BRRoomButton(guild_id, channel_id))
+        self.add_item(BRDataButton(guild_id, channel_id))
 
 
 class StartBRButton(Button):
@@ -172,7 +174,8 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -605,6 +608,179 @@ class DeleteBRButton(Button):
         )
 
 
+class BRRoomButton(Button):
+    """Кнопка для открытия комнаты BR."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Комната",
+            custom_id=f"br_room:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Проверка на владельца
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может открыть комнату.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Show modal for room ID and password
+        view = BRRoomModal(self.guild_id, self.channel_id)
+        await interaction.response.send_modal(view)
+
+
+class BRDataButton(Button):
+    """Кнопка для отправки данных BR."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Данные",
+            custom_id=f"br_data:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Проверка на владельца
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может отправить данные.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Check if room data exists
+        if not tournament.room_data:
+            await interaction.response.send_message(
+                "❌ Сначала откройте комнату.",
+                ephemeral=True
+            )
+            return
+
+        # Send room data to channel
+        try:
+            channel = interaction.guild.get_channel(1563195265395982466)
+            if not channel:
+                await interaction.response.send_message(
+                    "❌ Канал для данных не найден.",
+                    ephemeral=True
+                )
+                return
+
+            # Get current map
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+            current_map = tournament.current_map if hasattr(tournament, 'current_map') else "bermuda"
+            map_name = map_names.get(current_map, current_map)
+
+            # Get BR role
+            role = interaction.guild.get_role(tournament.role_id)
+            role_mention = f"<@&{tournament.role_id}>" if role else ""
+
+            # Send message 1: Header
+            await channel.send(
+                content=f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**"
+            )
+
+            # Send message 2: Room ID
+            await channel.send(content=tournament.room_data.get("id", ""))
+
+            # Send message 3: Password
+            await channel.send(content=tournament.room_data.get("password", ""))
+
+            # Send message 4: GIF
+            await channel.send(
+                content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"
+            )
+
+            # Send to general channel
+            general_channel = interaction.guild.get_channel(1200125075156910181)
+            if general_channel:
+                await general_channel.send(
+                    content=f"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>"
+                )
+
+            await interaction.response.send_message(
+                "✅ Данные отправлены.",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error sending BR data: {e}")
+            await interaction.response.send_message(
+                "❌ Не удалось отправить данные.",
+                ephemeral=True
+            )
+
+
+class BRRoomModal(Modal):
+    """Modal для ввода ID и пароля комнаты BR."""
+
+    room_id = TextInput(
+        label="ID комнаты",
+        placeholder="123456",
+        required=True,
+        max_length=20
+    )
+
+    room_password = TextInput(
+        label="Пароль",
+        placeholder="123",
+        required=True,
+        max_length=20
+    )
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(title="Комната BR")
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Store room data
+        tournament.room_data = {
+            "id": self.room_id.value,
+            "password": self.room_password.value
+        }
+        br_store.set(tournament)
+
+        await interaction.response.send_message(
+            "✅ Комната сохранена. Нажмите 'Данные' для отправки.",
+            ephemeral=True
+        )
+
+
 class StartBRButton(Button):
     """Кнопка для старта BR турнира."""
 
@@ -670,7 +846,8 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -785,17 +962,60 @@ class StartBermudaButton(Button):
             "kalahari": "Калахари"
         }
 
+        # Build teams section with current map points (sorted by points)
+        teams_with_points = []
+        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            players_str = ", ".join(players) if players else ""
+
+            # Calculate points for current map only
+            stats = team.get("stats", {})
+            map_points = 0
+            if "bermuda" in stats:
+                map_stats = stats["bermuda"]
+                place = map_stats.get("place", 0)
+                kills = map_stats.get("kills", 0)
+                if place > 0:
+                    map_points = (13 - place) + kills
+
+            teams_with_points.append({
+                "captain": captain,
+                "team_name": team_name,
+                "players_str": players_str,
+                "points": map_points,
+                "index": i
+            })
+
+        # Sort by points descending
+        teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+        teams_text = []
+        for team_data in teams_with_points:
+            captain = team_data["captain"]
+            players_str = team_data["players_str"]
+            points = team_data["points"]
+            original_index = team_data["index"]
+            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+
+            teams_text.append(
+                f"{replace_emojis(num_emoji)} {captain} ({points} очков)\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+            )
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get('bermuda', 'bermuda')}",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('bermuda', 'bermuda')}",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
-                f"{replace_emojis('sub_middle')} Фаза: {map_names.get('bermuda', 'bermuda')}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -902,7 +1122,8 @@ class TeamNameModal(Modal):
 
         # Build teams section
         teams_text = []
-        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1062,7 +1283,8 @@ class MapSelectMenu(Select):
 
             # Build teams section with current map points (sorted by points)
             teams_with_points = []
-            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
@@ -1252,7 +1474,8 @@ class BackToMapButton(Button):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
             emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             # Calculate total points so far
@@ -1365,7 +1588,8 @@ class BRStatsModal(Modal):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+        num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1476,7 +1700,8 @@ class BRStatsModal(Modal):
 
                 # Build teams section with next map points (sorted)
                 teams_with_points = []
-                num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+                num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
                 for i, team in enumerate(tournament.teams):
                     captain = team.get("captain", "Unknown")
@@ -1540,7 +1765,8 @@ class BRStatsModal(Modal):
 
             # Build teams section with current map points (sorted)
             teams_with_points = []
-            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            num_emojis = [replace_emojis("num_1"), replace_emojis("num_2"), replace_emojis("num_3"), replace_emojis("num_4"), replace_emojis("num_5"), replace_emojis("num_6"),
+                      replace_emojis("num_7"), replace_emojis("num_8"), replace_emojis("num_9"), replace_emojis("num_ten"), replace_emojis("num_eleven"), replace_emojis("num_twelve")]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")

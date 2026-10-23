@@ -212,9 +212,9 @@ GAME_EMOJIS = {
     "num_7": os.getenv("EMOJI_NUM_7", ""),
     "num_8": os.getenv("EMOJI_NUM_8", ""),
     "num_9": os.getenv("EMOJI_NUM_9", ""),
-    "num_10": os.getenv("EMOJI_NUM_TEN", ""),
-    "num_11": os.getenv("EMOJI_NUM_ELEVEN", ""),
-    "num_12": os.getenv("EMOJI_NUM_TWELVE", ""),
+    "num_ten": os.getenv("EMOJI_NUM_TEN", ""),
+    "num_eleven": os.getenv("EMOJI_NUM_ELEVEN", ""),
+    "num_twelve": os.getenv("EMOJI_NUM_TWELVE", ""),
 
     # Icon emojis
     "icon_letter": os.getenv("EMOJI_ICON_LETTER", ""),
@@ -327,9 +327,9 @@ STANDARD_EMOJIS = {
     "num_7": "7️⃣",
     "num_8": "8️⃣",
     "num_9": "9️⃣",
-    "num_10": "🔟",
-    "num_11": "1️⃣1️⃣",
-    "num_12": "1️⃣2️⃣",
+    "num_ten": "🔟",
+    "num_eleven": "1️⃣1️⃣",
+    "num_twelve": "1️⃣2️⃣",
 
     # Interface
     "success": "✅",
@@ -565,9 +565,9 @@ def replace_emojis(text: str) -> str:
         "7️⃣": "num_7",
         "8️⃣": "num_8",
         "9️⃣": "num_9",
-        "🔟": "num_10",
-        "1️⃣1️⃣": "num_11",
-        "1️⃣2️⃣": "num_12",
+        "🔟": "num_ten",
+        "1️⃣1️⃣": "num_eleven",
+        "1️⃣2️⃣": "num_twelve",
     }
 
     # Direct emoji name mapping for custom emoji names passed directly
@@ -583,7 +583,7 @@ def replace_emojis(text: str) -> str:
         "icon_wing", "icon_black_rose", "icon_fuck_you", "icon_zzz",
         "check", "cross",
         "gold_medal", "silver_medal", "bronze_medal",
-        "num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12",
+        "num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve",
         "room",
         "winner",
         "emoji_basic_case", "emoji_premium_case", "emoji_elite_case", "emoji_special_case",
@@ -604,5 +604,12 @@ def replace_emojis(text: str) -> str:
             # Only replace if custom emoji is different from standard
             if custom_emoji != standard:
                 result = result.replace(standard, custom_emoji)
+
+    # Special handling for num emojis to avoid substring replacement issues
+    # Replace in reverse order (longest first) to avoid num_11 becoming num_1
+    for emoji_name in ["num_twelve", "num_eleven", "num_ten", "num_9", "num_8", "num_7", "num_6", "num_5", "num_4", "num_3", "num_2", "num_1"]:
+        if emoji_name in result:
+            custom_emoji = get_emoji(emoji_name)
+            result = result.replace(emoji_name, custom_emoji)
 
     return result
