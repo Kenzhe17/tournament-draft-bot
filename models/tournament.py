@@ -446,6 +446,11 @@ class Tournament:
                     removed = True
                     logger.info(f"remove_player: removed '{name}' from team {team_idx} players, tournament_id={self.id}")
 
+        # Remove from player_user_ids if removed from circles or teams
+        if removed and name in self.player_user_ids:
+            del self.player_user_ids[name]
+            logger.info(f"remove_player: removed '{name}' from player_user_ids, tournament_id={self.id}")
+
         if removed:
             logger.info(f"remove_player: successfully removed '{name}' (user_id={user_id}) from tournament {self.id}")
 
