@@ -938,11 +938,8 @@ class Tournament:
             # Dictionary to store match -> opener assignments
             self.match_openers = {}  # {(match_type, match_index): user_id}
 
-            description = f"{replace_emojis('a_sparkle')} **НАЗНАЧЕНИЕ ОТКРЫВАЮЩИХ МАТЧИ** {replace_emojis('a_sparkle')}\n\n"
-
             # Assign for qualifiers if they exist
             if hasattr(self, 'qualifier_matches') and self.qualifier_matches:
-                description += f"{replace_emojis('a_star')} **ОТБОРОЧНЫЕ МАТЧИ:**\n"
                 for i, (team_a, team_b) in enumerate(self.qualifier_matches):
                     # Get all players from both teams
                     players = []
@@ -958,16 +955,9 @@ class Tournament:
                         opener_id = self.player_user_ids.get(opener_name)
                         if opener_id:
                             self.match_openers[("qualifier", i)] = opener_id
-                            team_a_name = self.team_names.get(team_a, f"Team {team_a}")
-                            team_b_name = self.team_names.get(team_b, f"Team {team_b}")
-                            description += (
-                                f"{replace_emojis('white_dot')} Матч {i+1}: {team_a_name} vs {team_b_name}\n"
-                                f"{replace_emojis('a_dot_smaller')} Открывает: <@{opener_id}>\n"
-                            )
 
             # Assign for semifinals if they exist
             if hasattr(self, 'semifinal_matches') and self.semifinal_matches:
-                description += f"\n{replace_emojis('a_star')} **ПОЛУФИНАЛЫ:**\n"
                 for i, (team_a, team_b) in enumerate(self.semifinal_matches):
                     players = []
                     for team_idx in [team_a, team_b]:
@@ -981,16 +971,9 @@ class Tournament:
                         opener_id = self.player_user_ids.get(opener_name)
                         if opener_id:
                             self.match_openers[("semifinal", i)] = opener_id
-                            team_a_name = self.team_names.get(team_a, f"Team {team_a}")
-                            team_b_name = self.team_names.get(team_b, f"Team {team_b}")
-                            description += (
-                                f"{replace_emojis('white_dot')} Матч {i+1}: {team_a_name} vs {team_b_name}\n"
-                                f"{replace_emojis('a_dot_smaller')} Открывает: <@{opener_id}>\n"
-                            )
 
             # Assign for final if it exists
             if hasattr(self, 'final_teams') and self.final_teams:
-                description += f"\n{replace_emojis('a_star')} **ФИНАЛ:**\n"
                 team_a, team_b = self.final_teams
                 players = []
                 for team_idx in [team_a, team_b]:
@@ -1004,23 +987,6 @@ class Tournament:
                     opener_id = self.player_user_ids.get(opener_name)
                     if opener_id:
                         self.match_openers[("final", 0)] = opener_id
-                        team_a_name = self.team_names.get(team_a, f"Team {team_a}")
-                        team_b_name = self.team_names.get(team_b, f"Team {team_b}")
-                        description += (
-                            f"{replace_emojis('white_dot')} Финал: {team_a_name} vs {team_b_name}\n"
-                            f"{replace_emojis('a_dot_smaller')} Открывает: <@{opener_id}>\n"
-                        )
-
-            description += f"\n{replace_emojis('a_star')} *Ожидаются все назначенные участники!*"
-
-            embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} r1z3 | МАТЧИ {replace_emojis('a_star')}",
-                description=description,
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-
-            import asyncio
-            asyncio.create_task(channel.send(embed=embed))
 
         except Exception as e:
             import logging

@@ -172,7 +172,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -180,12 +180,11 @@ class StartBRButton(Button):
             players = team.get("players", [])
             all_players = [captain] + players
             players_str = ", ".join(all_players)
-            emoji = team_emojis.get(i + 1, "🎮")
+            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{emoji} **{team_name}**\n"
-                f"┣ **Капитан:** {captain}\n"
-                f"┗ **Состав:** {players_str}\n"
+                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
         # Update embed in bot style
@@ -602,7 +601,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -610,12 +609,11 @@ class StartBRButton(Button):
             players = team.get("players", [])
             all_players = [captain] + players
             players_str = ", ".join(all_players)
-            emoji = team_emojis.get(i + 1, "🎮")
+            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{emoji} **{team_name}**\n"
-                f"┣ **Капитан:** {captain}\n"
-                f"┗ **Состав:** {players_str}\n"
+                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
         # Создать view для фазы команд
@@ -630,7 +628,7 @@ class StartBRButton(Button):
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text) + "\n\n"
                 f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
             ),
@@ -815,7 +813,7 @@ class TeamNameModal(Modal):
 
         # Build teams section
         teams_text = []
-        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emojis = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_10", "num_11", "num_12"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -823,12 +821,11 @@ class TeamNameModal(Modal):
             players = team.get("players", [])
             all_players = [captain] + players
             players_str = ", ".join(all_players)
-            emoji = team_emojis.get(i + 1, "🎮")
+            num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{emoji} **{team_name}**\n"
-                f"┣ **Капитан:** {captain}\n"
-                f"┗ **Состав:** {players_str}\n"
+                f"{replace_emojis(num_emoji)} {captain}\n"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
         # Обновить view (убрать кнопку если больше нельзя переименовывать)
@@ -843,7 +840,7 @@ class TeamNameModal(Modal):
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text) + "\n\n"
                 f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
             ),

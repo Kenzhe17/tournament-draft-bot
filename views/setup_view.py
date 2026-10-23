@@ -1527,14 +1527,14 @@ class LimitSettingsView(discord.ui.View):
         # Add limit toggle buttons for circles 2, 3, 4
         for circle in [2, 3, 4]:
             is_enabled = tournament.circle_limits_enabled.get(circle, True)
-            button = LimitToggleButton(tournament.guild_id, circle, is_enabled)
+            button = LimitToggleButton(tournament.guild_id, tournament.channel_id, circle, is_enabled)
             self.add_item(button)
 
 
 class LimitToggleButton(discord.ui.Button):
     """Кнопка для переключения лимита конкретного круга."""
 
-    def __init__(self, guild_id: int, circle: int, is_enabled: bool):
+    def __init__(self, guild_id: int, channel_id: int, circle: int, is_enabled: bool):
         self.circle = circle
         self.is_enabled = is_enabled
         label = f"Круг {circle}: {'Вкл' if is_enabled else 'Выкл'}"
