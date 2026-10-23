@@ -221,7 +221,7 @@ class TournamentCog(commands.Cog):
     @is_bot_owner()
     async def test_start(self, interaction: discord.Interaction) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
-        tournament = store.get(interaction.guild_id)
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
