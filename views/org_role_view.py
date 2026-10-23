@@ -157,7 +157,7 @@ class TakeRoleButton(discord.ui.Button):
             save_state(state)
 
             # Rebuild view with updated state
-            view = OrgRoleView(state)
+            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
@@ -217,7 +217,7 @@ class ReleaseRoleButton(discord.ui.Button):
             save_state(state)
 
             # Rebuild view with updated state
-            view = OrgRoleView(state)
+            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
@@ -271,7 +271,7 @@ class ResetButton(discord.ui.Button):
             state.role_holders = {}
             save_state(state)
 
-            # Rebuild view with updated state
+            # Rebuild main view with updated state
             view = OrgRoleView(state)
 
             # Update embed
@@ -300,17 +300,63 @@ class OrgRoleView(discord.ui.View):
 
     def __init__(self, state: OrgSlotState):
         super().__init__(timeout=None)
-        # Add 3 take/release button pairs for each role
+        # Add main button to open role selection
+        self.add_item(RoleSelectionButton(state))
+        # Add reset button for admins
+        self.add_item(ResetButton())
+
+
+class RoleSelectionButton(discord.ui.Button):
+    """Main button to open role selection menu."""
+
+    def __init__(self, state: OrgSlotState):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Взять роль",
+            custom_id="org_role_select"
+        )
+        self.state = state
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        state = load_state()
+        view = RoleSelectionView(state, interaction.guild, interaction.user.id)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class RoleSelectionView(discord.ui.View):
+    """View with 3 role buttons (Take or Release)."""
+
+    def __init__(self, state: OrgSlotState, guild: discord.Guild, user_id: int):
+        super().__init__(timeout=None)
+        self.state = state
+        self.guild = guild
+        self.user_id = user_id
+
         from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
         roles = [
             (ORG_1_ROLE_ID, "ORG-1"),
             (ORG_2_ROLE_ID, "ORG-2"),
             (ORG_3_ROLE_ID, "ORG-3"),
         ]
+
+        # Get user's roles
+        user = guild.get_member(user_id)
+        user_role_ids = [role.id for role in user.roles] if user else []
+
         for role_id, role_name in roles:
-            self.add_item(TakeRoleButton(state, role_id, role_name))
-            self.add_item(ReleaseRoleButton(state, role_id, role_name))
-        self.add_item(ResetButton())
+            # Check if user has this role
+            has_role = role_id in user_role_ids
+            # Check if role is full
+            holders = state.get_holders(role_id)
+            is_full = len(holders) >= MAX_ORG_ROLE_HOLDERS
+
+            if has_role:
+                # User has role - show release button
+                self.add_item(ReleaseRoleButton(state, role_id, role_name))
+            elif not is_full:
+                # Role is free - show take button
+                self.add_item(TakeRoleButton(state, role_id, role_name))
+            # If role is full and user doesn't have it, don't show button
 
 
 def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.Embed:
@@ -347,9 +393,9 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         f"Каждая роль (ORG-1, ORG-2, ORG-3) соответствует своему каналу турнира.\n"
         f"До **{MAX_ORG_ROLE_HOLDERS} человек** могут одновременно иметь одну роль.\n\n"
         f"{replace_emojis('a_sparkle')} **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Нажмите **«Взять»** для нужной роли, чтобы получить доступ к каналу.\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} После завершения нажмите **«Сдать»**.\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка красная — слот полон ({MAX_ORG_ROLE_HOLDERS}).\n\n"
+        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
+        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} После завершения нажмите **«Сдать»** на соответствующей роли.\n"
+        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка отсутствует — слот полон ({MAX_ORG_ROLE_HOLDERS}).\n\n"
         f"{replace_emojis('a_sparkle')} **ТЕКУЩИЙ СТАТУС:**\n"
         f"{status_section}\n\n"
         f"{replace_emojis('a_sparkle')} *Администрация оставляет за собой право сбросить роли в любой момент.*"
