@@ -498,29 +498,47 @@ class RemoveBRPlayerPaginationView(View):
         # Add pagination buttons if needed
         if self.total_pages > 1:
             if self.page > 1:
-                prev_btn = Button(
-                    label="◀",
-                    style=discord.ButtonStyle.primary,
-                    custom_id=f"br_remove_prev:{guild_id}:{channel_id}:{page}"
-                )
-                prev_btn.callback = self.prev_callback
-                self.add_item(prev_btn)
+                self.add_item(RemoveBRPlayerPrevButton(guild_id, channel_id, players, page))
 
             if self.page < self.total_pages:
-                next_btn = Button(
-                    label="▶",
-                    style=discord.ButtonStyle.primary,
-                    custom_id=f"br_remove_next:{guild_id}:{channel_id}:{page}"
-                )
-                next_btn.callback = self.next_callback
-                self.add_item(next_btn)
+                self.add_item(RemoveBRPlayerNextButton(guild_id, channel_id, players, page))
 
-    async def prev_callback(self, interaction: discord.Interaction) -> None:
+
+class RemoveBRPlayerPrevButton(Button):
+    """Previous page button for player removal."""
+
+    def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
+        super().__init__(
+            label="◀",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"br_remove_prev:{guild_id}:{channel_id}:{page}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.players = players
+        self.page = page
+
+    async def callback(self, interaction: discord.Interaction) -> None:
         new_page = self.page - 1
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
         await interaction.response.edit_message(view=view)
 
-    async def next_callback(self, interaction: discord.Interaction) -> None:
+
+class RemoveBRPlayerNextButton(Button):
+    """Next page button for player removal."""
+
+    def __init__(self, guild_id: int, channel_id: int, players: list, page: int):
+        super().__init__(
+            label="▶",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"br_remove_next:{guild_id}:{channel_id}:{page}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.players = players
+        self.page = page
+
+    async def callback(self, interaction: discord.Interaction) -> None:
         new_page = self.page + 1
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
         await interaction.response.edit_message(view=view)
