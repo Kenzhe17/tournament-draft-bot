@@ -63,9 +63,24 @@ class OrganizerManagementButton(Button):
         self.guild = guild
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if user has MANAGER_ROLE_ID
+        # Check if user has MANAGER_ROLE_ID or is an organizer in any tournament channel
+        has_access = False
+
+        # Check MANAGER_ROLE_ID
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
-        if not role or role not in interaction.user.roles:
+        if role and role in interaction.user.roles:
+            has_access = True
+
+        # Check if user is an organizer in any tournament channel
+        if not has_access:
+            from config import TOURNAMENT_CHANNELS
+            for channel_id in TOURNAMENT_CHANNELS:
+                channel_orgs = organizer_store.get(self.guild_id, channel_id)
+                if channel_orgs and interaction.user.id in channel_orgs.all_organizers():
+                    has_access = True
+                    break
+
+        if not has_access:
             await interaction.response.send_message(
                 f"❌ У вас нет роли для управления организаторами.",
                 ephemeral=True
@@ -174,10 +189,28 @@ class AddOrganizerButton(Button):
 
     def _can_manage(self, interaction: discord.Interaction, channel_orgs) -> bool:
         """Check if user can manage organizers."""
-        return (
-            interaction.user.id == BOT_OWNER_ID or
-            interaction.user.id == channel_orgs.organizer_id
-        )
+        # Bot owner can always manage
+        if interaction.user.id == BOT_OWNER_ID:
+            return True
+
+        # Main organizer of this channel can manage
+        if interaction.user.id == channel_orgs.organizer_id:
+            return True
+
+        # Additional organizers of this channel can manage
+        if interaction.user.id in channel_orgs.additional_organizers:
+            return True
+
+        # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
+        from config import TOURNAMENT_CHANNELS
+        role = interaction.guild.get_role(MANAGER_ROLE_ID)
+        if role and role in interaction.user.roles:
+            for channel_id in TOURNAMENT_CHANNELS:
+                orgs = organizer_store.get(self.guild_id, channel_id)
+                if orgs and interaction.user.id in orgs.all_organizers():
+                    return True
+
+        return False
 
 
 class AddOrganizerSelect(Select):
@@ -312,10 +345,28 @@ class RemoveOrganizerButton(Button):
 
     def _can_manage(self, interaction: discord.Interaction, channel_orgs) -> bool:
         """Check if user can manage organizers."""
-        return (
-            interaction.user.id == BOT_OWNER_ID or
-            interaction.user.id == channel_orgs.organizer_id
-        )
+        # Bot owner can always manage
+        if interaction.user.id == BOT_OWNER_ID:
+            return True
+
+        # Main organizer of this channel can manage
+        if interaction.user.id == channel_orgs.organizer_id:
+            return True
+
+        # Additional organizers of this channel can manage
+        if interaction.user.id in channel_orgs.additional_organizers:
+            return True
+
+        # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
+        from config import TOURNAMENT_CHANNELS
+        role = interaction.guild.get_role(MANAGER_ROLE_ID)
+        if role and role in interaction.user.roles:
+            for channel_id in TOURNAMENT_CHANNELS:
+                orgs = organizer_store.get(self.guild_id, channel_id)
+                if orgs and interaction.user.id in orgs.all_organizers():
+                    return True
+
+        return False
 
     async def _update_message(self, interaction: discord.Interaction) -> None:
         """Update the organizer management message."""
@@ -420,10 +471,28 @@ class TransferOrganizerButton(Button):
 
     def _can_manage(self, interaction: discord.Interaction, channel_orgs) -> bool:
         """Check if user can manage organizers."""
-        return (
-            interaction.user.id == BOT_OWNER_ID or
-            interaction.user.id == channel_orgs.organizer_id
-        )
+        # Bot owner can always manage
+        if interaction.user.id == BOT_OWNER_ID:
+            return True
+
+        # Main organizer of this channel can manage
+        if interaction.user.id == channel_orgs.organizer_id:
+            return True
+
+        # Additional organizers of this channel can manage
+        if interaction.user.id in channel_orgs.additional_organizers:
+            return True
+
+        # Users with MANAGER_ROLE_ID can manage if they are an organizer in any tournament channel
+        from config import TOURNAMENT_CHANNELS
+        role = interaction.guild.get_role(MANAGER_ROLE_ID)
+        if role and role in interaction.user.roles:
+            for channel_id in TOURNAMENT_CHANNELS:
+                orgs = organizer_store.get(self.guild_id, channel_id)
+                if orgs and interaction.user.id in orgs.all_organizers():
+                    return True
+
+        return False
 
 
 class TransferOrganizerSelect(Select):
