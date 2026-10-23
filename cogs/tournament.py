@@ -148,15 +148,12 @@ class TournamentCog(commands.Cog):
                     update_channel = interaction.guild.get_channel(channel_id)
                     if update_channel:
                         update_message = await update_channel.fetch_message(orgs.message_id)
-                        from cogs.organizer import OrganizerCog
-                        cog = self.bot.get_cog("OrganizerCog")
-                        if cog:
-                            new_embed = cog._build_multi_channel_embed(interaction.guild)
-                            from views.organizer_view import OrganizerManagementButton
-                            from discord.ui import View
-                            new_view = View()
-                            new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
-                            await update_message.edit(embed=new_embed, view=new_view)
+                        from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
+                        from discord.ui import View
+                        new_embed = build_multi_channel_embed(interaction.guild)
+                        new_view = View()
+                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                        await update_message.edit(embed=new_embed, view=new_view)
                 except Exception:
                     pass
 
@@ -201,15 +198,12 @@ class TournamentCog(commands.Cog):
                     update_channel = interaction.guild.get_channel(channel_id)
                     if update_channel:
                         update_message = await update_channel.fetch_message(orgs.message_id)
-                        from cogs.organizer import OrganizerCog
-                        cog = self.bot.get_cog("OrganizerCog")
-                        if cog:
-                            new_embed = cog._build_multi_channel_embed(interaction.guild)
-                            from views.organizer_view import OrganizerManagementButton
-                            from discord.ui import View
-                            new_view = View()
-                            new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
-                            await update_message.edit(embed=new_embed, view=new_view)
+                        from views.organizer_view import build_multi_channel_embed, OrganizerManagementButton
+                        from discord.ui import View
+                        new_embed = build_multi_channel_embed(interaction.guild)
+                        new_view = View()
+                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                        await update_message.edit(embed=new_embed, view=new_view)
                 except Exception:
                     pass
 

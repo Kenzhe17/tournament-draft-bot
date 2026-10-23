@@ -126,6 +126,66 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир создан в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
+    @app_commands.command(name="br_delete", description="Удалить BR турнир")
+    async def br_delete(self, interaction: discord.Interaction) -> None:
+        """Удалить BR турнир."""
+        # Проверка на владельца бота
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Эта команда доступна только владельцу бота.",
+                ephemeral=True
+            )
+            return
+
+        # Получить турнир
+        tournament = br_store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ В этом канале нет BR турнира.",
+                ephemeral=True
+            )
+            return
+
+        # Снять роль с реальных игроков (не ботов с отрицательными ID)
+        guild = interaction.guild
+        role = guild.get_role(tournament.role_id)
+        if role:
+            for player in tournament.players:
+                user_id = player["id"]
+                # Пропускаем ботов с отрицательными ID
+                if user_id < 0:
+                    continue
+                try:
+                    member = guild.get_member(user_id)
+                    if member:
+                        await member.remove_roles(role)
+                except discord.Forbidden:
+                    logger.warning("Не удалось снять роль с пользователя %s", user_id)
+                except Exception as e:
+                    logger.error("Ошибка при снятии роли: %s", e)
+
+        # Удалить сообщение
+        if tournament.message_id:
+            try:
+                channel = guild.get_channel(tournament.channel_id)
+                if channel:
+                    message = await channel.fetch_message(tournament.message_id)
+                    await message.delete()
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.warning("Не удалось удалить сообщение BR турнира: %s", e)
+
+        # Удалить из хранилища
+        br_store.delete(interaction.guild_id, interaction.channel_id)
+
+        await interaction.response.send_message(
+            "✅ BR турнир удален.",
+            ephemeral=True
+        )
+
+        logger.info("BR турнир удален в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
+
     @app_commands.command(name="brtest", description="Заполнить BR турнир 48 ботами")
     async def br_test(self, interaction: discord.Interaction) -> None:
         """Заполнить BR турнир 48 ботами для тестирования."""

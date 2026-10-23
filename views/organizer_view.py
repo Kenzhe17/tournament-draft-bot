@@ -531,10 +531,7 @@ class AddOrganizerSelect(Select):
             message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
-            from cogs.organizer import OrganizerCog
-            cog = interaction.client.get_cog("OrganizerCog")
-            if cog:
-                embed = build_multi_channel_embed(interaction.guild)
+            embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
@@ -645,10 +642,7 @@ class RemoveOrganizerButton(Button):
             message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
-            from cogs.organizer import OrganizerCog
-            cog = interaction.client.get_cog("OrganizerCog")
-            if cog:
-                embed = build_multi_channel_embed(interaction.guild)
+            embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
@@ -823,10 +817,7 @@ class TransferOrganizerSelect(Select):
             message = await channel.fetch_message(message_id)
 
             # Rebuild embed using multi-channel embed
-            from cogs.organizer import OrganizerCog
-            cog = interaction.client.get_cog("OrganizerCog")
-            if cog:
-                embed = build_multi_channel_embed(interaction.guild)
+            embed = build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
