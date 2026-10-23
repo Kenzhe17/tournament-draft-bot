@@ -11,6 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from config import TOURNAMENT_CHANNELS
 from models.tournament import (
     FormationMode,
     RegistrationState,
@@ -138,6 +139,27 @@ class TournamentCog(commands.Cog):
         channel_orgs.tournament_id = tournament.id
         organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
 
+        # Update organizer setup embed if it exists
+        from storage.organizer_store import organizer_store as org_store
+        for channel_id in TOURNAMENT_CHANNELS:
+            orgs = org_store.get(interaction.guild_id, channel_id)
+            if orgs and orgs.message_id:
+                try:
+                    update_channel = interaction.guild.get_channel(channel_id)
+                    if update_channel:
+                        update_message = await update_channel.fetch_message(orgs.message_id)
+                        from cogs.organizer import OrganizerCog
+                        cog = self.bot.get_cog("OrganizerCog")
+                        if cog:
+                            new_embed = cog._build_multi_channel_embed(interaction.guild)
+                            from views.organizer_view import OrganizerManagementButton
+                            from discord.ui import View
+                            new_view = View()
+                            new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                            await update_message.edit(embed=new_embed, view=new_view)
+                except Exception:
+                    pass
+
         logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
         # Log tournament creation
@@ -169,6 +191,27 @@ class TournamentCog(commands.Cog):
 
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
+
+        # Update organizer setup embed if it exists
+        from storage.organizer_store import organizer_store as org_store
+        for channel_id in TOURNAMENT_CHANNELS:
+            orgs = org_store.get(interaction.guild_id, channel_id)
+            if orgs and orgs.message_id:
+                try:
+                    update_channel = interaction.guild.get_channel(channel_id)
+                    if update_channel:
+                        update_message = await update_channel.fetch_message(orgs.message_id)
+                        from cogs.organizer import OrganizerCog
+                        cog = self.bot.get_cog("OrganizerCog")
+                        if cog:
+                            new_embed = cog._build_multi_channel_embed(interaction.guild)
+                            from views.organizer_view import OrganizerManagementButton
+                            from discord.ui import View
+                            new_view = View()
+                            new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                            await update_message.edit(embed=new_embed, view=new_view)
+                except Exception:
+                    pass
 
         # Log tournament deletion
         from utils.logging import log_tournament_deleted
