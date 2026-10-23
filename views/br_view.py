@@ -231,11 +231,37 @@ class StartBRButton(Button):
         # Save
         br_store.set(tournament)
 
-        # Update embed
+        # Build teams section
+        teams_text = []
+        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            all_players = [captain] + players
+            players_str = ", ".join(all_players)
+            emoji = team_emojis.get(i + 1, "🎮")
+
+            teams_text.append(
+                f"{emoji} **{team_name}**\n"
+                f"┣ **Капитан:** {captain}\n"
+                f"┗ **Состав:** {players_str}\n"
+            )
+
+        # Update embed in bot style
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Команды**",
-            description=f"**Фаза:** Команды\n**Команд:** {team_count}\n\n"
-                       f"Капитаны могут переименовать свои команды в течение 1 минуты.",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
+                f"{replace_emojis('sub_directory')} Команд: {team_count}\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                + "\n".join(teams_text) + "\n\n"
+                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+            ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -626,25 +652,42 @@ class StartBRButton(Button):
         # Сохранить
         br_store.set(tournament)
 
+        # Build teams section
+        teams_text = []
+        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            all_players = [captain] + players
+            players_str = ", ".join(all_players)
+            emoji = team_emojis.get(i + 1, "🎮")
+
+            teams_text.append(
+                f"{emoji} **{team_name}**\n"
+                f"┣ **Капитан:** {captain}\n"
+                f"┗ **Состав:** {players_str}\n"
+            )
+
         # Создать view для фазы команд
         view = BRTeamsView(self.guild_id, self.channel_id, tournament)
 
-        # Создать embed
+        # Создать embed в стиле бота
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Команды**",
-            description=f"Команд сформировано: **{len(tournament.teams)}**\n"
-                       f"Капитаны могут изменить название команды (1 минута).",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
+                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                + "\n".join(teams_text) + "\n\n"
+                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+            ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-
-        # Добавить информацию о командах
-        for i, team in enumerate(tournament.teams):
-            players_str = ", ".join(team["players"])
-            embed.add_field(
-                name=f"Команда {i + 1}: {team['name']}",
-                value=f"Капитан: {team['captain']}\nИгроки: {players_str}",
-                inline=False
-            )
 
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -753,22 +796,42 @@ class TeamNameModal(Modal):
         # Сохранить
         br_store.set(tournament)
 
+        # Build teams section
+        teams_text = []
+        team_emojis = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+
+        for i, team in enumerate(tournament.teams):
+            captain = team.get("captain", "Unknown")
+            team_name = team.get("name", f"Команда {i+1}")
+            players = team.get("players", [])
+            all_players = [captain] + players
+            players_str = ", ".join(all_players)
+            emoji = team_emojis.get(i + 1, "🎮")
+
+            teams_text.append(
+                f"{emoji} **{team_name}**\n"
+                f"┣ **Капитан:** {captain}\n"
+                f"┗ **Состав:** {players_str}\n"
+            )
+
         # Обновить view (убрать кнопку если больше нельзя переименовывать)
         view = BRTeamsView(self.guild_id, self.channel_id, tournament)
 
-        # Обновить embed
-        embed = interaction.message.embeds[0]
-        # Обновить поле команды
-        for i, field in enumerate(embed.fields):
-            if f"Команда {self.team_index + 1}" in field.name:
-                team = tournament.teams[self.team_index]
-                players_str = ", ".join(team["players"])
-                embed.set_field_at(
-                    i,
-                    name=f"Команда {self.team_index + 1}: {team['name']}",
-                    value=f"Капитан: {team['captain']}\nИгроки: {players_str}"
-                )
-                break
+        # Обновить embed в стиле бота
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
+                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                + "\n".join(teams_text) + "\n\n"
+                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
 
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -883,8 +946,17 @@ class MapSelectMenu(Select):
             }
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {map_names.get(value, value)}**",
-                description="Выберите группу команд для ввода статистики.",
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get(value, value)}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Фаза: {map_names.get(value, value)}\n"
+                    f"{replace_emojis('sub_directory')} Карта: {map_names.get(value, value)}\n\n"
+                    f"{replace_emojis('white_dot')} **Правила:**\n"
+                    f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
+                ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
@@ -1125,11 +1197,8 @@ class BRStatsModal(Modal):
                 # Показать результаты
                 results = tournament.calculate_final_results()
 
-                embed = discord.Embed(
-                    title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - Результаты**",
-                    color=discord.Color.gold()
-                )
-
+                # Build results section
+                results_text = []
                 for i, result in enumerate(results):
                     medal = ""
                     if i == 0:
@@ -1139,11 +1208,19 @@ class BRStatsModal(Modal):
                     elif i == 2:
                         medal = "🥉 "
 
-                    embed.add_field(
-                        name=f"{medal}{i + 1}. {result['name']}",
-                        value=f"Очки: **{result['total_points']}**",
-                        inline=False
+                    results_text.append(
+                        f"{medal} **{i + 1}. {result['name']}** - Очки: **{result['total_points']}**"
                     )
+
+                embed = discord.Embed(
+                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Результаты",
+                    description=(
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_dot')} **Результаты турнира:**\n"
+                        + "\n".join(results_text)
+                    ),
+                    color=discord.Color.gold()
+                )
 
                 view = BRResultsView(self.guild_id, self.channel_id)
                 await interaction.response.edit_message(embed=embed, view=view)
@@ -1164,8 +1241,16 @@ class BRStatsModal(Modal):
                     next_map = "Калахари"
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_sparkle')} **BATTLE ROYALE - {next_map}**",
-                    description="Все команды заполнили статистику. Переход к следующей карте.",
+                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {next_map}",
+                    description=(
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                        f"{replace_emojis('sub_middle')} Формат: Random\n"
+                        f"{replace_emojis('sub_middle')} Фаза: {next_map}\n"
+                        f"{replace_emojis('sub_directory')} Следующая карта: {next_map}\n\n"
+                        f"{replace_emojis('white_dot')} **Статус:**\n"
+                        f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
+                    ),
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
 
