@@ -368,7 +368,7 @@ class DeleteBRPlayerButton(Button):
             )
             return
 
-        # Create select menu with all players
+        # Create select menu with all players (paginated, 16 per page)
         if not tournament.players:
             await interaction.response.send_message(
                 "❌ Нет зарегистрированных игроков.",
@@ -376,18 +376,7 @@ class DeleteBRPlayerButton(Button):
             )
             return
 
-        options = []
-        for player in tournament.players:
-            options.append(
-                discord.SelectOption(
-                    label=player["name"],
-                    value=str(player["id"])
-                )
-            )
-
-        select = RemoveBRPlayerSelect(self.guild_id, self.channel_id, options)
-        view = View()
-        view.add_item(select)
+        view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, tournament.players, 1)
 
         await interaction.response.send_message(
             "Выберите игрока для удаления:",
@@ -397,16 +386,34 @@ class DeleteBRPlayerButton(Button):
 
 
 class RemoveBRPlayerSelect(Select):
-    """Select menu to choose player to remove."""
+    """Select menu to choose player to remove with pagination."""
 
-    def __init__(self, guild_id: int, channel_id: int, options: list):
-        super().__init__(
-            placeholder="Выберите игрока",
-            options=options,
-            custom_id=f"br_remove_player_select:{guild_id}:{channel_id}"
-        )
+    def __init__(self, guild_id: int, channel_id: int, players: list, page: int = 1):
         self.guild_id = guild_id
         self.channel_id = channel_id
+        self.players = players
+        self.page = page
+        self.per_page = 16
+
+        # Calculate page range
+        start = (page - 1) * self.per_page
+        end = start + self.per_page
+        current_players = players[start:end]
+
+        options = []
+        for player in current_players:
+            options.append(
+                discord.SelectOption(
+                    label=player["name"],
+                    value=str(player["id"])
+                )
+            )
+
+        super().__init__(
+            placeholder=f"Выберите игрока ({page}/{(len(players) + self.per_page - 1) // self.per_page})",
+            options=options,
+            custom_id=f"br_remove_player_select:{guild_id}:{channel_id}:{page}"
+        )
 
     async def callback(self, interaction: discord.Interaction) -> None:
         user_id = int(self.values[0])
@@ -445,6 +452,78 @@ class RemoveBRPlayerSelect(Select):
             # Update embed with current player list
             player_names = [p["name"] for p in tournament.players]
             players_text = ", ".join(player_names) if player_names else "*"
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                    f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                    f"{replace_emojis('white_dot')} **Зарегистрированные игроки:**\n"
+                    f"{players_text}\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Зарегистрируйтесь для участия!"
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            await message.edit(embed=embed)
+            await interaction.response.send_message(
+                "✅ Игрок удален.",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"Error updating BR message after player removal: {e}")
+            await interaction.response.send_message(
+                "❌ Не удалось обновить сообщение турнира.",
+                ephemeral=True
+            )
+
+
+class RemoveBRPlayerPaginationView(View):
+    """View with pagination for player removal."""
+
+    def __init__(self, guild_id: int, channel_id: int, players: list, page: int = 1):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.players = players
+        self.page = page
+        self.per_page = 16
+        self.total_pages = (len(players) + self.per_page - 1) // self.per_page
+
+        self.add_item(RemoveBRPlayerSelect(guild_id, channel_id, players, page))
+
+        # Add pagination buttons if needed
+        if self.total_pages > 1:
+            if self.page > 1:
+                prev_btn = Button(
+                    label="◀",
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"br_remove_prev:{guild_id}:{channel_id}:{page}"
+                )
+                prev_btn.callback = self.prev_callback
+                self.add_item(prev_btn)
+
+            if self.page < self.total_pages:
+                next_btn = Button(
+                    label="▶",
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"br_remove_next:{guild_id}:{channel_id}:{page}"
+                )
+                next_btn.callback = self.next_callback
+                self.add_item(next_btn)
+
+    async def prev_callback(self, interaction: discord.Interaction) -> None:
+        new_page = self.page - 1
+        view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
+        await interaction.response.edit_message(view=view)
+
+    async def next_callback(self, interaction: discord.Interaction) -> None:
+        new_page = self.page + 1
+        view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
+        await interaction.response.edit_message(view=view)
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
