@@ -361,7 +361,7 @@ class TournamentBot(commands.Bot):
         """Background task to check pet hunger and send notifications."""
         import asyncio
 
-        logger.info("Starting pet hunger check loop")
+
         while not self.is_closed():
             try:
     

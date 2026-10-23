@@ -576,11 +576,8 @@ async def init_db() -> None:
         if not case_store.get_all_cases():
             case_store._initialize_default_cases()
 
-        logger.info("Starting pets table creation...")
-
         # Create pets table
         try:
-            logger.info("Attempting to create pets table...")
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS pets (
                     pet_id BIGSERIAL PRIMARY KEY,
@@ -601,7 +598,6 @@ async def init_db() -> None:
                     CHECK (owner_2_id IS NULL OR owner_2_id != owner_1_id)
                 )
             """)
-            logger.info("Pets table created/verified successfully")
         except Exception as e:
             logger.error(f"Error creating pets table: {e}", exc_info=True)
             raise  # Re-raise to see full error
@@ -611,7 +607,6 @@ async def init_db() -> None:
             await conn.execute("""
                 ALTER TABLE pets ADD COLUMN IF NOT EXISTS hunger_started_at TIMESTAMPTZ NULL
             """)
-            logger.info("hunger_started_at column added/verified")
         except Exception as e:
             logger.error(f"Error adding hunger_started_at column: {e}")
 
@@ -619,14 +614,12 @@ async def init_db() -> None:
         try:
             # Drop old constraint if it exists
             await conn.execute("ALTER TABLE pets DROP CONSTRAINT IF EXISTS pets_level_check")
-            logger.info("Old level constraint dropped")
         except Exception as e:
             logger.error(f"Error dropping old level constraint: {e}")
 
         try:
             # Add new constraint with level <= 100
             await conn.execute("ALTER TABLE pets ADD CONSTRAINT pets_level_check CHECK (level >= 1 AND level <= 100)")
-            logger.info("New level constraint (1-100) added")
         except Exception as e:
             logger.error(f"Error adding new level constraint: {e}")
 
@@ -634,7 +627,6 @@ async def init_db() -> None:
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_pets_owner_1 ON pets(owner_1_id)")
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_pets_owner_2 ON pets(owner_2_id)")
-            logger.info("Pets indexes created/verified")
         except Exception as e:
             logger.error(f"Error creating pets indexes: {e}")
 
@@ -652,13 +644,11 @@ async def init_db() -> None:
                     UNIQUE (inviter_id, invitee_id, status)
                 )
             """)
-            logger.info("Pet invitations table created/verified")
         except Exception as e:
             logger.error(f"Error creating pet_invitations table: {e}")
 
         # Create index for pet_invitations
         try:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_pet_invitations_invitee ON pet_invitations(invitee_id, status)")
-            logger.info("Pet invitations index created/verified")
         except Exception as e:
             logger.error(f"Error creating pet_invitations index: {e}")
