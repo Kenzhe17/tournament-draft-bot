@@ -413,6 +413,9 @@ class Tournament:
 
     def remove_player(self, name: str) -> bool:
         """Удалить игрока из любого круга и команды. Возвращает True если найден и удален."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         name = name.strip()
         removed = False
 
@@ -425,6 +428,7 @@ class Tournament:
                     circle_players.pop(i)
                     self.set_circle_list(circle, circle_players)
                     removed = True
+                    logger.info(f"remove_player: removed '{name}' from circle {circle}, tournament_id={self.id}")
 
         # Remove from teams if in TEAMS phase or later
         user_id = self.player_user_ids.get(name)
@@ -434,11 +438,16 @@ class Tournament:
                 if team.get("captain") == name:
                     team["captain"] = ""
                     removed = True
+                    logger.info(f"remove_player: removed '{name}' as captain from team {team_idx}, tournament_id={self.id}")
 
                 # Remove from players list
                 if name in team.get("players", []):
                     team["players"].remove(name)
                     removed = True
+                    logger.info(f"remove_player: removed '{name}' from team {team_idx} players, tournament_id={self.id}")
+
+        if removed:
+            logger.info(f"remove_player: successfully removed '{name}' (user_id={user_id}) from tournament {self.id}")
 
         return removed
 
@@ -1273,30 +1282,37 @@ class Tournament:
 
     def is_player_active(self, user_id: int) -> bool:
         """Проверить активен ли игрок в этом турнире.
-        
+
         Игрок активен если:
         - Фаза SETUP или DRAFT и он зарегистрирован (в all_players)
         - Фаза > DRAFT и он выбран в команду (в teams)
         - Команда еще не проиграла (не в eliminated_teams)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Phase SETUP or DRAFT: check if registered
         if self.phase in [TournamentPhase.SETUP, TournamentPhase.DRAFT]:
-            return user_id in self.player_user_ids.values()
-        
+            is_active = user_id in self.player_user_ids.values()
+            logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active={is_active}, player_user_ids={list(self.player_user_ids.values())}")
+            return is_active
+
         # Phase > DRAFT: check if in a team that hasn't been eliminated
-        if self.phase in [TournamentPhase.TEAMS, TournamentPhase.QUALIFIERS, 
+        if self.phase in [TournamentPhase.TEAMS, TournamentPhase.QUALIFIERS,
                           TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]:
             # Find which team the player is in
             for team_idx, team in enumerate(self.teams):
                 if team_idx in self.eliminated_teams:
                     continue  # Team already eliminated
-                
+
                 # Check if player is in this team
                 all_team_players = [team["captain"]] + team["players"]
                 for player_name in all_team_players:
                     if self.player_user_ids.get(player_name) == user_id:
+                        logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active=True (in team {team_idx})")
                         return True  # Player in active team
-        
+
+        logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active=False")
         return False  # Player not active
 
     def eliminate_team(self, team_index: int) -> None:

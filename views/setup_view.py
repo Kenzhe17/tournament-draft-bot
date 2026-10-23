@@ -445,12 +445,15 @@ class ExitButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="Выйти",
-            custom_id=f"exit:{guild_id}",
+            custom_id=f"exit:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        import logging
+        logger = logging.getLogger(__name__)
+
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
             try:
@@ -476,6 +479,9 @@ class ExitButton(discord.ui.Button):
         from utils.cosmetics import clean_nickname
         cleaned_name = clean_nickname(user_name)
         user_name = cleaned_name
+        user_id = interaction.user.id
+
+        logger.info(f"ExitButton: user '{user_name}' (id={user_id}) attempting to exit tournament {tournament.id} in channel {interaction.channel_id}")
 
         # Handle different modes
         if tournament.formation_mode == FormationMode.RANDOM:
@@ -494,6 +500,7 @@ class ExitButton(discord.ui.Button):
             tournament.players_pool.remove(user_name)
             if user_name in tournament.player_user_ids:
                 del tournament.player_user_ids[user_name]
+            logger.info(f"ExitButton: user '{user_name}' (id={user_id}) removed from players_pool, tournament_id={tournament.id}")
         else:
             # Other modes: check circles
             if user_name not in tournament.all_players:
@@ -517,6 +524,8 @@ class ExitButton(discord.ui.Button):
                 except discord.NotFound:
                     pass
                 return
+
+            logger.info(f"ExitButton: user '{user_name}' (id={user_id}) successfully removed from tournament {tournament.id}")
 
         store.set(tournament)
 
