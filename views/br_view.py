@@ -543,33 +543,6 @@ class RemoveBRPlayerNextButton(Button):
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
         await interaction.response.edit_message(view=view)
 
-            embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
-                description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                    f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
-                    f"{replace_emojis('white_dot')} **Игроки:**\n"
-                    f"{replace_emojis('white_arrow')} {players_text}\n\n"
-                    f"{replace_emojis('white_dot')} **Правила:**\n"
-                    f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
-                    f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-                ),
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-
-            view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-            await message.edit(embed=embed, view=view)
-        except Exception as e:
-            logger.error("Error updating BR message: %s", e)
-
-        await interaction.response.edit_message(
-            content="✅ Игрок удален.",
-            view=None
-        )
-
 
 class DeleteBRButton(Button):
     """Кнопка для удаления BR турнира."""
