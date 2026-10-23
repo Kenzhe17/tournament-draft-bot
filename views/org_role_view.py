@@ -156,8 +156,8 @@ class TakeRoleButton(discord.ui.Button):
             state.message_id = interaction.message.id
             save_state(state)
 
-            # Rebuild view with updated state
-            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
+            # Rebuild main view with updated state
+            view = OrgRoleView(state)
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
@@ -216,8 +216,8 @@ class ReleaseRoleButton(discord.ui.Button):
             state.remove_holder(self.role_id, interaction.user.id)
             save_state(state)
 
-            # Rebuild view with updated state
-            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
+            # Rebuild main view with updated state
+            view = OrgRoleView(state)
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
@@ -320,7 +320,7 @@ class RoleSelectionButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
         view = RoleSelectionView(state, interaction.guild, interaction.user.id)
-        await interaction.response.send_message(view=view, ephemeral=True)
+        await interaction.response.edit_message(view=view)
 
 
 class RoleSelectionView(discord.ui.View):
