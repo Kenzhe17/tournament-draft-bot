@@ -73,9 +73,13 @@ class OrganizerManagementButton(Button):
         self.guild = guild
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if user has MANAGER_ROLE_ID or any ORG role
+        # Check if user has MANAGER_ROLE_ID, is admin, or any ORG role
         has_access = False
         user_channel_id = None
+
+        # Check if admin
+        if interaction.user.guild_permissions.administrator:
+            has_access = True
 
         # Check MANAGER_ROLE_ID
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
@@ -109,11 +113,13 @@ class OrganizerManagementButton(Button):
                 return
             # Open directly to their channel
             view = OrganizerMenuView(self.guild_id, user_channel_id)
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await interaction.response.send_message("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
+            await interaction.followup.send(view=view, ephemeral=True)
         else:
-            # Open channel selection view for MANAGER_ROLE
+            # Open channel selection view for MANAGER_ROLE or admin
             view = ChannelSelectView(self.guild_id, self.guild)
-            await interaction.response.send_message(view=view, ephemeral=True)
+            await interaction.response.send_message("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
+            await interaction.followup.send(view=view, ephemeral=True)
 
 
 class OrganizerMenuView(View):
