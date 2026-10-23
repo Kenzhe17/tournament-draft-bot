@@ -210,8 +210,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -880,8 +879,7 @@ class StartBRButton(Button):
 
         # Build teams section
         teams_text = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -998,8 +996,7 @@ class StartBermudaButton(Button):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1427,8 +1424,7 @@ class BRPurgatoryButton(Button):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1530,8 +1526,7 @@ class BRKalahariButton(Button):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1596,8 +1591,7 @@ class BRKalahariButton(Button):
 
         # Build teams section with current map points (sorted by points)
         teams_with_points = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1757,8 +1751,7 @@ class TeamNameModal(Modal):
 
         # Build teams section
         teams_text = []
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+        num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
         for i, team in enumerate(tournament.teams):
             captain = team.get("captain", "Unknown")
@@ -1918,8 +1911,7 @@ class MapSelectMenu(Select):
 
             # Build teams section with current map points (sorted by points)
             teams_with_points = []
-            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
@@ -2109,8 +2101,7 @@ class BackToMapButton(Button):
             team_name = team.get("name", f"Команда {i+1}")
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
-            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
             emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             # Calculate total points so far
@@ -2335,8 +2326,7 @@ class BRStatsModal(Modal):
 
                 # Build teams section with next map points (sorted)
                 teams_with_points = []
-                num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+                num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
                 for i, team in enumerate(tournament.teams):
                     captain = team.get("captain", "Unknown")
@@ -2400,8 +2390,7 @@ class BRStatsModal(Modal):
 
             # Build teams section with current map points (sorted)
             teams_with_points = []
-            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+            num_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
 
             for i, team in enumerate(tournament.teams):
                 captain = team.get("captain", "Unknown")
