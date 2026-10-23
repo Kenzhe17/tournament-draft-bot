@@ -144,6 +144,11 @@ class MatchHistoryStore:
                 return sorted(history_list.matches, key=lambda m: m.date, reverse=True)
             return []
 
+    async def get_user_history(self, guild_id: int, user_id: int, limit: int = 10) -> List[MatchHistory]:
+        """Получить историю матчей игрока с ограничением количества."""
+        matches = await self.get(guild_id, user_id)
+        return matches[:limit]
+
     async def add(self, match: MatchHistory) -> None:
         """Добавить запись о матче в историю."""
         if self._use_db:
