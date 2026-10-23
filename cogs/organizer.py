@@ -38,14 +38,8 @@ class OrganizerCog(commands.Cog):
             )
             return
 
-        # Получить турнир в канале
+        # Получить турнир в канале (опционально)
         tournament = store.get(interaction.guild_id, interaction.channel_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ В этом канале нет турнира.",
-                ephemeral=True
-            )
-            return
 
         # Создать или получить конфигурацию организаторов
         channel_orgs = organizer_store.get(interaction.guild_id, interaction.channel_id)
@@ -53,11 +47,13 @@ class OrganizerCog(commands.Cog):
             from storage.organizer_store import ChannelOrganizers
             channel_orgs = ChannelOrganizers()
             channel_orgs.organizer_id = interaction.user.id  # Создатель становится организатором
-            channel_orgs.tournament_id = tournament.id
+            if tournament:
+                channel_orgs.tournament_id = tournament.id
             organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
         else:
             # Обновить tournament_id если изменился
-            channel_orgs.tournament_id = tournament.id
+            if tournament:
+                channel_orgs.tournament_id = tournament.id
             organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
 
         # Создать view
@@ -88,7 +84,7 @@ class OrganizerCog(commands.Cog):
         else:
             tournament_info = (
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир ID:** *Нет турнира*"
+                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир ID:** *Нет турнира (канал управления)*"
             )
 
         # Список организаторов
