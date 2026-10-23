@@ -57,8 +57,8 @@ class OrganizerCog(commands.Cog):
             organizer_store.set(interaction.guild_id, interaction.channel_id, channel_orgs)
 
         # Создать view
-        from views.organizer_view import OrganizerManagementView
-        view = OrganizerManagementView(interaction.guild_id, interaction.channel_id)
+        from views.organizer_view import OrganizerMenuView
+        view = OrganizerMenuView(interaction.guild_id, interaction.channel_id)
 
         # Создать embed
         embed = self._build_embed(interaction.guild, interaction.channel, channel_orgs)

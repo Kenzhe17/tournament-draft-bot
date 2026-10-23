@@ -1,7 +1,6 @@
 """Views for organizer management."""
 
 import logging
-from typing import TYPE_CHECKING
 
 import discord
 from discord.ui import Modal, TextInput, View, Button, button, Select
@@ -9,9 +8,6 @@ from discord.ui import Modal, TextInput, View, Button, button, Select
 from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji
 from storage.organizer_store import organizer_store
 from storage.json_store import store
-
-if TYPE_CHECKING:
-    from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
 

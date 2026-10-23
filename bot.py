@@ -54,7 +54,6 @@ class TournamentBot(commands.Bot):
         # Start pet hunger check background task
         try:
             self.loop.create_task(self.pet_hunger_check_loop())
-            logger.info("Pet hunger check loop task created")
         except Exception as e:
             logger.error(f"Failed to create pet hunger check loop task: {e}", exc_info=True)
         
@@ -127,9 +126,9 @@ class TournamentBot(commands.Bot):
                 from storage.db import get_pool
                 pool = await get_pool()
                 async with pool.acquire() as conn:
-                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM players")
+                    cursor = await conn.fetch("SELECT DISTINCT guild_id FROM player_stats")
                     guild_ids = [row[0] for row in cursor]
-                
+
                 for guild_id in guild_ids:
                     try:
                         guild_synced = await self.tree.sync(guild=discord.Object(id=guild_id))
@@ -365,22 +364,17 @@ class TournamentBot(commands.Bot):
         logger.info("Starting pet hunger check loop")
         while not self.is_closed():
             try:
-                logger.info("Pet hunger check: waiting 5 minutes...")
+    
                 await asyncio.sleep(300)  # Check every 5 minutes
-                logger.info("Pet hunger check: 5 minutes passed, starting check")
+
                 
                 # Check if bot is still connected
                 if not self.is_ready():
-                    logger.warning("Bot not ready, skipping pet hunger check")
                     continue
-                
-                logger.info("Pet hunger check: bot is ready, checking all pets")
 
                 # Get all guilds
-                logger.info(f"Pet hunger check: checking {len(self.guilds)} guilds")
                 for guild in self.guilds:
                     try:
-                        logger.info(f"Pet hunger check: checking guild {guild.id}")
                         from storage.pet_store import pet_store
                         from storage.db import get_pool
 
@@ -389,7 +383,6 @@ class TournamentBot(commands.Bot):
                             # Get only pets from this guild
                             rows = await conn.fetch("SELECT * FROM pets WHERE owner_1_id = ANY($1) OR owner_2_id = ANY($1)", 
                                                     [member.id for member in guild.members])
-                            logger.info(f"Pet hunger check: found {len(rows)} pets in guild {guild.id}")
 
                             for row in rows:
                                 pet = pet_store._row_to_pet(row)
@@ -397,7 +390,6 @@ class TournamentBot(commands.Bot):
                                 await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
-                logger.info("Pet hunger check: completed checking all guilds")
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
 
