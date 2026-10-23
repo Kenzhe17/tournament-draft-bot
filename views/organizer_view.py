@@ -233,14 +233,14 @@ class AddOrganizerSelect(Select):
 
             message = await channel.fetch_message(channel_orgs.message_id)
 
-            # Rebuild embed
+            # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_embed(interaction.guild, channel, channel_orgs)
+                embed = cog._build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
-                view = OrganizerManagementView(self.guild_id, self.channel_id)
+                view = OrganizerManagementView(self.guild_id, interaction.guild)
 
                 await message.edit(embed=embed, view=view)
         except Exception as e:
@@ -317,14 +317,14 @@ class RemoveOrganizerButton(Button):
 
             message = await channel.fetch_message(channel_orgs.message_id)
 
-            # Rebuild embed
+            # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_embed(interaction.guild, channel, channel_orgs)
+                embed = cog._build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
-                view = OrganizerManagementView(self.guild_id, self.channel_id)
+                view = OrganizerManagementView(self.guild_id, interaction.guild)
 
                 await message.edit(embed=embed, view=view)
         except Exception as e:
@@ -453,14 +453,14 @@ class TransferOrganizerSelect(Select):
 
             message = await channel.fetch_message(channel_orgs.message_id)
 
-            # Rebuild embed
+            # Rebuild embed using multi-channel embed
             from cogs.organizer import OrganizerCog
             cog = interaction.client.get_cog("OrganizerCog")
             if cog:
-                embed = cog._build_embed(interaction.guild, channel, channel_orgs)
+                embed = cog._build_multi_channel_embed(interaction.guild)
 
                 # Rebuild view
-                view = OrganizerManagementView(self.guild_id, self.channel_id)
+                view = OrganizerManagementView(self.guild_id, interaction.guild)
 
                 await message.edit(embed=embed, view=view)
         except Exception as e:

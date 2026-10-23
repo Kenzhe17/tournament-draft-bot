@@ -290,13 +290,11 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
             name = member.display_name if member else f"<@{org_id}>"
             organizer_names.append(name)
         status_section = (
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS})\n"
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:** {', '.join(organizer_names)}"
+            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(organizer_names)}\n"
         )
     else:
         status_section = (
             f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Слот:** **Свободен** (0/{MAX_ORG_ROLE_HOLDERS})\n"
-            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:** **Никого**"
         )
 
     description = (
