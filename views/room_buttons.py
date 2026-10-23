@@ -89,7 +89,7 @@ class AdminRoomsButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="📋 Комнаты",
-            custom_id=f"admin_rooms:{guild_id}"
+            custom_id=f"admin_rooms:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
         self.channel_id = channel_id

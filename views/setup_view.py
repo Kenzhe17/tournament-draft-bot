@@ -58,7 +58,6 @@ class PlayerSelectView(discord.ui.View):
         self.players = sorted(players)
         self.guild_id = guild_id
         self.channel_id = channel_id
-        self.channel_id = channel_id
         self.action = action  # "delete", "swap_first", or "swap_second"
         self.first_player = first_player  # For swap_second, the first selected player
         self.page = 1
@@ -89,13 +88,13 @@ class PlayerSelectView(discord.ui.View):
             max_values=1,
             options=[discord.SelectOption(label=player, value=player) for player in current_players]
         )
-        select.custom_id = f"player_select:{self.action}:{self.guild_id}:{self.page}"
-        
+        select.custom_id = f"player_select:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
+
         # Set the callback to call the selected_callback with the chosen player
         async def select_callback(interaction: discord.Interaction):
             if self.selected_callback:
                 await self.selected_callback(interaction, select.values[0])
-        
+
         select.callback = select_callback
         self.add_item(select)
 
@@ -106,7 +105,7 @@ class PlayerSelectView(discord.ui.View):
                 label="◀",
                 style=discord.ButtonStyle.primary,
                 disabled=self.page == 1,
-                custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.page}"
+                custom_id=f"player_prev:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
             )
             prev_btn.callback = self.prev_callback
             self.add_item(prev_btn)
@@ -116,7 +115,7 @@ class PlayerSelectView(discord.ui.View):
                 label="▶",
                 style=discord.ButtonStyle.primary,
                 disabled=self.page == self.total_pages,
-                custom_id=f"player_next:{self.action}:{self.guild_id}:{self.page}"
+                custom_id=f"player_next:{self.action}:{self.guild_id}:{self.channel_id}:{self.page}"
             )
             next_btn.callback = self.next_callback
             self.add_item(next_btn)
@@ -144,10 +143,9 @@ class CircleSelectButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label=label,
-            custom_id=f"circle_select:{guild_id}:{circle}",
+            custom_id=f"circle_select:{guild_id}:{channel_id}:{circle}",
         )
         self.guild_id = guild_id
-        self.channel_id = channel_id
         self.channel_id = channel_id
         self.circle = circle
         self.circle_name = circle_name
@@ -266,10 +264,9 @@ class JoinPoolButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label=label,
-            custom_id=f"join_pool:{guild_id}",
+            custom_id=f"join_pool:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
-        self.channel_id = channel_id
         self.channel_id = channel_id
         self.current = current
         self.limit = limit
@@ -365,7 +362,6 @@ class AdminAddModal(discord.ui.Modal):
     def __init__(self, guild_id: int, channel_id: int, circle: int):
         super().__init__(title=f"Добавить в {circle_names[circle]}")
         self.guild_id = guild_id
-        self.channel_id = channel_id
         self.channel_id = channel_id
         self.circle = circle
 
@@ -935,7 +931,7 @@ class AdminAddButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.success,
             label=label,
-            custom_id=f"admin_add:{guild_id}:{circle}",
+            custom_id=f"admin_add:{guild_id}:{channel_id}:{circle}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -954,7 +950,7 @@ class AdminAddButton(discord.ui.Button):
             return
 
         # Show modal
-        modal = AdminAddModal(self.guild_id, self.circle)
+        modal = AdminAddModal(self.guild_id, self.channel_id, self.circle)
         try:
             await interaction.response.send_modal(modal)
         except discord.NotFound:
@@ -1394,7 +1390,7 @@ class OrgMenuButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Орг Меню",
-            custom_id=f"org_menu:{guild_id}",
+            custom_id=f"org_menu:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -1546,7 +1542,7 @@ class LimitToggleButton(discord.ui.Button):
         super().__init__(
             style=style,
             label=label,
-            custom_id=f"limit_toggle:{guild_id}:{circle}",
+            custom_id=f"limit_toggle:{guild_id}:{channel_id}:{circle}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id

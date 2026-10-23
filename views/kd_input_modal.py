@@ -83,16 +83,18 @@ class KDInputModal(discord.ui.Modal):
 class TeamKDInputModal(discord.ui.Modal):
     """Modal for inputting K/D for all players in a team."""
 
-    def __init__(self, guild_id: int, team_index: int, team_name: str, players: list[tuple[str, int]]):
+    def __init__(self, guild_id: int, channel_id: int, team_index: int, team_name: str, players: list[tuple[str, int]]):
         """
         Args:
             guild_id: Server ID
+            channel_id: Channel ID
             team_index: Team index (0 or 1)
             team_name: Team name for display
             players: List of (player_name, circle) tuples
         """
         super().__init__(title=f"Статистика: {team_name}")
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.team_index = team_index
         self.players = players
 

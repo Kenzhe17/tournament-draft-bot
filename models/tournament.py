@@ -1161,7 +1161,7 @@ class Tournament:
                                     from discord.ui import View
                                     new_embed = build_multi_channel_embed(guild)
                                     new_view = View()
-                                    new_view.add_item(OrganizerManagementButton(self.guild_id, guild))
+                                    new_view.add_item(OrganizerManagementButton(self.guild_id, channel_id, guild))
                                     await update_message.edit(embed=new_embed, view=new_view)
                             except Exception:
                                 pass

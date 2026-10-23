@@ -43,7 +43,7 @@ class TeamKDButton(discord.ui.Button):
         super().__init__(
             label=f"📊 {team_name} K/D",
             style=discord.ButtonStyle.primary,
-            custom_id=f"team_kd:{guild_id}:{team_number}"
+            custom_id=f"team_kd:{guild_id}:{channel_id}:{team_number}"
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -60,7 +60,7 @@ class TeamKDButton(discord.ui.Button):
             players = self.match_info.get('team2_players', [])
 
         from views.kd_input_modal import TeamKDInputModal
-        modal = TeamKDInputModal(self.guild_id, self.team_number, self.team_name, players)
+        modal = TeamKDInputModal(self.guild_id, self.channel_id, self.team_number, self.team_name, players)
         
         # Store the view reference in the modal so it can update buttons
         view = self.view
@@ -78,7 +78,7 @@ class ProcessMatchButton(discord.ui.Button):
         super().__init__(
             label="✅ Обработать результат",
             style=discord.ButtonStyle.success,
-            custom_id=f"process_match:{guild_id}",
+            custom_id=f"process_match:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id

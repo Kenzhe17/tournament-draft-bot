@@ -55,19 +55,20 @@ class AdminStatsMatchSelectView(discord.ui.View):
                 teams.append(team_name)
 
             label = f"Игра #{i + 1}: {teams[0]} vs {teams[1]}"
-            self.add_item(AdminStatsMatchButton(guild_id, tournament, match_type, i, label, match))
+            self.add_item(AdminStatsMatchButton(guild_id, channel_id, tournament, match_type, i, label, match))
 
 
 class AdminStatsMatchButton(discord.ui.Button):
     """Button to select a match and show team selection."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str, match: list):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, label: str, match: list):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.primary,
-            custom_id=f"admin_stats_match:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"admin_stats_match:{guild_id}:{channel_id}:{match_type}:{match_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -102,7 +103,7 @@ class AdminStatsMatchButton(discord.ui.Button):
             # Both teams filled - show confirmation view
             logging.info("Both teams filled, creating AdminConfirmView")
             try:
-                view = AdminStatsConfirmView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+                view = AdminStatsConfirmView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
                 embed = self._build_stats_embed()
                 logging.info("AdminConfirmView created, sending message")
                 await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -117,7 +118,7 @@ class AdminStatsMatchButton(discord.ui.Button):
         else:
             # Not both filled - show team selection
             logging.info(f"Not both teams filled, showing team selection")
-            team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+            team_view = AdminStatsTeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
             embed = discord.Embed(
                 title=replace_emojis("📊 Выберите команду"),
                 description="Выберите команду для заполнения статистики:",
@@ -166,45 +167,48 @@ class AdminStatsMatchButton(discord.ui.Button):
 class AdminStatsConfirmView(discord.ui.View):
     """View for admin to view and edit stats only (no winner selection here)."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, match: list):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
         self.match = match
 
         # Add only edit button (winner selection is done via "Выбрать победителя" panel)
-        self.add_item(AdminEditStatsButton(guild_id, tournament, match_type, match_index, match))
+        self.add_item(AdminEditStatsButton(guild_id, channel_id, tournament, match_type, match_index, match))
 
 
 class WinnerConfirmationView(discord.ui.View):
     """View for final winner confirmation with stats display."""
-    
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
         self.team_index = team_index
         self.team_name = team_name
         self.match = match
-        
-        self.add_item(ConfirmFinalWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, match))
-        self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index, match))
+
+        self.add_item(ConfirmFinalWinnerButton(guild_id, channel_id, tournament, match_type, match_index, team_index, team_name, match))
+        self.add_item(CancelWinnerButton(guild_id, channel_id, tournament, match_type, match_index, match))
 
 
 class ConfirmFinalWinnerButton(discord.ui.Button):
     """Button to finally confirm winner after confirmation dialog."""
     
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
         super().__init__(
             label=f"Подтвердить победу {team_name}",
             style=discord.ButtonStyle.success,
-            custom_id=f"confirm_final_winner:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"confirm_final_winner:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -448,14 +452,15 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
 
 class CancelWinnerButton(discord.ui.Button):
     """Button to cancel winner selection and return to stats view."""
-    
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: tuple):
+
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, match: tuple):
         super().__init__(
             label="Отмена",
             style=discord.ButtonStyle.danger,
-            custom_id=f"cancel_winner:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"cancel_winner:{guild_id}:{channel_id}:{match_type}:{match_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -509,21 +514,22 @@ class CancelWinnerButton(discord.ui.Button):
         
         # Create view with winner selection buttons
         teams = [(team_a_index, team_a_name), (team_b_index, team_b_name)]
-        team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams, self.match)
-        
+        team_view = TeamWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams, self.match)
+
         await interaction.response.edit_message(embed=embed, view=team_view)
 
 
 class AdminEditStatsButton(discord.ui.Button):
     """Button to edit stats instead of confirming."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, match: list):
         super().__init__(
             label="Изменить статистику",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"edit_stats:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"edit_stats:{guild_id}:{channel_id}:{match_type}:{match_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -531,7 +537,7 @@ class AdminEditStatsButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Show team selection for editing
-        team_view = AdminStatsTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, self.match)
+        team_view = AdminStatsTeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
         embed = discord.Embed(
             title=replace_emojis("📊 Выберите команду для редактирования"),
             color=discord.Color.gold()
@@ -542,9 +548,10 @@ class AdminEditStatsButton(discord.ui.Button):
 class AdminStatsTeamSelectView(discord.ui.View):
     """View for admin to select a team to fill stats for."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, match: list):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, match: list):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -555,19 +562,20 @@ class AdminStatsTeamSelectView(discord.ui.View):
             team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
             captain = team_data.get("captain", f"П{team_index + 1}")
             team_name = tournament.team_names.get(team_index, captain)
-            self.add_item(AdminStatsTeamButton(guild_id, tournament, match_type, match_index, team_index, team_name))
+            self.add_item(AdminStatsTeamButton(guild_id, channel_id, tournament, match_type, match_index, team_index, team_name))
 
 
 class AdminStatsTeamButton(discord.ui.Button):
     """Button to select a team and open modal for that team's players."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str):
         super().__init__(
             label=team_name,
             style=discord.ButtonStyle.secondary,
-            custom_id=f"admin_stats_team:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"admin_stats_team:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -722,7 +730,7 @@ class AdminPanelSelect(discord.ui.Select):
         super().__init__(
             placeholder="Панель организатора...",
             options=options,
-            custom_id=f"admin_panel:{guild_id}:{match_type}",
+            custom_id=f"admin_panel:{guild_id}:{channel_id}:{match_type}",
             min_values=1,
             max_values=1
         )
@@ -744,7 +752,7 @@ class AdminPanelSelect(discord.ui.Select):
 
         if selected == "select_winner":
             # Create match selection view with stats display
-            match_view = MatchWinnerSelectView(self.guild_id, self.tournament, self.match_type)
+            match_view = MatchWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type)
 
             embed = discord.Embed(
                 description=replace_emojis("🏆 **Выберите матч для фиксации результата:**"),
@@ -755,7 +763,7 @@ class AdminPanelSelect(discord.ui.Select):
 
         elif selected == "fill_stats":
             # Show match selection view for admin stats filling
-            match_view = AdminStatsMatchSelectView(self.guild_id, self.tournament, self.match_type)
+            match_view = AdminStatsMatchSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type)
 
             embed = discord.Embed(
                 description=replace_emojis("🏆 **Выберите матч для внесения статистики:**"),
@@ -775,9 +783,10 @@ class AdminPanelSelect(discord.ui.Select):
 class WinnerConfirmationView(discord.ui.View):
     """View for confirming winner selection with stats display."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -785,20 +794,21 @@ class WinnerConfirmationView(discord.ui.View):
         self.team_name = team_name
         self.match = match
 
-        self.add_item(ConfirmFinalWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, match))
+        self.add_item(ConfirmFinalWinnerButton(guild_id, channel_id, tournament, match_type, match_index, team_index, team_name, match))
         self.add_item(CancelWinnerButton(guild_id, tournament, match_type, match_index, match))
 
 
 class ConfirmWinnerButton(discord.ui.Button):
     """Button to confirm winner selection."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str):
         super().__init__(
             label=f"Подтвердить победу {team_name}",
             style=discord.ButtonStyle.success,
-            custom_id=f"confirm_winner:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"confirm_winner:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -914,13 +924,14 @@ class ConfirmWinnerButton(discord.ui.Button):
 class GenerateMatchesButton(discord.ui.Button):
     """Кнопка генерации пар для матчей."""
 
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
             label="Распределить",
             style=discord.ButtonStyle.primary,
-            custom_id=f"generate_matches:{guild_id}",
+            custom_id=f"generate_matches:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
@@ -987,13 +998,14 @@ class GenerateMatchesButton(discord.ui.Button):
 class TeamNameButton(discord.ui.Button):
     """Единая кнопка для капитанов назвать свою команду."""
 
-    def __init__(self, guild_id: int, tournament):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament):
         super().__init__(
             label="Название команды",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"team_name:{guild_id}",
+            custom_id=f"team_name:{guild_id}:{channel_id}",
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -1057,22 +1069,23 @@ class TeamNameModal(discord.ui.Modal, title="Название команды"):
 class TeamsView(discord.ui.View):
     """View с кнопкой генерации матчей после драфта."""
 
-    def __init__(self, guild_id: int, tournament):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament):
         super().__init__(timeout=None)
-        self.add_item(GenerateMatchesButton(guild_id))
+        self.add_item(GenerateMatchesButton(guild_id, channel_id))
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
         # if has_editable_team:
-        #     self.add_item(TeamNameButton(guild_id, tournament))
+        #     self.add_item(TeamNameButton(guild_id, channel_id, tournament))
 
 
 class MatchWinnerSelectView(discord.ui.View):
     """View for selecting match winners."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
 
@@ -1082,17 +1095,17 @@ class MatchWinnerSelectView(discord.ui.View):
                 if tournament.qualifier_winners[i] is None:
                     team1_name = self._get_team_name(team1)
                     team2_name = self._get_team_name(team2)
-                    self.add_item(MatchButton(guild_id, tournament, "qualifier", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
+                    self.add_item(MatchButton(guild_id, channel_id, tournament, "qualifier", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
         elif match_type == "semifinal":
             for i, (team1, team2) in enumerate(tournament.semifinal_matches):
                 if tournament.semifinal_winners[i] is None:
                     team1_name = self._get_team_name(team1)
                     team2_name = self._get_team_name(team2)
-                    self.add_item(MatchButton(guild_id, tournament, "semifinal", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
+                    self.add_item(MatchButton(guild_id, channel_id, tournament, "semifinal", i, f"Игра #{i + 1}: {team1_name} vs {team2_name}"))
         elif match_type == "final":
             team1_name = self._get_team_name(tournament.final_teams[0])
             team2_name = self._get_team_name(tournament.final_teams[1])
-            self.add_item(MatchButton(guild_id, tournament, "final", 0, f"Финал: {team1_name} vs {team2_name}"))
+            self.add_item(MatchButton(guild_id, channel_id, tournament, "final", 0, f"Финал: {team1_name} vs {team2_name}"))
 
     def _get_team_name(self, team_index: int) -> str:
         """Get team name or default to captain name."""
@@ -1104,13 +1117,14 @@ class MatchWinnerSelectView(discord.ui.View):
 class MatchButton(discord.ui.Button):
     """Button to select a match."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, label: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, label: str):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.primary,
-            custom_id=f"match_select:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"match_select:{guild_id}:{channel_id}:{match_type}:{match_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -1193,7 +1207,7 @@ class MatchButton(discord.ui.Button):
             embed.add_field(name=team_b_name, value="\n".join(team_b_stats_lines), inline=False)
 
         # Create view with winner selection buttons
-        team_view = TeamWinnerSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams, match)
+        team_view = TeamWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams, match)
 
         await interaction.response.edit_message(embed=embed, view=team_view)
 
@@ -1201,9 +1215,10 @@ class MatchButton(discord.ui.Button):
 class TeamWinnerSelectView(discord.ui.View):
     """View for selecting the winning team."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, teams: list[tuple[int, str]], match: tuple):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, teams: list[tuple[int, str]], match: tuple):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -1221,20 +1236,21 @@ class TeamWinnerSelectView(discord.ui.View):
         for team_index, team_name in teams:
             # Disable button if winner already selected
             disabled = winner_already_selected
-            self.add_item(TeamWinnerButton(guild_id, tournament, match_type, match_index, team_index, team_name, match, disabled))
+            self.add_item(TeamWinnerButton(guild_id, channel_id, tournament, match_type, match_index, team_index, team_name, match, disabled))
 
 
 class TeamWinnerButton(discord.ui.Button):
     """Button to select the winning team."""
 
-    def __init__(self, guild_id: int, tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple, disabled: bool = False):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, match: tuple, disabled: bool = False):
         super().__init__(
             label=team_name,
             style=discord.ButtonStyle.success,
-            custom_id=f"team_winner_select:{guild_id}:{match_type}:{match_index}:{team_index}",
+            custom_id=f"team_winner_select:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}",
             disabled=disabled
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -1252,7 +1268,7 @@ class TeamWinnerButton(discord.ui.Button):
 
         # Show confirmation view
         confirmation_view = WinnerConfirmationView(
-            self.guild_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, self.match
+            self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, self.match
         )
 
         embed = discord.Embed(
@@ -1312,14 +1328,14 @@ class QualifiersView(discord.ui.View):
                     for c in range(1, 5)
                 )
                 if not team0_filled:
-                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[0]))
+                    self.add_item(CaptainFillButton(guild_id, self.channel_id, tournament, "qualifier", i, match[0]))
                 # Check if team 1 has filled stats
                 team1_filled = any(
                     tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
                     for c in range(1, 5)
                 )
                 if not team1_filled:
-                    self.add_item(CaptainFillButton(guild_id, tournament, "qualifier", i, match[1]))
+                    self.add_item(CaptainFillButton(guild_id, self.channel_id, tournament, "qualifier", i, match[1]))
 
 
 class SemifinalsView(discord.ui.View):
@@ -1367,11 +1383,11 @@ class SemifinalsView(discord.ui.View):
                 for c in range(1, 5)
             )
             if not team0_filled:
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[0]))
+                self.add_item(CaptainFillButton(guild_id, self.channel_id, tournament, "semifinal", i, match[0]))
             # Check if team 1 has filled stats
             team1_filled = any(
                 tournament.teams[match[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
                 for c in range(1, 5)
             )
             if not team1_filled:
-                self.add_item(CaptainFillButton(guild_id, tournament, "semifinal", i, match[1]))
+                self.add_item(CaptainFillButton(guild_id, self.channel_id, tournament, "semifinal", i, match[1]))

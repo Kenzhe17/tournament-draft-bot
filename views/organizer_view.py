@@ -133,13 +133,14 @@ class ChannelSelectView(View):
 class OrganizerManagementButton(Button):
     """Button to open organizer management menu."""
 
-    def __init__(self, guild_id: int, guild: discord.Guild):
+    def __init__(self, guild_id: int, channel_id: int, guild: discord.Guild):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Управление организаторами",
-            custom_id=f"org_manage:{guild_id}"
+            custom_id=f"org_manage:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.guild = guild
 
     async def callback(self, interaction: discord.Interaction) -> None:

@@ -152,7 +152,7 @@ class TournamentCog(commands.Cog):
                         from discord.ui import View
                         new_embed = build_multi_channel_embed(interaction.guild)
                         new_view = View()
-                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
                         await update_message.edit(embed=new_embed, view=new_view)
                 except Exception:
                     pass
@@ -202,7 +202,7 @@ class TournamentCog(commands.Cog):
                         from discord.ui import View
                         new_embed = build_multi_channel_embed(interaction.guild)
                         new_view = View()
-                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, interaction.guild))
+                        new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
                         await update_message.edit(embed=new_embed, view=new_view)
                 except Exception:
                     pass

@@ -23,7 +23,7 @@ class CaptainFillButton(Button):
         super().__init__(
             label=f"{team_name}",
             style=discord.ButtonStyle.primary,
-            custom_id=f"captain_fill:{guild_id}:{match_type}:{match_index}:{team_index}"
+            custom_id=f"captain_fill:{guild_id}:{channel_id}:{match_type}:{match_index}:{team_index}"
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -75,6 +75,7 @@ class CaptainFillButton(Button):
         # Open modal for captain to fill stats
         modal = CaptainStatsModal(
             self.guild_id,
+            self.channel_id,
             tournament,
             self.match_type,
             self.match_index,
@@ -86,9 +87,10 @@ class CaptainFillButton(Button):
 class CaptainStatsModal(Modal, title="Статистика команды"):
     """Modal for captain to fill team statistics."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int):
         super().__init__()
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -189,9 +191,10 @@ class AdminFillButton(Button):
         super().__init__(
             label="Заполнить статистику (Админ)",
             style=discord.ButtonStyle.secondary,
-            custom_id=f"admin_fill:{guild_id}"
+            custom_id=f"admin_fill:{guild_id}:{tournament.channel_id}"
         )
         self.guild_id = guild_id
+        self.channel_id = tournament.channel_id
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:

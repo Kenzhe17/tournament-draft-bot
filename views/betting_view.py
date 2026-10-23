@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 class MatchSelectView(discord.ui.View):
     """View for selecting a match to bet on."""
 
-    def __init__(self, guild_id: int, tournament: Tournament):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
 
         # Add buttons for available matches based on tournament phase
@@ -33,16 +34,16 @@ class MatchSelectView(discord.ui.View):
             for i, (team1, team2) in enumerate(tournament.qualifier_matches):
                 team1_name = self._get_team_name(team1)
                 team2_name = self._get_team_name(team2)
-                self.add_item(MatchButton(guild_id, tournament, "qualifiers", i, f"{team1_name} vs {team2_name}"))
+                self.add_item(MatchButton(guild_id, channel_id, tournament, "qualifiers", i, f"{team1_name} vs {team2_name}"))
         elif tournament.phase == TournamentPhase.SEMIFINALS:
             for i, (team1, team2) in enumerate(tournament.semifinal_matches):
                 team1_name = self._get_team_name(team1)
                 team2_name = self._get_team_name(team2)
-                self.add_item(MatchButton(guild_id, tournament, "semifinal", i, f"{team1_name} vs {team2_name}"))
+                self.add_item(MatchButton(guild_id, channel_id, tournament, "semifinal", i, f"{team1_name} vs {team2_name}"))
         elif tournament.phase == TournamentPhase.FINAL:
             team1_name = self._get_team_name(tournament.final_teams[0])
             team2_name = self._get_team_name(tournament.final_teams[1])
-            self.add_item(MatchButton(guild_id, tournament, "final", 0, f"{team1_name} vs {team2_name}"))
+            self.add_item(MatchButton(guild_id, channel_id, tournament, "final", 0, f"{team1_name} vs {team2_name}"))
 
     def _get_team_name(self, team_index: int) -> str:
         """Get team name or default to captain name."""
@@ -54,13 +55,14 @@ class MatchSelectView(discord.ui.View):
 class MatchButton(discord.ui.Button):
     """Button to select a match."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, label: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, label: str):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.primary,
-            custom_id=f"match_select:{guild_id}:{match_type}:{match_index}"
+            custom_id=f"match_select:{guild_id}:{channel_id}:{match_type}:{match_index}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -86,7 +88,7 @@ class MatchButton(discord.ui.Button):
             teams.append((match_position, team_index, team_name))
 
         # Create team selection view
-        team_view = TeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index, teams)
+        team_view = TeamSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams)
 
         embed = discord.Embed(
             title=replace_emojis("🎯 Выберите команду"),
@@ -100,27 +102,29 @@ class MatchButton(discord.ui.Button):
 class TeamSelectView(discord.ui.View):
     """View for selecting a team to bet on."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, teams: list[tuple[int, int, str]]):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, teams: list[tuple[int, int, str]]):
         super().__init__(timeout=None)
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
 
         for match_position, team_index, team_name in teams:
-            self.add_item(TeamButton(guild_id, tournament, match_type, match_index, match_position, team_index, team_name))
+            self.add_item(TeamButton(guild_id, channel_id, tournament, match_type, match_index, match_position, team_index, team_name))
 
 
 class TeamButton(discord.ui.Button):
     """Button to select a team."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, match_position: int, team_index: int, team_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, match_position: int, team_index: int, team_name: str):
         super().__init__(
             label=team_name,
             style=discord.ButtonStyle.secondary,
-            custom_id=f"team_select:{guild_id}:{match_type}:{match_index}:{match_position}"
+            custom_id=f"team_select:{guild_id}:{channel_id}:{match_type}:{match_index}:{match_position}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -147,6 +151,7 @@ class TeamButton(discord.ui.Button):
 
         modal = BetAmountModal(
             self.guild_id,
+            self.channel_id,
             self.tournament,
             self.match_type,
             self.match_index,
@@ -161,9 +166,10 @@ class TeamButton(discord.ui.Button):
 class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
     """Modal for entering bet amount."""
 
-    def __init__(self, guild_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, team_a_name: str, team_b_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament, match_type: str, match_index: int, team_index: int, team_name: str, team_a_name: str, team_b_name: str):
         super().__init__()
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
         self.match_type = match_type
         self.match_index = match_index
@@ -304,18 +310,19 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
 class BettingButton(discord.ui.Button):
     """Main button to open betting interface."""
 
-    def __init__(self, guild_id: int, tournament: Tournament):
+    def __init__(self, guild_id: int, channel_id: int, tournament: Tournament):
         super().__init__(
             label="Сделать ставку",
             style=discord.ButtonStyle.primary,
-            custom_id=f"betting_main:{guild_id}"
+            custom_id=f"betting_main:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
+        self.channel_id = channel_id
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Create match selection view
-        match_view = MatchSelectView(self.guild_id, self.tournament)
+        match_view = MatchSelectView(self.guild_id, self.channel_id, self.tournament)
 
         embed = discord.Embed(
             title=get_emoji('money') + " Ставки на турнир",

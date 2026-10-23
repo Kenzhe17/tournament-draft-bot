@@ -30,7 +30,7 @@ class FinalWinnerButton(discord.ui.Button):
         super().__init__(
             label=label,
             style=discord.ButtonStyle.danger,
-            custom_id=f"final_win:{guild_id}:{team_index}",
+            custom_id=f"final_win:{guild_id}:{channel_id}:{team_index}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
@@ -122,11 +122,11 @@ class FinalView(discord.ui.View):
                 for c in range(1, 5)
             )
             if not team0_filled:
-                self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[0]))
+                self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[0]))
             # Check if team 1 has filled stats
             team1_filled = any(
                 tournament.teams[final_teams[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
                 for c in range(1, 5)
             )
             if not team1_filled:
-                self.add_item(CaptainFillButton(guild_id, tournament, "final", 0, final_teams[1]))
+                self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[1]))
