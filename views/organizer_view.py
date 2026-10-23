@@ -5,7 +5,7 @@ import logging
 import discord
 from discord.ui import Modal, TextInput, View, Button, button, Select
 
-from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS
+from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS, ORG_ROLE_MAP
 from storage.organizer_store import organizer_store
 from storage.json_store import store
 
@@ -73,20 +73,22 @@ class OrganizerManagementButton(Button):
         self.guild = guild
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if user has MANAGER_ROLE_ID or is an organizer in any tournament channel
+        # Check if user has MANAGER_ROLE_ID or any ORG role
         has_access = False
+        user_channel_id = None
 
         # Check MANAGER_ROLE_ID
         role = interaction.guild.get_role(MANAGER_ROLE_ID)
         if role and role in interaction.user.roles:
             has_access = True
 
-        # Check if user is an organizer in any tournament channel
+        # Check which ORG role the user has
         if not has_access:
-            for channel_id in TOURNAMENT_CHANNELS:
-                channel_orgs = organizer_store.get(self.guild_id, channel_id)
-                if channel_orgs and interaction.user.id in channel_orgs.all_organizers():
+            for channel_id, role_id in ORG_ROLE_MAP.items():
+                org_role = interaction.guild.get_role(role_id)
+                if org_role and org_role in interaction.user.roles:
                     has_access = True
+                    user_channel_id = channel_id
                     break
 
         if not has_access:
@@ -96,9 +98,22 @@ class OrganizerManagementButton(Button):
             )
             return
 
-        # Open channel selection view
-        view = ChannelSelectView(self.guild_id, self.guild)
-        await interaction.response.send_message(view=view, ephemeral=True)
+        # If user has specific ORG role, check if their channel has tournament
+        if user_channel_id:
+            tournament = store.get(self.guild_id, user_channel_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    f"❌ В вашем канале нет активного турнира.",
+                    ephemeral=True
+                )
+                return
+            # Open directly to their channel
+            view = OrganizerMenuView(self.guild_id, user_channel_id)
+            await interaction.response.send_message(view=view, ephemeral=True)
+        else:
+            # Open channel selection view for MANAGER_ROLE
+            view = ChannelSelectView(self.guild_id, self.guild)
+            await interaction.response.send_message(view=view, ephemeral=True)
 
 
 class OrganizerMenuView(View):
@@ -108,6 +123,9 @@ class OrganizerMenuView(View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
+
+        # Add notification button
+        self.add_item(NotificationButton(guild_id, channel_id))
 
         # Add button to add organizer
         self.add_item(AddOrganizerButton(guild_id, channel_id))
@@ -121,6 +139,153 @@ class OrganizerMenuView(View):
             all_orgs = channel_orgs.all_organizers()
             for org_id in all_orgs:
                 self.add_item(RemoveOrganizerButton(guild_id, channel_id, org_id))
+
+
+class NotificationButton(Button):
+    """Button to open notification menu."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Уведомить",
+            custom_id=f"org_notify:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = NotificationMenuView(self.guild_id, self.channel_id)
+        await interaction.response.send_message(view=view, ephemeral=True)
+
+
+class NotificationMenuView(View):
+    """Menu for tournament notifications."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        self.add_item(NotifyOpenButton(guild_id, channel_id))
+        self.add_item(NotifyCustomButton(guild_id, channel_id))
+
+
+class NotifyOpenButton(Button):
+    """Button to notify about tournament opening."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Уведомить об открытии",
+            custom_id=f"org_notify_open:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ В этом канале нет активного турнира.",
+                ephemeral=True
+            )
+            return
+
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message(
+                "❌ Канал не найден.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            await channel.send(
+                f"@everyone {replace_emojis('a_sparkle')} **ТУРНИР ОТКРЫТ!** {replace_emojis('a_sparkle')}\n\n"
+                f"{replace_emojis('white_arrow')} **Регистрация на турнир началась!**\n"
+                f"{replace_emojis('white_dot')} Переходите в канал: {channel.mention}\n"
+                f"{replace_emojis('white_dot')} Используйте `/tournament join` для участия\n\n"
+                f"{replace_emojis('a_star')} Удачи всем участникам! {replace_emojis('a_star')}"
+            )
+            await interaction.response.send_message(
+                "✅ Уведомление об открытии отправлено!",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ У бота нет прав для отправки сообщений в этот канал.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка: {str(e)}",
+                ephemeral=True
+            )
+
+
+class NotifyCustomButton(Button):
+    """Button to send custom notification."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="Свой шаблон",
+            custom_id=f"org_notify_custom:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        modal = CustomNotificationModal(self.guild_id, self.channel_id)
+        await interaction.response.send_modal(modal)
+
+
+class CustomNotificationModal(Modal, title="Свой шаблон уведомления"):
+    """Modal for custom notification text."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__()
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        self.notification_text = TextInput(
+            label="Текст уведомления",
+            style=discord.TextStyle.paragraph,
+            placeholder="Введите текст уведомления...",
+            required=True,
+            max_length=2000
+        )
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        text = self.notification_text.value
+
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel:
+            await interaction.response.send_message(
+                "❌ Канал не найден.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            await channel.send(
+                f"@everyone {replace_emojis('a_sparkle')} **УВЕДОМЛЕНИЕ ОТ ОРГАНИЗАТОРА** {replace_emojis('a_sparkle')}\n\n"
+                f"{text}"
+            )
+            await interaction.response.send_message(
+                "✅ Уведомление отправлено!",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "❌ У бота нет прав для отправки сообщений в этот канал.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Ошибка: {str(e)}",
+                ephemeral=True
+            )
 
 
 class AddOrganizerButton(Button):
