@@ -1291,7 +1291,7 @@ class QualifiersView(discord.ui.View):
         self.tournament = tournament
 
         # Add admin panel select menu
-        self.add_item(AdminPanelSelect(guild_id, tournament, "qualifier"))
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "qualifier"))
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -1349,7 +1349,7 @@ class SemifinalsView(discord.ui.View):
         self.tournament = tournament
 
         # Add admin panel select menu
-        self.add_item(AdminPanelSelect(guild_id, tournament, "semifinal"))
+        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "semifinal"))
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
