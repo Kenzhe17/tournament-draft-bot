@@ -701,27 +701,22 @@ class BRTeamsView(View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Добавить кнопки переименования для каждой команды
-        for i, team in enumerate(tournament.teams):
-            if tournament.team_rename_remaining.get(i, False):
-                self.add_item(TeamNameButton(guild_id, channel_id, i, team["name"]))
-
-        # Запустить таймер для исчезновения кнопок
-        self.bot = None  # Будет установлен позже если нужно
+        # Add single dynamic Team Name button (only for captains who haven't renamed yet)
+        self.add_item(TeamNameButton(guild_id, channel_id, tournament))
 
 
 class TeamNameButton(Button):
-    """Кнопка для изменения названия команды."""
+    """Dynamic button for team name (only shows for captains who haven't renamed)."""
 
-    def __init__(self, guild_id: int, channel_id: int, team_index: int, current_name: str):
+    def __init__(self, guild_id: int, channel_id: int, tournament: "BRTournament"):
         super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label=f"Team Name: {current_name}",
-            custom_id=f"br_team_name:{guild_id}:{channel_id}:{team_index}"
+            style=discord.ButtonStyle.primary,
+            label="Team Name",
+            custom_id=f"br_team_name:{guild_id}:{channel_id}"
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
-        self.team_index = team_index
+        self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = br_store.get(self.guild_id, self.channel_id)
@@ -732,20 +727,31 @@ class TeamNameButton(Button):
             )
             return
 
-        team = tournament.teams[self.team_index]
-        captain_name = team["captain"]
+        # Find which team the user is captain of
         user_name = interaction.user.display_name
+        team_index = None
+        for i, team in enumerate(tournament.teams):
+            if team.get("captain") == user_name:
+                team_index = i
+                break
 
-        # Проверка что пользователь капитан
-        if captain_name != user_name:
+        if team_index is None:
             await interaction.response.send_message(
-                "❌ Только капитан может изменить название.",
+                "❌ Вы не капитан ни одной команды.",
                 ephemeral=True
             )
             return
 
-        # Показать modal
-        modal = TeamNameModal(self.guild_id, self.channel_id, self.team_index, captain_name)
+        # Check if this captain can still rename
+        if not tournament.team_rename_remaining.get(team_index, False):
+            await interaction.response.send_message(
+                "❌ Вы уже переименовали свою команду или время истекло.",
+                ephemeral=True
+            )
+            return
+
+        # Show modal
+        modal = TeamNameModal(self.guild_id, self.channel_id, team_index, user_name)
         await interaction.response.send_modal(modal)
 
 
