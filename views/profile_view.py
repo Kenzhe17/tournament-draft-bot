@@ -233,4 +233,4 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.edit_original_response(embed=embed, view=view)
