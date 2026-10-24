@@ -839,10 +839,10 @@ async def build_qualifiers_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        # Get emoji for team number - use get_emoji like BR tournament
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-        num_emoji = num_emojis[team_idx] if team_idx < len(num_emojis) else "1️⃣"
+        # Get emoji for team number - use direct standard emojis for regular tournament
+        num_mapping = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
+                      7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emoji = num_mapping.get(team_idx + 1, "1️⃣")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
@@ -939,10 +939,10 @@ async def build_semifinals_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        # Get emoji for team number - use get_emoji like BR tournament
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-        num_emoji = num_emojis[team_idx] if team_idx < len(num_emojis) else "1️⃣"
+        # Get emoji for team number - use direct standard emojis for regular tournament
+        num_mapping = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
+                      7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emoji = num_mapping.get(team_idx + 1, "1️⃣")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
@@ -1032,10 +1032,10 @@ async def build_final_embed(
                 formatted_name = player
             formatted_players.append(formatted_name)
 
-        # Get emoji for team number - use get_emoji like BR tournament
-        num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
-                      get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
-        num_emoji = num_emojis[team_idx] if team_idx < len(num_emojis) else "1️⃣"
+        # Get emoji for team number - use direct standard emojis for regular tournament
+        num_mapping = {1: "1️⃣", 2: "2️⃣", 3: "3️⃣", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
+                      7: "7️⃣", 8: "8️⃣", 9: "9️⃣", 10: "🔟", 11: "1️⃣1️⃣", 12: "1️⃣2️⃣"}
+        num_emoji = num_mapping.get(team_idx + 1, "1️⃣")
         embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
