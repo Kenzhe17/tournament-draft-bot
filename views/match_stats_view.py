@@ -60,7 +60,7 @@ class CaptainFillButton(Button):
             return
 
         # Check if this team already filled stats
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         if match_id in tournament.temp_match_stats:
             # Check if any player from this team has stats filled
             team_filled = False
@@ -122,7 +122,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
 
         try:
             # Parse statistics
-            match_id = f"{self.match_type}_{self.match_index}"
+            match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
             stats = {}
 
             for i, (player_name, circle) in enumerate(self.players):
@@ -412,7 +412,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         logging.info(f"AdminStatsModal on_submit called: match_type={self.match_type}, match_index={self.match_index}, team_index={self.team_index}")
 
         # Parse statistics
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         stats = {}
 
         for i, (player_name, circle) in enumerate(self.players):
@@ -522,7 +522,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
     
     def _build_stats_embed(self, tournament, match):
         """Build embed displaying match statistics."""
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         temp_stats = tournament.temp_match_stats.get(match_id, {})
         
         team_a_index, team_b_index = match
@@ -747,7 +747,7 @@ class AdminConfirmView(View):
                 await interaction.followup.send(replace_emojis("❌ Турнир не найден."), ephemeral=True)
                 return
 
-            match_id = f"{self.match_type}_{self.match_index}"
+            match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
             temp_stats = tournament.temp_match_stats.get(match_id, {})
 
             logging.info(f"Processing match result: match_id={match_id}, temp_stats={temp_stats}")

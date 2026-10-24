@@ -151,7 +151,7 @@ class ViewBetsButton(Button):
         
         bets_text = []
         for i, (team_a, team_b) in enumerate(self.matches):
-            match_id = f"{self.match_type}_{i}"
+            match_id = f"{self.tournament.id}_{self.match_type}_{i}"
             bets = await bet_store.get_bets_by_match(self.tournament.id, match_id)
             
             team_a_data = self.tournament.teams[team_a] if team_a < len(self.tournament.teams) else {}

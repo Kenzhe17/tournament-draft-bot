@@ -211,7 +211,7 @@ class BetAmountModal(discord.ui.Modal, title="Сумма ставки"):
             return
 
         # Get match ID early for bet checking
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
 
         # Check if user already has a bet in this phase (qualifiers/semifinal/final)
         from storage.bet_store import bet_store

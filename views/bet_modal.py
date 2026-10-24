@@ -46,7 +46,7 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             await interaction.response.send_message(replace_emojis("❌ Можно ставить только 1 раз за этап!"), ephemeral=True)
             return
 
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         odds_data = await bet_store.get_current_odds_db(match_id)
         if odds_data:
             actual_odds = odds_data.team_a_odds if self.team_name == self.team_a_name else odds_data.team_b_odds

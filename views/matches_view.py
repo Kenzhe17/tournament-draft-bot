@@ -87,7 +87,7 @@ class AdminStatsMatchButton(discord.ui.Button):
             return
 
         # Check if both teams have stats filled
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         team_a_filled = any(
             self.tournament.teams[self.match[0]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
             for c in range(1, 5)
@@ -128,7 +128,7 @@ class AdminStatsMatchButton(discord.ui.Button):
 
     def _build_stats_embed(self) -> discord.Embed:
         """Build embed showing stats for both teams."""
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         stats = self.tournament.temp_match_stats.get(match_id, {})
 
         team_a_data = self.tournament.teams[self.match[0]] if self.match[0] < len(self.tournament.teams) else {}
@@ -236,7 +236,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         team_a_index, team_b_index = match
 
         # Check if stats are filled
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         temp_stats = self.tournament.temp_match_stats.get(match_id, {})
 
         if not temp_stats:
@@ -412,7 +412,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         store.set(tournament)
 
         # Resolve bets for this match
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         team_a_data = tournament.teams[self.match[0]] if self.match[0] < len(tournament.teams) else {}
         team_b_data = tournament.teams[self.match[1]] if self.match[1] < len(tournament.teams) else {}
         team_a_name = tournament.team_names.get(self.match[0], team_a_data.get("captain", f"Team {self.match[0]}"))
@@ -481,7 +481,7 @@ class CancelWinnerButton(discord.ui.Button):
             return
 
         # Return to stats view with winner selection buttons
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         temp_stats = self.tournament.temp_match_stats.get(match_id, {})
         
         team_a_index, team_b_index = self.match
@@ -643,7 +643,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         await interaction.response.defer(ephemeral=True)
 
         # Parse and validate statistics
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         stats = {}
 
         for i, player_name in enumerate(self.players):
@@ -873,7 +873,7 @@ class ConfirmWinnerButton(discord.ui.Button):
         team_a_index, team_b_index = match
 
         # Check if stats are filled - REQUIRE stats for winner selection
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         temp_stats = tournament.temp_match_stats.get(match_id, {})
 
         logging.info(f"ConfirmWinnerButton: match_id={match_id}, temp_stats={temp_stats}")
@@ -1151,7 +1151,7 @@ class MatchButton(discord.ui.Button):
             return
 
         # Check if stats are filled
-        match_id = f"{self.match_type}_{self.match_index}"
+        match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         temp_stats = self.tournament.temp_match_stats.get(match_id, {})
 
         logging.info(f"MatchButton: match_id={match_id}, temp_stats_filled={len(temp_stats) > 0}")
@@ -1327,7 +1327,7 @@ class QualifiersView(discord.ui.View):
             if winner is not None:
                 # Add fill button for both teams in this match
                 match = matches[i]
-                match_id = f"qualifier_{i}"
+                match_id = f"{tournament.id}_qualifier_{i}"
                 # Check if team 0 has filled stats
                 team0_filled = any(
                     tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
@@ -1382,7 +1382,7 @@ class SemifinalsView(discord.ui.View):
         # Add captain fill buttons for all matches
         from views.match_stats_view import CaptainFillButton
         for i, match in enumerate(matches):
-            match_id = f"semifinal_{i}"
+            match_id = f"{tournament.id}_semifinal_{i}"
             # Check if team 0 has filled stats
             team0_filled = any(
                 tournament.teams[match[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
