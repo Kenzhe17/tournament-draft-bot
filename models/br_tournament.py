@@ -101,6 +101,21 @@ class BRTournament:
             import logging
             logging.warning(f"Error checking regular tournaments for BR: {e}")
 
+        # Check if player is in any other BR tournament
+        try:
+            from storage.br_store import br_store
+            all_br_tournaments = br_store.get_by_guild(self.guild_id)
+            for br_tournament in all_br_tournaments:
+                if br_tournament.id != self.id and br_tournament.phase.value != "complete":
+                    for player in br_tournament.players:
+                        if player["id"] == user_id:
+                            import logging
+                            logging.warning(f"BR add_player FAILED: player is active in another BR tournament (channel {br_tournament.channel_id})")
+                            return False
+        except Exception as e:
+            import logging
+            logging.warning(f"Error checking other BR tournaments: {e}")
+
         self.players.append({"name": name, "id": user_id})
         return True
 
