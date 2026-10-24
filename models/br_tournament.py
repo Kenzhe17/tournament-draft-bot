@@ -65,6 +65,7 @@ class BRTournament:
     room_data: dict[str, str] = field(default_factory=dict)  # {"id": str, "password": str}
     created_at: str = ""
     team_rename_start_time: str = ""  # Время начала фазы переименования
+    organizer_id: int = 0  # ID первого игрока/организатора
 
     def __post_init__(self):
         if not self.id:
@@ -89,6 +90,10 @@ class BRTournament:
         for player in self.players:
             if player["id"] == user_id:
                 return False
+
+        # Set organizer to first player
+        if not self.organizer_id and len(self.players) == 0:
+            self.organizer_id = user_id
 
         # Check if player is active in any regular tournament
         try:
@@ -131,6 +136,11 @@ class BRTournament:
         for i, player in enumerate(self.players):
             if player["id"] == user_id:
                 self.players.pop(i)
+                # If organizer left, update to next player
+                if self.organizer_id == user_id and self.players:
+                    self.organizer_id = self.players[0]["id"]
+                elif not self.players:
+                    self.organizer_id = 0
                 return True
         return False
 
@@ -297,6 +307,7 @@ class BRTournament:
             "room_data": self.room_data,
             "created_at": self.created_at,
             "team_rename_start_time": self.team_rename_start_time,
+            "organizer_id": self.organizer_id,
         }
 
     @classmethod
@@ -318,4 +329,5 @@ class BRTournament:
             room_data=data.get("room_data", {}),
             created_at=data.get("created_at", ""),
             team_rename_start_time=data.get("team_rename_start_time", ""),
+            organizer_id=data.get("organizer_id", 0),
         )

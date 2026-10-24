@@ -292,7 +292,7 @@ class JoinBRButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
@@ -356,7 +356,7 @@ class LeaveBRButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.players[0]['id'] if tournament.players else 0}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: Random\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
