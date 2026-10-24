@@ -375,8 +375,8 @@ class Tournament:
         logging.info(f"  all_players: {self.all_players}")
         logging.info(f"  name in all_players: {name in self.all_players}")
 
-        # Check conflicts if store provided (only for ELO mode)
-        if store and user_id and self.formation_mode == FormationMode.ELO:
+        # Check conflicts if store provided
+        if store and user_id:
             all_tournaments = store.get_by_guild(self.guild_id)
             for other_tournament in all_tournaments:
                 # Skip self
