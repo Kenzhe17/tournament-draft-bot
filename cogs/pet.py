@@ -367,19 +367,45 @@ class PetCog(commands.Cog):
     @pet.command(name="top", description="Топ питомцев по уровню")
     async def top(self, interaction: discord.Interaction) -> None:
         """Показать топ питомцев."""
+        view = PetTopView(interaction.guild_id, interaction.user.id)
+        await view.initialize()
+
+        embed = await view.build_embed()
+
+        try:
+            await interaction.response.send_message(embed=embed, view=view)
+        except discord.NotFound:
+            await interaction.followup.send(embed=embed, view=view)
+
+
+class PetTopView(discord.ui.View):
+    """View для топа питомцев с пагинацией."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.author_id = user_id
+        self.page = 1
+        self.per_page = 5
+        self._total_pages = 0
+        self._pets = []
+        self._user_rank_info = None
+
+    async def initialize(self) -> None:
+        """Initialize pets and total pages asynchronously."""
         pool = await get_pool()
         async with pool.acquire() as conn:
-            pets = await conn.fetch(
-                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC LIMIT 50"
+            self._pets = await conn.fetch(
+                "SELECT pet_id, pet_name, pet_type, rarity, level, exp, owner_1_id, owner_2_id FROM pets ORDER BY level DESC, exp DESC"
             )
 
             # Находим место текущего пользователя
             user_pet = await conn.fetchrow(
                 "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
-                interaction.user.id
+                self.user_id
             )
 
-            user_rank_info = None
             if user_pet:
                 rank = await conn.fetchval(
                     """
@@ -389,21 +415,25 @@ class PetCog(commands.Cog):
                     """,
                     user_pet["level"], user_pet["exp"]
                 )
-                user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Уровень {user_pet['level']}** (`{user_pet['exp']} EXP`)"
+                self._user_rank_info = f"**Ваше место:** **`#{rank}`** | **Ваш питомец:** **{user_pet['pet_name']}** — **Уровень {user_pet['level']}** (`{user_pet['exp']} EXP`)"
             else:
-                user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
+                self._user_rank_info = "У вас пока нет питомца. Приобретите его в `/shop` → **Питомцы**!"
 
-        if not pets:
-            await interaction.response.send_message(
-                replace_emojis("❌ Пока нет питомцев."),
-                ephemeral=True
-            )
-            return
+        self._total_pages = (len(self._pets) + self.per_page - 1) // self.per_page if self._pets else 1
 
+        # Add navigation buttons
+        self.refresh_buttons()
+
+    async def build_embed(self) -> discord.Embed:
+        """Build embed for current page."""
         from models.pets_catalog import PETS_CATALOG
 
+        start_idx = (self.page - 1) * self.per_page
+        end_idx = start_idx + self.per_page
+        page_pets = self._pets[start_idx:end_idx]
+
         description = ""
-        for i, pet in enumerate(pets, 1):
+        for i, pet in enumerate(page_pets, start=start_idx + 1):
             pet_dict = dict(pet)
             pet_def = PETS_CATALOG.get(pet_dict["pet_type"], {})
 
@@ -426,8 +456,8 @@ class PetCog(commands.Cog):
                 f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
-        if user_rank_info:
-            description += f"───\n{replace_emojis('white_dot')} {user_rank_info}"
+        if self._user_rank_info:
+            description += f"───\n{replace_emojis('white_dot')} {self._user_rank_info}"
 
         embed = discord.Embed(
             title=f"{get_emoji('a_star')} **ТОП ПИТОМЦЕВ**",
@@ -435,7 +465,69 @@ class PetCog(commands.Cog):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.send_message(embed=embed)
+        return embed
+
+    def refresh_buttons(self) -> None:
+        """Обновляет состояние кнопок навигации."""
+        # Remove existing navigation buttons
+        for item in self.children[:]:
+            if isinstance(item, discord.ui.Button):
+                self.remove_item(item)
+
+        # Previous button
+        if self.page > 1:
+            self.add_item(
+                PetTopPageButton(self.page - 1, "◀", discord.ButtonStyle.primary)
+            )
+        else:
+            disabled_button = discord.ui.Button(
+                label="◀",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
+
+        # Next button
+        if self.page < self._total_pages:
+            self.add_item(
+                PetTopPageButton(self.page + 1, "▶", discord.ButtonStyle.primary)
+            )
+        else:
+            disabled_button = discord.ui.Button(
+                label="▶",
+                style=discord.ButtonStyle.primary,
+                disabled=True
+            )
+            self.add_item(disabled_button)
+
+
+class PetTopPageButton(discord.ui.Button):
+    """Кнопка для перехода на страницу топа питомцев."""
+
+    def __init__(self, page: int, label: str, style: discord.ButtonStyle):
+        super().__init__(
+            label=label,
+            style=style,
+            custom_id=f"pet_top_page:{page}",
+        )
+        self.page = page
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        view = self.view
+
+        if interaction.user.id != view.author_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы не можете переключать чужие страницы!"),
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+        view.page = self.page
+        view.refresh_buttons()
+
+        embed = await view.build_embed()
+        await interaction.edit_original_response(embed=embed, view=view)
 
 
 class PetCatalogView(discord.ui.View):
