@@ -470,8 +470,8 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
             avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
             skill_diff = avg_skill_b - avg_skill_a
-            # 1.0 skill difference = 0.2x odds difference
-            odds_diff = skill_diff * 0.2
+            # 1.0 skill difference = 0.5x odds difference
+            odds_diff = skill_diff * 0.5
             base_odds = 1.9
 
             if skill_diff >= 0:
@@ -485,17 +485,6 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
 
             odds_a = max(1.1, min(2.7, odds_a))
             odds_b = max(1.1, min(2.7, odds_b))
-
-            # Also ensure both odds sum to reasonable value
-            odds_sum = odds_a + odds_b
-            if odds_sum < 3.0:
-                scale = 3.0 / odds_sum
-                odds_a = min(2.7, odds_a * scale)
-                odds_b = min(2.7, odds_b * scale)
-            elif odds_sum > 5.0:
-                scale = 5.0 / odds_sum
-                odds_a = max(1.1, odds_a * scale)
-                odds_b = max(1.1, odds_b * scale)
 
         # Build field name
         star_emoji = replace_emojis("a_star")
