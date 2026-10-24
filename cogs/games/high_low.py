@@ -51,7 +51,7 @@ class HighLowView(discord.ui.View):
         )
 
         if state == "playing":
-            multiplier = 1.5 ** self.wins
+            multiplier = 1.2 ** self.wins
             current_prize = int(self.bet * multiplier)
 
             embed.add_field(

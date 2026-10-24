@@ -31,14 +31,14 @@ def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
 
 # Призы колеса с новыми шансами
 WHEEL_PRIZES = [
-    {"name": "0x", "multiplier": 0, "weight": 40},
-    {"name": "0.5x", "multiplier": 0.5, "weight": 25},
-    {"name": "1.5x", "multiplier": 1.5, "weight": 15},
+    {"name": "0x", "multiplier": 0, "weight": 30},
+    {"name": "0.5x", "multiplier": 0.5, "weight": 20},
+    {"name": "1.5x", "multiplier": 1.5, "weight": 10},
     {"name": "2x", "multiplier": 2, "weight": 10},
-    {"name": "3x", "multiplier": 3, "weight": 5},
-    {"name": "5x", "multiplier": 5, "weight": 3},
-    {"name": "7x", "multiplier": 7, "weight": 1},
-    {"name": "10x", "multiplier": 10, "weight": 1},
+    {"name": "3x", "multiplier": 3, "weight": 10},
+    {"name": "5x", "multiplier": 5, "weight": 10},
+    {"name": "7x", "multiplier": 7, "weight": 5},
+    {"name": "10x", "multiplier": 10, "weight": 5},
 ]
 
 
