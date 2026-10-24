@@ -72,9 +72,9 @@ class CaseStore:
         updated = False
         
         for case_id, case in self._cases.items():
-            # Проверить если nothing не 0.40, обновить
+            # Проверить если nothing не 0.50, обновить
             current_nothing = case.drop_rates.get("nothing", 0.0)
-            if abs(current_nothing - 0.40) > 0.01:  # Если не 40%
+            if abs(current_nothing - 0.50) > 0.01:  # Если не 50%
                 # Пересчитать drop_rates
                 item_key = None
                 nothing_key = "nothing"
@@ -86,16 +86,16 @@ class CaseStore:
                     elif key.startswith("coins_"):
                         coin_keys.append(key)
                 
-                # Новые значения: Item 20%, Nothing 40%, Coins 40%
+                # Новые значения: Item 10%, Nothing 50%, Coins 40%
                 new_drop_rates = {}
                 if item_key:
-                    new_drop_rates[item_key] = 0.20
-                new_drop_rates[nothing_key] = 0.40
+                    new_drop_rates[item_key] = 0.10
+                new_drop_rates[nothing_key] = 0.50
                 
-                # Распределить монеты по 5 уровням: 10% + 10% + 8% + 6% + 6% = 40%
+                # Распределить монеты по 5 уровням: 12% + 10% + 8% + 6% + 4% = 40%
                 if coin_keys:
                     coin_keys.sort()
-                    coin_rates = [0.10, 0.10, 0.08, 0.06, 0.06]
+                    coin_rates = [0.12, 0.10, 0.08, 0.06, 0.04]
                     for i, coin_key in enumerate(coin_keys):
                         if i < len(coin_rates):
                             new_drop_rates[coin_key] = coin_rates[i]
@@ -124,13 +124,13 @@ class CaseStore:
                 description="Базовые предметы",
                 price=200,
                 drop_rates={
-                    "item_basic": 0.20,
-                    "coins_100": 0.10,
+                    "item_basic": 0.10,
+                    "coins_100": 0.12,
                     "coins_200": 0.10,
                     "coins_300": 0.08,
                     "coins_400": 0.06,
-                    "coins_500": 0.06,
-                    "nothing": 0.40,
+                    "coins_500": 0.04,
+                    "nothing": 0.50,
                 },
                 is_active=True
             ),
@@ -140,13 +140,13 @@ class CaseStore:
                 description="Редкие предметы",
                 price=500,
                 drop_rates={
-                    "item_premium": 0.20,
-                    "coins_250": 0.10,
+                    "item_premium": 0.10,
+                    "coins_250": 0.12,
                     "coins_500": 0.10,
                     "coins_750": 0.08,
                     "coins_1000": 0.06,
-                    "coins_1250": 0.06,
-                    "nothing": 0.40,
+                    "coins_1250": 0.04,
+                    "nothing": 0.50,
                 },
                 is_active=True
             ),
@@ -156,13 +156,13 @@ class CaseStore:
                 description="Легендарные предметы",
                 price=1000,
                 drop_rates={
-                    "item_elite": 0.20,
-                    "coins_500": 0.10,
+                    "item_elite": 0.10,
+                    "coins_500": 0.12,
                     "coins_1000": 0.10,
                     "coins_1500": 0.08,
                     "coins_2000": 0.06,
-                    "coins_2500": 0.06,
-                    "nothing": 0.40,
+                    "coins_2500": 0.04,
+                    "nothing": 0.50,
                 },
                 is_active=True
             ),
@@ -172,13 +172,13 @@ class CaseStore:
                 description="Эксклюзивные предметы",
                 price=2000,
                 drop_rates={
-                    "item_special": 0.20,
-                    "coins_1000": 0.10,
+                    "item_special": 0.10,
+                    "coins_1000": 0.12,
                     "coins_2000": 0.10,
                     "coins_3000": 0.08,
                     "coins_4000": 0.06,
-                    "coins_5000": 0.06,
-                    "nothing": 0.40,
+                    "coins_5000": 0.04,
+                    "nothing": 0.50,
                 },
                 is_active=True
             ),
