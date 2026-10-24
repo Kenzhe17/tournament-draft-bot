@@ -77,9 +77,9 @@ class BetStore:
         """Initialize odds for a match based on skill rating difference."""
         # Calculate initial odds based on skill rating
         # Higher skill team gets lower odds
-        # Skill rating is 1.0-10.0, so 1.0 difference = 0.05x odds difference
+        # Skill rating is 1.0-10.0, so 1.0 difference = 0.5x odds difference
         skill_diff = avg_skill_b - avg_skill_a
-        odds_diff = skill_diff * 0.05
+        odds_diff = skill_diff * 0.5
         base_odds = 1.9
 
         if skill_diff >= 0:
