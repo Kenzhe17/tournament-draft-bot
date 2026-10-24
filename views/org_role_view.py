@@ -192,7 +192,11 @@ class ReleaseRoleButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
 
-        if interaction.user.id not in state.get_holders(self.role_id):
+        # Check if user has the role or is admin
+        is_holder = interaction.user.id in state.get_holders(self.role_id)
+        is_admin = interaction.user.guild_permissions.administrator
+
+        if not is_holder and not is_admin:
             await interaction.response.send_message(
                 f"❌ У вас нет роли {self.role_name}!",
                 ephemeral=True
@@ -207,13 +211,26 @@ class ReleaseRoleButton(discord.ui.Button):
             return
 
         try:
-            # Remove role from user
-            role = interaction.guild.get_role(self.role_id)
-            if role and role in interaction.user.roles:
-                await interaction.user.remove_roles(role)
+            # Remove role from user (if admin, remove from the holder; if user, remove from self)
+            holders = state.get_holders(self.role_id)
+            if not holders:
+                await interaction.response.send_message(
+                    f"❌ Роль {self.role_name} никому не назначена",
+                    ephemeral=True
+                )
+                return
+
+            # If admin, remove from the first holder; if user, remove from self
+            target_user_id = interaction.user.id if is_holder else holders[0]
+            target_member = interaction.guild.get_member(target_user_id)
+
+            if target_member:
+                role = interaction.guild.get_role(self.role_id)
+                if role and role in target_member.roles:
+                    await target_member.remove_roles(role)
 
             # Update state
-            state.remove_holder(self.role_id, interaction.user.id)
+            state.remove_holder(self.role_id, target_user_id)
             save_state(state)
 
             # Rebuild main view with updated state

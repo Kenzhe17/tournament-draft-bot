@@ -391,14 +391,13 @@ class Tournament:
             # Also check BR tournaments
             try:
                 from storage.br_store import br_store
-                all_br_tournaments = br_store.get_by_guild(self.guild_id)
-                for br_tournament in all_br_tournaments:
-                    if br_tournament.phase.value != "complete":
-                        # Check if player is in BR tournament
-                        for player in br_tournament.players:
-                            if player["id"] == user_id:
-                                logging.warning(f"  FAILED: player is active in BR tournament (channel {br_tournament.channel_id})")
-                                return False
+                br_tournament = br_store.get(self.guild_id, self.channel_id)
+                if br_tournament and br_tournament.phase.value != "complete":
+                    # Check if player is in BR tournament
+                    for player in br_tournament.players:
+                        if player["id"] == user_id:
+                            logging.warning(f"  FAILED: player is active in BR tournament")
+                            return False
             except Exception as e:
                 logging.warning(f"  Error checking BR tournament: {e}")
         

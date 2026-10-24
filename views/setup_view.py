@@ -413,10 +413,10 @@ class AdminAddModal(discord.ui.Modal):
                 break
 
         # Add player with user_id
-        success = tournament.add_player_to_circle(self.circle, player_name, user_id)
+        success = tournament.add_player_to_circle(self.circle, player_name, user_id, store)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось добавить игрока."),
+                replace_emojis("❌ Не удалось добавить игрока. Возможно игрок уже участвует в другом активном турнире."),
                 ephemeral=True
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))
