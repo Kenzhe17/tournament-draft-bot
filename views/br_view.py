@@ -37,11 +37,16 @@ class BRRegistrationView(View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Кнопка "Войти"
-        self.add_item(JoinBRButton(guild_id, channel_id))
-
-        # Кнопка "Выйти"
-        self.add_item(LeaveBRButton(guild_id, channel_id))
+        # Кнопки в зависимости от формата
+        if tournament.formation.value == "team":
+            # Team format: register team button
+            self.add_item(RegisterTeamButton(guild_id, channel_id))
+            # Remove team button
+            self.add_item(RemoveTeamButton(guild_id, channel_id))
+        else:
+            # Random format: individual join/leave
+            self.add_item(JoinBRButton(guild_id, channel_id))
+            self.add_item(LeaveBRButton(guild_id, channel_id))
 
         # Кнопка меню организатора (только для владельца)
         self.add_item(BROrganizerMenuButton(guild_id, channel_id))
@@ -234,7 +239,7 @@ class StartBRButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
                 f"{replace_emojis('sub_directory')} Команд: {team_count}\n\n"
                 f"{replace_emojis('white_dot')} **Команды:**\n"
@@ -290,11 +295,11 @@ class JoinBRButton(Button):
         players_text = ", ".join(player_names) if player_names else "*"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
                 f"{replace_emojis('white_dot')} **Игроки:**\n"
@@ -354,11 +359,11 @@ class LeaveBRButton(Button):
         players_text = ", ".join(player_names) if player_names else "*"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
                 f"{replace_emojis('white_dot')} **Игроки:**\n"
@@ -377,6 +382,236 @@ class LeaveBRButton(Button):
             "✅ Вы вышли из турнира.",
             ephemeral=True
         )
+
+
+class RegisterTeamButton(Button):
+    """Кнопка для регистрации команды на BR турнир."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="🏆 Зарегистрировать Команду",
+            custom_id=f"br_register_team:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.team_store import team_store
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        if tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        # Get user's team
+        team = team_store.get_by_captain(interaction.user.id)
+        if not team:
+            await interaction.response.send_message(
+                "❌ Вы не капитан команды! Используйте `/team create` для создания команды.",
+                ephemeral=True
+            )
+            return
+
+        # Check if team is full (4 players)
+        if not team.is_full():
+            await interaction.response.send_message(
+                f"❌ В команде {team.member_count()}/4 игроков! Нужно 4 игрока для регистрации.",
+                ephemeral=True
+            )
+            return
+
+        # Check if team already registered
+        if team.team_id in tournament.registered_teams:
+            await interaction.response.send_message(
+                "❌ Ваша команда уже зарегистрирована!",
+                ephemeral=True
+            )
+            return
+
+        # Register team
+        tournament.registered_teams.append(team.team_id)
+        br_store.set(tournament)
+
+        # Get team number emoji
+        team_number = len(tournament.registered_teams)
+        team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+        team_emoji = team_emojis[team_number - 1] if team_number <= len(team_emojis) else f"{team_number}"
+
+        # Build team list text
+        team_list = []
+        for i, team_id in enumerate(tournament.registered_teams):
+            registered_team = team_store.get(team_id)
+            if registered_team:
+                team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {registered_team.team_name}")
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: Team\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f"{replace_emojis('white_arrow')} {', '.join(team_list) if team_list else '*'}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        await interaction.followup.send(
+            f"✅ Команда **{team.team_name}** зарегистрирована как {team_emoji}!",
+            ephemeral=True
+        )
+
+
+class RemoveTeamButton(Button):
+    """Кнопка для удаления команды из BR турнира (владелец бота)."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Удалить команду",
+            custom_id=f"br_remove_team:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check if bot owner
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Только владелец бота может удалять команды.",
+                ephemeral=True
+            )
+            return
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        if tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        # Show select menu to choose team to remove
+        from storage.team_store import team_store
+
+        options = []
+        for team_id in tournament.registered_teams:
+            team = team_store.get(team_id)
+            if team:
+                options.append(
+                    discord.SelectOption(
+                        label=team.team_name,
+                        value=team_id
+                    )
+                )
+
+        if not options:
+            await interaction.response.send_message(
+                "❌ Нет зарегистрированных команд для удаления.",
+                ephemeral=True
+            )
+            return
+
+        view = RemoveTeamSelectView(self.guild_id, self.channel_id, options)
+        await interaction.response.send_message("Выберите команду для удаления:", view=view, ephemeral=True)
+
+
+class RemoveTeamSelectView(View):
+    """View with select menu for removing teams."""
+
+    def __init__(self, guild_id: int, channel_id: int, options: list[discord.SelectOption]):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+        select = discord.ui.Select(
+            placeholder="Выберите команду...",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        select.callback = self.select_callback
+        self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        team_id = interaction.data["values"][0]
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        if team_id in tournament.registered_teams:
+            tournament.registered_teams.remove(team_id)
+            br_store.set(tournament)
+
+            await interaction.response.send_message(
+                "✅ Команда удалена из турнира!",
+                ephemeral=True
+            )
+
+            # Update main embed
+            from storage.team_store import team_store
+            team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            team_list = []
+            for i, tid in enumerate(tournament.registered_teams):
+                registered_team = team_store.get(tid)
+                if registered_team:
+                    team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {registered_team.team_name}")
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Team\n"
+                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                    f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
+                    f"{replace_emojis('white_dot')} **Команды:**\n"
+                    f"{replace_emojis('white_arrow')} {', '.join(team_list) if team_list else '*'}\n\n"
+                    f"{replace_emojis('white_dot')} **Правила:**\n"
+                    f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                    f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+            await interaction.edit_original_response(embed=embed, view=view)
+        else:
+            await interaction.response.send_message(
+                "❌ Команда не найдена в турнире.",
+                ephemeral=True
+            )
 
 
 class DeleteBRPlayerButton(Button):
@@ -494,7 +729,7 @@ class RemoveBRPlayerSelect(Select):
             players_text = ", ".join(player_names) if player_names else "*"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
                 description=(
                     f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
@@ -907,7 +1142,7 @@ class StartBRButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
@@ -1049,7 +1284,7 @@ class StartBermudaButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text)
@@ -1738,7 +1973,7 @@ class BRPurgatoryButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text)
@@ -1862,7 +2097,7 @@ class BRKalahariButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text)
@@ -2017,7 +2252,7 @@ class TeamNameModal(Modal):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
@@ -2372,7 +2607,7 @@ class BackToMapButton(Button):
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
                 f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
                 f"{replace_emojis('white_dot')} **Команды:**\n"

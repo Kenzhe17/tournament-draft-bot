@@ -57,7 +57,8 @@ class BRTournament:
     formation: BRTournamentFormation = BRTournamentFormation.RANDOM
     phase: BRTournamentPhase = BRTournamentPhase.REGISTRATION
     players: list[dict] = field(default_factory=list)  # [{"name": str, "id": int}]
-    teams: list[dict] = field(default_factory=list)  # [{"captain": str, "players": list, "name": str, "stats": {}}]
+    teams: list[dict] = field(default_factory=list)  # [{"captain": str, "players": list, "name": str, "stats": {}, "team_id": str}]
+    registered_teams: list[str] = field(default_factory=list)  # List of team_ids for team format
     role_id: int = 0
     room_channel_id: int = 0
     current_map: str = ""
@@ -300,6 +301,7 @@ class BRTournament:
             "phase": self.phase.value,
             "players": self.players,
             "teams": self.teams,
+            "registered_teams": self.registered_teams,
             "role_id": self.role_id,
             "room_channel_id": self.room_channel_id,
             "current_map": self.current_map,
@@ -322,6 +324,7 @@ class BRTournament:
             phase=BRTournamentPhase(data.get("phase", "registration")),
             players=data.get("players", []),
             teams=data.get("teams", []),
+            registered_teams=data.get("registered_teams", []),
             role_id=data.get("role_id", 0),
             room_channel_id=data.get("room_channel_id", 0),
             current_map=data.get("current_map", ""),
