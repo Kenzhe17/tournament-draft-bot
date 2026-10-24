@@ -254,7 +254,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
 
     async def on_submit(self, interaction: discord.Interaction):
         self.team.team_name = self.new_name.value
-        await team_store._save_to_postgres(self.team) if team_store._use_postgres else team_store._save_to_json()
+        await team_store.update_team(self.team)
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Название изменено",
@@ -298,7 +298,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
 
     async def on_submit(self, interaction: discord.Interaction):
         self.team.password = self.new_password.value
-        await team_store._save_to_postgres(self.team) if team_store._use_postgres else team_store._save_to_json()
+        await team_store.update_team(self.team)
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Пароль изменен",

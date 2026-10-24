@@ -183,6 +183,56 @@ class BRTournament:
         self.team_rename_start_time = datetime.now().isoformat()
         return True
 
+    def form_teams_from_registered(self) -> bool:
+        """Сформировать команды из зарегистрированных команд.
+
+        Returns:
+            True если успешно, False если недостаточно команд
+        """
+        if len(self.registered_teams) < 5 or len(self.registered_teams) % 4 != 0:
+            return False
+
+        try:
+            from storage.team_store import team_store
+
+            self.teams = []
+            for i, team_id in enumerate(self.registered_teams):
+                team = team_store.get(team_id)
+                if not team:
+                    continue
+
+                # Get member objects
+                member_names = []
+                for member_id in team.members:
+                    # Find member in players list
+                    for player in self.players:
+                        if player["id"] == member_id:
+                            member_names.append(player["name"])
+                            break
+
+                if len(member_names) < 4:
+                    continue  # Skip incomplete teams
+
+                captain = member_names[0] if member_names else team.team_name
+
+                self.teams.append({
+                    "captain": captain,
+                    "players": member_names,
+                    "name": team.team_name,
+                    "stats": {},
+                    "team_id": team_id
+                })
+                self.team_rename_remaining[i] = True
+
+            if len(self.teams) < 5:
+                return False
+
+            self.phase = BRTournamentPhase.TEAMS
+            self.team_rename_start_time = datetime.now().isoformat()
+            return True
+        except Exception:
+            return False
+
     def rename_team(self, team_index: int, new_name: str, captain_name: str) -> bool:
         """Изменить название команды.
 

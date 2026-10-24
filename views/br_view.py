@@ -94,7 +94,10 @@ class BRManagementMenuView(View):
 
         # Add buttons based on phase
         if tournament.phase == BRTournamentPhase.REGISTRATION:
-            self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
+            if tournament.formation.value == "team":
+                self.add_item(RemoveTeamButton(guild_id, channel_id))
+            else:
+                self.add_item(DeleteBRPlayerButton(guild_id, channel_id))
             self.add_item(StartBRButton(guild_id, channel_id))
         elif tournament.phase in [BRTournamentPhase.BERMUDA, BRTournamentPhase.PURGATORY, BRTournamentPhase.KALAHARI]:
             self.add_item(BRStatsButton(guild_id, channel_id))
@@ -441,6 +444,16 @@ class RegisterTeamButton(Button):
 
         # Register team
         tournament.registered_teams.append(team.team_id)
+
+        # Add team members to players list for role distribution (check for duplicates)
+        for member_id in team.members:
+            # Check if already in players list
+            already_registered = any(p["id"] == member_id for p in tournament.players)
+            if not already_registered:
+                member = interaction.guild.get_member(member_id)
+                if member:
+                    tournament.players.append({"name": member.display_name, "id": member_id})
+
         br_store.set(tournament)
 
         # Get team number emoji (using same logic as random BR)
@@ -1089,34 +1102,67 @@ class StartBRButton(Button):
             return
 
         # Проверка условий старта
-        if len(tournament.players) < 20 or len(tournament.players) % 4 != 0:
-            await interaction.response.send_message(
-                "❌ Нельзя начать: нужно 20+ игроков и количество должно делиться на 4.",
-                ephemeral=True
-            )
-            return
+        if tournament.formation.value == "team":
+            if len(tournament.registered_teams) < 5 or len(tournament.registered_teams) % 4 != 0:
+                await interaction.response.send_message(
+                    "❌ Нельзя начать: нужно 5+ команд и количество должно делиться на 4.",
+                    ephemeral=True
+                )
+                return
 
-        # Сформировать команды
-        if not tournament.form_teams_random():
-            await interaction.response.send_message(
-                "❌ Не удалось сформировать команды.",
-                ephemeral=True
-            )
-            return
+            # Сформировать команды из зарегистрированных
+            if not tournament.form_teams_from_registered():
+                await interaction.response.send_message(
+                    "❌ Не удалось сформировать команды из зарегистрированных.",
+                    ephemeral=True
+                )
+                return
+        else:
+            if len(tournament.players) < 20 or len(tournament.players) % 4 != 0:
+                await interaction.response.send_message(
+                    "❌ Нельзя начать: нужно 20+ игроков и количество должно делиться на 4.",
+                    ephemeral=True
+                )
+                return
+
+            # Сформировать команды
+            if not tournament.form_teams_random():
+                await interaction.response.send_message(
+                    "❌ Не удалось сформировать команды.",
+                    ephemeral=True
+                )
+                return
 
         # Выдать роль реальным игрокам
         guild = interaction.guild
         role = guild.get_role(tournament.role_id)
         if role:
-            for player in tournament.players:
-                user_id = player["id"]
-                if user_id < 0:  # Пропускаем ботов
-                    continue
-                try:
-                    member = guild.get_member(user_id)
-                    if member:
-                        await member.add_roles(role)
-                except Exception as e:
+            if tournament.formation.value == "team":
+                # Give role to team members
+                from storage.team_store import team_store
+                for team_id in tournament.registered_teams:
+                    team = team_store.get(team_id)
+                    if team:
+                        for member_id in team.members:
+                            if member_id < 0:
+                                continue
+                            try:
+                                member = guild.get_member(member_id)
+                                if member:
+                                    await member.add_roles(role)
+                            except Exception as e:
+                                pass
+            else:
+                # Give role to all players (random format)
+                for player in tournament.players:
+                    user_id = player["id"]
+                    if user_id < 0:  # Пропускаем ботов
+                        continue
+                    try:
+                        member = guild.get_member(user_id)
+                        if member:
+                            await member.add_roles(role)
+                    except Exception as e:
                     logger.warning("Не удалось выдать роль: %s", e)
 
         # Сохранить

@@ -285,6 +285,25 @@ class TeamStore:
             return False
         return team.is_captain(user_id)
 
+    async def update_team(self, team: Team) -> bool:
+        """Обновить команду.
+
+        Args:
+            team: Объект команды
+
+        Returns:
+            True если успешно
+        """
+        if team.team_id not in self._teams:
+            return False
+
+        self._teams[team.team_id] = team
+        if self._use_postgres:
+            await self._save_to_postgres(team)
+        else:
+            self._save_to_json()
+        return True
+
 
 # Глобальный экземпляр хранилища
 team_store = TeamStore()
