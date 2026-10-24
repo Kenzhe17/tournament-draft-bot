@@ -356,7 +356,7 @@ class BetStore:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
                     "SELECT guild_id, user_id, user_name, tournament_id, match_id, team_name, team_index, amount, odds FROM bets WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_id LIKE $4",
-                    guild_id, user_id, tournament_id, f"{match_type}_%"
+                    guild_id, user_id, tournament_id, f"{tournament_id}_{match_type}_%"
                 )
                 if row:
                     return Bet(guild_id=row["guild_id"], user_id=row["user_id"], user_name=row["user_name"], tournament_id=row["tournament_id"], match_id=row["match_id"], team_name=row["team_name"], team_index=row.get("team_index", 0), amount=row["amount"], odds=row["odds"])

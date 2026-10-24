@@ -524,6 +524,19 @@ async def init_db() -> None:
             ON player_stats(guild_id, level DESC, xp DESC)
         """)
 
+        # Create teams table for BR tournament team format
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id TEXT PRIMARY KEY,
+                team_name TEXT NOT NULL,
+                password TEXT NOT NULL,
+                captain_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                members BIGINT[] NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_user_balance_guild
             ON user_balance(guild_id, balance DESC)
