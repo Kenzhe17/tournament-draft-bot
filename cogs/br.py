@@ -91,12 +91,15 @@ class BRCog(commands.Cog):
         # Build player/team list for embed
         if tournament.formation.value == "team":
             from storage.team_store import team_store
-            team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            from config import get_emoji
+            team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                               "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
             team_list = []
             for i, team_id in enumerate(tournament.registered_teams):
                 team = team_store.get(team_id)
                 if team:
-                    team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {team.team_name}")
+                    emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                    team_list.append(f"{emoji} {team.team_name}")
             players_text = ", ".join(team_list) if team_list else "*"
         else:
             player_names = [p["name"] for p in tournament.players]

@@ -443,17 +443,20 @@ class RegisterTeamButton(Button):
         tournament.registered_teams.append(team.team_id)
         br_store.set(tournament)
 
-        # Get team number emoji
+        # Get team number emoji (using same logic as random BR)
+        from config import get_emoji
         team_number = len(tournament.registered_teams)
-        team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
-        team_emoji = team_emojis[team_number - 1] if team_number <= len(team_emojis) else f"{team_number}"
+        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
+        team_emoji = get_emoji(team_emoji_names[team_number - 1]) if team_number <= len(team_emoji_names) else f"{team_number}"
 
         # Build team list text
         team_list = []
         for i, team_id in enumerate(tournament.registered_teams):
             registered_team = team_store.get(team_id)
             if registered_team:
-                team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {registered_team.team_name}")
+                emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                team_list.append(f"{emoji} {registered_team.team_name}")
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
@@ -581,12 +584,15 @@ class RemoveTeamSelectView(View):
 
             # Update main embed
             from storage.team_store import team_store
-            team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            from config import get_emoji
+            team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                               "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
             team_list = []
             for i, tid in enumerate(tournament.registered_teams):
                 registered_team = team_store.get(tid)
                 if registered_team:
-                    team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {registered_team.team_name}")
+                    emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                    team_list.append(f"{emoji} {registered_team.team_name}")
 
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
