@@ -416,12 +416,12 @@ class PetStore:
         if not pet:
             return False
         
-        # Блокировка способностей если сытость < 30 или энергии недостаточно
+        # Блокировка способностей если сытость < 30 или энергии < 30
         if pet.fullness < 30:
             logger.info(f"Ability blocked: pet {pet.pet_name} fullness {pet.fullness}% < 30%")
             return False
-        if pet.energy <= 0:
-            logger.info(f"Ability blocked: pet {pet.pet_name} energy {pet.energy} <= 0")
+        if pet.energy < 30:
+            logger.info(f"Ability blocked: pet {pet.pet_name} energy {pet.energy} < 30")
             return False
 
         # Списать энергию

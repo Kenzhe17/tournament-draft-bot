@@ -262,21 +262,31 @@ class CaseStore:
                                 coins_amount += bonus_coins
                                 pet_bonus_info["golden_fox_bonus"] = bonus_percent
                                 pet_bonus_info["golden_fox_name"] = pet.pet_name
-                            
-                            # Применить Секретный тайник (Мимик-собиратель) - только к монетам
-                            # Работает даже если энергии нет (но энергия тратится если есть)
-                            if pet_def["id"] == "mimic_collector":
-                                ability_mimic = pet_def["abilities"][1]
-                                if ability_mimic["name"] == "Секретный тайник":
-                                    mimic_chance = ability_mimic.get("max_val", 0)
-                                    if random.random() < (mimic_chance / 100):
-                                        bonus_range = random.uniform(0.25, 0.5)
-                                        extra_coins = int(coins_amount * bonus_range)
-                                        coins_amount += extra_coins
-                                        pet_bonus_info["mimic_bonus"] = extra_coins
-                                        pet_bonus_info["mimic_name"] = pet.pet_name
             except Exception as e:
                 logger.error(f"Error applying pet bonus to case: {e}")
+
+            # Применить Секретный тайник (Мимик-собиратель) - только к монетам
+            # Работает только если энергии достаточно
+            try:
+                from storage.pet_store import pet_store
+                pet = await pet_store.get_user_pet(guild_id, user_id)
+
+                if pet and pet.energy >= 30:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
+
+                    if pet_def and pet_def["id"] == "mimic_collector":
+                        ability_mimic = pet_def["abilities"][1]
+                        if ability_mimic["name"] == "Секретный тайник":
+                            mimic_chance = ability_mimic.get("max_val", 0)
+                            if random.random() < (mimic_chance / 100):
+                                bonus_range = random.uniform(0.25, 0.5)
+                                extra_coins = int(coins_amount * bonus_range)
+                                coins_amount += extra_coins
+                                pet_bonus_info["mimic_bonus"] = extra_coins
+                                pet_bonus_info["mimic_name"] = pet.pet_name
+            except Exception as e:
+                logger.error(f"Error applying mimic bonus to case: {e}")
 
             await user_balance_store.add_balance(guild_id, user_id, coins_amount)
             result = {"type": "coins", "value": coins_amount, "rarity": "common", "pet_bonus": pet_bonus_info}
