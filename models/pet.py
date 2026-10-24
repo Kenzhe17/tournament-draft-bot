@@ -227,7 +227,7 @@ RARITY_PRICES = {
 
 # Затраты энергии по действию
 ENERGY_COSTS = {
-    "case_open": 6,
+    "case_open": 2,
     "pay": 6,
     "rob": 10,
     "rob_defense": 9,
