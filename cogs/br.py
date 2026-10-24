@@ -69,21 +69,14 @@ class BRCog(commands.Cog):
             )
             return
 
-        # Проверка формата
-        if formation == "team":
-            await interaction.response.send_message(
-                "❌ Формат 'team' в разработке. Используйте 'random'.",
-                ephemeral=True
-            )
-            return
-
         # Создать турнир
         from models.br_tournament import BRTournament
+        formation_mode = BRTournamentFormation.RANDOM if formation == "random" else BRTournamentFormation.TEAM
         tournament = BRTournament(
             id="",
             guild_id=interaction.guild_id,
             channel_id=interaction.channel_id,
-            formation=BRTournamentFormation.RANDOM,
+            formation=formation_mode,
             role_id=BR_ROLE_ID,
             room_channel_id=BR_ROOM_CHANNEL_ID,
         )
@@ -95,23 +88,42 @@ class BRCog(commands.Cog):
         from views.br_view import BRRegistrationView
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
 
-        # Build player list for embed
-        player_names = [p["name"] for p in tournament.players]
-        players_text = ", ".join(player_names) if player_names else "*"
+        # Build player/team list for embed
+        if tournament.formation.value == "team":
+            from storage.team_store import team_store
+            team_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "1️⃣1️⃣", "1️⃣2️⃣"]
+            team_list = []
+            for i, team_id in enumerate(tournament.registered_teams):
+                team = team_store.get(team_id)
+                if team:
+                    team_list.append(f"{team_emojis[i] if i < len(team_emojis) else f'{i+1}'} {team.team_name}")
+            players_text = ", ".join(team_list) if team_list else "*"
+        else:
+            player_names = [p["name"] for p in tournament.players]
+            players_text = ", ".join(player_names) if player_names else "*"
 
         # Создать embed в стиле tournament create
+        if tournament.formation.value == "team":
+            players_label = "Команд"
+            players_count = f"{len(tournament.registered_teams)}/12"
+            rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+        else:
+            players_label = "Игроков"
+            players_count = f"{len(tournament.players)}/48"
+            rules_text = "Нажмите кнопку 'Войти' для регистрации."
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{interaction.user.id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Random\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                f"{replace_emojis('sub_directory')} {players_label}: {players_count}\n\n"
                 f"{replace_emojis('white_dot')} **Игроки:**\n"
                 f"{replace_emojis('white_arrow')} {players_text}\n\n"
                 f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f"{replace_emojis('white_arrow')} {rules_text}\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
