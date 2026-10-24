@@ -146,7 +146,7 @@ class GuessNumberInput(discord.ui.Modal):
         if guess == self.game_view.secret_number:
             # Победа
             self.game_view.game_over = True
-            winnings = self.game_view.bet * 5
+            winnings = int(self.game_view.bet * 1.25)
 
             lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
             async with lock:
@@ -296,7 +296,7 @@ class GuessNumberCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100 (5x множитель)")
+    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100 (1.25x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def guess_number(
         self,
