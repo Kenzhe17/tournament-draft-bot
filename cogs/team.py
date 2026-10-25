@@ -20,6 +20,36 @@ class TeamCog(commands.Cog):
 
     team = app_commands.Group(name="team", description="Управление командами")
 
+    @app_commands.command(name="guide", description="Руководство по командам")
+    async def guide(self, interaction: discord.Interaction):
+        """Показать руководство по созданию команд."""
+        embed = discord.Embed(
+            title="Руководство по командам",
+            description=(
+                "**Формат:** 12 команд по 4 игрока (1 Капитан + 3 участника)\n\n"
+                "**1. Создание команды**\n"
+                "`/team create пароль:твой_пароль`\n"
+                "- Создать команду и стать капитаном\n"
+                "- Пароль обязателен\n\n"
+                "**2. Вход в команду**\n"
+                "`/team status` → кнопка `[Войти]` → ввести пароль\n"
+                "- Максимум 4 человека в команде\n\n"
+                "**3. Статус команды**\n"
+                "`/team status` — показать состав и статус\n"
+                "- 🔴 (Недостаёт X игроков) — нельзя регистрироваться\n"
+                "- 🟢 (Готова) — команда готова к турниру\n\n"
+                "**4. Управление**\n"
+                "- ⚙️ `[Меню]` — смена названия/пароля, кик (только капитан)\n"
+                "- 🚪 `[Выйти]` — покинуть команду\n"
+                "- `/team delete` — удалить команду (только капитан)\n\n"
+                "**5. Регистрация**\n"
+                "- При статусе 🟢 (4/4) капитан нажимает `[Зарегистрировать Команду]`"
+            ),
+            color=discord.Color.from_rgb(114, 137, 218)
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @team.command(name="create", description="Создать команду")
     @app_commands.describe(password="Пароль команды (обязательно)")
     async def create(self, interaction: discord.Interaction, password: str):
