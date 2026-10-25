@@ -1341,6 +1341,24 @@ class StartBRButton(Button):
             tournament.current_map = "bermuda"
             br_store.set(tournament)
 
+            # Give role to captains (team format)
+            guild = interaction.guild
+            role = guild.get_role(tournament.role_id)
+            if role:
+                from storage.team_store import team_store
+                for team_id in tournament.registered_teams:
+                    team = team_store.get(team_id)
+                    if team:
+                        user_id = team.captain_id
+                        if user_id < 0:
+                            continue
+                        try:
+                            member = guild.get_member(user_id)
+                            if member:
+                                await member.add_roles(role)
+                        except Exception as e:
+                            logger.warning("Не удалось выдать роль капитану: %s", e)
+
             # Create Bermuda view
             view = BRBermudaView(self.guild_id, self.channel_id)
 
