@@ -144,10 +144,20 @@ class TeamLeaveButton(discord.ui.Button):
             )
             return
 
+        # Check if user is actually in the team
+        if not self.team.is_member(interaction.user.id):
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы не состоите в этой команде!"),
+                ephemeral=True
+            )
+            return
+
         await team_store.remove_member(self.team.team_id, interaction.user.id)
 
         # Update the original status message
         if self.status_view:
+            # Update the user_id in the status view to match the interaction user
+            self.status_view.user_id = interaction.user.id
             await self.status_view.update()
 
         embed = discord.Embed(
