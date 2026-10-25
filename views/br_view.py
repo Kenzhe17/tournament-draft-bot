@@ -65,10 +65,10 @@ class BROrganizerMenuButton(Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if bot owner
-        if interaction.user.id != BOT_OWNER_ID:
+        # Check if bot owner or specific user (582145013358657549)
+        if interaction.user.id != BOT_OWNER_ID and interaction.user.id != 582145013358657549:
             await interaction.response.send_message(
-                "❌ Только владелец бота может управлять BR турниром.",
+                "❌ Только владелец бота или организатор могут управлять BR турниром.",
                 ephemeral=True
             )
             return
