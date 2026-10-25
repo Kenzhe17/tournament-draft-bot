@@ -131,7 +131,7 @@ class HighLowView(discord.ui.View):
         elif self.round > self.max_rounds:
             # Победа
             self.game_over = True
-            final_prize = int(self.bet * (1.5 ** self.wins))
+            final_prize = int(self.bet * (1.3 ** self.wins))
 
             lock = get_user_lock(self.guild_id, self.user_id)
             async with lock:

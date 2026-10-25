@@ -205,16 +205,33 @@ class StartBRButton(Button):
         guild = interaction.guild
         role = guild.get_role(tournament.role_id)
         if role:
-            for player in tournament.players:
-                user_id = player["id"]
-                if user_id < 0:  # Skip bots
-                    continue
-                try:
-                    member = guild.get_member(user_id)
-                    if member:
-                        await member.add_roles(role)
-                except Exception as e:
-                    logger.warning("Не удалось выдать роль: %s", e)
+            if tournament.formation.value == "team":
+                # Team format: only give role to captains
+                from storage.team_store import team_store
+                for team_id in tournament.registered_teams:
+                    team = team_store.get(team_id)
+                    if team:
+                        user_id = team.captain_id
+                        if user_id < 0:  # Skip bots
+                            continue
+                        try:
+                            member = guild.get_member(user_id)
+                            if member:
+                                await member.add_roles(role)
+                        except Exception as e:
+                            logger.warning("Не удалось выдать роль капитану: %s", e)
+            else:
+                # Random format: give role to all players
+                for player in tournament.players:
+                    user_id = player["id"]
+                    if user_id < 0:  # Skip bots
+                        continue
+                    try:
+                        member = guild.get_member(user_id)
+                        if member:
+                            await member.add_roles(role)
+                    except Exception as e:
+                        logger.warning("Не удалось выдать роль: %s", e)
 
         # Save
         br_store.set(tournament)
@@ -882,16 +899,33 @@ class DeleteBRButton(Button):
         guild = interaction.guild
         role = guild.get_role(tournament.role_id)
         if role:
-            for player in tournament.players:
-                user_id = player["id"]
-                if user_id < 0:  # Пропускаем ботов
-                    continue
-                try:
-                    member = guild.get_member(user_id)
-                    if member:
-                        await member.remove_roles(role)
-                except Exception as e:
-                    logger.warning("Не удалось снять роль: %s", e)
+            if tournament.formation.value == "team":
+                # Remove role only from captains
+                from storage.team_store import team_store
+                for team_id in tournament.registered_teams:
+                    team = team_store.get(team_id)
+                    if team:
+                        user_id = team.captain_id
+                        if user_id < 0:
+                            continue
+                        try:
+                            member = guild.get_member(user_id)
+                            if member:
+                                await member.remove_roles(role)
+                        except Exception as e:
+                            logger.warning("Не удалось снять роль капитана: %s", e)
+            else:
+                # Remove role from all players (random format)
+                for player in tournament.players:
+                    user_id = player["id"]
+                    if user_id < 0:  # Пропускаем ботов
+                        continue
+                    try:
+                        member = guild.get_member(user_id)
+                        if member:
+                            await member.remove_roles(role)
+                    except Exception as e:
+                        logger.warning("Не удалось снять роль: %s", e)
 
         # Удалить сообщение
         if tournament.message_id:
@@ -1149,20 +1183,20 @@ class StartBRButton(Button):
         role = guild.get_role(tournament.role_id)
         if role:
             if tournament.formation.value == "team":
-                # Give role to team members
+                # Give role only to captains
                 from storage.team_store import team_store
                 for team_id in tournament.registered_teams:
                     team = team_store.get(team_id)
                     if team:
-                        for member_id in team.members:
-                            if member_id < 0:
-                                continue
-                            try:
-                                member = guild.get_member(member_id)
-                                if member:
-                                    await member.add_roles(role)
-                            except Exception as e:
-                                pass
+                        user_id = team.captain_id
+                        if user_id < 0:
+                            continue
+                        try:
+                            member = guild.get_member(user_id)
+                            if member:
+                                await member.add_roles(role)
+                        except Exception as e:
+                            logger.warning("Не удалось выдать роль капитану: %s", e)
             else:
                 # Give role to all players (random format)
                 for player in tournament.players:
@@ -2810,14 +2844,33 @@ class BRStatsModal(Modal):
                 guild = interaction.guild
                 role = guild.get_role(tournament.role_id)
                 if role:
-                    for player in tournament.players:
-                        user_id = player["id"]
-                        if user_id < 0:  # Пропускаем ботов
-                            continue
-                        try:
-                            member = guild.get_member(user_id)
-                            if member:
-                                await member.remove_roles(role)
+                    if tournament.formation.value == "team":
+                        # Remove role only from captains
+                        from storage.team_store import team_store
+                        for team_id in tournament.registered_teams:
+                            team = team_store.get(team_id)
+                            if team:
+                                user_id = team.captain_id
+                                if user_id < 0:
+                                    continue
+                                try:
+                                    member = guild.get_member(user_id)
+                                    if member:
+                                        await member.remove_roles(role)
+                                except Exception as e:
+                                    logger.warning("Не удалось снять роль капитана: %s", e)
+                    else:
+                        # Remove role from all players (random format)
+                        for player in tournament.players:
+                            user_id = player["id"]
+                            if user_id < 0:  # Пропускаем ботов
+                                continue
+                            try:
+                                member = guild.get_member(user_id)
+                                if member:
+                                    await member.remove_roles(role)
+                            except Exception as e:
+                                logger.warning("Не удалось снять роль: %s", e)
                         except Exception as e:
                             logger.warning("Не удалось снять роль с пользователя %s: %s", user_id, e)
 
