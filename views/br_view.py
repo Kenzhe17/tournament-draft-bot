@@ -708,10 +708,12 @@ class RemoveTeamSelectView(View):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
                         if "BATTLE ROYALE CUP" in embed.title:
-                            # Check if this is a proper message (description starts with Organizer)
-                            if embed.description and embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
-                                correct_msg = msg
+                            # Check if this is a proper message (title has no team names)
+                            # Corrupted titles look like: ":a_star: :winner: BATTLE ROYALE CUP | Team | Регистрация\n:num_1: Team 1:"
+                            # Proper title is just: ":a_star: :winner: BATTLE ROYALE CUP | Team | Регистрация"
+                            if "Team " not in embed.title:
                                 print(f"Found correct tournament message: {msg.id}")
+                                correct_msg = msg
                                 break
                 
                 if correct_msg:
