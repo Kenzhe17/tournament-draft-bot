@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from config import BOT_OWNER_ID, BR_ROLE_ID, BR_ROOM_CHANNEL_ID
 from models.br_tournament import BRTournamentFormation, BRTournamentPhase
+from models.team import Team
 from storage.br_store import br_store
 from utils.embeds import replace_emojis
 from views.br_view import BRRegistrationView
