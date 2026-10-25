@@ -1206,9 +1206,9 @@ async def build_winner_embed(
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd:.2f if best_kd > 0 else 0.00})\n"
-        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg:.1f if best_avg > 0 else 0.0})\n"
-        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills if best_kills > 0 else 0})\n"
+        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd:.2f if best_kd > 0 else '0.00'})\n"
+        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg:.1f if best_avg > 0 else '0.0'})\n"
+        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills if best_kills > 0 else '0'})\n"
         f"{replace_emojis('sub_directory')} **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout:,} {get_emoji('money') if max_payout > 0 else ''})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
