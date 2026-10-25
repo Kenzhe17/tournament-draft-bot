@@ -567,26 +567,43 @@ class RegisterTeamButton(Button):
                 emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
                 team_list.append(f"{emoji} {registered_team.team_name}")
 
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
-            description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: Team\n"
-                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
-                "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-            ),
-            color=discord.Color.from_rgb(69, 69, 69)
+        # Build description parts for debugging
+        organizer_line = f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>"
+        info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
+        format_line = f"{replace_emojis('sub_middle')} Формат: Team"
+        phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
+        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
+        teams_header = f"{replace_emojis('white_dot')} **Команды:**"
+        teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
+        rules_header = f"{replace_emojis('white_dot')} **Правила:**"
+        rules_content = f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+        footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+
+        print(f"organizer_line: {organizer_line}")
+        print(f"info_header: {info_header}")
+        print(f"teams_content: {teams_content}")
+
+        description = (
+            f"{organizer_line}\n\n"
+            f"{info_header}\n"
+            f"{format_line}\n"
+            f"{phase_line}\n"
+            f"{count_line}\n\n"
+            f"{teams_header}\n"
+            f"{teams_content}\n\n"
+            f"{rules_header}\n"
+            f"{rules_content}\n\n"
+            f"{footer}"
         )
 
-        print(f"Embed title: {embed.title}")
-        print(f"Embed description (first 500 chars): {embed.description[:500]}")
-        print(f"Team list: {team_list}")
+        print(f"Full description length: {len(description)}")
+        print(f"Full description: {description}")
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+            description=description,
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
