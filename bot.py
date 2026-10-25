@@ -138,6 +138,14 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Ошибка при получении серверов из БД: {e}")
 
+        # Force sync for main guild to ensure commands are available immediately
+        MAIN_GUILD_ID = 1196165488565289012
+        try:
+            guild_synced = await self.tree.sync(guild=discord.Object(id=MAIN_GUILD_ID))
+            logger.info(f"Синхронизировано {len(guild_synced)} команд для основного сервера {MAIN_GUILD_ID}")
+        except Exception as e:
+            logger.error(f"Ошибка синхронизации для основного сервера: {e}")
+
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance
         set_bot_instance(self)

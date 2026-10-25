@@ -31,16 +31,14 @@ class TeamStatusView(discord.ui.View):
         for item in self.children[:]:
             self.remove_item(item)
 
-        # Menu button (captain only)
+        # Captain: only menu button
         if self.team.is_captain(self.user_id):
             self.add_item(TeamMenuButton(self.team, self))
-
-        # Leave button (for members)
-        if self.team.is_member(self.user_id):
+        # Member: only leave button
+        elif self.team.is_member(self.user_id):
             self.add_item(TeamLeaveButton(self.team, self.user_id, self))
-
-        # Join button (always show if team not full, check in callback)
-        if not self.team.is_full():
+        # Non-member: only join button if team not full
+        elif not self.team.is_full():
             self.add_item(TeamJoinButton(self.team, self))
 
     async def update(self):
