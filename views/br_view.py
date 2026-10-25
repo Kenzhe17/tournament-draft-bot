@@ -1970,12 +1970,8 @@ class BRConfirmPurgatoryButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        print("BRConfirmPurgatoryButton callback called")
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
-        print(f"Reloaded tournament, teams count: {len(self.tournament.teams)}")
-        for i, team in enumerate(self.tournament.teams):
-            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
 
         # Transition to Purgatory
         self.tournament.phase = BRTournamentPhase.PURGATORY
@@ -2012,19 +2008,16 @@ class BRConfirmPurgatoryButton(Button):
 
                 # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
-                print(f"Purgatory transition: team {team_name}, stats: {stats}")
                 cumulative_points = 0
                 # For Purgatory, only count Bermuda points (since Purgatory not started yet)
                 if "bermuda" in stats:
                     map_stats = stats["bermuda"]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
-                    print(f"Purgatory transition: team {team_name}, bermuda place={place}, kills={kills}")
                     if place > 0:
                         # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                         place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
                         cumulative_points += place_points.get(place, 0) + kills
-                print(f"Purgatory transition: team {team_name}, cumulative_points={cumulative_points}")
 
                 teams_with_points.append({
                     "captain": captain,
@@ -2333,11 +2326,6 @@ class BRPurgatoryButton(Button):
             )
             return
 
-        print("BRPurgatoryButton callback called")
-        print(f"Teams before: {len(tournament.teams)}")
-        for i, team in enumerate(tournament.teams):
-            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
-
         # Transition to Purgatory phase
         tournament.phase = BRTournamentPhase.PURGATORY
         tournament.current_map = "purgatory"
@@ -2345,7 +2333,6 @@ class BRPurgatoryButton(Button):
 
         # Reload to get latest
         tournament = br_store.get(self.guild_id, self.channel_id)
-        print(f"Teams after reload: {len(tournament.teams)}")
 
         # Create view with only organizer menu button
         view = BRBermudaView(self.guild_id, self.channel_id)
@@ -2369,18 +2356,15 @@ class BRPurgatoryButton(Button):
 
             # Calculate cumulative points (Bermuda only since moving to Purgatory)
             stats = team.get("stats", {})
-            print(f"BRPurgatory: team {team_name}, stats: {stats}")
             cumulative_points = 0
             if "bermuda" in stats:
                 map_stats = stats["bermuda"]
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
-                print(f"BRPurgatory: team {team_name}, bermuda place={place}, kills={kills}")
                 if place > 0:
                     # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                     place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
                     cumulative_points += place_points.get(place, 0) + kills
-            print(f"BRPurgatory: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
                 "captain": captain,
@@ -2472,11 +2456,6 @@ class BRKalahariButton(Button):
             )
             return
 
-        print("BRKalahariButton callback called")
-        print(f"Teams before: {len(tournament.teams)}")
-        for i, team in enumerate(tournament.teams):
-            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
-
         # Transition to Kalahari phase
         tournament.phase = BRTournamentPhase.KALAHARI
         tournament.current_map = "kalahari"
@@ -2484,7 +2463,6 @@ class BRKalahariButton(Button):
 
         # Reload to get latest
         tournament = br_store.get(self.guild_id, self.channel_id)
-        print(f"Teams after reload: {len(tournament.teams)}")
 
         # Create view with only organizer menu button
         view = BRBermudaView(self.guild_id, self.channel_id)
@@ -2508,19 +2486,16 @@ class BRKalahariButton(Button):
 
             # Calculate cumulative points (Bermuda + Purgatory since moving to Kalahari)
             stats = team.get("stats", {})
-            print(f"BRKalahari: team {team_name}, stats: {stats}")
             cumulative_points = 0
             for map_name in ["bermuda", "purgatory"]:
                 if map_name in stats:
                     map_stats = stats[map_name]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
-                    print(f"BRKalahari: team {team_name}, {map_name} place={place}, kills={kills}")
                     if place > 0:
                         # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                         place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
                         cumulative_points += place_points.get(place, 0) + kills
-            print(f"BRKalahari: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
                 "captain": captain,
