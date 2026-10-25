@@ -690,6 +690,7 @@ class RemoveTeamSelectView(View):
                 for member_id in team.members:
                     tournament.players = [p for p in tournament.players if p["id"] != member_id]
 
+            # Save tournament
             br_store.set(tournament)
 
             # Send success message
@@ -698,15 +699,13 @@ class RemoveTeamSelectView(View):
                 ephemeral=True
             )
 
-            # Update main tournament message by searching for it in the channel
+            # Update main tournament message
             try:
                 # First try to find by message_id if available
                 if tournament.message_id:
                     try:
                         msg = await interaction.channel.fetch_message(tournament.message_id)
                         if msg:
-                            from storage.team_store import team_store
-                            from config import get_emoji
                             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                             team_list = []
@@ -735,6 +734,7 @@ class RemoveTeamSelectView(View):
 
                             view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
                             await msg.edit(embed=new_embed, view=view)
+                            return
                     except Exception as e:
                         print(f"Error updating tournament message by ID: {e}")
 
@@ -744,8 +744,6 @@ class RemoveTeamSelectView(View):
                         embed = msg.embeds[0]
                         if "BATTLE ROYALE CUP" in embed.title:
                             # Found the tournament message, update it
-                            from storage.team_store import team_store
-                            from config import get_emoji
                             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                             team_list = []
