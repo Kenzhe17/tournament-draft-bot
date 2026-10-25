@@ -1174,7 +1174,7 @@ class StartBRButton(Button):
                         if member:
                             await member.add_roles(role)
                     except Exception as e:
-                    logger.warning("Не удалось выдать роль: %s", e)
+                        logger.warning("Не удалось выдать роль: %s", e)
 
         # Сохранить
         br_store.set(tournament)
