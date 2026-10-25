@@ -51,7 +51,7 @@ class HighLowView(discord.ui.View):
         )
 
         if state == "playing":
-            multiplier = 1.2 ** self.wins
+            multiplier = 1.3 ** self.wins
             current_prize = int(self.bet * multiplier)
 
             embed.add_field(
@@ -65,12 +65,12 @@ class HighLowView(discord.ui.View):
             )
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
-                value="Угадайте будет следующее число выше или ниже текущего. Каждая правильная догадка увеличивает множитель на 1.5x!",
+                value="Угадайте будет следующее число выше или ниже текущего. Каждая правильная догадка увеличивает множитель на 1.3x!",
                 inline=False
             )
 
         elif state == "won":
-            final_prize = int(self.bet * (1.5 ** self.wins))
+            final_prize = int(self.bet * (1.3 ** self.wins))
             embed.color = discord.Color.green()
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",

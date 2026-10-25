@@ -378,14 +378,16 @@ class Tournament:
         # Check conflicts if store provided
         if store and user_id:
             all_tournaments = store.get_by_guild(self.guild_id)
+            logging.info(f"  Checking {len(all_tournaments)} other tournaments in guild")
             for other_tournament in all_tournaments:
                 # Skip self
                 if other_tournament.id == self.id:
                     continue
 
+                logging.info(f"  Checking tournament {other_tournament.id} (phase: {other_tournament.phase.value})")
                 # Check if player is active in other tournament
                 if other_tournament.is_player_active(user_id):
-                    logging.warning(f"  FAILED: player is active in another tournament")
+                    logging.warning(f"  FAILED: player is active in another tournament (ID: {other_tournament.id})")
                     return False  # Conflict detected
 
             # Also check BR tournaments

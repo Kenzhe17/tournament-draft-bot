@@ -179,7 +179,6 @@ class ReleaseRoleButton(discord.ui.Button):
     """Кнопка для сдачи роли организатора."""
 
     def __init__(self, state: OrgSlotState, role_id: int, role_name: str):
-        has_role = interaction.user.id in state.get_holders(role_id) if hasattr(self, 'has_user_role') else False
         super().__init__(
             label=f"Сдать {role_name}",
             style=discord.ButtonStyle.red,
@@ -366,9 +365,11 @@ class RoleSelectionView(discord.ui.View):
             # Check if role is full
             holders = state.get_holders(role_id)
             is_full = len(holders) >= MAX_ORG_ROLE_HOLDERS
+            # Check if user is admin
+            is_admin = user.guild_permissions.administrator if user else False
 
-            if has_role:
-                # User has role - show release button
+            if has_role or (is_admin and len(holders) > 0):
+                # User has role OR admin can release - show release button
                 self.add_item(ReleaseRoleButton(state, role_id, role_name))
             else:
                 # Always show take button, even if full (will show error in callback)

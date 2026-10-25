@@ -233,4 +233,8 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)
-        await interaction.edit_original_response(embed=embed, view=view)
+        try:
+            await interaction.edit_original_response(embed=embed, view=view)
+        except discord.NotFound:
+            # If original response is not available, send a new message
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
