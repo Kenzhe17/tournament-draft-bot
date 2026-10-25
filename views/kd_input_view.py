@@ -89,19 +89,30 @@ class ProcessMatchButton(discord.ui.Button):
         # Get fresh tournament data with K/D
         from storage.json_store import store
         tournament = store.get(self.guild_id, self.channel_id)
-        if not tournament or not hasattr(tournament, 'temp_kd_data') or not tournament.temp_kd_data:
+        if not tournament:
             await interaction.response.send_message(
-                replace_emojis("❌ Нет данных K/D для обработки. Сначала введите статистику для обеих команд."),
+                replace_emojis("❌ Турнир не найден."),
                 ephemeral=True
             )
             return
 
-        # Check if we have K/D for all players
+        # Get match stats from temp_match_stats
+        match_id = f"{self.tournament.id}_{self.match_info.get('match_type', 'unknown')}_{self.match_info.get('match_index', 0)}"
+        temp_stats = tournament.temp_match_stats.get(match_id, {})
+
+        if not temp_stats:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет данных статистики для обработки. Сначала заполните статистику для обеих команд."),
+                ephemeral=True
+            )
+            return
+
+        # Check if we have stats for all players
         team1_players = self.match_info.get('team1_players', [])
         team2_players = self.match_info.get('team2_players', [])
         all_players = [p[0] for p in team1_players + team2_players]
-        
-        missing_players = [p for p in all_players if p not in tournament.temp_kd_data]
+
+        missing_players = [p for p in all_players if p not in temp_stats]
         if missing_players:
             await interaction.response.send_message(
                 replace_emojis(f"❌ Отсутствует статистика для: {', '.join(missing_players)}"),
@@ -111,19 +122,19 @@ class ProcessMatchButton(discord.ui.Button):
 
         await interaction.response.defer()
 
-        # Update match_info with K/D data from tournament
-        self.match_info['temp_kd_data'] = tournament.temp_kd_data
+        # Update match_info with stats data from tournament
+        self.match_info['temp_kd_data'] = temp_stats
 
         # Log stats filling
         from utils.logging import log_stats_filled
         match_type = self.match_info.get('match_type', 'unknown')
         match_index = self.match_info.get('match_index', 0)
-        
+
         # Build stats summary
         stats_summary = ""
-        for player, kd in tournament.temp_kd_data.items():
+        for player, kd in temp_stats.items():
             stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
-        
+
         await log_stats_filled(interaction.client, interaction.guild, interaction.user, match_type, match_index, stats_summary)
 
         # Process the match result with new rating system
@@ -326,4 +337,16 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
 
     # Store tournament
     from storage.json_store import store
+    store.set(tournament)
+
+    # Copy stats to temp_match_stats for winner embed display
+    match_id = f"{tournament.id}_{match_type}_{match_index}"
+    if match_id not in tournament.temp_match_stats:
+        tournament.temp_match_stats[match_id] = {}
+    # Remove circle from stats for cleaner storage
+    for player, kd in temp_kd_data.items():
+        tournament.temp_match_stats[match_id][player] = {
+            "kills": kd.get("kills", 0),
+            "deaths": kd.get("deaths", 0)
+        }
     store.set(tournament)

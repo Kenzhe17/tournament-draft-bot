@@ -390,18 +390,7 @@ class Tournament:
                     logging.warning(f"  FAILED: player is active in another tournament (ID: {other_tournament.id})")
                     return False  # Conflict detected
 
-            # Also check BR tournaments
-            try:
-                from storage.br_store import br_store
-                all_br_tournaments = br_store.get_by_guild(self.guild_id)
-                for br_tournament in all_br_tournaments:
-                    if br_tournament.phase.value != "complete":
-                        # Check if player is in BR tournament
-                        for player in br_tournament.players:
-                            if player["id"] == user_id:
-                                logging.warning(f"  FAILED: player is active in BR tournament")
-                                return False
-            except Exception as e:
+        # Note: BR tournaments are separate systems and don't conflict with regular tournaments
                 logging.warning(f"  Error checking BR tournament: {e}")
         
         if not name or name in self.all_players:
