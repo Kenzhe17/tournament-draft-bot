@@ -92,6 +92,7 @@ class BRCog(commands.Cog):
         if tournament.formation.value == "team":
             from storage.team_store import team_store
             from config import get_emoji
+            from utils.cosmetics import clean_nickname
             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
             team_list = []
@@ -99,7 +100,14 @@ class BRCog(commands.Cog):
                 team = team_store.get(team_id)
                 if team:
                     emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
-                    team_list.append(f"{emoji} {team.team_name}")
+                    # Get member names (cleaned - no tags/icons)
+                    member_names = []
+                    for member_id in team.members:
+                        member = interaction.guild.get_member(member_id)
+                        if member:
+                            member_names.append(clean_nickname(member.display_name))
+                    members_text = f" ({', '.join(member_names)})" if member_names else ""
+                    team_list.append(f"{emoji} {team.team_name}{members_text}")
             players_text = ", ".join(team_list) if team_list else "*"
         else:
             player_names = [p["name"] for p in tournament.players]
@@ -208,9 +216,9 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир удален в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
-    @app_commands.command(name="brtest", description="Заполнить BR турнир 48 ботами")
+    @app_commands.command(name="brtest", description="Заполнить BR турнир ботами для тестирования")
     async def br_test(self, interaction: discord.Interaction) -> None:
-        """Заполнить BR турнир 48 ботами для тестирования."""
+        """Заполнить BR турнир ботами для тестирования."""
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
@@ -236,18 +244,63 @@ class BRCog(commands.Cog):
             )
             return
 
-        # Очистить существующих игроков
+        # Очистить существующих игроков и команд
         tournament.clear_players()
+        tournament.registered_teams = []
 
-        # Generate unique negative user_ids within int64 range
-        base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+        if tournament.formation.value == "team":
+            # Team format: create 12 teams with 4 bots each
+            from storage.team_store import team_store
+            from utils.cosmetics import clean_nickname
 
-        # Добавить 48 ботов
-        for i in range(1, 49):
-            tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
+            for team_num in range(1, 13):
+                # Create team with bot captain
+                base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+                captain_id = base_user_id - team_num
 
-        # Сохранить
-        br_store.set(tournament)
+                team = Team(
+                    team_id="",
+                    team_name=f"Team {team_num}",
+                    password="test",
+                    captain_id=captain_id,
+                    guild_id=interaction.guild_id
+                )
+
+                # Add 3 more bots (total 4)
+                for bot_num in range(1, 4):
+                    bot_id = captain_id - (bot_num * 1000)
+                    team.add_member(bot_id)
+
+                await team_store.create(team)
+                tournament.registered_teams.append(team.team_id)
+
+                # Add team members to players list
+                for member_id in team.members:
+                    tournament.players.append({"name": f"BotTeam{team_num}_{member_id}", "id": member_id})
+
+            br_store.set(tournament)
+            await interaction.response.send_message(
+                replace_emojis("✅ Добавлено 12 команд с ботами!"),
+                ephemeral=True
+            )
+        else:
+            # Random format: add 48 bots
+            tournament.clear_players()
+
+            # Generate unique negative user_ids within int64 range
+            base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+
+            # Добавить 48 ботов
+            for i in range(1, 49):
+                tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
+
+            # Сохранить
+            br_store.set(tournament)
+
+            await interaction.response.send_message(
+                replace_emojis("✅ Добавлено 48 ботов!"),
+                ephemeral=True
+            )
 
         # Обновить сообщение с новым стилем
         try:
@@ -255,22 +308,48 @@ class BRCog(commands.Cog):
             if channel and tournament.message_id:
                 message = await channel.fetch_message(tournament.message_id)
 
-                # Build player list
-                player_names = [p["name"] for p in tournament.players]
-                players_text = ", ".join(player_names) if player_names else "*"
+                # Build embed based on format
+                if tournament.formation.value == "team":
+                    from storage.team_store import team_store
+                    from config import get_emoji
+                    team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                                       "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
+                    team_list = []
+                    for i, team_id in enumerate(tournament.registered_teams):
+                        team = team_store.get(team_id)
+                        if team:
+                            emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                            # Get member names (cleaned)
+                            member_names = []
+                            for member_id in team.members:
+                                member = interaction.guild.get_member(member_id)
+                                if member:
+                                    member_names.append(clean_nickname(member.display_name))
+                            members_text = f" ({', '.join(member_names)})" if member_names else ""
+                            team_list.append(f"{emoji} {team.team_name}{members_text}")
+                    players_text = ", ".join(team_list) if team_list else "*"
+                    players_label = "Команд"
+                    players_count = f"{len(tournament.registered_teams)}/12"
+                    rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+                else:
+                    player_names = [p["name"] for p in tournament.players]
+                    players_text = ", ".join(player_names) if player_names else "*"
+                    players_label = "Игроков"
+                    players_count = f"{len(tournament.players)}/48"
+                    rules_text = "Нажмите кнопку 'Войти' для регистрации."
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Регистрация",
+                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                         f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                        f"{replace_emojis('sub_middle')} Формат: Random\n"
+                        f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                         f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                        f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
+                        f"{replace_emojis('sub_directory')} {players_label}: {players_count}\n\n"
                         f"{replace_emojis('white_dot')} **Игроки:**\n"
                         f"{replace_emojis('white_arrow')} {players_text}\n\n"
                         f"{replace_emojis('white_dot')} **Правила:**\n"
-                        f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                        f"{replace_emojis('white_arrow')} {rules_text}\n\n"
                         f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
                     ),
                     color=discord.Color.from_rgb(69, 69, 69)
@@ -280,11 +359,6 @@ class BRCog(commands.Cog):
                 await message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error("Ошибка при обновлении сообщения: %s", e)
-
-        await interaction.response.send_message(
-            f"✅ Добавлено 48 ботов в BR турнир.",
-            ephemeral=True
-        )
 
         logger.info("BR турнир заполнен 48 ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 

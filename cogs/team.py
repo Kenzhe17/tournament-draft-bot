@@ -124,6 +124,34 @@ class TeamCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+    @team.command(name="test", description="Добавить 3 ботов в вашу команду (для тестирования)")
+    async def test(self, interaction: discord.Interaction):
+        """Добавить 3 ботов в команду."""
+        team = team_store.get_by_captain(interaction.user.id)
+        if not team:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы не капитан команды!"),
+                ephemeral=True
+            )
+            return
+
+        # Add 3 bots with negative IDs
+        base_user_id = interaction.user.id
+        bot_ids = [base_user_id - 1, base_user_id - 2, base_user_id - 3]
+        bot_names = ["Bot 1", "Bot 2", "Bot 3"]
+
+        added_count = 0
+        for bot_id, bot_name in zip(bot_ids, bot_names):
+            if team.add_member(bot_id):
+                added_count += 1
+
+        await team_store.update_team(team)
+
+        await interaction.response.send_message(
+            replace_emojis(f"✅ Добавлено {added_count} ботов в команду!"),
+            ephemeral=True
+        )
+
 
 async def setup(bot: commands.Bot):
     """Setup the team cog."""
