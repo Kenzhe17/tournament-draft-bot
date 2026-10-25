@@ -563,6 +563,14 @@ class RegisterTeamButton(Button):
                 if member:
                     clean_name = clean_nickname(member.display_name)
                     tournament.players.append({"name": clean_name, "id": member_id})
+                    print(f"Added player to tournament: {clean_name} (ID: {member_id})")
+                else:
+                    print(f"Could not find member for ID: {member_id}")
+            else:
+                print(f"Player already in tournament: {member_id}")
+
+        print(f"Total players in tournament after registration: {len(tournament.players)}")
+        print(f"Registered teams: {tournament.registered_teams}")
 
         br_store.set(tournament)
 

@@ -190,20 +190,30 @@ class BRTournament:
         try:
             from storage.team_store import team_store
 
+            print(f"form_teams_from_registered: registered_teams={self.registered_teams}")
+            print(f"form_teams_from_registered: players in tournament={len(self.players)}")
+
             self.teams = []
             for i, team_id in enumerate(self.registered_teams):
                 team = team_store.get(team_id)
                 if not team:
+                    print(f"Team not found in store: {team_id}")
                     continue
 
                 # Get member names from players list
                 member_names = []
                 for member_id in team.members:
                     # Find member in players list
+                    found = False
                     for player in self.players:
                         if player["id"] == member_id:
                             member_names.append(player["name"])
+                            found = True
                             break
+                    if not found:
+                        print(f"Member {member_id} not found in tournament.players for team {team.team_name}")
+
+                print(f"Team {team.team_name}: found {len(member_names)}/{len(team.members)} members")
 
                 if len(member_names) < 4:
                     continue  # Skip incomplete teams
@@ -219,13 +229,18 @@ class BRTournament:
                 })
                 self.team_rename_remaining[i] = True
 
+            print(f"form_teams_from_registered: formed {len(self.teams)} teams")
+
             if len(self.teams) < 5:
                 return False
 
             self.phase = BRTournamentPhase.BERMUDA
             self.team_rename_start_time = datetime.now().isoformat()
             return True
-        except Exception:
+        except Exception as e:
+            print(f"Error in form_teams_from_registered: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def rename_team(self, team_index: int, new_name: str, captain_name: str) -> bool:
