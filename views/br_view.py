@@ -1387,7 +1387,9 @@ class StartBRButton(Button):
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
                     if place > 0:
-                        map_points = (13 - place) + kills
+                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        map_points = place_points.get(place, 0) + kills
 
                 teams_with_points.append({
                     "captain": captain,
@@ -2019,7 +2021,9 @@ class BRConfirmPurgatoryButton(Button):
                     kills = map_stats.get("kills", 0)
                     print(f"Purgatory transition: team {team_name}, bermuda place={place}, kills={kills}")
                     if place > 0:
-                        cumulative_points += (13 - place) + kills
+                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        cumulative_points += place_points.get(place, 0) + kills
                 print(f"Purgatory transition: team {team_name}, cumulative_points={cumulative_points}")
 
                 teams_with_points.append({
@@ -2126,7 +2130,9 @@ class BRConfirmKalahariButton(Button):
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
-                            cumulative_points += (13 - place) + kills
+                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            cumulative_points += place_points.get(place, 0) + kills
 
                 teams_with_points.append({
                     "captain": captain,
@@ -2224,7 +2230,9 @@ class BRConfirmResultsButton(Button):
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
-                            total_points += (13 - place) + kills
+                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            total_points += place_points.get(place, 0) + kills
 
                 teams_with_total_points.append({
                     "captain": captain,
@@ -2246,10 +2254,20 @@ class BRConfirmResultsButton(Button):
                 original_index = team_data["index"]
                 num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
-                # Add trophy for winner
+                # Add medals for top 3
                 if i == 0:
                     teams_text.append(
                         f"{get_emoji('winner')} **{team_name}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
+                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    )
+                elif i == 1:
+                    teams_text.append(
+                        f"{get_emoji('silver_medal')} **{team_name}** ({total_points} очков)\n"
+                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    )
+                elif i == 2:
+                    teams_text.append(
+                        f"{get_emoji('bronze_medal')} **{team_name}** ({total_points} очков)\n"
                         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                     )
                 else:
@@ -2359,7 +2377,9 @@ class BRPurgatoryButton(Button):
                 kills = map_stats.get("kills", 0)
                 print(f"BRPurgatory: team {team_name}, bermuda place={place}, kills={kills}")
                 if place > 0:
-                    cumulative_points += (13 - place) + kills
+                    # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                    place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                    cumulative_points += place_points.get(place, 0) + kills
             print(f"BRPurgatory: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
@@ -2497,7 +2517,9 @@ class BRKalahariButton(Button):
                     kills = map_stats.get("kills", 0)
                     print(f"BRKalahari: team {team_name}, {map_name} place={place}, kills={kills}")
                     if place > 0:
-                        cumulative_points += (13 - place) + kills
+                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        cumulative_points += place_points.get(place, 0) + kills
             print(f"BRKalahari: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
@@ -2838,9 +2860,10 @@ class MapSelectMenu(Select):
                     map_stats = stats[value]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
-                    # Points calculation: (13 - place) + kills
+                    # Points calculation based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                     if place > 0:
-                        map_points = (13 - place) + kills
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        map_points = place_points.get(place, 0) + kills
 
                 teams_with_points.append((map_points, i, captain, players_str))
 
@@ -3024,9 +3047,10 @@ class BackToMapButton(Button):
                     map_stats = stats[map_name]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
-                    # Points calculation: (13 - place) + kills
+                    # Points calculation based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                     if place > 0:
-                        total_points += (13 - place) + kills
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        total_points += place_points.get(place, 0) + kills
 
             teams_text.append(
                 f"{emoji} **{team_name}** ({total_points} очков)\n"
@@ -3142,9 +3166,10 @@ class BRStatsModal(Modal):
                 map_stats = stats[self.map_name]
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
-                # Points calculation: (13 - place) + kills
+                # Points calculation based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
                 if place > 0:
-                    map_points = (13 - place) + kills
+                    place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                    map_points = place_points.get(place, 0) + kills
 
             teams_with_points.append((map_points, i, captain, players_str))
 
@@ -3273,7 +3298,9 @@ class BRStatsModal(Modal):
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
-                            map_points = (13 - place) + kills
+                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            map_points = place_points.get(place, 0) + kills
 
                     teams_with_points.append((map_points, i, captain, players_str))
 
@@ -3337,7 +3364,9 @@ class BRStatsModal(Modal):
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
                     if place > 0:
-                        map_points = (13 - place) + kills
+                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                        map_points = place_points.get(place, 0) + kills
 
                 teams_with_points.append((map_points, i, captain, players_str))
 
