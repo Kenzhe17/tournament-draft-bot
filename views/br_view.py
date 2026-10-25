@@ -678,7 +678,18 @@ class RemoveTeamSelectView(View):
             return
 
         if team_id in tournament.registered_teams:
+            # Get team before removing to also remove players
+            from storage.team_store import team_store
+            team = team_store.get(team_id)
+
+            # Remove team from registered teams
             tournament.registered_teams.remove(team_id)
+
+            # Also remove team members from players list
+            if team:
+                for member_id in team.members:
+                    tournament.players = [p for p in tournament.players if p["id"] != member_id]
+
             br_store.set(tournament)
 
             # Send success message
