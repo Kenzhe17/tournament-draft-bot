@@ -120,9 +120,9 @@ class TeamCog(commands.Cog):
         )
 
         # Create view with buttons
-        view = TeamStatusView(team, interaction.user.id)
+        view = TeamStatusView(team, interaction.user.id, interaction)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=view)
 
     @team.command(name="test", description="Добавить 3 ботов в вашу команду (для тестирования)")
     async def test(self, interaction: discord.Interaction):

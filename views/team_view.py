@@ -18,10 +18,11 @@ if TYPE_CHECKING:
 class TeamStatusView(discord.ui.View):
     """View for team status with management buttons."""
 
-    def __init__(self, team: Team, user_id: int):
+    def __init__(self, team: Team, user_id: int, interaction=None):
         super().__init__(timeout=None)
         self.team = team
         self.user_id = user_id
+        self.interaction = interaction
         self.refresh_buttons()
 
     def refresh_buttons(self):
@@ -32,27 +33,72 @@ class TeamStatusView(discord.ui.View):
 
         # Menu button (captain only)
         if self.team.is_captain(self.user_id):
-            self.add_item(TeamMenuButton(self.team))
+            self.add_item(TeamMenuButton(self.team, self))
 
         # Leave button (for members)
         if self.team.is_member(self.user_id):
-            self.add_item(TeamLeaveButton(self.team, self.user_id))
+            self.add_item(TeamLeaveButton(self.team, self.user_id, self))
 
         # Join button (for non-members, if team not full)
         if not self.team.is_member(self.user_id) and not self.team.is_full():
             self.add_item(TeamJoinButton(self.team))
 
+    async def update_message(self):
+        """Update the status message dynamically."""
+        if not self.interaction:
+            return
+
+        # Rebuild member list
+        member_mentions = []
+        for member_id in self.team.members:
+            member = self.interaction.guild.get_member(member_id)
+            if member:
+                mention = member.mention
+                if member_id == self.team.captain_id:
+                    mention += " 👑"
+                member_mentions.append(mention)
+
+        # Determine status
+        count = self.team.member_count()
+        if count >= 4:
+            status_emoji = "🟢"
+            status_text = "Зелёный (Готова)"
+        else:
+            status_emoji = "🔴"
+            missing = 4 - count
+            status_text = f"Красный (Недостаёт {missing} игроков)"
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {self.team.team_name}",
+            description=(
+                f"{replace_emojis('white_dot')} **Состав:** {count}/4\n"
+                f"{replace_emojis('white_arrow')} {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
+                f"{replace_emojis('white_dot')} **Статус:** {status_emoji} {status_text}"
+            ),
+            color=discord.Color.from_rgb(114, 137, 218)
+        )
+
+        # Refresh view
+        self.refresh_buttons()
+
+        try:
+            await self.interaction.edit_original_response(embed=embed, view=self)
+        except Exception:
+            # If original message is not available, ignore
+            pass
+
 
 class TeamMenuButton(discord.ui.Button):
     """Button to open captain menu."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="⚙️ Меню",
             style=discord.ButtonStyle.primary,
             custom_id="team_menu"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
         if not self.team.is_captain(interaction.user.id):
@@ -62,20 +108,20 @@ class TeamMenuButton(discord.ui.Button):
             )
             return
 
-        view = TeamMenuView(self.team)
+        view = TeamMenuView(self.team, self.status_view)
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Меню капитана",
             description=f"{replace_emojis('white_arrow')} Управление командой **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
 class TeamLeaveButton(discord.ui.Button):
     """Button to leave team."""
 
-    def __init__(self, team: Team, user_id: int):
+    def __init__(self, team: Team, user_id: int, status_view=None):
         super().__init__(
             label="🚪 Выйти",
             style=discord.ButtonStyle.danger,
@@ -83,6 +129,7 @@ class TeamLeaveButton(discord.ui.Button):
         )
         self.team = team
         self.user_id = user_id
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
         if self.team.is_captain(interaction.user.id):
@@ -94,13 +141,18 @@ class TeamLeaveButton(discord.ui.Button):
 
         await team_store.remove_member(self.team.team_id, interaction.user.id)
 
+        # Update the original status message
+        if self.status_view:
+            self.status_view.team = team_store.get(self.team.team_id)
+            await self.status_view.update_message()
+
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы покинули команду",
             description=f"{replace_emojis('white_arrow')} Вы вышли из команды **{self.team.team_name}**",
             color=discord.Color.from_rgb(235, 100, 100)
         )
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class TeamJoinButton(discord.ui.Button):
@@ -212,37 +264,40 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
 class TeamMenuView(discord.ui.View):
     """Captain menu view."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(timeout=None)
         self.team = team
+        self.status_view = status_view
 
-        self.add_item(ChangeNameButton(self.team))
-        self.add_item(ChangePasswordButton(self.team))
-        self.add_item(KickMemberButton(self.team))
+        self.add_item(ChangeNameButton(self.team, self.status_view))
+        self.add_item(ChangePasswordButton(self.team, self.status_view))
+        self.add_item(KickMemberButton(self.team, self.status_view))
 
 
 class ChangeNameButton(discord.ui.Button):
     """Button to change team name."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="Сменить название",
             style=discord.ButtonStyle.primary,
             custom_id="team_change_name"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
-        modal = ChangeNameModal(self.team)
+        modal = ChangeNameModal(self.team, self.status_view)
         await interaction.response.send_modal(modal)
 
 
 class ChangeNameModal(discord.ui.Modal, title="Сменить название команды"):
     """Modal for changing team name."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__()
         self.team = team
+        self.status_view = status_view
 
     new_name = discord.ui.TextInput(
         label="Новое название",
@@ -256,6 +311,11 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
         self.team.team_name = self.new_name.value
         await team_store.update_team(self.team)
 
+        # Update status message
+        if self.status_view:
+            self.status_view.team = team_store.get(self.team.team_id)
+            await self.status_view.update_message()
+
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Название изменено",
             description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
@@ -268,25 +328,27 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
 class ChangePasswordButton(discord.ui.Button):
     """Button to change team password."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="Сменить пароль",
             style=discord.ButtonStyle.primary,
             custom_id="team_change_password"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
-        modal = ChangePasswordModal(self.team)
+        modal = ChangePasswordModal(self.team, self.status_view)
         await interaction.response.send_modal(modal)
 
 
 class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль команды"):
     """Modal for changing team password."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__()
         self.team = team
+        self.status_view = status_view
 
     new_password = discord.ui.TextInput(
         label="Новый пароль",
@@ -312,13 +374,14 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
 class KickMemberButton(discord.ui.Button):
     """Button to kick member."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="Кикнуть",
             style=discord.ButtonStyle.danger,
             custom_id="team_kick"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
         # Build select options
@@ -342,16 +405,17 @@ class KickMemberButton(discord.ui.Button):
             )
             return
 
-        view = KickMemberSelectView(self.team, options)
+        view = KickMemberSelectView(self.team, options, self.status_view)
         await interaction.response.send_message("Выберите участника для кика:", view=view, ephemeral=True)
 
 
 class KickMemberSelectView(discord.ui.View):
     """View with select menu for kicking members."""
 
-    def __init__(self, team: Team, options: list[discord.SelectOption]):
+    def __init__(self, team: Team, options: list[discord.SelectOption], status_view=None):
         super().__init__(timeout=None)
         self.team = team
+        self.status_view = status_view
 
         select = discord.ui.Select(
             placeholder="Выберите участника...",
@@ -372,6 +436,11 @@ class KickMemberSelectView(discord.ui.View):
                 ephemeral=True
             )
             return
+
+        # Update status message
+        if self.status_view:
+            self.status_view.team = team_store.get(self.team.team_id)
+            await self.status_view.update_message()
 
         await interaction.response.send_message(
             replace_emojis("✅ Участник исключен из команды!"),
