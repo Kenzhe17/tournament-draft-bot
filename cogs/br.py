@@ -249,7 +249,8 @@ class BRCog(commands.Cog):
             return
 
         # Очистить существующих игроков и команд
-        tournament.clear_players()
+        if tournament.formation.value == "random":
+            tournament.clear_players()
         tournament.registered_teams = []
 
         if tournament.formation.value == "team":

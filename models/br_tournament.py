@@ -196,7 +196,7 @@ class BRTournament:
                 if not team:
                     continue
 
-                # Get member objects
+                # Get member names from players list
                 member_names = []
                 for member_id in team.members:
                     # Find member in players list
