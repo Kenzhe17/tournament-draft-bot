@@ -111,6 +111,10 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.team")
 
+        # Load teams from PostgreSQL after extensions are loaded
+        from storage.team_store import team_store
+        await team_store.load_from_postgres()
+
         # Sync commands globally
         try:
             synced = await self.tree.sync()

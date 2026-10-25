@@ -29,7 +29,9 @@ class TeamStore:
     def _load(self) -> None:
         """Загрузить все команды из хранилища."""
         if self._use_postgres:
-            self._load_from_postgres()
+            # PostgreSQL loading is deferred to async context
+            # Initialize empty dict for now
+            self._teams = {}
         else:
             self._load_from_json()
 
@@ -53,8 +55,10 @@ class TeamStore:
             logger.error("Ошибка загрузки команд из JSON: %s", exc)
             self._teams = {}
 
-    async def _load_from_postgres(self) -> None:
-        """Загрузить команды из PostgreSQL."""
+    async def load_from_postgres(self) -> None:
+        """Async method to load teams from PostgreSQL after startup."""
+        if not self._use_postgres:
+            return
         try:
             from storage.db import get_pool
             pool = await get_pool()
