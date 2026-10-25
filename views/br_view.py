@@ -507,7 +507,7 @@ class RegisterTeamButton(Button):
         team = team_store.get_by_captain(interaction.user.id)
         if not team:
             await interaction.response.send_message(
-                "❌ Вы не капитан команды! Используйте `/team create` для создания команды.",
+                "❌ Вы не капитан команды! Создайте команду через `/team create` в канале <#1563826579061215332>.",
                 ephemeral=True
             )
             return
