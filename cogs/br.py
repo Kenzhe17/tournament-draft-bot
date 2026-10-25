@@ -337,6 +337,78 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир заполнен 48 ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
+    @app_commands.command(name="brtestteam", description="Заполнить BR турнир ботами-командами для тестирования")
+    async def br_test_team(self, interaction: discord.Interaction) -> None:
+        """Заполнить BR турнир ботами-командами для тестирования."""
+        # Проверка на владельца бота
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Эта команда доступна только владельцу бота.",
+                ephemeral=True
+            )
+            return
+
+        # Получить турнир
+        tournament = br_store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ В этом канале нет BR турнира.",
+                ephemeral=True
+            )
+            return
+
+        # Проверка фазы
+        if tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        # brtestteam only works for team format
+        if tournament.formation.value != "team":
+            await interaction.response.send_message(
+                "❌ brtestteam только для team формата.",
+                ephemeral=True
+            )
+            return
+
+        # Team format: create 12 teams with 4 bots each
+        from storage.team_store import team_store
+        from utils.cosmetics import clean_nickname
+
+        for team_num in range(1, 13):
+            # Create team with bot captain
+            base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+            captain_id = base_user_id - team_num
+
+            team = Team(
+                team_id="",
+                team_name=f"Team {team_num}",
+                password="test",
+                captain_id=captain_id,
+                guild_id=interaction.guild_id
+            )
+
+            # Add 3 more bots (total 4)
+            for bot_num in range(1, 4):
+                bot_id = captain_id - (bot_num * 1000)
+                team.add_member(bot_id)
+
+            await team_store.create(team)
+            tournament.registered_teams.append(team.team_id)
+
+            # Add team members to players list
+            for member_id in team.members:
+                tournament.players.append({"name": f"BotTeam{team_num}_{member_id}", "id": member_id})
+
+        br_store.set(tournament)
+        await interaction.response.send_message(
+            replace_emojis("✅ Добавлено 12 команд с ботами!"),
+            ephemeral=True
+        )
+        logger.info("BR турнир заполнен 12 командами с ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
+
 
 async def setup(bot: "TournamentBot"):
     """Setup the cog."""
