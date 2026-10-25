@@ -68,6 +68,17 @@ class TeamCog(commands.Cog):
             )
             return
 
+        # Delete team status message if exists
+        async for msg in interaction.channel.history(limit=50):
+            if msg.author == interaction.client.user and msg.embeds:
+                embed = msg.embeds[0]
+                if embed.title and team.team_name in embed.title:
+                    try:
+                        await msg.delete()
+                    except Exception:
+                        pass
+                    break
+
         await team_store.delete(team.team_id)
 
         embed = discord.Embed(
