@@ -1968,10 +1968,17 @@ class BRConfirmPurgatoryButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        print("BRConfirmPurgatoryButton callback called")
         # Transition to Purgatory
         self.tournament.phase = BRTournamentPhase.PURGATORY
         self.tournament.current_map = "purgatory"
         br_store.set(self.tournament)
+
+        # Reload tournament from store to get latest stats
+        self.tournament = br_store.get(self.guild_id, self.channel_id)
+        print(f"Reloaded tournament, teams count: {len(self.tournament.teams)}")
+        for i, team in enumerate(self.tournament.teams):
+            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
 
         # Close the ephemeral menu
         await interaction.response.edit_message(content="✅ Переход к Чистилище", view=None)
