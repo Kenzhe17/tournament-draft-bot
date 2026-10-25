@@ -41,8 +41,8 @@ class BRRegistrationView(View):
         if tournament.formation.value == "team":
             # Team format: register team button
             self.add_item(RegisterTeamButton(guild_id, channel_id))
-            # Remove team button
-            self.add_item(RemoveTeamButton(guild_id, channel_id))
+            # Leave tournament button for team captains
+            self.add_item(LeaveTournamentButton(guild_id, channel_id))
         else:
             # Random format: individual join/leave
             self.add_item(JoinBRButton(guild_id, channel_id))
@@ -401,6 +401,89 @@ class LeaveBRButton(Button):
 
         await interaction.followup.send(
             "✅ Вы вышли из турнира.",
+            ephemeral=True
+        )
+
+
+class LeaveTournamentButton(Button):
+    """Кнопка для выхода команды из BR турнира (для капитанов команд)."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Выйти",
+            custom_id=f"br_leave_tournament:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament or tournament.phase != BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не в фазе регистрации.",
+                ephemeral=True
+            )
+            return
+
+        if tournament.formation.value != "team":
+            await interaction.response.send_message(
+                "❌ Эта кнопка только для team формата.",
+                ephemeral=True
+            )
+            return
+
+        # Check if user is captain of a registered team
+        from storage.team_store import team_store
+        user_team = team_store.get_by_captain(interaction.user.id)
+        if not user_team:
+            await interaction.response.send_message(
+                "❌ Вы не капитан зарегистрированной команды.",
+                ephemeral=True
+            )
+            return
+
+        # Check if team is registered in tournament
+        if user_team.team_id not in tournament.registered_teams:
+            await interaction.response.send_message(
+                "❌ Ваша команда не зарегистрирована в этом турнире.",
+                ephemeral=True
+            )
+            return
+
+        # Remove team from tournament
+        tournament.registered_teams.remove(user_team.team_id)
+        br_store.set(tournament)
+
+        # Обновить embed с текущим списком команд
+        team_list = []
+        for team_id in tournament.registered_teams:
+            team = team_store.get(team_id)
+            if team:
+                team_list.append(team.team_name)
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
+            description=(
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
+                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
+                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f"{replace_emojis('white_arrow')} {', '.join(team_list) if team_list else '*'}\n\n"
+                f"{replace_emojis('white_dot')} **Правила:**\n"
+                f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+
+        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+        await interaction.followup.send(
+            f"✅ Команда **{user_team.team_name}** вышла из турнира!",
             ephemeral=True
         )
 
