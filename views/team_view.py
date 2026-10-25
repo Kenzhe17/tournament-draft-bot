@@ -31,15 +31,11 @@ class TeamStatusView(discord.ui.View):
         for item in self.children[:]:
             self.remove_item(item)
 
-        # Captain: only menu button
-        if self.team.is_captain(self.user_id):
-            self.add_item(TeamMenuButton(self.team, self))
-        # Member: only leave button
-        elif self.team.is_member(self.user_id):
-            self.add_item(TeamLeaveButton(self.team, self.user_id, self))
-        # Non-member: only join button if team not full
-        elif not self.team.is_full():
-            self.add_item(TeamJoinButton(self.team, self))
+        # Always show all buttons - permissions checked in callbacks
+        self.add_item(TeamMenuButton(self.team))
+        self.add_item(TeamLeaveButton(self.team, self.user_id, self))
+        if not self.team.is_full():
+            self.add_item(TeamJoinButton(self.team))
 
     async def update(self):
         """Update the status message."""
@@ -51,8 +47,8 @@ class TeamStatusView(discord.ui.View):
         if updated_team:
             self.team = updated_team
 
-        # Refresh buttons with updated team state
-        self.refresh_buttons()
+        # Don't refresh buttons - keep them as they were initially shown
+        # Buttons will work based on their callbacks checking permissions
 
         # Rebuild member list
         member_mentions = []
@@ -84,9 +80,6 @@ class TeamStatusView(discord.ui.View):
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        # Refresh view
-        self.refresh_buttons()
-
         try:
             await self.message.edit(embed=embed, view=self)
         except Exception:
@@ -97,14 +90,13 @@ class TeamStatusView(discord.ui.View):
 class TeamMenuButton(discord.ui.Button):
     """Button to open captain menu."""
 
-    def __init__(self, team: Team, status_view=None):
+    def __init__(self, team: Team):
         super().__init__(
             label="⚙️ Меню",
             style=discord.ButtonStyle.primary,
             custom_id="team_menu"
         )
         self.team = team
-        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
         if not self.team.is_captain(interaction.user.id):
@@ -114,7 +106,7 @@ class TeamMenuButton(discord.ui.Button):
             )
             return
 
-        view = TeamMenuView(self.team, self.status_view)
+        view = TeamMenuView(self.team)
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Меню капитана",
             description=f"{replace_emojis('white_arrow')} Управление командой **{self.team.team_name}**",
@@ -158,7 +150,7 @@ class TeamLeaveButton(discord.ui.Button):
         # Update the original status message
         if self.status_view:
             # Update the user_id in the status view to match the interaction user
-            self.status_view.user_id = interaction.user.id
+            self.status_view.user_id = interaction.user_id
             await self.status_view.update()
 
         embed = discord.Embed(
