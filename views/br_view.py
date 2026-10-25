@@ -2003,14 +2003,17 @@ class BRConfirmPurgatoryButton(Button):
 
                 # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
+                print(f"Purgatory transition: team {team_name}, stats: {stats}")
                 cumulative_points = 0
                 # For Purgatory, only count Bermuda points (since Purgatory not started yet)
                 if "bermuda" in stats:
                     map_stats = stats["bermuda"]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
+                    print(f"Purgatory transition: team {team_name}, bermuda place={place}, kills={kills}")
                     if place > 0:
                         cumulative_points += (13 - place) + kills
+                print(f"Purgatory transition: team {team_name}, cumulative_points={cumulative_points}")
 
                 teams_with_points.append({
                     "captain": captain,
