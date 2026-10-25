@@ -274,7 +274,7 @@ class HighLowCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="high_low", description="Угадай выше или ниже (множитель до 7.6x)")
+    @app_commands.command(name="high_low", description="Угадай выше или ниже (множитель до 3.7x)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def high_low(
         self,
