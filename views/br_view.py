@@ -446,11 +446,14 @@ class LeaveTournamentButton(Button):
         br_store.set(tournament)
 
         # Обновить embed с текущим списком команд
+        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
         team_list = []
-        for team_id in tournament.registered_teams:
+        for i, team_id in enumerate(tournament.registered_teams):
             team = team_store.get(team_id)
             if team:
-                team_list.append(team.team_name)
+                emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                team_list.append(f"{emoji} {team.team_name}")
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
@@ -461,7 +464,7 @@ class LeaveTournamentButton(Button):
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
                 f"{replace_emojis('white_dot')} **Команды:**\n"
-                "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
+                "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
                 f"{replace_emojis('white_dot')} **Правила:**\n"
                 f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
@@ -576,7 +579,7 @@ class RegisterTeamButton(Button):
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
                 f"{replace_emojis('white_dot')} **Команды:**\n"
-                "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
+                "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
                 f"{replace_emojis('white_dot')} **Правила:**\n"
                 f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
