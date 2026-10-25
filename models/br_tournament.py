@@ -137,11 +137,7 @@ class BRTournament:
         for i, player in enumerate(self.players):
             if player["id"] == user_id:
                 self.players.pop(i)
-                # If organizer left, update to next player
-                if self.organizer_id == user_id and self.players:
-                    self.organizer_id = self.players[0]["id"]
-                elif not self.players:
-                    self.organizer_id = 0
+                # Organizer remains unchanged - the creator stays organizer
                 return True
         return False
 

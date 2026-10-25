@@ -279,7 +279,8 @@ class JoinBRButton(Button):
             )
             return
 
-        user_name = interaction.user.display_name
+        from utils.cosmetics import clean_nickname
+        user_name = clean_nickname(interaction.user.display_name)
         user_id = interaction.user.id
 
         # Добавить игрока
