@@ -1325,6 +1325,101 @@ class StartBRButton(Button):
                     ephemeral=True
                 )
                 return
+
+            # For team format, go directly to Bermuda phase (no rename phase)
+            tournament.phase = BRTournamentPhase.BERMUDA
+            tournament.current_map = "bermuda"
+            br_store.set(tournament)
+
+            # Create Bermuda view
+            view = BRBermudaView(self.guild_id, self.channel_id)
+
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+
+            # Build teams section with current map points (sorted by points)
+            teams_with_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate points for current map only
+                stats = team.get("stats", {})
+                map_points = 0
+                if "bermuda" in stats:
+                    map_stats = stats["bermuda"]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    if place > 0:
+                        map_points = (13 - place) + kills
+
+                teams_with_points.append({
+                    "captain": captain,
+                    "players_str": players_str,
+                    "points": map_points,
+                    "index": i
+                })
+
+            # Sort by points (descending)
+            teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+            teams_text = []
+            for team_data in teams_with_points:
+                captain = team_data["captain"]
+                players_str = team_data["players_str"]
+                points = team_data["points"]
+                original_index = team_data["index"]
+                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+
+                teams_text.append(
+                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('bermuda', 'bermuda')}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
+                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    + "\n".join(teams_text)
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            # Get the main BR message and edit it
+            channel = interaction.guild.get_channel(self.channel_id)
+            if not channel or not tournament.message_id:
+                await interaction.response.send_message(
+                    "❌ Не удалось обновить сообщение турнира.",
+                    ephemeral=True
+                )
+                return
+
+            try:
+                message = await channel.fetch_message(tournament.message_id)
+                await message.edit(embed=embed, view=view)
+                await interaction.response.send_message(
+                    "✅ Турнир запущен!",
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.error("Ошибка при обновлении сообщения: %s", e)
+                await interaction.response.send_message(
+                    "❌ Не удалось обновить сообщение турнира.",
+                    ephemeral=True
+                )
+            return
         else:
             if len(tournament.players) < 20 or len(tournament.players) % 4 != 0:
                 await interaction.response.send_message(
@@ -1398,16 +1493,15 @@ class StartBRButton(Button):
 
         # Создать embed в стиле бота
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
+                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
-                + "\n".join(teams_text) + "\n\n"
-                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+                + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -1540,12 +1634,13 @@ class StartBermudaButton(Button):
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('bermuda', 'bermuda')}",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
+                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
+                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
@@ -2508,16 +2603,15 @@ class TeamNameModal(Modal):
 
         # Обновить embed в стиле бота
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
+                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
                 f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
                 f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
-                + "\n".join(teams_text) + "\n\n"
-                f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
+                + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
