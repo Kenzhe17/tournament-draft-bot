@@ -743,6 +743,9 @@ class RemoveTeamSelectView(View):
                             emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
                             team_list.append(f"{emoji} {registered_team.team_name}")
 
+                    team_list_str = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
+                    print(f"Team list: {team_list_str[:200]}")
+
                     new_embed = discord.Embed(
                         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
                         description=(
@@ -752,13 +755,16 @@ class RemoveTeamSelectView(View):
                             f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                             f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
                             f"{replace_emojis('white_dot')} **Команды:**\n"
-                            "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
+                            f"{team_list_str}\n\n"
                             f"{replace_emojis('white_dot')} **Правила:**\n"
                             f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
                             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
                         ),
                         color=discord.Color.from_rgb(69, 69, 69)
                     )
+
+                    print(f"New embed title: {new_embed.title}")
+                    print(f"New embed description (first 300 chars): {new_embed.description[:300]}")
 
                     view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
                     await msg_to_update.edit(embed=new_embed, view=view)
