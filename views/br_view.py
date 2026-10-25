@@ -700,86 +700,43 @@ class RemoveTeamSelectView(View):
             )
 
             # Update main tournament message
-            try:
-                # First try to find by message_id if available
-                if tournament.message_id:
-                    try:
-                        msg = await interaction.channel.fetch_message(tournament.message_id)
-                        if msg:
-                            team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
-                                               "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
-                            team_list = []
-                            for i, tid in enumerate(tournament.registered_teams):
-                                registered_team = team_store.get(tid)
-                                if registered_team:
-                                    emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
-                                    team_list.append(f"{emoji} {registered_team.team_name}")
+            if tournament.message_id:
+                try:
+                    msg = await interaction.channel.fetch_message(tournament.message_id)
+                    if msg:
+                        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+                                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
+                        team_list = []
+                        for i, tid in enumerate(tournament.registered_teams):
+                            registered_team = team_store.get(tid)
+                            if registered_team:
+                                emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
+                                team_list.append(f"{emoji} {registered_team.team_name}")
 
-                            new_embed = discord.Embed(
-                                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
-                                description=(
-                                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                                    f"{replace_emojis('sub_middle')} Формат: Team\n"
-                                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                                    f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
-                                    f"{replace_emojis('white_dot')} **Команды:**\n"
-                                    "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
-                                    f"{replace_emojis('white_dot')} **Правила:**\n"
-                                    f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
-                                    f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-                                ),
-                                color=discord.Color.from_rgb(69, 69, 69)
-                            )
+                        new_embed = discord.Embed(
+                            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+                            description=(
+                                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                                f"{replace_emojis('sub_middle')} Формат: Team\n"
+                                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
+                                f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
+                                f"{replace_emojis('white_dot')} **Команды:**\n"
+                                "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
+                                f"{replace_emojis('white_dot')} **Правила:**\n"
+                                f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+                            ),
+                            color=discord.Color.from_rgb(69, 69, 69)
+                        )
 
-                            view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-                            await msg.edit(embed=new_embed, view=view)
-                            print(f"Updated tournament message by ID: {tournament.message_id}")
-                            return
-                    except Exception as e:
-                        print(f"Error updating tournament message by ID: {e}")
-
-                # Fallback: search in channel history
-                print("Fallback: searching in channel history...")
-                async for msg in interaction.channel.history(limit=50):
-                    if msg.author.bot and msg.embeds:
-                        embed = msg.embeds[0]
-                        if "BATTLE ROYALE CUP" in embed.title:
-                            # Found the tournament message, update it
-                            team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
-                                               "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
-                            team_list = []
-                            for i, tid in enumerate(tournament.registered_teams):
-                                registered_team = team_store.get(tid)
-                                if registered_team:
-                                    emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
-                                    team_list.append(f"{emoji} {registered_team.team_name}")
-
-                            new_embed = discord.Embed(
-                                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
-                                description=(
-                                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                                    f"{replace_emojis('sub_middle')} Формат: Team\n"
-                                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                                    f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
-                                    f"{replace_emojis('white_dot')} **Команды:**\n"
-                                    "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
-                                    f"{replace_emojis('white_dot')} **Правила:**\n"
-                                    f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
-                                    f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-                                ),
-                                color=discord.Color.from_rgb(69, 69, 69)
-                            )
-
-                            view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-                            await msg.edit(embed=new_embed, view=view)
-                            print(f"Updated tournament message by history search: {msg.id}")
-                            break
-                else:
-                    print("No tournament message found in history")
-            except Exception as e:
-                print(f"Error updating tournament message: {e}")
+                        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+                        await msg.edit(embed=new_embed, view=view)
+                        print(f"Updated tournament message by ID: {tournament.message_id}")
+                except Exception as e:
+                    print(f"Error updating tournament message by ID: {e}")
+            else:
+                print("No message_id in tournament, cannot update")
         else:
             await interaction.response.send_message(
                 "❌ Команда не найдена в турнире.",
