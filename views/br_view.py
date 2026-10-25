@@ -1373,6 +1373,7 @@ class StartBRButton(Button):
 
                 teams_with_points.append({
                     "captain": captain,
+                    "team_name": team_name,
                     "players_str": players_str,
                     "points": map_points,
                     "index": i
@@ -1384,13 +1385,14 @@ class StartBRButton(Button):
             teams_text = []
             for team_data in teams_with_points:
                 captain = team_data["captain"]
+                team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
                 original_index = team_data["index"]
                 num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
                 teams_text.append(
-                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{num_emoji} {team_name} ({points} очков)\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
@@ -1633,13 +1635,14 @@ class StartBermudaButton(Button):
         teams_text = []
         for team_data in teams_with_points:
             captain = team_data["captain"]
+            team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
             original_index = team_data["index"]
             num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain} ({points} очков)\n"
+                f"{num_emoji} {team_name} ({points} очков)\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -2005,13 +2008,14 @@ class BRConfirmPurgatoryButton(Button):
             teams_text = []
             for team_data in teams_with_points:
                 captain = team_data["captain"]
+                team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
                 original_index = team_data["index"]
                 num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
                 teams_text.append(
-                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{num_emoji} {team_name} ({points} очков)\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
@@ -2106,13 +2110,14 @@ class BRConfirmKalahariButton(Button):
             teams_text = []
             for team_data in teams_with_points:
                 captain = team_data["captain"]
+                team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
                 original_index = team_data["index"]
                 num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
                 teams_text.append(
-                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{num_emoji} {team_name} ({points} очков)\n"
                     f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                 )
 
@@ -2200,6 +2205,7 @@ class BRConfirmResultsButton(Button):
             teams_text = []
             for i, team_data in enumerate(teams_with_total_points):
                 captain = team_data["captain"]
+                team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 total_points = team_data["total_points"]
                 original_index = team_data["index"]
@@ -2208,12 +2214,12 @@ class BRConfirmResultsButton(Button):
                 # Add trophy for winner
                 if i == 0:
                     teams_text.append(
-                        f"{get_emoji('winner')} **{captain}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
+                        f"{get_emoji('winner')} **{team_name}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
                         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                     )
                 else:
                     teams_text.append(
-                        f"{num_emoji} {captain} ({total_points} очков)\n"
+                        f"{num_emoji} {team_name} ({total_points} очков)\n"
                         f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
                     )
 
@@ -2323,13 +2329,14 @@ class BRPurgatoryButton(Button):
         teams_text = []
         for team_data in teams_with_points:
             captain = team_data["captain"]
+            team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
             original_index = team_data["index"]
             num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain} ({points} очков)\n"
+                f"{num_emoji} {team_name} ({points} очков)\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -2447,13 +2454,14 @@ class BRKalahariButton(Button):
         teams_text = []
         for team_data in teams_with_points:
             captain = team_data["captain"]
+            team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
             original_index = team_data["index"]
             num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain} ({points} очков)\n"
+                f"{num_emoji} {team_name} ({points} очков)\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
