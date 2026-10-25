@@ -551,9 +551,6 @@ async def init_db() -> None:
         from storage.minigame_init import initialize_minigames
         await initialize_minigames()
 
-        # Initialize cases in database (not just JSON)
-        from storage.case_store import case_store
-
         # Create match_history table for player match history
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS match_history (
@@ -585,9 +582,6 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_match_history_user_date
             ON match_history(guild_id, user_id, date DESC)
         """)
-        # Force initialization to ensure cases exist
-        if not case_store.get_all_cases():
-            case_store._initialize_default_cases()
 
         # Create pets table
         try:
