@@ -1896,6 +1896,24 @@ class TournamentCog(commands.Cog):
             await interaction.response.send_message(replace_emojis("⚪ Нельзя подарить самому себе"), ephemeral=True)
             return
 
+        # Check if sender has at least 1 game played
+        sender_stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        if not sender_stats or sender_stats.games < 1:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы должны сыграть хотя бы 1 игру в турнире для использования /gift"),
+                ephemeral=True
+            )
+            return
+
+        # Check if recipient has at least 1 game played
+        recipient_stats = await player_stats_store.get(interaction.guild_id, user.id)
+        if not recipient_stats or recipient_stats.games < 1:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ {user.mention} должен сыграть хотя бы 1 игру в турнире для получения подарка"),
+                ephemeral=True
+            )
+            return
+
         # Get item info
         item = shop_store.get_item(item_id)
         if not item:
