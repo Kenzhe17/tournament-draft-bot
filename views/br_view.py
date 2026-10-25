@@ -198,7 +198,7 @@ class StartBRButton(Button):
             tournament.team_rename_remaining[i] = True
 
         # Update phase
-        tournament.phase = BRTournamentPhase.TEAMS
+        tournament.phase = BRTournamentPhase.BERMUDA
         tournament.team_rename_start_time = interaction.created_at.isoformat()
 
         # Give BR role to real players
@@ -2314,9 +2314,9 @@ class TeamNameButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = br_store.get(self.guild_id, self.channel_id)
-        if not tournament or tournament.phase != BRTournamentPhase.TEAMS:
+        if not tournament:
             await interaction.response.send_message(
-                "❌ BR турнир не в фазе команд.",
+                "❌ BR турнир не найден.",
                 ephemeral=True
             )
             return
@@ -2459,12 +2459,12 @@ class MapSelectMenu(Select):
 
         # Опции в зависимости от текущей фазы
         options = []
-        if tournament.phase == BRTournamentPhase.TEAMS:
-            options.append(discord.SelectOption(label="Бермуды", value="bermuda"))
-        elif tournament.phase == BRTournamentPhase.BERMUDA:
+        if tournament.phase == BRTournamentPhase.BERMUDA:
             options.append(discord.SelectOption(label="Чистилище", value="purgatory"))
         elif tournament.phase == BRTournamentPhase.PURGATORY:
             options.append(discord.SelectOption(label="Калахари", value="kalahari"))
+        elif tournament.phase == BRTournamentPhase.REGISTRATION:
+            options.append(discord.SelectOption(label="Бермуды", value="bermuda"))
 
         options.append(discord.SelectOption(label="Данные", value="data"))
 

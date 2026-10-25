@@ -14,7 +14,6 @@ class BRTournamentPhase(str, Enum):
     """Фазы жизненного цикла BR турнира."""
 
     REGISTRATION = "registration"
-    TEAMS = "teams"
     BERMUDA = "bermuda"
     PURGATORY = "purgatory"
     KALAHARI = "kalahari"
@@ -175,7 +174,7 @@ class BRTournament:
             })
             self.team_rename_remaining[i] = True  # Каждая команда может переименовать 1 раз
 
-        self.phase = BRTournamentPhase.TEAMS
+        self.phase = BRTournamentPhase.BERMUDA
         self.team_rename_start_time = datetime.now().isoformat()
         return True
 
@@ -223,7 +222,7 @@ class BRTournament:
             if len(self.teams) < 5:
                 return False
 
-            self.phase = BRTournamentPhase.TEAMS
+            self.phase = BRTournamentPhase.BERMUDA
             self.team_rename_start_time = datetime.now().isoformat()
             return True
         except Exception:
