@@ -702,14 +702,14 @@ class RemoveTeamSelectView(View):
             # Update main tournament message - use history search to find correct message
             print("Searching for tournament message in history...")
             try:
-                # First, clean up any corrupted messages
-                print("Cleaning corrupted messages...")
-                async for msg in interaction.channel.history(limit=100):
+                # First, clean up ALL bot messages in this channel that are corrupted
+                print("Cleaning ALL corrupted bot messages...")
+                async for msg in interaction.channel.history(limit=200):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
-                        # Check if embed is corrupted (description starts with team name instead of proper format)
+                        # Check if embed is corrupted (description doesn't start with proper format)
                         if embed.description and not embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
-                            print(f"Deleting corrupted message: {msg.id}")
+                            print(f"Deleting corrupted message: {msg.id}, title: {embed.title[:50]}")
                             try:
                                 await msg.delete()
                             except Exception as e:
@@ -721,8 +721,8 @@ class RemoveTeamSelectView(View):
                 async for msg in interaction.channel.history(limit=50):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
-                        if "BATTLE ROYALE CUP" in embed.title and embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
-                            print(f"Found correct tournament message: {msg.id}")
+                        if "BATTLE ROYALE CUP" in embed.title:
+                            print(f"Found tournament message: {msg.id}, format check: {embed.description.startswith(f'{replace_emojis(\"white_arrow\")} **Организатор:**')}")
                             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                             team_list = []
@@ -761,6 +761,8 @@ class RemoveTeamSelectView(View):
                     print("No tournament message found in history")
             except Exception as e:
                 print(f"Error updating tournament message: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             await interaction.response.send_message(
                 "❌ Команда не найдена в турнире.",
