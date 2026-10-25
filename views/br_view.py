@@ -702,21 +702,8 @@ class RemoveTeamSelectView(View):
             # Update main tournament message - use history search to find correct message
             print("Searching for tournament message in history...")
             try:
-                # First, clean up ALL bot messages in this channel that are corrupted
-                print("Cleaning ALL corrupted bot messages...")
-                async for msg in interaction.channel.history(limit=200):
-                    if msg.author.bot and msg.embeds:
-                        embed = msg.embeds[0]
-                        # Check if embed is corrupted (description doesn't start with proper format)
-                        if embed.description and not embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
-                            print(f"Deleting corrupted message: {msg.id}, title: {embed.title[:50]}")
-                            try:
-                                await msg.delete()
-                            except Exception as e:
-                                print(f"Failed to delete corrupted message: {e}")
-                
                 # Find and update the correct tournament message
-                print("Searching for correct tournament message...")
+                print("Searching for tournament message...")
                 found = False
                 async for msg in interaction.channel.history(limit=50):
                     if msg.author.bot and msg.embeds:
