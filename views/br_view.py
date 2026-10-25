@@ -472,8 +472,56 @@ class LeaveTournamentButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        # Update tournament message using same logic as removal
+        print("Updating tournament message after team leave...")
+        try:
+            # Find any BATTLE ROYALE message (take first one if no proper one found)
+            target_msg = None
+            proper_msg = None
+            async for msg in interaction.channel.history(limit=50):
+                if msg.author.bot and msg.embeds:
+                    embed_msg = msg.embeds[0]
+                    if "BATTLE ROYALE CUP" in embed_msg.title:
+                        # Check if this is a proper message (title has no team names)
+                        if "Team " not in embed_msg.title:
+                            proper_msg = msg
+                            print(f"Found proper tournament message: {msg.id}")
+                        if target_msg is None:
+                            target_msg = msg
+                        if proper_msg:
+                            break
+            
+            # Use proper message if found, otherwise use first found
+            msg_to_update = proper_msg if proper_msg else target_msg
+            
+            if msg_to_update:
+                # Delete all other BATTLE ROYALE messages
+                async for msg in interaction.channel.history(limit=100):
+                    if msg.author.bot and msg.embeds:
+                        embed_msg = msg.embeds[0]
+                        if "BATTLE ROYALE CUP" in embed_msg.title and msg.id != msg_to_update.id:
+                            print(f"Deleting corrupted message: {msg.id}")
+                            try:
+                                await msg.delete()
+                            except Exception as e:
+                                print(f"Failed to delete message: {e}")
+                
+                view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+                await msg_to_update.edit(embed=embed, view=view)
+                tournament.message_id = msg_to_update.id
+                br_store.set(tournament)
+                print(f"Updated tournament message: {msg_to_update.id} (proper: {proper_msg is not None})")
+            else:
+                print("No BATTLE ROYALE message found at all")
+        except Exception as e:
+            print(f"Error updating tournament message: {e}")
+            import traceback
+            traceback.print_exc()
+
+        await interaction.response.send_message(
+            f"✅ Команда '{user_team.team_name}' вышла из турнира.",
+            ephemeral=True
+        )
 
 
 class RegisterTeamButton(Button):
@@ -554,21 +602,13 @@ class RegisterTeamButton(Button):
                            "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
         team_emoji = get_emoji(team_emoji_names[team_number - 1]) if team_number <= len(team_emoji_names) else f"{team_number}"
 
-        # Build team list text with members
+        # Build team list text
         team_list = []
         for i, team_id in enumerate(tournament.registered_teams):
             registered_team = team_store.get(team_id)
             if registered_team:
                 emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
-                # Get member names (cleaned)
-                from utils.cosmetics import clean_nickname
-                member_names = []
-                for member_id in registered_team.members:
-                    member = interaction.guild.get_member(member_id)
-                    if member:
-                        member_names.append(clean_nickname(member.display_name))
-                members_text = f" ({', '.join(member_names)})" if member_names else ""
-                team_list.append(f"{emoji} {registered_team.team_name}{members_text}")
+                team_list.append(f"{emoji} {registered_team.team_name}")
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
@@ -587,8 +627,56 @@ class RegisterTeamButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        # Update tournament message using same logic as removal
+        print("Updating tournament message after team registration...")
+        try:
+            # Find any BATTLE ROYALE message (take first one if no proper one found)
+            target_msg = None
+            proper_msg = None
+            async for msg in interaction.channel.history(limit=50):
+                if msg.author.bot and msg.embeds:
+                    embed_msg = msg.embeds[0]
+                    if "BATTLE ROYALE CUP" in embed_msg.title:
+                        # Check if this is a proper message (title has no team names)
+                        if "Team " not in embed_msg.title:
+                            proper_msg = msg
+                            print(f"Found proper tournament message: {msg.id}")
+                        if target_msg is None:
+                            target_msg = msg
+                        if proper_msg:
+                            break
+            
+            # Use proper message if found, otherwise use first found
+            msg_to_update = proper_msg if proper_msg else target_msg
+            
+            if msg_to_update:
+                # Delete all other BATTLE ROYALE messages
+                async for msg in interaction.channel.history(limit=100):
+                    if msg.author.bot and msg.embeds:
+                        embed_msg = msg.embeds[0]
+                        if "BATTLE ROYALE CUP" in embed_msg.title and msg.id != msg_to_update.id:
+                            print(f"Deleting corrupted message: {msg.id}")
+                            try:
+                                await msg.delete()
+                            except Exception as e:
+                                print(f"Failed to delete message: {e}")
+                
+                view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
+                await msg_to_update.edit(embed=embed, view=view)
+                tournament.message_id = msg_to_update.id
+                br_store.set(tournament)
+                print(f"Updated tournament message: {msg_to_update.id} (proper: {proper_msg is not None})")
+            else:
+                print("No BATTLE ROYALE message found at all")
+        except Exception as e:
+            print(f"Error updating tournament message: {e}")
+            import traceback
+            traceback.print_exc()
+
+        await interaction.response.send_message(
+            f"✅ Команда '{team.team_name}' зарегистрирована как {team_emoji}!",
+            ephemeral=True
+        )
 
 
 class RemoveTeamButton(Button):
