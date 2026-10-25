@@ -67,11 +67,11 @@ class TeamStatusView(discord.ui.View):
         count = self.team.member_count()
         if count >= 4:
             status_emoji = "🟢"
-            status_text = "Зелёный (Готова)"
+            status_text = "(Готова)"
         else:
             status_emoji = "🔴"
             missing = 4 - count
-            status_text = f"Красный (Недостаёт {missing} игроков)"
+            status_text = f"(Недостаёт {missing} игроков)"
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {self.team.team_name}",
