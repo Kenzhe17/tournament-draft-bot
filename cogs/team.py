@@ -124,6 +124,10 @@ class TeamCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view)
 
+        # Get the sent message and store it in the view for dynamic updates
+        message = await interaction.original_response()
+        view.message = message
+
     @team.command(name="test", description="Добавить 3 ботов в вашу команду (для тестирования)")
     async def test(self, interaction: discord.Interaction):
         """Добавить 3 ботов в команду."""
@@ -146,6 +150,45 @@ class TeamCog(commands.Cog):
                 added_count += 1
 
         await team_store.update_team(team)
+
+        # Find and update the status message if it exists
+        # We need to search for the message in the channel
+        async for msg in interaction.channel.history(limit=50):
+            if msg.author == interaction.client.user and msg.embeds:
+                embed = msg.embeds[0]
+                if embed.title and team.team_name in embed.title:
+                    # This is likely the status message, update it
+                    member_mentions = []
+                    for member_id in team.members:
+                        member = interaction.guild.get_member(member_id)
+                        if member:
+                            mention = member.mention
+                            if member_id == team.captain_id:
+                                mention += " 👑"
+                            member_mentions.append(mention)
+
+                    count = team.member_count()
+                    if count >= 4:
+                        status_emoji = "🟢"
+                        status_text = "Зелёный (Готова)"
+                    else:
+                        status_emoji = "🔴"
+                        missing = 4 - count
+                        status_text = f"Красный (Недостаёт {missing} игроков)"
+
+                    new_embed = discord.Embed(
+                        title=f"{replace_emojis('a_star')} {team.team_name}",
+                        description=(
+                            f"{replace_emojis('white_dot')} **Состав:** {count}/4\n"
+                            f"{replace_emojis('white_arrow')} {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
+                            f"{replace_emojis('white_dot')} **Статус:** {status_emoji} {status_text}"
+                        ),
+                        color=discord.Color.from_rgb(114, 137, 218)
+                    )
+
+                    view = TeamStatusView(team, interaction.user.id, msg)
+                    await msg.edit(embed=new_embed, view=view)
+                    break
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Добавлено {added_count} ботов в команду!"),

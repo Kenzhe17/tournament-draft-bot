@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 class TeamStatusView(discord.ui.View):
     """View for team status with management buttons."""
 
-    def __init__(self, team: Team, user_id: int, interaction=None):
+    def __init__(self, team: Team, user_id: int, message=None):
         super().__init__(timeout=None)
         self.team = team
         self.user_id = user_id
-        self.interaction = interaction
+        self.message = message
         self.refresh_buttons()
 
     def refresh_buttons(self):
@@ -41,17 +41,22 @@ class TeamStatusView(discord.ui.View):
 
         # Join button (for non-members, if team not full)
         if not self.team.is_member(self.user_id) and not self.team.is_full():
-            self.add_item(TeamJoinButton(self.team))
+            self.add_item(TeamJoinButton(self.team, self))
 
-    async def update_message(self):
-        """Update the status message dynamically."""
-        if not self.interaction:
+    async def update(self):
+        """Update the status message."""
+        if not self.message:
             return
+
+        # Reload team from store
+        updated_team = team_store.get(self.team.team_id)
+        if updated_team:
+            self.team = updated_team
 
         # Rebuild member list
         member_mentions = []
         for member_id in self.team.members:
-            member = self.interaction.guild.get_member(member_id)
+            member = self.message.guild.get_member(member_id)
             if member:
                 mention = member.mention
                 if member_id == self.team.captain_id:
@@ -82,9 +87,9 @@ class TeamStatusView(discord.ui.View):
         self.refresh_buttons()
 
         try:
-            await self.interaction.edit_original_response(embed=embed, view=self)
+            await self.message.edit(embed=embed, view=self)
         except Exception:
-            # If original message is not available, ignore
+            # If message is not available, ignore
             pass
 
 
@@ -143,8 +148,7 @@ class TeamLeaveButton(discord.ui.Button):
 
         # Update the original status message
         if self.status_view:
-            self.status_view.team = team_store.get(self.team.team_id)
-            await self.status_view.update_message()
+            await self.status_view.update()
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы покинули команду",
@@ -158,25 +162,27 @@ class TeamLeaveButton(discord.ui.Button):
 class TeamJoinButton(discord.ui.Button):
     """Button to join team via password."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="🔑 Войти",
             style=discord.ButtonStyle.success,
             custom_id="team_join"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
-        modal = TeamJoinModal(self.team)
+        modal = TeamJoinModal(self.team, self.status_view)
         await interaction.response.send_modal(modal)
 
 
 class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
     """Modal for entering team password."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__()
         self.team = team
+        self.status_view = status_view
 
     password = discord.ui.TextInput(
         label="Пароль команды",
@@ -218,47 +224,17 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
             )
             return
 
-        # Reload team from store
-        updated_team = team_store.get(self.team.team_id)
-        if not updated_team:
-            await interaction.response.send_message(
-                replace_emojis("❌ Ошибка при загрузке команды!"),
-                ephemeral=True
-            )
-            return
-
-        # Build updated embed
-        member_mentions = []
-        for member_id in updated_team.members:
-            member = interaction.guild.get_member(member_id)
-            if member:
-                mention = member.mention
-                if member_id == updated_team.captain_id:
-                    mention += " 👑"
-                member_mentions.append(mention)
-
-        count = updated_team.member_count()
-        if count >= 4:
-            status_emoji = "🟢"
-            status_text = "Зелёный (Готова)"
-        else:
-            status_emoji = "🔴"
-            missing = 4 - count
-            status_text = f"Красный (Недостаёт {missing} игроков)"
+        # Update status message
+        if self.status_view:
+            await self.status_view.update()
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {updated_team.team_name}",
-            description=(
-                f"{replace_emojis('white_dot')} **Состав:** {count}/4\n"
-                f"{replace_emojis('white_arrow')} {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
-                f"{replace_emojis('white_dot')} **Статус:** {status_emoji} {status_text}"
-            ),
+            title=f"{replace_emojis('a_star')} Вы вступили в команду",
+            description=f"{replace_emojis('white_arrow')} Вы вступили в команду **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        view = TeamStatusView(updated_team, interaction.user.id)
-
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message(embed=embed)
 
 
 class TeamMenuView(discord.ui.View):
@@ -313,8 +289,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
 
         # Update status message
         if self.status_view:
-            self.status_view.team = team_store.get(self.team.team_id)
-            await self.status_view.update_message()
+            await self.status_view.update()
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Название изменено",
@@ -439,8 +414,7 @@ class KickMemberSelectView(discord.ui.View):
 
         # Update status message
         if self.status_view:
-            self.status_view.team = team_store.get(self.team.team_id)
-            await self.status_view.update_message()
+            await self.status_view.update()
 
         await interaction.response.send_message(
             replace_emojis("✅ Участник исключен из команды!"),
