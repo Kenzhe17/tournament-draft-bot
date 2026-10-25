@@ -985,6 +985,50 @@ class GenerateMatchesButton(discord.ui.Button):
             logger.info(f"After generate_bracket, phase: {tournament.phase.value}")
             store.set(tournament)
 
+            # Initialize betting odds for all matches
+            from storage.bet_store import bet_store
+            from utils.embeds import get_team_avg_skill
+
+            if tournament.size == TournamentSize.EIGHT:
+                # Final match
+                match_id = f"{tournament.id}_final_0"
+                team_a_data = tournament.teams[0] if 0 < len(tournament.teams) else {}
+                team_b_data = tournament.teams[1] if 1 < len(tournament.teams) else {}
+                avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+                avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+                captain_a = team_a_data.get("captain", f"П1")
+                captain_b = team_b_data.get("captain", f"П2")
+                name_a = tournament.team_names.get(0, captain_a)
+                name_b = tournament.team_names.get(1, captain_b)
+                await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
+            elif tournament.size == TournamentSize.SIXTEEN:
+                # Semifinals + final
+                for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
+                    match_id = f"{tournament.id}_semifinal_{i}"
+                    team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+                    team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+                    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+                    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+                    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+                    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+                    name_a = tournament.team_names.get(team_a, captain_a)
+                    name_b = tournament.team_names.get(team_b, captain_b)
+                    await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
+                # Final match (will be initialized when semifinals complete)
+            elif tournament.size == TournamentSize.THIRTY_TWO:
+                # Qualifiers
+                for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
+                    match_id = f"{tournament.id}_qualifier_{i}"
+                    team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
+                    team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
+                    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
+                    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+                    captain_a = team_a_data.get("captain", f"П{team_a + 1}")
+                    captain_b = team_b_data.get("captain", f"П{team_b + 1}")
+                    name_a = tournament.team_names.get(team_a, captain_a)
+                    name_b = tournament.team_names.get(team_b, captain_b)
+                    await bet_store.initialize_match_odds_db(match_id, name_a, name_b, avg_skill_a, avg_skill_b)
+
             # Update games for all players (tournament started)
             from storage.player_stats_store import player_stats_store
             from storage.user_balance_store import user_balance_store
