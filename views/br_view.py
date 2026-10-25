@@ -722,7 +722,7 @@ class RemoveTeamSelectView(View):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
                         if "BATTLE ROYALE CUP" in embed.title:
-                            print(f"Found tournament message: {msg.id}, format check: {embed.description.startswith(f'{replace_emojis(\"white_arrow\")} **Организатор:**')}")
+                            print(f"Found tournament message: {msg.id}")
                             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                             team_list = []
