@@ -240,7 +240,7 @@ class StartBRButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
@@ -760,9 +760,9 @@ class RemoveBRPlayerSelect(Select):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                     f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                     f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
                     f"{replace_emojis('white_dot')} **Зарегистрированные игроки:**\n"
@@ -1202,7 +1202,7 @@ class StartBRButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
@@ -1344,7 +1344,7 @@ class StartBermudaButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('bermuda', 'bermuda')}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
@@ -1715,7 +1715,7 @@ class BRConfirmPurgatoryButton(Button):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
@@ -1816,7 +1816,7 @@ class BRConfirmKalahariButton(Button):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('kalahari', 'kalahari')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
@@ -1917,7 +1917,7 @@ class BRConfirmResultsButton(Button):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | ИТОГИ",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_directory')} Финальные результаты\n\n"
@@ -2033,7 +2033,7 @@ class BRPurgatoryButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
@@ -2157,7 +2157,7 @@ class BRKalahariButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('kalahari', 'kalahari')}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
@@ -2312,7 +2312,7 @@ class TeamNameModal(Modal):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Команды\n"
@@ -2489,7 +2489,7 @@ class MapSelectMenu(Select):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get(value, value)}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {map_names.get(value, value)}\n"
@@ -2667,7 +2667,7 @@ class BackToMapButton(Button):
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
@@ -2841,7 +2841,7 @@ class BRStatsModal(Modal):
                 embed = discord.Embed(
                     title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Результаты",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                         f"{replace_emojis('white_dot')} **Результаты турнира:**\n"
                         + "\n".join(results_text)
                     ),
@@ -2905,7 +2905,7 @@ class BRStatsModal(Modal):
                 embed = discord.Embed(
                     title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {next_map}",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                        f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                         f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                         f"{replace_emojis('sub_middle')} Формат: Random\n"
                         f"{replace_emojis('sub_middle')} Фаза: {next_map}\n"
@@ -2969,7 +2969,7 @@ class BRStatsModal(Modal):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{BOT_OWNER_ID}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
