@@ -701,11 +701,6 @@ class RemoveTeamSelectView(View):
             tournament.registered_teams.remove(team_id)
             br_store.set(tournament)
 
-            await interaction.response.send_message(
-                "✅ Команда удалена из турнира!",
-                ephemeral=True
-            )
-
             # Update main embed
             from storage.team_store import team_store
             from config import get_emoji
