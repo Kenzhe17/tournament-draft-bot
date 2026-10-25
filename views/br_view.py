@@ -703,20 +703,26 @@ class RemoveTeamSelectView(View):
             print("Searching for tournament message in history...")
             try:
                 # First, clean up any corrupted messages
+                print("Cleaning corrupted messages...")
                 async for msg in interaction.channel.history(limit=100):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
-                        # Check if embed is corrupted (has team names in description before proper format)
-                        if embed.description and "Team " in embed.description[:100]:
-                            print(f"Found potentially corrupted message: {msg.id}")
+                        # Check if embed is corrupted (description starts with team name instead of proper format)
+                        if embed.description and not embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
+                            print(f"Deleting corrupted message: {msg.id}")
+                            try:
+                                await msg.delete()
+                            except Exception as e:
+                                print(f"Failed to delete corrupted message: {e}")
                 
                 # Find and update the correct tournament message
+                print("Searching for correct tournament message...")
                 found = False
                 async for msg in interaction.channel.history(limit=50):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
-                        if "BATTLE ROYALE CUP" in embed.title:
-                            print(f"Found tournament message: {msg.id}")
+                        if "BATTLE ROYALE CUP" in embed.title and embed.description.startswith(f"{replace_emojis('white_arrow')} **Организатор:**"):
+                            print(f"Found correct tournament message: {msg.id}")
                             team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                                "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                             team_list = []
