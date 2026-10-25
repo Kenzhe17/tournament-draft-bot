@@ -734,11 +734,13 @@ class RemoveTeamSelectView(View):
 
                             view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
                             await msg.edit(embed=new_embed, view=view)
+                            print(f"Updated tournament message by ID: {tournament.message_id}")
                             return
                     except Exception as e:
                         print(f"Error updating tournament message by ID: {e}")
 
                 # Fallback: search in channel history
+                print("Fallback: searching in channel history...")
                 async for msg in interaction.channel.history(limit=50):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
@@ -772,7 +774,10 @@ class RemoveTeamSelectView(View):
 
                             view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
                             await msg.edit(embed=new_embed, view=view)
+                            print(f"Updated tournament message by history search: {msg.id}")
                             break
+                else:
+                    print("No tournament message found in history")
             except Exception as e:
                 print(f"Error updating tournament message: {e}")
         else:
