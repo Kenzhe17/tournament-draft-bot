@@ -702,33 +702,38 @@ class RemoveTeamSelectView(View):
             # Update main tournament message - delete corrupted and update correct one
             print("Deleting corrupted BATTLE ROYALE messages and updating correct one...")
             try:
-                # Find the correct tournament message first
-                correct_msg = None
+                # Find any BATTLE ROYALE message (take first one if no proper one found)
+                target_msg = None
+                proper_msg = None
                 async for msg in interaction.channel.history(limit=50):
                     if msg.author.bot and msg.embeds:
                         embed = msg.embeds[0]
                         if "BATTLE ROYALE CUP" in embed.title:
                             # Check if this is a proper message (title has no team names)
-                            # Corrupted titles look like: ":a_star: :winner: BATTLE ROYALE CUP | Team | Регистрация\n:num_1: Team 1:"
-                            # Proper title is just: ":a_star: :winner: BATTLE ROYALE CUP | Team | Регистрация"
                             if "Team " not in embed.title:
-                                print(f"Found correct tournament message: {msg.id}")
-                                correct_msg = msg
+                                proper_msg = msg
+                                print(f"Found proper tournament message: {msg.id}")
+                            if target_msg is None:
+                                target_msg = msg
+                            if proper_msg:
                                 break
                 
-                if correct_msg:
+                # Use proper message if found, otherwise use first found
+                msg_to_update = proper_msg if proper_msg else target_msg
+                
+                if msg_to_update:
                     # Delete all other BATTLE ROYALE messages
                     async for msg in interaction.channel.history(limit=100):
                         if msg.author.bot and msg.embeds:
                             embed = msg.embeds[0]
-                            if "BATTLE ROYALE CUP" in embed.title and msg.id != correct_msg.id:
+                            if "BATTLE ROYALE CUP" in embed.title and msg.id != msg_to_update.id:
                                 print(f"Deleting corrupted message: {msg.id}")
                                 try:
                                     await msg.delete()
                                 except Exception as e:
                                     print(f"Failed to delete message: {e}")
                     
-                    # Update the correct message
+                    # Update the message
                     team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                                        "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
                     team_list = []
@@ -756,12 +761,12 @@ class RemoveTeamSelectView(View):
                     )
 
                     view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-                    await correct_msg.edit(embed=new_embed, view=view)
-                    tournament.message_id = correct_msg.id
+                    await msg_to_update.edit(embed=new_embed, view=view)
+                    tournament.message_id = msg_to_update.id
                     br_store.set(tournament)
-                    print(f"Updated tournament message: {correct_msg.id}")
+                    print(f"Updated tournament message: {msg_to_update.id} (proper: {proper_msg is not None})")
                 else:
-                    print("No correct tournament message found")
+                    print("No BATTLE ROYALE message found at all")
             except Exception as e:
                 print(f"Error updating tournament message: {e}")
                 import traceback
