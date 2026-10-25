@@ -79,6 +79,7 @@ class BRCog(commands.Cog):
             formation=formation_mode,
             role_id=BR_ROLE_ID,
             room_channel_id=BR_ROOM_CHANNEL_ID,
+            organizer_id=interaction.user.id,
         )
 
         # Сохранить
