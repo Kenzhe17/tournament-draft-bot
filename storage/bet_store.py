@@ -70,6 +70,8 @@ class BetStore:
                 loaded = {}
                 for row in rows:
                     loaded[row["match_id"]] = MatchOdds(
+                        team_a_name="",
+                        team_b_name="",
                         team_a_odds=row["team_a_odds"],
                         team_b_odds=row["team_b_odds"],
                         team_a_buffer=row["team_a_buffer"],
@@ -163,6 +165,8 @@ class BetStore:
                 )
                 if row:
                     self._odds[match_id] = MatchOdds(
+                        team_a_name="",
+                        team_b_name="",
                         team_a_odds=row["team_a_odds"],
                         team_b_odds=row["team_b_odds"],
                         team_a_buffer=row["team_a_buffer"],
@@ -205,6 +209,8 @@ class BetStore:
 
             # Also load into memory
             self._odds[match_id] = MatchOdds(
+                team_a_name=team_a_name,
+                team_b_name=team_b_name,
                 team_a_odds=odds_a,
                 team_b_odds=odds_b,
                 team_a_buffer=0,
@@ -250,6 +256,8 @@ class BetStore:
                     team_a_odds = max(1.1, min(2.7, row["team_a_odds"]))
                     team_b_odds = max(1.1, min(2.7, row["team_b_odds"]))
                     return MatchOdds(
+                        team_a_name="",
+                        team_b_name="",
                         team_a_odds=team_a_odds,
                         team_b_odds=team_b_odds,
                         team_a_buffer=row["team_a_buffer"],
