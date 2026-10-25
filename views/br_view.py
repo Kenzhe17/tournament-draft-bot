@@ -1969,16 +1969,16 @@ class BRConfirmPurgatoryButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         print("BRConfirmPurgatoryButton callback called")
-        # Transition to Purgatory
-        self.tournament.phase = BRTournamentPhase.PURGATORY
-        self.tournament.current_map = "purgatory"
-        br_store.set(self.tournament)
-
-        # Reload tournament from store to get latest stats
+        # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
         print(f"Reloaded tournament, teams count: {len(self.tournament.teams)}")
         for i, team in enumerate(self.tournament.teams):
             print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
+
+        # Transition to Purgatory
+        self.tournament.phase = BRTournamentPhase.PURGATORY
+        self.tournament.current_map = "purgatory"
+        br_store.set(self.tournament)
 
         # Close the ephemeral menu
         await interaction.response.edit_message(content="✅ Переход к Чистилище", view=None)
@@ -2048,11 +2048,11 @@ class BRConfirmPurgatoryButton(Button):
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('purgatory', 'purgatory')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
                     f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                     + "\n".join(teams_text)
@@ -2080,6 +2080,9 @@ class BRConfirmKalahariButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Reload tournament from store to get latest stats BEFORE changing phase
+        self.tournament = br_store.get(self.guild_id, self.channel_id)
+
         # Transition to Kalahari
         self.tournament.phase = BRTournamentPhase.KALAHARI
         self.tournament.current_map = "kalahari"
@@ -2151,11 +2154,11 @@ class BRConfirmKalahariButton(Button):
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('kalahari', 'kalahari')}",
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
                     f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
                     f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
                     + "\n".join(teams_text)
@@ -2183,6 +2186,9 @@ class BRConfirmResultsButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Reload tournament from store to get latest stats BEFORE changing phase
+        self.tournament = br_store.get(self.guild_id, self.channel_id)
+
         # Transition to RESULTS phase
         self.tournament.phase = BRTournamentPhase.RESULTS
         br_store.set(self.tournament)
@@ -2255,9 +2261,9 @@ class BRConfirmResultsButton(Button):
             embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | ИТОГИ",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
                     f"{replace_emojis('sub_directory')} Финальные результаты\n\n"
                     f"{replace_emojis('white_dot')} **Команды по очкам:**\n\n"
                     + "\n".join(teams_text)
