@@ -2288,16 +2288,6 @@ class BRConfirmResultsButton(Button):
             logger.error(f"Error updating BR message for results: {e}")
 
 
-class BRResultsView(View):
-    """View for BR results phase - no buttons, tournament is complete."""
-
-    def __init__(self, guild_id: int, channel_id: int):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        # No buttons - tournament is complete
-
-
 class BRPurgatoryButton(Button):
     """Button to transition to Purgatory phase."""
 
