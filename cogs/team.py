@@ -78,6 +78,9 @@ class TeamCog(commands.Cog):
             )
             return
 
+        # Defer response since we need to do async operations
+        await interaction.response.defer(ephemeral=True)
+
         # Delete team status message if exists
         async for msg in interaction.channel.history(limit=50):
             if msg.author == interaction.client.user and msg.embeds:
@@ -97,7 +100,7 @@ class TeamCog(commands.Cog):
             color=discord.Color.from_rgb(235, 100, 100)  # Pastel red
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @team.command(name="status", description="Статус команды")
     @app_commands.describe(team_name="Название команды (опционально)")

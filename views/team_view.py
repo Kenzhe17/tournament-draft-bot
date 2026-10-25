@@ -255,7 +255,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class TeamMenuView(discord.ui.View):
