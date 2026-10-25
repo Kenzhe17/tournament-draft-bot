@@ -110,7 +110,7 @@ class BRCog(commands.Cog):
                             member_names.append(clean_nickname(member.display_name))
                     members_text = f" ({', '.join(member_names)})" if member_names else ""
                     team_list.append(f"{emoji} {team.team_name}{members_text}")
-            players_text = ", ".join(team_list) if team_list else "*"
+            players_text = "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *"
         else:
             player_names = [p["name"] for p in tournament.players]
             players_text = ", ".join(player_names) if player_names else "*"
@@ -120,10 +120,12 @@ class BRCog(commands.Cog):
             players_label = "Команд"
             players_count = f"{len(tournament.registered_teams)}/12"
             rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+            team_display_label = "Команды"
         else:
             players_label = "Игроков"
             players_count = f"{len(tournament.players)}/48"
             rules_text = "Нажмите кнопку 'Войти' для регистрации."
+            team_display_label = "Игроки"
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
@@ -133,8 +135,8 @@ class BRCog(commands.Cog):
                 f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                 f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                 f"{replace_emojis('sub_directory')} {players_label}: {players_count}\n\n"
-                f"{replace_emojis('white_dot')} **Игроки:**\n"
-                f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                f"{replace_emojis('white_dot')} **{team_display_label}:**\n"
+                f"{players_text}\n\n"
                 f"{replace_emojis('white_dot')} **Правила:**\n"
                 f"{replace_emojis('white_arrow')} {rules_text}\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
@@ -329,16 +331,18 @@ class BRCog(commands.Cog):
                                     member_names.append(clean_nickname(member.display_name))
                             members_text = f" ({', '.join(member_names)})" if member_names else ""
                             team_list.append(f"{emoji} {team.team_name}{members_text}")
-                    players_text = ", ".join(team_list) if team_list else "*"
+                    players_text = "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *"
                     players_label = "Команд"
                     players_count = f"{len(tournament.registered_teams)}/12"
                     rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+                    team_display_label = "Команды"
                 else:
                     player_names = [p["name"] for p in tournament.players]
                     players_text = ", ".join(player_names) if player_names else "*"
                     players_label = "Игроков"
                     players_count = f"{len(tournament.players)}/48"
                     rules_text = "Нажмите кнопку 'Войти' для регистрации."
+                    team_display_label = "Игроки"
 
                 embed = discord.Embed(
                     title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
@@ -348,8 +352,8 @@ class BRCog(commands.Cog):
                         f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
                         f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
                         f"{replace_emojis('sub_directory')} {players_label}: {players_count}\n\n"
-                        f"{replace_emojis('white_dot')} **Игроки:**\n"
-                        f"{replace_emojis('white_arrow')} {players_text}\n\n"
+                        f"{replace_emojis('white_dot')} **{team_display_label}:**\n"
+                        f"{players_text}\n\n"
                         f"{replace_emojis('white_dot')} **Правила:**\n"
                         f"{replace_emojis('white_arrow')} {rules_text}\n\n"
                         f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
