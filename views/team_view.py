@@ -297,7 +297,18 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        self.team.team_name = self.new_name.value
+        new_name = self.new_name.value
+
+        # Check if name already exists (excluding current team)
+        existing_team = team_store.get_by_name(self.team.guild_id, new_name)
+        if existing_team and existing_team.team_id != self.team.team_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Это название уже занято другой командой!"),
+                ephemeral=True
+            )
+            return
+
+        self.team.team_name = new_name
         await team_store.update_team(self.team)
 
         # Update status message

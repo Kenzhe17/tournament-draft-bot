@@ -171,6 +171,21 @@ class TeamStore:
         """
         return [team for team in self._teams.values() if team.guild_id == guild_id]
 
+    def get_by_name(self, guild_id: int, team_name: str) -> Team | None:
+        """Получить команду по названию в сервере.
+
+        Args:
+            guild_id: ID сервера
+            team_name: Название команды
+
+        Returns:
+            Объект команды или None
+        """
+        for team in self._teams.values():
+            if team.guild_id == guild_id and team.team_name == team_name:
+                return team
+        return None
+
     def get_by_captain(self, captain_id: int) -> Team | None:
         """Получить команду по капитану.
 

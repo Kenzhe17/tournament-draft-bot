@@ -33,10 +33,20 @@ class TeamCog(commands.Cog):
             )
             return
 
+        # Generate unique team name
+        base_name = f"Команда {interaction.user.display_name}"
+        team_name = base_name
+        counter = 1
+
+        # Check if name already exists and find a unique one
+        while team_store.get_by_name(interaction.guild_id, team_name):
+            team_name = f"{base_name} {counter}"
+            counter += 1
+
         # Create team
         team = Team(
             team_id="",
-            team_name=f"Команда {interaction.user.display_name}",
+            team_name=team_name,
             password=password,
             captain_id=interaction.user.id,
             guild_id=interaction.guild_id
