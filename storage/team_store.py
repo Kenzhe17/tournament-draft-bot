@@ -337,6 +337,12 @@ class TeamStore:
         if team.team_id not in self._teams:
             return False
 
+        # Check if team is registered in any BR tournament
+        from storage.br_store import br_store
+        for tournament in br_store._tournaments.values():
+            if tournament and team.team_id in tournament.registered_teams:
+                return False  # Team is registered, cannot update
+
         self._teams[team.team_id] = team
         if self._use_postgres:
             await self._save_to_postgres(team)

@@ -313,7 +313,25 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
             return
 
         self.team.team_name = new_name
-        await team_store.update_team(self.team)
+        success = await team_store.update_team(self.team)
+        if not success:
+            await interaction.response.send_message(
+                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять название."),
+                ephemeral=True
+            )
+            return
+
+        # Update status message
+        if self.status_view:
+            await self.status_view.update()
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} Название изменено",
+            description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
+            color=discord.Color.from_rgb(114, 137, 218)
+        )
+
+        await interaction.response.edit_message(embed=embed)
 
         # Update status message
         if self.status_view:
@@ -363,7 +381,21 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
 
     async def on_submit(self, interaction: discord.Interaction):
         self.team.password = self.new_password.value
-        await team_store.update_team(self.team)
+        success = await team_store.update_team(self.team)
+        if not success:
+            await interaction.response.send_message(
+                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять пароль."),
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title=f"{replace_emojis('a_star')} Пароль изменен",
+            description=f"{replace_emojis('white_arrow')} Новый пароль: ||{self.team.password}||",
+            color=discord.Color.from_rgb(114, 137, 218)
+        )
+
+        await interaction.response.edit_message(embed=embed)
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Пароль изменен",
