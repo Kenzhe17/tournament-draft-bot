@@ -2282,7 +2282,7 @@ class BRConfirmResultsButton(Button):
                 color=discord.Color.gold()
             )
 
-            view = BRResultsView(self.guild_id, self.channel_id)
+            view = None
             await message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Error updating BR message for results: {e}")
