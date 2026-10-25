@@ -100,15 +100,27 @@ class TeamCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @team.command(name="status", description="Статус команды")
-    async def status(self, interaction: discord.Interaction):
+    @app_commands.describe(team_name="Название команды (опционально)")
+    async def status(self, interaction: discord.Interaction, team_name: str = None):
         """Показать статус команды."""
-        team = team_store.get_by_member(interaction.user.id)
-        if not team:
-            await interaction.response.send_message(
-                replace_emojis("❌ Вы не состоите в команде!"),
-                ephemeral=True
-            )
-            return
+        # If team_name is provided, search for that team
+        if team_name:
+            team = team_store.get_by_name(interaction.guild_id, team_name)
+            if not team:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Команда с таким названием не найдена!"),
+                    ephemeral=True
+                )
+                return
+        else:
+            # Otherwise, get user's team
+            team = team_store.get_by_member(interaction.user.id)
+            if not team:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Вы не состоите в команде! Укажите название команды или создайте свою."),
+                    ephemeral=True
+                )
+                return
 
         # Build member list
         member_mentions = []
@@ -141,7 +153,7 @@ class TeamCog(commands.Cog):
         )
 
         # Create view with buttons
-        view = TeamStatusView(team, interaction.user.id, interaction)
+        view = TeamStatusView(team, interaction.user.id)
 
         await interaction.response.send_message(embed=embed, view=view)
 
@@ -208,6 +220,7 @@ class TeamCog(commands.Cog):
                     )
 
                     view = TeamStatusView(team, interaction.user.id, msg)
+                    view.message = msg
                     await msg.edit(embed=new_embed, view=view)
                     break
 

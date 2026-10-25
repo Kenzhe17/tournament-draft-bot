@@ -39,8 +39,8 @@ class TeamStatusView(discord.ui.View):
         if self.team.is_member(self.user_id):
             self.add_item(TeamLeaveButton(self.team, self.user_id, self))
 
-        # Join button (for non-members, if team not full)
-        if not self.team.is_member(self.user_id) and not self.team.is_full():
+        # Join button (always show if team not full, check in callback)
+        if not self.team.is_full():
             self.add_item(TeamJoinButton(self.team, self))
 
     async def update(self):
@@ -185,6 +185,14 @@ class TeamJoinButton(discord.ui.Button):
         self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
+        # Check if user is already in the team
+        if self.team.is_member(interaction.user.id):
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы уже состоите в этой команде!"),
+                ephemeral=True
+            )
+            return
+
         modal = TeamJoinModal(self.team, self.status_view)
         await interaction.response.send_modal(modal)
 
