@@ -115,7 +115,7 @@ class FinalView(discord.ui.View):
         # Add captain fill buttons for final (always available during final phase)
         from views.match_stats_view import CaptainFillButton
         if tournament.phase == TournamentPhase.FINAL:
-            match_id = "final_0"
+            match_id = f"{tournament.id}_final_0"
             # Check if team 0 has filled stats
             team0_filled = any(
                 tournament.teams[final_teams[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})

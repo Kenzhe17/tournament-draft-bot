@@ -40,7 +40,8 @@ class CaptainFillButton(Button):
             return
 
         # Check if user is captain of this team
-        user_name = interaction.user.display_name
+        from utils.cosmetics import clean_nickname
+        user_name = clean_nickname(interaction.user.display_name)
         team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
         if team.get("captain") != user_name:
             await interaction.response.send_message(replace_emojis("❌ Только капитан может заполнять статистику."), ephemeral=True)
@@ -178,6 +179,12 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             from bot import TournamentBot
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
+
+            # Notify user that button will disappear
+            await interaction.followup.send(
+                replace_emojis("✅ Статистика заполнена. Кнопка капитана для вашей команды исчезла."),
+                ephemeral=True
+            )
         except Exception as e:
             import logging
             logging.error(f"Error in CaptainStatsModal.on_submit: {e}", exc_info=True)

@@ -616,7 +616,7 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         self.players = players
 
         # Check if stats already filled by captains
-        match_id = f"{match_type}_{match_index}"
+        match_id = f"{tournament.id}_{match_type}_{match_index}"
         existing_stats = tournament.temp_match_stats.get(match_id, {})
 
         # Create input fields for each player (max 4 for a team)
@@ -702,11 +702,17 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
 
-        # Update tournament message
+        # Update tournament message and view
         try:
             from bot import TournamentBot
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
+
+            # Refresh the view to hide captain buttons for filled teams
+            await interaction.followup.send(
+                replace_emojis("✅ Статистика заполнена. Кнопка капитана для этой команды исчезла."),
+                ephemeral=True
+            )
         except Exception as e:
             import logging
             logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
