@@ -1199,6 +1199,12 @@ async def build_winner_embed(
         if players:
             team_list += f"{replace_emojis('white_arrow')} **{team_name}:** {', '.join(players)}\n"
 
+    # Calculate display values for stats
+    best_kd_display = f"{best_kd:.2f}" if best_kd > 0 else "0.00"
+    best_avg_display = f"{best_avg:.1f}" if best_avg > 0 else "0.0"
+    best_kills_display = str(best_kills) if best_kills > 0 else "0"
+    max_payout_display = f"{max_payout:,}" if max_payout > 0 else "0"
+
     description = (
         f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
         f"{replace_emojis('white_dot')} **Победитель:**\n"
@@ -1206,10 +1212,10 @@ async def build_winner_embed(
         f"{replace_emojis('white_dot')} **Список команд:**\n"
         f"{team_list}\n"
         f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd:.2f if best_kd > 0 else '0.00'})\n"
-        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg:.1f if best_avg > 0 else '0.0'})\n"
-        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills if best_kills > 0 else '0'})\n"
-        f"{replace_emojis('sub_directory')} **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout:,} {get_emoji('money') if max_payout > 0 else ''})\n\n"
+        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd_display})\n"
+        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg_display})\n"
+        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills_display})\n"
+        f"{replace_emojis('sub_directory')} **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout_display} {get_emoji('money') if max_payout > 0 else ''})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
