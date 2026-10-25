@@ -584,6 +584,10 @@ class RegisterTeamButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
+        print(f"Embed title: {embed.title}")
+        print(f"Embed description (first 500 chars): {embed.description[:500]}")
+        print(f"Team list: {team_list}")
+
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
 
