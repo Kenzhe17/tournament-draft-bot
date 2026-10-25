@@ -236,7 +236,7 @@ class TournamentBot(commands.Bot):
         try:
             message = await channel.fetch_message(tournament.message_id)
         except discord.HTTPException as exc:
-            logger.error("Сообщение не найдено: %s", exc)
+            logger.warning("Сообщение не найдено (возможно удалено): %s", exc)
             return
 
         embed = await build_embed_for_phase(tournament, guild)

@@ -75,6 +75,10 @@ class BetStore:
 
     def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
         """Initialize odds for a match based on skill rating difference."""
+        # Don't reinitialize if odds already exist
+        if match_id in self._odds:
+            return
+
         # Calculate initial odds based on skill rating
         # Higher skill team gets lower odds
         # Skill rating is 1.0-10.0, so 1.0 difference = 0.5x odds difference
@@ -105,17 +109,25 @@ class BetStore:
         )
 
     async def initialize_match_odds_db(self, match_id: str, team_a_odds: float, team_b_odds: float) -> None:
-        """Initialize odds in database."""
+        """Initialize odds in database (only if not already initialized)."""
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                # Check if odds already exist
+                existing = await conn.fetchrow(
+                    "SELECT match_id FROM match_odds WHERE match_id = $1",
+                    match_id
+                )
+                if existing:
+                    # Odds already initialized, don't reset
+                    return
+
+                # Insert new odds
                 await conn.execute(
                     """
                     INSERT INTO match_odds (match_id, team_a_odds, team_b_odds, team_a_buffer, team_b_buffer)
                     VALUES ($1, $2, $3, 0, 0)
-                    ON CONFLICT (match_id) DO UPDATE SET
-                        team_a_odds = $2, team_b_odds = $3, team_a_buffer = 0, team_b_buffer = 0
                     """,
                     match_id, team_a_odds, team_b_odds
                 )
