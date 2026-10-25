@@ -236,5 +236,9 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         try:
             await interaction.edit_original_response(embed=embed, view=view)
         except discord.NotFound:
-            # If original response is not available, send a followup message
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            # If original response is not available, try followup
+            try:
+                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+            except discord.NotFound:
+                # If followup also fails, just log and ignore
+                pass
