@@ -565,7 +565,9 @@ class RegisterTeamButton(Button):
                     tournament.players.append({"name": clean_name, "id": member_id})
                     print(f"Added player to tournament: {clean_name} (ID: {member_id})")
                 else:
-                    print(f"Could not find member for ID: {member_id}")
+                    # Member not in guild (bot or offline), add with fallback name
+                    tournament.players.append({"name": f"User_{member_id}", "id": member_id})
+                    print(f"Added offline/bot player to tournament: User_{member_id} (ID: {member_id})")
             else:
                 print(f"Player already in tournament: {member_id}")
 
