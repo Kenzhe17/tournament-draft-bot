@@ -284,23 +284,18 @@ class BRTournament:
             True если успешно, False если некорректные данные
         """
         if team_index >= len(self.teams):
-            print(f"set_team_stats: team_index {team_index} >= len(self.teams) {len(self.teams)}")
             return False
 
         if place < 1 or place > 12:
-            print(f"set_team_stats: invalid place {place}")
             return False
 
         if kills < 0 or kills > 50:
-            print(f"set_team_stats: invalid kills {kills}")
             return False
 
-        print(f"set_team_stats: team_index={team_index}, map_name={map_name}, place={place}, kills={kills}")
         self.teams[team_index]["stats"][map_name] = {
             "place": place,
             "kills": kills
         }
-        print(f"set_team_stats: saved stats for team {self.teams[team_index]['name']}: {self.teams[team_index]['stats']}")
         return True
 
     def are_all_stats_complete(self, map_name: str) -> bool:
