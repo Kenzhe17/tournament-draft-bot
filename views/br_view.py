@@ -712,6 +712,11 @@ class RemoveTeamSelectView(View):
 
             view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
             await interaction.edit_original_response(embed=embed, view=view)
+
+            await interaction.followup.send(
+                ":white_check_mark: Команда удалена из турнира!",
+                ephemeral=True
+            )
         else:
             await interaction.response.send_message(
                 "❌ Команда не найдена в турнире.",
