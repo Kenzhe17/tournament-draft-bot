@@ -51,8 +51,8 @@ class TeamStatusView(discord.ui.View):
         if updated_team:
             self.team = updated_team
 
-        # Refresh buttons with updated team state
-        self.refresh_buttons()
+        # Don't refresh buttons - keep the original buttons for the original user
+        # Buttons are role-specific and should not change during updates
 
         # Rebuild member list
         member_mentions = []
