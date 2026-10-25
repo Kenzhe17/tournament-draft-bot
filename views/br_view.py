@@ -335,11 +335,6 @@ class JoinBRButton(Button):
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
 
-        await interaction.followup.send(
-            f"✅ Вы зарегистрированы как {user_name}!",
-            ephemeral=True
-        )
-
 
 class LeaveBRButton(Button):
     """Кнопка для выхода из BR турнира."""
@@ -398,11 +393,6 @@ class LeaveBRButton(Button):
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
-
-        await interaction.followup.send(
-            "✅ Вы вышли из турнира.",
-            ephemeral=True
-        )
 
 
 class LeaveTournamentButton(Button):
@@ -481,11 +471,6 @@ class LeaveTournamentButton(Button):
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
-
-        await interaction.followup.send(
-            f"✅ Команда **{user_team.team_name}** вышла из турнира!",
-            ephemeral=True
-        )
 
 
 class RegisterTeamButton(Button):
@@ -601,11 +586,6 @@ class RegisterTeamButton(Button):
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
         await interaction.response.edit_message(embed=embed, view=view)
-
-        await interaction.followup.send(
-            f"✅ Команда **{team.team_name}** зарегистрирована как {team_emoji}!",
-            ephemeral=True
-        )
 
 
 class RemoveTeamButton(Button):
