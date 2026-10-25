@@ -145,7 +145,13 @@ class TeamLeaveButton(discord.ui.Button):
             )
             return
 
-        await team_store.remove_member(self.team.team_id, interaction.user.id)
+        success = await team_store.remove_member(self.team.team_id, interaction.user.id)
+        if not success:
+            await interaction.response.send_message(
+                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
+                ephemeral=True
+            )
+            return
 
         # Update the original status message
         if self.status_view:
@@ -230,7 +236,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
         success = await team_store.add_member(self.team.team_id, interaction.user.id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось добавить в команду!"),
+                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
                 ephemeral=True
             )
             return
@@ -429,7 +435,7 @@ class KickMemberSelectView(discord.ui.View):
         success = await team_store.remove_member(self.team.team_id, user_id)
         if not success:
             await interaction.response.send_message(
-                replace_emojis("❌ Не удалось исключить участника!"),
+                replace_emojis("❌ Команда зарегистрирована в BR турнире! Нельзя менять состав."),
                 ephemeral=True
             )
             return

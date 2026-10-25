@@ -247,6 +247,12 @@ class TeamStore:
         Returns:
             True если успешно, False если команда не найдена, лимит превышен или уже в команде
         """
+        # Check if team is registered in any BR tournament
+        from storage.br_store import br_store
+        for tournament in br_store._tournaments.values():
+            if tournament and team_id in tournament.registered_teams:
+                return False  # Team is registered, cannot add members
+
         team = self._teams.get(team_id)
         if not team:
             return False
@@ -270,6 +276,12 @@ class TeamStore:
         Returns:
             True если успешно, False если команда не найдена, пользователь не найден или это капитан
         """
+        # Check if team is registered in any BR tournament
+        from storage.br_store import br_store
+        for tournament in br_store._tournaments.values():
+            if tournament and team_id in tournament.registered_teams:
+                return False  # Team is registered, cannot remove members
+
         team = self._teams.get(team_id)
         if not team:
             return False
