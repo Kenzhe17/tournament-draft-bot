@@ -391,8 +391,7 @@ class Tournament:
                     return False  # Conflict detected
 
         # Note: BR tournaments are separate systems and don't conflict with regular tournaments
-                logging.warning(f"  Error checking BR tournament: {e}")
-        
+
         if not name or name in self.all_players:
             logging.warning(f"  FAILED: name is empty or already in all_players")
             return False
