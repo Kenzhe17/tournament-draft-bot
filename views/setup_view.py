@@ -1439,11 +1439,11 @@ class OrgMenuButton(discord.ui.Button):
         self.channel_id = channel_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        from utils.permissions import is_org_check
-        if not is_org_check(interaction.user, interaction.guild):
+        from config import BOT_OWNER_ID
+        if interaction.user.id != BOT_OWNER_ID:
             try:
                 await interaction.response.send_message(
-                    replace_emojis("❌ Только организаторы (роль 'org') могут открывать орг меню."),
+                    "❌ Только владелец бота может открывать орг меню.",
                     ephemeral=True
                 )
             except discord.NotFound:
