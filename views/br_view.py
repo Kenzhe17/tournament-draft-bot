@@ -249,7 +249,7 @@ class StartBRButton(Button):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain}\n"
+                f"{num_emoji} {team_name}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -1494,7 +1494,7 @@ class StartBRButton(Button):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain}\n"
+                f"{num_emoji} {team_name}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
@@ -2604,7 +2604,7 @@ class TeamNameModal(Modal):
             num_emoji = num_emojis[i] if i < len(num_emojis) else "🎮"
 
             teams_text.append(
-                f"{num_emoji} {captain}\n"
+                f"{num_emoji} {team_name}\n"
                 f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
             )
 
