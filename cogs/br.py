@@ -248,56 +248,24 @@ class BRCog(commands.Cog):
             )
             return
 
-        # Очистить существующих игроков и команд
-        if tournament.formation.value == "random":
-            tournament.clear_players()
-        tournament.registered_teams = []
-
+        # brtest only works for random format
         if tournament.formation.value == "team":
-            # Team format: create 12 teams with 4 bots each
-            from storage.team_store import team_store
-            from utils.cosmetics import clean_nickname
-
-            for team_num in range(1, 13):
-                # Create team with bot captain
-                base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
-                captain_id = base_user_id - team_num
-
-                team = Team(
-                    team_id="",
-                    team_name=f"Team {team_num}",
-                    password="test",
-                    captain_id=captain_id,
-                    guild_id=interaction.guild_id
-                )
-
-                # Add 3 more bots (total 4)
-                for bot_num in range(1, 4):
-                    bot_id = captain_id - (bot_num * 1000)
-                    team.add_member(bot_id)
-
-                await team_store.create(team)
-                tournament.registered_teams.append(team.team_id)
-
-                # Add team members to players list
-                for member_id in team.members:
-                    tournament.players.append({"name": f"BotTeam{team_num}_{member_id}", "id": member_id})
-
-            br_store.set(tournament)
             await interaction.response.send_message(
-                replace_emojis("✅ Добавлено 12 команд с ботами!"),
+                "❌ brtest только для random формата. Для team формата регистрируйте команды через кнопку.",
                 ephemeral=True
             )
-        else:
-            # Random format: add 48 bots
-            tournament.clear_players()
+            return
 
-            # Generate unique negative user_ids within int64 range
-            base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+        # Random format: add 48 bots
+        tournament.clear_players()
+        tournament.registered_teams = []
 
-            # Добавить 48 ботов
-            for i in range(1, 49):
-                tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
+        # Generate unique negative user_ids within int64 range
+        base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
+
+        # Добавить 48 ботов
+        for i in range(1, 49):
+            tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
 
             # Сохранить
             br_store.set(tournament)
