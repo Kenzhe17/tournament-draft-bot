@@ -97,8 +97,17 @@ class TeamStore:
         """Сохранить команду в PostgreSQL."""
         try:
             from storage.db import get_pool
+            from datetime import datetime
             pool = await get_pool()
             async with pool.acquire() as conn:
+                # Convert created_at string to datetime if needed
+                created_at = team.created_at
+                if isinstance(created_at, str):
+                    try:
+                        created_at = datetime.fromisoformat(created_at)
+                    except ValueError:
+                        created_at = datetime.now()
+
                 await conn.execute("""
                     INSERT INTO teams (team_id, team_name, password, captain_id, guild_id, members, created_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -110,7 +119,7 @@ class TeamStore:
                         members = EXCLUDED.members,
                         created_at = EXCLUDED.created_at
                 """, team.team_id, team.team_name, team.password, team.captain_id,
-                    team.guild_id, team.members, team.created_at)
+                    team.guild_id, team.members, created_at)
         except Exception as exc:
             logger.error("Ошибка сохранения команды в PostgreSQL: %s", exc)
 

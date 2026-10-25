@@ -53,6 +53,9 @@ class TeamStatusView(discord.ui.View):
         if updated_team:
             self.team = updated_team
 
+        # Refresh buttons with updated team state
+        self.refresh_buttons()
+
         # Rebuild member list
         member_mentions = []
         for member_id in self.team.members:

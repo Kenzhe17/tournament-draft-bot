@@ -2416,6 +2416,11 @@ class GuideSelectMenu(discord.ui.Select):
         self.current = current
         options = [
             discord.SelectOption(
+                label="Правила сервера",
+                description="Свод правил и регламент турниров",
+                value="rules"
+            ),
+            discord.SelectOption(
                 label="Турниры",
                 description="Сетка, топ ELO и статистика турниров",
                 value="tournaments"
@@ -2454,11 +2459,6 @@ class GuideSelectMenu(discord.ui.Select):
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
-            ),
-            discord.SelectOption(
-                label="Правила сервера",
-                description="Свод правил и регламент турниров",
-                value="rules"
             )
         ]
         
@@ -2618,6 +2618,11 @@ class HelpGuideSelectMenu(discord.ui.Select):
         self.current = current
         options = [
             discord.SelectOption(
+                label="Правила сервера",
+                description="Свод правил и регламент турниров",
+                value="rules"
+            ),
+            discord.SelectOption(
                 label="Турниры",
                 description="Сетка, топ ELO и статистика турниров",
                 value="tournaments"
@@ -2656,11 +2661,6 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 label="Организаторам",
                 description="Создание турниров и управление кругами",
                 value="organizers"
-            ),
-            discord.SelectOption(
-                label="Правила сервера",
-                description="Свод правил и регламент турниров",
-                value="rules"
             )
         ]
 
