@@ -143,15 +143,19 @@ class BetStore:
             return
 
         from storage.db import get_pool
+        import logging
+        logger = logging.getLogger(__name__)
+
         pool = await get_pool()
         async with pool.acquire() as conn:
             # Check if odds already exist
             existing = await conn.fetchrow(
-                "SELECT match_id FROM match_odds WHERE match_id = $1",
+                "SELECT match_id, team_a_odds, team_b_odds FROM match_odds WHERE match_id = $1",
                 match_id
             )
             if existing:
                 # Odds already initialized, don't reset
+                logger.info(f"Odds already exist for {match_id}: team_a={existing['team_a_odds']:.2f}x, team_b={existing['team_b_odds']:.2f}x")
                 # Also load into memory
                 row = await conn.fetchrow(
                     "SELECT team_a_odds, team_b_odds, team_a_buffer, team_b_buffer FROM match_odds WHERE match_id = $1",
@@ -171,15 +175,24 @@ class BetStore:
             odds_diff = skill_diff * 0.5
             base_odds = 1.9
 
+            logger.info(f"Initializing odds for {match_id}:")
+            logger.info(f"  Team A ({team_a_name}): skill={avg_skill_a:.2f}")
+            logger.info(f"  Team B ({team_b_name}): skill={avg_skill_b:.2f}")
+            logger.info(f"  Skill diff: {skill_diff:.2f}")
+
             if skill_diff >= 0:
                 odds_a = base_odds + odds_diff
                 odds_b = base_odds - odds_diff
+                logger.info(f"  Team B has higher skill -> Team B gets lower odds")
             else:
                 odds_a = base_odds + odds_diff
                 odds_b = base_odds - odds_diff
+                logger.info(f"  Team A has higher skill -> Team A gets lower odds")
 
             odds_a = max(1.1, min(2.7, odds_a))
             odds_b = max(1.1, min(2.7, odds_b))
+
+            logger.info(f"  Final odds: team_a={odds_a:.2f}x, team_b={odds_b:.2f}x")
 
             # Insert new odds
             await conn.execute(
@@ -246,20 +259,43 @@ class BetStore:
 
     async def save_bet(self, bet: Bet, team_a_name: str, team_b_name: str) -> None:
         """Сохранить ставку с динамическим расчётом коэффициентов."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         # Get lock for this match to prevent race conditions
         lock = self._get_lock(bet.match_id)
         async with lock:
             # Ensure odds are initialized
             if bet.match_id not in self._odds:
-                # Initialize with default odds if not set
-                self._odds[bet.match_id] = MatchOdds(
-                    team_a_name=team_a_name,
-                    team_b_name=team_b_name,
-                    team_a_odds=1.9,
-                    team_b_odds=1.9,
-                    team_a_buffer=0,
-                    team_b_buffer=0
-                )
+                logger.warning(f"Odds not in memory for {bet.match_id}, loading from DB...")
+                # Try to load from DB first
+                if self._use_db:
+                    db_odds = await self.get_current_odds_db(bet.match_id)
+                    if db_odds:
+                        self._odds[bet.match_id] = db_odds
+                        logger.info(f"Loaded odds from DB: team_a={db_odds.team_a_odds:.2f}x, team_b={db_odds.team_b_odds:.2f}x")
+                    else:
+                        # Initialize with default odds if not set
+                        logger.warning(f"No odds in DB for {bet.match_id}, initializing with defaults")
+                        self._odds[bet.match_id] = MatchOdds(
+                            team_a_name=team_a_name,
+                            team_b_name=team_b_name,
+                            team_a_odds=1.9,
+                            team_b_odds=1.9,
+                            team_a_buffer=0,
+                            team_b_buffer=0
+                        )
+                else:
+                    # Initialize with default odds if not set
+                    logger.warning(f"No odds in memory for {bet.match_id}, initializing with defaults")
+                    self._odds[bet.match_id] = MatchOdds(
+                        team_a_name=team_a_name,
+                        team_b_name=team_b_name,
+                        team_a_odds=1.9,
+                        team_b_odds=1.9,
+                        team_a_buffer=0,
+                        team_b_buffer=0
+                    )
 
             # Get current odds
             current_odds = self._odds[bet.match_id]
@@ -282,6 +318,7 @@ class BetStore:
 
             # New bet, use current odds
             bet.odds = current_bet_odds
+            logger.info(f"Saving bet: user={bet.user_name}, match={bet.match_id}, team={bet.team_name}, amount={bet.amount}, odds={current_bet_odds:.2f}x")
             shift_amount = bet.amount
 
             # Calculate odds shift: 1000 coins = 0.05x shift
@@ -386,6 +423,19 @@ class BetStore:
                         """,
                         bet.guild_id, bet.user_id, bet.user_name, bet.tournament_id, bet.match_id, bet.team_name, bet.team_index, bet.amount, bet.odds
                     )
+
+                    # Update odds in DB
+                    await conn.execute(
+                        """
+                        UPDATE match_odds
+                        SET team_a_odds = $1, team_b_odds = $2, team_a_buffer = $3, team_b_buffer = $4
+                        WHERE match_id = $5
+                        """,
+                        current_odds.team_a_odds, current_odds.team_b_odds,
+                        current_odds.team_a_buffer, current_odds.team_b_buffer,
+                        bet.match_id
+                    )
+                    logger.info(f"Updated odds in DB for {bet.match_id}: team_a={current_odds.team_a_odds:.2f}x, team_b={current_odds.team_b_odds:.2f}x")
             else:
                 from storage.user_balance_store import user_balance_store
 
@@ -405,6 +455,7 @@ class BetStore:
                 self._bets[key].append(bet)
                 self.save()
                 self.save()  # Save odds as well
+                logger.info(f"Saved odds to file for {bet.match_id}: team_a={current_odds.team_a_odds:.2f}x, team_b={current_odds.team_b_odds:.2f}x")
 
     async def get_bets_by_match(self, tournament_id: str, match_id: str) -> list[Bet]:
         """Получить все ставки для матча."""
