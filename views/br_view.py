@@ -2315,10 +2315,19 @@ class BRPurgatoryButton(Button):
             )
             return
 
+        print("BRPurgatoryButton callback called")
+        print(f"Teams before: {len(tournament.teams)}")
+        for i, team in enumerate(tournament.teams):
+            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
+
         # Transition to Purgatory phase
         tournament.phase = BRTournamentPhase.PURGATORY
         tournament.current_map = "purgatory"
         br_store.set(tournament)
+
+        # Reload to get latest
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        print(f"Teams after reload: {len(tournament.teams)}")
 
         # Create view with only organizer menu button
         view = BRBermudaView(self.guild_id, self.channel_id)
@@ -2340,21 +2349,24 @@ class BRPurgatoryButton(Button):
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
 
-            # Calculate points for current map only
+            # Calculate cumulative points (Bermuda only since moving to Purgatory)
             stats = team.get("stats", {})
-            map_points = 0
-            if "purgatory" in stats:
-                map_stats = stats["purgatory"]
+            print(f"BRPurgatory: team {team_name}, stats: {stats}")
+            cumulative_points = 0
+            if "bermuda" in stats:
+                map_stats = stats["bermuda"]
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
+                print(f"BRPurgatory: team {team_name}, bermuda place={place}, kills={kills}")
                 if place > 0:
-                    map_points = (13 - place) + kills
+                    cumulative_points += (13 - place) + kills
+            print(f"BRPurgatory: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
                 "captain": captain,
                 "team_name": team_name,
                 "players_str": players_str,
-                "points": map_points,
+                "points": cumulative_points,
                 "index": i
             })
 
