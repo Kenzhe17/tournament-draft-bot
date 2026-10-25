@@ -1,6 +1,6 @@
 """Хранилище команд для BR турнира с поддержкой PostgreSQL и JSON fallback."""
 
-from __future__ annotations
+from __future__ import annotations
 
 import json
 import logging
