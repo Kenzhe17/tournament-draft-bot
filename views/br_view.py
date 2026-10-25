@@ -2871,8 +2871,6 @@ class BRStatsModal(Modal):
                                     await member.remove_roles(role)
                             except Exception as e:
                                 logger.warning("Не удалось снять роль: %s", e)
-                        except Exception as e:
-                            logger.warning("Не удалось снять роль с пользователя %s: %s", user_id, e)
 
                 # Показать результаты
                 results = tournament.calculate_final_results()
