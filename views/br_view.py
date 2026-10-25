@@ -460,7 +460,7 @@ class LeaveTournamentButton(Button):
         info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
         format_line = f"{replace_emojis('sub_middle')} Формат: Team"
         phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
-        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
+        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}+"
         teams_header = f"{replace_emojis('white_dot')} **Команды:**"
         teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
         rules_header = f"{replace_emojis('white_dot')} **Правила:**"
@@ -586,7 +586,7 @@ class RegisterTeamButton(Button):
         info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
         format_line = f"{replace_emojis('sub_middle')} Формат: Team"
         phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
-        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
+        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}+"
         teams_header = f"{replace_emojis('white_dot')} **Команды:**"
         teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
         rules_header = f"{replace_emojis('white_dot')} **Правила:**"
@@ -793,7 +793,7 @@ class RemoveTeamSelectView(View):
                             f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                             f"{replace_emojis('sub_middle')} Формат: Team\n"
                             f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                            f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
+                            f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}+\n\n"
                             f"{replace_emojis('white_dot')} **Команды:**\n"
                             f"{team_list_str}\n\n"
                             f"{replace_emojis('white_dot')} **Правила:**\n"
@@ -1311,9 +1311,9 @@ class StartBRButton(Button):
 
         # Проверка условий старта
         if tournament.formation.value == "team":
-            if len(tournament.registered_teams) < 5 or len(tournament.registered_teams) % 4 != 0:
+            if len(tournament.registered_teams) < 5:
                 await interaction.response.send_message(
-                    "❌ Нельзя начать: нужно 5+ команд и количество должно делиться на 4.",
+                    "❌ Нельзя начать: нужно минимум 5 команд.",
                     ephemeral=True
                 )
                 return

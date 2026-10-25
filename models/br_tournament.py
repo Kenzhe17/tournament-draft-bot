@@ -184,7 +184,7 @@ class BRTournament:
         Returns:
             True если успешно, False если недостаточно команд
         """
-        if len(self.registered_teams) < 5 or len(self.registered_teams) % 4 != 0:
+        if len(self.registered_teams) < 5:
             return False
 
         try:
