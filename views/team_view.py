@@ -81,7 +81,7 @@ class TeamStatusView(discord.ui.View):
         )
 
         try:
-            await self.message.edit(embed=embed, view=self)
+            await self.message.edit(embed=embed)
         except Exception:
             # If message is not available, ignore
             pass
