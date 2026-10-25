@@ -2452,10 +2452,19 @@ class BRKalahariButton(Button):
             )
             return
 
+        print("BRKalahariButton callback called")
+        print(f"Teams before: {len(tournament.teams)}")
+        for i, team in enumerate(tournament.teams):
+            print(f"Team {i}: {team.get('name')}, stats: {team.get('stats')}")
+
         # Transition to Kalahari phase
         tournament.phase = BRTournamentPhase.KALAHARI
         tournament.current_map = "kalahari"
         br_store.set(tournament)
+
+        # Reload to get latest
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        print(f"Teams after reload: {len(tournament.teams)}")
 
         # Create view with only organizer menu button
         view = BRBermudaView(self.guild_id, self.channel_id)
@@ -2477,21 +2486,25 @@ class BRKalahariButton(Button):
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
 
-            # Calculate points for current map only
+            # Calculate cumulative points (Bermuda + Purgatory since moving to Kalahari)
             stats = team.get("stats", {})
-            map_points = 0
-            if "kalahari" in stats:
-                map_stats = stats["kalahari"]
-                place = map_stats.get("place", 0)
-                kills = map_stats.get("kills", 0)
-                if place > 0:
-                    map_points = (13 - place) + kills
+            print(f"BRKalahari: team {team_name}, stats: {stats}")
+            cumulative_points = 0
+            for map_name in ["bermuda", "purgatory"]:
+                if map_name in stats:
+                    map_stats = stats[map_name]
+                    place = map_stats.get("place", 0)
+                    kills = map_stats.get("kills", 0)
+                    print(f"BRKalahari: team {team_name}, {map_name} place={place}, kills={kills}")
+                    if place > 0:
+                        cumulative_points += (13 - place) + kills
+            print(f"BRKalahari: team {team_name}, cumulative_points={cumulative_points}")
 
             teams_with_points.append({
                 "captain": captain,
                 "team_name": team_name,
                 "players_str": players_str,
-                "points": map_points,
+                "points": cumulative_points,
                 "index": i
             })
 
@@ -2513,7 +2526,7 @@ class BRKalahariButton(Button):
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('kalahari', 'kalahari')}",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
             description=(
                 f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                 f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
