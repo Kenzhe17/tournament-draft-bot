@@ -455,20 +455,34 @@ class LeaveTournamentButton(Button):
                 emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
                 team_list.append(f"{emoji} {team.team_name}")
 
+        # Build description parts
+        organizer_line = f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>"
+        info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
+        format_line = f"{replace_emojis('sub_middle')} Формат: Team"
+        phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
+        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
+        teams_header = f"{replace_emojis('white_dot')} **Команды:**"
+        teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
+        rules_header = f"{replace_emojis('white_dot')} **Правила:**"
+        rules_content = f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+        footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
+
+        description = (
+            f"{organizer_line}\n\n"
+            f"{info_header}\n"
+            f"{format_line}\n"
+            f"{phase_line}\n"
+            f"{count_line}\n\n"
+            f"{teams_header}\n"
+            f"{teams_content}\n\n"
+            f"{rules_header}\n"
+            f"{rules_content}\n\n"
+            f"{footer}"
+        )
+
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
-            description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
-                "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *" + "\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
-                f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
-            ),
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+            description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
