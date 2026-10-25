@@ -110,7 +110,7 @@ class BRCog(commands.Cog):
                             member_names.append(clean_nickname(member.display_name))
                     members_text = f" ({', '.join(member_names)})" if member_names else ""
                     team_list.append(f"{emoji} {team.team_name}{members_text}")
-            players_text = "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *"
+            players_text = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
         else:
             player_names = [p["name"] for p in tournament.players]
             players_text = ", ".join(player_names) if player_names else "*"
@@ -331,7 +331,7 @@ class BRCog(commands.Cog):
                                     member_names.append(clean_nickname(member.display_name))
                             members_text = f" ({', '.join(member_names)})" if member_names else ""
                             team_list.append(f"{emoji} {team.team_name}{members_text}")
-                    players_text = "\n".join([f"{replace_emojis('white_arrow')} {team}" for team in team_list]) if team_list else f"{replace_emojis('white_arrow')} *"
+                    players_text = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
                     players_label = "Команд"
                     players_count = f"{len(tournament.registered_teams)}/12"
                     rules_text = "Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
