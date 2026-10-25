@@ -115,6 +115,10 @@ class TournamentBot(commands.Bot):
         from storage.team_store import team_store
         await team_store.load_from_postgres()
 
+        # Load betting odds from PostgreSQL after extensions are loaded
+        from storage.bet_store import bet_store
+        await bet_store.load_from_db()
+
         # Sync commands globally
         try:
             synced = await self.tree.sync()

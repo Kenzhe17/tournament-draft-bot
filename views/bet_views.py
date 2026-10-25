@@ -163,7 +163,7 @@ class ViewBetsButton(Button):
             
             # Get odds for this match
             from storage.bet_store import bet_store
-            current_odds = bet_store.get_current_odds(match_id)
+            current_odds = await bet_store.get_current_odds_sync(match_id)
             if current_odds:
                 odds_a = current_odds.team_a_odds
                 odds_b = current_odds.team_b_odds

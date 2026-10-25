@@ -460,7 +460,7 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
 
         # Get current odds from bet_store (dynamic odds system)
         match_id = f"{tournament.id}_{match_type}_{i}"
-        current_odds = bet_store.get_current_odds(match_id)
+        current_odds = await bet_store.get_current_odds_sync(match_id)
 
         if current_odds:
             odds_a = current_odds.team_a_odds

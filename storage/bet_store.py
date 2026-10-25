@@ -21,7 +21,9 @@ class BetStore:
         self._locks: dict[str, asyncio.Lock] = {}  # match_id -> async lock for race condition protection
         self._use_db = True  # Использовать PostgreSQL
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self.load()
+        # Load JSON fallback only, PostgreSQL loading is deferred to async context
+        if not self._use_db:
+            self.load()
 
     def _get_lock(self, match_id: str) -> asyncio.Lock:
         """Get or create a lock for the match."""
@@ -56,6 +58,28 @@ class BetStore:
             except (json.JSONDecodeError, KeyError):
                 self._odds = {}
 
+    async def load_from_db(self) -> None:
+        """Load odds from PostgreSQL after bot startup."""
+        if not self._use_db:
+            return
+        try:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch("SELECT * FROM match_odds")
+                loaded = {}
+                for row in rows:
+                    loaded[row["match_id"]] = MatchOdds(
+                        team_a_odds=row["team_a_odds"],
+                        team_b_odds=row["team_b_odds"],
+                        team_a_buffer=row["team_a_buffer"],
+                        team_b_buffer=row["team_b_buffer"]
+                    )
+                self._odds = loaded
+        except Exception as exc:
+            print(f"Error loading odds from DB: {exc}")
+            self._odds = {}
+
     def save(self) -> None:
         """Сохранить ставки и коэффициенты в файл (fallback)."""
         data = {
@@ -75,8 +99,13 @@ class BetStore:
 
     def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
         """Initialize odds for a match based on skill rating difference."""
-        # Don't reinitialize if odds already exist
+        # Don't reinitialize if odds already exist in memory
         if match_id in self._odds:
+            return
+
+        # When using DB, we'll check in the async version instead
+        # This method is for JSON fallback only
+        if self._use_db:
             return
 
         # Calculate initial odds based on skill rating
@@ -108,29 +137,66 @@ class BetStore:
             team_b_buffer=0
         )
 
-    async def initialize_match_odds_db(self, match_id: str, team_a_odds: float, team_b_odds: float) -> None:
+    async def initialize_match_odds_db(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
         """Initialize odds in database (only if not already initialized)."""
-        if self._use_db:
-            from storage.db import get_pool
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                # Check if odds already exist
-                existing = await conn.fetchrow(
-                    "SELECT match_id FROM match_odds WHERE match_id = $1",
+        if not self._use_db:
+            return
+
+        from storage.db import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Check if odds already exist
+            existing = await conn.fetchrow(
+                "SELECT match_id FROM match_odds WHERE match_id = $1",
+                match_id
+            )
+            if existing:
+                # Odds already initialized, don't reset
+                # Also load into memory
+                row = await conn.fetchrow(
+                    "SELECT team_a_odds, team_b_odds, team_a_buffer, team_b_buffer FROM match_odds WHERE match_id = $1",
                     match_id
                 )
-                if existing:
-                    # Odds already initialized, don't reset
-                    return
+                if row:
+                    self._odds[match_id] = MatchOdds(
+                        team_a_odds=row["team_a_odds"],
+                        team_b_odds=row["team_b_odds"],
+                        team_a_buffer=row["team_a_buffer"],
+                        team_b_buffer=row["team_b_buffer"]
+                    )
+                return
 
-                # Insert new odds
-                await conn.execute(
-                    """
-                    INSERT INTO match_odds (match_id, team_a_odds, team_b_odds, team_a_buffer, team_b_buffer)
-                    VALUES ($1, $2, $3, 0, 0)
-                    """,
-                    match_id, team_a_odds, team_b_odds
-                )
+            # Calculate initial odds based on skill rating
+            skill_diff = avg_skill_b - avg_skill_a
+            odds_diff = skill_diff * 0.5
+            base_odds = 1.9
+
+            if skill_diff >= 0:
+                odds_a = base_odds + odds_diff
+                odds_b = base_odds - odds_diff
+            else:
+                odds_a = base_odds + odds_diff
+                odds_b = base_odds - odds_diff
+
+            odds_a = max(1.1, min(2.7, odds_a))
+            odds_b = max(1.1, min(2.7, odds_b))
+
+            # Insert new odds
+            await conn.execute(
+                """
+                INSERT INTO match_odds (match_id, team_a_odds, team_b_odds, team_a_buffer, team_b_buffer)
+                VALUES ($1, $2, $3, 0, 0)
+                """,
+                match_id, odds_a, odds_b
+            )
+
+            # Also load into memory
+            self._odds[match_id] = MatchOdds(
+                team_a_odds=odds_a,
+                team_b_odds=odds_b,
+                team_a_buffer=0,
+                team_b_buffer=0
+            )
 
     def get_current_odds(self, match_id: str) -> MatchOdds | None:
         """Get current odds for a match."""
@@ -140,6 +206,21 @@ class BetStore:
             odds.team_a_odds = max(1.1, min(2.7, odds.team_a_odds))
             odds.team_b_odds = max(1.1, min(2.7, odds.team_b_odds))
         return odds
+
+    async def get_current_odds_sync(self, match_id: str) -> MatchOdds | None:
+        """Get current odds for a match (async version that checks DB)."""
+        # Check memory first
+        if match_id in self._odds:
+            odds = self._odds[match_id]
+            odds.team_a_odds = max(1.1, min(2.7, odds.team_a_odds))
+            odds.team_b_odds = max(1.1, min(2.7, odds.team_b_odds))
+            return odds
+
+        # If using DB and not in memory, try to load from DB
+        if self._use_db:
+            return await self.get_current_odds_db(match_id)
+
+        return None
 
     async def get_current_odds_db(self, match_id: str) -> MatchOdds | None:
         """Get current odds from database."""
