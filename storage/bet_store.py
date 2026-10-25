@@ -112,9 +112,9 @@ class BetStore:
 
         # Calculate initial odds based on skill rating
         # Higher skill team gets lower odds
-        # Skill rating is 1.0-10.0, so 1.0 difference = 0.5x odds difference
+        # Skill rating is 1.0-10.0, so 1.0 difference = 0.1x odds difference
         skill_diff = avg_skill_b - avg_skill_a
-        odds_diff = skill_diff * 0.5
+        odds_diff = skill_diff * 0.1  # Changed from 0.5 to 0.1
         base_odds = 1.9
 
         if skill_diff >= 0:
@@ -176,13 +176,14 @@ class BetStore:
 
             # Calculate initial odds based on skill rating
             skill_diff = avg_skill_b - avg_skill_a
-            odds_diff = skill_diff * 0.5
+            odds_diff = skill_diff * 0.1  # Changed from 0.5 to 0.1
             base_odds = 1.9
 
             logger.info(f"Initializing odds for {match_id}:")
             logger.info(f"  Team A ({team_a_name}): skill={avg_skill_a:.2f}")
             logger.info(f"  Team B ({team_b_name}): skill={avg_skill_b:.2f}")
             logger.info(f"  Skill diff: {skill_diff:.2f}")
+            logger.info(f"  Odds shift: {odds_diff:.2f}x (0.1x per 1.0 skill diff)")
 
             if skill_diff >= 0:
                 odds_a = base_odds + odds_diff

@@ -470,8 +470,8 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
             avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
             skill_diff = avg_skill_b - avg_skill_a
-            # 1.0 skill difference = 0.5x odds difference
-            odds_diff = skill_diff * 0.5
+            # 1.0 skill difference = 0.1x odds difference
+            odds_diff = skill_diff * 0.1
             base_odds = 1.9
 
             if skill_diff >= 0:
