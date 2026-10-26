@@ -143,7 +143,11 @@ class TeamCog(commands.Cog):
         else:
             status_emoji = "🔴"
             missing = 4 - count
-            status_text = f"(Недостаёт {missing} игроков)"
+            # Fix grammar: "игрок" for 1, "игроков" for 2-4
+            if missing == 1:
+                status_text = f"(Недостаёт {missing} игрок)"
+            else:
+                status_text = f"(Недостаёт {missing} игроков)"
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} {team.team_name}",
