@@ -63,26 +63,17 @@ class BRCog(commands.Cog):
 
         # Проверка на существующий турнир в канале
         existing = br_store.get(interaction.guild_id, interaction.channel_id)
-        if existing and existing.phase != BRTournamentPhase.COMPLETE:
-            await interaction.response.send_message(
-                "❌ В этом канале уже есть активный BR турнир.",
-                ephemeral=True
-            )
-            return
-
-        # Если есть завершенный турнир, удалить его из store но оставить embed
-        if existing and existing.phase == BRTournamentPhase.COMPLETE:
-            # Обновить embed чтобы показать что турнир завершен
+        if existing:
+            # Удалить view из embed существующего турнира
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
                     if channel:
                         message = await channel.fetch_message(existing.message_id)
-                        # Убрать view из завершенного турнира
                         await message.edit(view=None)
                 except Exception:
                     pass
-            # Удалить из store
+            # Удалить из store независимо от фазы
             br_store.delete(interaction.guild_id, interaction.channel_id)
 
         # Создать турнир
