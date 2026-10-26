@@ -447,12 +447,16 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 embed=None,
                 view=None
             )
-        except discord.NotFound:
-            # Interaction expired, use followup instead
-            await interaction.followup.send(
-                f"✅ Победитель {self.team_name} подтверждён!",
-                ephemeral=True
-            )
+        except (discord.NotFound, discord.InteractionResponded):
+            # Interaction expired or already responded, use followup instead
+            try:
+                await interaction.followup.send(
+                    f"✅ Победитель {self.team_name} подтверждён!",
+                    ephemeral=True
+                )
+            except (discord.NotFound, discord.InteractionResponded):
+                # Both failed, interaction is completely expired - silently ignore
+                pass
 
 
 class CancelWinnerButton(discord.ui.Button):
