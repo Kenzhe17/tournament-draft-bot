@@ -77,27 +77,17 @@ class TournamentCog(commands.Cog):
     ) -> None:
         """Создать турнир с указанным размером."""
         existing = store.get(interaction.guild_id, interaction.channel_id)
-        if existing and existing.phase != TournamentPhase.COMPLETE:
-            await interaction.response.send_message(
-                replace_emojis("❌ На сервере уже есть активный турнир."),
-                ephemeral=True,
-            )
-            asyncio.create_task(_delete_ephemeral_later(interaction))
-            return
-
-        # Если есть завершенный турнир, удалить его из store но оставить embed
-        if existing and existing.phase == TournamentPhase.COMPLETE:
-            # Обновить embed чтобы показать что турнир завершен
+        if existing:
+            # Удалить view из embed существующего турнира
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
                     if channel:
                         message = await channel.fetch_message(existing.message_id)
-                        # Убрать view из завершенного турнира
                         await message.edit(view=None)
                 except Exception:
                     pass
-            # Удалить из store
+            # Удалить из store независимо от фазы
             store.delete(interaction.guild_id, interaction.channel_id)
 
         # Validate size
