@@ -155,7 +155,8 @@ class TeamCog(commands.Cog):
             color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
         )
 
-        # Create view with buttons
+        # Create view with buttons for dynamic updates
+        from views.team_view import TeamStatusView
         view = TeamStatusView(team, interaction.user.id)
 
         await interaction.response.send_message(embed=embed, view=view)
