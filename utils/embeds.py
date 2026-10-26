@@ -1098,8 +1098,15 @@ async def build_winner_embed(
     player_match_count = {}
 
     # Calculate from tournament match stats using temp_match_stats
+    import logging
+    logging.info(f"build_winner_embed: tournament.id={tournament.id}")
+    logging.info(f"  qualifier_matches count: {len(tournament.qualifier_matches)}")
+    logging.info(f"  semifinal_matches count: {len(tournament.semifinal_matches)}")
+    logging.info(f"  temp_match_stats keys: {list(tournament.temp_match_stats.keys())}")
+
     for match_idx in range(len(tournament.qualifier_matches)):
         match_stats = tournament.temp_match_stats.get(f"qualifier_{match_idx}", {})
+        logging.info(f"  qualifier_{match_idx}: {len(match_stats)} players")
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
@@ -1119,6 +1126,7 @@ async def build_winner_embed(
 
     for match_idx in range(len(tournament.semifinal_matches)):
         match_stats = tournament.temp_match_stats.get(f"semifinal_{match_idx}", {})
+        logging.info(f"  semifinal_{match_idx}: {len(match_stats)} players")
         if match_stats:
             total_matches += 1
             for player_name, stat in match_stats.items():
@@ -1138,6 +1146,7 @@ async def build_winner_embed(
 
     # Get final match stats from temp_match_stats
     final_stats = tournament.temp_match_stats.get("final_0", {})
+    logging.info(f"  final_0: {len(final_stats)} players")
     if final_stats:
         total_matches += 1
         for player_name, stat in final_stats.items():
