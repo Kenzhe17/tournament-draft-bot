@@ -159,11 +159,32 @@ class TeamCog(commands.Cog):
         from views.team_view import TeamStatusView
         view = TeamStatusView(team, interaction.user.id)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        # Check if there's an existing status message
+        message = None
+        if team.status_message_id:
+            try:
+                message = await interaction.channel.fetch_message(team.status_message_id)
+                # Update existing message
+                await message.edit(embed=embed, view=view)
+            except (discord.NotFound, discord.Forbidden):
+                # Message doesn't exist or can't access, create new
+                message = None
 
-        # Get the sent message and store it in the view for dynamic updates
-        message = await interaction.original_response()
+        if not message:
+            # Create new message
+            message = await interaction.channel.send(embed=embed, view=view)
+            # Save message_id to team
+            team.status_message_id = message.id
+            await team_store.update_team(team)
+
+        # Store message in view for dynamic updates
         view.message = message
+
+        # Send ephemeral confirmation
+        await interaction.response.send_message(
+            replace_emojis("✅ Статус команды обновлен"),
+            ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot):

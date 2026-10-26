@@ -19,6 +19,7 @@ class Team:
     guild_id: int
     members: list[int] = field(default_factory=list)  # List of user IDs
     created_at: str = ""
+    status_message_id: int | None = None  # Message ID of the status embed
 
     def __post_init__(self):
         if not self.team_id:
@@ -39,6 +40,7 @@ class Team:
             "guild_id": self.guild_id,
             "members": self.members,
             "created_at": self.created_at,
+            "status_message_id": self.status_message_id,
         }
 
     @classmethod
@@ -52,6 +54,7 @@ class Team:
             guild_id=data.get("guild_id", 0),
             members=data.get("members", []),
             created_at=data.get("created_at", ""),
+            status_message_id=data.get("status_message_id"),
         )
 
     def is_captain(self, user_id: int) -> bool:
