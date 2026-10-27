@@ -64,11 +64,8 @@ class BetAmountModal(Modal, title="Сумма ставки"):
             bot = interaction.client
             await bot.update_tournament_message(interaction.guild, self.tournament)
 
-            # Get the actual odds used (they may have changed during save)
-            display_odds = bet.odds
-
             await interaction.response.send_message(
-                replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + get_emoji('money') + f" → {self.team_name} `({display_odds:.2f}x)`",
+                replace_emojis(f"✅ Ставка добавлена\n\n{amount} ") + get_emoji('money') + f" → {self.team_name}",
                 ephemeral=True
             )
         except Exception as e:
