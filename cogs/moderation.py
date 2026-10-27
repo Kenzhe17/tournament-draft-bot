@@ -354,7 +354,7 @@ class ModerationCog(commands.Cog):
         
         if is_warn_gif:
             # Add warning
-            warn = await warn_store.add_warn(target_user.id, message.guild.id, message.author.id, "Гифка-триггер")
+            warn = await warn_store.add_warn(target_user.id, message.guild.id, message.author.id, "Воля Диктатора")
             
             if warn:
                 active_warns = await warn_store.get_active_warns(target_user.id, message.guild.id)
