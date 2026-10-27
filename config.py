@@ -64,6 +64,10 @@ ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.disc
 # Auto-moderation settings
 AUTO_MOD_GIF_URL = os.getenv("AUTO_MOD_GIF_URL", "https://static2.klipy.com/ii/4e7bea9f7a3371424e6c16ebc93252fe/57/bf/0z6e3yTVovYFjc7t8P.gif")
 
+# Auto-moderation allowed user IDs (comma-separated list)
+AUTO_MOD_ALLOWED_IDS = os.getenv("AUTO_MOD_ALLOWED_IDS", "1032544122600423427,575937439147753472")
+AUTO_MOD_ALLOWED_USER_IDS = [int(x.strip()) for x in AUTO_MOD_ALLOWED_IDS.split(",") if x.strip()]
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

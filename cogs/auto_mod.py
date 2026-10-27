@@ -5,7 +5,7 @@ import logging
 import discord
 from discord.ext import commands
 
-from config import AUTO_MOD_GIF_URL
+from config import AUTO_MOD_GIF_URL, AUTO_MOD_ALLOWED_USER_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,10 @@ class AutoModCog(commands.Cog):
         """Check for gif trigger and issue warning via JuniperBot."""
         # Ignore messages from bots
         if message.author.bot:
+            return
+
+        # Check if user is allowed to use auto-mod features
+        if message.author.id not in AUTO_MOD_ALLOWED_USER_IDS:
             return
 
         # Check if message is a reply
@@ -56,7 +60,7 @@ class AutoModCog(commands.Cog):
                 # Send the command to the channel (JuniperBot will process it)
                 await channel.send(punish_command)
                 
-                logger.info(f"Auto-mod: Issued warning to {violator.id} ({violator.display_name}) via gif trigger")
+                logger.info(f"Auto-mod: Issued warning to {violator.id} ({violator.display_name}) via gif trigger by {message.author.id}")
             except Exception as e:
                 logger.error(f"Error in auto-mod gif trigger: {e}", exc_info=True)
 

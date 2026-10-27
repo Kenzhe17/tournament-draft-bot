@@ -7,6 +7,8 @@ import re
 import discord
 from discord.ext import commands
 
+from config import AUTO_MOD_ALLOWED_USER_IDS
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +23,11 @@ class UnwarnCog(commands.Cog):
     @commands.command(name="снятьпред", description="Автоматически снять последнее предупреждение через JuniperBot")
     async def unwarn(self, ctx: commands.Context, user: str):
         """Automatically remove the latest warning via JuniperBot."""
+        # Check if user is allowed to use auto-mod features
+        if ctx.author.id not in AUTO_MOD_ALLOWED_USER_IDS:
+            await ctx.send("❌ У вас нет прав для использования этой команды.")
+            return
+
         # Parse user ID from mention or raw ID
         user_id = None
         if "<@" in user:
