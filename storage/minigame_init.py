@@ -80,48 +80,7 @@ async def initialize_minigames() -> None:
                 "is_pvp": False,
                 "is_pve": True,
             },
-            # 6. Wheel of Fortune
-            {
-                "id": "wheel",
-                "command_name": "wheel",
-                "name": "Колесо фортуны",
-                "description": "Крутите колесо с разными множителями. (В разработке)",
-                "category": "luck",
-                "difficulty": "medium",
-                "min_bet": 20,
-                "max_bet": 500,
-                "multiplier": 5.0,
-                "is_pvp": False,
-                "is_pve": True,
-            },
-            # 7. Tic-Tac-Toe
-            {
-                "id": "tictactoe",
-                "command_name": "tictactoe",
-                "name": "Крестики-Нолики",
-                "description": "Классическая игра 3x3. Кто первый соберёт 3 в ряд - победитель. (В разработке)",
-                "category": "luck",
-                "difficulty": "medium",
-                "min_bet": 20,
-                "max_bet": 500,
-                "multiplier": 2.0,
-                "is_pvp": True,
-                "is_pve": True,
-            },
-            # 9. Spin Bottle
-            {
-                "id": "spin_bottle",
-                "command_name": "spin_bottle",
-                "name": "Бутылочка",
-                "description": "Крутите бутылочку. На кого она укажет - тот выполняет вызов. (В разработке)",
-                "category": "luck",
-                "difficulty": "medium",
-                "min_bet": 25,
-                "max_bet": 500,
-                "multiplier": 2.0,
-                "is_pvp": True,
-                "is_pve": False,
-            },
+            # 6. Tic-Tac-Toe
             # Quiz games (Priority 2)
             # 11. Math Quiz
             {

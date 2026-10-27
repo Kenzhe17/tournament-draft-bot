@@ -134,23 +134,6 @@ LUCK_GAMES = [
         is_pve=True
     ),
     GameConfig(
-        id="wheel",
-        name="Колесо фортуны",
-        emoji="🎡",
-        command="wheel",
-        status="ready",
-        short_description="Крутите колесо с множителями от 0x до 10x.",
-        description="Крутите колесо с множителями от 0x до 10x. Взвешенные шансы на призы.",
-        how_to_play="Сектора дают множители ставки (0x: 40%, 0.5x: 25%, 1.5x: 15%, 2x: 10%, 3x: 5%, 5x: 3%, 7x: 1%, 10x: 1%).",
-        min_bet=10,
-        max_bet=10000,
-        category="luck",
-        difficulty="medium",
-        multiplier=10.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
         id="tictactoe",
         name="Крестики-нолики",
         emoji="❌",
@@ -166,23 +149,6 @@ LUCK_GAMES = [
         multiplier=2.0,
         is_pvp=True,
         is_pve=True
-    ),
-    GameConfig(
-        id="spin_bottle",
-        name="Бутылочка",
-        emoji="🍾",
-        command="spin_bottle",
-        status="ready",
-        short_description="Крутите бутылочку и бросайте вызов друзьям.",
-        description="Крутите бутылочку и бросайте вызов друзьям.",
-        how_to_play="Бутылочка выбирает случайного игрока. Кто отказывается от вызова — теряет ставку.",
-        min_bet=50,
-        max_bet=2000,
-        category="luck",
-        difficulty="easy",
-        multiplier=2.0,
-        is_pvp=True,
-        is_pve=False
     ),
 ]
 

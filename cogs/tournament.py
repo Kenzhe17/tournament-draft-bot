@@ -667,36 +667,12 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(EmojiBetModal(interaction.guild_id, interaction.user.id))
 
-    # @app_commands.command(name="wheel", description="Колесо фортуны")
-    # async def wheel(self, interaction: discord.Interaction) -> None:
-    #     """Игра колесо фортуны."""
-    #     from storage.redis_client import get_cooldown, set_cooldown
-    #     from views.wheel_view import WheelBetModal
-
-    #     # Check cooldown (3 seconds)
-    #     if await get_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel"):
-    #         await interaction.response.send_message(
-    #             "⏳ Подождите 3 секунды перед повторной игрой!",
-    #             ephemeral=True
-    #         )
-    #         return
-
-    #     await set_cooldown(interaction.guild_id, interaction.user.id, "minigame_wheel", 3)
-    #     await interaction.response.send_modal(WheelBetModal(interaction.guild_id, interaction.user.id))
-
     # @app_commands.command(name="tictactoe", description="Крестики-Нолики")
     # async def tictactoe(self, interaction: discord.Interaction) -> None:
     #     """Игра крестики-нолики."""
     #     from views.tictactoe_view import TicTacToeBetModal
 
     #     await interaction.response.send_modal(TicTacToeBetModal(interaction.guild_id, interaction.user.id))
-
-    # @app_commands.command(name="spin_bottle", description="Бутылочка")
-    # async def spin_bottle(self, interaction: discord.Interaction) -> None:
-    #     """Игра бутылочка."""
-    #     from views.spin_bottle_view import SpinBottleBetModal
-
-    #     await interaction.response.send_modal(SpinBottleBetModal(interaction.guild_id, interaction.user.id))
 
     # @app_commands.command(name="math_quiz", description="Математическая викторина")
     # async def math_quiz(self, interaction: discord.Interaction) -> None:
