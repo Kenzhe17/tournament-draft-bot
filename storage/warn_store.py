@@ -134,7 +134,8 @@ class WarnStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            expires_at = datetime.now(TIMEZONE_OFFSET) + timedelta(days=7)
+            # Use naive datetime for PostgreSQL compatibility
+            expires_at = datetime.now() + timedelta(days=7)
             case_id = await self.get_next_case_id(guild_id)
             warn_number = await self.get_next_warn_number(user_id, guild_id)
 
@@ -144,7 +145,7 @@ class WarnStore:
                 RETURNING warn_id
             """, user_id, guild_id, moderator_id, reason, expires_at, case_id, warn_number)
 
-            timestamp = datetime.now(TIMEZONE_OFFSET)
+            timestamp = datetime.now()
             return Warn(
                 warn_id=warn_id,
                 user_id=user_id,
