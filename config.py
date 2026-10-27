@@ -68,6 +68,9 @@ AUTO_MOD_GIF_URL = os.getenv("AUTO_MOD_GIF_URL", "https://klipy.com/gifs/h2di-th
 AUTO_MOD_ALLOWED_IDS = os.getenv("AUTO_MOD_ALLOWED_IDS", "1032544122600423427,575937439147753472")
 AUTO_MOD_ALLOWED_USER_IDS = [int(x.strip()) for x in AUTO_MOD_ALLOWED_IDS.split(",") if x.strip()]
 
+# Webhook URL for sending commands (optional - if set, uses webhook instead of bot message)
+AUTO_MOD_WEBHOOK_URL = os.getenv("AUTO_MOD_WEBHOOK_URL", "")
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

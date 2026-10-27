@@ -3,10 +3,11 @@
 import logging
 import re
 
+import aiohttp
 import discord
 from discord.ext import commands
 
-from config import AUTO_MOD_GIF_URL, AUTO_MOD_ALLOWED_USER_IDS
+from config import AUTO_MOD_GIF_URL, AUTO_MOD_ALLOWED_USER_IDS, AUTO_MOD_WEBHOOK_URL
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,21 @@ class AutoModCog(commands.Cog):
                 # Format the command for JuniperBot
                 punish_command = f"!пред <@{violator.id}> 7д Воля Диктатора"
 
-                # Send the command to the channel (JuniperBot will process it)
-                await channel.send(punish_command)
+                # Send the command via webhook if configured, otherwise via bot message
+                if AUTO_MOD_WEBHOOK_URL:
+                    async with aiohttp.ClientSession() as session:
+                        webhook_data = {
+                            "content": punish_command,
+                            "username": "Модератор Система"
+                        }
+                        async with session.post(AUTO_MOD_WEBHOOK_URL, json=webhook_data) as response:
+                            if response.status in (200, 204):
+                                logger.info(f"Auto-mod: Command sent via webhook for {violator.id}")
+                            else:
+                                logger.error(f"Auto-mod: Webhook error: {response.status}")
+                else:
+                    # Send the command to the channel (JuniperBot will process it)
+                    await channel.send(punish_command)
                 
                 logger.info(f"Auto-mod: Issued warning to {violator.id} ({violator.display_name}) via gif trigger by {message.author.id}")
             except Exception as e:
