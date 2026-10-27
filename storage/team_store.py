@@ -164,6 +164,42 @@ class TeamStore:
         """
         return self._teams.get(team_id)
 
+    async def refresh_from_db(self, team_id: str) -> Team | None:
+        """Refresh team from PostgreSQL database.
+
+        Args:
+            team_id: ID команды
+
+        Returns:
+            Объект команды или None
+        """
+        if self._use_postgres:
+            try:
+                from storage.db import get_pool
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow("""
+                        SELECT team_id, team_name, password, captain_id, guild_id, members, created_at
+                        FROM teams
+                        WHERE team_id = $1
+                    """, team_id)
+                    if row:
+                        team = Team(
+                            team_id=row['team_id'],
+                            team_name=row['team_name'],
+                            password=row['password'],
+                            captain_id=row['captain_id'],
+                            guild_id=row['guild_id'],
+                            members=row['members'],
+                            created_at=row['created_at']
+                        )
+                        # Update cache
+                        self._teams[team_id] = team
+                        return team
+            except Exception as exc:
+                logger.error("Ошибка загрузки команды из PostgreSQL: %s", exc)
+        return self._teams.get(team_id)
+
     def get_by_guild(self, guild_id: int) -> list[Team]:
         """Получить все команды сервера.
 

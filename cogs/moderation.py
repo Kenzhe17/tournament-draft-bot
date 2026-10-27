@@ -120,7 +120,12 @@ class ModerationCog(commands.Cog):
         else:
             message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
         
-        await interaction.response.send_message(message)
+        embed = discord.Embed(
+            description=message,
+            color=discord.Color(0xFFAA00)
+        )
+        
+        await interaction.response.send_message(embed=embed)
         
         # Delete after 5 seconds
         await asyncio.sleep(5)
@@ -164,7 +169,13 @@ class ModerationCog(commands.Cog):
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
         message = f"✅Предупреждение участника {участник.mention} #{warn.warn_id} снято"
-        await interaction.response.send_message(message)
+        
+        embed = discord.Embed(
+            description=message,
+            color=discord.Color(0xFFAA00)
+        )
+        
+        await interaction.response.send_message(embed=embed)
         
         # Delete after 5 seconds
         await asyncio.sleep(5)
@@ -322,7 +333,16 @@ class ModerationCog(commands.Cog):
                 else:
                     warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
                 
-                await channel.send(warn_msg)
+                embed = discord.Embed(
+                    description=warn_msg,
+                    color=discord.Color(0xFFAA00)
+                )
+                
+                msg = await channel.send(embed=embed)
+                
+                # Delete after 5 seconds
+                await asyncio.sleep(5)
+                await msg.delete()
         
         elif is_unwarn_gif:
             # Remove warning
@@ -338,7 +358,17 @@ class ModerationCog(commands.Cog):
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
                 
                 unwarn_msg = f"✅Предупреждение участника {target_user.mention} #{warn.warn_id} снято"
-                await channel.send(unwarn_msg)
+                
+                embed = discord.Embed(
+                    description=unwarn_msg,
+                    color=discord.Color(0xFFAA00)
+                )
+                
+                msg = await channel.send(embed=embed)
+                
+                # Delete after 5 seconds
+                await asyncio.sleep(5)
+                await msg.delete()
 
 
 async def setup(bot: commands.Bot):

@@ -43,7 +43,7 @@ class TeamStatusView(discord.ui.View):
             return
 
         # Reload team from store
-        updated_team = team_store.get(self.team.team_id)
+        updated_team = await team_store.refresh_from_db(self.team.team_id)
         if updated_team:
             self.team = updated_team
 
@@ -324,18 +324,6 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
                 ephemeral=True
             )
             return
-
-        # Update status message
-        if self.status_view:
-            await self.status_view.update()
-
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Название изменено",
-            description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
-            color=discord.Color.from_rgb(114, 137, 218)
-        )
-
-        await interaction.response.edit_message(embed=embed)
 
         # Update status message
         if self.status_view:
