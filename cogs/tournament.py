@@ -2295,6 +2295,80 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @app_commands.command(name="trstattest", description="Рандомно заполнить статистику всем игрокам (только для тестов)")
+    @is_bot_owner()
+    async def trstattest(self, interaction: discord.Interaction) -> None:
+        """Рандомно заполнить статистику для всех игроков в текущем турнире."""
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден в этом канале."),
+                ephemeral=True
+            )
+            return
+
+        # Determine which matches to fill based on phase
+        matches_to_fill = []
+        if tournament.phase == TournamentPhase.QUALIFIERS:
+            for idx in range(len(tournament.qualifier_matches)):
+                matches_to_fill.append(("qualifier", idx))
+        elif tournament.phase == TournamentPhase.SEMIFINALS:
+            for idx in range(len(tournament.semifinal_matches)):
+                matches_to_fill.append(("semifinal", idx))
+        elif tournament.phase == TournamentPhase.FINAL:
+            matches_to_fill.append(("final", 0))
+        else:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не в подходящей фазе. Нужно быть в qualifiers, semifinals или final."),
+                ephemeral=True
+            )
+            return
+
+        total_filled = 0
+        for match_type, match_index in matches_to_fill:
+            match_id = f"{tournament.id}_{match_type}_{match_index}"
+
+            # Get teams for this match
+            if match_type == "qualifier":
+                match = tournament.qualifier_matches[match_index]
+            elif match_type == "semifinal":
+                match = tournament.semifinal_matches[match_index]
+            else:  # final
+                match = (tournament.final_teams[0], tournament.final_teams[1])
+
+            team_a_idx, team_b_idx = match
+
+            # Fill stats for both teams
+            for team_idx in [team_a_idx, team_b_idx]:
+                team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
+
+                # Fill stats for circle1-4
+                for circle in range(1, 5):
+                    player = team_data.get(f"circle{circle}")
+                    if player:
+                        # Random stats: kills 0-5, deaths 0-5
+                        kills = random.randint(0, 5)
+                        deaths = random.randint(0, 5)
+
+                        # Store in temp_match_stats
+                        if match_id not in tournament.temp_match_stats:
+                            tournament.temp_match_stats[match_id] = {}
+
+                        tournament.temp_match_stats[match_id][player] = {
+                            "kills": kills,
+                            "deaths": deaths
+                        }
+
+            total_filled += 1
+
+        # Save tournament
+        store.set(tournament)
+
+        await interaction.response.send_message(
+            replace_emojis(f"✅ Статистика рандомно заполнена для {total_filled} матчей."),
+            ephemeral=True
+        )
+
     async def cog_app_command_error(
         self,
         interaction: discord.Interaction,
@@ -2780,80 +2854,6 @@ class HelpGuideSelectMenu(discord.ui.Select):
             )
             view = HelpGuideView(current="rules")
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-    @app_commands.command(name="trstattest", description="Рандомно заполнить статистику всем игрокам (только для тестов)")
-    @is_bot_owner()
-    async def trstattest(self, interaction: discord.Interaction) -> None:
-        """Рандомно заполнить статистику для всех игроков в текущем турнире."""
-        tournament = store.get(interaction.guild_id, interaction.channel_id)
-        if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден в этом канале."),
-                ephemeral=True
-            )
-            return
-
-        # Determine which matches to fill based on phase
-        matches_to_fill = []
-        if tournament.phase == TournamentPhase.QUALIFIERS:
-            for idx in range(len(tournament.qualifier_matches)):
-                matches_to_fill.append(("qualifier", idx))
-        elif tournament.phase == TournamentPhase.SEMIFINALS:
-            for idx in range(len(tournament.semifinal_matches)):
-                matches_to_fill.append(("semifinal", idx))
-        elif tournament.phase == TournamentPhase.FINAL:
-            matches_to_fill.append(("final", 0))
-        else:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не в подходящей фазе. Нужно быть в qualifiers, semifinals или final."),
-                ephemeral=True
-            )
-            return
-
-        total_filled = 0
-        for match_type, match_index in matches_to_fill:
-            match_id = f"{tournament.id}_{match_type}_{match_index}"
-
-            # Get teams for this match
-            if match_type == "qualifier":
-                match = tournament.qualifier_matches[match_index]
-            elif match_type == "semifinal":
-                match = tournament.semifinal_matches[match_index]
-            else:  # final
-                match = (tournament.final_teams[0], tournament.final_teams[1])
-
-            team_a_idx, team_b_idx = match
-
-            # Fill stats for both teams
-            for team_idx in [team_a_idx, team_b_idx]:
-                team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
-
-                # Fill stats for circle1-4
-                for circle in range(1, 5):
-                    player = team_data.get(f"circle{circle}")
-                    if player:
-                        # Random stats: kills 0-5, deaths 0-5
-                        kills = random.randint(0, 5)
-                        deaths = random.randint(0, 5)
-
-                        # Store in temp_match_stats
-                        if match_id not in tournament.temp_match_stats:
-                            tournament.temp_match_stats[match_id] = {}
-
-                        tournament.temp_match_stats[match_id][player] = {
-                            "kills": kills,
-                            "deaths": deaths
-                        }
-
-            total_filled += 1
-
-        # Save tournament
-        store.set(tournament)
-
-        await interaction.response.send_message(
-            replace_emojis(f"✅ Статистика рандомно заполнена для {total_filled} матчей."),
-            ephemeral=True
-        )
 
 
 class HelpGuideView(discord.ui.View):
