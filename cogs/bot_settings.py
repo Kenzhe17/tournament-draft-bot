@@ -6,9 +6,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import replace_emojis
+from config import BOT_OWNER_ID, replace_emojis
 from storage.json_store import store
-from utils.permissions import is_admin_check
 
 
 class BotSettingsCog(commands.Cog):
@@ -28,10 +27,10 @@ class BotSettingsCog(commands.Cog):
         coin_drop: bool = None
     ):
         """Включить или выключить функции бота."""
-        # Check if user is admin
-        if not is_admin_check(interaction.user, interaction.guild):
+        # Check if user is bot owner
+        if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
-                "❌ У вас нет прав для использования этой команды.",
+                "❌ Только владелец бота может использовать эту команду.",
                 ephemeral=True
             )
             return
