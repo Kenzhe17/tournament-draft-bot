@@ -273,13 +273,13 @@ class BRCog(commands.Cog):
         for i in range(1, 49):
             tournament.add_player(f"Bot {i}", base_user_id - i)  # Unique negative IDs for bots
 
-            # Сохранить
-            br_store.set(tournament)
+        # Сохранить
+        br_store.set(tournament)
 
-            await interaction.response.send_message(
-                replace_emojis("✅ Добавлено 48 ботов!"),
-                ephemeral=True
-            )
+        await interaction.response.send_message(
+            replace_emojis("✅ Добавлено 48 ботов!"),
+            ephemeral=True
+        )
 
         # Обновить сообщение с новым стилем
         try:
@@ -414,6 +414,60 @@ class BRCog(commands.Cog):
             ephemeral=True
         )
         logger.info("BR турнир заполнен 12 командами с ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
+
+    @app_commands.command(name="brstattest", description="Заполнить случайную статистику для всех команд BR турнира")
+    async def br_stats_test(self, interaction: discord.Interaction) -> None:
+        """Заполнить случайную статистику для всех команд BR турнира."""
+        # Проверка на владельца бота
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Эта команда доступна только владельцу бота.",
+                ephemeral=True
+            )
+            return
+
+        # Получить турнир
+        tournament = br_store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ В этом канале нет BR турнира.",
+                ephemeral=True
+            )
+            return
+
+        # Проверка фазы - должна быть после формирования команд
+        if tournament.phase == BRTournamentPhase.REGISTRATION:
+            await interaction.response.send_message(
+                "❌ BR турнир не начал игру. Сначала запустите турнир.",
+                ephemeral=True
+            )
+            return
+
+        if not tournament.teams:
+            await interaction.response.send_message(
+                "❌ В турнире нет команд.",
+                ephemeral=True
+            )
+            return
+
+        # Заполнить случайную статистику для всех карт
+        import random
+        maps = ["bermuda", "purgatory", "kalahari"]
+        
+        for team in tournament.teams:
+            for map_name in maps:
+                place = random.randint(1, 12)
+                kills = random.randint(0, 50)
+                tournament.set_team_stats(tournament.teams.index(team), map_name, place, kills)
+
+        # Сохранить
+        br_store.set(tournament)
+
+        await interaction.response.send_message(
+            replace_emojis(f"✅ Заполнена случайная статистика для {len(tournament.teams)} команд на всех картах!"),
+            ephemeral=True
+        )
+        logger.info("BR статистика заполнена для %s команд в канале %s сервера %s", len(tournament.teams), interaction.channel_id, interaction.guild_id)
 
 
 async def setup(bot: "TournamentBot"):
