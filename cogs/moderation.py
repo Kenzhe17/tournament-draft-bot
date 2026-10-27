@@ -68,25 +68,8 @@ class ModerationCog(commands.Cog):
         """Wait for bot to be ready before starting task."""
         await self.bot.wait_until_ready()
     
-    async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
-        """Apply punishment based on warning count."""
-        duration = MUTE_SCALE.get(warn_count)
-        
-        if duration:
-            mute_role = guild.get_role(MUTE_ROLE_ID)
-            if mute_role:
-                mute_until = datetime.utcnow() + duration
-                await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
-                await warn_store.set_mute_until(member.id, guild.id, mute_until)
-                logger.info(f"Muted {member.id} for {duration}")
-                return duration
-        
-        return None
-    
-    @app_commands.command(name="казнить", description="Выдать предупреждение")
-    @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
-    async def warn(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
-        """Issue a warning to a user."""
+    async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
+        """Implementation of warn command."""
         # Check if user has moderator permissions
         if not interaction.user.guild_permissions.moderate_members:
             await interaction.response.send_message("❌ У вас нет прав для выдачи предупреждений.", ephemeral=True)
@@ -118,16 +101,35 @@ class ModerationCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
+    async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
+        """Apply punishment based on warning count."""
+        duration = MUTE_SCALE.get(warn_count)
+        
+        if duration:
+            mute_role = guild.get_role(MUTE_ROLE_ID)
+            if mute_role:
+                mute_until = datetime.utcnow() + duration
+                await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
+                await warn_store.set_mute_until(member.id, guild.id, mute_until)
+                logger.info(f"Muted {member.id} for {duration}")
+                return duration
+        
+        return None
+
+    @app_commands.command(name="казнить", description="Выдать предупреждение")
+    @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
+    async def warn(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
+        """Issue a warning to a user."""
+        await self._warn_impl(interaction, участник, причина)
+    
     @app_commands.command(name="пред", description="Выдать предупреждение")
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
     async def warn_alias(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
         """Alias for /казнить."""
-        await self.warn.callback(interaction, участник, причина)
+        await self._warn_impl(interaction, участник, причина)
     
-    @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
-    @app_commands.describe(участник="Пользователь для снятия предупреждения")
-    async def unwarn(self, interaction: discord.Interaction, участник: discord.Member):
-        """Remove the most recent warning from a user."""
+    async def _unwarn_impl(self, interaction: discord.Interaction, участник: discord.Member):
+        """Implementation of unwarn command."""
         # Check if user has moderator permissions
         if not interaction.user.guild_permissions.moderate_members:
             await interaction.response.send_message("❌ У вас нет прав для снятия предупреждений.", ephemeral=True)
@@ -159,17 +161,21 @@ class ModerationCog(commands.Cog):
         embed.set_footer(text=f"Модератор: {interaction.user.display_name}")
         
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
+    @app_commands.describe(участник="Пользователь для снятия предупреждения")
+    async def unwarn(self, interaction: discord.Interaction, участник: discord.Member):
+        """Remove the most recent warning from a user."""
+        await self._unwarn_impl(interaction, участник)
     
     @app_commands.command(name="снятьпред", description="Снять последнее предупреждение")
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
     async def unwarn_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /пощадить."""
-        await self.unwarn.callback(interaction, участник)
+        await self._unwarn_impl(interaction, участник)
     
-    @app_commands.command(name="преды", description="Просмотреть предупреждения пользователя")
-    @app_commands.describe(участник="Пользователь для просмотра")
-    async def warns(self, interaction: discord.Interaction, участник: discord.Member):
-        """View all warnings for a user."""
+    async def _warns_impl(self, interaction: discord.Interaction, участник: discord.Member):
+        """Implementation of warns command."""
         # Check if user has moderator permissions
         if not interaction.user.guild_permissions.moderate_members:
             await interaction.response.send_message("❌ У вас нет прав для просмотра предупреждений.", ephemeral=True)
@@ -205,12 +211,18 @@ class ModerationCog(commands.Cog):
             embed.add_field(name="Мут до", value=mute_until.strftime('%d.%m.%Y %H:%M'), inline=False)
         
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="преды", description="Просмотреть предупреждения пользователя")
+    @app_commands.describe(участник="Пользователь для просмотра")
+    async def warns(self, interaction: discord.Interaction, участник: discord.Member):
+        """View all warnings for a user."""
+        await self._warns_impl(interaction, участник)
     
     @app_commands.command(name="допускания", description="Просмотреть предупреждения пользователя")
     @app_commands.describe(участник="Пользователь для просмотра")
     async def warns_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /преды."""
-        await self.warns.callback(interaction, участник)
+        await self._warns_impl(interaction, участник)
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
