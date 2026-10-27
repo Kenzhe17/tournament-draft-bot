@@ -69,7 +69,7 @@ class AutoModCog(commands.Cog):
                 violator = replied_message.author
 
                 # Format the command for JuniperBot
-                punish_command = f"!пред участник:<@{violator.id}> длительность:7д причина:Воля Диктатора"
+                punish_command = f"!пред <@{violator.id}> 7д Воля Диктатора"
 
                 # Send the command to the channel (JuniperBot will process it)
                 await channel.send(punish_command)
