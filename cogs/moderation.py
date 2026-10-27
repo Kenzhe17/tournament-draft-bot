@@ -256,9 +256,6 @@ class ModerationCog(commands.Cog):
         if not (is_warn_gif or is_unwarn_gif):
             return
         
-        # Delete the gif message
-        await message.delete()
-        
         # Get the replied message
         channel = message.channel
         replied_message = await channel.fetch_message(message.reference.message_id)
