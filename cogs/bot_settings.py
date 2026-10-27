@@ -19,20 +19,7 @@ class BotSettingsCog(commands.Cog):
         self.bot = bot
         logger.info("BotSettingsCog initialized")
 
-    @app_commands.Group(name="off", description="Управление функциями бота")
-    async def off(self, interaction: discord.Interaction):
-        """Root command for bot settings."""
-        if interaction.user.id != BOT_OWNER_ID:
-            await interaction.response.send_message(
-                "❌ Только владелец бота может использовать эту команду.",
-                ephemeral=True
-            )
-            return
-        
-        await interaction.response.send_message(
-            "Используйте `/off toggle` для включения/выключения функций.",
-            ephemeral=True
-        )
+    off = app_commands.Group(name="off", description="Управление функциями бота")
 
     @off.command(name="toggle", description="Включить/выключить функции бота")
     @app_commands.describe(welcome="Welcome message для новых участников", coin_drop="Спонтанные ивенты с монетами")
