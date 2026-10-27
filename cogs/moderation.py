@@ -1,5 +1,6 @@
 """Warning and moderation system cog."""
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
@@ -68,6 +69,21 @@ class ModerationCog(commands.Cog):
         """Wait for bot to be ready before starting task."""
         await self.bot.wait_until_ready()
     
+    async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
+        """Apply punishment based on warning count."""
+        duration = MUTE_SCALE.get(warn_count)
+        
+        if duration:
+            mute_role = guild.get_role(MUTE_ROLE_ID)
+            if mute_role:
+                mute_until = datetime.utcnow() + duration
+                await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
+                await warn_store.set_mute_until(member.id, guild.id, mute_until)
+                logger.info(f"Muted {member.id} for {duration}")
+                return duration
+        
+        return None
+    
     async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
         """Implementation of warn command."""
         # Check if user has moderator permissions
@@ -89,32 +105,26 @@ class ModerationCog(commands.Cog):
         # Apply punishment
         duration = await self.apply_punishment(interaction.guild, участник, warn_count)
         
-        # Build response
-        duration_text = f" на {duration}" if duration else ""
-        embed = discord.Embed(
-            title="⚠️ Предупреждение",
-            description=f"Пользователю {участник.mention} выдано предупреждение ({warn_count}/{warn_count + 1}){duration_text}",
-            color=discord.Color.orange()
-        )
-        embed.add_field(name="Причина", value=причина, inline=False)
-        embed.set_footer(text=f"Модератор: {interaction.user.display_name}")
-        
-        await interaction.response.send_message(embed=embed)
-    
-    async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
-        """Apply punishment based on warning count."""
-        duration = MUTE_SCALE.get(warn_count)
-        
+        # Build response message
         if duration:
-            mute_role = guild.get_role(MUTE_ROLE_ID)
-            if mute_role:
-                mute_until = datetime.utcnow() + duration
-                await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
-                await warn_store.set_mute_until(member.id, guild.id, mute_until)
-                logger.info(f"Muted {member.id} for {duration}")
-                return duration
+            # Format duration for display
+            if duration.days >= 1:
+                duration_text = f"{duration.days} дн"
+            elif duration.seconds >= 3600:
+                hours = duration.seconds // 3600
+                duration_text = f"{hours} ч"
+            else:
+                duration_text = f"{duration.seconds // 60} мин"
+            
+            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+        else:
+            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
         
-        return None
+        msg = await interaction.response.send_message(message)
+        
+        # Delete after 5 seconds
+        await asyncio.sleep(5)
+        await msg.delete()
 
     @app_commands.command(name="казнить", description="Выдать предупреждение")
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
@@ -152,15 +162,12 @@ class ModerationCog(commands.Cog):
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
-        embed = discord.Embed(
-            title="✅ Предупреждение снято",
-            description=f"С пользователя {участник.mention} снято последнее предупреждение",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="Осталось предупреждений", value=str(warn_count), inline=False)
-        embed.set_footer(text=f"Модератор: {interaction.user.display_name}")
+        message = f"✅Предупреждение участника {участник.mention} #{warn.warn_id} снято"
+        msg = await interaction.response.send_message(message)
         
-        await interaction.response.send_message(embed=embed)
+        # Delete after 5 seconds
+        await asyncio.sleep(5)
+        await msg.delete()
 
     @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
@@ -191,24 +198,53 @@ class ModerationCog(commands.Cog):
         
         # Build embed
         embed = discord.Embed(
-            title=f"Предупреждения: {участник.display_name}",
-            description=f"Всего: {len(all_warns)} | Активных: {len(active_warns)}",
-            color=discord.Color.blue()
+            title="Список предупреждений",
+            description=f"Предупреждения участника {участник.mention}",
+            color=0xFFAA00,
+            thumbnail={"url": f"https://cdn.discordapp.com/embed/avatars/{участник.id}.png"}
         )
         
-        # Add warnings list
-        warn_list = []
-        for i, warn in enumerate(all_warns[:10], 1):  # Show last 10
-            status = "✅" if warn.active else "❌"
-            warn_list.append(f"{status} #{warn.warn_id} | {warn.timestamp.strftime('%d.%m.%Y %H:%M')} | {warn.reason}")
+        # Add warning fields
+        for warn in all_warns[:10]:  # Show last 10
+            date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
+            field_name = f"Случай `#{warn.warn_id}` **{date_str}**"
+            
+            # Get moderator info
+            moderator_id = getattr(warn, 'moderator_id', interaction.user.id)
+            moderator = interaction.guild.get_member(moderator_id)
+            if moderator:
+                moderator_mention = moderator.mention
+            else:
+                moderator_mention = f"<@{moderator_id}>"
+            
+            field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
+            
+            # Add mute_until if exists
+            mute_until = await warn_store.get_mute_until(участник.id, interaction.guild.id)
+            if mute_until:
+                mute_until_str = mute_until.strftime('%d %B %Y г. %H:%M')
+                # Calculate time remaining
+                remaining = mute_until - datetime.utcnow()
+                days = remaining.days
+                hours = remaining.seconds // 3600
+                if days > 0:
+                    remaining_text = f"*(через {days} дн)*"
+                elif hours > 0:
+                    remaining_text = f"*(через {hours} ч)*"
+                else:
+                    remaining_text = "*(скоро)*"
+                field_value += f"**Действует до:** `{mute_until_str}` {remaining_text}\n"
+            
+            # Add reason if exists
+            if warn.reason and warn.reason != "Без причины":
+                field_value += f"**Причина:** {warn.reason}\n"
+            
+            field_value += "───────────────────────────────────"
+            embed.add_field(name=field_name, value=field_value, inline=False)
         
-        if warn_list:
-            embed.add_field(name="Последние предупреждения", value="\n".join(warn_list), inline=False)
-        
-        # Check mute status
-        mute_until = await warn_store.get_mute_until(участник.id, interaction.guild.id)
-        if mute_until:
-            embed.add_field(name="Мут до", value=mute_until.strftime('%d.%m.%Y %H:%M'), inline=False)
+        # Footer
+        total_warns = len(all_warns)
+        embed.set_footer(text=f"Страница 1 из 1 — Всего предупреждений: {total_warns} • Запросил {interaction.user.display_name}")
         
         await interaction.response.send_message(embed=embed)
 
@@ -270,8 +306,21 @@ class ModerationCog(commands.Cog):
                 warn_count = len(active_warns)
                 duration = await self.apply_punishment(message.guild, target_user, warn_count)
                 
-                duration_text = f" на {duration}" if duration else ""
-                await channel.send(f"⚠️ {target_user.mention} получил предупреждение ({warn_count}){duration_text}")
+                if duration:
+                    # Format duration for display
+                    if duration.days >= 1:
+                        duration_text = f"{duration.days} дн"
+                    elif duration.seconds >= 3600:
+                        hours = duration.seconds // 3600
+                        duration_text = f"{hours} ч"
+                    else:
+                        duration_text = f"{duration.seconds // 60} мин"
+                    
+                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+                else:
+                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
+                
+                await channel.send(warn_msg)
         
         elif is_unwarn_gif:
             # Remove warning
@@ -286,7 +335,8 @@ class ModerationCog(commands.Cog):
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
                 
-                await channel.send(f"✅ С {target_user.mention} снято предупреждение (осталось: {warn_count})")
+                unwarn_msg = f"✅Предупреждение участника {target_user.mention} #{warn.warn_id} снято"
+                await channel.send(unwarn_msg)
 
 
 async def setup(bot: commands.Bot):

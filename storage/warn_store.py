@@ -14,13 +14,14 @@ class Warn:
     """Warning data model."""
     
     def __init__(self, warn_id: int, user_id: int, guild_id: int, 
-                 timestamp: datetime, reason: str, active: bool = True):
+                 timestamp: datetime, reason: str, active: bool = True, moderator_id: int = None):
         self.warn_id = warn_id
         self.user_id = user_id
         self.guild_id = guild_id
         self.timestamp = timestamp
         self.reason = reason
         self.active = active
+        self.moderator_id = moderator_id
 
 
 class WarnStore:
@@ -72,7 +73,7 @@ class WarnStore:
             """, user_id, guild_id, moderator_id, reason)
             
             timestamp = datetime.utcnow()
-            return Warn(warn_id, user_id, guild_id, timestamp, reason)
+            return Warn(warn_id, user_id, guild_id, timestamp, reason, True, moderator_id)
     
     async def get_active_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all active warnings for a user."""
@@ -82,14 +83,14 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT warn_id, user_id, guild_id, timestamp, reason, active
+                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2 AND active = TRUE
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
             
             return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active']) for row in rows]
+                        row['timestamp'], row['reason'], row['active'], row['moderator_id']) for row in rows]
     
     async def get_all_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all warnings for a user (including inactive)."""
@@ -99,14 +100,14 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT warn_id, user_id, guild_id, timestamp, reason, active
+                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
             
             return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active']) for row in rows]
+                        row['timestamp'], row['reason'], row['active'], row['moderator_id']) for row in rows]
     
     async def remove_last_warn(self, user_id: int, guild_id: int) -> Optional[Warn]:
         """Remove the most recent active warning."""
@@ -124,12 +125,12 @@ class WarnStore:
                     ORDER BY timestamp DESC
                     LIMIT 1
                 )
-                RETURNING warn_id, user_id, guild_id, timestamp, reason, active
+                RETURNING warn_id, user_id, guild_id, timestamp, reason, active, moderator_id
             """, user_id, guild_id)
             
             if row:
                 return Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                           row['timestamp'], row['reason'], row['active'])
+                           row['timestamp'], row['reason'], row['active'], row['moderator_id'])
             return None
     
     async def set_mute_until(self, user_id: int, guild_id: int, mute_until: datetime):
