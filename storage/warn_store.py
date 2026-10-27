@@ -33,6 +33,7 @@ class WarnStore:
         """Enable database storage."""
         self.enabled = True
         logger.info("WarnStore: Database storage enabled")
+        logger.info(f"WarnStore: enabled={self.enabled}")
     
     async def init_table(self):
         """Initialize warnings table in database."""

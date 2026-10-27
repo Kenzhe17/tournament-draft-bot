@@ -71,6 +71,7 @@ class TournamentBot(commands.Bot):
         if DATABASE_URL:
             try:
                 from storage.db import init_db
+                from storage.bet_store import bet_store
                 await init_db()
                 player_stats_store.enable_db()
                 user_balance_store.enable_db()
@@ -84,7 +85,7 @@ class TournamentBot(commands.Bot):
                     await warn_store.init_table()
                     logger.info("Warnings table initialized")
                 except Exception as e:
-                    logger.error(f"Failed to initialize warnings table: {e}")
+                    logger.error(f"Failed to initialize warnings table: {e}", exc_info=True)
                 
                 # Sync games from config to database
                 try:
@@ -126,11 +127,9 @@ class TournamentBot(commands.Bot):
         await team_store.load_from_postgres()
 
         # Load betting odds from PostgreSQL after extensions are loaded
-        bet_store_loaded = False
         try:
             from storage.bet_store import bet_store
             await bet_store.load_from_db()
-            bet_store_loaded = True
         except Exception as e:
             logger.error(f"Failed to load betting odds from DB: {e}", exc_info=True)
 
