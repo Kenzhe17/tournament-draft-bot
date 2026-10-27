@@ -200,8 +200,8 @@ class ModerationCog(commands.Cog):
         embed = discord.Embed(
             title="Список предупреждений",
             description=f"Предупреждения участника {участник.mention}",
-            color=0xFFAA00,
-            thumbnail={"url": f"https://cdn.discordapp.com/embed/avatars/{участник.id}.png"}
+            color=discord.Color(0xFFAA00),
+            thumbnail={"url": f"https://cdn.discordapp.com/embed/avatars/{участник.id % 5}.png"}
         )
         
         # Add warning fields
