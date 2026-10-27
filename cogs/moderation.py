@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands, tasks
 
 from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL
@@ -27,6 +27,117 @@ MUTE_SCALE = {
     9: timedelta(days=1),
     10: timedelta(days=1),
 }
+
+
+class WarnPaginationView(ui.View):
+    """Pagination view for warnings list."""
+
+    def __init__(self, warnings: list, user: discord.Member, interaction_user: discord.Member, guild_id: int):
+        super().__init__(timeout=None)
+        self.warnings = warnings
+        self.user = user
+        self.interaction_user = interaction_user
+        self.guild_id = guild_id
+        self.current_page = 0
+        self.per_page = 5
+        self.total_pages = (len(warnings) + self.per_page - 1) // self.per_page
+        self.update_buttons()
+
+        # Update button custom_ids to be unique
+        self.prev_button.custom_id = f"warn_prev_{user.id}"
+        self.next_button.custom_id = f"warn_next_{user.id}"
+
+    def update_buttons(self):
+        """Update button states based on current page."""
+        self.prev_button.disabled = self.current_page == 0
+        self.next_button.disabled = self.current_page >= self.total_pages - 1
+
+    async def build_embed(self) -> discord.Embed:
+        """Build embed for current page."""
+        start_idx = self.current_page * self.per_page
+        end_idx = start_idx + self.per_page
+        page_warns = self.warnings[start_idx:end_idx]
+
+        embed = discord.Embed(
+            title="Список предупреждений",
+            description=f"Предупреждения участника {self.user.mention}",
+            color=discord.Color(0xFFAA00)
+        )
+        embed.set_thumbnail(url=f"https://cdn.discordapp.com/embed/avatars/{self.user.id % 5}.png")
+
+        for warn in page_warns:
+            date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
+            status = "✅" if warn.active else "❌"
+            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
+
+            # Get moderator info
+            moderator_id = getattr(warn, 'moderator_id', self.interaction_user.id)
+            moderator_mention = f"<@{moderator_id}>"
+
+            field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
+
+            # Add expiration if exists
+            if warn.expires_at:
+                expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
+                if warn.active:
+                    # Calculate time remaining
+                    remaining = warn.expires_at - datetime.utcnow()
+                    days = remaining.days
+                    hours = remaining.seconds // 3600
+                    if days > 0:
+                        remaining_text = f"*(через {days} дн)*"
+                    elif hours > 0:
+                        remaining_text = f"*(через {hours} ч)*"
+                    else:
+                        remaining_text = "*(скоро)*"
+                    field_value += f"**Истекает:** `{expires_str}` {remaining_text}\n"
+                else:
+                    field_value += f"**Истекло:** `{expires_str}`\n"
+
+            # Add mute_until if exists
+            mute_until = await warn_store.get_mute_until(self.user.id, self.guild_id)
+            if mute_until:
+                mute_until_str = mute_until.strftime('%d %B %Y г. %H:%M')
+                # Calculate time remaining
+                remaining = mute_until - datetime.utcnow()
+                days = remaining.days
+                hours = remaining.seconds // 3600
+                if days > 0:
+                    remaining_text = f"*(через {days} дн)*"
+                elif hours > 0:
+                    remaining_text = f"*(через {hours} ч)*"
+                else:
+                    remaining_text = "*(скоро)*"
+                field_value += f"**Мут до:** `{mute_until_str}` {remaining_text}\n"
+
+            # Add reason if exists
+            if warn.reason and warn.reason != "Без причины":
+                field_value += f"**Причина:** {warn.reason}\n"
+
+            field_value += "───────────────────────────────────"
+            embed.add_field(name=field_name, value=field_value, inline=False)
+
+        # Footer
+        total_warns = len(self.warnings)
+        embed.set_footer(text=f"Страница {self.current_page + 1} из {self.total_pages} — Всего предупреждений: {total_warns} • Запросил {self.interaction_user.display_name}")
+
+        return embed
+
+    @ui.button(label="◀ Предыдущая", style=discord.ButtonStyle.secondary, custom_id="warn_prev")
+    async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
+        """Previous page button."""
+        if self.current_page > 0:
+            self.current_page -= 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=await self.build_embed(), view=self)
+
+    @ui.button(label="Следующая ▶", style=discord.ButtonStyle.secondary, custom_id="warn_next")
+    async def next_button(self, interaction: discord.Interaction, button: ui.Button):
+        """Next page button."""
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self.update_buttons()
+            await interaction.response.edit_message(embed=await self.build_embed(), view=self)
 
 
 class ModerationCog(commands.Cog):
@@ -223,85 +334,25 @@ class ModerationCog(commands.Cog):
         if not interaction.user.guild_permissions.moderate_members:
             await interaction.response.send_message("❌ У вас нет прав для просмотра предупреждений.", ephemeral=True)
             return
-        
+
         # Get all warnings
         all_warns = await warn_store.get_all_warns(участник.id, interaction.guild.id)
-        active_warns = await warn_store.get_active_warns(участник.id, interaction.guild.id)
-        
+
         if not all_warns:
             await interaction.response.send_message(f"У пользователя {участник.mention} нет предупреждений.", ephemeral=True)
             return
-        
-        # Build embed
-        embed = discord.Embed(
-            title="Список предупреждений",
-            description=f"Предупреждения участника {участник.mention}",
-            color=discord.Color(0xFFAA00)
-        )
-        embed.set_thumbnail(url=f"https://cdn.discordapp.com/embed/avatars/{участник.id % 5}.png")
-        
-        # Add warning fields
-        for warn in all_warns[:10]:  # Show last 10
-            date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
-            status = "✅" if warn.active else "❌"
-            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
 
-            # Get moderator info
-            moderator_id = getattr(warn, 'moderator_id', interaction.user.id)
-            moderator = interaction.guild.get_member(moderator_id)
-            if moderator:
-                moderator_mention = moderator.mention
-            else:
-                moderator_mention = f"<@{moderator_id}>"
+        # Create pagination view
+        view = WarnPaginationView(all_warns, участник, interaction.user, interaction.guild.id)
+        embed = await view.build_embed()
 
-            field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
-
-            # Add expiration if exists
-            if warn.expires_at:
-                expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
-                if warn.active:
-                    # Calculate time remaining
-                    remaining = warn.expires_at - datetime.utcnow()
-                    days = remaining.days
-                    hours = remaining.seconds // 3600
-                    if days > 0:
-                        remaining_text = f"*(через {days} дн)*"
-                    elif hours > 0:
-                        remaining_text = f"*(через {hours} ч)*"
-                    else:
-                        remaining_text = "*(скоро)*"
-                    field_value += f"**Истекает:** `{expires_str}` {remaining_text}\n"
-                else:
-                    field_value += f"**Истекло:** `{expires_str}`\n"
-
-            # Add mute_until if exists
-            mute_until = await warn_store.get_mute_until(участник.id, interaction.guild.id)
-            if mute_until:
-                mute_until_str = mute_until.strftime('%d %B %Y г. %H:%M')
-                # Calculate time remaining
-                remaining = mute_until - datetime.utcnow()
-                days = remaining.days
-                hours = remaining.seconds // 3600
-                if days > 0:
-                    remaining_text = f"*(через {days} дн)*"
-                elif hours > 0:
-                    remaining_text = f"*(через {hours} ч)*"
-                else:
-                    remaining_text = "*(скоро)*"
-                field_value += f"**Мут до:** `{mute_until_str}` {remaining_text}\n"
-
-            # Add reason if exists
-            if warn.reason and warn.reason != "Без причины":
-                field_value += f"**Причина:** {warn.reason}\n"
-
-            field_value += "───────────────────────────────────"
-            embed.add_field(name=field_name, value=field_value, inline=False)
-        
-        # Footer
-        total_warns = len(all_warns)
-        embed.set_footer(text=f"Страница 1 из 1 — Всего предупреждений: {total_warns} • Запросил {interaction.user.display_name}")
-        
-        await interaction.response.send_message(embed=embed)
+        if len(all_warns) > 5:
+            # Only show buttons if there are more than 5 warnings
+            await interaction.response.send_message(embed=embed, view=view)
+        else:
+            # No pagination needed
+            view = None
+            await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="преды", description="Просмотреть предупреждения пользователя")
     @app_commands.describe(участник="Пользователь для просмотра")
