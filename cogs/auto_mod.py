@@ -69,10 +69,13 @@ class AutoModCog(commands.Cog):
                 violator = replied_message.author
 
                 # Format the command for JuniperBot
-                punish_command = f"/пред участник:<@{violator.id}> длительность:7д Воля Диктатора"
+                punish_command = f"!пред участник:<@{violator.id}> длительность:7д причина:Воля Диктатора"
 
                 # Send the command to the channel (JuniperBot will process it)
-                await channel.send(punish_command)
+                msg = await channel.send(punish_command)
+                
+                # Delete the command message immediately
+                await msg.delete()
                 
                 logger.info(f"Auto-mod: Issued warning to {violator.id} ({violator.display_name}) via gif trigger by {message.author.id}")
             except Exception as e:
