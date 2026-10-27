@@ -1,6 +1,7 @@
 """Auto-moderation cog for gif-triggered warnings."""
 
 import logging
+import re
 
 import discord
 from discord.ext import commands
@@ -21,28 +22,41 @@ class AutoModCog(commands.Cog):
         """Check for gif trigger and issue warning via JuniperBot."""
         # Ignore messages from bots
         if message.author.bot:
+            logger.debug(f"Auto-mod: Ignored bot message from {message.author.id}")
             return
 
         # Check if user is allowed to use auto-mod features
         if message.author.id not in AUTO_MOD_ALLOWED_USER_IDS:
+            logger.debug(f"Auto-mod: User {message.author.id} not in allowed list")
             return
 
         # Check if message is a reply
         if not message.reference or not message.reference.message_id:
+            logger.debug(f"Auto-mod: Message from {message.author.id} is not a reply")
             return
 
         # Check if message contains the target gif
         is_target_gif = False
         
-        # Check in message content
-        if AUTO_MOD_GIF_URL in message.content:
+        # Check in message content (partial match for shortened URLs)
+        if AUTO_MOD_GIF_URL in message.content or "h2di-the-dictator" in message.content:
             is_target_gif = True
+            logger.info(f"Auto-mod: Found target gif in message content from {message.author.id}")
         
-        # Check in attachments
+        # Check in attachments (partial match)
         for attachment in message.attachments:
-            if attachment.url == AUTO_MOD_GIF_URL:
+            if AUTO_MOD_GIF_URL in attachment.url or "h2di-the-dictator" in attachment.url:
                 is_target_gif = True
+                logger.info(f"Auto-mod: Found target gif in attachment from {message.author.id}")
                 break
+
+        # Log all URLs found in message for debugging
+        if not is_target_gif:
+            urls = re.findall(r'https?://[^\s<>"]+', message.content)
+            attachment_urls = [a.url for a in message.attachments]
+            logger.debug(f"Auto-mod: URLs in message: {urls}")
+            logger.debug(f"Auto-mod: Attachment URLs: {attachment_urls}")
+            logger.debug(f"Auto-mod: Target URL: {AUTO_MOD_GIF_URL}")
 
         # If the target gif is found
         if is_target_gif:
