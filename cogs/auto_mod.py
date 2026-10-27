@@ -1,7 +1,6 @@
 """Auto-moderation cog for gif-triggered warnings."""
 
 import logging
-import re
 
 import discord
 from discord.ext import commands
@@ -38,21 +37,21 @@ class AutoModCog(commands.Cog):
         # Check if message contains the target gif
         is_target_gif = False
         
-        # Check in message content (partial match for shortened URLs)
-        if AUTO_MOD_GIF_URL in message.content or "h2di-the-dictator" in message.content:
+        # Check in message content (exact match)
+        if AUTO_MOD_GIF_URL in message.content:
             is_target_gif = True
             logger.info(f"Auto-mod: Found target gif in message content from {message.author.id}")
         
-        # Check in attachments (partial match)
+        # Check in attachments (exact match)
         for attachment in message.attachments:
-            if AUTO_MOD_GIF_URL in attachment.url or "h2di-the-dictator" in attachment.url:
+            if attachment.url == AUTO_MOD_GIF_URL:
                 is_target_gif = True
                 logger.info(f"Auto-mod: Found target gif in attachment from {message.author.id}")
                 break
 
         # Log all URLs found in message for debugging
         if not is_target_gif:
-            urls = re.findall(r'https?://[^\s<>"]+', message.content)
+            urls = [url for url in message.content.split() if url.startswith('http')]
             attachment_urls = [a.url for a in message.attachments]
             logger.info(f"Auto-mod: URLs in message: {urls}")
             logger.info(f"Auto-mod: Attachment URLs: {attachment_urls}")
@@ -69,7 +68,7 @@ class AutoModCog(commands.Cog):
                 violator = replied_message.author
 
                 # Format the command for JuniperBot
-                punish_command = f"/пред участник:<@{violator.id}> длительность:7д Выдача наказания гифкой"
+                punish_command = f"/пред участник:<@{violator.id}> длительность:7д Воля Диктатора"
 
                 # Send the command to the channel (JuniperBot will process it)
                 await channel.send(punish_command)
