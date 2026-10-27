@@ -183,7 +183,7 @@ class ModerationCog(commands.Cog):
                 current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
-                        f"**Срок мьюта участника {member.global_name or member.name} (`{member.id}`) истек**\n\n"
+                        f"**Срок мьюта участника {member.mention} ({member.name}) истек**\n\n"
                         f"**Случай:** `#Авто`\n\n"
                         f"`ID участника: {member.id}` • `{current_timestamp}`"
                     ),
@@ -213,7 +213,7 @@ class ModerationCog(commands.Cog):
                 current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
-                        f"**Предупреждение участника {member.global_name or member.name} (`{member.id}`) истекло**\n\n"
+                        f"**Предупреждение участника {member.mention} ({member.name}) истекло**\n\n"
                         f"**Модератор:** Бот (Автоматически)\n"
                         f"**Случай:** `#Авто`\n\n"
                         f"`ID участника: {member.id}` • `{current_timestamp}`"
@@ -315,15 +315,15 @@ class ModerationCog(commands.Cog):
 
         # Send detailed log to webhook
         current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
-        duration_info = f"{duration_text} ({warn.expires_at.strftime('%d.%m.%Y %H:%M')})" if duration else "7 дней"
+        expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
         log_embed = discord.Embed(
             description=(
-                f"**Участник {участник.global_name or участник.name} (`{участник.id}`) получил предупреждение**\n\n"
-                f"**Модератор:** {interaction.user.global_name or interaction.user.name} (`{interaction.user.id}`)\n"
-                f"**Канал:** {interaction.channel.name} (`{interaction.channel.id}`)\n"
+                f"**Участник {участник.mention} ({участник.name}) получил предупреждение**\n\n"
+                f"**Модератор:** {interaction.user.mention} ({interaction.user.name})\n"
+                f"**Канал:** <#{interaction.channel.id}>\n"
                 f"**Предупреждение:** `#{warn.warn_number}`\n"
                 f"**Случай:** `#{warn.case_id}`\n"
-                f"**Длительность:** {duration_info}\n"
+                f"**Длительность:** 7д ({expires_str})\n"
                 f"────────────────────────\n"
                 f"**Причина**\n"
                 f"{причина}\n\n"
@@ -387,9 +387,9 @@ class ModerationCog(commands.Cog):
         current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
         log_embed = discord.Embed(
             description=(
-                f"**Предупреждение снято с участника {участник.global_name or участник.name} (`{участник.id}`)**\n\n"
-                f"**Модератор:** {interaction.user.global_name or interaction.user.name} (`{interaction.user.id}`)\n"
-                f"**Канал:** {interaction.channel.name} (`{interaction.channel.id}`)\n"
+                f"**Предупреждение снято с участника {участник.mention} ({участник.name})**\n\n"
+                f"**Модератор:** {interaction.user.mention} ({interaction.user.name})\n"
+                f"**Канал:** <#{interaction.channel.id}>\n"
                 f"**Случай:** `#{warn.case_id}`\n\n"
                 f"`ID участника: {участник.id}` • `{current_timestamp}`"
             ),
@@ -504,10 +504,10 @@ class ModerationCog(commands.Cog):
         expire_date = (datetime.utcnow() + duration).strftime('%d.%m.%Y %H:%M')
         log_embed = discord.Embed(
             description=(
-                f"**Участник {участник.global_name or участник.name} (`{участник.id}`) был замьючен на всём сервере**\n\n"
-                f"**Модератор:** {interaction.user.global_name or interaction.user.name} (`{interaction.user.id}`)\n"
-                f"**Канал:** {interaction.channel.name} (`{interaction.channel.id}`)\n"
-                f"**Длительность:** {duration_text} (`{expire_date}`)\n\n"
+                f"**Участник {участник.mention} ({участник.name}) был замьючен на всём сервере**\n\n"
+                f"**Модератор:** {interaction.user.mention} ({interaction.user.name})\n"
+                f"**Канал:** <#{interaction.channel.id}>\n"
+                f"**Длительность:** {duration_text} ({expire_date})\n\n"
                 f"`ID участника: {участник.id}` • `{current_timestamp}`"
             ),
             color=discord.Color.orange()
@@ -580,9 +580,9 @@ class ModerationCog(commands.Cog):
         current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
         log_embed = discord.Embed(
             description=(
-                f"**Участник {участник.global_name or участник.name} (`{участник.id}`) был размьючен**\n\n"
-                f"**Модератор:** {interaction.user.global_name or interaction.user.name} (`{interaction.user.id}`)\n"
-                f"**Канал:** {interaction.channel.name} (`{interaction.channel.id}`)\n\n"
+                f"**Участник {участник.mention} ({участник.name}) был размьючен**\n\n"
+                f"**Модератор:** {interaction.user.mention} ({interaction.user.name})\n"
+                f"**Канал:** <#{interaction.channel.id}>\n\n"
                 f"`ID участника: {участник.id}` • `{current_timestamp}`"
             ),
             color=discord.Color.green()
@@ -698,15 +698,15 @@ class ModerationCog(commands.Cog):
 
                 # Send detailed log to webhook
                 current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
-                duration_info = f"{duration_text} ({warn.expires_at.strftime('%d.%m.%Y %H:%M')})" if duration else "7 дней"
+                expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
                 log_embed = discord.Embed(
                     description=(
-                        f"**Участник {target_user.global_name or target_user.name} (`{target_user.id}`) получил предупреждение**\n\n"
-                        f"**Модератор:** {message.author.global_name or message.author.name} (`{message.author.id}`)\n"
-                        f"**Канал:** {channel.name} (`{channel.id}`)\n"
+                        f"**Участник {target_user.mention} ({target_user.name}) получил предупреждение**\n\n"
+                        f"**Модератор:** {message.author.mention} ({message.author.name})\n"
+                        f"**Канал:** <#{channel.id}>\n"
                         f"**Предупреждение:** `#{warn.warn_number}`\n"
                         f"**Случай:** `#{warn.case_id}`\n"
-                        f"**Длительность:** {duration_info}\n"
+                        f"**Длительность:** 7д ({expires_str})\n"
                         f"────────────────────────\n"
                         f"**Причина**\n"
                         f"Воля Диктатора\n\n"
@@ -746,9 +746,9 @@ class ModerationCog(commands.Cog):
                 current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
-                        f"**Предупреждение снято с участника {target_user.global_name or target_user.name} (`{target_user.id}`)**\n\n"
-                        f"**Модератор:** {message.author.global_name or message.author.name} (`{message.author.id}`)\n"
-                        f"**Канал:** {channel.name} (`{channel.id}`)\n"
+                        f"**Предупреждение снято с участника {target_user.mention} ({target_user.name})**\n\n"
+                        f"**Модератор:** {message.author.mention} ({message.author.name})\n"
+                        f"**Канал:** <#{channel.id}>\n"
                         f"**Случай:** `#{warn.case_id}`\n\n"
                         f"`ID участника: {target_user.id}` • `{current_timestamp}`"
                     ),
