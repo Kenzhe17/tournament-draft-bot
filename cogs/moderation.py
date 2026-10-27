@@ -297,9 +297,9 @@ class ModerationCog(commands.Cog):
             else:
                 duration_text = f"{duration.seconds // 60} мин"
 
-            message = f"**Приговор исполнен.** На участника `{участник.global_name or участник.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
+            message = f"✅Участник {участник.mention} получил предупреждение\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
         else:
-            message = f"**Приговор исполнен.** На участника `{участник.global_name or участник.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
+            message = f"✅Участник {участник.mention} получил предупреждение\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
 
         embed = discord.Embed(
             description=message,
@@ -308,8 +308,8 @@ class ModerationCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-        # Delete after 5 seconds
-        await asyncio.sleep(5)
+        # Delete after 10 seconds
+        await asyncio.sleep(10)
         msg = await interaction.original_response()
         await msg.delete()
 
@@ -368,8 +368,8 @@ class ModerationCog(commands.Cog):
             mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
-        
-        message = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` участника `{участник.global_name or участник.name}` аннулировано."
+
+        message = f"✅   С участника {участник.mention} сняты ограничения!"
 
         embed = discord.Embed(
             description=message,
@@ -378,8 +378,8 @@ class ModerationCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-        # Delete after 5 seconds
-        await asyncio.sleep(5)
+        # Delete after 10 seconds
+        await asyncio.sleep(10)
         msg = await interaction.original_response()
         await msg.delete()
 
@@ -483,9 +483,9 @@ class ModerationCog(commands.Cog):
 
         # Use custom message for /молчать, standard for /мьют
         if custom:
-            message = f"По воле диктатора участник {участник.global_name or участник.name} будет молчать {duration_text}"
+            message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
         else:
-            message = f"✅Участник {участник.global_name or участник.name} замьючен!\n**Модератор:** {interaction.user.global_name or interaction.user.name}\n**Срок:** {duration_text}"
+            message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
 
         embed = discord.Embed(
             description=message,
@@ -494,8 +494,8 @@ class ModerationCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-        # Delete after 5 seconds
-        await asyncio.sleep(5)
+        # Delete after 10 seconds
+        await asyncio.sleep(10)
         msg = await interaction.original_response()
         await msg.delete()
 
@@ -560,9 +560,9 @@ class ModerationCog(commands.Cog):
 
         # Use custom message for /говори, standard for /размьют
         if custom:
-            message = f"Участнику {участник.global_name or участник.name} было даровано право говорить по воле Диктатора"
+            message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
         else:
-            message = f"✅С участника {участник.global_name or участник.name} сняты ограничения!"
+            message = f"✅С участника {участник.mention} сняты ограничения!"
 
         embed = discord.Embed(
             description=message,
@@ -571,8 +571,8 @@ class ModerationCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-        # Delete after 5 seconds
-        await asyncio.sleep(5)
+        # Delete after 10 seconds
+        await asyncio.sleep(10)
         msg = await interaction.original_response()
         await msg.delete()
 
@@ -692,8 +692,8 @@ class ModerationCog(commands.Cog):
 
                 msg = await channel.send(embed=embed)
 
-                # Delete after 5 seconds
-                await asyncio.sleep(5)
+                # Delete after 10 seconds
+                await asyncio.sleep(10)
                 await msg.delete()
 
                 # Send detailed log to webhook
@@ -738,8 +738,8 @@ class ModerationCog(commands.Cog):
 
                 msg = await channel.send(embed=embed)
 
-                # Delete after 5 seconds
-                await asyncio.sleep(5)
+                # Delete after 10 seconds
+                await asyncio.sleep(10)
                 await msg.delete()
 
                 # Send detailed log to webhook
