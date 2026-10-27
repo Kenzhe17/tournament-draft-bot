@@ -404,7 +404,7 @@ class ModerationCog(commands.Cog):
         else:
             duration_text = f"{duration.seconds // 60} мин"
 
-        message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+        message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
 
         embed = discord.Embed(
             description=message,
@@ -462,7 +462,7 @@ class ModerationCog(commands.Cog):
         # Clear mute_until in database
         await warn_store.clear_mute_until(участник.id, interaction.guild.id)
 
-        message = f"✅С участника {участник.mention} сняты ограничения!"
+        message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
 
         embed = discord.Embed(
             description=message,
@@ -482,7 +482,7 @@ class ModerationCog(commands.Cog):
         """Mute a user for a specified duration."""
         await self._mute_impl(interaction, участник, длительность)
 
-    @app_commands.command(name="запретить", description="Выдать мут пользователю")
+    @app_commands.command(name="запретить", description="Молчать")
     @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
     async def mute_alias(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
         """Alias for /мьют."""
@@ -494,7 +494,7 @@ class ModerationCog(commands.Cog):
         """Unmute a user."""
         await self._unmute_impl(interaction, участник)
 
-    @app_commands.command(name="разрешить", description="Снять мут с пользователя")
+    @app_commands.command(name="разрешить", description="Говори")
     @app_commands.describe(участник="Пользователь для снятия мута")
     async def unmute_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /размьют."""
