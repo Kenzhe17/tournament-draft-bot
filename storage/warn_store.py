@@ -1,13 +1,16 @@
 """Warning system storage."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from config import MUTE_ROLE_ID
 from storage.db import get_pool
 
 logger = logging.getLogger(__name__)
+
+# Timezone offset for GMT+5
+TIMEZONE_OFFSET = timezone(timedelta(hours=5))
 
 
 class Warn:
@@ -131,7 +134,7 @@ class WarnStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            expires_at = datetime.utcnow() + timedelta(days=7)
+            expires_at = datetime.now(TIMEZONE_OFFSET) + timedelta(days=7)
             case_id = await self.get_next_case_id(guild_id)
             warn_number = await self.get_next_warn_number(user_id, guild_id)
 
@@ -141,7 +144,7 @@ class WarnStore:
                 RETURNING warn_id
             """, user_id, guild_id, moderator_id, reason, expires_at, case_id, warn_number)
 
-            timestamp = datetime.utcnow()
+            timestamp = datetime.now(TIMEZONE_OFFSET)
             return Warn(
                 warn_id=warn_id,
                 user_id=user_id,

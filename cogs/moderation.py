@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import discord
 from discord import app_commands, ui
@@ -12,6 +12,9 @@ from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_U
 from storage.warn_store import warn_store
 
 logger = logging.getLogger(__name__)
+
+# Timezone offset for GMT+5
+TIMEZONE_OFFSET = timezone(timedelta(hours=5))
 
 
 # Mute duration scale
@@ -87,7 +90,7 @@ class WarnPaginationView(ui.View):
                 expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
                 if warn.active:
                     # Calculate time remaining
-                    remaining = warn.expires_at - datetime.utcnow()
+                    remaining = warn.expires_at - datetime.now(TIMEZONE_OFFSET)
                     days = remaining.days
                     hours = remaining.seconds // 3600
                     if days > 0:
@@ -105,7 +108,7 @@ class WarnPaginationView(ui.View):
             if mute_until:
                 mute_until_str = mute_until.strftime('%d %B %Y г. %H:%M')
                 # Calculate time remaining
-                remaining = mute_until - datetime.utcnow()
+                remaining = mute_until - datetime.now(TIMEZONE_OFFSET)
                 days = remaining.days
                 hours = remaining.seconds // 3600
                 if days > 0:
@@ -180,7 +183,7 @@ class ModerationCog(commands.Cog):
                     continue
 
                 # Send log for expired mute
-                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
                         f"**Срок мьюта участника {member.mention} ({member.name}) истек**\n\n"
@@ -210,7 +213,7 @@ class ModerationCog(commands.Cog):
                     continue
 
                 # Send log for expired warning
-                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
                         f"**Предупреждение участника {member.mention} ({member.name}) истекло**\n\n"
@@ -257,7 +260,7 @@ class ModerationCog(commands.Cog):
         if duration:
             mute_role = guild.get_role(MUTE_ROLE_ID)
             if mute_role:
-                mute_until = datetime.utcnow() + duration
+                mute_until = datetime.now(TIMEZONE_OFFSET) + duration
                 await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
                 await warn_store.set_mute_until(member.id, guild.id, mute_until)
                 logger.info(f"Muted {member.id} for {duration}")
@@ -319,7 +322,7 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
         expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
         log_embed = discord.Embed(
             description=(
@@ -395,7 +398,7 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
         log_embed = discord.Embed(
             description=(
                 f"**Предупреждение снято с участника {участник.mention} ({участник.name})**\n\n"
@@ -480,7 +483,7 @@ class ModerationCog(commands.Cog):
         await участник.add_roles(mute_role, reason=f"Мут от {interaction.user.display_name}")
 
         # Set mute_until in database
-        mute_until = datetime.utcnow() + duration
+        mute_until = datetime.now(TIMEZONE_OFFSET) + duration
         await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until)
 
         # Format duration for display
@@ -511,8 +514,8 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
-        expire_date = (datetime.utcnow() + duration).strftime('%d.%m.%Y %H:%M')
+        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+        expire_date = (datetime.now(TIMEZONE_OFFSET) + duration).strftime('%d.%m.%Y %H:%M')
         log_embed = discord.Embed(
             description=(
                 f"**Участник {участник.mention} ({участник.name}) был замьючен на всём сервере**\n\n"
@@ -588,7 +591,7 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
         log_embed = discord.Embed(
             description=(
                 f"**Участник {участник.mention} ({участник.name}) был размьючен**\n\n"
@@ -697,7 +700,7 @@ class ModerationCog(commands.Cog):
                 await msg.delete()
 
                 # Send detailed log to webhook
-                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
                 expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
                 log_embed = discord.Embed(
                     description=(
@@ -743,7 +746,7 @@ class ModerationCog(commands.Cog):
                 await msg.delete()
 
                 # Send detailed log to webhook
-                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
                 log_embed = discord.Embed(
                     description=(
                         f"**Предупреждение снято с участника {target_user.mention} ({target_user.name})**\n\n"
