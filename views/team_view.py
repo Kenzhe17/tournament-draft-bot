@@ -35,7 +35,7 @@ class TeamStatusView(discord.ui.View):
         self.add_item(TeamMenuButton(self.team))
         self.add_item(TeamLeaveButton(self.team, self.user_id, self))
         if not self.team.is_full():
-            self.add_item(TeamJoinButton(self.team))
+            self.add_item(TeamJoinButton(self.team, self))
 
     async def update(self):
         """Update the status message."""

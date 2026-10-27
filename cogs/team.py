@@ -168,6 +168,8 @@ class TeamCog(commands.Cog):
         if team.status_message_id:
             try:
                 message = await interaction.channel.fetch_message(team.status_message_id)
+                # Store message in view for dynamic updates
+                view.message = message
                 # Update existing message
                 await message.edit(embed=embed, view=view)
             except (discord.NotFound, discord.Forbidden):
@@ -181,8 +183,9 @@ class TeamCog(commands.Cog):
             team.status_message_id = message.id
             await team_store.update_team(team)
 
-        # Store message in view for dynamic updates
-        view.message = message
+        # Store message in view for dynamic updates (if not already set)
+        if not view.message:
+            view.message = message
 
         # Send ephemeral confirmation
         await interaction.response.send_message(
