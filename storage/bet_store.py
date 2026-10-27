@@ -140,7 +140,7 @@ class BetStore:
         )
 
     async def initialize_match_odds_db(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
-        """Initialize odds in database (always reset for new matches)."""
+        """Initialize odds in database (only if not already initialized)."""
         if not self._use_db:
             return
 
@@ -150,11 +150,23 @@ class BetStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
-            # Delete existing odds for this match_id to ensure fresh initialization
-            await conn.execute(
-                "DELETE FROM match_odds WHERE match_id = $1",
+            # Check if odds already exist
+            existing = await conn.fetchrow(
+                "SELECT match_id, team_a_odds, team_b_odds, team_a_buffer, team_b_buffer FROM match_odds WHERE match_id = $1",
                 match_id
             )
+            if existing:
+                # Odds already initialized, load into memory and don't reset
+                logger.info(f"Odds already exist for {match_id}: team_a={existing['team_a_odds']:.2f}x, team_b={existing['team_b_odds']:.2f}x")
+                self._odds[match_id] = MatchOdds(
+                    team_a_name=team_a_name,
+                    team_b_name=team_b_name,
+                    team_a_odds=existing['team_a_odds'],
+                    team_b_odds=existing['team_b_odds'],
+                    team_a_buffer=existing['team_a_buffer'],
+                    team_b_buffer=existing['team_b_buffer']
+                )
+                return
 
             # Calculate initial odds based on skill rating
             skill_diff = avg_skill_b - avg_skill_a
