@@ -110,6 +110,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.auto_mod")
+        await self.load_extension("cogs.unwarn")
 
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
