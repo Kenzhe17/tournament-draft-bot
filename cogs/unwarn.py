@@ -52,8 +52,7 @@ class UnwarnCog(commands.Cog):
         self.pending_unwarns[key] = asyncio.get_event_loop().time()
 
         # Send command to get user's warnings
-        msg = await ctx.send(f"!преды <@{user_id}>")
-        await msg.delete()
+        await ctx.send(f"!преды <@{user_id}>")
 
         logger.info(f"Unwarn: Requested warnings for user {user_id} in channel {ctx.channel.id}")
 
@@ -112,8 +111,7 @@ class UnwarnCog(commands.Cog):
         await asyncio.sleep(1.5)
         
         # Send the unwarn command
-        msg = await channel.send(f"!снятьпред {case_number}")
-        await msg.delete()
+        await channel.send(f"!снятьпред {case_number}")
         logger.info(f"Unwarn: Executed unwarn for case {case_number}, user {user_id}")
 
 
