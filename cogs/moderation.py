@@ -1,7 +1,6 @@
 """Warning and moderation system cog."""
 
 import logging
-import re
 from datetime import datetime, timedelta
 
 import discord
@@ -123,7 +122,7 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
     async def warn_alias(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
         """Alias for /казнить."""
-        await self.warn(interaction, участник, причина)
+        await self.warn.callback(interaction, участник, причина)
     
     @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
@@ -165,7 +164,7 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
     async def unwarn_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /пощадить."""
-        await self.unwarn(interaction, участник)
+        await self.unwarn.callback(interaction, участник)
     
     @app_commands.command(name="преды", description="Просмотреть предупреждения пользователя")
     @app_commands.describe(участник="Пользователь для просмотра")
@@ -211,7 +210,7 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для просмотра")
     async def warns_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /преды."""
-        await self.warns(interaction, участник)
+        await self.warns.callback(interaction, участник)
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
