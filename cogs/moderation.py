@@ -250,7 +250,7 @@ class ModerationCog(commands.Cog):
     async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
         """Apply punishment based on warning count."""
         duration = MUTE_SCALE.get(warn_count)
-        
+
         if duration:
             mute_role = guild.get_role(MUTE_ROLE_ID)
             if mute_role:
@@ -259,7 +259,7 @@ class ModerationCog(commands.Cog):
                 await warn_store.set_mute_until(member.id, guild.id, mute_until)
                 logger.info(f"Muted {member.id} for {duration}")
                 return duration
-        
+
         return None
     
     async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
@@ -294,9 +294,9 @@ class ModerationCog(commands.Cog):
             else:
                 duration_text = f"{duration.seconds // 60} мин"
 
-            message = f"**На приговор поставлена печать.** Участник `{участник.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
+            message = f"**На приговор поставлена печать.** Участник `{участник.global_name or участник.name}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
         else:
-            message = f"**На приговор поставлена печать.** Участник `{участник.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
+            message = f"**На приговор поставлена печать.** Участник `{участник.global_name or участник.name}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
 
         embed = discord.Embed(
             description=message,
@@ -366,7 +366,7 @@ class ModerationCog(commands.Cog):
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
-        message = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{участник.mention}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
+        message = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{участник.global_name or участник.name}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
 
         embed = discord.Embed(
             description=message,
@@ -480,9 +480,9 @@ class ModerationCog(commands.Cog):
 
         # Use custom message for /молчать, standard for /мьют
         if custom:
-            message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
+            message = f"По воле диктатора участник {участник.global_name or участник.name} будет молчать {duration_text}"
         else:
-            message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+            message = f"✅Участник {участник.global_name or участник.name} замьючен!\n**Модератор:** {interaction.user.global_name or interaction.user.name}\n**Срок:** {duration_text}"
 
         embed = discord.Embed(
             description=message,
@@ -557,9 +557,9 @@ class ModerationCog(commands.Cog):
 
         # Use custom message for /говори, standard for /размьют
         if custom:
-            message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
+            message = f"Участнику {участник.global_name or участник.name} было даровано право говорить по воле Диктатора"
         else:
-            message = f"✅С участника {участник.mention} сняты ограничения!"
+            message = f"✅С участника {участник.global_name or участник.name} сняты ограничения!"
 
         embed = discord.Embed(
             description=message,
@@ -678,9 +678,9 @@ class ModerationCog(commands.Cog):
                     else:
                         duration_text = f"{duration.seconds // 60} мин"
 
-                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
+                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.global_name or target_user.name}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
                 else:
-                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
+                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.global_name or target_user.name}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
 
                 embed = discord.Embed(
                     description=warn_msg,
@@ -726,7 +726,7 @@ class ModerationCog(commands.Cog):
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
 
-                unwarn_msg = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{target_user.mention}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
+                unwarn_msg = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{target_user.global_name or target_user.name}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
 
                 embed = discord.Embed(
                     description=unwarn_msg,
