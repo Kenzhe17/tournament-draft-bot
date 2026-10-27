@@ -115,9 +115,10 @@ class WarnPaginationView(ui.View):
 
             field_value += "───────────────────────────────────"
 
-            # Add field with case number and date in name
-            status = "✅" if warn.active else "❌"
-            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
+            # Add field with case number and date in name (no emojis)
+            case_id = getattr(warn, 'case_id', warn.warn_id)
+            warn_number = getattr(warn, 'warn_number', warn.warn_id)
+            field_name = f"Случай `#{case_id}` **{date_str}**"
             embed.add_field(name=field_name, value=field_value, inline=False)
 
         # Footer
@@ -252,18 +253,18 @@ class ModerationCog(commands.Cog):
                 duration_text = f"{hours} ч"
             else:
                 duration_text = f"{duration.seconds // 60} мин"
-            
-            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+
+            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
         else:
-            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
-        
+            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`)"
+
         embed = discord.Embed(
             description=message,
             color=discord.Color(0xFFAA00)
         )
-        
+
         await interaction.response.send_message(embed=embed)
-        
+
         # Delete after 5 seconds
         await asyncio.sleep(5)
         msg = await interaction.original_response()
@@ -305,15 +306,15 @@ class ModerationCog(commands.Cog):
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
-        message = f"✅Предупреждение участника {участник.mention} #{warn.warn_id} снято"
-        
+        message = f"✅Предупреждение участника {участник.mention} #{warn.warn_number} снято"
+
         embed = discord.Embed(
             description=message,
             color=discord.Color(0xFFAA00)
         )
-        
+
         await interaction.response.send_message(embed=embed)
-        
+
         # Delete after 5 seconds
         await asyncio.sleep(5)
         msg = await interaction.original_response()
@@ -424,18 +425,18 @@ class ModerationCog(commands.Cog):
                         duration_text = f"{hours} ч"
                     else:
                         duration_text = f"{duration.seconds // 60} мин"
-                    
-                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+
+                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
                 else:
-                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
-                
+                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`)"
+
                 embed = discord.Embed(
                     description=warn_msg,
                     color=discord.Color(0xFFAA00)
                 )
-                
+
                 msg = await channel.send(embed=embed)
-                
+
                 # Delete after 5 seconds
                 await asyncio.sleep(5)
                 await msg.delete()
@@ -452,16 +453,16 @@ class ModerationCog(commands.Cog):
                     mute_role = message.guild.get_role(MUTE_ROLE_ID)
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
-                
-                unwarn_msg = f"✅Предупреждение участника {target_user.mention} #{warn.warn_id} снято"
-                
+
+                unwarn_msg = f"✅Предупреждение участника {target_user.mention} #{warn.warn_number} снято"
+
                 embed = discord.Embed(
                     description=unwarn_msg,
                     color=discord.Color(0xFFAA00)
                 )
-                
+
                 msg = await channel.send(embed=embed)
-                
+
                 # Delete after 5 seconds
                 await asyncio.sleep(5)
                 await msg.delete()

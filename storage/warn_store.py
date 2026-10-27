@@ -14,7 +14,7 @@ class Warn:
     """Warning data model."""
 
     def __init__(self, warn_id: int, user_id: int, guild_id: int,
-                 timestamp: datetime, reason: str, active: bool = True, moderator_id: int = None, expires_at: datetime = None):
+                 timestamp: datetime, reason: str, active: bool = True, moderator_id: int = None, expires_at: datetime = None, case_id: int = None):
         self.warn_id = warn_id
         self.user_id = user_id
         self.guild_id = guild_id
@@ -23,6 +23,7 @@ class Warn:
         self.active = active
         self.moderator_id = moderator_id
         self.expires_at = expires_at
+        self.case_id = case_id
 
 
 class WarnStore:
@@ -54,7 +55,9 @@ class WarnStore:
                     reason TEXT,
                     active BOOLEAN DEFAULT TRUE,
                     mute_until TIMESTAMP,
-                    expires_at TIMESTAMP
+                    expires_at TIMESTAMP,
+                    case_id INTEGER,
+                    warn_number INTEGER
                 )
             """)
 
@@ -68,8 +71,56 @@ class WarnStore:
             except Exception as e:
                 logger.info(f"expires_at column may already exist: {e}")
 
+            # Add case_id column if it doesn't exist (migration)
+            try:
+                await conn.execute("""
+                    ALTER TABLE warnings
+                    ADD COLUMN IF NOT EXISTS case_id INTEGER
+                """)
+                logger.info("Added case_id column to warnings table")
+            except Exception as e:
+                logger.info(f"case_id column may already exist: {e}")
+
+            # Add warn_number column if it doesn't exist (migration)
+            try:
+                await conn.execute("""
+                    ALTER TABLE warnings
+                    ADD COLUMN IF NOT EXISTS warn_number INTEGER
+                """)
+                logger.info("Added warn_number column to warnings table")
+            except Exception as e:
+                logger.info(f"warn_number column may already exist: {e}")
+
             logger.info("Warnings table initialized")
     
+    async def get_next_case_id(self, guild_id: int) -> int:
+        """Get the next case ID for a guild."""
+        if not self.enabled:
+            return 1
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            max_case = await conn.fetchval("""
+                SELECT MAX(case_id)
+                FROM warnings
+                WHERE guild_id = $1
+            """, guild_id)
+            return (max_case or 0) + 1
+
+    async def get_next_warn_number(self, user_id: int, guild_id: int) -> int:
+        """Get the next warning number for a user in a guild."""
+        if not self.enabled:
+            return 1
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            max_warn = await conn.fetchval("""
+                SELECT MAX(warn_number)
+                FROM warnings
+                WHERE user_id = $1 AND guild_id = $2
+            """, user_id, guild_id)
+            return (max_warn or 0) + 1
+
     async def add_warn(self, user_id: int, guild_id: int,
                       moderator_id: int, reason: str = "Без причины") -> Warn:
         """Add a warning to the database."""
@@ -80,14 +131,17 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             expires_at = datetime.utcnow() + timedelta(days=7)
+            case_id = await self.get_next_case_id(guild_id)
+            warn_number = await self.get_next_warn_number(user_id, guild_id)
+
             warn_id = await conn.fetchval("""
-                INSERT INTO warnings (user_id, guild_id, moderator_id, reason, expires_at)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO warnings (user_id, guild_id, moderator_id, reason, expires_at, case_id, warn_number)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING warn_id
-            """, user_id, guild_id, moderator_id, reason, expires_at)
+            """, user_id, guild_id, moderator_id, reason, expires_at, case_id, warn_number)
 
             timestamp = datetime.utcnow()
-            return Warn(warn_id, user_id, guild_id, timestamp, reason, True, moderator_id, expires_at)
+            return Warn(warn_id, user_id, guild_id, timestamp, reason, True, moderator_id, expires_at, case_id, warn_number)
     
     async def get_active_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all active warnings for a user."""
@@ -97,14 +151,14 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at
+                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at, case_id, warn_number
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2 AND active = TRUE AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
 
             return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at']) for row in rows]
+                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number']) for row in rows]
     
     async def get_all_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all warnings for a user (including inactive)."""
@@ -114,14 +168,14 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at
+                SELECT warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at, case_id, warn_number
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
 
             return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at']) for row in rows]
+                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number']) for row in rows]
     
     async def remove_last_warn(self, user_id: int, guild_id: int) -> Optional[Warn]:
         """Remove the most recent active warning."""
@@ -131,20 +185,19 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow("""
-                UPDATE warnings
-                SET active = FALSE
+                DELETE FROM warnings
                 WHERE warn_id = (
                     SELECT warn_id FROM warnings
                     WHERE user_id = $1 AND guild_id = $2 AND active = TRUE
                     ORDER BY timestamp DESC
                     LIMIT 1
                 )
-                RETURNING warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at
+                RETURNING warn_id, user_id, guild_id, timestamp, reason, active, moderator_id, expires_at, case_id, warn_number
             """, user_id, guild_id)
 
             if row:
                 return Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                           row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'])
+                           row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number'])
             return None
     
     async def set_mute_until(self, user_id: int, guild_id: int, mute_until: datetime):
@@ -177,18 +230,19 @@ class WarnStore:
             return mute_until
     
     async def clear_expired_mutes(self) -> List[int]:
-        """Get users with expired mutes."""
+        """Get users with expired mutes and clear mute_until."""
         if not self.enabled:
             return []
 
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT DISTINCT user_id, guild_id
-                FROM warnings
+                UPDATE warnings
+                SET mute_until = NULL
                 WHERE active = TRUE
                   AND mute_until IS NOT NULL
                   AND mute_until <= CURRENT_TIMESTAMP
+                RETURNING DISTINCT user_id, guild_id
             """)
 
             return [(row['user_id'], row['guild_id']) for row in rows]
@@ -201,15 +255,43 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                UPDATE warnings
-                SET active = FALSE
+                DELETE FROM warnings
                 WHERE active = TRUE
                   AND expires_at IS NOT NULL
                   AND expires_at <= CURRENT_TIMESTAMP
                 RETURNING user_id, guild_id
             """)
 
-            return [(row['user_id'], row['guild_id']) for row in rows]
+            affected = [(row['user_id'], row['guild_id']) for row in rows]
+
+            # Recalculate warn_numbers for affected users
+            for user_id, guild_id in affected:
+                await self.recalculate_warn_numbers(user_id, guild_id)
+
+            return affected
+
+    async def recalculate_warn_numbers(self, user_id: int, guild_id: int):
+        """Recalculate warn_numbers for a user to keep them sequential."""
+        if not self.enabled:
+            return
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Get all warnings for the user ordered by timestamp
+            rows = await conn.fetch("""
+                SELECT warn_id
+                FROM warnings
+                WHERE user_id = $1 AND guild_id = $2
+                ORDER BY timestamp ASC
+            """, user_id, guild_id)
+
+            # Update warn_numbers sequentially
+            for idx, row in enumerate(rows, start=1):
+                await conn.execute("""
+                    UPDATE warnings
+                    SET warn_number = $1
+                    WHERE warn_id = $2
+                """, idx, row['warn_id'])
 
 
 warn_store = WarnStore()
