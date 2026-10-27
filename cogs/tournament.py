@@ -1494,12 +1494,7 @@ class TournamentCog(commands.Cog):
 
             if operation == "set":
                 new_balance = amount
-                # Calculate difference to add/remove
-                diff = new_balance - current_balance
-                if diff > 0:
-                    await user_balance_store.add_balance(interaction.guild_id, player.id, diff)
-                elif diff < 0:
-                    await user_balance_store.remove_balance(interaction.guild_id, player.id, abs(diff))
+                await user_balance_store.set_balance(interaction.guild_id, player.id, new_balance)
             elif operation == "add":
                 new_balance = current_balance + amount
                 await user_balance_store.add_balance(interaction.guild_id, player.id, amount)

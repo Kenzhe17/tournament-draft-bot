@@ -74,7 +74,12 @@ class BetAmountModal(Modal, title="Сумма ставки"):
         except Exception as e:
             import logging
             logging.error(f"Error placing bet: {e}", exc_info=True)
-            await interaction.response.send_message(replace_emojis(f"❌ Ошибка при создании ставки: {str(e)}"), ephemeral=True)
+            # Use followup since interaction may already be responded to
+            try:
+                await interaction.followup.send_message(replace_emojis(f"❌ Ошибка при создании ставки: {str(e)}"), ephemeral=True)
+            except Exception:
+                # If followup also fails, we can't do much
+                pass
 
     def _get_user_team_index(self, user_id):
         if self.match_type == "qualifiers":
