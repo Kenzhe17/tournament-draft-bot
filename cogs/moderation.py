@@ -404,7 +404,7 @@ class ModerationCog(commands.Cog):
         else:
             duration_text = f"{duration.seconds // 60} мин"
 
-        message = f"✅Участник {участник.mention} замьючен!\nМодератор: {interaction.user.mention}\nСрок: {duration_text}"
+        message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
 
         embed = discord.Embed(
             description=message,
