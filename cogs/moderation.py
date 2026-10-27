@@ -43,24 +43,47 @@ class ModerationCog(commands.Cog):
     
     @tasks.loop(minutes=1)
     async def mute_check_task(self):
-        """Check for expired mutes every minute."""
+        """Check for expired mutes and warnings every minute."""
         try:
-            expired_users = await warn_store.clear_expired_mutes()
-            
-            for user_id, guild_id in expired_users:
+            # Clear expired mutes
+            expired_mutes = await warn_store.clear_expired_mutes()
+
+            for user_id, guild_id in expired_mutes:
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
                     continue
-                
+
                 member = guild.get_member(user_id)
                 if not member:
                     continue
-                
+
                 # Remove mute role
                 mute_role = guild.get_role(MUTE_ROLE_ID)
                 if mute_role and mute_role in member.roles:
                     await member.remove_roles(mute_role, reason="Мут истек")
                     logger.info(f"Removed mute role from {user_id} in guild {guild_id}")
+
+            # Clear expired warnings
+            expired_warns = await warn_store.clear_expired_warns()
+
+            for user_id, guild_id in expired_warns:
+                guild = self.bot.get_guild(guild_id)
+                if not guild:
+                    continue
+
+                member = guild.get_member(user_id)
+                if not member:
+                    continue
+
+                # Check if user still has active warnings
+                active_warns = await warn_store.get_active_warns(user_id, guild_id)
+                if len(active_warns) < 4:
+                    # If user has less than 4 active warnings, remove mute role
+                    mute_role = guild.get_role(MUTE_ROLE_ID)
+                    if mute_role and mute_role in member.roles:
+                        await member.remove_roles(mute_role, reason="Предупреждение истекло")
+                        logger.info(f"Removed mute role from {user_id} due to expired warning in guild {guild_id}")
+
         except Exception as e:
             logger.error(f"Error in mute check task: {e}", exc_info=True)
     
@@ -220,8 +243,9 @@ class ModerationCog(commands.Cog):
         # Add warning fields
         for warn in all_warns[:10]:  # Show last 10
             date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
-            field_name = f"Случай `#{warn.warn_id}` **{date_str}**"
-            
+            status = "✅" if warn.active else "❌"
+            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
+
             # Get moderator info
             moderator_id = getattr(warn, 'moderator_id', interaction.user.id)
             moderator = interaction.guild.get_member(moderator_id)
@@ -229,9 +253,27 @@ class ModerationCog(commands.Cog):
                 moderator_mention = moderator.mention
             else:
                 moderator_mention = f"<@{moderator_id}>"
-            
+
             field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
-            
+
+            # Add expiration if exists
+            if warn.expires_at:
+                expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
+                if warn.active:
+                    # Calculate time remaining
+                    remaining = warn.expires_at - datetime.utcnow()
+                    days = remaining.days
+                    hours = remaining.seconds // 3600
+                    if days > 0:
+                        remaining_text = f"*(через {days} дн)*"
+                    elif hours > 0:
+                        remaining_text = f"*(через {hours} ч)*"
+                    else:
+                        remaining_text = "*(скоро)*"
+                    field_value += f"**Истекает:** `{expires_str}` {remaining_text}\n"
+                else:
+                    field_value += f"**Истекло:** `{expires_str}`\n"
+
             # Add mute_until if exists
             mute_until = await warn_store.get_mute_until(участник.id, interaction.guild.id)
             if mute_until:
@@ -246,12 +288,12 @@ class ModerationCog(commands.Cog):
                     remaining_text = f"*(через {hours} ч)*"
                 else:
                     remaining_text = "*(скоро)*"
-                field_value += f"**Действует до:** `{mute_until_str}` {remaining_text}\n"
-            
+                field_value += f"**Мут до:** `{mute_until_str}` {remaining_text}\n"
+
             # Add reason if exists
             if warn.reason and warn.reason != "Без причины":
                 field_value += f"**Причина:** {warn.reason}\n"
-            
+
             field_value += "───────────────────────────────────"
             embed.add_field(name=field_name, value=field_value, inline=False)
         
