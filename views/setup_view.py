@@ -332,6 +332,17 @@ class JoinPoolButton(discord.ui.Button):
                 )
                 return
 
+            # Check if user is active in another regular tournament
+            all_tournaments = store.get_by_guild(self.guild_id)
+            for other_tournament in all_tournaments:
+                if other_tournament.id != tournament.id:
+                    if other_tournament.is_player_active(interaction.user.id):
+                        await interaction.response.send_message(
+                            replace_emojis("❌ Вы уже участвуете в другом активном турнире."),
+                            ephemeral=True
+                        )
+                        return
+
             # Add player to pool
             tournament.players_pool.append(user_name)
             tournament.player_user_ids[user_name] = interaction.user.id
