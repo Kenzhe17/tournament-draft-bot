@@ -157,8 +157,18 @@ class WarnStore:
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
 
-            return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number']) for row in rows]
+            return [Warn(
+                warn_id=row['warn_id'],
+                user_id=row['user_id'],
+                guild_id=row['guild_id'],
+                timestamp=row['timestamp'],
+                reason=row['reason'],
+                active=row['active'],
+                moderator_id=row['moderator_id'],
+                expires_at=row['expires_at'],
+                case_id=row['case_id'],
+                warn_number=row['warn_number']
+            ) for row in rows]
     
     async def get_all_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all warnings for a user (including inactive)."""
@@ -174,8 +184,18 @@ class WarnStore:
                 ORDER BY timestamp DESC
             """, user_id, guild_id)
 
-            return [Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                        row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number']) for row in rows]
+            return [Warn(
+                warn_id=row['warn_id'],
+                user_id=row['user_id'],
+                guild_id=row['guild_id'],
+                timestamp=row['timestamp'],
+                reason=row['reason'],
+                active=row['active'],
+                moderator_id=row['moderator_id'],
+                expires_at=row['expires_at'],
+                case_id=row['case_id'],
+                warn_number=row['warn_number']
+            ) for row in rows]
     
     async def remove_last_warn(self, user_id: int, guild_id: int) -> Optional[Warn]:
         """Remove the most recent active warning."""
@@ -196,8 +216,18 @@ class WarnStore:
             """, user_id, guild_id)
 
             if row:
-                return Warn(row['warn_id'], row['user_id'], row['guild_id'],
-                           row['timestamp'], row['reason'], row['active'], row['moderator_id'], row['expires_at'], row['case_id'], row['warn_number'])
+                return Warn(
+                    warn_id=row['warn_id'],
+                    user_id=row['user_id'],
+                    guild_id=row['guild_id'],
+                    timestamp=row['timestamp'],
+                    reason=row['reason'],
+                    active=row['active'],
+                    moderator_id=row['moderator_id'],
+                    expires_at=row['expires_at'],
+                    case_id=row['case_id'],
+                    warn_number=row['warn_number']
+                )
             return None
     
     async def set_mute_until(self, user_id: int, guild_id: int, mute_until: datetime):
