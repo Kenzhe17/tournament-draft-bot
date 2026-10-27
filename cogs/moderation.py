@@ -8,7 +8,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
 
-from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL
+from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_URL
 from storage.warn_store import warn_store
 
 logger = logging.getLogger(__name__)
@@ -179,6 +179,18 @@ class ModerationCog(commands.Cog):
                 if not member:
                     continue
 
+                # Send log for expired mute
+                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                log_embed = discord.Embed(
+                    description=(
+                        f"**Срок мьюта участника {member.mention} (`{member.name}`) истек**\n\n"
+                        f"**Случай:** `#Авто`\n\n"
+                        f"`ID участника: {member.id}` • `{current_timestamp}`"
+                    ),
+                    color=discord.Color.green()
+                )
+                await self.send_mod_log(log_embed)
+
                 # Remove mute role
                 mute_role = guild.get_role(MUTE_ROLE_ID)
                 if mute_role and mute_role in member.roles:
@@ -197,6 +209,19 @@ class ModerationCog(commands.Cog):
                 if not member:
                     continue
 
+                # Send log for expired warning
+                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                log_embed = discord.Embed(
+                    description=(
+                        f"**Предупреждение участника {member.mention} (`{member.name}`) истекло**\n\n"
+                        f"**Модератор:** Бот (Автоматически)\n"
+                        f"**Случай:** `#Авто`\n\n"
+                        f"`ID участника: {member.id}` • `{current_timestamp}`"
+                    ),
+                    color=discord.Color.green()
+                )
+                await self.send_mod_log(log_embed)
+
                 # Check if user still has active warnings
                 active_warns = await warn_store.get_active_warns(user_id, guild_id)
                 if len(active_warns) < 4:
@@ -213,6 +238,14 @@ class ModerationCog(commands.Cog):
     async def before_mute_check(self):
         """Wait for bot to be ready before starting task."""
         await self.bot.wait_until_ready()
+
+    async def send_mod_log(self, embed: discord.Embed):
+        """Send moderation log to webhook."""
+        try:
+            webhook = discord.SyncWebhook.from_url(MOD_LOG_WEBHOOK_URL)
+            await webhook.send(embed=embed, username="Модератор")
+        except Exception as e:
+            logger.error(f"Failed to send mod log: {e}", exc_info=True)
     
     async def apply_punishment(self, guild: discord.Guild, member: discord.Member, warn_count: int):
         """Apply punishment based on warning count."""
@@ -277,6 +310,26 @@ class ModerationCog(commands.Cog):
         msg = await interaction.original_response()
         await msg.delete()
 
+        # Send detailed log to webhook
+        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        duration_info = f"{duration_text} ({warn.expires_at.strftime('%d.%m.%Y %H:%M')})" if duration else "7 дней"
+        log_embed = discord.Embed(
+            description=(
+                f"**Участник {участник.mention} (`{участник.name}`) получил предупреждение**\n\n"
+                f"**Модератор:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                f"**Канал:** {interaction.channel.mention}\n"
+                f"**Предупреждение:** `#{warn.warn_number}`\n"
+                f"**Случай:** `#{warn.case_id}`\n"
+                f"**Длительность:** {duration_info}\n"
+                f"────────────────────────\n"
+                f"**Причина**\n"
+                f"{причина}\n\n"
+                f"`ID участника: {участник.id}` • `{current_timestamp}`"
+            ),
+            color=discord.Color.orange()
+        )
+        await self.send_mod_log(log_embed)
+
     @app_commands.command(name="казнить", description="Выдать предупреждение")
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
     async def warn(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
@@ -326,6 +379,20 @@ class ModerationCog(commands.Cog):
         await asyncio.sleep(5)
         msg = await interaction.original_response()
         await msg.delete()
+
+        # Send detailed log to webhook
+        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        log_embed = discord.Embed(
+            description=(
+                f"**Предупреждение снято с участника {участник.mention} (`{участник.name}`)**\n\n"
+                f"**Модератор:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                f"**Канал:** {interaction.channel.mention}\n"
+                f"**Случай:** `#{warn.case_id}`\n\n"
+                f"`ID участника: {участник.id}` • `{current_timestamp}`"
+            ),
+            color=discord.Color.green()
+        )
+        await self.send_mod_log(log_embed)
 
     @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
@@ -429,6 +496,21 @@ class ModerationCog(commands.Cog):
         msg = await interaction.original_response()
         await msg.delete()
 
+        # Send detailed log to webhook
+        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        expire_date = (datetime.utcnow() + duration).strftime('%d.%m.%Y %H:%M')
+        log_embed = discord.Embed(
+            description=(
+                f"**Участник {участник.mention} (`{участник.name}`) был замьючен на всём сервере**\n\n"
+                f"**Модератор:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                f"**Канал:** {interaction.channel.mention}\n"
+                f"**Длительность:** {duration_text} (`{expire_date}`)\n\n"
+                f"`ID участника: {участник.id}` • `{current_timestamp}`"
+            ),
+            color=discord.Color.orange()
+        )
+        await self.send_mod_log(log_embed)
+
     def parse_duration(self, duration_str: str) -> timedelta:
         """Parse duration string like '1ч', '30м', '1д'."""
         duration_str = duration_str.lower().strip()
@@ -490,6 +572,19 @@ class ModerationCog(commands.Cog):
         await asyncio.sleep(5)
         msg = await interaction.original_response()
         await msg.delete()
+
+        # Send detailed log to webhook
+        current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+        log_embed = discord.Embed(
+            description=(
+                f"**Участник {участник.mention} (`{участник.name}`) был размьючен**\n\n"
+                f"**Модератор:** {interaction.user.mention} (`{interaction.user.name}`)\n"
+                f"**Канал:** {interaction.channel.mention}\n\n"
+                f"`ID участника: {участник.id}` • `{current_timestamp}`"
+            ),
+            color=discord.Color.green()
+        )
+        await self.send_mod_log(log_embed)
 
     @app_commands.command(name="мьют", description="Выдать мут пользователю")
     @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
@@ -597,6 +692,26 @@ class ModerationCog(commands.Cog):
                 # Delete after 5 seconds
                 await asyncio.sleep(5)
                 await msg.delete()
+
+                # Send detailed log to webhook
+                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                duration_info = f"{duration_text} ({warn.expires_at.strftime('%d.%m.%Y %H:%M')})" if duration else "7 дней"
+                log_embed = discord.Embed(
+                    description=(
+                        f"**Участник {target_user.mention} (`{target_user.name}`) получил предупреждение**\n\n"
+                        f"**Модератор:** {message.author.mention} (`{message.author.name}`)\n"
+                        f"**Канал:** {channel.mention}\n"
+                        f"**Предупреждение:** `#{warn.warn_number}`\n"
+                        f"**Случай:** `#{warn.case_id}`\n"
+                        f"**Длительность:** {duration_info}\n"
+                        f"────────────────────────\n"
+                        f"**Причина**\n"
+                        f"Воля Диктатора\n\n"
+                        f"`ID участника: {target_user.id}` • `{current_timestamp}`"
+                    ),
+                    color=discord.Color.orange()
+                )
+                await self.send_mod_log(log_embed)
         
         elif is_unwarn_gif:
             # Remove warning
@@ -623,6 +738,20 @@ class ModerationCog(commands.Cog):
                 # Delete after 5 seconds
                 await asyncio.sleep(5)
                 await msg.delete()
+
+                # Send detailed log to webhook
+                current_timestamp = datetime.utcnow().strftime('%d.%m.%Y %H:%M:%S')
+                log_embed = discord.Embed(
+                    description=(
+                        f"**Предупреждение снято с участника {target_user.mention} (`{target_user.name}`)**\n\n"
+                        f"**Модератор:** {message.author.mention} (`{message.author.name}`)\n"
+                        f"**Канал:** {channel.mention}\n"
+                        f"**Случай:** `#{warn.case_id}`\n\n"
+                        f"`ID участника: {target_user.id}` • `{current_timestamp}`"
+                    ),
+                    color=discord.Color.green()
+                )
+                await self.send_mod_log(log_embed)
 
 
 async def setup(bot: commands.Bot):
