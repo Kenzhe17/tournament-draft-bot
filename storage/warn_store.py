@@ -14,7 +14,7 @@ class Warn:
     """Warning data model."""
 
     def __init__(self, warn_id: int, user_id: int, guild_id: int,
-                 timestamp: datetime, reason: str, active: bool = True, moderator_id: int = None, expires_at: datetime = None, case_id: int = None):
+                 timestamp: datetime, reason: str, active: bool = True, moderator_id: int = None, expires_at: datetime = None, case_id: int = None, warn_number: int = None):
         self.warn_id = warn_id
         self.user_id = user_id
         self.guild_id = guild_id
@@ -24,6 +24,7 @@ class Warn:
         self.moderator_id = moderator_id
         self.expires_at = expires_at
         self.case_id = case_id
+        self.warn_number = warn_number
 
 
 class WarnStore:
@@ -141,7 +142,18 @@ class WarnStore:
             """, user_id, guild_id, moderator_id, reason, expires_at, case_id, warn_number)
 
             timestamp = datetime.utcnow()
-            return Warn(warn_id, user_id, guild_id, timestamp, reason, True, moderator_id, expires_at, case_id, warn_number)
+            return Warn(
+                warn_id=warn_id,
+                user_id=user_id,
+                guild_id=guild_id,
+                timestamp=timestamp,
+                reason=reason,
+                active=True,
+                moderator_id=moderator_id,
+                expires_at=expires_at,
+                case_id=case_id,
+                warn_number=warn_number
+            )
     
     async def get_active_warns(self, user_id: int, guild_id: int) -> List[Warn]:
         """Get all active warnings for a user."""
@@ -166,8 +178,8 @@ class WarnStore:
                 active=row['active'],
                 moderator_id=row['moderator_id'],
                 expires_at=row['expires_at'],
-                case_id=row['case_id'],
-                warn_number=row['warn_number']
+                case_id=row.get('case_id'),
+                warn_number=row.get('warn_number')
             ) for row in rows]
     
     async def get_all_warns(self, user_id: int, guild_id: int) -> List[Warn]:
@@ -193,8 +205,8 @@ class WarnStore:
                 active=row['active'],
                 moderator_id=row['moderator_id'],
                 expires_at=row['expires_at'],
-                case_id=row['case_id'],
-                warn_number=row['warn_number']
+                case_id=row.get('case_id'),
+                warn_number=row.get('warn_number')
             ) for row in rows]
     
     async def remove_last_warn(self, user_id: int, guild_id: int) -> Optional[Warn]:
@@ -225,8 +237,8 @@ class WarnStore:
                     active=row['active'],
                     moderator_id=row['moderator_id'],
                     expires_at=row['expires_at'],
-                    case_id=row['case_id'],
-                    warn_number=row['warn_number']
+                    case_id=row.get('case_id'),
+                    warn_number=row.get('warn_number')
                 )
             return None
     
