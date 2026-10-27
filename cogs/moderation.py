@@ -297,9 +297,9 @@ class ModerationCog(commands.Cog):
             else:
                 duration_text = f"{duration.seconds // 60} мин"
 
-            message = f"✅Участник {участник.mention} получил предупреждение\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+            message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
         else:
-            message = f"✅Участник {участник.mention} получил предупреждение\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
+            message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
 
         embed = discord.Embed(
             description=message,
@@ -369,7 +369,7 @@ class ModerationCog(commands.Cog):
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
 
-        message = f"✅   С участника {участник.mention} сняты ограничения!"
+        message = f"✅ С участника {участник.mention} снята предупреждение #{warn.warn_number} (случай #{warn.case_id})!"
 
         embed = discord.Embed(
             description=message,
@@ -562,7 +562,7 @@ class ModerationCog(commands.Cog):
         if custom:
             message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
         else:
-            message = f"✅С участника {участник.mention} сняты ограничения!"
+            message = f"✅Участник {участник.mention} был размьючен!"
 
         embed = discord.Embed(
             description=message,
@@ -729,7 +729,7 @@ class ModerationCog(commands.Cog):
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
 
-                unwarn_msg = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` участника `{target_user.global_name or target_user.name}` аннулировано."
+                unwarn_msg = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`) участника `{target_user.global_name or target_user.name}` аннулировано."
 
                 embed = discord.Embed(
                     description=unwarn_msg,
