@@ -32,7 +32,7 @@ class TeamStatusView(discord.ui.View):
             self.remove_item(item)
 
         # Always show all buttons - permissions checked in callbacks
-        self.add_item(TeamMenuButton(self.team))
+        self.add_item(TeamMenuButton(self.team, self))
         self.add_item(TeamLeaveButton(self.team, self.user_id, self))
         if not self.team.is_full():
             self.add_item(TeamJoinButton(self.team, self))
@@ -85,7 +85,7 @@ class TeamStatusView(discord.ui.View):
         )
 
         try:
-            await self.message.edit(embed=embed)
+            await self.message.edit(embed=embed, view=self)
         except (discord.NotFound, discord.Forbidden, AttributeError):
             # If message is not available or None, ignore
             pass
@@ -94,13 +94,14 @@ class TeamStatusView(discord.ui.View):
 class TeamMenuButton(discord.ui.Button):
     """Button to open captain menu."""
 
-    def __init__(self, team: Team):
+    def __init__(self, team: Team, status_view=None):
         super().__init__(
             label="⚙️ Меню",
             style=discord.ButtonStyle.primary,
             custom_id="team_menu"
         )
         self.team = team
+        self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
         if not self.team.is_captain(interaction.user.id):
@@ -110,7 +111,7 @@ class TeamMenuButton(discord.ui.Button):
             )
             return
 
-        view = TeamMenuView(self.team)
+        view = TeamMenuView(self.team, self.status_view)
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Меню капитана",
             description=f"{replace_emojis('white_arrow')} Управление командой **{self.team.team_name}**",
@@ -159,9 +160,12 @@ class TeamLeaveButton(discord.ui.Button):
 
         # Update the original status message
         if self.status_view:
-            # Update the user_id in the status view to match the interaction user
-            self.status_view.user_id = interaction.user_id
+            # Refresh team from database and update status message
             await self.status_view.update()
+            # Update team reference in status_view
+            updated_team = await team_store.refresh_from_db(self.team.team_id)
+            if updated_team:
+                self.status_view.team = updated_team
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы покинули команду",
@@ -248,6 +252,10 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
         # Update status message
         if self.status_view:
             await self.status_view.update()
+            # Update team reference in status_view
+            updated_team = await team_store.refresh_from_db(self.team.team_id)
+            if updated_team:
+                self.status_view.team = updated_team
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы вступили в команду",
@@ -329,6 +337,10 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
         if self.status_view and self.status_view.message:
             # Refresh team from database and update status message
             await self.status_view.update()
+            # Update team reference in status_view
+            updated_team = await team_store.refresh_from_db(self.team.team_id)
+            if updated_team:
+                self.status_view.team = updated_team
 
         # Respond with success message (modal response)
         embed = discord.Embed(
@@ -382,21 +394,21 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
             )
             return
 
+        # Update status message if exists
+        if self.status_view and self.status_view.message:
+            await self.status_view.update()
+            # Update team reference in status_view
+            updated_team = await team_store.refresh_from_db(self.team.team_id)
+            if updated_team:
+                self.status_view.team = updated_team
+
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Пароль изменен",
             description=f"{replace_emojis('white_arrow')} Новый пароль: ||{self.team.password}||",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.edit_message(embed=embed)
-
-        embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Пароль изменен",
-            description=f"{replace_emojis('white_arrow')} Новый пароль: ||{self.team.password}||",
-            color=discord.Color.from_rgb(114, 137, 218)
-        )
-
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class KickMemberButton(discord.ui.Button):
@@ -468,6 +480,10 @@ class KickMemberSelectView(discord.ui.View):
         # Update status message
         if self.status_view:
             await self.status_view.update()
+            # Update team reference in status_view
+            updated_team = await team_store.refresh_from_db(self.team.team_id)
+            if updated_team:
+                self.status_view.team = updated_team
 
         await interaction.response.send_message(
             replace_emojis("✅ Участник исключен из команды!"),
