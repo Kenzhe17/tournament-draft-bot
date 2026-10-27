@@ -19,7 +19,7 @@ class BotSettingsCog(commands.Cog):
         self.bot = bot
         logger.info("BotSettingsCog initialized")
 
-    @app_commands.Group(name="off", description="Управление функциями бота")
+    @app_commands.group(name="off", description="Управление функциями бота")
     async def off(self, interaction: discord.Interaction):
         """Root command for bot settings."""
         if interaction.user.id != BOT_OWNER_ID:
