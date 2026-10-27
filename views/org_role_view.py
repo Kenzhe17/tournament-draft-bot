@@ -251,6 +251,23 @@ class ReleaseRoleButton(discord.ui.Button):
             )
 
 
+class BackButton(discord.ui.Button):
+    """Кнопка для возврата к главному меню."""
+
+    def __init__(self):
+        super().__init__(
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            custom_id="org_back"
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        state = load_state()
+        view = OrgRoleView(state)
+        new_embed = build_org_role_embed(interaction.guild, state)
+        await interaction.response.edit_message(embed=new_embed, view=view)
+
+
 class ResetButton(discord.ui.Button):
     """Кнопка для сброса роли (только для админов)."""
 
@@ -374,6 +391,9 @@ class RoleSelectionView(discord.ui.View):
             else:
                 # Always show take button, even if full (will show error in callback)
                 self.add_item(TakeRoleButton(state, role_id, role_name))
+
+        # Add back button
+        self.add_item(BackButton())
 
 
 def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.Embed:

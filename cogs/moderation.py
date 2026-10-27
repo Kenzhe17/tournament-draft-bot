@@ -120,10 +120,11 @@ class ModerationCog(commands.Cog):
         else:
             message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_id}` (случай `#{warn.warn_id}`)"
         
-        msg = await interaction.response.send_message(message)
+        await interaction.response.send_message(message)
         
         # Delete after 5 seconds
         await asyncio.sleep(5)
+        msg = await interaction.original_response()
         await msg.delete()
 
     @app_commands.command(name="казнить", description="Выдать предупреждение")
@@ -163,10 +164,11 @@ class ModerationCog(commands.Cog):
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
         message = f"✅Предупреждение участника {участник.mention} #{warn.warn_id} снято"
-        msg = await interaction.response.send_message(message)
+        await interaction.response.send_message(message)
         
         # Delete after 5 seconds
         await asyncio.sleep(5)
+        msg = await interaction.original_response()
         await msg.delete()
 
     @app_commands.command(name="пощадить", description="Снять последнее предупреждение")
@@ -200,9 +202,9 @@ class ModerationCog(commands.Cog):
         embed = discord.Embed(
             title="Список предупреждений",
             description=f"Предупреждения участника {участник.mention}",
-            color=discord.Color(0xFFAA00),
-            thumbnail={"url": f"https://cdn.discordapp.com/embed/avatars/{участник.id % 5}.png"}
+            color=discord.Color(0xFFAA00)
         )
+        embed.set_thumbnail(url=f"https://cdn.discordapp.com/embed/avatars/{участник.id % 5}.png")
         
         # Add warning fields
         for warn in all_warns[:10]:  # Show last 10
