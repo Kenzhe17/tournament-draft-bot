@@ -472,7 +472,9 @@ class Tournament:
             circle_list = self.circle_list(circle)
             for player_name in circle_list:
                 user_id = self.player_user_ids.get(player_name, 0)
-                all_players.append((player_name, user_id))
+                # Filter out bot players (negative IDs)
+                if user_id > 0:
+                    all_players.append((player_name, user_id))
 
         # Get ELO for each player
         players_with_elo = []
@@ -532,7 +534,9 @@ class Tournament:
             circle_list = self.circle_list(circle)
             for player_name in circle_list:
                 user_id = self.player_user_ids.get(player_name, 0)
-                all_players.append((player_name, user_id))
+                # Filter out bot players (negative IDs)
+                if user_id > 0:
+                    all_players.append((player_name, user_id))
 
         logger.info(f"distribute_by_skill_rating: collected {len(all_players)} players from circles")
         
@@ -632,7 +636,9 @@ class Tournament:
         all_players = []
         for player_name in self.players_pool:
             user_id = self.player_user_ids.get(player_name, 0)
-            all_players.append((player_name, user_id))
+            # Filter out bot players (negative IDs)
+            if user_id > 0:
+                all_players.append((player_name, user_id))
 
         logger.info(f"distribute_randomly: collected {len(all_players)} players")
 
@@ -1266,7 +1272,9 @@ class Tournament:
 
         # Phase SETUP or DRAFT: check if registered
         if self.phase in [TournamentPhase.SETUP, TournamentPhase.DRAFT]:
-            is_active = user_id in self.player_user_ids.values()
+            # Check if user_id is in player_user_ids (real players only, not bots)
+            # Also check if user_id > 0 to exclude bot players (negative IDs)
+            is_active = user_id in self.player_user_ids.values() and user_id > 0
             logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active={is_active}, player_user_ids={list(self.player_user_ids.values())}")
             return is_active
 
@@ -1281,7 +1289,7 @@ class Tournament:
                 # Check if player is in this team
                 all_team_players = [team["captain"]] + team["players"]
                 for player_name in all_team_players:
-                    if self.player_user_ids.get(player_name) == user_id:
+                    if self.player_user_ids.get(player_name) == user_id and user_id > 0:
                         logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active=True (in team {team_idx})")
                         return True  # Player in active team
 
