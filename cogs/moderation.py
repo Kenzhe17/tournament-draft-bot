@@ -16,6 +16,20 @@ logger = logging.getLogger(__name__)
 # Timezone offset for GMT+5
 TIMEZONE_OFFSET = timezone(timedelta(hours=5))
 
+def format_timestamp(dt: datetime) -> str:
+    """Format datetime to GMT+5 timestamp string."""
+    if dt.tzinfo is None:
+        # Convert naive datetime to timezone-aware
+        dt = dt.replace(tzinfo=timezone.utc).astimezone(TIMEZONE_OFFSET)
+    return dt.strftime('%d.%m.%Y %H:%M:%S')
+
+def format_date(dt: datetime) -> str:
+    """Format datetime to GMT+5 date string."""
+    if dt.tzinfo is None:
+        # Convert naive datetime to timezone-aware
+        dt = dt.replace(tzinfo=timezone.utc).astimezone(TIMEZONE_OFFSET)
+    return dt.strftime('%d.%m.%Y %H:%M')
+
 
 # Mute duration scale
 MUTE_SCALE = {
@@ -76,7 +90,7 @@ class WarnPaginationView(ui.View):
         embed.set_thumbnail(url=f"https://cdn.discordapp.com/embed/avatars/{self.user.id % 5}.png")
 
         for warn in page_warns:
-            date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
+            date_str = format_date(warn.timestamp)
 
             # Get moderator info
             moderator_id = getattr(warn, 'moderator_id', self.interaction_user.id)
@@ -87,10 +101,10 @@ class WarnPaginationView(ui.View):
 
             # Add expiration (warning duration) if exists
             if warn.expires_at:
-                expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
+                expires_str = format_date(warn.expires_at)
                 if warn.active:
                     # Calculate time remaining
-                    remaining = warn.expires_at - datetime.now(TIMEZONE_OFFSET)
+                    remaining = warn.expires_at - datetime.now()
                     days = remaining.days
                     hours = remaining.seconds // 3600
                     if days > 0:
@@ -106,9 +120,9 @@ class WarnPaginationView(ui.View):
             # Add mute_until if exists
             mute_until = await warn_store.get_mute_until(self.user.id, self.guild_id)
             if mute_until:
-                mute_until_str = mute_until.strftime('%d %B %Y г. %H:%M')
+                mute_until_str = format_date(mute_until)
                 # Calculate time remaining
-                remaining = mute_until - datetime.now(TIMEZONE_OFFSET)
+                remaining = mute_until - datetime.now()
                 days = remaining.days
                 hours = remaining.seconds // 3600
                 if days > 0:
@@ -183,7 +197,7 @@ class ModerationCog(commands.Cog):
                     continue
 
                 # Send log for expired mute
-                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = format_timestamp(datetime.now())
                 log_embed = discord.Embed(
                     description=(
                         f"**Срок мьюта участника {member.mention} ({member.name}) истек**\n\n"
@@ -213,7 +227,7 @@ class ModerationCog(commands.Cog):
                     continue
 
                 # Send log for expired warning
-                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = format_timestamp(datetime.now())
                 log_embed = discord.Embed(
                     description=(
                         f"**Предупреждение участника {member.mention} ({member.name}) истекло**\n\n"
@@ -260,7 +274,7 @@ class ModerationCog(commands.Cog):
         if duration:
             mute_role = guild.get_role(MUTE_ROLE_ID)
             if mute_role:
-                mute_until = datetime.now(TIMEZONE_OFFSET) + duration
+                mute_until = datetime.now() + duration
                 await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
                 await warn_store.set_mute_until(member.id, guild.id, mute_until)
                 logger.info(f"Muted {member.id} for {duration}")
@@ -322,8 +336,8 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
-        expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
+        current_timestamp = format_timestamp(datetime.now())
+        expires_str = format_date(warn.expires_at)
         log_embed = discord.Embed(
             description=(
                 f"**Участник {участник.mention} ({участник.name}) получил предупреждение**\n\n"
@@ -398,7 +412,7 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+        current_timestamp = format_timestamp(datetime.now())
         log_embed = discord.Embed(
             description=(
                 f"**Предупреждение снято с участника {участник.mention} ({участник.name})**\n\n"
@@ -483,7 +497,7 @@ class ModerationCog(commands.Cog):
         await участник.add_roles(mute_role, reason=f"Мут от {interaction.user.display_name}")
 
         # Set mute_until in database
-        mute_until = datetime.now(TIMEZONE_OFFSET) + duration
+        mute_until = datetime.now() + duration
         await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until)
 
         # Format duration for display
@@ -514,8 +528,8 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
-        expire_date = (datetime.now(TIMEZONE_OFFSET) + duration).strftime('%d.%m.%Y %H:%M')
+        current_timestamp = format_timestamp(datetime.now())
+        expire_date = format_date(datetime.now() + duration)
         log_embed = discord.Embed(
             description=(
                 f"**Участник {участник.mention} ({участник.name}) был замьючен на всём сервере**\n\n"
@@ -591,7 +605,7 @@ class ModerationCog(commands.Cog):
         await msg.delete()
 
         # Send detailed log to webhook
-        current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+        current_timestamp = format_timestamp(datetime.now())
         log_embed = discord.Embed(
             description=(
                 f"**Участник {участник.mention} ({участник.name}) был размьючен**\n\n"
@@ -700,8 +714,8 @@ class ModerationCog(commands.Cog):
                 await msg.delete()
 
                 # Send detailed log to webhook
-                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
-                expires_str = warn.expires_at.strftime('%d.%m.%Y %H:%M')
+                current_timestamp = format_timestamp(datetime.now())
+                expires_str = format_date(warn.expires_at)
                 log_embed = discord.Embed(
                     description=(
                         f"**Участник {target_user.mention} ({target_user.name}) получил предупреждение**\n\n"
@@ -746,7 +760,7 @@ class ModerationCog(commands.Cog):
                 await msg.delete()
 
                 # Send detailed log to webhook
-                current_timestamp = datetime.now(TIMEZONE_OFFSET).strftime('%d.%m.%Y %H:%M:%S')
+                current_timestamp = format_timestamp(datetime.now())
                 log_embed = discord.Embed(
                     description=(
                         f"**Предупреждение снято с участника {target_user.mention} ({target_user.name})**\n\n"
