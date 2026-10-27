@@ -305,9 +305,9 @@ class ModerationCog(commands.Cog):
                 else:
                     duration_text = f"{duration.seconds // 60} мин"
 
-                message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+                message = f"Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок мьюта:** {duration_text}"
             else:
-                message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
+                message = f"Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок мьюта:** нет"
 
         embed = discord.Embed(
             description=message,
@@ -499,7 +499,7 @@ class ModerationCog(commands.Cog):
         if custom:
             message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
         else:
-            message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+            message = f"✅ Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок мьюта:** {duration_text}"
 
         embed = discord.Embed(
             description=message,
@@ -576,7 +576,7 @@ class ModerationCog(commands.Cog):
         if custom:
             message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
         else:
-            message = f"✅Участник {участник.mention} был размьючен!"
+            message = f"✅ Участник {участник.mention} был размьючен!"
 
         embed = discord.Embed(
             description=message,
