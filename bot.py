@@ -37,6 +37,7 @@ class TournamentBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.members = True
+        intents.message_content = True  # Required for auto-mod to read message content
         super().__init__(
             command_prefix="!",
             intents=intents,

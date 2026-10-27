@@ -22,17 +22,17 @@ class AutoModCog(commands.Cog):
         """Check for gif trigger and issue warning via JuniperBot."""
         # Ignore messages from bots
         if message.author.bot:
-            logger.debug(f"Auto-mod: Ignored bot message from {message.author.id}")
+            logger.info(f"Auto-mod: Ignored bot message from {message.author.id}")
             return
 
         # Check if user is allowed to use auto-mod features
         if message.author.id not in AUTO_MOD_ALLOWED_USER_IDS:
-            logger.debug(f"Auto-mod: User {message.author.id} not in allowed list")
+            logger.info(f"Auto-mod: User {message.author.id} not in allowed list")
             return
 
         # Check if message is a reply
         if not message.reference or not message.reference.message_id:
-            logger.debug(f"Auto-mod: Message from {message.author.id} is not a reply")
+            logger.info(f"Auto-mod: Message from {message.author.id} is not a reply")
             return
 
         # Check if message contains the target gif
@@ -54,9 +54,9 @@ class AutoModCog(commands.Cog):
         if not is_target_gif:
             urls = re.findall(r'https?://[^\s<>"]+', message.content)
             attachment_urls = [a.url for a in message.attachments]
-            logger.debug(f"Auto-mod: URLs in message: {urls}")
-            logger.debug(f"Auto-mod: Attachment URLs: {attachment_urls}")
-            logger.debug(f"Auto-mod: Target URL: {AUTO_MOD_GIF_URL}")
+            logger.info(f"Auto-mod: URLs in message: {urls}")
+            logger.info(f"Auto-mod: Attachment URLs: {attachment_urls}")
+            logger.info(f"Auto-mod: Target URL: {AUTO_MOD_GIF_URL}")
 
         # If the target gif is found
         if is_target_gif:
