@@ -589,13 +589,14 @@ class BetStore:
         for bet in bets:
             logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', team_index={bet.team_index}, amount={bet.amount}, odds={bet.odds}")
             if bet.team_name == winning_team_name:
-                # Winning bet: payout = amount * (final odds - 1) = pure profit
-                payout = int(bet.amount * (winning_odds - 1))
+                # Winning bet: payout = amount * final odds (includes original bet + profit)
+                payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
                 payouts_by_name[bet.user_name] = payout
-                logging.info(f"WINNING bet: user_id={bet.user_id}, team_name='{bet.team_name}' == '{winning_team_name}', payout={payout} (pure profit)")
-                # Record as win (profit = payout, since it's already pure profit)
-                await betting_stats_store.record_bet_result(guild_id, bet.user_id, payout, won=True)
+                logging.info(f"WINNING bet: user_id={bet.user_id}, team_name='{bet.team_name}' == '{winning_team_name}', payout={payout} (total payout)")
+                # Record as win (profit = payout - bet amount)
+                profit = payout - bet.amount
+                await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
             else:
                 # Losing bet: no payout
                 payouts[bet.user_id] = 0
