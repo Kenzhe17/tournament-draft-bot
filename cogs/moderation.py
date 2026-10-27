@@ -67,13 +67,12 @@ class WarnPaginationView(ui.View):
 
         for warn in page_warns:
             date_str = warn.timestamp.strftime('%d %B %Y г. %H:%M')
-            status = "✅" if warn.active else "❌"
-            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
 
             # Get moderator info
             moderator_id = getattr(warn, 'moderator_id', self.interaction_user.id)
             moderator_mention = f"<@{moderator_id}>"
 
+            # Build field value
             field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
 
             # Add expiration if exists
@@ -85,12 +84,12 @@ class WarnPaginationView(ui.View):
                     days = remaining.days
                     hours = remaining.seconds // 3600
                     if days > 0:
-                        remaining_text = f"*(через {days} дн)*"
+                        remaining_text = f"(`через {days} дн`)"
                     elif hours > 0:
-                        remaining_text = f"*(через {hours} ч)*"
+                        remaining_text = f"(`через {hours} ч`)"
                     else:
-                        remaining_text = "*(скоро)*"
-                    field_value += f"**Истекает:** `{expires_str}` {remaining_text}\n"
+                        remaining_text = "(`скоро`)"
+                    field_value += f"**Действует до:** `{expires_str}` {remaining_text}\n"
                 else:
                     field_value += f"**Истекло:** `{expires_str}`\n"
 
@@ -103,11 +102,11 @@ class WarnPaginationView(ui.View):
                 days = remaining.days
                 hours = remaining.seconds // 3600
                 if days > 0:
-                    remaining_text = f"*(через {days} дн)*"
+                    remaining_text = f"(`через {days} дн`)"
                 elif hours > 0:
-                    remaining_text = f"*(через {hours} ч)*"
+                    remaining_text = f"(`через {hours} ч`)"
                 else:
-                    remaining_text = "*(скоро)*"
+                    remaining_text = "(`скоро`)"
                 field_value += f"**Мут до:** `{mute_until_str}` {remaining_text}\n"
 
             # Add reason if exists
@@ -115,6 +114,10 @@ class WarnPaginationView(ui.View):
                 field_value += f"**Причина:** {warn.reason}\n"
 
             field_value += "───────────────────────────────────"
+
+            # Add field with case number and date in name
+            status = "✅" if warn.active else "❌"
+            field_name = f"{status} Случай `#{warn.warn_id}` **{date_str}**"
             embed.add_field(name=field_name, value=field_value, inline=False)
 
         # Footer
