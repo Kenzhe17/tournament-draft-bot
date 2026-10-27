@@ -28,6 +28,13 @@ MUTE_SCALE = {
     10: timedelta(days=1),
 }
 
+# Authorized user IDs for GIF triggers
+AUTHORIZED_GIF_USERS = {
+    1032544122600423427,
+    582145013358657549,
+    575937439147753472
+}
+
 
 class WarnPaginationView(ui.View):
     """Pagination view for warnings list."""
@@ -224,8 +231,8 @@ class ModerationCog(commands.Cog):
     
     async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
         """Implementation of warn command."""
-        # Check if user has moderator permissions
-        if not interaction.user.guild_permissions.moderate_members:
+        # Check if user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для выдачи предупреждений.", ephemeral=True)
             return
         
@@ -284,8 +291,8 @@ class ModerationCog(commands.Cog):
     
     async def _unwarn_impl(self, interaction: discord.Interaction, участник: discord.Member):
         """Implementation of unwarn command."""
-        # Check if user has moderator permissions
-        if not interaction.user.guild_permissions.moderate_members:
+        # Check if user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для снятия предупреждений.", ephemeral=True)
             return
         
@@ -334,8 +341,8 @@ class ModerationCog(commands.Cog):
     
     async def _warns_impl(self, interaction: discord.Interaction, участник: discord.Member):
         """Implementation of warns command."""
-        # Check if user has moderator permissions
-        if not interaction.user.guild_permissions.moderate_members:
+        # Check if user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для просмотра предупреждений.", ephemeral=True)
             return
 
@@ -372,8 +379,8 @@ class ModerationCog(commands.Cog):
 
     async def _mute_impl(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
         """Implementation of mute command."""
-        # Check if user has moderator permissions
-        if not interaction.user.guild_permissions.moderate_members:
+        # Check if user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для выдачи мута.", ephemeral=True)
             return
 
@@ -442,8 +449,8 @@ class ModerationCog(commands.Cog):
 
     async def _unmute_impl(self, interaction: discord.Interaction, участник: discord.Member):
         """Implementation of unmute command."""
-        # Check if user has moderator permissions
-        if not interaction.user.guild_permissions.moderate_members:
+        # Check if user has admin permissions
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для снятия мута.", ephemeral=True)
             return
 
@@ -506,13 +513,13 @@ class ModerationCog(commands.Cog):
         # Ignore messages from bots
         if message.author.bot:
             return
-        
+
         # Check if message is a reply
         if not message.reference or not message.reference.message_id:
             return
-        
-        # Check if user has moderator permissions
-        if not message.author.guild_permissions.moderate_members:
+
+        # Check if user is authorized for GIF triggers
+        if message.author.id not in AUTHORIZED_GIF_USERS:
             return
         
         # Check for warn gif
