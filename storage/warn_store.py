@@ -57,6 +57,17 @@ class WarnStore:
                     expires_at TIMESTAMP
                 )
             """)
+
+            # Add expires_at column if it doesn't exist (migration)
+            try:
+                await conn.execute("""
+                    ALTER TABLE warnings
+                    ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP
+                """)
+                logger.info("Added expires_at column to warnings table")
+            except Exception as e:
+                logger.info(f"expires_at column may already exist: {e}")
+
             logger.info("Warnings table initialized")
     
     async def add_warn(self, user_id: int, guild_id: int,

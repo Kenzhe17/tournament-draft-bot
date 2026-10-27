@@ -325,17 +325,18 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
             )
             return
 
-        # Update status message
-        if self.status_view:
+        # Update status message if exists
+        if self.status_view and self.status_view.message:
+            # Refresh team from database and update status message
             await self.status_view.update()
 
+        # Respond with success message (modal response)
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Название изменено",
             description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
-
-        await interaction.response.edit_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class ChangePasswordButton(discord.ui.Button):
