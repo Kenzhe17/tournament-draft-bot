@@ -265,41 +265,46 @@ class ModerationCog(commands.Cog):
 
         return None
     
-    async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
+    async def _warn_impl(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины", custom: bool = False):
         """Implementation of warn command."""
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для выдачи предупреждений.", ephemeral=True)
             return
-        
+
         # Add warning
         warn = await warn_store.add_warn(участник.id, interaction.guild.id, interaction.user.id, причина)
-        
+
         if not warn:
             await interaction.response.send_message("❌ Ошибка при добавлении предупреждения.", ephemeral=True)
             return
-        
+
         # Get active warnings count
         active_warns = await warn_store.get_active_warns(участник.id, interaction.guild.id)
         warn_count = len(active_warns)
-        
+
         # Apply punishment
         duration = await self.apply_punishment(interaction.guild, участник, warn_count)
-        
-        # Build response message
-        if duration:
-            # Format duration for display
-            if duration.days >= 1:
-                duration_text = f"{duration.days} дн"
-            elif duration.seconds >= 3600:
-                hours = duration.seconds // 3600
-                duration_text = f"{hours} ч"
-            else:
-                duration_text = f"{duration.seconds // 60} мин"
 
-            message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+        # Build response message based on command type
+        if custom:
+            # Custom format for /казнить
+            message = f"**Приговор исполнен.** На участника `{участник.global_name or участник.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
         else:
-            message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
+            # Standard format for /пред
+            if duration:
+                # Format duration for display
+                if duration.days >= 1:
+                    duration_text = f"{duration.days} дн"
+                elif duration.seconds >= 3600:
+                    hours = duration.seconds // 3600
+                    duration_text = f"{hours} ч"
+                else:
+                    duration_text = f"{duration.seconds // 60} мин"
+
+                message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
+            else:
+                message = f"✅Участник {участник.mention} получил предупреждение #{warn.warn_number} случай #{warn.case_id}!\n**Модератор:** {interaction.user.mention}\n**Срок:** 7 дней"
 
         embed = discord.Embed(
             description=message,
@@ -337,7 +342,7 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
     async def warn(self, interaction: discord.Interaction, участник: discord.Member, причина: str = "Без причины"):
         """Issue a warning to a user."""
-        await self._warn_impl(interaction, участник, причина)
+        await self._warn_impl(interaction, участник, причина, custom=True)
     
     @app_commands.command(name="пред", description="Выдать предупреждение")
     @app_commands.describe(участник="Пользователь для предупреждения", причина="Причина предупреждения")
@@ -345,31 +350,37 @@ class ModerationCog(commands.Cog):
         """Alias for /казнить."""
         await self._warn_impl(interaction, участник, причина)
     
-    async def _unwarn_impl(self, interaction: discord.Interaction, участник: discord.Member):
+    async def _unwarn_impl(self, interaction: discord.Interaction, участник: discord.Member, custom: bool = False):
         """Implementation of unwarn command."""
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для снятия предупреждений.", ephemeral=True)
             return
-        
+
         # Remove last warning
         warn = await warn_store.remove_last_warn(участник.id, interaction.guild.id)
-        
+
         if not warn:
             await interaction.response.send_message("❌ У пользователя нет активных предупреждений.", ephemeral=True)
             return
-        
+
         # Get remaining warnings
         active_warns = await warn_store.get_active_warns(участник.id, interaction.guild.id)
         warn_count = len(active_warns)
-        
+
         # Check if mute should be reduced/removed
         if warn_count < 4:
             mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
 
-        message = f"✅ С участника {участник.mention} снята предупреждение #{warn.warn_number} (случай #{warn.case_id})!"
+        # Build response message based on command type
+        if custom:
+            # Custom format for /пощадить
+            message = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` участника `{участник.global_name or участник.name}` аннулировано."
+        else:
+            # Standard format for /снятьпред
+            message = f"✅ С участника {участник.mention} снята предупреждение #{warn.warn_number} (случай #{warn.case_id})!"
 
         embed = discord.Embed(
             description=message,
@@ -401,13 +412,13 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
     async def unwarn(self, interaction: discord.Interaction, участник: discord.Member):
         """Remove the most recent warning from a user."""
-        await self._unwarn_impl(interaction, участник)
-    
+        await self._unwarn_impl(interaction, участник, custom=True)
+
     @app_commands.command(name="снятьпред", description="Снять последнее предупреждение")
     @app_commands.describe(участник="Пользователь для снятия предупреждения")
     async def unwarn_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /пощадить."""
-        await self._unwarn_impl(interaction, участник)
+        await self._unwarn_impl(interaction, участник, custom=False)
     
     async def _warns_impl(self, interaction: discord.Interaction, участник: discord.Member):
         """Implementation of warns command."""
@@ -665,25 +676,14 @@ class ModerationCog(commands.Cog):
         if is_warn_gif:
             # Add warning
             warn = await warn_store.add_warn(target_user.id, message.guild.id, message.author.id, "Воля Диктатора")
-            
+
             if warn:
                 active_warns = await warn_store.get_active_warns(target_user.id, message.guild.id)
                 warn_count = len(active_warns)
                 duration = await self.apply_punishment(message.guild, target_user, warn_count)
-                
-                if duration:
-                    # Format duration for display
-                    if duration.days >= 1:
-                        duration_text = f"{duration.days} дн"
-                    elif duration.seconds >= 3600:
-                        hours = duration.seconds // 3600
-                        duration_text = f"{hours} ч"
-                    else:
-                        duration_text = f"{duration.seconds // 60} мин"
 
-                    warn_msg = f"**Приговор исполнен.** На участника `{target_user.global_name or target_user.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
-                else:
-                    warn_msg = f"**Приговор исполнен.** На участника `{target_user.global_name or target_user.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
+                # Use custom format for GIF (same as /казнить)
+                warn_msg = f"**Приговор исполнен.** На участника `{target_user.global_name or target_user.name}` клеймом наложено предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`)."
 
                 embed = discord.Embed(
                     description=warn_msg,
@@ -729,7 +729,7 @@ class ModerationCog(commands.Cog):
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
 
-                unwarn_msg = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` (дело `#{warn.case_id}`) участника `{target_user.global_name or target_user.name}` аннулировано."
+                unwarn_msg = f"**Высочайшая милость.** Предупреждение `#{warn.warn_number}` участника `{target_user.global_name or target_user.name}` аннулировано."
 
                 embed = discord.Embed(
                     description=unwarn_msg,
