@@ -135,6 +135,13 @@ class TeamLeaveButton(discord.ui.Button):
         self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         if self.team.is_captain(interaction.user.id):
             await interaction.response.send_message(
                 replace_emojis("❌ Капитан не может покинуть команду! Используйте `/team delete` для удаления команды."),
@@ -166,6 +173,7 @@ class TeamLeaveButton(discord.ui.Button):
             updated_team = await team_store.refresh_from_db(self.team.team_id)
             if updated_team:
                 self.status_view.team = updated_team
+                self.team = updated_team
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы покинули команду",
@@ -218,6 +226,13 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         if self.password.value != self.team.password:
             await interaction.response.send_message(
                 replace_emojis("❌ Неверный пароль!"),
@@ -256,6 +271,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
             updated_team = await team_store.refresh_from_db(self.team.team_id)
             if updated_team:
                 self.status_view.team = updated_team
+                self.team = updated_team
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Вы вступили в команду",
@@ -315,6 +331,13 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
     async def on_submit(self, interaction: discord.Interaction):
         new_name = self.new_name.value
 
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         # Check if name already exists (excluding current team)
         existing_team = team_store.get_by_name(self.team.guild_id, new_name)
         if existing_team and existing_team.team_id != self.team.team_id:
@@ -341,6 +364,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
             updated_team = await team_store.refresh_from_db(self.team.team_id)
             if updated_team:
                 self.status_view.team = updated_team
+                self.team = updated_team
 
         # Respond with success message (modal response)
         embed = discord.Embed(
@@ -385,6 +409,13 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
     )
 
     async def on_submit(self, interaction: discord.Interaction):
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         self.team.password = self.new_password.value
         success = await team_store.update_team(self.team)
         if not success:
@@ -401,6 +432,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
             updated_team = await team_store.refresh_from_db(self.team.team_id)
             if updated_team:
                 self.status_view.team = updated_team
+                self.team = updated_team
 
         embed = discord.Embed(
             title=f"{replace_emojis('a_star')} Пароль изменен",
@@ -424,6 +456,13 @@ class KickMemberButton(discord.ui.Button):
         self.status_view = status_view
 
     async def callback(self, interaction: discord.Interaction):
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         # Build select options
         options = []
         for member_id in self.team.members:
@@ -467,6 +506,13 @@ class KickMemberSelectView(discord.ui.View):
         self.add_item(select)
 
     async def select_callback(self, interaction: discord.Interaction):
+        # Refresh team from database to get current state
+        current_team = await team_store.refresh_from_db(self.team.team_id)
+        if current_team:
+            self.team = current_team
+            if self.status_view:
+                self.status_view.team = current_team
+
         user_id = int(interaction.data["values"][0])
 
         success = await team_store.remove_member(self.team.team_id, user_id)
@@ -484,6 +530,7 @@ class KickMemberSelectView(discord.ui.View):
             updated_team = await team_store.refresh_from_db(self.team.team_id)
             if updated_team:
                 self.status_view.team = updated_team
+                self.team = updated_team
 
         await interaction.response.send_message(
             replace_emojis("✅ Участник исключен из команды!"),
