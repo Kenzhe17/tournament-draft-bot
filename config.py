@@ -61,16 +61,6 @@ WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com
 # Organizer thumbnail URL for tournament embeds
 ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430580442005564/image.png?ex=6abcdbca&is=6abb8a4a&hm=47d04c7fdccae7a3dd3e9b23f84596f471986b77077848b8c29ed9045ce81dc1&")
 
-# Auto-moderation settings
-AUTO_MOD_GIF_URL = os.getenv("AUTO_MOD_GIF_URL", "https://klipy.com/gifs/h2di-the-dictator")
-
-# Auto-moderation allowed user IDs (comma-separated list)
-AUTO_MOD_ALLOWED_IDS = os.getenv("AUTO_MOD_ALLOWED_IDS", "1032544122600423427,575937439147753472")
-AUTO_MOD_ALLOWED_USER_IDS = [int(x.strip()) for x in AUTO_MOD_ALLOWED_IDS.split(",") if x.strip()]
-
-# Webhook URL for sending commands (optional - if set, uses webhook instead of bot message)
-AUTO_MOD_WEBHOOK_URL = os.getenv("AUTO_MOD_WEBHOOK_URL", "")
-
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

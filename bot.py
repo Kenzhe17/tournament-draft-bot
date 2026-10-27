@@ -37,7 +37,6 @@ class TournamentBot(commands.Bot):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.members = True
-        intents.message_content = True  # Required for auto-mod to read message content
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -110,8 +109,6 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
-        await self.load_extension("cogs.auto_mod")
-        await self.load_extension("cogs.unwarn")
 
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
