@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from models.tournament import TournamentPhase, TournamentSize
+from models.tournament import TournamentPhase, TournamentSize, FormationMode
 from storage.json_store import store
 from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
@@ -88,14 +88,32 @@ class AdminStatsMatchButton(discord.ui.Button):
 
         # Check if both teams have stats filled
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
-        team_a_filled = any(
-            self.tournament.teams[self.match[0]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
-            for c in range(1, 5)
-        )
-        team_b_filled = any(
-            self.tournament.teams[self.match[1]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
-            for c in range(1, 5)
-        )
+        
+        # For RANDOM mode, check if any player from the team has stats
+        # For ELO/SKILL mode, check if any circle from the team has stats
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: check captain and players
+            team_a_players = [self.tournament.teams[self.match[0]].get("captain")] + self.tournament.teams[self.match[0]].get("players", [])
+            team_b_players = [self.tournament.teams[self.match[1]].get("captain")] + self.tournament.teams[self.match[1]].get("players", [])
+            
+            team_a_filled = any(
+                player in self.tournament.temp_match_stats.get(match_id, {})
+                for player in team_a_players
+            )
+            team_b_filled = any(
+                player in self.tournament.temp_match_stats.get(match_id, {})
+                for player in team_b_players
+            )
+        else:
+            # ELO/SKILL mode: check circles
+            team_a_filled = any(
+                self.tournament.teams[self.match[0]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
+                for c in range(1, 5)
+            )
+            team_b_filled = any(
+                self.tournament.teams[self.match[1]].get(f"circle{c}") in self.tournament.temp_match_stats.get(match_id, {})
+                for c in range(1, 5)
+            )
 
         logging.info(f"Team filled status: team_a={team_a_filled}, team_b={team_b_filled}, match_id={match_id}")
 
@@ -138,19 +156,43 @@ class AdminStatsMatchButton(discord.ui.Button):
 
         # Build team A stats
         team_a_stats = []
-        for c in range(1, 5):
-            player = team_a_data.get(f"circle{c}")
-            if player and player in stats:
-                s = stats[player]
-                team_a_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: captain + players
+            captain = team_a_data.get("captain")
+            if captain and captain in stats:
+                s = stats[captain]
+                team_a_stats.append(f"{captain}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+            for player in team_a_data.get("players", []):
+                if player in stats:
+                    s = stats[player]
+                    team_a_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+        else:
+            # ELO/SKILL mode: circles
+            for c in range(1, 5):
+                player = team_a_data.get(f"circle{c}")
+                if player and player in stats:
+                    s = stats[player]
+                    team_a_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
 
         # Build team B stats
         team_b_stats = []
-        for c in range(1, 5):
-            player = team_b_data.get(f"circle{c}")
-            if player and player in stats:
-                s = stats[player]
-                team_b_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: captain + players
+            captain = team_b_data.get("captain")
+            if captain and captain in stats:
+                s = stats[captain]
+                team_b_stats.append(f"{captain}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+            for player in team_b_data.get("players", []):
+                if player in stats:
+                    s = stats[player]
+                    team_b_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
+        else:
+            # ELO/SKILL mode: circles
+            for c in range(1, 5):
+                player = team_b_data.get(f"circle{c}")
+                if player and player in stats:
+                    s = stats[player]
+                    team_b_stats.append(f"{player}: {s.get('kills', 0)}/{s.get('deaths', 0)}")
 
         embed = discord.Embed(
             title=replace_emojis("📊 Статистика матча"),
@@ -595,10 +637,19 @@ class AdminStatsTeamButton(discord.ui.Button):
         # Get players for this team
         team_data = self.tournament.teams[self.team_index] if self.team_index < len(self.tournament.teams) else {}
         players = []
-        for circle in range(1, 5):
-            player = team_data.get(f"circle{circle}")
-            if player:
-                players.append(player)
+        
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: captain + players
+            captain = team_data.get("captain")
+            if captain:
+                players.append(captain)
+            players.extend(team_data.get("players", []))
+        else:
+            # ELO/SKILL mode: circles
+            for circle in range(1, 5):
+                player = team_data.get(f"circle{circle}")
+                if player:
+                    players.append(player)
 
         # Open modal with K/D fields for this team's players
         modal = AdminStatsModal(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, players)
@@ -1248,21 +1299,45 @@ class MatchButton(discord.ui.Button):
         
         # Add team A stats
         team_a_stats_lines = []
-        for circle in range(1, 5):
-            player = team_a_data.get(f"circle{circle}")
-            if player and player in temp_stats:
-                kd = temp_stats[player]
-                team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: captain + players
+            captain = team_a_data.get("captain")
+            if captain and captain in temp_stats:
+                kd = temp_stats[captain]
+                team_a_stats_lines.append(f"{captain}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+            for player in team_a_data.get("players", []):
+                if player in temp_stats:
+                    kd = temp_stats[player]
+                    team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        else:
+            # ELO/SKILL mode: circles
+            for circle in range(1, 5):
+                player = team_a_data.get(f"circle{circle}")
+                if player and player in temp_stats:
+                    kd = temp_stats[player]
+                    team_a_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
         if team_a_stats_lines:
             embed.add_field(name=team_a_name, value="\n".join(team_a_stats_lines), inline=False)
         
         # Add team B stats
         team_b_stats_lines = []
-        for circle in range(1, 5):
-            player = team_b_data.get(f"circle{circle}")
-            if player and player in temp_stats:
-                kd = temp_stats[player]
-                team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        if self.tournament.formation_mode == FormationMode.RANDOM:
+            # Random mode: captain + players
+            captain = team_b_data.get("captain")
+            if captain and captain in temp_stats:
+                kd = temp_stats[captain]
+                team_b_stats_lines.append(f"{captain}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+            for player in team_b_data.get("players", []):
+                if player in temp_stats:
+                    kd = temp_stats[player]
+                    team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
+        else:
+            # ELO/SKILL mode: circles
+            for circle in range(1, 5):
+                player = team_b_data.get(f"circle{circle}")
+                if player and player in temp_stats:
+                    kd = temp_stats[player]
+                    team_b_stats_lines.append(f"{player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}")
         if team_b_stats_lines:
             embed.add_field(name=team_b_name, value="\n".join(team_b_stats_lines), inline=False)
 
