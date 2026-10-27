@@ -289,6 +289,11 @@ class ModerationCog(commands.Cog):
             await interaction.response.send_message("❌ У вас нет прав для выдачи предупреждений.", ephemeral=True)
             return
 
+        # Check if target has higher role than moderator
+        if участник.top_role.position > interaction.user.top_role.position:
+            await interaction.response.send_message("❌ Нельзя выдавать предупреждения пользователям с более высокой ролью.", ephemeral=True)
+            return
+
         # Add warning
         warn = await warn_store.add_warn(участник.id, interaction.guild.id, interaction.user.id, причина)
 
@@ -372,6 +377,16 @@ class ModerationCog(commands.Cog):
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для снятия предупреждений.", ephemeral=True)
+            return
+
+        # Check if trying to remove warning from self
+        if участник.id == interaction.user.id:
+            await interaction.response.send_message("❌ Нельзя снимать предупреждения с самого себя.", ephemeral=True)
+            return
+
+        # Check if target has higher role than moderator
+        if участник.top_role.position > interaction.user.top_role.position:
+            await interaction.response.send_message("❌ Нельзя снимать предупреждения с пользователей с более высокой ролью.", ephemeral=True)
             return
 
         # Remove last warning
@@ -482,6 +497,11 @@ class ModerationCog(commands.Cog):
             await interaction.response.send_message("❌ У вас нет прав для выдачи мута.", ephemeral=True)
             return
 
+        # Check if target has higher role than moderator
+        if участник.top_role.position > interaction.user.top_role.position:
+            await interaction.response.send_message("❌ Нельзя выдавать мут пользователям с более высокой ролью.", ephemeral=True)
+            return
+
         # Parse duration
         duration = self.parse_duration(длительность)
         if not duration:
@@ -569,6 +589,16 @@ class ModerationCog(commands.Cog):
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("❌ У вас нет прав для снятия мута.", ephemeral=True)
+            return
+
+        # Check if trying to unmute self
+        if участник.id == interaction.user.id:
+            await interaction.response.send_message("❌ Нельзя снимать мут с самого себя.", ephemeral=True)
+            return
+
+        # Check if target has higher role than moderator
+        if участник.top_role.position > interaction.user.top_role.position:
+            await interaction.response.send_message("❌ Нельзя снимать мут с пользователей с более высокой ролью.", ephemeral=True)
             return
 
         # Remove mute role
@@ -689,7 +719,11 @@ class ModerationCog(commands.Cog):
         channel = message.channel
         replied_message = await channel.fetch_message(message.reference.message_id)
         target_user = replied_message.author
-        
+
+        # Check if target has higher role than moderator
+        if target_user.top_role.position > message.author.top_role.position:
+            return
+
         if is_warn_gif:
             # Add warning
             warn = await warn_store.add_warn(target_user.id, message.guild.id, message.author.id, "Воля Диктатора")
@@ -734,6 +768,14 @@ class ModerationCog(commands.Cog):
                 await self.send_mod_log(log_embed)
         
         elif is_unwarn_gif:
+            # Check if trying to remove warning from self
+            if target_user.id == message.author.id:
+                return
+
+            # Check if target has higher role than moderator
+            if target_user.top_role.position > message.author.top_role.position:
+                return
+
             # Remove warning
             warn = await warn_store.remove_last_warn(target_user.id, message.guild.id)
             
