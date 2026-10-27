@@ -294,9 +294,9 @@ class ModerationCog(commands.Cog):
             else:
                 duration_text = f"{duration.seconds // 60} мин"
 
-            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+            message = f"**На приговор поставлена печать.** Участник `{участник.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
         else:
-            message = f"✅Участник {участник.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`)"
+            message = f"**На приговор поставлена печать.** Участник `{участник.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
 
         embed = discord.Embed(
             description=message,
@@ -366,7 +366,7 @@ class ModerationCog(commands.Cog):
             if mute_role and mute_role in участник.roles:
                 await участник.remove_roles(mute_role, reason="Снятие предупреждения")
         
-        message = f"✅Предупреждение участника {участник.mention} #{warn.warn_number} снято"
+        message = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{участник.mention}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
 
         embed = discord.Embed(
             description=message,
@@ -678,9 +678,9 @@ class ModerationCog(commands.Cog):
                     else:
                         duration_text = f"{duration.seconds // 60} мин"
 
-                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`) и был замьючен. Он сможет говорить снова через {duration_text}"
+                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
                 else:
-                    warn_msg = f"✅Участник {target_user.mention} получил предупреждение `#{warn.warn_number}` (случай `#{warn.case_id}`)"
+                    warn_msg = f"**На приговор поставлена печать.** Участник `{target_user.mention}` клеймён предупреждением `#{warn.warn_number}` (Случай `#{warn.case_id}`). Всякое повиновение должно быть абсолютным, а следующая оплошность станет последней."
 
                 embed = discord.Embed(
                     description=warn_msg,
@@ -726,7 +726,7 @@ class ModerationCog(commands.Cog):
                     if mute_role and mute_role in target_user.roles:
                         await target_user.remove_roles(mute_role, reason="Снятие через гифку")
 
-                unwarn_msg = f"✅Предупреждение участника {target_user.mention} #{warn.warn_number} снято"
+                unwarn_msg = f"**Милость Диктатора безгранична.** Наказание `#{warn.warn_number}` для участника `{target_user.mention}` аннулировано, вино заглажена. Провинившемуся дарован шанс искупить вину служением."
 
                 embed = discord.Embed(
                     description=unwarn_msg,
