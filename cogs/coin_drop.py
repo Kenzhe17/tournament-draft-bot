@@ -164,6 +164,12 @@ class CoinDropCog(commands.Cog):
 
     async def trigger_drop(self, channel: discord.TextChannel):
         """Логика генерации случайного ивента (сумма 100-500, шанс 50/50)."""
+        # Check if coin drops are enabled in settings
+        from storage.json_store import store
+        settings = store.get_settings()
+        if not settings.get("coin_drop_enabled", True):
+            return
+
         # Записываем время ивента
         LAST_EVENT_TIME[channel.id] = datetime.now()
 

@@ -84,6 +84,23 @@ class JsonStore:
         """Получить все турниры сервера (для проверок конфликтов)."""
         return [t for (gid, cid), t in self._tournaments.items() if gid == guild_id]
 
+    def get_settings(self) -> dict:
+        """Получить настройки бота."""
+        SETTINGS_FILE = DATA_DIR / "settings.json"
+        if not SETTINGS_FILE.exists():
+            return {}
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {}
+
+    def set_settings(self, settings: dict) -> None:
+        """Сохранить настройки бота."""
+        SETTINGS_FILE = DATA_DIR / "settings.json"
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+
 
 # Глобальный экземпляр хранилища
 store = JsonStore()

@@ -110,6 +110,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.isolate")
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.team")
+        await self.load_extension("cogs.bot_settings")
 
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
@@ -452,6 +453,12 @@ class TournamentBot(commands.Bot):
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Send welcome message when a member joins the server."""
+        # Check if welcome is enabled in settings
+        from storage.json_store import store
+        settings = store.get_settings()
+        if not settings.get("welcome_enabled", True):
+            return
+
         WELCOME_CHANNEL_ID = 1200125075156910181
 
         # Only send for the specific server
