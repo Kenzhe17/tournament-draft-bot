@@ -590,6 +590,11 @@ class DeletePlayerButton(discord.ui.Button):
         else:
             players = list(tournament.all_players)
 
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"DeletePlayerButton: formation_mode={tournament.formation_mode.value}, players_count={len(players)}, players={players}")
+
         if not players:
             try:
                 await interaction.response.send_message(
@@ -700,6 +705,11 @@ class SwapPlayersButton(discord.ui.Button):
             players = list(tournament.players_pool)
         else:
             players = list(tournament.all_players)
+
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"DeletePlayerButton: formation_mode={tournament.formation_mode.value}, players_count={len(players)}, players={players}")
 
         if not players:
             try:
@@ -840,6 +850,11 @@ class MovePlayerButton(discord.ui.Button):
             players = list(tournament.players_pool)
         else:
             players = list(tournament.all_players)
+
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"DeletePlayerButton: formation_mode={tournament.formation_mode.value}, players_count={len(players)}, players={players}")
 
         if not players:
             try:
