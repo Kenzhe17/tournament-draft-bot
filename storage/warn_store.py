@@ -204,7 +204,7 @@ class WarnStore:
         """Set mute expiration time for a user."""
         if not self.enabled:
             return
-        
+
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute("""
@@ -212,6 +212,19 @@ class WarnStore:
                 SET mute_until = $1
                 WHERE user_id = $2 AND guild_id = $3 AND active = TRUE
             """, mute_until, user_id, guild_id)
+
+    async def clear_mute_until(self, user_id: int, guild_id: int):
+        """Clear mute expiration time for a user."""
+        if not self.enabled:
+            return
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE warnings
+                SET mute_until = NULL
+                WHERE user_id = $1 AND guild_id = $2
+            """, user_id, guild_id)
     
     async def get_mute_until(self, user_id: int, guild_id: int) -> Optional[datetime]:
         """Get the earliest mute expiration time for a user."""
@@ -237,15 +250,26 @@ class WarnStore:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch("""
-                UPDATE warnings
-                SET mute_until = NULL
+                SELECT DISTINCT user_id, guild_id
+                FROM warnings
                 WHERE active = TRUE
                   AND mute_until IS NOT NULL
                   AND mute_until <= CURRENT_TIMESTAMP
-                RETURNING DISTINCT user_id, guild_id
             """)
 
-            return [(row['user_id'], row['guild_id']) for row in rows]
+            affected = [(row['user_id'], row['guild_id']) for row in rows]
+
+            # Clear mute_until for expired mutes
+            if affected:
+                await conn.execute("""
+                    UPDATE warnings
+                    SET mute_until = NULL
+                    WHERE active = TRUE
+                      AND mute_until IS NOT NULL
+                      AND mute_until <= CURRENT_TIMESTAMP
+                """)
+
+            return affected
 
     async def clear_expired_warns(self) -> List[int]:
         """Clear expired warnings and return affected user IDs."""

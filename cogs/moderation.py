@@ -75,7 +75,7 @@ class WarnPaginationView(ui.View):
             # Build field value
             field_value = f"**Модератор:** {moderator_mention} (ID: `{moderator_id}`)\n"
 
-            # Add expiration if exists
+            # Add expiration (warning duration) if exists
             if warn.expires_at:
                 expires_str = warn.expires_at.strftime('%d %B %Y г. %H:%M')
                 if warn.active:
@@ -89,7 +89,7 @@ class WarnPaginationView(ui.View):
                         remaining_text = f"(`через {hours} ч`)"
                     else:
                         remaining_text = "(`скоро`)"
-                    field_value += f"**Действует до:** `{expires_str}` {remaining_text}\n"
+                    field_value += f"**Истекает:** `{expires_str}` {remaining_text}\n"
                 else:
                     field_value += f"**Истекло:** `{expires_str}`\n"
 
@@ -160,7 +160,7 @@ class ModerationCog(commands.Cog):
     async def mute_check_task(self):
         """Check for expired mutes and warnings every minute."""
         try:
-            # Clear expired mutes
+            # Clear expired mutes (mute_until in DB is already cleared by clear_expired_mutes)
             expired_mutes = await warn_store.clear_expired_mutes()
 
             for user_id, guild_id in expired_mutes:
@@ -369,6 +369,136 @@ class ModerationCog(commands.Cog):
     async def warns_alias(self, interaction: discord.Interaction, участник: discord.Member):
         """Alias for /преды."""
         await self._warns_impl(interaction, участник)
+
+    async def _mute_impl(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
+        """Implementation of mute command."""
+        # Check if user has moderator permissions
+        if not interaction.user.guild_permissions.moderate_members:
+            await interaction.response.send_message("❌ У вас нет прав для выдачи мута.", ephemeral=True)
+            return
+
+        # Parse duration
+        duration = self.parse_duration(длительность)
+        if not duration:
+            await interaction.response.send_message("❌ Неверный формат длительности. Используйте: 1ч, 30м, 1д", ephemeral=True)
+            return
+
+        # Give mute role
+        mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
+        if not mute_role:
+            await interaction.response.send_message("❌ Роль мута не найдена.", ephemeral=True)
+            return
+
+        await участник.add_roles(mute_role, reason=f"Мут от {interaction.user.display_name}")
+
+        # Set mute_until in database
+        mute_until = datetime.utcnow() + duration
+        await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until)
+
+        # Format duration for display
+        if duration.days >= 1:
+            duration_text = f"{duration.days} дн"
+        elif duration.seconds >= 3600:
+            hours = duration.seconds // 3600
+            duration_text = f"{hours} ч"
+        else:
+            duration_text = f"{duration.seconds // 60} мин"
+
+        message = f"✅Участник {участник.mention} замьючен!\nМодератор: {interaction.user.mention}\nСрок: {duration_text}"
+
+        embed = discord.Embed(
+            description=message,
+            color=discord.Color(0xFFAA00)
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+        # Delete after 5 seconds
+        await asyncio.sleep(5)
+        msg = await interaction.original_response()
+        await msg.delete()
+
+    def parse_duration(self, duration_str: str) -> timedelta:
+        """Parse duration string like '1ч', '30м', '1д'."""
+        duration_str = duration_str.lower().strip()
+        if not duration_str:
+            return None
+
+        # Extract number and unit
+        unit = duration_str[-1]
+        try:
+            num = int(duration_str[:-1])
+        except ValueError:
+            return None
+
+        if unit == 'ч' or unit == 'h':
+            return timedelta(hours=num)
+        elif unit == 'м' or unit == 'm':
+            return timedelta(minutes=num)
+        elif unit == 'д' or unit == 'd':
+            return timedelta(days=num)
+        else:
+            return None
+
+    async def _unmute_impl(self, interaction: discord.Interaction, участник: discord.Member):
+        """Implementation of unmute command."""
+        # Check if user has moderator permissions
+        if not interaction.user.guild_permissions.moderate_members:
+            await interaction.response.send_message("❌ У вас нет прав для снятия мута.", ephemeral=True)
+            return
+
+        # Remove mute role
+        mute_role = interaction.guild.get_role(MUTE_ROLE_ID)
+        if not mute_role:
+            await interaction.response.send_message("❌ Роль мута не найдена.", ephemeral=True)
+            return
+
+        if mute_role not in участник.roles:
+            await interaction.response.send_message("❌ У пользователя нет роли мута.", ephemeral=True)
+            return
+
+        await участник.remove_roles(mute_role, reason=f"Размут от {interaction.user.display_name}")
+
+        # Clear mute_until in database
+        await warn_store.clear_mute_until(участник.id, interaction.guild.id)
+
+        message = f"✅С участника {участник.mention} сняты ограничения!"
+
+        embed = discord.Embed(
+            description=message,
+            color=discord.Color(0xFFAA00)
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+        # Delete after 5 seconds
+        await asyncio.sleep(5)
+        msg = await interaction.original_response()
+        await msg.delete()
+
+    @app_commands.command(name="мьют", description="Выдать мут пользователю")
+    @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
+    async def mute(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
+        """Mute a user for a specified duration."""
+        await self._mute_impl(interaction, участник, длительность)
+
+    @app_commands.command(name="запретить", description="Выдать мут пользователю")
+    @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
+    async def mute_alias(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
+        """Alias for /мьют."""
+        await self._mute_impl(interaction, участник, длительность)
+
+    @app_commands.command(name="размьют", description="Снять мут с пользователя")
+    @app_commands.describe(участник="Пользователь для снятия мута")
+    async def unmute(self, interaction: discord.Interaction, участник: discord.Member):
+        """Unmute a user."""
+        await self._unmute_impl(interaction, участник)
+
+    @app_commands.command(name="разрешить", description="Снять мут с пользователя")
+    @app_commands.describe(участник="Пользователь для снятия мута")
+    async def unmute_alias(self, interaction: discord.Interaction, участник: discord.Member):
+        """Alias for /размьют."""
+        await self._unmute_impl(interaction, участник)
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
