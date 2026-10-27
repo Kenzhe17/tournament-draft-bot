@@ -78,8 +78,8 @@ class UnwarnCog(commands.Cog):
             embed_text += " ".join(field.value for field in embed.fields)
 
             # Try to find warning case numbers
-            # Pattern: "Пред #123" or "Предупреждение #123"
-            case_matches = re.findall(r"Пред\s*#(\d+)", embed_text, re.IGNORECASE)
+            # Pattern: "Случай #123" or "Предупреждение #123"
+            case_matches = re.findall(r"Случай\s*#(\d+)", embed_text, re.IGNORECASE)
             
             if case_matches:
                 # Get the latest (highest) case number
