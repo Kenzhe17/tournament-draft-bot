@@ -16,6 +16,7 @@ from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
 from storage.bet_store import bet_store
 from storage.betting_stats_store import betting_stats_store
+from storage.warn_store import warn_store
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
@@ -75,7 +76,15 @@ class TournamentBot(commands.Bot):
                 user_balance_store.enable_db()
                 bet_store.enable_db()
                 betting_stats_store.enable_db()
+                warn_store.enable_db()
                 logger.info("Database initialized and enabled")
+                
+                # Initialize warnings table
+                try:
+                    await warn_store.init_table()
+                    logger.info("Warnings table initialized")
+                except Exception as e:
+                    logger.error(f"Failed to initialize warnings table: {e}")
                 
                 # Sync games from config to database
                 try:
@@ -110,14 +119,20 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
+        await self.load_extension("cogs.moderation")
 
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
         await team_store.load_from_postgres()
 
         # Load betting odds from PostgreSQL after extensions are loaded
-        from storage.bet_store import bet_store
-        await bet_store.load_from_db()
+        bet_store_loaded = False
+        try:
+            from storage.bet_store import bet_store
+            await bet_store.load_from_db()
+            bet_store_loaded = True
+        except Exception as e:
+            logger.error(f"Failed to load betting odds from DB: {e}", exc_info=True)
 
         # Sync commands globally
         try:

@@ -61,6 +61,11 @@ WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com
 # Organizer thumbnail URL for tournament embeds
 ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430580442005564/image.png?ex=6abcdbca&is=6abb8a4a&hm=47d04c7fdccae7a3dd3e9b23f84596f471986b77077848b8c29ed9045ce81dc1&")
 
+# Warning system settings
+MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", "1280620360823345192"))
+WARN_GIF_URL = os.getenv("WARN_GIF_URL", "https://klipy.com/gifs/h2di-the-dictator")
+UNWARN_GIF_URL = os.getenv("UNWARN_GIF_URL", "https://klipy.com/gifs/slice-execute-4")
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка
