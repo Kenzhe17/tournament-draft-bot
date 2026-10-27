@@ -241,8 +241,11 @@ class ModerationCog(commands.Cog):
 
     async def send_mod_log(self, embed: discord.Embed):
         """Send moderation log to webhook."""
+        if not MOD_LOG_WEBHOOK_URL:
+            logger.warning("MOD_LOG_WEBHOOK_URL not set, skipping log")
+            return
         try:
-            webhook = discord.SyncWebhook.from_url(MOD_LOG_WEBHOOK_URL)
+            webhook = discord.Webhook.from_url(MOD_LOG_WEBHOOK_URL)
             await webhook.send(embed=embed, username="Модератор")
         except Exception as e:
             logger.error(f"Failed to send mod log: {e}", exc_info=True)
