@@ -111,11 +111,7 @@ class UnwarnCog(commands.Cog):
         await asyncio.sleep(1.5)
         
         # Send the unwarn command
-        msg = await channel.send(f"!снятьпред номер_случая:{case_number}")
-        
-        # Delete the command message immediately
-        await msg.delete()
-        
+        await channel.send(f"!снятьпред номер_случая:{case_number}")
         logger.info(f"Unwarn: Executed unwarn for case {case_number}, user {user_id}")
 
 
