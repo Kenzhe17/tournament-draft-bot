@@ -377,7 +377,7 @@ class ModerationCog(commands.Cog):
         """Alias for /преды."""
         await self._warns_impl(interaction, участник)
 
-    async def _mute_impl(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
+    async def _mute_impl(self, interaction: discord.Interaction, участник: discord.Member, длительность: str, custom: bool = False):
         """Implementation of mute command."""
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
@@ -411,7 +411,11 @@ class ModerationCog(commands.Cog):
         else:
             duration_text = f"{duration.seconds // 60} мин"
 
-        message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
+        # Use custom message for /молчать, standard for /мьют
+        if custom:
+            message = f"По воле диктатора участник {участник.mention} будет молчать {duration_text}"
+        else:
+            message = f"✅Участник {участник.mention} замьючен!\n**Модератор:** {interaction.user.mention}\n**Срок:** {duration_text}"
 
         embed = discord.Embed(
             description=message,
@@ -447,7 +451,7 @@ class ModerationCog(commands.Cog):
         else:
             return None
 
-    async def _unmute_impl(self, interaction: discord.Interaction, участник: discord.Member):
+    async def _unmute_impl(self, interaction: discord.Interaction, участник: discord.Member, custom: bool = False):
         """Implementation of unmute command."""
         # Check if user has admin permissions
         if not interaction.user.guild_permissions.administrator:
@@ -469,7 +473,11 @@ class ModerationCog(commands.Cog):
         # Clear mute_until in database
         await warn_store.clear_mute_until(участник.id, interaction.guild.id)
 
-        message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
+        # Use custom message for /говори, standard for /размьют
+        if custom:
+            message = f"Участнику {участник.mention} было даровано право говорить по воле Диктатора"
+        else:
+            message = f"✅С участника {участник.mention} сняты ограничения!"
 
         embed = discord.Embed(
             description=message,
@@ -487,25 +495,37 @@ class ModerationCog(commands.Cog):
     @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
     async def mute(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
         """Mute a user for a specified duration."""
-        await self._mute_impl(interaction, участник, длительность)
+        await self._mute_impl(interaction, участник, длительность, custom=False)
+
+    @app_commands.command(name="молчать", description="Молчать")
+    @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
+    async def mute_custom(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
+        """Custom mute command with dictator-style message."""
+        await self._mute_impl(interaction, участник, длительность, custom=True)
 
     @app_commands.command(name="запретить", description="Молчать")
     @app_commands.describe(участник="Пользователь для мута", длительность="Длительность мута (например: 1ч, 30м, 1д)")
     async def mute_alias(self, interaction: discord.Interaction, участник: discord.Member, длительность: str):
-        """Alias for /мьют."""
-        await self._mute_impl(interaction, участник, длительность)
+        """Alias for /молчать."""
+        await self._mute_impl(interaction, участник, длительность, custom=True)
 
     @app_commands.command(name="размьют", description="Снять мут с пользователя")
     @app_commands.describe(участник="Пользователь для снятия мута")
     async def unmute(self, interaction: discord.Interaction, участник: discord.Member):
         """Unmute a user."""
-        await self._unmute_impl(interaction, участник)
+        await self._unmute_impl(interaction, участник, custom=False)
+
+    @app_commands.command(name="говори", description="Говори")
+    @app_commands.describe(участник="Пользователь для снятия мута")
+    async def unmute_custom(self, interaction: discord.Interaction, участник: discord.Member):
+        """Custom unmute command with dictator-style message."""
+        await self._unmute_impl(interaction, участник, custom=True)
 
     @app_commands.command(name="разрешить", description="Говори")
     @app_commands.describe(участник="Пользователь для снятия мута")
     async def unmute_alias(self, interaction: discord.Interaction, участник: discord.Member):
-        """Alias for /размьют."""
-        await self._unmute_impl(interaction, участник)
+        """Alias for /говори."""
+        await self._unmute_impl(interaction, участник, custom=True)
     
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
