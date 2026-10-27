@@ -1,6 +1,7 @@
 """Auto-moderation cog for gif-triggered warnings."""
 
 import logging
+import re
 
 import discord
 from discord.ext import commands
@@ -37,21 +38,21 @@ class AutoModCog(commands.Cog):
         # Check if message contains the target gif
         is_target_gif = False
         
-        # Check in message content (exact match)
-        if AUTO_MOD_GIF_URL in message.content:
+        # Check in message content (both URL formats)
+        if AUTO_MOD_GIF_URL in message.content or "h2di-the-dictator" in message.content:
             is_target_gif = True
             logger.info(f"Auto-mod: Found target gif in message content from {message.author.id}")
         
-        # Check in attachments (exact match)
+        # Check in attachments (both URL formats)
         for attachment in message.attachments:
-            if attachment.url == AUTO_MOD_GIF_URL:
+            if AUTO_MOD_GIF_URL in attachment.url or "h2di-the-dictator" in attachment.url:
                 is_target_gif = True
                 logger.info(f"Auto-mod: Found target gif in attachment from {message.author.id}")
                 break
 
         # Log all URLs found in message for debugging
         if not is_target_gif:
-            urls = [url for url in message.content.split() if url.startswith('http')]
+            urls = re.findall(r'https?://[^\s<>"]+', message.content)
             attachment_urls = [a.url for a in message.attachments]
             logger.info(f"Auto-mod: URLs in message: {urls}")
             logger.info(f"Auto-mod: Attachment URLs: {attachment_urls}")
