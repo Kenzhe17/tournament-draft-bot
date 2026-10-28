@@ -376,6 +376,18 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
+        # Check if tournament has enough players
+        current_players = len(tournament.all_players)
+        required_players = int(tournament.size.value)
+
+        if current_players < required_players:
+            await interaction.response.send_message(
+                f"❌ Недостаточно игроков. Нужно {required_players}, есть {current_players}. Используйте /test keep_players:true для добавления ботов.",
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
         # Mark as test tournament but don't add bots
         tournament.is_test = True
 
