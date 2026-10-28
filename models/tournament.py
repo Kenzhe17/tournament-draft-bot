@@ -708,7 +708,21 @@ class Tournament:
         self.circle4 = []
         self.players_pool = []
 
-        logger.info(f"distribute_randomly: after clearing, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
+        # Clean up player_user_ids: only keep players who are in teams
+        # Remove players who were in players_pool but not selected for teams
+        team_player_names = set()
+        for team in self.teams:
+            team_player_names.add(team["captain"])
+            team_player_names.update(team["players"])
+
+        # Rebuild player_user_ids with only team players
+        new_player_user_ids = {}
+        for name, uid in self.player_user_ids.items():
+            if name in team_player_names:
+                new_player_user_ids[name] = uid
+
+        self.player_user_ids = new_player_user_ids
+        logger.info(f"distribute_randomly: cleaned player_user_ids, kept {len(new_player_user_ids)} players, real_player_ids={[uid for name, uid in new_player_user_ids.items() if uid > 0]}")
 
         # Skip TEAMS phase and go directly to bracket generation
         logger.info(f"distribute_randomly: calling generate_bracket, current phase={self.phase.value}")
@@ -1282,7 +1296,7 @@ class Tournament:
 
         Игрок активен если:
         - Фаза SETUP или DRAFT и он зарегистрирован (в all_players)
-        - Фаза > DRAFT и он выбран в команду (в teams)
+        - Фаза > DRAFT и он выбран в команду (в teams) или в players_pool (RANDOM mode)
         - Команда еще не проиграла (не в eliminated_teams)
         - Турнир еще не завершен (не COMPLETE)
         """
@@ -1305,6 +1319,13 @@ class Tournament:
         # Phase > DRAFT: check if in a team that hasn't been eliminated
         if self.phase in [TournamentPhase.TEAMS, TournamentPhase.QUALIFIERS,
                           TournamentPhase.SEMIFINALS, TournamentPhase.FINAL]:
+            # For RANDOM mode, also check players_pool
+            if self.formation_mode == FormationMode.RANDOM:
+                for player_name in self.players_pool:
+                    if self.player_user_ids.get(player_name) == user_id and user_id > 0:
+                        logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active=True (in players_pool)")
+                        return True  # Player in players_pool
+
             # Find which team the player is in
             for team_idx, team in enumerate(self.teams):
                 if team_idx in self.eliminated_teams:
