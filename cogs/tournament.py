@@ -225,8 +225,8 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
     @is_bot_owner()
-    @app_commands.describe(keep_players="Сохранить реальных игроков и добавить ботов только для заполнения")
-    async def test_start(self, interaction: discord.Interaction, keep_players: bool = False) -> None:
+    @app_commands.describe(keep_players="Сохранить реальных игроков и добавить ботов только для заполнения", no_bots="Не добавлять ботов, запустить только с реальными игроками")
+    async def test_start(self, interaction: discord.Interaction, keep_players: bool = False, no_bots: bool = False) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
@@ -249,6 +249,16 @@ class TournamentCog(commands.Cog):
         tournament.is_test = True
         captain_count = tournament.captain_count
         required_players = int(tournament.size.value)
+
+        # If no_bots=True, just start with current players (no filling)
+        if no_bots:
+            await interaction.response.send_message(
+                f"🧪 Турнир запущен только с реальными игроками ({len(tournament.all_players)} чел)! Нажмите Старт для запуска.",
+                ephemeral=True
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            await self.bot.update_tournament_message(interaction.guild, tournament)
+            return
 
         # Generate unique negative user_ids within int64 range
         # Use guild_id and channel_id to create unique base, but keep it small
@@ -336,8 +346,41 @@ class TournamentCog(commands.Cog):
 
         store.set(tournament)
 
+        message = f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска."
+        if keep_players:
+            message = f"🧪 Турнир заполнен ботовыми игроками ({required_players} всего, реальные сохранены)! Нажмите Старт для запуска."
+
+        await interaction.response.send_message(message, ephemeral=True)
+        asyncio.create_task(_delete_ephemeral_later(interaction))
+
+        await self.bot.update_tournament_message(interaction.guild, tournament)
+
+    @app_commands.command(name="start_real", description="Запустить турнир только с реальными игроками (без ботов)")
+    @is_bot_owner()
+    async def start_real_only(self, interaction: discord.Interaction) -> None:
+        """Запустить турнир только с реальными игроками."""
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        if tournament.phase != TournamentPhase.SETUP:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир уже запущен."),
+                ephemeral=True,
+            )
+            asyncio.create_task(_delete_ephemeral_later(interaction))
+            return
+
+        # Mark as test tournament but don't add bots
+        tournament.is_test = True
+
         await interaction.response.send_message(
-            f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска.",
+            f"🧪 Турнир готов к запуску с {len(tournament.all_players)} реальными игроками! Нажмите Старт для запуска.",
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
