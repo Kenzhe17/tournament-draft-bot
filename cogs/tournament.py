@@ -253,6 +253,15 @@ class TournamentCog(commands.Cog):
         # Use guild_id and channel_id to create unique base, but keep it small
         base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
 
+        # Clear all existing data and player_user_ids
+        tournament.circle1 = []
+        tournament.circle2 = []
+        tournament.circle3 = []
+        tournament.circle4 = []
+        tournament.players_pool = []
+        tournament.captains = []
+        tournament.player_user_ids = {}
+
         if tournament.formation_mode == FormationMode.RANDOM:
             # RANDOM mode: fill players_pool
             tournament.players_pool = [f"Player{i+1}" for i in range(required_players)]
