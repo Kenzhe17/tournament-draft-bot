@@ -1283,7 +1283,7 @@ class Tournament:
             # Check if user_id is in player_user_ids (real players only, not bots)
             # Also check if user_id > 0 to exclude bot players (negative IDs)
             is_active = user_id in self.player_user_ids.values() and user_id > 0
-            logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active={is_active}, player_user_ids={list(self.player_user_ids.values())}")
+            logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase={self.phase.value}, is_active={is_active}, real_player_ids={[uid for uid in self.player_user_ids.values() if uid > 0]}")
             return is_active
 
         # Phase > DRAFT: check if in a team that hasn't been eliminated
