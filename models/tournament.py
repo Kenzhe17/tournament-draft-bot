@@ -472,6 +472,8 @@ class Tournament:
     async def distribute_by_elo(self, guild_id: int) -> None:
         """Распределить игроков по кругам на основе ELO."""
         from storage.player_stats_store import player_stats_store
+        import logging
+        logger = logging.getLogger(__name__)
 
         # Collect all players from all circles
         all_players = []
@@ -480,6 +482,8 @@ class Tournament:
             for player_name in circle_list:
                 user_id = self.player_user_ids.get(player_name, 0)
                 all_players.append((player_name, user_id))
+
+        logger.info(f"distribute_by_elo: collected {len(all_players)} players, real_player_ids={[uid for name, uid in all_players if uid > 0]}")
 
         # Get ELO for each player (only for real players)
         players_with_elo = []
@@ -531,6 +535,8 @@ class Tournament:
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
 
+        logger.info(f"distribute_by_elo: after distribution, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
+
     async def distribute_by_skill_rating(self, guild_id: int) -> None:
         """Распределить игроков по кругам на основе Skill Rating."""
         from storage.player_stats_store import player_stats_store
@@ -545,7 +551,7 @@ class Tournament:
                 user_id = self.player_user_ids.get(player_name, 0)
                 all_players.append((player_name, user_id))
 
-        logger.info(f"distribute_by_skill_rating: collected {len(all_players)} players from circles")
+        logger.info(f"distribute_by_skill_rating: collected {len(all_players)} players, real_player_ids={[uid for name, uid in all_players if uid > 0]}")
         
         # Get Skill Rating for each player (only for real players)
         players_with_rating = []
@@ -633,8 +639,9 @@ class Tournament:
             player_name, user_id, _ = final_players_with_rating[i]
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
-        
+
         logger.info(f"distribute_by_skill_rating: circle4={self.circle4}")
+        logger.info(f"distribute_by_skill_rating: after distribution, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
 
     # --- Случайное распределение (без кругов) ---
 
@@ -649,7 +656,7 @@ class Tournament:
             user_id = self.player_user_ids.get(player_name, 0)
             all_players.append((player_name, user_id))
 
-        logger.info(f"distribute_randomly: collected {len(all_players)} players")
+        logger.info(f"distribute_randomly: collected {len(all_players)} players, real_player_ids={[uid for name, uid in all_players if uid > 0]}")
 
         # Shuffle players randomly
         random.shuffle(all_players)
@@ -700,6 +707,8 @@ class Tournament:
         self.circle3 = []
         self.circle4 = []
         self.players_pool = []
+
+        logger.info(f"distribute_randomly: after clearing, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
 
         # Skip TEAMS phase and go directly to bracket generation
         logger.info(f"distribute_randomly: calling generate_bracket, current phase={self.phase.value}")
