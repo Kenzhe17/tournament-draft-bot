@@ -535,7 +535,15 @@ class Tournament:
             self.circle4.append(player_name)
             self.player_user_ids[player_name] = user_id
 
-        logger.info(f"distribute_by_elo: after distribution, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
+        # Clean up player_user_ids: only keep players who are in circles
+        circle_player_names = set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
+        new_player_user_ids = {}
+        for name, uid in self.player_user_ids.items():
+            if name in circle_player_names:
+                new_player_user_ids[name] = uid
+
+        self.player_user_ids = new_player_user_ids
+        logger.info(f"distribute_by_elo: cleaned player_user_ids, kept {len(new_player_user_ids)} players, real_player_ids={[uid for name, uid in new_player_user_ids.items() if uid > 0]}")
 
     async def distribute_by_skill_rating(self, guild_id: int) -> None:
         """Распределить игроков по кругам на основе Skill Rating."""
@@ -641,7 +649,16 @@ class Tournament:
             self.player_user_ids[player_name] = user_id
 
         logger.info(f"distribute_by_skill_rating: circle4={self.circle4}")
-        logger.info(f"distribute_by_skill_rating: after distribution, real_player_ids={[uid for name, uid in self.player_user_ids.items() if uid > 0]}")
+
+        # Clean up player_user_ids: only keep players who are in circles
+        circle_player_names = set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
+        new_player_user_ids = {}
+        for name, uid in self.player_user_ids.items():
+            if name in circle_player_names:
+                new_player_user_ids[name] = uid
+
+        self.player_user_ids = new_player_user_ids
+        logger.info(f"distribute_by_skill_rating: cleaned player_user_ids, kept {len(new_player_user_ids)} players, real_player_ids={[uid for name, uid in new_player_user_ids.items() if uid > 0]}")
 
     # --- Случайное распределение (без кругов) ---
 
