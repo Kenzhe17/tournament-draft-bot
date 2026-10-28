@@ -472,16 +472,18 @@ class Tournament:
             circle_list = self.circle_list(circle)
             for player_name in circle_list:
                 user_id = self.player_user_ids.get(player_name, 0)
-                # Filter out bot players (negative IDs)
-                if user_id > 0:
-                    all_players.append((player_name, user_id))
+                all_players.append((player_name, user_id))
 
-        # Get ELO for each player
+        # Get ELO for each player (only for real players)
         players_with_elo = []
         for player_name, user_id in all_players:
-            stats = await player_stats_store.get(guild_id, user_id)
-            elo = stats.elo if stats else 1000  # Default ELO for new players
-            players_with_elo.append((player_name, user_id, elo))
+            if user_id > 0:
+                stats = await player_stats_store.get(guild_id, user_id)
+                elo = stats.elo if stats else 1000  # Default ELO for new players
+                players_with_elo.append((player_name, user_id, elo))
+            else:
+                # Bot players get default ELO
+                players_with_elo.append((player_name, user_id, 1000))
 
         # Sort by ELO (descending)
         players_with_elo.sort(key=lambda x: x[2], reverse=True)
@@ -534,28 +536,30 @@ class Tournament:
             circle_list = self.circle_list(circle)
             for player_name in circle_list:
                 user_id = self.player_user_ids.get(player_name, 0)
-                # Filter out bot players (negative IDs)
-                if user_id > 0:
-                    all_players.append((player_name, user_id))
+                all_players.append((player_name, user_id))
 
         logger.info(f"distribute_by_skill_rating: collected {len(all_players)} players from circles")
         
-        # Get Skill Rating for each player
+        # Get Skill Rating for each player (only for real players)
         players_with_rating = []
         all_ratings = []  # Для расчёта среднего по серверу
-        
+
         for player_name, user_id in all_players:
-            stats = await player_stats_store.get(guild_id, user_id)
-            if stats:
-                try:
-                    skill_rating = stats.skill_rating
-                    if stats.games >= 3:
-                        all_ratings.append(skill_rating)
-                except (AttributeError, Exception):
-                    skill_rating = 1.0  # Default if skill_rating not available
+            if user_id > 0:
+                stats = await player_stats_store.get(guild_id, user_id)
+                if stats:
+                    try:
+                        skill_rating = stats.skill_rating
+                        if stats.games >= 3:
+                            all_ratings.append(skill_rating)
+                    except (AttributeError, Exception):
+                        skill_rating = 1.0  # Default if skill_rating not available
+                else:
+                    skill_rating = 1.0  # Default for new players
+                players_with_rating.append((player_name, user_id, skill_rating))
             else:
-                skill_rating = 1.0  # Default for new players
-            players_with_rating.append((player_name, user_id, skill_rating))
+                # Bot players get default rating
+                players_with_rating.append((player_name, user_id, 1.0))
         
         # Рассчитать среднее Skill Rating сервера (для игроков с 3+ катками)
         server_avg_rating = 5.0  # Default if no data
@@ -636,9 +640,7 @@ class Tournament:
         all_players = []
         for player_name in self.players_pool:
             user_id = self.player_user_ids.get(player_name, 0)
-            # Filter out bot players (negative IDs)
-            if user_id > 0:
-                all_players.append((player_name, user_id))
+            all_players.append((player_name, user_id))
 
         logger.info(f"distribute_randomly: collected {len(all_players)} players")
 
@@ -1266,9 +1268,15 @@ class Tournament:
         - Фаза SETUP или DRAFT и он зарегистрирован (в all_players)
         - Фаза > DRAFT и он выбран в команду (в teams)
         - Команда еще не проиграла (не в eliminated_teams)
+        - Турнир еще не завершен (не COMPLETE)
         """
         import logging
         logger = logging.getLogger(__name__)
+
+        # COMPLETE phase: nobody is active
+        if self.phase == TournamentPhase.COMPLETE:
+            logger.info(f"is_player_active: user_id={user_id}, tournament_id={self.id}, phase=COMPLETE, is_active=False")
+            return False
 
         # Phase SETUP or DRAFT: check if registered
         if self.phase in [TournamentPhase.SETUP, TournamentPhase.DRAFT]:
