@@ -410,8 +410,15 @@ class Tournament:
         logging.info(f"  SUCCESS: added to circle {circle}")
 
         # Register user_id if provided
+        # Only update if user_id > 0 (real player) to avoid overwriting with bot IDs
         if user_id is not None:
-            self.player_user_ids[name] = user_id
+            existing_id = self.player_user_ids.get(name)
+            if existing_id is None or (existing_id <= 0 and user_id > 0):
+                # Only set if no existing ID, or existing is bot and new is real
+                self.player_user_ids[name] = user_id
+                logging.info(f"  Set user_id for {name}: {user_id}")
+            else:
+                logging.info(f"  Kept existing user_id for {name}: {existing_id} (not overwriting with {user_id})")
 
         return True
 
