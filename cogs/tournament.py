@@ -225,7 +225,8 @@ class TournamentCog(commands.Cog):
 
     @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
     @is_bot_owner()
-    async def test_start(self, interaction: discord.Interaction) -> None:
+    @app_commands.describe(keep_players="Сохранить реальных игроков и добавить ботов только для заполнения")
+    async def test_start(self, interaction: discord.Interaction, keep_players: bool = False) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
         tournament = store.get(interaction.guild_id, interaction.channel_id)
         if not tournament:
@@ -253,39 +254,85 @@ class TournamentCog(commands.Cog):
         # Use guild_id and channel_id to create unique base, but keep it small
         base_user_id = -((interaction.guild_id % 10000) * 10000 + (interaction.channel_id % 100) * 10)
 
-        # Clear all existing data and player_user_ids
-        tournament.circle1 = []
-        tournament.circle2 = []
-        tournament.circle3 = []
-        tournament.circle4 = []
-        tournament.players_pool = []
-        tournament.captains = []
-        tournament.player_user_ids = {}
+        if not keep_players:
+            # Clear all existing data and player_user_ids
+            tournament.circle1 = []
+            tournament.circle2 = []
+            tournament.circle3 = []
+            tournament.circle4 = []
+            tournament.players_pool = []
+            tournament.captains = []
+            tournament.player_user_ids = {}
 
         if tournament.formation_mode == FormationMode.RANDOM:
             # RANDOM mode: fill players_pool
-            tournament.players_pool = [f"Player{i+1}" for i in range(required_players)]
-            # Add unique user_ids based on guild/channel to avoid conflicts
-            for i, player_name in enumerate(tournament.players_pool):
-                tournament.player_user_ids[player_name] = base_user_id - i  # Unique negative IDs
+            if keep_players:
+                # Keep existing real players, add bots to fill remaining slots
+                current_players = len(tournament.players_pool)
+                needed = required_players - current_players
+                for i in range(needed):
+                    player_name = f"Player{current_players + i + 1}"
+                    tournament.players_pool.append(player_name)
+                    tournament.player_user_ids[player_name] = base_user_id - i
+            else:
+                # Fill with only bots
+                tournament.players_pool = [f"Player{i+1}" for i in range(required_players)]
+                for i, player_name in enumerate(tournament.players_pool):
+                    tournament.player_user_ids[player_name] = base_user_id - i
         else:
             # ELO/SKILL modes: fill circles
-            tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
-            tournament.circle1.extend(tournament.captains)
-            tournament.circle2.extend([f"P2-{i}" for i in range(captain_count)])
-            tournament.circle3.extend([f"P3-{i}" for i in range(captain_count)])
-            # Add extra players to circle4 to reach required total
-            remaining_players = required_players - (captain_count * 3)
-            tournament.circle4.extend([f"P4-{i}" for i in range(remaining_players)])
-            # Add unique user_ids for all players
-            for i, player_name in enumerate(tournament.captains):
-                tournament.player_user_ids[player_name] = base_user_id - i
-            for i, player_name in enumerate(tournament.circle2):
-                tournament.player_user_ids[player_name] = base_user_id - 100 - i
-            for i, player_name in enumerate(tournament.circle3):
-                tournament.player_user_ids[player_name] = base_user_id - 200 - i
-            for i, player_name in enumerate(tournament.circle4):
-                tournament.player_user_ids[player_name] = base_user_id - 300 - i
+            if keep_players:
+                # Keep existing real players, add bots to fill remaining slots
+                # Calculate needed players for each circle
+                needed_captains = captain_count - len(tournament.circle1)
+                needed_circle2 = captain_count - len(tournament.circle2)
+                needed_circle3 = captain_count - len(tournament.circle3)
+                needed_circle4 = required_players - (captain_count * 3) - len(tournament.circle4)
+
+                # Add bots to fill circle1 (captains)
+                for i in range(needed_captains):
+                    player_name = f"Cap{len(tournament.circle1) + i + 1}"
+                    tournament.circle1.append(player_name)
+                    tournament.player_user_ids[player_name] = base_user_id - i
+
+                # Add bots to fill circle2
+                for i in range(needed_circle2):
+                    player_name = f"P2-{len(tournament.circle2) + i}"
+                    tournament.circle2.append(player_name)
+                    tournament.player_user_ids[player_name] = base_user_id - 100 - i
+
+                # Add bots to fill circle3
+                for i in range(needed_circle3):
+                    player_name = f"P3-{len(tournament.circle3) + i}"
+                    tournament.circle3.append(player_name)
+                    tournament.player_user_ids[player_name] = base_user_id - 200 - i
+
+                # Add bots to fill circle4
+                for i in range(needed_circle4):
+                    player_name = f"P4-{len(tournament.circle4) + i}"
+                    tournament.circle4.append(player_name)
+                    tournament.player_user_ids[player_name] = base_user_id - 300 - i
+
+                # Update captains list
+                tournament.captains = list(tournament.circle1)
+            else:
+                # Fill with only bots
+                tournament.captains = [f"Cap{i+1}" for i in range(captain_count)]
+                tournament.circle1.extend(tournament.captains)
+                tournament.circle2.extend([f"P2-{i}" for i in range(captain_count)])
+                tournament.circle3.extend([f"P3-{i}" for i in range(captain_count)])
+                # Add extra players to circle4 to reach required total
+                remaining_players = required_players - (captain_count * 3)
+                tournament.circle4.extend([f"P4-{i}" for i in range(remaining_players)])
+                # Add unique user_ids for all players
+                for i, player_name in enumerate(tournament.captains):
+                    tournament.player_user_ids[player_name] = base_user_id - i
+                for i, player_name in enumerate(tournament.circle2):
+                    tournament.player_user_ids[player_name] = base_user_id - 100 - i
+                for i, player_name in enumerate(tournament.circle3):
+                    tournament.player_user_ids[player_name] = base_user_id - 200 - i
+                for i, player_name in enumerate(tournament.circle4):
+                    tournament.player_user_ids[player_name] = base_user_id - 300 - i
 
         store.set(tournament)
 
