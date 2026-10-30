@@ -41,7 +41,126 @@ The client script (`rz3_rpc.py`) runs on the player's computer during tournament
 
 The RPC server is automatically started with the bot in `bot.py`. No additional configuration needed.
 
+### Discord Application Setup (One-time)
+
+1. **Create Discord Application:**
+   - Go to [Discord Developer Portal](https://discord.com/developers/applications)
+   - Click "New Application"
+   - Name it "r!z3 Tournament" (or any name you prefer)
+   - Click "Create"
+
+2. **Enable Rich Presence:**
+   - In the left sidebar, click "Rich Presence"
+   - Click "Enable Rich Presence"
+   - Click "Save Changes"
+
+3. **Upload Assets (Images):**
+   - In Rich Presence section, click "Art Assets"
+   - Upload your tournament logo
+   - Name it `logo_rz3` (this matches the code reference)
+   - Upload a small image for optional small_image (optional)
+   - Click "Save Changes"
+
+4. **Copy Application ID:**
+   - On the application's "General Information" page
+   - Copy the "APPLICATION ID" (19-digit number)
+   - You'll need this for the client configuration
+
 ### Client Setup
+
+#### Option 1: Using Environment Variable (Recommended)
+
+1. **Create/Edit .env file:**
+   ```bash
+   # In the same directory as rz3_rpc.py
+   DISCORD_CLIENT_ID=123456789012345678
+   ```
+
+2. **Install Dependencies:**
+   ```bash
+   pip install pypresence aiohttp python-dotenv
+   ```
+
+3. **Run the Client:**
+   ```bash
+   python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL]
+   ```
+
+#### Option 2: Editing the Script Directly
+
+1. **Open rz3_rpc.py in a text editor**
+
+2. **Find this line (around line 38):**
+   ```python
+   DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "YOUR_CLIENT_ID")
+   ```
+
+3. **Replace "YOUR_CLIENT_ID" with your actual Application ID:**
+   ```python
+   DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "123456789012345678")
+   ```
+
+4. **Save the file**
+
+5. **Install Dependencies:**
+   ```bash
+   pip install pypresence aiohttp
+   ```
+
+6. **Run the Client:**
+   ```bash
+   python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL]
+   ```
+
+### Environment Variable Setup Guide
+
+#### Windows (Command Prompt):
+```cmd
+set DISCORD_CLIENT_ID=123456789012345678
+python rz3_rpc.py YOUR_DISCORD_ID
+```
+
+#### Windows (PowerShell):
+```powershell
+$env:DISCORD_CLIENT_ID="123456789012345678"
+python rz3_rpc.py YOUR_DISCORD_ID
+```
+
+#### Windows (Permanent - System Environment Variables):
+1. Press `Win + R`, type `sysdm.cpl`, press Enter
+2. Click "Advanced" tab
+3. Click "Environment Variables"
+4. Under "User variables", click "New"
+5. Variable name: `DISCORD_CLIENT_ID`
+6. Variable value: `123456789012345678`
+7. Click OK on all dialogs
+8. Restart Command Prompt/PowerShell
+
+#### Linux/macOS (Temporary):
+```bash
+export DISCORD_CLIENT_ID=123456789012345678
+python rz3_rpc.py YOUR_DISCORD_ID
+```
+
+#### Linux/macOS (Permanent - .bashrc or .zshrc):
+1. Open `~/.bashrc` (for Bash) or `~/.zshrc` (for Zsh)
+2. Add this line at the end:
+   ```bash
+   export DISCORD_CLIENT_ID=123456789012345678
+   ```
+3. Save the file
+4. Run `source ~/.bashrc` or `source ~/.zshrc`
+5. Or restart your terminal
+
+#### Using .env file (Recommended for project):
+1. Create a file named `.env` in the same directory as `rz3_rpc.py`
+2. Add this line:
+   ```
+   DISCORD_CLIENT_ID=123456789012345678
+   ```
+3. The script will automatically read this file
+
+### Running the Client
 
 1. **Install Dependencies:**
    ```bash
@@ -77,20 +196,112 @@ The RPC server is automatically started with the bot in `bot.py`. No additional 
 
 When active, the player's Discord profile will show:
 
-**In Lobby:**
-- **Details:** "Tournament Setup" or "BR Tournament Registration"
-- **State:** "Phase: SETUP" or "Players: 24/48"
-- **Large Image:** r!z3 logo
-- **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [current/total]
+### Regular Tournament Scenarios
 
-**In Game:**
-- **Details:** "Qualifiers" or "BR Cup - Bermuda"
-- **State:** "Team 1" or "Team: Team Name"
+**SETUP Phase (Registration):**
+- **Details:** "Tournament Setup"
+- **State:** "Phase: SETUP"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [4/4] or [24/48]
-- **Start Time:** Match duration timer
+- **Party Size:** [registered/total] (e.g., [8/8], [16/16], [32/32])
+
+**DRAFT Phase (Team Selection):**
+- **Details:** "Tournament Setup"
+- **State:** "Phase: DRAFT"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [registered/total]
+
+**QUALIFIERS Phase:**
+- **Details:** "Qualifiers"
+- **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [total_players/tournament_size] (e.g., [8/8], [16/16], [32/32])
+
+**SEMIFINALS Phase:**
+- **Details:** "Semifinals"
+- **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [players/size]
+
+**FINALS Phase:**
+- **Details:** "Finals"
+- **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [players/size]
+
+**COMPLETE Phase:**
+- **Status:** Cleared (no Rich Presence)
+
+### BR Tournament Scenarios
+
+**REGISTRATION Phase:**
+- **Details:** "BR Tournament Registration"
+- **State:** "Players: X/48" (e.g., "Players: 24/48")
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [X/48]
+
+**BERMUDA Phase (Map 1):**
+- **Details:** "BR Cup - Bermuda"
+- **State:** "Team: Team Name" (e.g., "Team: Team Alpha")
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [X/X] (current players)
+
+**BERMUDA Phase (Map 4, if maps=4):**
+- **Details:** "BR Cup - Bermuda"
+- **State:** "Team: Team Name"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [X/X]
+
+**PURGATORY Phase:**
+- **Details:** "BR Cup - Purgatory"
+- **State:** "Team: Team Name"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [X/X]
+
+**KALAHARI Phase:**
+- **Details:** "BR Cup - Kalahari"
+- **State:** "Team: Team Name"
+- **Large Image:** r!z3 logo
+- **Large Text:** "r!z3 Tournament System"
+- **Party Size:** [X/X]
+
+**RESULTS Phase:**
+- **Status:** Cleared (no Rich Presence)
+
+**COMPLETE Phase:**
+- **Status:** Cleared (no Rich Presence)
+
+### No Active Tournament
+
+**Player not in any tournament:**
+- **Status:** Cleared (no Rich Presence)
+- Reason: Player is not registered in any active tournament
+
+### Summary Table
+
+| Tournament Type | Phase | Status | Details | State | Party Size |
+|----------------|-------|--------|---------|-------|------------|
+| Regular | SETUP | IN_LOBBY | Tournament Setup | Phase: SETUP | [X/total] |
+| Regular | DRAFT | IN_LOBBY | Tournament Setup | Phase: DRAFT | [X/total] |
+| Regular | QUALIFIERS | IN_GAME | Qualifiers | Team 1-4 | [X/size] |
+| Regular | SEMIFINALS | IN_GAME | Semifinals | Team 1-4 | [X/size] |
+| Regular | FINALS | IN_GAME | Finals | Team 1-4 | [X/size] |
+| Regular | COMPLETE | none | - | - | - |
+| BR | REGISTRATION | IN_LOBBY | BR Tournament Registration | Players: X/48 | [X/48] |
+| BR | BERMUDA | IN_GAME | BR Cup - Bermuda | Team: Name | [X/X] |
+| BR | PURGATORY | IN_GAME | BR Cup - Purgatory | Team: Name | [X/X] |
+| BR | KALAHARI | IN_GAME | BR Cup - Kalahari | Team: Name | [X/X] |
+| BR | RESULTS | none | - | - | - |
+| BR | COMPLETE | none | - | - | - |
+| None | - | none | - | - | - |
 
 ## Features
 
