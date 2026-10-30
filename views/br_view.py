@@ -2148,7 +2148,7 @@ class BRConfirmPurgatoryButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index (the map we just transitioned to)
                 current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
-                for map_idx in range(current_idx):
+                for map_idx in range(current_idx + 1):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -2352,7 +2352,7 @@ class BRConfirmKalahariButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index
                 current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
-                for map_idx in range(current_idx):
+                for map_idx in range(current_idx + 1):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -3055,7 +3055,8 @@ class BRKalahariButton(Button):
             stats = team.get("stats", {})
             cumulative_points = 0
             # Count all completed maps up to current_index (the map we just transitioned to)
-            for map_idx in range(tournament.current_map_index):
+            current_idx = tournament.current_map_index if tournament.current_map_index is not None else 0
+            for map_idx in range(current_idx + 1):
                 map_stats = tournament.get_team_stats_for_map(team, map_idx)
                 if map_stats:
 
