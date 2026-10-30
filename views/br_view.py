@@ -2147,7 +2147,7 @@ class BRConfirmPurgatoryButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index (the map we just transitioned to)
                 current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
-                for map_idx in range(current_idx + 1):
+                for map_idx in range(current_idx):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -2684,9 +2684,9 @@ class BRNextMapButton(Button):
                 # Calculate cumulative points for all completed maps up to current map index
                 stats = team.get("stats", {})
                 cumulative_points = 0
-                # Count all completed maps (including current map)
+                # Count all completed maps BEFORE current map (stats for current map not yet entered)
                 current_map_idx = tournament.current_map_index if tournament.current_map_index is not None else 0
-                for map_idx in range(current_map_idx + 1):
+                for map_idx in range(current_map_idx):
                     map_stats = tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
                         place = map_stats.get("place", 0)
