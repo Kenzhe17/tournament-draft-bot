@@ -104,28 +104,42 @@ class BRManagementMenuView(View):
             self.add_item(BRRoomButton(guild_id, channel_id))
             self.add_item(BRDataButton(guild_id, channel_id))
 
-            # Add Purgatory button only if all stats are complete for current map
-            if tournament.phase == BRTournamentPhase.BERMUDA:
-                if tournament.are_all_stats_complete("bermuda"):
-                    self.add_item(BRPurgatoryButton(guild_id, channel_id))
+            # Add transition buttons based on map sequence
+            map_sequence = tournament.get_map_sequence()
+            current_phase_index = -1
+            for i, map_name in enumerate(map_sequence):
+                if map_name == tournament.phase.value:
+                    current_phase_index = i
+                    break
+
+            # If this is the last map and all stats are complete, show results button
+            if current_phase_index == len(map_sequence) - 1:
+                if tournament.are_all_stats_complete(tournament.current_map):
+                    self.add_item(BRShowResultsButton(guild_id, channel_id))
                 else:
-                    # Add disabled button
                     btn = Button(
                         style=discord.ButtonStyle.secondary,
-                        label="Чистилище",
+                        label="Показать итоги",
                         disabled=True,
-                        custom_id=f"br_purgatory_disabled:{guild_id}:{channel_id}"
+                        custom_id=f"br_results_disabled:{guild_id}:{channel_id}"
                     )
                     self.add_item(btn)
-            elif tournament.phase == BRTournamentPhase.PURGATORY:
-                if tournament.are_all_stats_complete("purgatory"):
-                    self.add_item(BRKalahariButton(guild_id, channel_id))
+            elif current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+                # Show next map button if stats are complete
+                next_map = map_sequence[current_phase_index + 1]
+                if tournament.are_all_stats_complete(tournament.current_map):
+                    if next_map == "purgatory":
+                        self.add_item(BRPurgatoryButton(guild_id, channel_id))
+                    elif next_map == "kalahari":
+                        self.add_item(BRKalahariButton(guild_id, channel_id))
+                    elif next_map == "bermuda":
+                        self.add_item(BRNextMapButton(guild_id, channel_id, tournament, next_map))
                 else:
                     btn = Button(
                         style=discord.ButtonStyle.secondary,
-                        label="Калахари",
+                        label=next_map.capitalize(),
                         disabled=True,
-                        custom_id=f"br_kalahari_disabled:{guild_id}:{channel_id}"
+                        custom_id=f"br_next_disabled:{guild_id}:{channel_id}"
                     )
                     self.add_item(btn)
         elif tournament.phase == BRTournamentPhase.RESULTS:
@@ -1923,29 +1937,6 @@ class BRStatsReviewView(View):
         # Add back button
         self.add_item(BRBackToGroupSelectButton(guild_id, channel_id, tournament))
 
-        # Add confirm button if all stats are complete
-        if tournament.are_all_stats_complete(tournament.current_map):
-            map_sequence = tournament.get_map_sequence()
-            current_phase_index = -1
-            for i, map_name in enumerate(map_sequence):
-                if map_name == tournament.phase.value:
-                    current_phase_index = i
-                    break
-
-            # If this is the last map (or only map), show results button
-            if current_phase_index == len(map_sequence) - 1:
-                self.add_item(BRConfirmResultsButton(guild_id, channel_id, tournament))
-            elif current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
-                # Show next map button
-                next_map = map_sequence[current_phase_index + 1]
-                if next_map == "purgatory":
-                    self.add_item(BRConfirmPurgatoryButton(guild_id, channel_id, tournament))
-                elif next_map == "kalahari":
-                    self.add_item(BRConfirmKalahariButton(guild_id, channel_id, tournament))
-                elif next_map == "bermuda":
-                    # Custom button for repeating bermuda
-                    self.add_item(BRConfirmNextMapButton(guild_id, channel_id, tournament, next_map))
-
 
 class BREditTeamStatsButton(Button):
     """Button to edit stats for a team."""
@@ -2457,6 +2448,216 @@ class BRConfirmNextMapButton(Button):
                 title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
                 description=(
                     f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: Random\n"
+                    f"{replace_emojis('sub_middle')} Фаза: {map_display}\n"
+                    f"{replace_emojis('sub_directory')} Карта: {map_display}\n\n"
+                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    + "\n".join(teams_text) + "\n\n"
+                    f"{replace_emojis('white_dot')} **Статус:**\n"
+                    f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
+                ),
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+
+            view = BRBermudaView(self.guild_id, self.channel_id)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating BR message for next map: {e}")
+
+
+class BRShowResultsButton(Button):
+    """Button to show final results from org menu."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Показать итоги",
+            custom_id=f"br_show_results:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.br_store import br_store
+        from models.br_tournament import BRTournamentPhase
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Transition to RESULTS phase
+        tournament.phase = BRTournamentPhase.RESULTS
+        br_store.set(tournament)
+
+        # Close the ephemeral menu
+        await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+
+        # Update main message with final results embed
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not tournament.message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(tournament.message_id)
+
+            # Calculate total points for all maps
+            teams_with_total_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate total points across all maps
+                stats = team.get("stats", {})
+                total_points = 0
+                for map_name in tournament.get_map_sequence():
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            total_points += place_points.get(place, 0) + kills
+
+                teams_with_total_points.append({
+                    "captain": captain,
+                    "team_name": team_name,
+                    "players_str": players_str,
+                    "total_points": total_points,
+                    "index": i
+                })
+
+            # Sort by total points descending
+            teams_with_total_points.sort(key=lambda x: x["total_points"], reverse=True)
+
+            teams_text = []
+            for rank, team_data in enumerate(teams_with_total_points):
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                teams_text.append(
+                    f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {team_data['players_str']}\n"
+                )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
+                    f"{replace_emojis('sub_directory')} Статус: Завершен\n\n"
+                    f"{replace_emojis('white_dot')} **Результаты команд:**\n\n"
+                    + "\n".join(teams_text)
+                ),
+                color=discord.Color.gold()
+            )
+
+            view = BRBermudaView(self.guild_id, self.channel_id)
+            await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating BR message for results: {e}")
+
+
+class BRNextMapButton(Button):
+    """Button to transition to next map from org menu."""
+
+    def __init__(self, guild_id: int, channel_id: int, tournament, next_map: str):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label=f"{next_map.capitalize()}",
+            custom_id=f"br_next_map:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.next_map = next_map
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from storage.br_store import br_store
+        from models.br_tournament import BRTournamentPhase
+
+        tournament = br_store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ BR турнир не найден.",
+                ephemeral=True
+            )
+            return
+
+        # Transition to next map
+        tournament.phase = BRTournamentPhase(self.next_map)
+        tournament.current_map = self.next_map
+        br_store.set(tournament)
+
+        # Close the ephemeral menu
+        await interaction.response.edit_message(content=f"✅ Переход к {self.next_map.capitalize()}", view=None)
+
+        # Update main message with next map embed
+        channel = interaction.guild.get_channel(self.channel_id)
+        if not channel or not tournament.message_id:
+            return
+
+        try:
+            message = await channel.fetch_message(tournament.message_id)
+
+            map_names = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }
+            map_display = map_names.get(self.next_map, self.next_map)
+
+            # Build teams section with current map points (sorted by points)
+            teams_with_points = []
+            num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                          get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+            for i, team in enumerate(tournament.teams):
+                captain = team.get("captain", "Unknown")
+                team_name = team.get("name", f"Команда {i+1}")
+                players = team.get("players", [])
+                players_str = ", ".join(players) if players else ""
+
+                # Calculate cumulative points for completed maps
+                stats = team.get("stats", {})
+                cumulative_points = 0
+                for map_name in tournament.get_map_sequence():
+                    if map_name == self.next_map:
+                        break  # Don't count the next map we're transitioning to
+                    if map_name in stats:
+                        map_stats = stats[map_name]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            cumulative_points += place_points.get(place, 0) + kills
+
+                teams_with_points.append((cumulative_points, i, captain, players_str))
+
+            # Sort by points (descending)
+            teams_with_points.sort(key=lambda x: x[0], reverse=True)
+
+            # Build display with sorted teams
+            teams_text = []
+            for rank, (points, original_index, captain, players_str) in enumerate(teams_with_points):
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+                teams_text.append(
+                    f"{num_emoji} {captain} ({points} очков)\n"
+                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                )
+
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
+                description=(
+                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
                     f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
                     f"{replace_emojis('sub_middle')} Формат: Random\n"
                     f"{replace_emojis('sub_middle')} Фаза: {map_display}\n"

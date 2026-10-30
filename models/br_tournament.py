@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class BRTournamentPhase(str, Enum):
