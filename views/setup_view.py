@@ -1621,6 +1621,14 @@ class NotifyButton(discord.ui.Button):
         # Calculate missing players
         total_players = len(tournament.players_pool)
         total_needed = int(tournament.size.value)
+
+        # For ELO/SKILL modes, count players in circles instead of pool
+        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL]:
+            total_players = 0
+            for circle_num in range(1, 5):
+                circle_data = getattr(tournament, f"circle{circle_num}", [])
+                total_players += len(circle_data)
+
         missing = total_needed - total_players
 
         description = f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
@@ -1650,7 +1658,7 @@ class NotifyButton(discord.ui.Button):
                     circles_info.append(f"Круг {circle_num}: {circle_count}/{circle_limit} (нужно {circle_missing})")
 
             if circles_info:
-                description += "\n**Круги:**\n" + "\n".join(circles_info)
+                description += "\n**Игроки:**\n" + "\n".join(circles_info)
 
         embed = discord.Embed(
             title=replace_emojis("📢 Турнир"),
