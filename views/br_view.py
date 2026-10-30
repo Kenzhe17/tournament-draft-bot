@@ -74,7 +74,15 @@ class BROrganizerMenuButton(Button):
             return
 
         view = BRManagementMenuView(self.guild_id, self.channel_id)
-        await interaction.response.send_message(view=view, ephemeral=True)
+
+        # Check if view has any items
+        if len(view.children) == 0:
+            await interaction.response.send_message(
+                "Нет доступных действий для этого этапа турнира.",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("Организаторское меню:", view=view, ephemeral=True)
 
 
 class BRManagementMenuView(View):
@@ -144,6 +152,28 @@ class BRManagementMenuView(View):
                     self.add_item(btn)
         elif tournament.phase == BRTournamentPhase.RESULTS:
             # No buttons in results phase - tournament is complete
+            pass
+
+        # Always add a close button
+        self.add_item(BRCloseMenuButton(guild_id, channel_id))
+
+
+class BRCloseMenuButton(Button):
+    """Button to close the org menu."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Закрыть",
+            custom_id=f"br_close_menu:{guild_id}:{channel_id}"
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        try:
+            await interaction.response.edit_message(view=None)
+        except discord.NotFound:
             pass
 
 
