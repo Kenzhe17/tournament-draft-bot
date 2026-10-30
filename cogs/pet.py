@@ -213,19 +213,20 @@ class PetCog(commands.Cog):
 
     @pet.command(name="coowner_remove", description="Убрать текущего со-опекуна питомца")
     async def coowner_remove(self, interaction: discord.Interaction) -> None:
-        """Убрать со-опекуна."""
+        """Убрать со-опекуна или выйти из со-опекунства."""
         await interaction.response.defer()
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Check if user is either owner_1 or owner_2
             pet = await conn.fetchrow(
-                "SELECT * FROM pets WHERE owner_1_id = $1",
+                "SELECT * FROM pets WHERE owner_1_id = $1 OR owner_2_id = $1",
                 interaction.user.id
             )
 
             if not pet:
                 await interaction.followup.send(
-                    replace_emojis("❌ У вас нет питомца или вы не являетесь главным опекуном!")
+                    replace_emojis("❌ У вас нет питомца или вы не являетесь опекуном!")
                 )
                 return
 
@@ -238,6 +239,16 @@ class PetCog(commands.Cog):
                 )
                 return
 
+            # Check if user is owner_1 (main owner) or owner_2 (coowner)
+            is_main_owner = pet_dict["owner_1_id"] == interaction.user.id
+            is_coowner = pet_dict["owner_2_id"] == interaction.user.id
+
+            if not is_main_owner and not is_coowner:
+                await interaction.followup.send(
+                    replace_emojis("❌ Вы не являетесь опекуном этого питомца!")
+                )
+                return
+
             await conn.execute(
                 "UPDATE pets SET owner_2_id = NULL WHERE pet_id = $1",
                 pet_dict["pet_id"]
@@ -245,15 +256,28 @@ class PetCog(commands.Cog):
 
         old_coowner_mention = f"<@{old_coowner_id}>"
 
-        embed = discord.Embed(
-            title=replace_emojis("СО-ОПЕКУН УБРАН"),
-            description=(
-                f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
-                f"{replace_emojis('white_dot')} {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
-                f"{replace_emojis('white_dot')} Питомец снова находится под вашей единоличной опекой."
-            ),
-            color=discord.Color.red()
-        )
+        if is_main_owner:
+            # Main owner removing coowner
+            embed = discord.Embed(
+                title=replace_emojis("СО-ОПЕКУН УБРАН"),
+                description=(
+                    f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
+                    f"{replace_emojis('white_dot')} {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
+                    f"{replace_emojis('white_dot')} Питомец снова находится под вашей единоличной опекой."
+                ),
+                color=discord.Color.red()
+            )
+        else:
+            # Coowner removing themselves
+            embed = discord.Embed(
+                title=replace_emojis("ВЫХОД ИЗ СО-ОПЕКУНСТВА"),
+                description=(
+                    f"{replace_emojis('a_sparkle')} {interaction.user.mention} вышел из со-опекунства питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
+                    f"{replace_emojis('white_dot')} Вы больше не имеете доступа к управлению и бонусам этого питомца.\n"
+                    f"{replace_emojis('white_dot')} Питомец теперь находится под единоличной опекой главного опекуна."
+                ),
+                color=discord.Color.orange()
+            )
 
         await interaction.followup.send(embed=embed)
 
