@@ -12,7 +12,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import TOURNAMENT_CHANNELS
+from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
 from models.tournament import (
     FormationMode,
     RegistrationState,
@@ -79,7 +79,15 @@ class TournamentCog(commands.Cog):
         """Создать турнир с указанным размером."""
         existing = store.get(interaction.guild_id, interaction.channel_id)
         if existing:
-            # Удалить view из embed существующего турнира
+            # Проверяем фазу существующего турнира
+            if existing.phase != TournamentPhase.COMPLETE:
+                await interaction.response.send_message(
+                    replace_emojis("❌ На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
+            # Если турнир завершен, можно удалить и создать новый
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
@@ -88,7 +96,6 @@ class TournamentCog(commands.Cog):
                         await message.edit(view=None)
                 except Exception:
                     pass
-            # Удалить из store независимо от фазы
             store.delete(interaction.guild_id, interaction.channel_id)
 
         # Validate size
@@ -135,6 +142,9 @@ class TournamentCog(commands.Cog):
 
         tournament.message_id = message.id
         store.set(tournament)
+
+        # Send notification to notification channel
+        await send_tournament_notification(tournament, interaction.guild, "Создан новый турнир")
 
         # Add organizer to channel organizers
         from storage.organizer_store import ChannelOrganizers, organizer_store
@@ -2569,6 +2579,36 @@ def get_rank_emoji(level: int) -> str:
     emoji = get_emoji(base_rank)
     
     return f"{emoji} {rank_name}"
+
+
+async def send_tournament_notification(tournament, guild, action: str) -> None:
+    """Send tournament notification to notification channel."""
+    try:
+        channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+        if not channel:
+            logger.warning(f"Notification channel {NOTIFICATION_CHANNEL_ID} not found")
+            return
+
+        role = guild.get_role(NOTIFICATION_ROLE_ID)
+        role_mention = role.mention if role else ""
+
+        embed = discord.Embed(
+            title=replace_emojis("🏆 Уведомление о турнире"),
+            description=(
+                f"{role_mention}\n\n"
+                f"**Действие:** {action}\n"
+                f"**Размер:** {tournament.size.value} игроков\n"
+                f"**Режим:** {tournament.formation_mode.value}\n"
+                f"**Канал:** <#{tournament.channel_id}>\n"
+                f"**Фаза:** {tournament.phase.value}\n"
+            ),
+            color=discord.Color.blue()
+        )
+
+        await channel.send(embed=embed)
+        logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
+    except Exception as e:
+        logger.error(f"Failed to send tournament notification: {e}")
 
 
 class GuideSelectMenu(discord.ui.Select):

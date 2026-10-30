@@ -1544,6 +1544,143 @@ class OrgMenuView(discord.ui.View):
         limit_button = LimitButton(tournament.guild_id, tournament.channel_id)
         self.add_item(limit_button)
 
+        # Add notification button
+        notify_button = NotifyButton(tournament.guild_id, tournament.channel_id)
+        self.add_item(notify_button)
+
+
+class NotifyButton(discord.ui.Button):
+    """Кнопка для отправки уведомления о турнире."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.success,
+            label="Уведомить",
+            custom_id=f"notify:{guild_id}:{channel_id}",
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.cooldowns = {}  # {user_id: last_use_timestamp}
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.permissions import is_channel_organizer
+        from config import BOT_OWNER_ID, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
+        from datetime import datetime, timedelta
+
+        # Check if user is bot owner or channel organizer
+        if interaction.user.id != BOT_OWNER_ID and not is_channel_organizer(interaction.user, interaction.guild, interaction.channel_id):
+            try:
+                await interaction.response.send_message(
+                    "❌ Только владелец бота или организатор могут отправлять уведомления.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Check cooldown (1 minute)
+        now = datetime.now()
+        last_use = self.cooldowns.get(interaction.user.id)
+        if last_use and (now - last_use) < timedelta(minutes=1):
+            remaining = 60 - int((now - last_use).total_seconds())
+            try:
+                await interaction.response.send_message(
+                    f"⏱️ Подождите {remaining} секунд перед повторным уведомлением.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Нет активного турнира."),
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        # Build notification message based on tournament state
+        channel = interaction.guild.get_channel(NOTIFICATION_CHANNEL_ID)
+        if not channel:
+            try:
+                await interaction.response.send_message(
+                    "❌ Канал для уведомлений не найден.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
+        role = interaction.guild.get_role(NOTIFICATION_ROLE_ID)
+        role_mention = role.mention if role else ""
+
+        # Calculate missing players
+        total_players = len(tournament.players_pool)
+        total_needed = tournament.size.value
+        missing = total_needed - total_players
+
+        description = f"{role_mention}\n\n"
+        description += f"**Канал:** <#{tournament.channel_id}>\n"
+        description += f"**Размер:** {tournament.size.value} игроков\n"
+        description += f"**Режим:** {tournament.formation_mode.value}\n"
+        description += f"**Зарегистрировано:** {total_players}/{total_needed}\n"
+
+        if missing > 0:
+            description += f"**Не хватает:** {missing} игроков\n"
+
+        # Add circle-specific info for ELO/SKILL modes
+        if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL]:
+            circle_limits = {
+                1: 2,
+                2: 2,
+                3: 2,
+                4: 2
+            } if tournament.size.value == 8 else {
+                1: 4,
+                2: 4,
+                3: 4,
+                4: 4
+            } if tournament.size.value == 16 else {
+                1: 8,
+                2: 8,
+                3: 8,
+                4: 8
+            }
+
+            circles_info = []
+            for circle_num in range(1, 5):
+                circle_data = getattr(tournament, f"circle{circle_num}", [])
+                circle_count = len(circle_data)
+                circle_limit = circle_limits.get(circle_num, 0)
+                circle_missing = circle_limit - circle_count
+                if circle_missing > 0:
+                    circles_info.append(f"Круг {circle_num}: {circle_count}/{circle_limit} (нужно {circle_missing})")
+
+            if circles_info:
+                description += "\n**Круги:**\n" + "\n".join(circles_info)
+
+        embed = discord.Embed(
+            title=replace_emojis("📢 Уведомление о турнире"),
+            description=description,
+            color=discord.Color.gold()
+        )
+
+        try:
+            await channel.send(embed=embed)
+            await interaction.response.send_message(
+                "✅ Уведомление отправлено.",
+                ephemeral=True
+            )
+        except discord.NotFound:
+            pass
+
+        # Update cooldown
+        self.cooldowns[interaction.user.id] = now
+
 
 class LimitButton(discord.ui.Button):
     """Кнопка для настройки лимитов кругов."""

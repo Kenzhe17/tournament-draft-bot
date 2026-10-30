@@ -44,6 +44,12 @@ ORG_ROLE_MAP = {
     1563149951033151609: ORG_3_ROLE_ID,  # Channel 3 -> ORG-3
 }
 
+# Notification role ID for tournament announcements
+NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "1564923985454571560"))
+
+# Notification channel ID for tournament announcements
+NOTIFICATION_CHANNEL_ID = int(os.getenv("NOTIFICATION_CHANNEL_ID", "1492103238348967988"))
+
 # Tournament channels for organizer management (comma-separated list)
 TOURNAMENT_CHANNELS_RAW = os.getenv("TOURNAMENT_CHANNELS", "1549809898643001484,1563149967303118949,1563149951033151609")
 TOURNAMENT_CHANNELS = [int(x.strip()) for x in TOURNAMENT_CHANNELS_RAW.split(",") if x.strip()]
