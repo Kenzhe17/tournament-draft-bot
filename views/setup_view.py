@@ -1670,7 +1670,7 @@ class NotifyButton(discord.ui.Button):
         )
 
         try:
-            await channel.send(embed=embed)
+            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
             await interaction.response.send_message(
                 "✅ Уведомление отправлено.",
                 ephemeral=True

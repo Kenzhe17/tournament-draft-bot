@@ -2605,7 +2605,7 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
             color=discord.Color.blue()
         )
 
-        await channel.send(embed=embed)
+        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")
