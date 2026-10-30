@@ -186,15 +186,20 @@ class ModerationCog(commands.Cog):
         try:
             # Clear expired mutes (mute_until in DB is already cleared by clear_expired_mutes)
             expired_mutes = await warn_store.clear_expired_mutes()
+            logger.info(f"mute_check_task: found {len(expired_mutes)} expired mutes to process")
 
             for user_id, guild_id in expired_mutes:
                 guild = self.bot.get_guild(guild_id)
                 if not guild:
+                    logger.warning(f"mute_check_task: guild {guild_id} not found for user {user_id}")
                     continue
 
                 member = guild.get_member(user_id)
                 if not member:
+                    logger.warning(f"mute_check_task: member {user_id} not found in guild {guild_id}")
                     continue
+
+                logger.info(f"mute_check_task: processing expired mute for {member.name} ({user_id}) in guild {guild_id}")
 
                 # Send log for expired mute
                 current_timestamp = format_timestamp(datetime.now())
@@ -212,10 +217,16 @@ class ModerationCog(commands.Cog):
                 mute_role = guild.get_role(MUTE_ROLE_ID)
                 if mute_role and mute_role in member.roles:
                     await member.remove_roles(mute_role, reason="Мут истек")
-                    logger.info(f"Removed mute role from {user_id} in guild {guild_id}")
+                    logger.info(f"mute_check_task: successfully removed mute role from {user_id} in guild {guild_id}")
+                else:
+                    if not mute_role:
+                        logger.warning(f"mute_check_task: mute role {MUTE_ROLE_ID} not found in guild {guild_id}")
+                    elif mute_role not in member.roles:
+                        logger.info(f"mute_check_task: user {user_id} does not have mute role in guild {guild_id}")
 
             # Clear expired warnings
             expired_warns = await warn_store.clear_expired_warns()
+            logger.info(f"mute_check_task: found {len(expired_warns)} expired warnings to process")
 
             for user_id, guild_id in expired_warns:
                 guild = self.bot.get_guild(guild_id)

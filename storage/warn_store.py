@@ -304,16 +304,18 @@ class WarnStore:
             """)
 
             affected = [(row['user_id'], row['guild_id']) for row in rows]
+            logger.info(f"clear_expired_mutes: found {len(affected)} expired mute records in DB")
 
             # Clear mute_until for expired mutes
             if affected:
-                await conn.execute("""
+                result = await conn.execute("""
                     UPDATE warnings
                     SET mute_until = NULL
                     WHERE active = TRUE
                       AND mute_until IS NOT NULL
                       AND mute_until <= CURRENT_TIMESTAMP
                 """)
+                logger.info(f"clear_expired_mutes: cleared mute_until for {result} records")
 
             return affected
 
