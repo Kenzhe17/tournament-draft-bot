@@ -1,23 +1,40 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { io } from 'socket.io-client'
 import Card from './Card'
-import { createDeck, canBeat, canAddToAttack } from '../game/deck'
+import { canBeat, canAddToAttack } from '../game/deck'
 import './GameTable.css'
 
 const GameTable = ({ gameState, player, onGameStateChange }) => {
   const [selectedCard, setSelectedCard] = useState(null)
-  const [table, setTable] = useState([])
-  const [hand, setHand] = useState([])
-  const [trump, setTrump] = useState(null)
-  const [deck, setDeck] = useState([])
+  const [game, setGame] = useState(gameState)
+  const [socket, setSocket] = useState(null)
 
-  // Initialize game when component mounts
-  React.useEffect(() => {
-    const newDeck = createDeck()
-    const trumpCard = newDeck[newDeck.length - 1]
-    setDeck(newDeck.slice(0, -1))
-    setTrump(trumpCard)
-    setHand(newDeck.slice(0, 6))
-  }, [])
+  // Connect to Socket.IO server
+  useEffect(() => {
+    const newSocket = io('http://localhost:3001')
+    setSocket(newSocket)
+
+    // Join game
+    newSocket.emit('join_game', {
+      gameId: game?.id || 'default',
+      player
+    })
+
+    // Listen for game updates
+    newSocket.on('game_update', (updatedGame) => {
+      setGame(updatedGame)
+      onGameStateChange(updatedGame)
+    })
+
+    newSocket.on('game_start', (startedGame) => {
+      setGame(startedGame)
+      onGameStateChange(startedGame)
+    })
+
+    return () => {
+      newSocket.disconnect()
+    }
+  }, [player])
 
   const handleCardClick = (card) => {
     if (selectedCard?.id === card.id) {
@@ -28,48 +45,117 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
   }
 
   const handleAttack = () => {
-    if (!selectedCard) return
-    if (table.length === 0 || canAddToAttack(selectedCard, table)) {
-      setTable([...table, { card: selectedCard, defender: null }])
-      setHand(hand.filter(c => c.id !== selectedCard.id))
+    if (!selectedCard || !socket || !game) return
+    
+    const isAttacker = player.id === game.currentAttacker
+    if (!isAttacker) return
+    
+    const hand = game.hands[player.id] || []
+    const card = hand.find(c => c.id === selectedCard.id)
+    
+    if (card && (game.table.length === 0 || canAddToAttack(card, game.table))) {
+      socket.emit('game_action', {
+        gameId: game.id,
+        action: 'attack',
+        data: { card }
+      })
       setSelectedCard(null)
     }
   }
 
   const handleDefend = () => {
-    if (!selectedCard || table.length === 0) return
-    const lastAttack = table[table.length - 1]
-    if (!lastAttack.defender && canBeat(lastAttack.card, selectedCard, trump?.suit)) {
-      const newTable = [...table]
-      newTable[newTable.length - 1].defender = selectedCard
-      setTable(newTable)
-      setHand(hand.filter(c => c.id !== selectedCard.id))
+    if (!selectedCard || !socket || !game) return
+    
+    const isDefender = player.id === game.currentDefender
+    if (!isDefender) return
+    
+    const hand = game.hands[player.id] || []
+    const card = hand.find(c => c.id === selectedCard.id)
+    const lastAttack = game.table[game.table.length - 1]
+    
+    if (card && lastAttack && !lastAttack.defender && canBeat(lastAttack.card, card, game.trumpSuit)) {
+      socket.emit('game_action', {
+        gameId: game.id,
+        action: 'defend',
+        data: { card }
+      })
       setSelectedCard(null)
     }
   }
 
   const handleTake = () => {
-    const cardsToTake = table.flatMap(t => [t.card, t.defender].filter(Boolean))
-    setHand([...hand, ...cardsToTake])
-    setTable([])
+    if (!socket || !game) return
+    
+    const isDefender = player.id === game.currentDefender
+    if (!isDefender || game.table.length === 0) return
+    
+    socket.emit('game_action', {
+      gameId: game.id,
+      action: 'take',
+      data: {}
+    })
   }
 
   const handleDone = () => {
-    // Clear table and draw cards
-    setTable([])
-    const cardsToDraw = Math.min(6 - hand.length, deck.length)
-    setHand([...hand, ...deck.slice(0, cardsToDraw)])
-    setDeck(deck.slice(cardsToDraw))
+    if (!socket || !game) return
+    
+    const isAttacker = player.id === game.currentAttacker
+    if (!isAttacker || game.table.length === 0) return
+    
+    socket.emit('game_action', {
+      gameId: game.id,
+      action: 'done',
+      data: {}
+    })
   }
+
+  const handleTransfer = () => {
+    if (!selectedCard || !socket || !game) return
+    
+    const isDefender = player.id === game.currentDefender
+    if (!isDefender || game.mode !== 'perevodnoy') return
+    
+    const hand = game.hands[player.id] || []
+    const card = hand.find(c => c.id === selectedCard.id)
+    const lastAttack = game.table[game.table.length - 1]
+    
+    if (card && lastAttack && card.rank === lastAttack.card.rank) {
+      socket.emit('game_action', {
+        gameId: game.id,
+        action: 'transfer',
+        data: { card }
+      })
+      setSelectedCard(null)
+    }
+  }
+
+  if (!game) {
+    return <div className="loading">Загрузка игры...</div>
+  }
+
+  const hand = game.hands[player.id] || []
+  const isAttacker = player.id === game.currentAttacker
+  const isDefender = player.id === game.currentDefender
+  const isMyTurn = isAttacker || isDefender
 
   return (
     <div className="game-table">
       {/* Other players */}
       <div className="other-players">
-        <div className="player-slot">
-          <div className="player-name">Игрок 2</div>
-          <div className="cards-back">🂠 🂠 🂠 🂠 🂠 🂠</div>
-        </div>
+        {game.players
+          .filter(p => p.id !== player.id)
+          .map((otherPlayer, index) => (
+            <div key={otherPlayer.id} className="player-slot">
+              <div className="player-name">
+                {otherPlayer.global_name || otherPlayer.username}
+                {game.currentAttacker === otherPlayer.id && <span className="role-badge">⚔️</span>}
+                {game.currentDefender === otherPlayer.id && <span className="role-badge">🛡️</span>}
+              </div>
+              <div className="cards-back">
+                {'🂠 '.repeat(Math.min(6, game.hands[otherPlayer.id]?.length || 0))}
+              </div>
+            </div>
+          ))}
       </div>
 
       {/* Center area */}
@@ -78,18 +164,33 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
         <div className="deck-area">
           <div className="deck">
             <div className="card-back">🂠</div>
-            <div className="deck-count">{deck.length}</div>
+            <div className="deck-count">{game.drawPile?.length || 0}</div>
           </div>
-          {trump && (
+          {game.trump && (
             <div className="trump-card">
-              <Card card={trump} size="small" disabled />
+              <Card card={game.trump} size="small" disabled />
             </div>
+          )}
+        </div>
+
+        {/* Game status */}
+        <div className="game-status">
+          {game.phase === 'waiting' && <p>Ожидание игроков...</p>}
+          {game.phase === 'playing' && (
+            <p>
+              {isAttacker ? 'Ваш ход: Атакуйте!' : isDefender ? 'Ваш ход: Защищайтесь!' : 'Ожидание хода...'}
+            </p>
+          )}
+          {game.phase === 'finished' && (
+            <p className="winner-text">
+              {game.winner === player.id ? '🎉 Вы победили!' : '😢 Вы проиграли!'}
+            </p>
           )}
         </div>
 
         {/* Table */}
         <div className="table">
-          {table.map((pair, index) => (
+          {game.table.map((pair, index) => (
             <div key={index} className="card-pair">
               <Card card={pair.card} size="normal" disabled />
               {pair.defender && <Card card={pair.defender} size="normal" disabled />}
@@ -100,14 +201,19 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
 
       {/* Player's hand */}
       <div className="player-hand">
-        <div className="hand-label">Ваша рука</div>
+        <div className="hand-label">
+          Ваша рука ({hand.length} карт)
+          {isAttacker && <span className="turn-indicator">⚔️ Атакуете</span>}
+          {isDefender && <span className="turn-indicator">🛡️ Защищаетесь</span>}
+        </div>
         <div className="cards">
           {hand.map((card) => (
             <Card
               key={card.id}
               card={card}
-              onClick={() => handleCardClick(card)}
+              onClick={() => isMyTurn && handleCardClick(card)}
               selected={selectedCard?.id === card.id}
+              disabled={!isMyTurn}
               size="normal"
             />
           ))}
@@ -115,20 +221,35 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
       </div>
 
       {/* Game controls */}
-      <div className="game-controls">
-        <button className="control-button attack" onClick={handleAttack} disabled={!selectedCard}>
-          Атаковать
-        </button>
-        <button className="control-button defend" onClick={handleDefend} disabled={!selectedCard}>
-          Защищаться
-        </button>
-        <button className="control-button take" onClick={handleTake} disabled={table.length === 0}>
-          Взять
-        </button>
-        <button className="control-button done" onClick={handleDone} disabled={table.length === 0}>
-          Бито
-        </button>
-      </div>
+      {game.phase === 'playing' && (
+        <div className="game-controls">
+          {isAttacker && (
+            <>
+              <button className="control-button attack" onClick={handleAttack} disabled={!selectedCard}>
+                Атаковать
+              </button>
+              <button className="control-button done" onClick={handleDone} disabled={game.table.length === 0}>
+                Бито
+              </button>
+            </>
+          )}
+          {isDefender && (
+            <>
+              <button className="control-button defend" onClick={handleDefend} disabled={!selectedCard}>
+                Защищаться
+              </button>
+              <button className="control-button take" onClick={handleTake} disabled={game.table.length === 0}>
+                Взять
+              </button>
+              {game.mode === 'perevodnoy' && (
+                <button className="control-button transfer" onClick={handleTransfer} disabled={!selectedCard}>
+                  Перевести
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

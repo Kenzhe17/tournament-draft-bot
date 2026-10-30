@@ -179,3 +179,50 @@
 .control-button.done:hover:not(:disabled) {
   background: #4752c4;
 }
+
+.control-button.transfer {
+  background: #eb459e;
+}
+
+.control-button.transfer:hover:not(:disabled) {
+  background: #c93680;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 24px;
+  color: #b9bbbe;
+}
+
+.game-status {
+  text-align: center;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.game-status p {
+  color: #b9bbbe;
+  font-size: 16px;
+}
+
+.winner-text {
+  font-size: 24px;
+  font-weight: bold;
+  color: #57f287;
+}
+
+.role-badge {
+  margin-left: 8px;
+  font-size: 16px;
+}
+
+.turn-indicator {
+  margin-left: 10px;
+  color: #5865f2;
+  font-weight: bold;
+}
