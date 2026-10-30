@@ -1,13 +1,20 @@
-.venv/
-venv/
-__pycache__/
-*.pyc
-.git/
-.env
-data/
-bot/
-scripts/
-*.md
-docker-compose.yml
-fly.toml
-render.yaml
+# Ignore Python bot files when deploying durak-activity/server
+# This ensures Railway only builds the Node.js server
+Dockerfile
+requirements.txt
+bot.py
+cogs/
+models/
+storage/
+views/
+utils/
+assets/
+config.py
+EMOJI_SETUP.md
+BETTING_SYSTEM.md
+ELO_SYSTEM.md
+IMPLEMENTATION_CHECKLIST.md
+RPC_README.md
+LEGAL_HOSTING.md
+DURAK_ACTIVITY.md
+
