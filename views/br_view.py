@@ -1424,11 +1424,10 @@ class StartBRButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate points for current map only
-                stats = team.get("stats", {})
+                # Calculate points for current map only (map_index 0 = bermuda)
+                map_stats = tournament.get_team_stats_for_map(team, 0)
                 map_points = 0
-                if "bermuda" in stats:
-                    map_stats = stats["bermuda"]
+                if map_stats:
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
                     if place > 0:
@@ -1448,13 +1447,12 @@ class StartBRButton(Button):
             teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
             teams_text = []
-            for team_data in teams_with_points:
+            for rank, team_data in enumerate(teams_with_points):
                 captain = team_data["captain"]
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                original_index = team_data["index"]
-                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -1685,7 +1683,9 @@ class StartBermudaButton(Button):
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
                 if place > 0:
-                    map_points = (13 - place) + kills
+                    # Points based on place: 1=12, 2=9, 3=8, 4=7, 5:6, 6:5, 7:4, 8:3, 9:2, 10:1, 11:0, 12:0
+                    place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                    map_points = place_points.get(place, 0) + kills
 
             teams_with_points.append({
                 "captain": captain,
@@ -1699,13 +1699,12 @@ class StartBermudaButton(Button):
         teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
         teams_text = []
-        for team_data in teams_with_points:
+        for rank, team_data in enumerate(teams_with_points):
             captain = team_data["captain"]
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            original_index = team_data["index"]
-            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2171,13 +2170,12 @@ class BRConfirmPurgatoryButton(Button):
             teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
             teams_text = []
-            for team_data in teams_with_points:
+            for rank, team_data in enumerate(teams_with_points):
                 captain = team_data["captain"]
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                original_index = team_data["index"]
-                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2375,13 +2373,12 @@ class BRConfirmKalahariButton(Button):
             teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
             teams_text = []
-            for team_data in teams_with_points:
+            for rank, team_data in enumerate(teams_with_points):
                 captain = team_data["captain"]
                 team_name = team_data["team_name"]
                 players_str = team_data["players_str"]
                 points = team_data["points"]
-                original_index = team_data["index"]
-                num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+                num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
@@ -2938,13 +2935,12 @@ class BRPurgatoryButton(Button):
         teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
         teams_text = []
-        for team_data in teams_with_points:
+        for rank, team_data in enumerate(teams_with_points):
             captain = team_data["captain"]
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            original_index = team_data["index"]
-            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
@@ -3079,13 +3075,12 @@ class BRKalahariButton(Button):
         teams_with_points.sort(key=lambda x: x["points"], reverse=True)
 
         teams_text = []
-        for team_data in teams_with_points:
+        for rank, team_data in enumerate(teams_with_points):
             captain = team_data["captain"]
             team_name = team_data["team_name"]
             players_str = team_data["players_str"]
             points = team_data["points"]
-            original_index = team_data["index"]
-            num_emoji = num_emojis[original_index] if original_index < len(num_emojis) else "🎮"
+            num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
