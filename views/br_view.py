@@ -1973,13 +1973,27 @@ class BRConfirmPurgatoryButton(Button):
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
-        # Transition to Purgatory
-        self.tournament.phase = BRTournamentPhase.PURGATORY
-        self.tournament.current_map = "purgatory"
-        br_store.set(self.tournament)
+        # Transition to next map based on map_sequence
+        map_sequence = self.tournament.get_map_sequence()
+        current_phase_index = -1
+        for i, map_name in enumerate(map_sequence):
+            if map_name == self.tournament.phase.value:
+                current_phase_index = i
+                break
 
-        # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Переход к Чистилище", view=None)
+        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            next_map = map_sequence[current_phase_index + 1]
+            self.tournament.phase = BRTournamentPhase(next_map)
+            self.tournament.current_map = next_map
+            map_display = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }.get(next_map, next_map)
+            br_store.set(self.tournament)
+
+            # Close the ephemeral menu
+            await interaction.response.edit_message(content=f"✅ Переход к {map_display}", view=None)
 
         # Update main message with Purgatory embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2080,13 +2094,27 @@ class BRConfirmKalahariButton(Button):
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
-        # Transition to Kalahari
-        self.tournament.phase = BRTournamentPhase.KALAHARI
-        self.tournament.current_map = "kalahari"
-        br_store.set(self.tournament)
+        # Transition to next map based on map_sequence
+        map_sequence = self.tournament.get_map_sequence()
+        current_phase_index = -1
+        for i, map_name in enumerate(map_sequence):
+            if map_name == self.tournament.phase.value:
+                current_phase_index = i
+                break
 
-        # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Переход к Калахари", view=None)
+        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            next_map = map_sequence[current_phase_index + 1]
+            self.tournament.phase = BRTournamentPhase(next_map)
+            self.tournament.current_map = next_map
+            map_display = {
+                "bermuda": "Бермуды",
+                "purgatory": "Чистилище",
+                "kalahari": "Калахари"
+            }.get(next_map, next_map)
+            br_store.set(self.tournament)
+
+            # Close the ephemeral menu
+            await interaction.response.edit_message(content=f"✅ Переход к {map_display}", view=None)
 
         # Update main message with Kalahari embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2316,10 +2344,19 @@ class BRPurgatoryButton(Button):
             )
             return
 
-        # Transition to Purgatory phase
-        tournament.phase = BRTournamentPhase.PURGATORY
-        tournament.current_map = "purgatory"
-        br_store.set(tournament)
+        # Transition to next map based on map_sequence
+        map_sequence = tournament.get_map_sequence()
+        current_phase_index = -1
+        for i, map_name in enumerate(map_sequence):
+            if map_name == tournament.phase.value:
+                current_phase_index = i
+                break
+
+        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            next_map = map_sequence[current_phase_index + 1]
+            tournament.phase = BRTournamentPhase(next_map)
+            tournament.current_map = next_map
+            br_store.set(tournament)
 
         # Reload to get latest
         tournament = br_store.get(self.guild_id, self.channel_id)
@@ -2446,10 +2483,19 @@ class BRKalahariButton(Button):
             )
             return
 
-        # Transition to Kalahari phase
-        tournament.phase = BRTournamentPhase.KALAHARI
-        tournament.current_map = "kalahari"
-        br_store.set(tournament)
+        # Transition to next map based on map_sequence
+        map_sequence = tournament.get_map_sequence()
+        current_phase_index = -1
+        for i, map_name in enumerate(map_sequence):
+            if map_name == tournament.phase.value:
+                current_phase_index = i
+                break
+
+        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            next_map = map_sequence[current_phase_index + 1]
+            tournament.phase = BRTournamentPhase(next_map)
+            tournament.current_map = next_map
+            br_store.set(tournament)
 
         # Reload to get latest
         tournament = br_store.get(self.guild_id, self.channel_id)
@@ -3152,14 +3198,21 @@ class BRStatsModal(Modal):
 
         # Проверить все ли команды заполнили статистику для текущей карты
         if tournament.are_all_stats_complete(self.map_name):
-            # Переход к следующей фазе
-            if tournament.phase == BRTournamentPhase.BERMUDA:
-                tournament.phase = BRTournamentPhase.PURGATORY
-                tournament.current_map = "purgatory"
-            elif tournament.phase == BRTournamentPhase.PURGATORY:
-                tournament.phase = BRTournamentPhase.KALAHARI
-                tournament.current_map = "kalahari"
-            elif tournament.phase == BRTournamentPhase.KALAHARI:
+            # Переход к следующей фазе на основе map_count
+            map_sequence = tournament.get_map_sequence()
+            current_phase_index = -1
+            for i, map_name in enumerate(map_sequence):
+                if map_name == tournament.phase.value:
+                    current_phase_index = i
+                    break
+
+            if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+                # Go to next map
+                next_map = map_sequence[current_phase_index + 1]
+                tournament.phase = BRTournamentPhase(next_map)
+                tournament.current_map = next_map
+            else:
+                # All maps completed
                 tournament.phase = BRTournamentPhase.RESULTS
 
             br_store.set(tournament)
