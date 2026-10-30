@@ -1924,8 +1924,88 @@ class BRSingleTeamStatsModal(Modal):
             self.tournament.set_team_stats(self.team_index, map_name, place, kills)
             br_store.set(self.tournament)
 
+            # Reload tournament to get latest stats
+            self.tournament = br_store.get(self.guild_id, self.channel_id)
+
+            # Update main message with current points
+            channel = interaction.guild.get_channel(self.channel_id)
+            if channel and self.tournament.message_id:
+                try:
+                    message = await channel.fetch_message(self.tournament.message_id)
+
+                    map_names = {
+                        "bermuda": "Бермуды",
+                        "purgatory": "Чистилище",
+                        "kalahari": "Калахари"
+                    }
+                    map_display = map_names.get(self.tournament.current_map, self.tournament.current_map)
+
+                    # Build teams section with cumulative points
+                    teams_with_points = []
+                    num_emojis = [get_emoji("num_1"), get_emoji("num_2"), get_emoji("num_3"), get_emoji("num_4"), get_emoji("num_5"), get_emoji("num_6"),
+                                  get_emoji("num_7"), get_emoji("num_8"), get_emoji("num_9"), get_emoji("num_ten"), get_emoji("num_eleven"), get_emoji("num_twelve")]
+
+                    for i, team in enumerate(self.tournament.teams):
+                        captain = team.get("captain", "Unknown")
+                        team_name = team.get("name", f"Команда {i+1}")
+                        players = team.get("players", [])
+                        players_str = ", ".join(players) if players else ""
+
+                        # Calculate cumulative points including current map
+                        cumulative_points = 0
+                        for map_idx in range(current_map_idx + 1):
+                            map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                            if map_stats:
+                                place = map_stats.get("place", 0)
+                                kills = map_stats.get("kills", 0)
+                                if place > 0:
+                                    place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                                    cumulative_points += place_points.get(place, 0) + kills
+
+                        teams_with_points.append({
+                            "captain": captain,
+                            "team_name": team_name,
+                            "players_str": players_str,
+                            "points": cumulative_points,
+                            "index": i
+                        })
+
+                    # Sort by points descending
+                    teams_with_points.sort(key=lambda x: x["points"], reverse=True)
+
+                    teams_text = []
+                    for rank, team_data in enumerate(teams_with_points):
+                        captain = team_data["captain"]
+                        team_name = team_data["team_name"]
+                        players_str = team_data["players_str"]
+                        points = team_data["points"]
+                        num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
+
+                        teams_text.append(
+                            f"{num_emoji} {team_name} ({points} очков)\n"
+                            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        )
+
+                    embed = discord.Embed(
+                        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_display}",
+                        description=(
+                            f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+                            f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
+                            f"{replace_emojis('sub_directory')} Карта: {map_display}\n\n"
+                            f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                            + "\n".join(teams_text)
+                        ),
+                        color=discord.Color.from_rgb(69, 69, 69)
+                    )
+
+                    view = BRBermudaView(self.guild_id, self.channel_id)
+                    await message.edit(embed=embed, view=view)
+                except Exception as e:
+                    logger.error(f"Error updating BR message after stats save: {e}")
+
             await interaction.response.send_message(
-                "✅ Статистика сохранена. Нажмите 'Назад' для проверки.",
+                "✅ Статистика сохранена.",
                 ephemeral=True
             )
         except ValueError:
@@ -2564,11 +2644,11 @@ class BRShowResultsButton(Button):
                 players_str = ", ".join(players) if players else ""
 
                 # Calculate total points across all maps
-                stats = team.get("stats", {})
                 total_points = 0
-                for map_name in tournament.get_map_sequence():
-                    if map_name in stats:
-                        map_stats = stats[map_name]
+                map_sequence = tournament.get_map_sequence()
+                for map_idx in range(len(map_sequence)):
+                    map_stats = tournament.get_team_stats_for_map(team, map_idx)
+                    if map_stats:
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
