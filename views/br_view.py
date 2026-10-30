@@ -2045,9 +2045,9 @@ class BRConfirmPurgatoryButton(Button):
                     stats = team.get("stats", {})
                     total_points = 0
                     for map_idx, map_name in enumerate(self.tournament.get_map_sequence()):
-                        stats_key = self.tournament.get_stats_key(map_idx)
-                        if stats_key in stats:
-                            map_stats = stats[stats_key]
+                        map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                        if map_stats:
+                            
                             place = map_stats.get("place", 0)
                             kills = map_stats.get("kills", 0)
                             if place > 0:
@@ -2139,9 +2139,9 @@ class BRConfirmPurgatoryButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index (the map we just transitioned to)
                 for map_idx in range(self.tournament.current_map_index):
-                    stats_key = self.tournament.get_stats_key(map_idx)
-                    if stats_key in stats:
-                        map_stats = stats[stats_key]
+                    map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                    if map_stats:
+
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
@@ -2245,9 +2245,9 @@ class BRConfirmKalahariButton(Button):
                     stats = team.get("stats", {})
                     total_points = 0
                     for map_idx, map_name in enumerate(self.tournament.get_map_sequence()):
-                        stats_key = self.tournament.get_stats_key(map_idx)
-                        if stats_key in stats:
-                            map_stats = stats[stats_key]
+                        map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                        if map_stats:
+                            
                             place = map_stats.get("place", 0)
                             kills = map_stats.get("kills", 0)
                             if place > 0:
@@ -2339,9 +2339,9 @@ class BRConfirmKalahariButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index
                 for map_idx in range(self.tournament.current_map_index):
-                    stats_key = self.tournament.get_stats_key(map_idx)
-                    if stats_key in stats:
-                        map_stats = stats[stats_key]
+                    map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                    if map_stats:
+
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
@@ -2456,9 +2456,9 @@ class BRConfirmNextMapButton(Button):
                 cumulative_points = 0
                 # Count all completed maps up to current_index (before transition)
                 for map_idx in range(self.tournament.current_map_index):
-                    stats_key = self.tournament.get_stats_key(map_idx)
-                    if stats_key in stats:
-                        map_stats = stats[stats_key]
+                    map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
+                    if map_stats:
+
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
@@ -3034,8 +3034,8 @@ class BRKalahariButton(Button):
             # Count all completed maps up to current_index (the map we just transitioned to)
             for map_idx in range(tournament.current_map_index):
                 stats_key = tournament.get_stats_key(map_idx)
-                if stats_key in stats:
-                    map_stats = stats[stats_key]
+                if map_stats:
+                    
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
                     if place > 0:
