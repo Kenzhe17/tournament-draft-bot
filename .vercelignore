@@ -1,0 +1,7 @@
+# Ignore everything except durak-activity
+/*
+!/durak-activity
+
+# Ignore node_modules in durak-activity
+durak-activity/node_modules
+durak-activity/dist
