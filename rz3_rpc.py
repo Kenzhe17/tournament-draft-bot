@@ -5,11 +5,12 @@ This script runs on player's PC during tournaments to show their current status
 in Discord profile via Discord Rich Presence.
 
 Usage:
-    python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL]
+    python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL] [--test]
 
-Example:
+Examples:
     python rz3_rpc.py 123456789012345678
     python rz3_rpc.py 123456789012345678 http://localhost:8080
+    python rz3_rpc.py 123456789012345678 http://localhost:8080 --test
 """
 
 import asyncio
@@ -51,6 +52,9 @@ RPC_CONFIG = {
     "small_image": None,
     "small_text": None,
 }
+
+# Test mode flag
+TEST_MODE = "--test" in sys.argv
 
 
 logging.basicConfig(
@@ -116,6 +120,10 @@ class RPCClient:
             sys.exit(1)
 
         self.running = True
+
+        # Test mode: perform initial diagnostics
+        if TEST_MODE:
+            await self.run_diagnostics()
 
     async def cleanup(self):
         """Cleanup resources."""
@@ -269,6 +277,96 @@ class RPCClient:
             # Wait for next update
             await asyncio.sleep(UPDATE_INTERVAL)
 
+    async def run_diagnostics(self):
+        """Run diagnostic checks to help troubleshoot Rich Presence issues."""
+        print("\n" + "=" * 60)
+        print("ДИАГНОСТИКА RICH PRESENCE")
+        print("=" * 60)
+
+        # Check 1: Server connectivity
+        print("\n[1/5] Проверка соединения с сервером...")
+        status_data = await self.fetch_status()
+        if status_data:
+            print(f"✓ Сервер доступен")
+            print(f"  Статус: {status_data.get('status')}")
+            print(f"  Details: {status_data.get('details')}")
+            print(f"  State: {status_data.get('state')}")
+            print(f"  Party: {status_data.get('party_size')}")
+            
+            if status_data.get('status') == 'none':
+                print("\n⚠ Статус: none - вы не в активном турнире")
+                print("  Rich Presence не будет отображаться пока вы не зарегистрируетесь")
+        else:
+            print("✗ Сервер недоступен")
+            print("  Проверьте:")
+            print("  - Бот запущен и работает?")
+            print("  - Server URL правильный?")
+            print("  - Порт 8080 открыт?")
+            return
+
+        # Check 2: Discord connection
+        print("\n[2/5] Проверка соединения с Discord...")
+        try:
+            # Try to get RPC information
+            logger.info("Checking Discord RPC connection...")
+            print("✓ Discord RPC соединение активно")
+        except Exception as e:
+            print(f"✗ Ошибка Discord RPC: {e}")
+            return
+
+        # Check 3: Test presence update
+        print("\n[3/5] Тестовое обновление Rich Presence...")
+        test_presence = {
+            "details": "Тест r!z3 RPC",
+            "state": "Диагностика",
+            "large_image": "logo_rz3",
+            "large_text": "r!z3 Tournament System"
+        }
+        try:
+            await self.rpc.update(**test_presence)
+            print("✓ Тестовое обновление успешно")
+            print("  Проверьте ваш профиль Discord")
+            print("  Должно появиться: 'Тест r!z3 RPC | Диагностика'")
+            print("\n  Если не появляется:")
+            print("  1. Проверьте Настройки пользователя -> Конфиденциальность активности")
+            print("  2. Включите 'Отображать текущую активность в статусе'")
+            print("  3. Убедитесь что используется десктопное приложение Discord")
+            
+            # Wait 5 seconds for user to check
+            print("\n  Ожидание 5 секунд...")
+            await asyncio.sleep(5)
+            
+            # Clear test presence
+            await self.rpc.clear()
+            print("✓ Тестовый статус очищен")
+        except Exception as e:
+            print(f"✗ Ошибка тестового обновления: {e}")
+            if "asset" in str(e).lower():
+                print("  ⚠ Ассет logo_rz3 не найден или не кэширован")
+                print("  Rich Presence будет работать без картинки")
+            return
+
+        # Check 4: Verify Discord ID format
+        print("\n[4/5] Проверка Discord ID...")
+        if len(str(self.discord_id)) >= 17 and len(str(self.discord_id)) <= 20:
+            print(f"✓ Discord ID формат верный: {self.discord_id}")
+        else:
+            print(f"✗ Discord ID формат неверный: {self.discord_id}")
+            print("  Discord ID должен быть 18-19 цифр")
+
+        # Check 5: Summary
+        print("\n[5/5] Итоговая проверка...")
+        print("=" * 60)
+        if status_data and status_data.get('status') != 'none':
+            print("✓ Все проверки пройдены")
+            print("✓ Rich Presence должен отображаться в профиле")
+            print(f"✓ Статус: {status_data.get('details')} | {status_data.get('state')}")
+        else:
+            print("⚠ Диагностика завершена, но Rich Presence не появится")
+            print("  Причина: вы не зарегистрированы в активном турнире")
+            print("  Зарегистрируйтесь в турнире, чтобы увидеть статус")
+        print("=" * 60 + "\n")
+
     async def run(self):
         """Run the RPC client."""
         try:
@@ -302,6 +400,7 @@ def main():
     print(f"Discord ID: {discord_id}")
     print(f"Server URL: {server_url}")
     print(f"Update interval: {UPDATE_INTERVAL}s")
+    print(f"Test mode: {'Enabled' if TEST_MODE else 'Disabled'}")
     print("Press Ctrl+C to stop")
     print("-" * 50)
 

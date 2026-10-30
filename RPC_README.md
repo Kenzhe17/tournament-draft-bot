@@ -182,7 +182,7 @@ python rz3_rpc.py YOUR_DISCORD_ID
 
 4. **Run the Client:**
    ```bash
-   python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL]
+   python rz3_rpc.py YOUR_DISCORD_ID [SERVER_URL] [--test]
    ```
 
    **Examples:**
@@ -192,7 +192,19 @@ python rz3_rpc.py YOUR_DISCORD_ID
 
    # Remote server
    python rz3_rpc.py 123456789012345678 http://your-server.com:8080
+
+   # Test mode (runs diagnostics)
+   python rz3_rpc.py 123456789012345678 http://localhost:8080 --test
    ```
+
+   **Test Mode:**
+   The `--test` flag runs diagnostics to help troubleshoot issues:
+   - Checks server connectivity
+   - Verifies Discord RPC connection
+   - Performs a test Rich Presence update
+   - Validates Discord ID format
+   - Checks if player is in an active tournament
+   - Provides step-by-step guidance
 
 ## Discord Rich Presence Display
 
@@ -330,19 +342,61 @@ When active, the player's Discord profile will show:
 
 ## Troubleshooting
 
+### Rich Presence не отображается в профиле
+
+#### Шаг 1: Запустите тестовую диагностику
+```bash
+python rz3_rpc.py YOUR_DISCORD_ID http://localhost:8080 --test
+```
+Это выполнит 5 проверок и покажет где проблема.
+
+#### Шаг 2: Проверьте настройки конфиденциальности Discord
+1. Откройте Discord
+2. Нажмите на шестеренку (настройки пользователя)
+3. Перейдите в "Конфиденциальность активности" (Activity Privacy)
+4. Включите "Отображать текущую активность в статусе" (Display current activity as a status message)
+5. **ВАЖНО:** Rich Presence работает только в десктопном приложении Discord, не в браузере или на телефоне
+
+#### Шаг 3: Убедитесь что вы в активном турнире
+Rich Presence отображается только если:
+- Вы зарегистрированы в турнире
+- Турнир в активной фазе (SETUP, DRAFT, QUALIFIERS, SEMIFINALS, FINALS, или BR карты)
+- Статус в БД: `IN_GAME` или `IN_LOBBY`
+
+Если турнир завершен (COMPLETE), статус автоматически очищается.
+
+#### Шаг 4: Проверьте Discord ID
+- Discord ID должен быть 18-19 цифр
+- Используйте тот же ID под которым вы зарегистрированы в боте
+- Можно найти ID в Discord: Настройки пользователя -> Дополнительно -> ID копировать
+
+#### Шаг 5: Проверьте что бот запущен
+- Бот должен быть запущен и RPC сервер должен работать на порту 8080
+- Проверьте логи бота: "RPC server started on http://0.0.0.0:8080"
+- Попробуйте открыть в браузере: `http://localhost:8080/status/YOUR_DISCORD_ID`
+- Должен вернуть JSON с текущим статусом
+
+#### Шаг 6: Ассет logo_rz3 не кэширован
+- Если ассет не кэширован, скрипт покажет предупреждение
+- Rich Presence будет работать без картинки
+- Через несколько часов после загрузки ассет кэшируется автоматически
+
 ### Discord not found
 - Make sure Discord application is running
 - Check that Discord is logged in
+- RPC работает только в десктопном приложении, не в браузере
 
 ### Server connection error
 - Verify the server URL is correct
 - Check that the bot is running and RPC server is accessible
 - Check firewall settings
+- For Railway: use the public URL, not localhost
 
 ### Presence not updating
 - Check bot logs for RPC server errors
 - Verify player is registered in a tournament
 - Check that tournament is in active phase (not COMPLETE)
+- Run test mode: `python rz3_rpc.py ID http://server --test`
 
 ### Invalid Client ID
 - Verify the Discord Application ID is correct
