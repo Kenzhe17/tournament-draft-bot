@@ -2656,12 +2656,10 @@ class BRNextMapButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate cumulative points for completed maps
+                # Calculate cumulative points for all completed maps (including current map)
                 stats = team.get("stats", {})
                 cumulative_points = 0
                 for map_name in tournament.get_map_sequence():
-                    if map_name == self.next_map:
-                        break  # Don't count the next map we're transitioning to
                     if map_name in stats:
                         map_stats = stats[map_name]
                         place = map_stats.get("place", 0)
