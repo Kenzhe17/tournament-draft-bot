@@ -113,6 +113,28 @@ class BRTournament:
         """
         return f"map_{map_index}"
 
+    def get_team_stats_for_map(self, team: dict, map_index: int) -> dict | None:
+        """Get stats for a team at a specific map index, with backward compatibility.
+
+        Args:
+            team: Team dictionary
+            map_index: Position in the map sequence (0-based)
+
+        Returns:
+            Stats dict with 'place' and 'kills', or None if not found
+        """
+        # Try new format first (map_0, map_1, etc.)
+        stats_key = self.get_stats_key(map_index)
+        if stats_key in team["stats"]:
+            return team["stats"][stats_key]
+
+        # Fall back to old format (bermuda, purgatory, kalahari)
+        map_name = self.get_map_name_for_index(map_index)
+        if map_name in team["stats"]:
+            return team["stats"][map_name]
+
+        return None
+
     def add_player(self, name: str, user_id: int) -> bool:
         """Добавить игрока в турнир.
 
