@@ -1425,7 +1425,6 @@ class Tournament:
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
             start_time=data.get("start_time", ""),
-            created_at=data.get("created_at", __import__('datetime').datetime.now().isoformat()),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
             team_names_changed_teams=set(data.get("team_names_changed_teams", [])),
@@ -1453,4 +1452,6 @@ class Tournament:
             organizer_id=data.get("organizer_id", 0),
             eliminated_teams=set(data.get("eliminated_teams", [])),
         )
+        # Set created_at after initialization since it's init=False
+        t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())
         return t

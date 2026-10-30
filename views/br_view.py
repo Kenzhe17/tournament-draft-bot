@@ -2879,19 +2879,16 @@ class BRPurgatoryButton(Button):
             )
             return
 
-        # Transition to next map based on map_sequence
+        # Transition to next map based on current_map_index
+        current_index = tournament.current_map_index if tournament.current_map_index is not None else 0
         map_sequence = tournament.get_map_sequence()
-        current_phase_index = -1
-        for i, map_name in enumerate(map_sequence):
-            if map_name == tournament.phase.value:
-                current_phase_index = i
-                break
 
-        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
-            next_map = map_sequence[current_phase_index + 1]
+        if current_index >= 0 and current_index < len(map_sequence) - 1:
+            next_index = current_index + 1
+            next_map = map_sequence[next_index]
             tournament.phase = BRTournamentPhase(next_map)
             tournament.current_map = next_map
-            tournament.current_map_index = current_phase_index + 1
+            tournament.current_map_index = next_index
             br_store.set(tournament)
 
         # Reload to get latest
@@ -3734,22 +3731,20 @@ class BRStatsModal(Modal):
 
         # Проверить все ли команды заполнили статистику для текущей карты
         if tournament.are_all_stats_complete(self.map_name):
-            # Переход к следующей фазе на основе map_count
+            # Переход к следующей фазе на основе current_map_index
             map_sequence = tournament.get_map_sequence()
-            current_phase_index = -1
-            for i, map_name in enumerate(map_sequence):
-                if map_name == tournament.phase.value:
-                    current_phase_index = i
-                    break
+            current_index = tournament.current_map_index if tournament.current_map_index is not None else 0
 
             # If this is the last map (or only map), go to RESULTS
-            if current_phase_index == len(map_sequence) - 1:
+            if current_index == len(map_sequence) - 1:
                 tournament.phase = BRTournamentPhase.RESULTS
-            elif current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            elif current_index >= 0 and current_index < len(map_sequence) - 1:
                 # Go to next map
-                next_map = map_sequence[current_phase_index + 1]
+                next_index = current_index + 1
+                next_map = map_sequence[next_index]
                 tournament.phase = BRTournamentPhase(next_map)
                 tournament.current_map = next_map
+                tournament.current_map_index = next_index
 
             br_store.set(tournament)
 
