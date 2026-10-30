@@ -49,6 +49,14 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Start RPC server for Discord Rich Presence
+        try:
+            from rpc_server import start_rpc_server
+            self.loop.create_task(start_rpc_server(host="0.0.0.0", port=8080))
+            logger.info("RPC server task created")
+        except Exception as e:
+            logger.error(f"Failed to start RPC server: {e}", exc_info=True)
+
         # Start betting timer background task
         self.loop.create_task(self.betting_timer_loop())
         # Start draft timer background task (for auto-random picks)
