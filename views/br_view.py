@@ -1680,8 +1680,8 @@ class StartBermudaButton(Button):
             # Calculate points for current map only
             stats = team.get("stats", {})
             map_points = 0
-            if "bermuda" in stats:
-                map_stats = stats["bermuda"]
+            map_stats = tournament.get_team_stats_for_map(team, 0)  # map_index 0 = bermuda
+            if map_stats:
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
                 if place > 0:
@@ -1806,12 +1806,14 @@ class BRTeamGroupButton(Button):
         self.tournament = tournament
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if all teams in this group have stats
+        # Check if all teams in this group have stats for current map index
         all_have_stats = True
+        current_map_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
         for i in range(self.start_index, self.end_index):
             if i < len(self.tournament.teams):
                 team = self.tournament.teams[i]
-                if self.tournament.current_map not in team.get("stats", {}):
+                stats_key = self.tournament.get_stats_key(current_map_idx)
+                if stats_key not in team.get("stats", {}):
                     all_have_stats = False
                     break
 
@@ -1837,11 +1839,13 @@ class BRStatsInputView(View):
         self.end_index = end_index
 
         # Add buttons for each team in the group
+        current_map_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
         for i in range(start_index, end_index):
             if i < len(tournament.teams):
                 team = tournament.teams[i]
                 captain = team.get("captain", f"Команда {i+1}")
-                has_stats = tournament.current_map in team.get("stats", {})
+                stats_key = self.tournament.get_stats_key(current_map_idx)
+                has_stats = stats_key in team.get("stats", {})
                 label = f"{captain} {'✅' if has_stats else '❌'}"
                 self.add_item(BRTeamStatsButton(guild_id, channel_id, tournament, i, label))
 
@@ -1915,8 +1919,10 @@ class BRSingleTeamStatsModal(Modal):
                 )
                 return
 
-            # Save stats
-            self.tournament.set_team_stats(self.team_index, self.tournament.current_map, place, kills)
+            # Save stats using current map index
+            current_map_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
+            map_name = self.tournament.get_map_sequence()[current_map_idx]
+            self.tournament.set_team_stats(self.team_index, map_name, place, kills)
             br_store.set(self.tournament)
 
             await interaction.response.send_message(
@@ -2137,11 +2143,12 @@ class BRConfirmPurgatoryButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate cumulative points for all completed maps
+                # Calculate cumulative points for all completed maps up to current index
                 stats = team.get("stats", {})
                 cumulative_points = 0
                 # Count all completed maps up to current_index (the map we just transitioned to)
-                for map_idx in range(self.tournament.current_map_index):
+                current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
+                for map_idx in range(current_idx):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -2344,7 +2351,8 @@ class BRConfirmKalahariButton(Button):
                 stats = team.get("stats", {})
                 cumulative_points = 0
                 # Count all completed maps up to current_index
-                for map_idx in range(self.tournament.current_map_index):
+                current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
+                for map_idx in range(current_idx):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -2461,7 +2469,8 @@ class BRConfirmNextMapButton(Button):
                 stats = team.get("stats", {})
                 cumulative_points = 0
                 # Count all completed maps up to current_index (before transition)
-                for map_idx in range(self.tournament.current_map_index):
+                current_idx = self.tournament.current_map_index if self.tournament.current_map_index is not None else 0
+                for map_idx in range(current_idx):
                     map_stats = self.tournament.get_team_stats_for_map(team, map_idx)
                     if map_stats:
 
@@ -2910,8 +2919,8 @@ class BRPurgatoryButton(Button):
             # Calculate cumulative points (Bermuda only since moving to Purgatory)
             stats = team.get("stats", {})
             cumulative_points = 0
-            if "bermuda" in stats:
-                map_stats = stats["bermuda"]
+            map_stats = tournament.get_team_stats_for_map(team, 0)  # map_index 0 = bermuda
+            if map_stats:
                 place = map_stats.get("place", 0)
                 kills = map_stats.get("kills", 0)
                 if place > 0:
