@@ -2245,7 +2245,7 @@ class BRConfirmResultsButton(Button):
                 # Calculate total points across all maps
                 stats = team.get("stats", {})
                 total_points = 0
-                for map_name in ["bermuda", "purgatory", "kalahari"]:
+                for map_name in self.tournament.get_map_sequence():
                     if map_name in stats:
                         map_stats = stats[map_name]
                         place = map_stats.get("place", 0)
@@ -3053,7 +3053,7 @@ class BackToMapButton(Button):
             # Calculate total points so far
             total_points = 0
             stats = team.get("stats", {})
-            for map_name in ["bermuda", "purgatory", "kalahari"]:
+            for map_name in tournament.get_map_sequence():
                 if map_name in stats:
                     map_stats = stats[map_name]
                     place = map_stats.get("place", 0)
