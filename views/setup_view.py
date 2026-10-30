@@ -1578,6 +1578,18 @@ class NotifyButton(discord.ui.Button):
                 pass
             return
 
+        # Reload tournament from store
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            try:
+                await interaction.response.send_message(
+                    "❌ Турнир не найден.",
+                    ephemeral=True
+                )
+            except discord.NotFound:
+                pass
+            return
+
         # Check cooldown (1 minute from tournament creation)
         now = datetime.now()
         created_at = datetime.fromisoformat(tournament.created_at) if tournament.created_at else now
@@ -1601,17 +1613,6 @@ class NotifyButton(discord.ui.Button):
             try:
                 await interaction.response.send_message(
                     f"⏱️ Подождите {remaining} секунд перед повторным уведомлением.",
-                    ephemeral=True
-                )
-            except discord.NotFound:
-                pass
-            return
-
-        tournament = store.get(interaction.guild_id, interaction.channel_id)
-        if not tournament:
-            try:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Нет активного турнира."),
                     ephemeral=True
                 )
             except discord.NotFound:
