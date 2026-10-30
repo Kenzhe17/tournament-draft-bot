@@ -75,6 +75,17 @@ class RPCClient:
         """Start the RPC client."""
         logger.info(f"Starting RPC client for Discord ID: {self.discord_id}")
         logger.info(f"Server URL: {self.server_url}")
+        logger.info(f"Discord Application ID: {DISCORD_CLIENT_ID}")
+
+        # Print privacy reminder
+        print("\n" + "=" * 60)
+        print("ВАЖНО: Настройки конфиденциальности Discord")
+        print("=" * 60)
+        print("Для отображения Rich Presence убедитесь, что:")
+        print("1. Discord запущен (десктопное приложение)")
+        print("2. Перейдите: Настройки пользователя -> Конфиденциальность активности")
+        print("3. Включите: Отображать текущую активность в статусе")
+        print("=" * 60 + "\n")
 
         # Start aiohttp session
         self.session = aiohttp.ClientSession()
@@ -83,17 +94,24 @@ class RPCClient:
         try:
             self.rpc = Presence(DISCORD_CLIENT_ID)
             await self.rpc.connect()
-            logger.info("Connected to Discord RPC")
+            logger.info("✓ Connected to Discord RPC")
         except DiscordNotFound:
-            logger.error("Discord not found. Make sure Discord is running.")
+            logger.error("✗ Discord not found. Make sure Discord desktop app is running.")
+            logger.error("  (Web Discord does not support Rich Presence)")
+            print("\n❌ Ошибка: Discord не найден")
+            print("Убедитесь, что запущено десктопное приложение Discord")
+            print("(Web Discord не поддерживает Rich Presence)\n")
             await self.cleanup()
             sys.exit(1)
         except InvalidID:
-            logger.error(f"Invalid Discord Client ID: {DISCORD_CLIENT_ID}")
+            logger.error(f"✗ Invalid Discord Client ID: {DISCORD_CLIENT_ID}")
+            print(f"\n❌ Ошибка: Неверный Application ID: {DISCORD_CLIENT_ID}")
+            print("Проверьте Application ID в Discord Developer Portal\n")
             await self.cleanup()
             sys.exit(1)
         except Exception as e:
-            logger.error(f"Failed to connect to Discord RPC: {e}")
+            logger.error(f"✗ Failed to connect to Discord RPC: {e}")
+            print(f"\n❌ Ошибка подключения к Discord RPC: {e}\n")
             await self.cleanup()
             sys.exit(1)
 
@@ -121,20 +139,27 @@ class RPCClient:
         """Fetch player status from server."""
         try:
             url = f"{self.server_url}/status/{self.discord_id}"
+            logger.debug(f"Fetching status from: {url}")
             async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    logger.info(f"✓ Server response: status={data.get('status')}, details={data.get('details')}, state={data.get('state')}")
+                    return data
                 else:
-                    logger.warning(f"Server returned status {response.status}")
+                    logger.warning(f"✗ Server returned status {response.status}")
+                    logger.warning(f"  Response: {await response.text()}")
                     return None
         except asyncio.TimeoutError:
-            logger.warning("Timeout fetching status from server")
+            logger.warning("✗ Timeout fetching status from server")
+            print("⚠ Таймаут при запросе к серверу")
             return None
         except aiohttp.ClientError as e:
-            logger.warning(f"HTTP error fetching status: {e}")
+            logger.warning(f"✗ HTTP error fetching status: {e}")
+            print(f"⚠ Ошибка HTTP: {e}")
             return None
         except Exception as e:
-            logger.error(f"Unexpected error fetching status: {e}")
+            logger.error(f"✗ Unexpected error fetching status: {e}")
+            print(f"❌ Неожиданная ошибка: {e}")
             return None
 
     async def update_presence(self, status_data: dict):
@@ -147,7 +172,8 @@ class RPCClient:
                 if self.current_status != "none":
                     await self.rpc.clear()
                     self.current_status = "none"
-                    logger.info("Cleared Discord presence")
+                    logger.info("✓ Cleared Discord presence")
+                    print("○ Статус очищен (не в турнире)")
                 return
 
             # Build presence payload
@@ -168,18 +194,40 @@ class RPCClient:
             if start_time:
                 presence_data["start"] = start_time
 
-            await self.rpc.update(**presence_data)
-            self.current_status = status
-            logger.info(f"Updated presence: {presence_data}")
+            # Try to update presence with asset
+            try:
+                await self.rpc.update(**presence_data)
+                self.current_status = status
+                logger.info(f"✓ Updated presence: {presence_data}")
+                print(f"● Rich Presence обновлён: {presence_data.get('details')} | {presence_data.get('state')}")
+            except Exception as update_error:
+                # If asset not found, try without large_image
+                if "large_image" in str(update_error) or "asset" in str(update_error).lower():
+                    logger.warning(f"✗ Asset error (logo_rz3 not cached), retrying without image: {update_error}")
+                    print("⚠ Ассет logo_rz3 не кэширован, обновление без картинки")
+                    presence_data_no_image = presence_data.copy()
+                    del presence_data_no_image["large_image"]
+                    del presence_data_no_image["large_text"]
+                    await self.rpc.update(**presence_data_no_image)
+                    self.current_status = status
+                    logger.info(f"✓ Updated presence (no image): {presence_data_no_image}")
+                    print(f"● Rich Presence обновлён (без картинки): {presence_data_no_image.get('details')}")
+                else:
+                    raise update_error
 
         except Exception as e:
-            logger.error(f"Error updating presence: {e}")
+            logger.error(f"✗ Error updating presence: {e}")
+            print(f"❌ Ошибка обновления Rich Presence: {e}")
 
     async def run_loop(self):
         """Main update loop."""
         logger.info("Starting update loop (15s interval)")
+        print(f"● Автообновление каждые {UPDATE_INTERVAL} секунд")
+        print("-" * 50)
 
+        iteration = 0
         while self.running:
+            iteration += 1
             try:
                 # Fetch status from server
                 status_data = await self.fetch_status()
@@ -189,12 +237,34 @@ class RPCClient:
                 else:
                     # Server error - clear presence
                     if self.current_status != "none":
-                        await self.rpc.clear()
-                        self.current_status = "none"
-                        logger.info("Cleared presence due to server error")
+                        try:
+                            await self.rpc.clear()
+                            self.current_status = "none"
+                            logger.info("✓ Cleared presence due to server error")
+                            print("○ Статус очищен (ошибка сервера)")
+                        except Exception as clear_error:
+                            logger.error(f"✗ Error clearing presence: {clear_error}")
+                            print(f"❌ Ошибка очистки статуса: {clear_error}")
 
             except Exception as e:
-                logger.error(f"Error in update loop: {e}")
+                logger.error(f"✗ Error in update loop: {e}")
+                print(f"❌ Ошибка в цикле обновления: {e}")
+
+                # Check if it's a Discord connection error
+                if "PipeClosed" in str(e) or "Connection" in str(e):
+                    logger.error("Discord connection lost. Attempting to reconnect...")
+                    print("⚠ Соединение с Discord потеряно, попытка переподключения...")
+                    try:
+                        await self.rpc.close()
+                        await self.rpc.connect()
+                        logger.info("✓ Reconnected to Discord RPC")
+                        print("✓ Переподключено к Discord")
+                    except Exception as reconnect_error:
+                        logger.error(f"✗ Failed to reconnect: {reconnect_error}")
+                        print(f"❌ Не удалось переподключиться: {reconnect_error}")
+                        print("❌ Пожалуйста, перезапустите Discord и скрипт")
+                        await self.cleanup()
+                        sys.exit(1)
 
             # Wait for next update
             await asyncio.sleep(UPDATE_INTERVAL)
