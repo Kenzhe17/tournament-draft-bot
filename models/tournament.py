@@ -127,6 +127,7 @@ class Tournament:
     phase: TournamentPhase = TournamentPhase.SETUP
     is_test: bool = False
     start_time: str = ""  # ISO format timestamp when tournament started
+    created_at: str = field(init=False, default_factory=lambda: __import__('datetime').datetime.now().isoformat())  # ISO format timestamp when tournament was created
 
     # Лимиты для кругов (True = лимит включен, False = без лимита)
     circle_limits_enabled: dict[int, bool] = field(default_factory=lambda: {2: True, 3: True, 4: True})
@@ -1381,6 +1382,7 @@ class Tournament:
             "phase": self.phase.value,
             "is_test": self.is_test,
             "start_time": self.start_time,
+            "created_at": self.created_at,
             "circle_limits_enabled": self.circle_limits_enabled,
             "team_names": self.team_names,
             "team_names_changed_teams": list(self.team_names_changed_teams),
@@ -1423,6 +1425,7 @@ class Tournament:
             phase=TournamentPhase(data.get("phase", "setup")),
             is_test=data.get("is_test", False),
             start_time=data.get("start_time", ""),
+            created_at=data.get("created_at", __import__('datetime').datetime.now().isoformat()),
             circle_limits_enabled=data.get("circle_limits_enabled", {2: True, 3: True, 4: True}),
             team_names=data.get("team_names", {}),
             team_names_changed_teams=set(data.get("team_names_changed_teams", [])),

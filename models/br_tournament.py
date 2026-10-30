@@ -300,6 +300,10 @@ class BRTournament:
             "place": place,
             "kills": kills
         }
+
+        # Log the stats entry
+        logger.info(f"BR Tournament Stats: Team {team_index} ({self.teams[team_index].get('captain', 'Unknown')}) - Map: {map_name}, Place: {place}, Kills: {kills}")
+
         return True
 
     def are_all_stats_complete(self, map_name: str) -> bool:
