@@ -2593,7 +2593,7 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
         role_mention = role.mention if role else ""
 
         embed = discord.Embed(
-            title=replace_emojis("🏆 Турнир Создан"),
+            title="Турнир Создан",
             description=(
                 f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
                 f"**Регистрация** {replace_emojis("➡️")} <#{tournament.channel_id}>"

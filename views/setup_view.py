@@ -1677,7 +1677,7 @@ class NotifyButton(discord.ui.Button):
                 description += "\n**Игроки:**\n" + "\n".join(circles_info)
 
         embed = discord.Embed(
-            title=replace_emojis("📢 Турнир"),
+            title="Турнир",
             description=description,
             color=discord.Color.gold()
         )

@@ -422,20 +422,16 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
             )
 
     description = (
-        f"{replace_emojis('white_arrow')} **Система бронирования ролей Организаторов**\n\n"
-        f"Каждая роль (ORG-1, ORG-2, ORG-3) соответствует своему каналу турнира.\n"
-        f"До **{MAX_ORG_ROLE_HOLDERS} человек** могут одновременно иметь одну роль.\n\n"
         f"{replace_emojis('a_sparkle')} **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} После завершения нажмите **«Сдать»** на соответствующей роли.\n"
-        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Если кнопка отсутствует — слот полон ({MAX_ORG_ROLE_HOLDERS}).\n\n"
+        f"{replace_emojis('white_dot')} Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
+        f"{replace_emojis('white_dot')} После завершения нажмите **«Сдать»** на соответствующей роли.\n\n"
         f"{replace_emojis('a_sparkle')} **ТЕКУЩИЙ СТАТУС:**\n"
         f"{status_section}\n\n"
         f"{replace_emojis('a_sparkle')} *Администрация оставляет за собой право сбросить роли в любой момент.*"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} r1z3 | УПРАВЛЕНИЕ РОЛЯМИ ОРГАНИЗАТОРОВ {replace_emojis('a_star')}",
+        title=f"{replace_emojis('a_star')} Панель Организатора {replace_emojis('a_star')}",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
