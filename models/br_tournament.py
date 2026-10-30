@@ -64,6 +64,7 @@ class BRTournament:
     role_id: int = 0
     room_channel_id: int = 0
     current_map: str = ""
+    current_map_index: int = 0  # Current position in map sequence (0-based)
     map_count: int = 3  # Number of maps in the tournament (1-10)
     team_rename_remaining: dict[int, bool] = field(default_factory=dict)  # team_index: can_rename
     room_data: dict[str, str] = field(default_factory=dict)  # {"id": str, "password": str}
@@ -88,6 +89,29 @@ class BRTournament:
         for i in range(self.map_count):
             sequence.append(maps[i % 3])
         return sequence
+
+    def get_map_name_for_index(self, index: int) -> str:
+        """Get the map name for a given index in the sequence.
+
+        Args:
+            index: Position in the map sequence (0-based)
+
+        Returns:
+            Map name (bermuda, purgatory, or kalahari)
+        """
+        maps = ["bermuda", "purgatory", "kalahari"]
+        return maps[index % 3]
+
+    def get_stats_key(self, map_index: int) -> str:
+        """Get the stats storage key for a map index.
+
+        Args:
+            map_index: Position in the map sequence (0-based)
+
+        Returns:
+            Storage key like "map_0", "map_1", etc.
+        """
+        return f"map_{map_index}"
 
     def add_player(self, name: str, user_id: int) -> bool:
         """Добавить игрока в турнир.
@@ -299,27 +323,31 @@ class BRTournament:
         if kills < 0 or kills > 50:
             return False
 
-        self.teams[team_index]["stats"][map_name] = {
+        # Use current_map_index for stats key to handle repeated maps
+        stats_key = self.get_stats_key(self.current_map_index)
+        self.teams[team_index]["stats"][stats_key] = {
             "place": place,
-            "kills": kills
+            "kills": kills,
+            "map_name": map_name  # Store map_name for display purposes
         }
 
         # Log the stats entry
-        logger.info(f"BR Tournament Stats: Team {team_index} ({self.teams[team_index].get('captain', 'Unknown')}) - Map: {map_name}, Place: {place}, Kills: {kills}")
+        logger.info(f"BR Tournament Stats: Team {team_index} ({self.teams[team_index].get('captain', 'Unknown')}) - Map Index: {self.current_map_index}, Map: {map_name}, Place: {place}, Kills: {kills}")
 
         return True
 
-    def are_all_stats_complete(self, map_name: str) -> bool:
-        """Проверить заполнена ли статистика для всех команд для карты.
+    def are_all_stats_complete(self, map_name: str = None) -> bool:
+        """Проверить заполнена ли статистика для всех команд для текущей карты.
 
         Args:
-            map_name: Название карты
+            map_name: Название карты (optional, uses current_map_index if not provided)
 
         Returns:
             True если все команды заполнили статистику
         """
+        stats_key = self.get_stats_key(self.current_map_index)
         for team in self.teams:
-            if map_name not in team["stats"]:
+            if stats_key not in team["stats"]:
                 return False
         return True
 
@@ -330,14 +358,17 @@ class BRTournament:
             Список команд с очками, отсортированный по убыванию очков
         """
         results = []
+        map_sequence = self.get_map_sequence()
 
         for i, team in enumerate(self.teams):
             total_points = 0
+            map_stats = {}
 
-            # Очки за каждую карту
-            for map_name in ["bermuda", "purgatory", "kalahari"]:
-                if map_name in team["stats"]:
-                    stats = team["stats"][map_name]
+            # Очки за каждую карту в последовательности
+            for map_idx, map_name in enumerate(map_sequence):
+                stats_key = self.get_stats_key(map_idx)
+                if stats_key in team["stats"]:
+                    stats = team["stats"][stats_key]
                     place = stats["place"]
                     kills = stats["kills"]
 
@@ -348,13 +379,17 @@ class BRTournament:
 
                     total_points += place_points + kills_points
 
+                    # Store stats for display
+                    map_stats[map_name] = {
+                        "place": place,
+                        "kills": kills
+                    }
+
             results.append({
                 "team_index": i,
                 "name": team["name"],
                 "total_points": total_points,
-                "bermuda": team["stats"].get("bermuda", {}),
-                "purgatory": team["stats"].get("purgatory", {}),
-                "kalahari": team["stats"].get("kalahari", {}),
+                "map_stats": map_stats,
             })
 
         # Сортировать по убыванию очков
@@ -376,6 +411,7 @@ class BRTournament:
             "role_id": self.role_id,
             "room_channel_id": self.room_channel_id,
             "current_map": self.current_map,
+            "current_map_index": self.current_map_index,
             "map_count": self.map_count,
             "team_rename_remaining": self.team_rename_remaining,
             "room_data": self.room_data,
@@ -387,6 +423,18 @@ class BRTournament:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BRTournament:
         """Создать объект из словаря из JSON."""
+        # For backward compatibility, derive current_map_index from phase if not present
+        current_map_index = data.get("current_map_index", 0)
+        if current_map_index == 0 and data.get("phase") != "registration":
+            # Old tournament without current_map_index - try to derive it
+            phase = data.get("phase", "registration")
+            if phase == "bermuda":
+                current_map_index = 0
+            elif phase == "purgatory":
+                current_map_index = 1
+            elif phase == "kalahari":
+                current_map_index = 2
+
         return cls(
             id=data.get("id", ""),
             guild_id=data.get("guild_id", 0),
@@ -400,6 +448,7 @@ class BRTournament:
             role_id=data.get("role_id", 0),
             room_channel_id=data.get("room_channel_id", 0),
             current_map=data.get("current_map", ""),
+            current_map_index=current_map_index,
             map_count=data.get("map_count", 3),
             team_rename_remaining=data.get("team_rename_remaining", {}),
             room_data=data.get("room_data", {}),

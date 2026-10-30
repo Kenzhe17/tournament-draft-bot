@@ -112,19 +112,15 @@ class BRManagementMenuView(View):
             self.add_item(BRRoomButton(guild_id, channel_id))
             self.add_item(BRDataButton(guild_id, channel_id))
 
-            # Add transition buttons based on map sequence
+            # Add transition buttons based on map sequence using current_map_index
             map_sequence = tournament.get_map_sequence()
-            current_phase_index = -1
-            for i, map_name in enumerate(map_sequence):
-                if map_name == tournament.phase.value:
-                    current_phase_index = i
-                    break
+            current_index = tournament.current_map_index
 
-            logger.info(f"BRManagementMenuView: phase={tournament.phase.value}, map_sequence={map_sequence}, current_phase_index={current_phase_index}, is_complete={tournament.are_all_stats_complete(tournament.current_map)}")
+            logger.info(f"BRManagementMenuView: phase={tournament.phase.value}, current_map_index={current_index}, map_sequence={map_sequence}, is_complete={tournament.are_all_stats_complete()}")
 
             # If this is the last map and all stats are complete, show results button
-            if current_phase_index == len(map_sequence) - 1:
-                if tournament.are_all_stats_complete(tournament.current_map):
+            if current_index == len(map_sequence) - 1:
+                if tournament.are_all_stats_complete():
                     self.add_item(BRShowResultsButton(guild_id, channel_id))
                 else:
                     btn = Button(
@@ -134,10 +130,10 @@ class BRManagementMenuView(View):
                         custom_id=f"br_results_disabled:{guild_id}:{channel_id}"
                     )
                     self.add_item(btn)
-            elif current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
+            elif current_index >= 0 and current_index < len(map_sequence) - 1:
                 # Show next map button if stats are complete
-                next_map = map_sequence[current_phase_index + 1]
-                if tournament.are_all_stats_complete(tournament.current_map):
+                next_map = map_sequence[current_index + 1]
+                if tournament.are_all_stats_complete():
                     if next_map == "purgatory":
                         self.add_item(BRPurgatoryButton(guild_id, channel_id))
                     elif next_map == "kalahari":
@@ -245,6 +241,8 @@ class StartBRButton(Button):
 
         # Update phase
         tournament.phase = BRTournamentPhase.BERMUDA
+        tournament.current_map = "bermuda"
+        tournament.current_map_index = 0
         tournament.team_rename_start_time = interaction.created_at.isoformat()
 
         # Give BR role to real players
@@ -1385,6 +1383,7 @@ class StartBRButton(Button):
             # For team format, go directly to Bermuda phase (no rename phase)
             tournament.phase = BRTournamentPhase.BERMUDA
             tournament.current_map = "bermuda"
+            tournament.current_map_index = 0
             br_store.set(tournament)
 
             # Give role to captains (team format)
@@ -1655,6 +1654,7 @@ class StartBermudaButton(Button):
         # Transition to Bermuda phase
         tournament.phase = BRTournamentPhase.BERMUDA
         tournament.current_map = "bermuda"
+        tournament.current_map_index = 0
         br_store.set(tournament)
 
         # Create view with only organizer menu button
@@ -2010,16 +2010,12 @@ class BRConfirmPurgatoryButton(Button):
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
-        # Transition to next map based on map_sequence
+        # Transition to next map based on current_map_index
+        current_index = self.tournament.current_map_index
         map_sequence = self.tournament.get_map_sequence()
-        current_phase_index = -1
-        for i, map_name in enumerate(map_sequence):
-            if map_name == self.tournament.phase.value:
-                current_phase_index = i
-                break
 
         # If this is the last map, go to RESULTS instead of next map
-        if current_phase_index == len(map_sequence) - 1:
+        if current_index == len(map_sequence) - 1:
             self.tournament.phase = BRTournamentPhase.RESULTS
             br_store.set(self.tournament)
 
@@ -2048,9 +2044,10 @@ class BRConfirmPurgatoryButton(Button):
                     # Calculate total points across all maps
                     stats = team.get("stats", {})
                     total_points = 0
-                    for map_name in self.tournament.get_map_sequence():
-                        if map_name in stats:
-                            map_stats = stats[map_name]
+                    for map_idx, map_name in enumerate(self.tournament.get_map_sequence()):
+                        stats_key = self.tournament.get_stats_key(map_idx)
+                        if stats_key in stats:
+                            map_stats = stats[stats_key]
                             place = map_stats.get("place", 0)
                             kills = map_stats.get("kills", 0)
                             if place > 0:
@@ -2096,10 +2093,12 @@ class BRConfirmPurgatoryButton(Button):
             return
 
         # Otherwise, go to next map
-        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
-            next_map = map_sequence[current_phase_index + 1]
+        if current_index >= 0 and current_index < len(map_sequence) - 1:
+            next_index = current_index + 1
+            next_map = map_sequence[next_index]
             self.tournament.phase = BRTournamentPhase(next_map)
             self.tournament.current_map = next_map
+            self.tournament.current_map_index = next_index
             map_display = {
                 "bermuda": "Бермуды",
                 "purgatory": "Чистилище",
@@ -2209,16 +2208,12 @@ class BRConfirmKalahariButton(Button):
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
-        # Transition to next map based on map_sequence
+        # Transition to next map based on current_map_index
+        current_index = self.tournament.current_map_index
         map_sequence = self.tournament.get_map_sequence()
-        current_phase_index = -1
-        for i, map_name in enumerate(map_sequence):
-            if map_name == self.tournament.phase.value:
-                current_phase_index = i
-                break
 
         # If this is the last map, go to RESULTS instead of next map
-        if current_phase_index == len(map_sequence) - 1:
+        if current_index == len(map_sequence) - 1:
             self.tournament.phase = BRTournamentPhase.RESULTS
             br_store.set(self.tournament)
 
@@ -2247,9 +2242,10 @@ class BRConfirmKalahariButton(Button):
                     # Calculate total points across all maps
                     stats = team.get("stats", {})
                     total_points = 0
-                    for map_name in self.tournament.get_map_sequence():
-                        if map_name in stats:
-                            map_stats = stats[map_name]
+                    for map_idx, map_name in enumerate(self.tournament.get_map_sequence()):
+                        stats_key = self.tournament.get_stats_key(map_idx)
+                        if stats_key in stats:
+                            map_stats = stats[stats_key]
                             place = map_stats.get("place", 0)
                             kills = map_stats.get("kills", 0)
                             if place > 0:
@@ -2295,10 +2291,12 @@ class BRConfirmKalahariButton(Button):
             return
 
         # Otherwise, go to next map
-        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
-            next_map = map_sequence[current_phase_index + 1]
+        if current_index >= 0 and current_index < len(map_sequence) - 1:
+            next_index = current_index + 1
+            next_map = map_sequence[next_index]
             self.tournament.phase = BRTournamentPhase(next_map)
             self.tournament.current_map = next_map
+            self.tournament.current_map_index = next_index
             map_display = {
                 "bermuda": "Бермуды",
                 "purgatory": "Чистилище",
@@ -2337,14 +2335,15 @@ class BRConfirmKalahariButton(Button):
                 # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
                 cumulative_points = 0
-                # For Kalahari, count both Bermuda and Purgatory points
-                for map_name in ["bermuda", "purgatory"]:
-                    if map_name in stats:
-                        map_stats = stats[map_name]
+                # Count all completed maps up to current_index
+                for map_idx in range(self.tournament.current_map_index):
+                    stats_key = self.tournament.get_stats_key(map_idx)
+                    if stats_key in stats:
+                        map_stats = stats[stats_key]
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
-                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12:0
                             place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
                             cumulative_points += place_points.get(place, 0) + kills
 
@@ -2411,8 +2410,10 @@ class BRConfirmNextMapButton(Button):
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
         # Transition to next map
+        next_index = self.tournament.current_map_index + 1
         self.tournament.phase = BRTournamentPhase(self.next_map)
         self.tournament.current_map = self.next_map
+        self.tournament.current_map_index = next_index
         map_display = {
             "bermuda": "Бермуды",
             "purgatory": "Чистилище",
@@ -2990,18 +2991,16 @@ class BRKalahariButton(Button):
             )
             return
 
-        # Transition to next map based on map_sequence
+        # Transition to next map based on current_map_index
+        current_index = tournament.current_map_index
         map_sequence = tournament.get_map_sequence()
-        current_phase_index = -1
-        for i, map_name in enumerate(map_sequence):
-            if map_name == tournament.phase.value:
-                current_phase_index = i
-                break
 
-        if current_phase_index >= 0 and current_phase_index < len(map_sequence) - 1:
-            next_map = map_sequence[current_phase_index + 1]
+        if current_index >= 0 and current_index < len(map_sequence) - 1:
+            next_index = current_index + 1
+            next_map = map_sequence[next_index]
             tournament.phase = BRTournamentPhase(next_map)
             tournament.current_map = next_map
+            tournament.current_map_index = next_index
             br_store.set(tournament)
 
         # Reload to get latest
