@@ -4,6 +4,11 @@ import Card from './Card'
 import { canBeat, canAddToAttack } from '../game/deck'
 import './GameTable.css'
 
+// Get server URL from environment or use default
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || window.location.hostname === 'localhost' 
+  ? 'http://localhost:3001' 
+  : 'https://your-backend-url.railway.app'
+
 const GameTable = ({ gameState, player, onGameStateChange }) => {
   const [selectedCard, setSelectedCard] = useState(null)
   const [game, setGame] = useState(gameState)
@@ -11,7 +16,7 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
 
   // Connect to Socket.IO server
   useEffect(() => {
-    const newSocket = io('http://localhost:3001')
+    const newSocket = io(SERVER_URL)
     setSocket(newSocket)
 
     // Join game
@@ -29,6 +34,10 @@ const GameTable = ({ gameState, player, onGameStateChange }) => {
     newSocket.on('game_start', (startedGame) => {
       setGame(startedGame)
       onGameStateChange(startedGame)
+    })
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error)
     })
 
     return () => {

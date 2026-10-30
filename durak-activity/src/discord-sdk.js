@@ -1,9 +1,9 @@
-import { discordSdk } from '@discord/embedded-app-sdk'
+import * as DiscordSDK from '@discord/embedded-app-sdk'
 
-// Configure Discord SDK
-discordSdk.configuration = {
+// Create Discord SDK instance
+const discordSdk = new DiscordSDK.DiscordSDK({
   clientId: '1782609823367873392',
   scopes: ['identify', 'guilds'],
-}
+})
 
 export { discordSdk }

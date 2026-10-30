@@ -15,11 +15,18 @@ function App() {
     const initDiscord = async () => {
       try {
         await discordSdk.ready()
-        const { user } = await discordSdk.commands.authenticate()
-        setPlayer(user)
+        const auth = await discordSdk.commands.authenticate()
+        setPlayer(auth.user)
         setIsConnected(true)
       } catch (error) {
         console.error('Failed to initialize Discord SDK:', error)
+        // For development, use mock user
+        setPlayer({
+          id: '123456789',
+          username: 'TestUser',
+          global_name: 'Test User'
+        })
+        setIsConnected(true)
       }
     }
 
