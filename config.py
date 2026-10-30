@@ -73,6 +73,7 @@ ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.disc
 
 # Warning system settings
 MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", "1280620360823345192"))
+# GIF URLs for mute/unmute via gif replies (not for warnings)
 WARN_GIF_URL = os.getenv("WARN_GIF_URL", "https://klipy.com/gifs/h2di-the-dictator")
 UNWARN_GIF_URL = os.getenv("UNWARN_GIF_URL", "https://klipy.com/gifs/slice-execute-4")
 
