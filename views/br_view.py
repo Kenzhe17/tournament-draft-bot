@@ -2137,15 +2137,17 @@ class BRConfirmPurgatoryButton(Button):
                 # Calculate cumulative points for all completed maps
                 stats = team.get("stats", {})
                 cumulative_points = 0
-                # For Purgatory, only count Bermuda points (since Purgatory not started yet)
-                if "bermuda" in stats:
-                    map_stats = stats["bermuda"]
-                    place = map_stats.get("place", 0)
-                    kills = map_stats.get("kills", 0)
-                    if place > 0:
-                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
-                        place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
-                        cumulative_points += place_points.get(place, 0) + kills
+                # Count all completed maps up to current_index (the map we just transitioned to)
+                for map_idx in range(self.tournament.current_map_index):
+                    stats_key = self.tournament.get_stats_key(map_idx)
+                    if stats_key in stats:
+                        map_stats = stats[stats_key]
+                        place = map_stats.get("place", 0)
+                        kills = map_stats.get("kills", 0)
+                        if place > 0:
+                            # Points based on place: 1=12, 2=9, 3=8, 4=7, 5:6, 6:5, 7:4, 8:3, 9:2, 10:1, 11:0, 12:0
+                            place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
+                            cumulative_points += place_points.get(place, 0) + kills
 
                 teams_with_points.append({
                     "captain": captain,
@@ -2449,14 +2451,14 @@ class BRConfirmNextMapButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate cumulative points for completed maps
+                # Calculate cumulative points for completed maps up to current_index
                 stats = team.get("stats", {})
                 cumulative_points = 0
-                for map_name in self.tournament.get_map_sequence():
-                    if map_name == self.next_map:
-                        break  # Don't count the next map we're transitioning to
-                    if map_name in stats:
-                        map_stats = stats[map_name]
+                # Count all completed maps up to current_index (before transition)
+                for map_idx in range(self.tournament.current_map_index):
+                    stats_key = self.tournament.get_stats_key(map_idx)
+                    if stats_key in stats:
+                        map_stats = stats[stats_key]
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
@@ -3026,16 +3028,18 @@ class BRKalahariButton(Button):
             players = team.get("players", [])
             players_str = ", ".join(players) if players else ""
 
-            # Calculate cumulative points (Bermuda + Purgatory since moving to Kalahari)
+            # Calculate cumulative points for all completed maps up to current_index
             stats = team.get("stats", {})
             cumulative_points = 0
-            for map_name in ["bermuda", "purgatory"]:
-                if map_name in stats:
-                    map_stats = stats[map_name]
+            # Count all completed maps up to current_index (the map we just transitioned to)
+            for map_idx in range(tournament.current_map_index):
+                stats_key = tournament.get_stats_key(map_idx)
+                if stats_key in stats:
+                    map_stats = stats[stats_key]
                     place = map_stats.get("place", 0)
                     kills = map_stats.get("kills", 0)
                     if place > 0:
-                        # Points based on place: 1=12, 2=9, 3=8, 4=7, 5=6, 6=5, 7=4, 8=3, 9=2, 10=1, 11=0, 12=0
+                        # Points based on place: 1=12, 2=9, 3:8, 4:7, 5:6, 6:5, 7:4, 8:3, 9:2, 10:1, 11:0, 12:0
                         place_points = {1: 12, 2: 9, 3: 8, 4: 7, 5: 6, 6: 5, 7: 4, 8: 3, 9: 2, 10: 1, 11: 0, 12: 0}
                         cumulative_points += place_points.get(place, 0) + kills
 
