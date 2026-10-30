@@ -43,6 +43,8 @@ The RPC server is automatically started with the bot in `bot.py`. No additional 
 
 ### Discord Application Setup (One-time)
 
+**Application ID:** `1282609823367823392`
+
 1. **Create Discord Application:**
    - Go to [Discord Developer Portal](https://discord.com/developers/applications)
    - Click "New Application"
@@ -64,7 +66,7 @@ The RPC server is automatically started with the bot in `bot.py`. No additional 
 4. **Copy Application ID:**
    - On the application's "General Information" page
    - Copy the "APPLICATION ID" (19-digit number)
-   - You'll need this for the client configuration
+   - The Application ID for this project is: `1282609823367823392`
 
 ### Client Setup
 
@@ -199,7 +201,7 @@ When active, the player's Discord profile will show:
 ### Regular Tournament Scenarios
 
 **SETUP Phase (Registration):**
-- **Details:** "Tournament Setup"
+- **Details:** "Регистрация"
 - **State:** "Phase: SETUP"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
@@ -207,7 +209,7 @@ When active, the player's Discord profile will show:
 - **Start Time:** None (no timer in lobby)
 
 **DRAFT Phase (Team Selection):**
-- **Details:** "Tournament Setup"
+- **Details:** "Драфт команд"
 - **State:** "Phase: DRAFT"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
@@ -301,8 +303,8 @@ When active, the player's Discord profile will show:
 
 | Фаза турнира | Статус в БД | Details | State | Кнопка / Пати | Таймер |
 |-------------|-------------|---------|-------|---------------|---------|
-| Регистрация / Настройка | IN_LOBBY | Tournament Setup | Phase: SETUP | [X/всего] | - |
-| Драфт команд | IN_LOBBY | Tournament Setup | Phase: DRAFT | [X/всего] | - |
+| Регистрация / Настройка | IN_LOBBY | Регистрация | Phase: SETUP | [X/всего] | - |
+| Драфт команд | IN_LOBBY | Драфт команд | Phase: DRAFT | [X/всего] | - |
 | Квалификации | IN_GAME | Qualifiers | Team 1 (название команды) | [4/4] | ✓ |
 | Полуфинал | IN_GAME | Semifinals | Team 1 (название команды) | [4/4] | ✓ |
 | Финал | IN_GAME | Finals | Team 1 (название команды) | [4/4] | ✓ |

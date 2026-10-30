@@ -36,7 +36,7 @@ except ImportError:
 # Discord Application ID for r!z3 Tournament
 # Get this from https://discord.com/developers/applications
 # Create an application, enable Rich Presence, and copy the Application ID
-DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "YOUR_CLIENT_ID")
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1282609823367823392")
 
 # Default server URL (can be overridden with command line argument)
 DEFAULT_SERVER_URL = "http://localhost:8080"

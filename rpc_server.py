@@ -111,7 +111,7 @@ async def get_player_status(request: web.Request) -> web.Response:
                 # Regular tournament
                 if phase in ["SETUP", "DRAFT"]:
                     status = "IN_LOBBY"
-                    details = "Tournament Setup"
+                    details = "Регистрация" if phase == "SETUP" else "Драфт команд"
                     state = f"Phase: {phase}"
                     tournament_size = getattr(active_tournament, 'size', 8)
                     if isinstance(tournament_size, str):
