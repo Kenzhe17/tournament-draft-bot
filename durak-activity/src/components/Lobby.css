@@ -1,0 +1,108 @@
+.lobby {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1e1f22 0%, #2c2f33 100%);
+}
+
+.lobby-content {
+  background: #36393f;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  max-width: 500px;
+  width: 90%;
+}
+
+.lobby-title {
+  font-size: 48px;
+  text-align: center;
+  margin-bottom: 30px;
+  color: #ffffff;
+}
+
+.player-info {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 30px;
+}
+
+.avatar {
+  background: #5865f2;
+  padding: 20px 40px;
+  border-radius: 50%;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.game-settings {
+  margin-bottom: 30px;
+}
+
+.game-settings h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #b9bbbe;
+}
+
+.setting-group {
+  margin-bottom: 20px;
+}
+
+.setting-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #dcddde;
+  font-size: 14px;
+}
+
+.setting-group select {
+  width: 100%;
+  padding: 12px;
+  background: #40444b;
+  border: 1px solid #202225;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.setting-group select:focus {
+  outline: none;
+  border-color: #5865f2;
+}
+
+.start-button {
+  width: 100%;
+  padding: 16px;
+  background: #5865f2;
+  border: none;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  margin-top: 10px;
+}
+
+.start-button:hover {
+  background: #4752c4;
+}
+
+.lobby-info {
+  text-align: center;
+  color: #b9bbbe;
+}
+
+.lobby-info p {
+  margin-bottom: 8px;
+}
+
+.players-count {
+  font-size: 18px;
+  color: #5865f2;
+  font-weight: bold;
+}

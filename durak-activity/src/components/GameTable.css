@@ -1,0 +1,181 @@
+.game-table {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #1e1f22 0%, #2c2f33 100%);
+  padding: 20px;
+}
+
+.other-players {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 20px;
+}
+
+.player-slot {
+  background: #36393f;
+  padding: 15px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.player-name {
+  color: #b9bbbe;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.cards-back {
+  font-size: 24px;
+  letter-spacing: 4px;
+}
+
+.center-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.deck-area {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.deck {
+  position: relative;
+  width: 80px;
+  height: 112px;
+}
+
+.card-back {
+  width: 80px;
+  height: 112px;
+  background: #2c2f33;
+  border: 2px solid #202225;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+}
+
+.deck-count {
+  position: absolute;
+  bottom: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #5865f2;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.trump-card {
+  background: #40444b;
+  padding: 10px;
+  border-radius: 8px;
+}
+
+.table {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  max-width: 800px;
+  min-height: 200px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.card-pair {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.player-hand {
+  background: #36393f;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.hand-label {
+  color: #b9bbbe;
+  font-size: 14px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.cards {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.game-controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  padding: 20px;
+  background: #40444b;
+  border-radius: 12px;
+}
+
+.control-button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #ffffff;
+}
+
+.control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.control-button.attack {
+  background: #ed4245;
+}
+
+.control-button.attack:hover:not(:disabled) {
+  background: #c93b3e;
+}
+
+.control-button.defend {
+  background: #57f287;
+}
+
+.control-button.defend:hover:not(:disabled) {
+  background: #45c570;
+}
+
+.control-button.take {
+  background: #fee75c;
+  color: #000000;
+}
+
+.control-button.take:hover:not(:disabled) {
+  background: #e6c54b;
+}
+
+.control-button.done {
+  background: #5865f2;
+}
+
+.control-button.done:hover:not(:disabled) {
+  background: #4752c4;
+}
