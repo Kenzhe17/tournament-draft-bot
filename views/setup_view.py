@@ -1620,12 +1620,11 @@ class NotifyButton(discord.ui.Button):
 
         # Calculate missing players
         total_players = len(tournament.players_pool)
-        total_needed = tournament.size.value
+        total_needed = int(tournament.size.value)
         missing = total_needed - total_players
 
-        description = f"**Канал:** <#{tournament.channel_id}>\n"
-        description += f"**Размер:** {tournament.size.value} игроков\n"
-        description += f"**Режим:** {tournament.formation_mode.value}\n"
+        description = f"**Тип:** {tournament.size.value} игроков / {tournament.formation_mode.value.upper()}\n"
+        description += f"**Регистрация** {replace_emojis("➡️")} <#{tournament.channel_id}>\n"
         description += f"**Зарегистрировано:** {total_players}/{total_needed}\n"
 
         if missing > 0:
@@ -1663,7 +1662,7 @@ class NotifyButton(discord.ui.Button):
                 description += "\n**Круги:**\n" + "\n".join(circles_info)
 
         embed = discord.Embed(
-            title=replace_emojis("📢 Уведомление о турнире"),
+            title=replace_emojis("📢 Турнир"),
             description=description,
             color=discord.Color.gold()
         )
