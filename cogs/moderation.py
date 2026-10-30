@@ -288,7 +288,7 @@ class ModerationCog(commands.Cog):
                 mute_until = datetime.now() + duration
                 await member.add_roles(mute_role, reason=f"Мут за {warn_count} предупреждений")
                 await warn_store.set_mute_until(member.id, guild.id, mute_until)
-                logger.info(f"Muted {member.id} for {duration}")
+                logger.info(f"Muted {member.id} for {duration}, mute_until set to {mute_until}")
                 return duration
 
         return None
@@ -530,6 +530,7 @@ class ModerationCog(commands.Cog):
         # Set mute_until in database
         mute_until = datetime.now() + duration
         await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until)
+        logger.info(f"Manual mute: user_id={участник.id}, guild_id={interaction.guild.id}, mute_until={mute_until}, duration={duration}")
 
         # Format duration for display
         if duration.days >= 1:

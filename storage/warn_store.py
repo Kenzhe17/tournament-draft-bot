@@ -251,13 +251,18 @@ class WarnStore:
         if not self.enabled:
             return
 
+        # Ensure mute_until is naive (no timezone) for database consistency
+        if mute_until.tzinfo is not None:
+            mute_until = mute_until.replace(tzinfo=None)
+
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute("""
+            result = await conn.execute("""
                 UPDATE warnings
                 SET mute_until = $1
                 WHERE user_id = $2 AND guild_id = $3 AND active = TRUE
             """, mute_until, user_id, guild_id)
+            logger.info(f"set_mute_until: user_id={user_id}, guild_id={guild_id}, mute_until={mute_until}, affected={result}")
 
     async def clear_mute_until(self, user_id: int, guild_id: int):
         """Clear mute expiration time for a user."""
@@ -276,16 +281,18 @@ class WarnStore:
         """Get the earliest mute expiration time for a user."""
         if not self.enabled:
             return None
-        
+
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Use naive datetime for comparison
+            current_time = datetime.now().replace(tzinfo=None)
             mute_until = await conn.fetchval("""
                 SELECT MIN(mute_until)
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2 AND active = TRUE
-                  AND mute_until > CURRENT_TIMESTAMP
-            """, user_id, guild_id)
-            
+                  AND mute_until > $1
+            """, user_id, guild_id, current_time)
+
             return mute_until
     
     async def clear_expired_mutes(self) -> List[int]:
@@ -306,13 +313,15 @@ class WarnStore:
             for row in all_mutes:
                 logger.info(f"  - user_id={row['user_id']}, guild_id={row['guild_id']}, mute_until={row['mute_until']}")
 
+            # Use naive datetime for comparison (mute_until is stored as naive)
+            current_time = datetime.now().replace(tzinfo=None)
             rows = await conn.fetch("""
                 SELECT DISTINCT user_id, guild_id
                 FROM warnings
                 WHERE active = TRUE
                   AND mute_until IS NOT NULL
-                  AND mute_until <= CURRENT_TIMESTAMP
-            """)
+                  AND mute_until <= $1
+            """, current_time)
 
             affected = [(row['user_id'], row['guild_id']) for row in rows]
             logger.info(f"clear_expired_mutes: found {len(affected)} expired mute records in DB")
@@ -324,8 +333,8 @@ class WarnStore:
                     SET mute_until = NULL
                     WHERE active = TRUE
                       AND mute_until IS NOT NULL
-                      AND mute_until <= CURRENT_TIMESTAMP
-                """)
+                      AND mute_until <= $1
+                """, current_time)
                 logger.info(f"clear_expired_mutes: cleared mute_until for {result} records")
 
             return affected
@@ -337,13 +346,15 @@ class WarnStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # Use naive datetime for comparison
+            current_time = datetime.now().replace(tzinfo=None)
             rows = await conn.fetch("""
                 DELETE FROM warnings
                 WHERE active = TRUE
                   AND expires_at IS NOT NULL
-                  AND expires_at <= CURRENT_TIMESTAMP
+                  AND expires_at <= $1
                 RETURNING user_id, guild_id
-            """)
+            """, current_time)
 
             affected = [(row['user_id'], row['guild_id']) for row in rows]
 
