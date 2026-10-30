@@ -2010,6 +2010,9 @@ class BRConfirmPurgatoryButton(Button):
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
 
+        # Log current state
+        logger.info(f"BRConfirmButton: current_map={self.tournament.current_map}, current_map_index={self.tournament.current_map_index}")
+
         # Transition to next map based on current_map_index
         current_index = self.tournament.current_map_index
         map_sequence = self.tournament.get_map_sequence()
@@ -2209,6 +2212,9 @@ class BRConfirmKalahariButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         # Reload tournament from store to get latest stats BEFORE changing phase
         self.tournament = br_store.get(self.guild_id, self.channel_id)
+
+        # Log current state
+        logger.info(f"BRConfirmButton: current_map={self.tournament.current_map}, current_map_index={self.tournament.current_map_index}")
 
         # Transition to next map based on current_map_index
         current_index = self.tournament.current_map_index
@@ -2627,9 +2633,17 @@ class BRNextMapButton(Button):
             )
             return
 
+        # Log current state
+        logger.info(f"BRNextMapButton: current_map={tournament.current_map}, current_map_index={tournament.current_map_index}, next_map={self.next_map}")
+
         # Transition to next map
+        map_sequence = tournament.get_map_sequence()
+        current_index = tournament.current_map_index if tournament.current_map_index is not None else 0
+        next_index = current_index + 1
+        
         tournament.phase = BRTournamentPhase(self.next_map)
         tournament.current_map = self.next_map
+        tournament.current_map_index = next_index
         br_store.set(tournament)
 
         # Close the ephemeral menu
@@ -2661,12 +2675,14 @@ class BRNextMapButton(Button):
                 players = team.get("players", [])
                 players_str = ", ".join(players) if players else ""
 
-                # Calculate cumulative points for all completed maps (including current map)
+                # Calculate cumulative points for all completed maps up to current map index
                 stats = team.get("stats", {})
                 cumulative_points = 0
-                for map_name in tournament.get_map_sequence():
-                    if map_name in stats:
-                        map_stats = stats[map_name]
+                # Count all completed maps (including current map)
+                current_map_idx = tournament.current_map_index if tournament.current_map_index is not None else 0
+                for map_idx in range(current_map_idx + 1):
+                    map_stats = tournament.get_team_stats_for_map(team, map_idx)
+                    if map_stats:
                         place = map_stats.get("place", 0)
                         kills = map_stats.get("kills", 0)
                         if place > 0:
