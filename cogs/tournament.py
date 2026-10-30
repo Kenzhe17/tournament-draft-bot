@@ -2595,7 +2595,6 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
         embed = discord.Embed(
             title=replace_emojis("🏆 Уведомление о турнире"),
             description=(
-                f"{role_mention}\n\n"
                 f"**Действие:** {action}\n"
                 f"**Размер:** {tournament.size.value} игроков\n"
                 f"**Режим:** {tournament.formation_mode.value}\n"
@@ -2605,7 +2604,7 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
             color=discord.Color.blue()
         )
 
-        await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+        await channel.send(content=role_mention, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")

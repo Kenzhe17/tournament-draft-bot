@@ -1623,8 +1623,7 @@ class NotifyButton(discord.ui.Button):
         total_needed = tournament.size.value
         missing = total_needed - total_players
 
-        description = f"{role_mention}\n\n"
-        description += f"**Канал:** <#{tournament.channel_id}>\n"
+        description = f"**Канал:** <#{tournament.channel_id}>\n"
         description += f"**Размер:** {tournament.size.value} игроков\n"
         description += f"**Режим:** {tournament.formation_mode.value}\n"
         description += f"**Зарегистрировано:** {total_players}/{total_needed}\n"
@@ -1670,7 +1669,7 @@ class NotifyButton(discord.ui.Button):
         )
 
         try:
-            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+            await channel.send(content=role_mention, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
             await interaction.response.send_message(
                 "✅ Уведомление отправлено.",
                 ephemeral=True
