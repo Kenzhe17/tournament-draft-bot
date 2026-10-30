@@ -295,6 +295,17 @@ class WarnStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # First, log all active mutes with their mute_until values for debugging
+            all_mutes = await conn.fetch("""
+                SELECT user_id, guild_id, mute_until
+                FROM warnings
+                WHERE active = TRUE
+                  AND mute_until IS NOT NULL
+            """)
+            logger.info(f"clear_expired_mutes: total active mutes in DB: {len(all_mutes)}")
+            for row in all_mutes:
+                logger.info(f"  - user_id={row['user_id']}, guild_id={row['guild_id']}, mute_until={row['mute_until']}")
+
             rows = await conn.fetch("""
                 SELECT DISTINCT user_id, guild_id
                 FROM warnings
