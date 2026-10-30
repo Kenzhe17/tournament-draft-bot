@@ -61,6 +61,7 @@ class BRTournament:
     role_id: int = 0
     room_channel_id: int = 0
     current_map: str = ""
+    map_count: int = 3  # Number of maps in the tournament (1-10)
     team_rename_remaining: dict[int, bool] = field(default_factory=dict)  # team_index: can_rename
     room_data: dict[str, str] = field(default_factory=dict)  # {"id": str, "password": str}
     created_at: str = ""
@@ -72,6 +73,18 @@ class BRTournament:
             self.id = str(uuid.uuid4())
         if not self.created_at:
             self.created_at = datetime.now().isoformat()
+
+    def get_map_sequence(self) -> list[str]:
+        """Get the sequence of maps based on map_count.
+
+        Returns:
+            List of map names cycling through bermuda, purgatory, kalahari
+        """
+        maps = ["bermuda", "purgatory", "kalahari"]
+        sequence = []
+        for i in range(self.map_count):
+            sequence.append(maps[i % 3])
+        return sequence
 
     def add_player(self, name: str, user_id: int) -> bool:
         """Добавить игрока в турнир.
@@ -356,6 +369,7 @@ class BRTournament:
             "role_id": self.role_id,
             "room_channel_id": self.room_channel_id,
             "current_map": self.current_map,
+            "map_count": self.map_count,
             "team_rename_remaining": self.team_rename_remaining,
             "room_data": self.room_data,
             "created_at": self.created_at,
@@ -379,6 +393,7 @@ class BRTournament:
             role_id=data.get("role_id", 0),
             room_channel_id=data.get("room_channel_id", 0),
             current_map=data.get("current_map", ""),
+            map_count=data.get("map_count", 3),
             team_rename_remaining=data.get("team_rename_remaining", {}),
             room_data=data.get("room_data", {}),
             created_at=data.get("created_at", ""),

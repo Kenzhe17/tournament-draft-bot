@@ -1632,22 +1632,13 @@ class NotifyButton(discord.ui.Button):
 
         # Add circle-specific info for ELO/SKILL modes
         if tournament.formation_mode in [FormationMode.ELO, FormationMode.SKILL]:
-            circle_limits = {
-                1: 2,
-                2: 2,
-                3: 2,
-                4: 2
-            } if tournament.size.value == 8 else {
-                1: 4,
-                2: 4,
-                3: 4,
-                4: 4
-            } if tournament.size.value == 16 else {
-                1: 8,
-                2: 8,
-                3: 8,
-                4: 8
+            size_value = int(tournament.size.value)
+            circle_limits_map = {
+                8: {1: 2, 2: 2, 3: 2, 4: 2},
+                16: {1: 4, 2: 4, 3: 4, 4: 4},
+                32: {1: 8, 2: 8, 3: 8, 4: 8},
             }
+            circle_limits = circle_limits_map.get(size_value, {1: 2, 2: 2, 3: 2, 4: 2})
 
             circles_info = []
             for circle_num in range(1, 5):

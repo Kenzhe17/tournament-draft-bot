@@ -27,7 +27,7 @@ class BRCog(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="br", description="Создать Battle Royale турнир")
-    @app_commands.describe(formation="Формат турнира")
+    @app_commands.describe(formation="Формат турнира", maps="Количество карт (1-10)")
     @app_commands.choices(formation=[
         app_commands.Choice(name="random", value="random"),
         app_commands.Choice(name="team", value="team"),
@@ -35,9 +35,17 @@ class BRCog(commands.Cog):
     async def br_create(
         self,
         interaction: discord.Interaction,
-        formation: str
+        formation: str,
+        maps: int = 3
     ) -> None:
         """Создать BR турнир."""
+        # Validate maps parameter
+        if maps < 1 or maps > 10:
+            await interaction.response.send_message(
+                "❌ Количество карт должно быть от 1 до 10.",
+                ephemeral=True
+            )
+            return
         # Проверка на владельца бота
         if interaction.user.id != BOT_OWNER_ID:
             await interaction.response.send_message(
@@ -87,6 +95,7 @@ class BRCog(commands.Cog):
             role_id=BR_ROLE_ID,
             room_channel_id=BR_ROOM_CHANNEL_ID,
             organizer_id=interaction.user.id,
+            map_count=maps,
         )
 
         # Сохранить
