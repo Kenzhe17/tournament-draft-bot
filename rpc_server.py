@@ -3,11 +3,15 @@
 import asyncio
 import json
 import logging
+import time
 from aiohttp import web
 from storage.json_store import store
 from storage.br_store import br_store
 
 logger = logging.getLogger(__name__)
+
+# Dictionary to track match start times: {(guild_id, channel_id): timestamp}
+MATCH_START_TIMES = {}
 
 
 async def get_player_status(request: web.Request) -> web.Response:
@@ -60,6 +64,8 @@ async def get_player_status(request: web.Request) -> web.Response:
         party_size = [0, 0]
         start_time = None
 
+        tournament_key = (active_tournament.guild_id, active_tournament.channel_id)
+
         try:
             from models.tournament import TournamentPhase as RegularPhase
             from models.br_tournament import BRTournamentPhase
@@ -75,25 +81,46 @@ async def get_player_status(request: web.Request) -> web.Response:
                     status = "IN_LOBBY"
                     details = "BR Tournament Registration"
                     state = f"Players: {len(active_tournament.players)}/48"
+                    # Party size shows slot progress [X/48]
                     party_size = [len(active_tournament.players), 48]
+                    # Clear start time if in lobby
+                    if tournament_key in MATCH_START_TIMES:
+                        del MATCH_START_TIMES[tournament_key]
                 elif phase in ["bermuda", "purgatory", "kalahari"]:
                     status = "IN_GAME"
                     details = f"BR Cup - {phase.capitalize()}"
                     # Find player's team
+                    team_size = 0
                     for team in active_tournament.teams:
                         if player_info["name"] in team.get("players", []):
                             state = f"Team: {team.get('name', 'Unknown')}"
+                            team_size = len(team.get("players", []))
                             break
-                    party_size = [len(active_tournament.players), len(active_tournament.players)]
+                    # Party size shows squad size [X/X]
+                    party_size = [team_size, team_size] if team_size > 0 else [4, 4]
+                    # Record or get start time
+                    if tournament_key not in MATCH_START_TIMES:
+                        MATCH_START_TIMES[tournament_key] = int(time.time())
+                    start_time = MATCH_START_TIMES[tournament_key]
                 elif phase in ["results", "complete"]:
                     status = "none"
+                    # Clear start time when complete
+                    if tournament_key in MATCH_START_TIMES:
+                        del MATCH_START_TIMES[tournament_key]
             else:
                 # Regular tournament
                 if phase in ["SETUP", "DRAFT"]:
                     status = "IN_LOBBY"
                     details = "Tournament Setup"
                     state = f"Phase: {phase}"
-                    party_size = [len(active_tournament.players), getattr(active_tournament, 'size', 8)]
+                    tournament_size = getattr(active_tournament, 'size', 8)
+                    if isinstance(tournament_size, str):
+                        tournament_size = int(tournament_size)
+                    # Party size shows lobby progress [X/total]
+                    party_size = [len(active_tournament.players), tournament_size]
+                    # Clear start time if in lobby
+                    if tournament_key in MATCH_START_TIMES:
+                        del MATCH_START_TIMES[tournament_key]
                 elif phase in ["QUALIFIERS", "SEMIFINALS", "FINALS"]:
                     status = "IN_GAME"
                     details = f"{phase.capitalize()}"
@@ -104,14 +131,24 @@ async def get_player_status(request: web.Request) -> web.Response:
                         getattr(active_tournament, 'circle3', []),
                         getattr(active_tournament, 'circle4', [])
                     ]
+                    team_size = 0
                     for idx, circle in enumerate(circles, 1):
                         for player in circle:
                             if player.get("id") == discord_id:
                                 state = f"Team {idx}"
+                                team_size = len(circle)
                                 break
-                    party_size = [len(active_tournament.players), getattr(active_tournament, 'size', 8)]
+                    # Party size shows team size [4/4] for regular tournaments
+                    party_size = [team_size, team_size] if team_size > 0 else [4, 4]
+                    # Record or get start time
+                    if tournament_key not in MATCH_START_TIMES:
+                        MATCH_START_TIMES[tournament_key] = int(time.time())
+                    start_time = MATCH_START_TIMES[tournament_key]
                 elif phase == "COMPLETE":
                     status = "none"
+                    # Clear start time when complete
+                    if tournament_key in MATCH_START_TIMES:
+                        del MATCH_START_TIMES[tournament_key]
         except Exception as e:
             logger.error(f"Error determining tournament status: {e}")
             status = "none"

@@ -204,6 +204,7 @@ When active, the player's Discord profile will show:
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
 - **Party Size:** [registered/total] (e.g., [8/8], [16/16], [32/32])
+- **Start Time:** None (no timer in lobby)
 
 **DRAFT Phase (Team Selection):**
 - **Details:** "Tournament Setup"
@@ -211,27 +212,31 @@ When active, the player's Discord profile will show:
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
 - **Party Size:** [registered/total]
+- **Start Time:** None (no timer in lobby)
 
 **QUALIFIERS Phase:**
 - **Details:** "Qualifiers"
 - **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [total_players/tournament_size] (e.g., [8/8], [16/16], [32/32])
+- **Party Size:** [4/4] (team size)
+- **Start Time:** Match duration timer (starts when phase begins)
 
 **SEMIFINALS Phase:**
 - **Details:** "Semifinals"
 - **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [players/size]
+- **Party Size:** [4/4] (team size)
+- **Start Time:** Match duration timer
 
 **FINALS Phase:**
 - **Details:** "Finals"
 - **State:** "Team 1" / "Team 2" / "Team 3" / "Team 4"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [players/size]
+- **Party Size:** [4/4] (team size)
+- **Start Time:** Match duration timer
 
 **COMPLETE Phase:**
 - **Status:** Cleared (no Rich Presence)
@@ -244,34 +249,39 @@ When active, the player's Discord profile will show:
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
 - **Party Size:** [X/48]
+- **Start Time:** None (no timer in lobby)
 
 **BERMUDA Phase (Map 1):**
 - **Details:** "BR Cup - Bermuda"
 - **State:** "Team: Team Name" (e.g., "Team: Team Alpha")
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [X/X] (current players)
+- **Party Size:** [4/4] (squad size)
+- **Start Time:** Match duration timer
 
 **BERMUDA Phase (Map 4, if maps=4):**
 - **Details:** "BR Cup - Bermuda"
 - **State:** "Team: Team Name"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [X/X]
+- **Party Size:** [4/4] (squad size)
+- **Start Time:** Match duration timer
 
 **PURGATORY Phase:**
 - **Details:** "BR Cup - Purgatory"
 - **State:** "Team: Team Name"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [X/X]
+- **Party Size:** [4/4] (squad size)
+- **Start Time:** Match duration timer
 
 **KALAHARI Phase:**
 - **Details:** "BR Cup - Kalahari"
 - **State:** "Team: Team Name"
 - **Large Image:** r!z3 logo
 - **Large Text:** "r!z3 Tournament System"
-- **Party Size:** [X/X]
+- **Party Size:** [4/4] (squad size)
+- **Start Time:** Match duration timer
 
 **RESULTS Phase:**
 - **Status:** Cleared (no Rich Presence)
@@ -287,21 +297,26 @@ When active, the player's Discord profile will show:
 
 ### Summary Table
 
-| Tournament Type | Phase | Status | Details | State | Party Size |
-|----------------|-------|--------|---------|-------|------------|
-| Regular | SETUP | IN_LOBBY | Tournament Setup | Phase: SETUP | [X/total] |
-| Regular | DRAFT | IN_LOBBY | Tournament Setup | Phase: DRAFT | [X/total] |
-| Regular | QUALIFIERS | IN_GAME | Qualifiers | Team 1-4 | [X/size] |
-| Regular | SEMIFINALS | IN_GAME | Semifinals | Team 1-4 | [X/size] |
-| Regular | FINALS | IN_GAME | Finals | Team 1-4 | [X/size] |
-| Regular | COMPLETE | none | - | - | - |
-| BR | REGISTRATION | IN_LOBBY | BR Tournament Registration | Players: X/48 | [X/48] |
-| BR | BERMUDA | IN_GAME | BR Cup - Bermuda | Team: Name | [X/X] |
-| BR | PURGATORY | IN_GAME | BR Cup - Purgatory | Team: Name | [X/X] |
-| BR | KALAHARI | IN_GAME | BR Cup - Kalahari | Team: Name | [X/X] |
-| BR | RESULTS | none | - | - | - |
-| BR | COMPLETE | none | - | - | - |
-| None | - | none | - | - | - |
+#### 1. Обычные турниры (Tournament Draft)
+
+| Фаза турнира | Статус в БД | Details | State | Кнопка / Пати | Таймер |
+|-------------|-------------|---------|-------|---------------|---------|
+| Регистрация / Настройка | IN_LOBBY | Tournament Setup | Phase: SETUP | [X/всего] | - |
+| Драфт команд | IN_LOBBY | Tournament Setup | Phase: DRAFT | [X/всего] | - |
+| Квалификации | IN_GAME | Qualifiers | Team 1 (название команды) | [4/4] | ✓ |
+| Полуфинал | IN_GAME | Semifinals | Team 1 (название команды) | [4/4] | ✓ |
+| Финал | IN_GAME | Finals | Team 1 (название команды) | [4/4] | ✓ |
+| Завершён | none | (очищается) | - | - | - |
+
+#### 2. Battle Royale (BR) турниры
+
+| Карта / Фаза | Статус в БД | Details | State | Кнопка / Пати | Таймер |
+|--------------|-------------|---------|-------|---------------|---------|
+| Регистрация | IN_LOBBY | BR Tournament Registration | Players: X/48 | [X/48] | - |
+| Карта: Бермуды | IN_GAME | BR Cup - Bermuda | Team: [Название] | [4/4] | ✓ |
+| Карта: Чистилище | IN_GAME | BR Cup - Purgatory | Team: [Название] | [4/4] | ✓ |
+| Карта: Калахари | IN_GAME | BR Cup - Kalahari | Team: [Название] | [4/4] | ✓ |
+| Подсчёт результатов / Конец | none | (очищается) | - | - | - |
 
 ## Features
 
