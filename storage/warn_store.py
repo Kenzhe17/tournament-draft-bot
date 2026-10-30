@@ -246,8 +246,8 @@ class WarnStore:
                 )
             return None
     
-    async def set_mute_until(self, user_id: int, guild_id: int, mute_until: datetime):
-        """Set mute expiration time for a user."""
+    async def set_mute_until(self, user_id: int, guild_id: int, mute_until: datetime, moderator_id: int = None):
+        """Set mute expiration time for a user. Creates a warning record if none exists."""
         if not self.enabled:
             return
 
@@ -257,12 +257,28 @@ class WarnStore:
 
         pool = await get_pool()
         async with pool.acquire() as conn:
+            # First try to update existing active warning
             result = await conn.execute("""
                 UPDATE warnings
                 SET mute_until = $1
                 WHERE user_id = $2 AND guild_id = $3 AND active = TRUE
             """, mute_until, user_id, guild_id)
-            logger.info(f"set_mute_until: user_id={user_id}, guild_id={guild_id}, mute_until={mute_until}, affected={result}")
+
+            if "UPDATE 0" in result:
+                # No active warning exists, create one
+                logger.info(f"set_mute_until: no active warning found, creating new record for user_id={user_id}, guild_id={guild_id}")
+                if moderator_id is None:
+                    moderator_id = user_id  # Fallback to user_id if no moderator provided
+
+                await conn.execute("""
+                    INSERT INTO warnings (user_id, guild_id, moderator_id, reason, mute_until, expires_at, case_id, warn_number)
+                    VALUES ($1, $2, $3, 'Мут', $4, CURRENT_TIMESTAMP + INTERVAL '7 days',
+                            (SELECT COALESCE(MAX(case_id), 0) + 1 FROM warnings WHERE guild_id = $2),
+                            (SELECT COALESCE(MAX(warn_number), 0) + 1 FROM warnings WHERE user_id = $1 AND guild_id = $2))
+                """, user_id, guild_id, moderator_id, mute_until)
+                logger.info(f"set_mute_until: created new warning record for user_id={user_id}, guild_id={guild_id}")
+            else:
+                logger.info(f"set_mute_until: user_id={user_id}, guild_id={guild_id}, mute_until={mute_until}, affected={result}")
 
     async def clear_mute_until(self, user_id: int, guild_id: int):
         """Clear mute expiration time for a user."""
@@ -290,7 +306,7 @@ class WarnStore:
                 SELECT MIN(mute_until)
                 FROM warnings
                 WHERE user_id = $1 AND guild_id = $2 AND active = TRUE
-                  AND mute_until > $1
+                  AND mute_until > $3
             """, user_id, guild_id, current_time)
 
             return mute_until

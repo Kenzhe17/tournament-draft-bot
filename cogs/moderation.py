@@ -527,9 +527,9 @@ class ModerationCog(commands.Cog):
 
         await участник.add_roles(mute_role, reason=f"Мут от {interaction.user.display_name}")
 
-        # Set mute_until in database
+        # Set mute_until in database (will create warning record if needed)
         mute_until = datetime.now() + duration
-        await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until)
+        await warn_store.set_mute_until(участник.id, interaction.guild.id, mute_until, interaction.user.id)
         logger.info(f"Manual mute: user_id={участник.id}, guild_id={interaction.guild.id}, mute_until={mute_until}, duration={duration}")
 
         # Format duration for display
