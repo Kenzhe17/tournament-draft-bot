@@ -49,6 +49,17 @@ class ModerationCog(commands.Cog):
         except Exception as e:
             logger.error(f"Failed to send mod log: {e}", exc_info=True)
 
+    async def _scheduled_unmute(self, guild: discord.Guild, user: discord.Member, delay_seconds: int):
+        """Scheduled task to unmute user after delay."""
+        await asyncio.sleep(delay_seconds)
+        try:
+            mute_role = guild.get_role(MUTE_ROLE_ID)
+            if mute_role and mute_role in user.roles:
+                await user.remove_roles(mute_role, reason="Автоматическое снятие мьюта")
+                logger.info(f"Auto-unmuted {user.name} after {delay_seconds} seconds")
+        except Exception as e:
+            logger.error(f"Failed to auto-unmute {user.name}: {e}", exc_info=True)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
         """Listen for gif triggers."""
@@ -91,13 +102,13 @@ class ModerationCog(commands.Cog):
             return
 
         if is_warn_gif:
-            # Give 1 minute mute
+            # Give 10 minute mute
             mute_role = message.guild.get_role(MUTE_ROLE_ID)
             if mute_role:
                 await target_user.add_roles(mute_role, reason="Гифка мьют")
 
                 # Use custom message from /молчать
-                mute_msg = f"По воле диктатора участник {target_user.mention} будет молчать 1 мин"
+                mute_msg = f"По воле диктатора участник {target_user.mention} будет молчать 10 мин"
 
                 embed = discord.Embed(
                     description=mute_msg,
@@ -112,18 +123,21 @@ class ModerationCog(commands.Cog):
 
                 # Send detailed log to webhook
                 current_timestamp = format_timestamp(datetime.now())
-                expire_date = format_date(datetime.now() + timedelta(minutes=1))
+                expire_date = format_date(datetime.now() + timedelta(minutes=10))
                 log_embed = discord.Embed(
                     description=(
                         f"**Участник {target_user.mention} ({target_user.name}) был замьючен на всём сервере**\n\n"
                         f"**Модератор:** {message.author.mention} ({message.author.name})\n"
                         f"**Канал:** <#{channel.id}>\n"
-                        f"**Длительность:** 1 мин ({expire_date})\n\n"
+                        f"**Длительность:** 10 мин ({expire_date})\n\n"
                         f"`ID участника: {target_user.id}` • `{current_timestamp}`"
                     ),
                     color=discord.Color.orange()
                 )
                 await self.send_mod_log(log_embed)
+
+                # Schedule unmute after 10 minutes as a background task
+                asyncio.create_task(self._scheduled_unmute(message.guild, target_user, 600))
 
         elif is_unwarn_gif:
             # Check if trying to remove mute from self
