@@ -120,6 +120,8 @@ class BRManagementMenuView(View):
                     current_phase_index = i
                     break
 
+            logger.info(f"BRManagementMenuView: phase={tournament.phase.value}, map_sequence={map_sequence}, current_phase_index={current_phase_index}, is_complete={tournament.are_all_stats_complete(tournament.current_map)}")
+
             # If this is the last map and all stats are complete, show results button
             if current_phase_index == len(map_sequence) - 1:
                 if tournament.are_all_stats_complete(tournament.current_map):
