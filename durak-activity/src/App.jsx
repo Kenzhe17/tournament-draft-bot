@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { discordSdk } from './discord-sdk'
+import { discordSdk, hasFrameId } from './discord-sdk'
 import GameTable from './components/GameTable'
 import Lobby from './components/Lobby'
 import './App.css'
@@ -12,7 +12,19 @@ function App() {
   const [initError, setInitError] = useState(null)
 
   useEffect(() => {
-    // Initialize Discord SDK
+    // If running outside Discord, use mock user immediately
+    if (!hasFrameId) {
+      console.log('Running outside Discord, using mock user')
+      setPlayer({
+        id: '123456789',
+        username: 'TestUser',
+        global_name: 'Test User'
+      })
+      setIsConnected(true)
+      return
+    }
+
+    // Initialize Discord SDK only when running inside Discord
     const initDiscord = async () => {
       try {
         console.log('Initializing Discord SDK...')
@@ -25,7 +37,7 @@ function App() {
       } catch (error) {
         console.error('Failed to initialize Discord SDK:', error)
         setInitError(error.message)
-        // For development or fallback, use mock user
+        // Fallback to mock user if SDK fails
         setPlayer({
           id: '123456789',
           username: 'TestUser',
