@@ -8,7 +8,11 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://*.discord.com https://*.discordsays.com;"
+          "value": "frame-ancestors 'self' https://*.discord.com https://*.discordsays.com https://1279474396079329331.discordsays.com;"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "ALLOWALL"
         }
       ]
     }
