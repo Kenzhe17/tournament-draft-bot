@@ -9,18 +9,23 @@ function App() {
   const [inLobby, setInLobby] = useState(true)
   const [gameState, setGameState] = useState(null)
   const [player, setPlayer] = useState(null)
+  const [initError, setInitError] = useState(null)
 
   useEffect(() => {
     // Initialize Discord SDK
     const initDiscord = async () => {
       try {
+        console.log('Initializing Discord SDK...')
         await discordSdk.ready()
+        console.log('Discord SDK ready')
         const auth = await discordSdk.commands.authenticate()
+        console.log('Authenticated:', auth)
         setPlayer(auth.user)
         setIsConnected(true)
       } catch (error) {
         console.error('Failed to initialize Discord SDK:', error)
-        // For development, use mock user
+        setInitError(error.message)
+        // For development or fallback, use mock user
         setPlayer({
           id: '123456789',
           username: 'TestUser',
@@ -30,7 +35,22 @@ function App() {
       }
     }
 
+    // Timeout after 5 seconds if SDK doesn't respond
+    const timeout = setTimeout(() => {
+      if (!isConnected) {
+        console.warn('SDK initialization timeout, using fallback')
+        setPlayer({
+          id: '123456789',
+          username: 'TestUser',
+          global_name: 'Test User'
+        })
+        setIsConnected(true)
+      }
+    }, 5000)
+
     initDiscord()
+
+    return () => clearTimeout(timeout)
   }, [])
 
   if (!isConnected) {
@@ -38,6 +58,7 @@ function App() {
       <div className="loading-screen">
         <div className="loading-spinner"></div>
         <p>Подключение к Discord...</p>
+        {initError && <p className="error">Ошибка: {initError}</p>}
       </div>
     )
   }

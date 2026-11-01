@@ -26,3 +26,9 @@
   color: #b9bbbe;
   font-size: 16px;
 }
+
+.loading-screen .error {
+  color: #ed4245;
+  font-size: 14px;
+  margin-top: 10px;
+}
