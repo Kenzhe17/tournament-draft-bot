@@ -1,4 +1,4 @@
-import * as DiscordSDK from '@discord/embedded-app-sdk'
+import { DiscordSDK } from '@discord/embedded-app-sdk'
 
 // Create Discord SDK instance
 const discordSdk = new DiscordSDK({
