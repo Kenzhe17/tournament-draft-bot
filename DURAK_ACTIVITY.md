@@ -123,7 +123,7 @@ vercel
 
 ## Discord Developer Portal:
 
-1. Перейти: https://discord.com/developers/applications/1782609823367873392
+1. Перейти: https://discord.com/developers/applications/1279474396079329331
 2. "URL Mappings" → добавить URL деплоя frontend
 3. "Embedded App" → включить, настроить permissions (identify, guilds)
 4. "Information" → добавить Terms и Privacy URLs из Этапа 1
