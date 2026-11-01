@@ -153,6 +153,62 @@ function getNextPlayerIndex(currentIndex, totalPlayers) {
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id)
 
+  socket.on('create_lobby', ({ settings, player }) => {
+    console.log('Creating lobby:', settings, player)
+    
+    // Generate unique lobby ID
+    const lobbyId = `lobby_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    const game = createGame(lobbyId, settings)
+    game.players.push(player)
+    game.hostId = player.id // Track who created the lobby
+    
+    games.set(lobbyId, game)
+    socket.join(lobbyId)
+    socket.lobbyId = lobbyId
+    socket.playerId = player.id
+    
+    socket.emit('lobby_created', { lobbyId, game })
+  })
+
+  socket.on('join_lobby', ({ lobbyId, player }) => {
+    console.log('Player joining lobby:', lobbyId, player)
+    
+    const game = games.get(lobbyId)
+    
+    if (!game) {
+      socket.emit('error', { message: 'Лобби не найдено' })
+      return
+    }
+    
+    if (game.phase !== 'waiting') {
+      socket.emit('error', { message: 'Игра уже началась' })
+      return
+    }
+    
+    if (game.players.length >= game.playerCount) {
+      socket.emit('error', { message: 'Лобби заполнено' })
+      return
+    }
+    
+    // Add player to game
+    if (!game.players.find(p => p.id === player.id)) {
+      game.players.push(player)
+      socket.join(lobbyId)
+      socket.lobbyId = lobbyId
+      socket.playerId = player.id
+      
+      // Notify all players
+      io.to(lobbyId).emit('game_update', game)
+      
+      // If host is ready and enough players, start game
+      if (game.players.length >= game.playerCount) {
+        initializeGame(game)
+        io.to(lobbyId).emit('game_start', game)
+      }
+    }
+  })
+
   socket.on('join_game', ({ gameId, player }) => {
     console.log('Player joining game:', gameId, player)
     
