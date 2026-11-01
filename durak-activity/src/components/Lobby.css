@@ -106,3 +106,102 @@
   color: #5865f2;
   font-weight: bold;
 }
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 10px;
+  background: #40444b;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #b9bbbe;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+.status-dot.connected {
+  background: #3ba55c;
+}
+
+.status-dot.disconnected {
+  background: #ed4245;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.lobby-room {
+  text-align: center;
+}
+
+.lobby-room h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  color: #b9bbbe;
+}
+
+.lobby-room code {
+  background: #40444b;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 16px;
+  color: #5865f2;
+}
+
+.players-list {
+  margin: 20px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.player-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #40444b;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.player-number {
+  color: #b9bbbe;
+  font-weight: bold;
+}
+
+.player-name {
+  color: #ffffff;
+  flex: 1;
+  text-align: left;
+}
+
+.host-badge {
+  color: #5865f2;
+  font-size: 12px;
+}
+
+.waiting-text {
+  color: #b9bbbe;
+  margin-top: 20px;
+  font-style: italic;
+}
+
+.start-button:disabled {
+  background: #4e5058;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.start-button:disabled:hover {
+  background: #4e5058;
+}

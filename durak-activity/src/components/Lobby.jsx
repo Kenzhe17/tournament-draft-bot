@@ -11,12 +11,33 @@ const Lobby = ({ player, onStartGame, onGameStateChange }) => {
   const [socket, setSocket] = useState(null)
   const [players, setPlayers] = useState([])
   const [status, setStatus] = useState('waiting') // waiting, ready, playing
+  const [socketConnected, setSocketConnected] = useState(false)
 
   useEffect(() => {
     // Connect to Socket.IO server
     const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
-    const newSocket = io(serverUrl)
+    console.log('Connecting to Socket.IO server:', serverUrl)
+    
+    const newSocket = io(serverUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true
+    })
     setSocket(newSocket)
+
+    newSocket.on('connect', () => {
+      console.log('Socket.IO connected')
+      setSocketConnected(true)
+    })
+
+    newSocket.on('connect_error', (error) => {
+      console.error('Socket.IO connection error:', error)
+      setSocketConnected(false)
+    })
+
+    newSocket.on('disconnect', () => {
+      console.log('Socket.IO disconnected')
+      setSocketConnected(false)
+    })
 
     newSocket.on('lobby_created', ({ lobbyId: id, game }) => {
       console.log('Lobby created:', id, game)
@@ -99,6 +120,11 @@ const Lobby = ({ player, onStartGame, onGameStateChange }) => {
         {!lobbyId ? (
           <div className="game-settings">
             <h2>Создать лобби</h2>
+            
+            <div className="connection-status">
+              <span className={`status-dot ${socketConnected ? 'connected' : 'disconnected'}`}></span>
+              <span>{socketConnected ? 'Подключено к серверу' : 'Подключение к серверу...'}</span>
+            </div>
 
             <div className="setting-group">
               <label>Режим игры:</label>
@@ -125,7 +151,7 @@ const Lobby = ({ player, onStartGame, onGameStateChange }) => {
               </select>
             </div>
 
-            <button className="start-button" onClick={handleCreateLobby}>
+            <button className="start-button" onClick={handleCreateLobby} disabled={!socketConnected}>
               Создать лобби
             </button>
           </div>
