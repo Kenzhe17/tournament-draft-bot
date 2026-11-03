@@ -39,7 +39,7 @@ class MMTournament:
     message_id: int | None = None
     format: MMFormat = MMFormat.DUO
     phase: MMPhase = MMPhase.SEARCHING
-    players: list[dict] = field(default_factory=list)  # [{"name": str, "id": int, "skill_rating": int}]
+    players: list[dict] = field(default_factory=list)  # [{"name": str, "id": int, "skill_rating": float}]
     teams: list[dict] = field(default_factory=list)  # [{"captain": str, "players": list, "name": str, "kills": int}]
     room_data: dict[str, str] = field(default_factory=dict)  # {"id": str, "password": str}
     created_at: str = ""
@@ -71,7 +71,7 @@ class MMTournament:
             return 4
         return 2
 
-    def add_player(self, name: str, user_id: int, skill_rating: int = 1000) -> bool:
+    def add_player(self, name: str, user_id: int, skill_rating: float = 1.0) -> bool:
         """Добавить игрока в поиск.
 
         Args:

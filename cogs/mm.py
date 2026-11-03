@@ -159,11 +159,11 @@ class MMCog(commands.Cog):
             await interaction.response.send_message(f"❌ Уже {current_players}/{tournament.required_players} игроков.", ephemeral=True)
             return
 
-        # Add test players with varying ELO
-        elo_values = [1200, 1100, 1000, 900, 800, 700]
+        # Add test players with varying skill rating (1.0-10.0)
+        sr_values = [9.5, 8.0, 6.5, 5.0, 3.5, 2.0]
         for i in range(target_players - current_players):
-            elo = elo_values[i % len(elo_values)]
-            tournament.add_player(f"TestPlayer{i+1}", 1000000 + i, elo)
+            sr = sr_values[i % len(sr_values)]
+            tournament.add_player(f"TestPlayer{i+1}", 1000000 + i, sr)
 
         mm_store.set(tournament)
 

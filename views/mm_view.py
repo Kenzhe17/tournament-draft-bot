@@ -83,9 +83,9 @@ class JoinMMButton(Button):
                         )
                         return
 
-        # Get player ELO (used as skill rating)
+        # Get player skill rating from profile
         player_stats = await player_stats_store.get(self.guild_id, user_id)
-        skill_rating = player_stats.elo if player_stats else 1000
+        skill_rating = player_stats.skill_rating if player_stats else 1.0
 
         # Add player
         if not tournament.add_player(user_name, user_id, skill_rating):
@@ -506,25 +506,40 @@ def create_searching_embed(tournament: "MMTournament") -> discord.Embed:
     current = len(tournament.players)
     required = tournament.required_players
 
-    embed = discord.Embed(
-        title=f"🔍 Matchmaking - {format_name}",
-        description=f"Поиск игроков: {current}/{required}",
-        color=discord.Color.blue()
-    )
-
-    # Players list
+    # Players list with SR
+    players_text = ""
     if tournament.players:
-        players_text = "\n".join([f"{i+1}. {p['name']} (SR: {p['skill_rating']})" for i, p in enumerate(tournament.players)])
-        embed.add_field(name="Игроки в поиске", value=players_text, inline=False)
+        for i, p in enumerate(tournament.players):
+            sr_display = f"{p['skill_rating']:.1f}" if isinstance(p['skill_rating'], float) else str(p['skill_rating'])
+            players_text += f"{replace_emojis('white_arrow')} {p['name']} (SR: {sr_display})\n"
+    else:
+        players_text = replace_emojis('white_arrow') + " *Ожидание игроков...*"
 
     # Timer info
+    timer_text = ""
     if tournament.first_player_time:
         first_time = datetime.fromisoformat(tournament.first_player_time)
         elapsed = (datetime.now() - first_time).total_seconds()
         remaining = max(0, 600 - elapsed)  # 10 minutes
         minutes = int(remaining // 60)
         seconds = int(remaining % 60)
-        embed.add_field(name="Таймер", value=f"{minutes}:{seconds:02d}", inline=False)
+        timer_text = f"{replace_emojis('sub_middle')} Таймер: {minutes}:{seconds:02d}\n"
+
+    description = (
+        f"{replace_emojis('white_dot')} **Информация о поиске:**\n"
+        f"{replace_emojis('sub_middle')} Формат: {format_name}\n"
+        f"{replace_emojis('sub_middle')} Игроки: {current}/{required}\n"
+        f"{timer_text}\n"
+        f"{replace_emojis('white_dot')} **Игроки в поиске:**\n"
+        f"{players_text}\n"
+        f"{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже чтобы войти в поиск"
+    )
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} 🔍 MATCHMAKING ПОИСК",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
 
     return embed
 
@@ -533,23 +548,38 @@ def create_playing_embed(tournament: "MMTournament") -> discord.Embed:
     """Create embed for playing phase."""
     format_name = "Duo (2x2)" if tournament.format == MMFormat.DUO else "Squad (4x4)"
 
-    embed = discord.Embed(
-        title=f"🎮 Matchmaking - {format_name}",
-        description="Турнир идет! Введите данные комнаты и затем статистику.",
-        color=discord.Color.green()
-    )
-
     # Room data
+    room_text = ""
     if tournament.room_data.get("id"):
-        room_text = f"ID: {tournament.room_data['id']}"
+        room_text = f"{replace_emojis('sub_middle')} ID: {tournament.room_data['id']}\n"
         if tournament.room_data.get("password"):
-            room_text += f"\nПароль: {tournament.room_data['password']}"
-        embed.add_field(name="Комната", value=room_text, inline=False)
+            room_text += f"{replace_emojis('sub_middle')} Пароль: {tournament.room_data['password']}\n"
+    else:
+        room_text = replace_emojis('white_arrow') + " *Данные комнаты не введены*"
 
     # Teams
+    teams_text = ""
     for i, team in enumerate(tournament.teams):
-        players_text = ", ".join(team["players"])
-        embed.add_field(name=f"{team['name']} (Капитан: {team['captain']})", value=players_text, inline=False)
+        players_str = ", ".join(team["players"])
+        teams_text += f"{replace_emojis('white_dot')} **{team['name']}** (Капитан: {team['captain']})\n"
+        teams_text += f"{replace_emojis('white_arrow')} {players_str}\n"
+
+    description = (
+        f"{replace_emojis('white_dot')} **Информация о матче:**\n"
+        f"{replace_emojis('sub_middle')} Формат: {format_name}\n"
+        f"{replace_emojis('sub_middle')} Статус: Игра идет\n\n"
+        f"{replace_emojis('white_dot')} **Комната:**\n"
+        f"{room_text}\n\n"
+        f"{replace_emojis('white_dot')} **Команды:**\n"
+        f"{teams_text}\n"
+        f"{replace_emojis('a_dot_smaller')} Введите данные комнаты и затем статистику"
+    )
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} 🎮 MATCHMAKING ИГРА",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
 
     return embed
 
@@ -558,30 +588,54 @@ def create_reporting_embed(tournament: "MMTournament") -> discord.Embed:
     """Create embed for reporting phase."""
     format_name = "Duo (2x2)" if tournament.format == MMFormat.DUO else "Squad (4x4)"
 
-    embed = discord.Embed(
-        title=f"📊 Matchmaking - {format_name}",
-        description="Капитаны введите киллы своей команды.",
-        color=discord.Color.orange()
+    # Teams with kills
+    teams_text = ""
+    for i, team in enumerate(tournament.teams):
+        if team['kills'] > 0:
+            status = f"Киллы: {team['kills']}"
+        else:
+            status = "*Ожидает ввода*"
+        teams_text += f"{replace_emojis('white_dot')} **{team['name']}** (Капитан: {team['captain']})\n"
+        teams_text += f"{replace_emojis('white_arrow')} {status}\n"
+
+    description = (
+        f"{replace_emojis('white_dot')} **Информация о матче:**\n"
+        f"{replace_emojis('sub_middle')} Формат: {format_name}\n"
+        f"{replace_emojis('sub_middle')} Статус: Ввод статистики\n\n"
+        f"{replace_emojis('white_dot')} **Статистика команд:**\n"
+        f"{teams_text}\n"
+        f"{replace_emojis('a_dot_smaller')} Капитаны введите киллы своей команды"
     )
 
-    # Teams with kills
-    for i, team in enumerate(tournament.teams):
-        status = f"Киллы: {team['kills']}" if team['kills'] > 0 else "Ожидает ввода"
-        embed.add_field(name=f"{team['name']}", value=status, inline=False)
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} 📊 MATCHMAKING СТАТИСТИКА",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
 
     return embed
 
 
 def create_manual_winner_embed(tournament: "MMTournament", reason: str) -> discord.Embed:
     """Create embed for manual winner selection."""
-    embed = discord.Embed(
-        title="⚠️ Выберите победителя",
-        description=reason,
-        color=discord.Color.red()
+    # Teams with kills
+    teams_text = ""
+    for i, team in enumerate(tournament.teams):
+        teams_text += f"{replace_emojis('white_dot')} **{team['name']}** (Капитан: {team['captain']})\n"
+        teams_text += f"{replace_emojis('white_arrow')} Киллы: {team['kills']}\n"
+
+    description = (
+        f"{replace_emojis('white_dot')} **Причина:** {reason}\n\n"
+        f"{replace_emojis('white_dot')} **Статистика команд:**\n"
+        f"{teams_text}\n"
+        f"{replace_emojis('a_dot_smaller')} Выберите победителя вручную"
     )
 
-    for i, team in enumerate(tournament.teams):
-        embed.add_field(name=f"{team['name']}", value=f"Киллы: {team['kills']}", inline=False)
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} ⚠️ ВЫБЕРИТЕ ПОБЕДИТЕЛЯ",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
 
     return embed
 
@@ -593,22 +647,45 @@ def create_results_embed(tournament: "MMTournament") -> discord.Embed:
     winner_index = tournament.winner_team_index
     winner_team = tournament.teams[winner_index] if winner_index is not None else None
 
-    embed = discord.Embed(
-        title=f"🏆 Matchmaking - {format_name}",
-        color=discord.Color.gold()
-    )
-
+    # Winner section
+    winner_text = ""
     if winner_team:
-        embed.add_field(name="🎉 Победитель", value=winner_team['name'], inline=False)
-        embed.add_field(name="Киллы победителя", value=str(winner_team['kills']), inline=False)
+        players_str = ", ".join(winner_team['players'])
+        winner_text = (
+            f"{replace_emojis('white_arrow')} **{winner_team['name']}** (Капитан: {winner_team['captain']})\n"
+            f"{replace_emojis('white_arrow')} Киллы: {winner_team['kills']}\n"
+            f"{replace_emojis('white_arrow')} Состав: {players_str}"
+        )
 
-    # All teams
+    # Loser section
+    loser_text = ""
     for i, team in enumerate(tournament.teams):
         if i == winner_index:
             continue
-        embed.add_field(name=f"{team['name']}", value=f"Киллы: {team['kills']}", inline=False)
+        players_str = ", ".join(team['players'])
+        loser_text += (
+            f"{replace_emojis('white_dot')} **{team['name']}** (Капитан: {team['captain']})\n"
+            f"{replace_emojis('white_arrow')} Киллы: {team['kills']}\n"
+            f"{replace_emojis('white_arrow')} Состав: {players_str}\n"
+        )
+
+    description = (
+        f"{replace_emojis('white_dot')} **Информация о матче:**\n"
+        f"{replace_emojis('sub_middle')} Формат: {format_name}\n"
+        f"{replace_emojis('sub_middle')} Статус: Завершен\n\n"
+        f"{replace_emojis('white_dot')} **Победитель:**\n"
+        f"{winner_text}\n\n"
+        f"{replace_emojis('white_dot')} **Проигравшая команда:**\n"
+        f"{loser_text}\n"
+    )
 
     if tournament.manual_winner:
-        embed.set_footer(text="Победитель выбран вручную")
+        description += f"{replace_emojis('a_dot_smaller')} Победитель выбран вручную\n"
+
+    embed = discord.Embed(
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ МАТЧМАКИНГА",
+        description=description,
+        color=discord.Color.from_rgb(69, 69, 69)
+    )
 
     return embed
