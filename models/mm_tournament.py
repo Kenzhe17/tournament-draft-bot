@@ -37,6 +37,7 @@ class MMTournament:
     guild_id: int
     channel_id: int
     message_id: int | None = None
+    match_message_id: int | None = None  # Message ID in match channel
     format: MMFormat = MMFormat.DUO
     phase: MMPhase = MMPhase.SEARCHING
     players: list[dict] = field(default_factory=list)  # [{"name": str, "id": int, "skill_rating": float}]
@@ -255,6 +256,7 @@ class MMTournament:
             "guild_id": self.guild_id,
             "channel_id": self.channel_id,
             "message_id": self.message_id,
+            "match_message_id": self.match_message_id,
             "format": self.format.value,
             "phase": self.phase.value,
             "players": self.players,
@@ -274,6 +276,7 @@ class MMTournament:
             guild_id=data.get("guild_id", 0),
             channel_id=data.get("channel_id", 0),
             message_id=data.get("message_id"),
+            match_message_id=data.get("match_message_id"),
             format=MMFormat(data.get("format", "duo")),
             phase=MMPhase(data.get("phase", "searching")),
             players=data.get("players", []),

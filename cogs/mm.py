@@ -12,12 +12,14 @@ from discord.ext import commands
 from config import BOT_OWNER_ID
 from models.mm_tournament import MMFormat, MMPhase
 from storage.mm_store import mm_store
-from views.mm_view import MMRegistrationView, create_searching_embed
+from views.mm_view import MMRegistrationView, create_searching_embed, create_playing_embed
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
 logger = logging.getLogger(__name__)
+
+MM_MATCH_CHANNEL_ID = 1564629925494001744
 
 
 class MMCog(commands.Cog):
@@ -47,21 +49,7 @@ class MMCog(commands.Cog):
             )
             return
 
-        # Проверка на существующий турнир в канале
-        existing = mm_store.get(interaction.guild_id, interaction.channel_id)
-        if existing:
-            if existing.phase == MMPhase.COMPLETE:
-                # Delete completed tournament
-                mm_store.delete(interaction.guild_id, interaction.channel_id)
-                self._cancel_timer(interaction.guild_id, interaction.channel_id)
-            else:
-                await interaction.response.send_message(
-                    f"❌ В этом канале уже идет поиск. {len(existing.players)}/{existing.required_players} игроков.",
-                    ephemeral=True
-                )
-                return
-
-        # Создать турнир
+        # Создать новый турнир (всегда)
         from models.mm_tournament import MMTournament
         format_mode = MMFormat.DUO if format == "duo" else MMFormat.SQUAD
         tournament = MMTournament(

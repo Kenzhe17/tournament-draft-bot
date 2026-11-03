@@ -68,17 +68,17 @@ class JoinMMButton(Button):
             await interaction.response.send_message("❌ Турнир завершен. Запустите новый поиск.", ephemeral=True)
             return
 
-        # Check if already in another MM tournament
+        # Check if already in any active MM tournament (including this one)
         user_id = interaction.user.id
         user_name = interaction.user.display_name
 
         all_mm = mm_store.get_by_guild(self.guild_id)
         for mm in all_mm:
-            if mm.id != tournament.id and mm.phase.value != "complete":
+            if mm.phase.value not in ["complete", "searching"]:
                 for player in mm.players:
                     if player["id"] == user_id:
                         await interaction.response.send_message(
-                            f"❌ Вы уже участвуете в другом поиске в канале <#{mm.channel_id}>",
+                            f"❌ Вы уже участвуете в активном матче. Завершите его чтобы войти в новый поиск.",
                             ephemeral=True
                         )
                         return
@@ -107,10 +107,31 @@ class JoinMMButton(Button):
             tournament.form_teams_balanced()
             mm_store.set(tournament)
 
-            # Update to playing view
-            embed = create_playing_embed(tournament)
-            view = MMPlayingView(self.guild_id, self.channel_id, tournament)
-            await interaction.edit_original_response(embed=embed, view=view)
+            # Send match embed to match channel
+            try:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_embed = create_playing_embed(tournament)
+                    match_view = MMPlayingView(self.guild_id, self.channel_id, tournament)
+                    match_message = await match_channel.send(embed=match_embed, view=match_view)
+                    # Store match message ID in tournament
+                    tournament.match_message_id = match_message.id
+                    mm_store.set(tournament)
+            except Exception as e:
+                logger.error(f"Error sending match embed: {e}")
+
+            # Update main embed to show new search is available
+            new_tournament = MMTournament(
+                id="",
+                guild_id=self.guild_id,
+                channel_id=self.channel_id,
+                format=tournament.format,
+            )
+            mm_store.set(new_tournament)
+
+            new_embed = create_searching_embed(new_tournament)
+            new_view = MMRegistrationView(self.guild_id, self.channel_id, new_tournament)
+            await interaction.edit_original_response(embed=new_embed, view=new_view)
 
 
 class LeaveMMButton(Button):
@@ -217,10 +238,19 @@ class MMRoomModal(Modal):
         }
         mm_store.set(self.tournament)
 
-        embed = create_playing_embed(self.tournament)
-        view = MMPlayingView(self.guild_id, self.channel_id, self.tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
-        await interaction.followup.send("✅ Данные комнаты сохранены!", ephemeral=True)
+        # Update match message
+        try:
+            if self.tournament.match_message_id:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_message = await match_channel.fetch_message(self.tournament.match_message_id)
+                    embed = create_playing_embed(self.tournament)
+                    view = MMPlayingView(self.guild_id, self.channel_id, self.tournament)
+                    await match_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating match message: {e}")
+
+        await interaction.response.send_message("✅ Данные комнаты сохранены!", ephemeral=True)
 
 
 class GoToReportingButton(Button):
@@ -343,10 +373,19 @@ class MMKillsModal(Modal):
         self.tournament.set_team_kills(self.team_index, kills)
         mm_store.set(self.tournament)
 
-        embed = create_reporting_embed(self.tournament)
-        view = MMReportingView(self.guild_id, self.channel_id, self.tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
-        await interaction.followup.send(f"✅ Киллы команды {self.team_index + 1} сохранены: {kills}", ephemeral=True)
+        # Update match message
+        try:
+            if self.tournament.match_message_id:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_message = await match_channel.fetch_message(self.tournament.match_message_id)
+                    embed = create_reporting_embed(self.tournament)
+                    view = MMReportingView(self.guild_id, self.channel_id, self.tournament)
+                    await match_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating match message: {e}")
+
+        await interaction.response.send_message(f"✅ Киллы команды {self.team_index + 1} сохранены: {kills}", ephemeral=True)
 
 
 class FinishReportingButton(Button):
@@ -376,7 +415,16 @@ class FinishReportingButton(Button):
             # Show manual winner selection
             embed = create_manual_winner_embed(tournament, message)
             view = MMManualWinnerView(self.guild_id, self.channel_id, tournament)
-            await interaction.response.edit_message(embed=embed, view=view)
+            # Update match message
+            try:
+                if tournament.match_message_id:
+                    match_channel = interaction.guild.get_channel(1564629925494001744)
+                    if match_channel:
+                        match_message = await match_channel.fetch_message(tournament.match_message_id)
+                        await match_message.edit(embed=embed, view=view)
+            except Exception as e:
+                logger.error(f"Error updating match message: {e}")
+            await interaction.response.edit_message(content="❌ Статистика не совпадает. Выберите победителя вручную в канале матчей.", embed=None, view=None)
             return
 
         # Auto-determine winner
@@ -392,7 +440,16 @@ class FinishReportingButton(Button):
 
         embed = create_results_embed(tournament)
         view = MMCompleteView(self.guild_id, self.channel_id)
-        await interaction.response.edit_message(embed=embed, view=view)
+        # Update match message
+        try:
+            if tournament.match_message_id:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_message = await match_channel.fetch_message(tournament.match_message_id)
+                    await match_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating match message: {e}")
+        await interaction.response.send_message("✅ Турнир завершен!", ephemeral=True)
 
 
 class MMManualWinnerView(View):
@@ -432,7 +489,18 @@ class SelectTeamAButton(Button):
 
         embed = create_results_embed(self.tournament)
         view = MMCompleteView(self.guild_id, self.channel_id)
+        # Update match message
+        try:
+            if self.tournament.match_message_id:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_message = await match_channel.fetch_message(self.tournament.match_message_id)
+                    await match_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating match message: {e}")
+
         await interaction.response.edit_message(embed=embed, view=view)
+
 
 
 class SelectTeamBButton(Button):
@@ -459,7 +527,18 @@ class SelectTeamBButton(Button):
 
         embed = create_results_embed(self.tournament)
         view = MMCompleteView(self.guild_id, self.channel_id)
+        # Update match message
+        try:
+            if self.tournament.match_message_id:
+                match_channel = interaction.guild.get_channel(1564629925494001744)
+                if match_channel:
+                    match_message = await match_channel.fetch_message(self.tournament.match_message_id)
+                    await match_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating match message: {e}")
+
         await interaction.response.edit_message(embed=embed, view=view)
+
 
 
 class MMCompleteView(View):
@@ -469,33 +548,7 @@ class MMCompleteView(View):
         super().__init__(timeout=None)
         self.guild_id = guild_id
         self.channel_id = channel_id
-
-        self.add_item(NewSearchButton(guild_id, channel_id))
-
-
-class NewSearchButton(Button):
-    """Кнопка для нового поиска."""
-
-    def __init__(self, guild_id: int, channel_id: int):
-        super().__init__(
-            style=discord.ButtonStyle.primary,
-            label="Новый поиск",
-            emoji="🔍",
-            custom_id=f"mm_new:{guild_id}:{channel_id}"
-        )
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        from storage.mm_store import mm_store
-
-        # Delete old tournament
-        mm_store.delete(self.guild_id, self.channel_id)
-
-        # Create new tournament (need format from original)
-        # This button should recreate with same format - need to store format
-        # For now, just delete and let user run /mm command again
-        await interaction.response.send_message("❌ Запустите новый поиск через команду `/mm duo` или `/mm squad`", ephemeral=True)
+        # No buttons - tournament is complete
 
 
 # Embed builders
