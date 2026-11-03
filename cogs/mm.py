@@ -139,8 +139,8 @@ class MMCog(commands.Cog):
             await interaction.response.send_message("❌ Поиск уже не в фазе регистрации.", ephemeral=True)
             return
 
-        # Fill to half of required players
-        target_players = tournament.required_players // 2
+        # Fill to almost full (leave 1 spot)
+        target_players = tournament.required_players - 1
         current_players = len(tournament.players)
 
         if current_players >= target_players:
