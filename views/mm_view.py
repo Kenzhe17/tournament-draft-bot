@@ -598,15 +598,16 @@ def create_searching_embed(tournament: "MMTournament") -> discord.Embed:
 
 
 def create_playing_embed(tournament: "MMTournament") -> discord.Embed:
-    """Create embed for playing phase (tournament style)."""
+    """Create embed for playing phase (same style as /tournament create)."""
     format_name = "Duo (2x2)" if tournament.format == MMFormat.DUO else "Squad (4x4)"
 
-    # Teams with players and SR
-    teams_text = ""
-    for i, team in enumerate(tournament.teams):
-        players_str = ", ".join(team["players"])
-        teams_text += f"{replace_emojis('white_dot')} **{team['name']}** (Капитан: {team['captain']})\n"
-        teams_text += f"{replace_emojis('white_arrow')} Состав: {players_str}\n"
+    # Build players list with SR (like tournament pool)
+    player_strings = []
+    for player in tournament.players:
+        sr_display = f"{player['skill_rating']:.1f}" if isinstance(player['skill_rating'], float) else str(player['skill_rating'])
+        player_strings.append(f"{player['name']} (SR: {sr_display})")
+
+    players_text = ", ".join(player_strings) if player_strings else "*"
 
     # Room data
     room_text = ""
@@ -618,18 +619,20 @@ def create_playing_embed(tournament: "MMTournament") -> discord.Embed:
         room_text = replace_emojis('white_arrow') + " *Данные комнаты не введены*"
 
     description = (
-        f"{replace_emojis('white_dot')} **Информация о матче:**\n"
-        f"{replace_emojis('sub_middle')} Формат: {format_name}\n"
-        f"{replace_emojis('sub_middle')} Статус: Игра идет\n\n"
-        f"{replace_emojis('white_dot')} **Команды:**\n"
-        f"{teams_text}\n"
+        f"{replace_emojis('white_arrow')} **Организатор:** Автоматический\n\n"
+        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+        f"{replace_emojis('sub_middle')} Размер: {format_name}\n"
+        f"{replace_emojis('sub_middle')} Режим формирования: Skill Rating\n"
+        f"{replace_emojis('sub_directory')} Статус регистрации: Закрыто\n\n"
+        f"{replace_emojis('white_dot')} **Пул игроков:**\n"
+        f"{replace_emojis('white_arrow')} {players_text}\n\n"
         f"{replace_emojis('white_dot')} **Комната:**\n"
         f"{room_text}\n"
-        f"{replace_emojis('a_dot_smaller')} Автоматический матч - введите данные комнаты и статистику"
+        f"{replace_emojis('a_dot_smaller')} Матч начался - введите данные комнаты и статистику"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} {format_name} | АВТОМАТИЧЕСКИЙ",
+        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} {format_name} | ЗАКРЫТО | Skill Rating",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
