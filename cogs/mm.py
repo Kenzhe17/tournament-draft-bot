@@ -131,6 +131,58 @@ class MMCog(commands.Cog):
             self._timers[key].cancel()
             del self._timers[key]
 
+    @app_commands.command(name="mmtest", description="Заполнить поиск тестовыми игроками")
+    async def mm_test(self, interaction: discord.Interaction) -> None:
+        """Заполнить поиск тестовыми игроками."""
+        # Проверка на владельца бота
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message(
+                "❌ Эта команда доступна только владельцу бота.",
+                ephemeral=True
+            )
+            return
+
+        tournament = mm_store.get(interaction.guild_id, interaction.channel_id)
+        if not tournament:
+            await interaction.response.send_message("❌ Нет активного поиска в этом канале.", ephemeral=True)
+            return
+
+        if tournament.phase != MMPhase.SEARCHING:
+            await interaction.response.send_message("❌ Поиск уже не в фазе регистрации.", ephemeral=True)
+            return
+
+        # Fill to half of required players
+        target_players = tournament.required_players // 2
+        current_players = len(tournament.players)
+
+        if current_players >= target_players:
+            await interaction.response.send_message(f"❌ Уже {current_players}/{tournament.required_players} игроков.", ephemeral=True)
+            return
+
+        # Add test players with varying ELO
+        elo_values = [1200, 1100, 1000, 900, 800, 700]
+        for i in range(target_players - current_players):
+            elo = elo_values[i % len(elo_values)]
+            tournament.add_player(f"TestPlayer{i+1}", 1000000 + i, elo)
+
+        mm_store.set(tournament)
+
+        # Update embed
+        embed = create_searching_embed(tournament)
+        view = MMRegistrationView(interaction.guild_id, interaction.channel_id, tournament)
+
+        # Update original message
+        try:
+            if tournament.message_id:
+                channel = interaction.guild.get_channel(tournament.channel_id)
+                if channel:
+                    message = await channel.fetch_message(tournament.message_id)
+                    await message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Error updating message: {e}")
+
+        await interaction.response.send_message(f"✅ Добавлено {target_players - current_players} тестовых игроков. {len(tournament.players)}/{tournament.required_players}", ephemeral=True)
+
 
 async def setup(bot: "TournamentBot") -> None:
     """Setup the cog."""
