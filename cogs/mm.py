@@ -176,14 +176,30 @@ class MMCog(commands.Cog):
                 if not search:
                     return
 
-                # Отправить уведомление о поиске
+                # Отправить уведомление о поиске в канал уведомлений
                 try:
+                    from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
+                    notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
                     search_channel = self.bot.get_channel(channel_id)
-                    if search_channel:
+                    
+                    if notification_channel and search_channel:
                         current = len(search.players)
                         required = search.required_players
-                        await search_channel.send(
-                            f"🔍 Прямо сейчас поиск игроков в канале {search_channel.mention}! ({current}/{required})"
+                        
+                        role = self.bot.get_guild(guild_id).get_role(NOTIFICATION_ROLE_ID)
+                        role_mention = role.mention if role else ""
+                        
+                        embed = discord.Embed(
+                            title="🔍 Поиск игроков",
+                            description=f"Прямо сейчас поиск игроков в канале {search_channel.mention}!",
+                            color=discord.Color.from_rgb(69, 69, 69)
+                        )
+                        embed.add_field(name="Игроки", value=f"{current}/{required}", inline=True)
+                        
+                        await notification_channel.send(
+                            content=role_mention,
+                            embed=embed,
+                            allowed_mentions=discord.AllowedMentions(roles=True)
                         )
                 except Exception as e:
                     logger.error(f"Error sending search notification: {e}")
