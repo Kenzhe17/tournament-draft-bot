@@ -182,7 +182,7 @@ class UltimatumStore:
                     losses=row["losses"],
                     status=PlayerStatus(row["status"]),
                     final_place=row["final_place"],
-                    elimination_round=row["elimination_round"],
+                    elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
                     created_at=row["created_at"],
                 )
                 for row in rows
@@ -210,7 +210,7 @@ class UltimatumStore:
                     losses=row["losses"],
                     status=PlayerStatus(row["status"]),
                     final_place=row["final_place"],
-                    elimination_round=row["elimination_round"],
+                    elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
                     created_at=row["created_at"],
                 )
                 for row in rows
@@ -242,7 +242,7 @@ class UltimatumStore:
                 losses=row["losses"],
                 status=PlayerStatus(row["status"]),
                 final_place=row["final_place"],
-                elimination_round=row["elimination_round"],
+                elimination_round=row.get("elimination_round"),  # Use .get() for migration safety
                 created_at=row["created_at"],
             )
 

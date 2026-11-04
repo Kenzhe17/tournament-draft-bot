@@ -29,12 +29,10 @@ class UltimatumCog(commands.Cog):
     ultimatum_group = app_commands.Group(name="ultimatum", description="Ultimatum Solo Tournament")
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
-    @app_commands.describe(name="Tournament name")
     @app_commands.checks.has_permissions(administrator=True)
     async def create_tournament(
         self,
-        interaction: discord.Interaction,
-        name: str
+        interaction: discord.Interaction
     ) -> None:
         """Create a new tournament."""
         # Check for existing active tournament
@@ -46,9 +44,12 @@ class UltimatumCog(commands.Cog):
             )
             return
 
+        # Generate tournament name
+        tournament_name = f"Ultimatum Solo #{interaction.created_at.strftime('%Y%m%d')}"
+
         # Create tournament
         tournament = await ultimatum_store.create_tournament(
-            name=name,
+            name=tournament_name,
             guild_id=interaction.guild_id,
             created_by=interaction.user.id
         )
@@ -196,26 +197,26 @@ class UltimatumCog(commands.Cog):
         }
 
         emoji = status_emoji.get(tournament.status, "❓")
+        status_text = "Открыто" if tournament.status == TournamentStatus.REGISTRATION else tournament.status.value
 
-        # Build description in regular tournament style
-        description_parts = []
-        description_parts.append(f"{replace_emojis('white_arrow')} **{emoji} УЛЬТИМАТУМ СОЛО: {tournament.name}**")
-        description_parts.append("")
-        description_parts.append(f"{replace_emojis('white_dot')} **Статус:** {tournament.status.value}")
-        description_parts.append(f"{replace_emojis('white_dot')} **Раунд:** {tournament.current_round}")
-        description_parts.append("")
-        description_parts.append(f"{replace_emojis('white_dot')} **Режим:** Solo Elimination (2 losses = out)")
-        description_parts.append(f"{replace_emojis('white_dot')} **Формат:** 16 игроков")
-        description_parts.append(f"{replace_emojis('white_dot')} **Гранд-финал:** 4-0 Direct Pass / 5-1 Qualifier")
-        description_parts.append("")
-        description_parts.append(f"{replace_emojis('a_star')} Используйте кнопки ниже для управления")
+        # Build description in regular tournament style like build_setup_embed
+        description = (
+            f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.created_by}>\n\n"
+            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
+            f"{replace_emojis('sub_middle')} Размер: 16\n"
+            f"{replace_emojis('sub_middle')} Режим формирования: RANDOM\n"
+            f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
+            f"{replace_emojis('white_dot')} **Пул игроков:**\n"
+            f"{replace_emojis('white_arrow')} *\n\n"
+            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
+            f"{replace_emojis('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
+        )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ТУРНИР",
-            description="\n".join(description_parts),
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} 16 | {status_text} | RANDOM",
+            description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1095082979505274880/1108998207315419218/tournament.png")
 
         return embed
 
