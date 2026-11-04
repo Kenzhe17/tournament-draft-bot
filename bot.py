@@ -213,7 +213,7 @@ class TournamentBot(commands.Bot):
             return build_draft_view(tournament)
 
         if phase == TournamentPhase.TEAMS:
-            return TeamsView(gid, tournament)
+            return TeamsView(gid, tournament.channel_id, tournament)
 
         if phase == TournamentPhase.QUALIFIERS:
             return QualifiersView(
