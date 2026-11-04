@@ -130,29 +130,12 @@ class MMCog(commands.Cog):
         """Создать обычный турнир из поиска."""
         guild = interaction_channel.guild
         
-        # Проверить активные турниры в обоих каналах
-        active_tournaments = []
-        for channel_id in [TOURNAMENT_CHANNEL_ID, TOURNAMENT_CHANNEL_ID_2]:
-            tournament_channel = self.bot.get_channel(channel_id)
-            if tournament_channel:
-                tournament = store.get(guild.id, tournament_channel.id)
-                if tournament and tournament.phase != TournamentPhase.COMPLETE:
-                    active_tournaments.append(tournament_channel.id)
-        
-        if len(active_tournaments) >= 2:
-            # Обновить embed с сообщением о лимите
-            search.has_limit_reached = True
-            embed = build_search_embed(search, guild)
-            view = build_search_view(self.bot, search)
-            try:
-                message = await interaction_channel.fetch_message(search.message_id)
-                await message.edit(embed=embed, view=view)
-            except Exception as e:
-                logger.error(f"Error updating search embed with limit message: {e}")
+        # Использовать запомненный канал
+        tournament_channel_id = search.tournament_channel_id
+        if not tournament_channel_id:
+            logger.error("Tournament channel not set for search")
             return
 
-        # Выбрать свободный канал
-        tournament_channel_id = TOURNAMENT_CHANNEL_ID if TOURNAMENT_CHANNEL_ID not in active_tournaments else TOURNAMENT_CHANNEL_ID_2
         tournament_channel = self.bot.get_channel(tournament_channel_id)
 
         if not tournament_channel:
@@ -240,34 +223,29 @@ class MMCog(commands.Cog):
         )
 
     async def reset_search_limit(self, guild_id: int) -> None:
-        """Сбросить лимит поиска если освобождался турнир."""
-        # Проверить активные турниры
-        active_tournaments = []
-        for channel_id in [TOURNAMENT_CHANNEL_ID, TOURNAMENT_CHANNEL_ID_2]:
-            tournament_channel = self.bot.get_channel(channel_id)
-            if tournament_channel:
-                tournament = store.get(guild_id, tournament_channel.id)
-                if tournament and tournament.phase != TournamentPhase.COMPLETE:
-                    active_tournaments.append(tournament_channel.id)
-        
-        # Если менее 2 активных турниров, сбросить лимит в поиске
-        if len(active_tournaments) < 2:
-            all_searches = mm_search_store.get_by_guild(guild_id)
-            for search in all_searches:
-                if search.has_limit_reached:
-                    search.has_limit_reached = False
-                    mm_search_store.set(search)
-                    
-                    # Обновить embed
-                    try:
-                        channel = self.bot.get_channel(search.channel_id)
-                        if channel:
-                            message = await channel.fetch_message(search.message_id)
-                            embed = build_search_embed(search, channel.guild)
-                            view = build_search_view(self.bot, search)
-                            await message.edit(embed=embed, view=view)
-                    except Exception as e:
-                        logger.error(f"Error resetting search limit: {e}")
+        """Сбросить выбранный канал поиска если освободился турнир."""
+        all_searches = mm_search_store.get_by_guild(guild_id)
+        for search in all_searches:
+            if search.tournament_channel_id:
+                # Проверить что канал свободен
+                tournament_channel = self.bot.get_channel(search.tournament_channel_id)
+                if tournament_channel:
+                    tournament = store.get(guild_id, tournament_channel.id)
+                    if not tournament or tournament.phase == TournamentPhase.COMPLETE:
+                        # Канал свободен, сбросить выбор
+                        search.tournament_channel_id = 0
+                        mm_search_store.set(search)
+                        
+                        # Обновить embed если это необходимо
+                        try:
+                            channel = self.bot.get_channel(search.channel_id)
+                            if channel:
+                                message = await channel.fetch_message(search.message_id)
+                                embed = build_search_embed(search, channel.guild)
+                                view = build_search_view(self.bot, search)
+                                await message.edit(embed=embed, view=view)
+                        except Exception as e:
+                            logger.error(f"Error resetting search channel: {e}")
 
 
 async def setup(bot: TournamentBot) -> None:

@@ -28,19 +28,13 @@ def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
     required = search.required_players
     current = len(search.players)
 
-    description = replace_emojis(f":white_dot: Информация о поиске:\n"
-                                f":sub_middle: Формат: {format_name}\n"
-                                f":sub_middle: Игроки: {current}/{required}\n"
-                                f":sub_middle: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}")
-    
-    if search.has_limit_reached:
-        description += replace_emojis("\n\n:warning: Достигнут лимит активных турниров (2). Ожидайте завершения одного из турниров.")
-    
-    description += replace_emojis("\n\n:white_dot: Игроки в поиске:")
-
     embed = discord.Embed(
         title=replace_emojis(f":a_star: :winner: {format_name} | ПОИСК"),
-        description=description,
+        description=replace_emojis(f":white_dot: Информация о поиске:\n"
+                                   f":sub_middle: Формат: {format_name}\n"
+                                   f":sub_middle: Игроки: {current}/{required}\n"
+                                   f":sub_middle: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}\n\n"
+                                   f":white_dot: Игроки в поиске:"),
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
@@ -86,13 +80,6 @@ class JoinSearchButton(discord.ui.Button):
             await interaction.response.send_message("❌ Поиск не найден.", ephemeral=True)
             return
 
-        if search.has_limit_reached:
-            await interaction.response.send_message(
-                "❌ Достигнут лимит активных турниров (2). Ожидайте завершения одного из турниров.",
-                ephemeral=True
-            )
-            return
-
         if search.is_full:
             await interaction.response.send_message("❌ Поиск уже заполнен.", ephemeral=True)
             return
@@ -114,6 +101,51 @@ class JoinSearchButton(discord.ui.Button):
                 if interaction.user.id in other_search.player_user_ids.values():
                     await interaction.response.send_message(
                         "❌ Вы уже в другом поиске. Выйдите из него сначала.",
+                        ephemeral=True
+                    )
+                    return
+
+        # Если это первый игрок - выбрать канал для турнира
+        if not search.tournament_channel_id:
+            # Проверить канал 1
+            channel_1 = self.bot.get_channel(1549809898643001484)
+            if channel_1:
+                tournament_1 = store.get(self.guild_id, channel_1.id)
+                if not tournament_1 or tournament_1.phase == TournamentPhase.COMPLETE:
+                    search.tournament_channel_id = channel_1.id
+                    mm_search_store.set(search)
+                else:
+                    # Канал 1 занят, проверить канал 2
+                    channel_2 = self.bot.get_channel(1567611808884465814)
+                    if channel_2:
+                        tournament_2 = store.get(self.guild_id, channel_2.id)
+                        if not tournament_2 or tournament_2.phase == TournamentPhase.COMPLETE:
+                            search.tournament_channel_id = channel_2.id
+                            mm_search_store.set(search)
+                        else:
+                            # Оба канала заняты
+                            await interaction.response.send_message(
+                                "❌ Все каналы для турниров заняты. Ожидайте завершения одного из турниров.",
+                                ephemeral=True
+                            )
+                            return
+                    else:
+                        await interaction.response.send_message("❌ Канал для турниров не найден.", ephemeral=True)
+                        return
+            else:
+                await interaction.response.send_message("❌ Канал для турниров не найден.", ephemeral=True)
+                return
+        else:
+            # Если канал уже выбран, проверить что он свободен
+            tournament_channel = self.bot.get_channel(search.tournament_channel_id)
+            if tournament_channel:
+                tournament = store.get(self.guild_id, tournament_channel.id)
+                if tournament and tournament.phase != TournamentPhase.COMPLETE:
+                    # Канал занят, сбросить выбор
+                    search.tournament_channel_id = 0
+                    mm_search_store.set(search)
+                    await interaction.response.send_message(
+                        "❌ Канал для турниров занят. Повторите попытку.",
                         ephemeral=True
                     )
                     return

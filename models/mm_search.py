@@ -23,7 +23,7 @@ class MMSearch:
     player_user_ids: dict[str, int] = field(default_factory=dict)  # name -> user_id
     created_at: str = field(default_factory=lambda: __import__('datetime').datetime.now().isoformat())
     timer_started: bool = False  # Таймер запущен?
-    has_limit_reached: bool = False  # Достигнут лимит активных турниров
+    tournament_channel_id: int = 0  # Канал в котором будет создан турнир
 
     @property
     def required_players(self) -> int:
@@ -59,7 +59,7 @@ class MMSearch:
         self.players = []
         self.player_user_ids = {}
         self.timer_started = False
-        self.has_limit_reached = False
+        self.tournament_channel_id = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Конвертировать в словарь для JSON."""
@@ -72,7 +72,7 @@ class MMSearch:
             "player_user_ids": self.player_user_ids,
             "created_at": self.created_at,
             "timer_started": self.timer_started,
-            "has_limit_reached": self.has_limit_reached,
+            "tournament_channel_id": self.tournament_channel_id,
         }
 
     @classmethod
@@ -87,5 +87,5 @@ class MMSearch:
             player_user_ids=data.get("player_user_ids", {}),
             created_at=data.get("created_at", ""),
             timer_started=data.get("timer_started", False),
-            has_limit_reached=data.get("has_limit_reached", False),
+            tournament_channel_id=data.get("tournament_channel_id", 0),
         )
