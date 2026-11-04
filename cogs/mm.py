@@ -39,17 +39,43 @@ class MMCog(commands.Cog):
 
     mm_group = app_commands.Group(name="mm", description="Matchmaking поиск")
 
-    @mm_group.command(name="duo", description="Создать поиск Duo (2x2, 4 игрока)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def mm_duo(self, interaction: discord.Interaction) -> None:
-        """Создать поиск для формата Duo."""
-        await self._create_search(interaction, MMFormat.DUO)
-
     @mm_group.command(name="squad", description="Создать поиск Squad (4x4, 8 игроков)")
     @app_commands.checks.has_permissions(administrator=True)
     async def mm_squad(self, interaction: discord.Interaction) -> None:
         """Создать поиск для формата Squad."""
         await self._create_search(interaction, MMFormat.SQUAD)
+
+    @mm_group.command(name="delete", description="Удалить все поиски на сервере")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def mm_delete(self, interaction: discord.Interaction) -> None:
+        """Удалить все поиски на сервере."""
+        all_searches = mm_search_store.get_by_guild(interaction.guild_id)
+        deleted_count = 0
+        
+        for search in all_searches:
+            try:
+                # Удалить сообщение если есть
+                channel = self.bot.get_channel(search.channel_id)
+                if channel and search.message_id:
+                    try:
+                        message = await channel.fetch_message(search.message_id)
+                        await message.delete()
+                    except Exception:
+                        pass
+                
+                # Удалить из хранилища
+                mm_search_store.delete(search.guild_id, search.channel_id)
+                deleted_count += 1
+                
+                # Отменить таймер
+                self._cancel_search_timer(search.guild_id, search.channel_id)
+            except Exception as e:
+                logger.error(f"Error deleting search: {e}")
+        
+        await interaction.response.send_message(
+            f"✅ Удалено {deleted_count} поисков на сервере.",
+            ephemeral=True
+        )
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
