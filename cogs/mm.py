@@ -368,12 +368,12 @@ class MMCog(commands.Cog):
         all_searches = mm_search_store.get_by_guild(guild_id)
         for search in all_searches:
             if search.tournament_channel_id:
-                # Проверить что канал свободен
+                # Проверить что канал свободен или турнир завершен
                 tournament_channel = self.bot.get_channel(search.tournament_channel_id)
                 if tournament_channel:
                     tournament = store.get(guild_id, tournament_channel.id)
                     if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                        # Канал свободен, разблокировать и сбросить выбор
+                        # Канал свободен или турнир завершен, разблокировать и сбросить выбор
                         if search.tournament_channel_id in LOCKED_CHANNELS:
                             del LOCKED_CHANNELS[search.tournament_channel_id]
                         search.tournament_channel_id = 0
@@ -389,6 +389,12 @@ class MMCog(commands.Cog):
                                 await message.edit(embed=embed, view=view)
                         except Exception as e:
                             logger.error(f"Error resetting search channel: {e}")
+
+    async def on_tournament_complete(self, guild_id: int, channel_id: int) -> None:
+        """Вызывается при завершении турнира для разблокировки канала."""
+        if channel_id in LOCKED_CHANNELS:
+            del LOCKED_CHANNELS[channel_id]
+            logger.info(f"Channel {channel_id} unlocked after tournament completion")
 
 
 async def setup(bot: TournamentBot) -> None:
