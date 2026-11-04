@@ -255,16 +255,6 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                         # Auto-confirm winner based on kills
                         auto_winner_idx = team_a_idx if team_a_kills > team_b_kills else team_b_idx
                         
-                        # Set winner in tournament
-                        if self.match_type == "qualifier":
-                            tournament.qualifier_winners[self.match_index] = auto_winner_idx
-                        elif self.match_type == "semifinal":
-                            tournament.semifinal_pending_winners[self.match_index] = auto_winner_idx
-                        elif self.match_type == "final":
-                            tournament.final_pending_winner = auto_winner_idx
-                        
-                        store.set(tournament)
-                        
                         # Log auto-confirmation
                         import logging
                         logging.info(f"Auto-confirming winner: match_type={self.match_type}, match_index={self.match_index}, winner_idx={auto_winner_idx}")

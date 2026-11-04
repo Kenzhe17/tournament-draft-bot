@@ -178,13 +178,25 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     lobby_player_count = 0
     for team_index in [team1_index, team2_index]:
         team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
-        for circle in range(1, 5):
-            player_name = team_data.get(f"circle{circle}", "")
-            if player_name and player_name in tournament.player_user_ids:
-                stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
-                if stats:
-                    lobby_elo_sum += stats.elo
-                    lobby_player_count += 1
+        
+        # Check if this is random-auto mode (uses players list instead of circles)
+        if tournament.formation_mode == "random-auto":
+            players_list = team_data.get("players", [])
+            for player_name in players_list:
+                if player_name in tournament.player_user_ids:
+                    stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
+                    if stats:
+                        lobby_elo_sum += stats.elo
+                        lobby_player_count += 1
+        else:
+            # Circle-based mode
+            for circle in range(1, 5):
+                player_name = team_data.get(f"circle{circle}", "")
+                if player_name and player_name in tournament.player_user_ids:
+                    stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
+                    if stats:
+                        lobby_elo_sum += stats.elo
+                        lobby_player_count += 1
 
     lobby_avg_elo = lobby_elo_sum / lobby_player_count if lobby_player_count > 0 else 0.0
 
@@ -196,19 +208,36 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         # Collect player data for position calculation
         players_for_position = []
 
-        for circle in range(1, 5):
-            player = team_data.get(f"circle{circle}")
-            if player and player in temp_kd_data:
-                kd = temp_kd_data[player]
-                kills = kd.get('kills', 0)
-                deaths = kd.get('deaths', 0)
+        # Check if this is random-auto mode
+        if tournament.formation_mode == "random-auto":
+            players_list = team_data.get("players", [])
+            for player_name in players_list:
+                if player_name in temp_kd_data:
+                    kd = temp_kd_data[player_name]
+                    kills = kd.get('kills', 0)
+                    deaths = kd.get('deaths', 0)
 
-                # Get current ELO and stats
-                user_id = tournament.player_user_ids.get(player, 0)
-                stats = await player_stats_store.get(guild_id, user_id)
-                current_elo = stats.elo if stats else 1000
+                    # Get current ELO and stats
+                    user_id = tournament.player_user_ids.get(player_name, 0)
+                    stats = await player_stats_store.get(guild_id, user_id)
+                    current_elo = stats.elo if stats else 1000
 
-                players_for_position.append((player, kills, deaths, current_elo))
+                    players_for_position.append((player_name, kills, deaths, current_elo))
+        else:
+            # Circle-based mode
+            for circle in range(1, 5):
+                player = team_data.get(f"circle{circle}")
+                if player and player in temp_kd_data:
+                    kd = temp_kd_data[player]
+                    kills = kd.get('kills', 0)
+                    deaths = kd.get('deaths', 0)
+
+                    # Get current ELO and stats
+                    user_id = tournament.player_user_ids.get(player, 0)
+                    stats = await player_stats_store.get(guild_id, user_id)
+                    current_elo = stats.elo if stats else 1000
+
+                    players_for_position.append((player, kills, deaths, current_elo))
 
         # Calculate positions within team
         positions = calculate_team_position(players_for_position)
