@@ -156,7 +156,7 @@ async def send_ultimatum_room_notifications(
 ) -> None:
     """Send room info to specific channel for Ultimatum match."""
     # Get specific channel
-    channel = bot.get_channel(1561683314480255057)
+    channel = bot.get_channel(1567585136957063229)
     if not channel:
         return
 
@@ -178,4 +178,4 @@ async def send_ultimatum_room_notifications(
     # Send to general channel
     general_channel = bot.get_channel(1200125075156910181)
     if general_channel:
-        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>")
+        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1567585136957063229>")

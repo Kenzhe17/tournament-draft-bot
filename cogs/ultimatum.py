@@ -316,6 +316,21 @@ class UltimatumCog(commands.Cog):
             )
             return
 
+        # Remove tournament role from all players
+        if tournament.guild_id:
+            guild = interaction.guild
+            if guild:
+                role = guild.get_role(1567580142744895561)
+                if role:
+                    players = await ultimatum_store.get_players(tournament.id)
+                    for player in players:
+                        try:
+                            member = guild.get_member(player.discord_id)
+                            if member:
+                                await member.remove_roles(role)
+                        except Exception as e:
+                            logger.error(f"Error removing role from player {player.discord_id}: {e}")
+
         # Delete tournament from database
         pool = await get_pool()
         async with pool.acquire() as conn:

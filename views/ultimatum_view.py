@@ -67,9 +67,6 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
 
         field_value = f"{replace_emojis('white_arrow')} {p1_name} vs {p2_name}"
 
-        if match.room_id:
-            field_value += f"\n{replace_emojis('sub_middle')} Комната: {match.room_id}"
-
         embed.add_field(
             name="\u200b",  # Zero-width space
             value=field_value,
@@ -294,12 +291,15 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         self.is_admin = is_admin
 
     async def callback(self, interaction: discord.Interaction) -> None:
+        # Defer to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+        
         match_id = int(self.values[0])
         
         # Get match details
         match = await ultimatum_store.get_match_by_id(match_id)
         if not match:
-            await interaction.response.send_message("Матч не найден", ephemeral=True)
+            await interaction.followup.send("Матч не найден", ephemeral=True)
             return
         
         # Get players
@@ -307,7 +307,7 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         p2 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player2_id)
         
         if not p1 or not p2:
-            await interaction.response.send_message("Игроки не найдены", ephemeral=True)
+            await interaction.followup.send("Игроки не найдены", ephemeral=True)
             return
         
         # Create buttons for each player
@@ -339,4 +339,4 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
             color=discord.Color.from_rgb(69, 69, 69)
         )
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
