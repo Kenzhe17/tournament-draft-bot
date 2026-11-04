@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS ultimatum_players (
     losses INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE, ELIMINATED, GRAND_FINALIST, CHAMPION, GRAND_FINAL_LOSER
     final_place INTEGER,
+    elimination_round INTEGER,  -- Round when player was eliminated
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tournament_id, discord_id),
     FOREIGN KEY (tournament_id) REFERENCES ultimatum_tournaments(id) ON DELETE CASCADE
@@ -103,4 +104,15 @@ CREATE INDEX IF NOT EXISTS idx_ultimatum_matches_round ON ultimatum_matches(roun
 CREATE INDEX IF NOT EXISTS idx_ultimatum_matches_status ON ultimatum_matches(status);
 CREATE INDEX IF NOT EXISTS idx_ultimatum_match_history_players ON ultimatum_match_history(player1_id, player2_id);
 CREATE INDEX IF NOT EXISTS idx_ultimatum_audit_log_tournament ON ultimatum_audit_log(tournament_id);
+
+-- Migration: Add elimination_round column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_players' AND column_name = 'elimination_round'
+    ) THEN
+        ALTER TABLE ultimatum_players ADD COLUMN elimination_round INTEGER;
+    END IF;
+END $$;
 

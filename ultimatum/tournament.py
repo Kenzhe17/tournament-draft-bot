@@ -126,7 +126,7 @@ class UltimatumTournament:
 
         # Check if loser should be eliminated (2 losses)
         if loser.losses + 1 >= 2:
-            await self.eliminate_player(match.tournament_id, loser_id)
+            await self.eliminate_player(match.tournament_id, loser_id, match.round_number)
 
         # Update Elo ratings (only for normal matches, not for byes)
         if match.match_type == MatchType.NORMAL:
@@ -297,13 +297,18 @@ class UltimatumTournament:
     async def eliminate_player(
         self,
         tournament_id: str,
-        discord_id: int
+        discord_id: int,
+        elimination_round: Optional[int] = None
     ) -> None:
         """Eliminate a player (2 losses)."""
+        tournament = await self.store.get_tournament(tournament_id)
+        round_num = elimination_round or tournament.current_round
+
         await self.store.update_player_stats(
-            tournament_id, discord_id, None, None, PlayerStatus.ELIMINATED
+            tournament_id, discord_id, None, None,
+            PlayerStatus.ELIMINATED, round_num
         )
-        logger.info(f"Player {discord_id} eliminated from tournament {tournament_id}")
+        logger.info(f"Player {discord_id} eliminated from tournament {tournament_id} in round {round_num}")
 
     async def finalize_tournament(self, tournament_id: str) -> None:
         """Finalize tournament and calculate rankings 1-16.
@@ -312,12 +317,12 @@ class UltimatumTournament:
         1. Status (Champion > Grand Final Loser > Grand Finalist > Eliminated > Active)
         2. Total wins (more wins = better)
         3. Total losses (fewer losses = better)
-        4. Elimination round (later = better, if available)
+        4. Elimination round (later = better, for eliminated players)
         """
         # Get all players
         players = await self.store.get_players(tournament_id)
 
-        # Sort by status priority, then wins, then losses
+        # Sort by status priority, then wins, then losses, then elimination round
         status_priority = {
             PlayerStatus.CHAMPION: 0,
             PlayerStatus.GRAND_FINAL_LOSER: 1,
@@ -331,7 +336,8 @@ class UltimatumTournament:
             key=lambda p: (
                 status_priority.get(p.status, 99),
                 -p.wins,
-                p.losses if p.losses else 0
+                p.losses if p.losses else 0,
+                -(p.elimination_round if p.elimination_round else 0)  # Later elimination = better
             )
         )
 

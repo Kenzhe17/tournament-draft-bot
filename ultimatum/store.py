@@ -182,6 +182,7 @@ class UltimatumStore:
                     losses=row["losses"],
                     status=PlayerStatus(row["status"]),
                     final_place=row["final_place"],
+                    elimination_round=row["elimination_round"],
                     created_at=row["created_at"],
                 )
                 for row in rows
@@ -209,6 +210,7 @@ class UltimatumStore:
                     losses=row["losses"],
                     status=PlayerStatus(row["status"]),
                     final_place=row["final_place"],
+                    elimination_round=row["elimination_round"],
                     created_at=row["created_at"],
                 )
                 for row in rows
@@ -240,6 +242,7 @@ class UltimatumStore:
                 losses=row["losses"],
                 status=PlayerStatus(row["status"]),
                 final_place=row["final_place"],
+                elimination_round=row["elimination_round"],
                 created_at=row["created_at"],
             )
 
@@ -249,20 +252,31 @@ class UltimatumStore:
         discord_id: int,
         wins: int,
         losses: int,
-        status: Optional[PlayerStatus] = None
+        status: Optional[PlayerStatus] = None,
+        elimination_round: Optional[int] = None
     ) -> None:
         """Update player stats."""
         pool = await get_pool()
         async with pool.acquire() as conn:
             if status:
-                await conn.execute(
-                    """
-                    UPDATE ultimatum_players
-                    SET wins = $1, losses = $2, status = $3
-                    WHERE tournament_id = $4 AND discord_id = $5
-                    """,
-                    wins, losses, status.value, tournament_id, discord_id
-                )
+                if elimination_round is not None:
+                    await conn.execute(
+                        """
+                        UPDATE ultimatum_players
+                        SET wins = $1, losses = $2, status = $3, elimination_round = $4
+                        WHERE tournament_id = $5 AND discord_id = $6
+                        """,
+                        wins, losses, status.value, elimination_round, tournament_id, discord_id
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        UPDATE ultimatum_players
+                        SET wins = $1, losses = $2, status = $3
+                        WHERE tournament_id = $4 AND discord_id = $5
+                        """,
+                        wins, losses, status.value, tournament_id, discord_id
+                    )
             else:
                 await conn.execute(
                     """

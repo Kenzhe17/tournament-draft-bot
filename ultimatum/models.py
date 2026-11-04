@@ -102,6 +102,7 @@ class Player:
     losses: int = 0
     status: PlayerStatus = PlayerStatus.ACTIVE
     final_place: Optional[int] = None
+    elimination_round: Optional[int] = None  # Round when player was eliminated
     created_at: Optional[datetime] = None
 
     @property
@@ -125,6 +126,7 @@ class Player:
             "losses": self.losses,
             "status": self.status.value,
             "final_place": self.final_place,
+            "elimination_round": self.elimination_round,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -140,6 +142,7 @@ class Player:
             losses=data["losses"],
             status=PlayerStatus(data["status"]),
             final_place=data.get("final_place"),
+            elimination_round=data.get("elimination_round"),
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
         )
 
