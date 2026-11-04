@@ -69,8 +69,8 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
         p1_player = await ultimatum_store.get_player_by_discord_id(tournament_id, match.player1_id)
         p2_player = await ultimatum_store.get_player_by_discord_id(tournament_id, match.player2_id)
         
-        p1_stats = f"({p1_player.wins}:{p1_player.losses})" if p1_player else "(0:0)"
-        p2_stats = f"({p2_player.wins}:{p2_player.losses})" if p2_player else "(0:0)"
+        p1_stats = f" ({p1_player.wins}:{p1_player.losses})" if p1_player else " (0:0)"
+        p2_stats = f" ({p2_player.wins}:{p2_player.losses})" if p2_player else " (0:0)"
 
         field_value = f"{replace_emojis('white_arrow')} {p1_name}{p1_stats} vs {p2_name}{p2_stats}"
 
