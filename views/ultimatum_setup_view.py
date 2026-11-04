@@ -336,6 +336,18 @@ class UltimatumOrgMenuView(discord.ui.View):
         try:
             await tournament_logic.start_tournament(self.tournament.id, interaction.client)
             await interaction.followup.send("✅ Турнир начался!", ephemeral=True)
+            
+            # Delete the tournament setup message
+            try:
+                channel = interaction.client.get_channel(self.channel_id)
+                if channel:
+                    async for msg in channel.history(limit=10):
+                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
+                            await msg.delete()
+                            logger.info("Deleted tournament setup message after start")
+                            break
+            except Exception as e:
+                logger.error(f"Error deleting tournament message: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"Error starting tournament: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Ошибка: {str(e)}", ephemeral=True)

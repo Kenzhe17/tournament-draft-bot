@@ -73,52 +73,7 @@ class UltimatumCog(commands.Cog):
 
         logger.info(f"Tournament created: {tournament.id} by {interaction.user.id}")
 
-    @ultimatum_group.command(name="join", description="Join Ultimatum tournament")
-    async def join_tournament(self, interaction: discord.Interaction) -> None:
-        """Join the active tournament - like other tournaments."""
-        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ No active tournament found.",
-                ephemeral=True
-            )
-            return
 
-        if tournament.status != TournamentStatus.REGISTRATION:
-            await interaction.response.send_message(
-                "❌ Tournament is not in registration phase.",
-                ephemeral=True
-            )
-            return
-
-        # Check player count
-        players = await ultimatum_store.get_players(tournament.id)
-        if len(players) >= 16:
-            await interaction.response.send_message(
-                "❌ Tournament is full (16 players).",
-                ephemeral=True
-            )
-            return
-
-        # Add player
-        try:
-            await ultimatum_store.add_player(
-                tournament.id,
-                interaction.user.id,
-                interaction.user.display_name
-            )
-        except ValueError as e:
-            await interaction.response.send_message(
-                f"❌ {str(e)}",
-                ephemeral=True
-            )
-            return
-
-        players = await ultimatum_store.get_players(tournament.id)
-        await interaction.response.send_message(
-            f"✅ You joined! Players: {len(players)}/16",
-            ephemeral=True
-        )
 
     @ultimatum_group.command(name="test_fill", description="Fill tournament with test players (for testing)")
     @app_commands.checks.has_permissions(administrator=True)
