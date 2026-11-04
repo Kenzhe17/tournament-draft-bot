@@ -36,6 +36,12 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
         from ultimatum.store import ultimatum_store
         from utils.permissions import is_org_check
 
+        # Defer immediately to avoid timeout
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except (discord.NotFound, discord.DiscordServerError):
+            pass
+
         # Check if user is admin
         is_admin = is_org_check(interaction.user, interaction.guild)
         
@@ -43,7 +49,7 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
         match = await ultimatum_store.get_match_by_id(self.match_id)
         if not match:
             try:
-                await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+                await interaction.followup.send("❌ Матч не найден.", ephemeral=True)
             except (discord.NotFound, discord.DiscordServerError):
                 pass
             return
@@ -52,19 +58,13 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
         user_in_match = match.player1_id == interaction.user.id or match.player2_id == interaction.user.id
         if not is_admin and not user_in_match:
             try:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ Только участники матча или админы могут добавлять комнату.",
                     ephemeral=True
                 )
             except (discord.NotFound, discord.DiscordServerError):
                 pass
             return
-
-        # Defer immediately to avoid timeout
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except (discord.NotFound, discord.DiscordServerError):
-            pass
 
         # Check cooldown (1 second)
         cooldown_key = (interaction.guild_id, self.match_id)
