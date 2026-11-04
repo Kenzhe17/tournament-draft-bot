@@ -24,8 +24,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Канал для турниров
-TOURNAMENT_CHANNEL_ID = 1564629925494001744
+# Каналы для турниров
+TOURNAMENT_CHANNEL_ID = 1549809898643001484
+TOURNAMENT_CHANNEL_ID_2 = 1567611808884465814
 
 
 class MMCog(commands.Cog):
@@ -77,6 +78,9 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
 
         logger.info("Создан поиск %s в канале %s", format.value, interaction.channel_id)
+        
+        # Запустить таймер
+        self._start_search_timer(interaction.guild_id, interaction.channel_id)
 
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
         """Запустить таймер для поиска."""
@@ -125,15 +129,39 @@ class MMCog(commands.Cog):
     async def _create_tournament_from_search(self, search: MMSearch, interaction_channel: discord.TextChannel) -> None:
         """Создать обычный турнир из поиска."""
         guild = interaction_channel.guild
-        tournament_channel = self.bot.get_channel(TOURNAMENT_CHANNEL_ID)
+        
+        # Проверить активные турниры в обоих каналах
+        active_tournaments = []
+        for channel_id in [TOURNAMENT_CHANNEL_ID, TOURNAMENT_CHANNEL_ID_2]:
+            tournament_channel = self.bot.get_channel(channel_id)
+            if tournament_channel:
+                tournament = store.get(guild.id, tournament_channel.id)
+                if tournament and tournament.phase != TournamentPhase.COMPLETE:
+                    active_tournaments.append(tournament_channel.id)
+        
+        if len(active_tournaments) >= 2:
+            # Обновить embed с сообщением о лимите
+            search.has_limit_reached = True
+            embed = build_search_embed(search, guild)
+            view = build_search_view(self.bot, search)
+            try:
+                message = await interaction_channel.fetch_message(search.message_id)
+                await message.edit(embed=embed, view=view)
+            except Exception as e:
+                logger.error(f"Error updating search embed with limit message: {e}")
+            return
+
+        # Выбрать свободный канал
+        tournament_channel_id = TOURNAMENT_CHANNEL_ID if TOURNAMENT_CHANNEL_ID not in active_tournaments else TOURNAMENT_CHANNEL_ID_2
+        tournament_channel = self.bot.get_channel(tournament_channel_id)
 
         if not tournament_channel:
-            logger.error("Канал для турниров не найден: %s", TOURNAMENT_CHANNEL_ID)
+            logger.error("Канал для турниров не найден: %s", tournament_channel_id)
             return
 
         # Определить размер и формат
         tournament_size = TournamentSize.EIGHT if search.format == MMFormat.SQUAD else TournamentSize.EIGHT
-        formation_mode = FormationMode.RANDOM
+        formation_mode = FormationMode.RANDOM_AUTO  # Использовать random-auto
 
         # Создать турнир
         tournament = Tournament(
@@ -147,7 +175,7 @@ class MMCog(commands.Cog):
         # Сохранить канал поиска для сброса после завершения
         tournament.mm_search_channel_id = search.channel_id
 
-        # Добавить игроков в пул
+        # Добавить игроков в пул с их SR
         for player_name in search.players:
             user_id = search.player_user_ids.get(player_name, 0)
             tournament.players_pool.append(player_name)

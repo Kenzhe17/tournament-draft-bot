@@ -242,6 +242,48 @@ class Tournament:
         """Все добавленные игроки (круги 1–4) - player names."""
         return set(self.circle1 + self.circle2 + self.circle3 + self.circle4)
 
+    def distribute_players_random_auto(self, players_with_sr: list[tuple[str, float]]) -> list[list[str]]:
+        """Распределить игроков по SR для random-auto формата.
+        
+        Args:
+            players_with_sr: List of (player_name, skill_rating) tuples
+            
+        Returns:
+            List of teams (each team is list of player names)
+        """
+        # Сортировать по SR от высокого к низшему
+        sorted_players = sorted(players_with_sr, key=lambda x: x[1], reverse=True)
+        player_names = [p[0] for p in sorted_players]
+        
+        num_teams = self.captain_count
+        players_per_team = len(player_names) // num_teams
+        
+        # Разделить на 4 группы
+        group_size = num_teams
+        groups = [
+            player_names[i:i + group_size] 
+            for i in range(0, len(player_names), group_size)
+        ]
+        
+        # Инициализировать команды
+        teams = [[] for _ in range(num_teams)]
+        
+        # Круг 1 - капитаны (первые N игроков)
+        for i, captain in enumerate(groups[0]):
+            teams[i].append(captain)
+        
+        # Круги 2-4 - распределение по RANDOM_AUTO_PICK_ORDERS
+        for round_num in [2, 3, 4]:
+            if round_num - 1 < len(groups):
+                group = groups[round_num - 1]
+                order = RANDOM_AUTO_PICK_ORDERS.get(num_teams, {}).get(str(round_num), [])
+                
+                for team_idx, player_idx in enumerate(order):
+                    if player_idx < len(group):
+                        teams[team_idx].append(group[player_idx])
+        
+        return teams
+
     @property
     def is_setup_complete(self) -> bool:
         """Готов ли турнир к запуску драфта."""
