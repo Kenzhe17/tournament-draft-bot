@@ -109,7 +109,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.pet")
         await self.load_extension("cogs.isolate")
         await self.load_extension("cogs.br")
-        await self.load_extension("cogs.mm")
+        # await self.load_extension("cogs.mm")  # Disabled - using auto-start tournaments instead
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")

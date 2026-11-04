@@ -35,6 +35,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Auto tournament channels
+AUTO_CHANNELS = [1564628503930871811, 1564629925494001744]
+MAX_AUTO_TOURNAMENTS = 2
+
 # Список «опасных» прав для проверки 2FA
 DANGEROUS_PERMS = {
     "administrator": "Администратор",
