@@ -169,17 +169,21 @@ class UltimatumStartButton(discord.ui.Button):
                 ephemeral=True
             )
 
-            # Update the embed and view
+            # Update the embed and send round view
             try:
                 from cogs.ultimatum import UltimatumCog
+                from views.ultimatum_view import build_ultimatum_round_embed, build_ultimatum_round_view
+
                 cog = interaction.client.get_cog('UltimatumCog')
                 if cog:
                     tournament = await ultimatum_store.get_tournament(tournament.id)
-                    new_embed = await cog._build_tournament_embed(tournament)
-                    # Clear view or update with round view
-                    self.view.clear_items()
-                    await interaction.message.edit(embed=new_embed, view=self.view)
+                    # Build round embed for round 1
+                    new_embed = build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
+                    new_view = build_ultimatum_round_view(interaction.client, tournament.id, 1)
+                    # Edit message with round embed and view
+                    await interaction.message.edit(embed=new_embed, view=new_view)
                 else:
+                    # Fallback: just clear items
                     self.view.clear_items()
                     await interaction.message.edit(view=self.view)
             except discord.NotFound:
