@@ -138,48 +138,34 @@ class Isolate(commands.Cog):
             )
 
     async def save_permissions_snapshot(self, guild: discord.Guild) -> dict:
-        """Сохранить текущие права доступа для всех каналов и категорий."""
-        
+        """Сохранить текущие права доступа для всех каналов и всех ролей."""
+
         snapshot = {
             "guild_id": guild.id,
             "channels": {},
             "categories": {}
         }
 
-        # Сохранить права категорий
+        # Сохранить права категорий для всех ролей
         for category in guild.categories:
             category_data = {}
-            # Сохранить @everyone если есть overwrite
-            if category.overwrites_for(guild.default_role).view_channel is not None:
-                category_data[str(guild.default_role.id)] = {
+            # Сохранить для всех ролей сервера
+            for role in guild.roles:
+                overwrite = category.overwrites_for(role)
+                category_data[str(role.id)] = {
                     "type": "role",
-                    "view_channel": self._serialize_permission(category.overwrites_for(guild.default_role).view_channel)
-                }
-            # Сохранить остальные overwrites
-            for target, overwrite in category.overwrites.items():
-                if target.id == guild.default_role.id:
-                    continue  # @everyone уже обработан
-                category_data[str(target.id)] = {
-                    "type": "role" if isinstance(target, discord.Role) else "member",
                     "view_channel": self._serialize_permission(overwrite.view_channel)
                 }
             snapshot["categories"][str(category.id)] = category_data
 
-        # Сохранить права каналов
+        # Сохранить права каналов для всех ролей
         for channel in guild.channels:
             channel_data = {}
-            # Сохранить @everyone если есть overwrite
-            if channel.overwrites_for(guild.default_role).view_channel is not None:
-                channel_data[str(guild.default_role.id)] = {
+            # Сохранить для всех ролей сервера
+            for role in guild.roles:
+                overwrite = channel.overwrites_for(role)
+                channel_data[str(role.id)] = {
                     "type": "role",
-                    "view_channel": self._serialize_permission(channel.overwrites_for(guild.default_role).view_channel)
-                }
-            # Сохранить остальные overwrites
-            for target, overwrite in channel.overwrites.items():
-                if target.id == guild.default_role.id:
-                    continue  # @everyone уже обработан
-                channel_data[str(target.id)] = {
-                    "type": "role" if isinstance(target, discord.Role) else "member",
                     "view_channel": self._serialize_permission(overwrite.view_channel)
                 }
             snapshot["channels"][str(channel.id)] = channel_data
@@ -189,7 +175,7 @@ class Isolate(commands.Cog):
         with open(ISOLATION_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
 
-        logger.info(f"Snapshot сохранен: {len(snapshot['categories'])} категорий, {len(snapshot['channels'])} каналов")
+        logger.info(f"Snapshot сохранен: {len(snapshot['categories'])} категорий, {len(snapshot['channels'])} каналов, {len(guild.roles)} ролей")
         return snapshot
 
     def _serialize_permission(self, perm: bool | None) -> str:
@@ -211,63 +197,46 @@ class Isolate(commands.Cog):
             return None
 
     async def apply_isolation(self, guild: discord.Guild, snapshot: dict) -> None:
-        """Применить изоляцию - запретить view_channel для всех."""
-        
+        """Применить изоляцию - запретить view_channel для всех ролей во всех каналах."""
+
         # Обработать категории
         for category_id, overwrites in snapshot["categories"].items():
             category = guild.get_channel(int(category_id))
             if not category or not isinstance(category, discord.CategoryChannel):
                 continue
-            
+
             for target_id, data in overwrites.items():
-                # Получить target (role или member)
+                # Получить target (role)
                 target = self._get_target(guild, target_id, data["type"])
                 if not target:
                     continue
-                
-                # Если право было allow или null, установить deny
-                old_perm = self._deserialize_permission(data["view_channel"])
-                if old_perm in [True, None]:
-                    # Установить явный deny
-                    await category.set_permissions(
-                        target,
-                        view_channel=False
-                    )
-                    # Задержка для rate limits
-                    await asyncio.sleep(0.3)
+
+                # Установить явный deny для view_channel
+                await category.set_permissions(
+                    target,
+                    view_channel=False
+                )
+                # Задержка для rate limits
+                await asyncio.sleep(0.3)
 
         # Обработать каналы
         for channel_id, overwrites in snapshot["channels"].items():
             channel = guild.get_channel(int(channel_id))
             if not channel:
                 continue
-            
+
             for target_id, data in overwrites.items():
-                # Получить target (role или member)
+                # Получить target (role)
                 target = self._get_target(guild, target_id, data["type"])
                 if not target:
                     continue
-                
-                # Если право было allow или null, установить deny
-                old_perm = self._deserialize_permission(data["view_channel"])
-                if old_perm in [True, None]:
-                    # Установить явный deny
-                    await channel.set_permissions(
-                        target,
-                        view_channel=False
-                    )
-                    # Задержка для rate limits
-                    await asyncio.sleep(0.3)
 
-        # Дополнительно: установить deny для @everyone во всех каналах без snapshot
-        # Это гарантирует что каналы без явных overwrites тоже будут скрыты
-        for channel in guild.channels:
-            if str(channel.id) not in snapshot["channels"]:
-                # Канал не был в snapshot - установить deny для @everyone
+                # Установить явный deny для view_channel
                 await channel.set_permissions(
-                    guild.default_role,
+                    target,
                     view_channel=False
                 )
+                # Задержка для rate limits
                 await asyncio.sleep(0.3)
 
         logger.info(f"Изоляция применена к {len(snapshot['categories'])} категориям и {len(snapshot['channels'])} каналам")
@@ -281,18 +250,18 @@ class Isolate(commands.Cog):
 
     async def restore_permissions(self, guild: discord.Guild, snapshot: dict) -> None:
         """Восстановить права доступа из snapshot."""
-        
+
         # Восстановить права категорий
         for category_id, overwrites in snapshot["categories"].items():
             category = guild.get_channel(int(category_id))
             if not category or not isinstance(category, discord.CategoryChannel):
                 continue
-            
+
             for target_id, data in overwrites.items():
                 target = self._get_target(guild, target_id, data["type"])
                 if not target:
                     continue
-                
+
                 # Восстановить исходное значение
                 perm_value = self._deserialize_permission(data["view_channel"])
                 if perm_value is None:
@@ -315,12 +284,12 @@ class Isolate(commands.Cog):
             channel = guild.get_channel(int(channel_id))
             if not channel:
                 continue
-            
+
             for target_id, data in overwrites.items():
                 target = self._get_target(guild, target_id, data["type"])
                 if not target:
                     continue
-                
+
                 # Восстановить исходное значение
                 perm_value = self._deserialize_permission(data["view_channel"])
                 if perm_value is None:
