@@ -93,11 +93,20 @@ class UltimatumJoinButton(discord.ui.Button):
                 ephemeral=True
             )
 
-            # Update the original message
+            # Update the original message with new embed and view
             try:
-                await interaction.message.edit(view=self.view)
+                from cogs.ultimatum import UltimatumCog
+                # Get the cog from the bot
+                cog = interaction.client.get_cog('UltimatumCog')
+                if cog:
+                    new_embed = await cog._build_tournament_embed(tournament)
+                    await interaction.message.edit(embed=new_embed, view=self.view)
+                else:
+                    await interaction.message.edit(view=self.view)
             except discord.NotFound:
                 pass
+            except Exception as e:
+                logger.error(f"Error updating tournament message: {e}")
 
             logger.info(f"User {interaction.user.id} joined Ultimatum tournament {tournament.id}")
 
