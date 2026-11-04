@@ -7,11 +7,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID
+from config import BOT_OWNER_ID, replace_emojis
 from ultimatum.models import TournamentStatus, PlayerStatus
 from ultimatum.store import ultimatum_store
 from ultimatum.tournament import UltimatumTournament
 from ultimatum.elo_store import elo_store
+from views.ultimatum_view import build_ultimatum_round_embed, UltimatumMatchView
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,14 @@ class UltimatumCog(commands.Cog):
 
             await self.tournament_logic.start_tournament(tournament.id)
             await interaction.response.send_message("✅ Tournament started!", ephemeral=True)
+
+            # Send round embed with matches
+            tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
+            if tournament:
+                embed = await build_ultimatum_round_embed(tournament.id, 1)
+                view = UltimatumMatchView(self.bot, tournament.id, 1)
+                await view.initialize()
+                await interaction.channel.send(embed=embed, view=view)
 
         start_btn.callback = start_callback
         view.add_item(start_btn)

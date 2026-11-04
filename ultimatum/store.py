@@ -392,6 +392,24 @@ class UltimatumStore:
                 completed_at=row["completed_at"],
             )
 
+    async def update_match_room(
+        self,
+        match_id: int,
+        room_id: str,
+        room_password: str
+    ) -> None:
+        """Update match room information."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_matches
+                SET room_id = $1, room_password = $2
+                WHERE id = $3
+                """,
+                room_id, room_password, match_id
+            )
+
     async def create_round(self, tournament_id: str, round_number: int) -> Round:
         """Create a round."""
         pool = await get_pool()
