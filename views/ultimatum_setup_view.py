@@ -181,10 +181,16 @@ class UltimatumStartButton(discord.ui.Button):
                     # Build round embed for round 1
                     new_embed = await build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
                     new_view = await build_ultimatum_round_view(interaction.client, tournament.id, 1)
+                    
+                    logger.info(f"Built round embed: {new_embed}, view: {new_view}")
+                    
                     # Send new message with round embed and view instead of editing
-                    await interaction.channel.send(embed=new_embed, view=new_view)
+                    round_message = await interaction.channel.send(embed=new_embed, view=new_view)
+                    logger.info(f"Sent round message: {round_message.id}")
+                    
                     # Delete old setup message
                     await interaction.message.delete()
+                    logger.info("Deleted old setup message")
                 else:
                     # Fallback: just clear items
                     self.view.clear_items()
@@ -192,7 +198,7 @@ class UltimatumStartButton(discord.ui.Button):
             except discord.NotFound:
                 pass
             except Exception as e:
-                logger.error(f"Error updating tournament message after start: {e}")
+                logger.error(f"Error updating tournament message after start: {e}", exc_info=True)
 
             logger.info(f"Ultimatum tournament {tournament.id} started by {interaction.user.id}")
 
