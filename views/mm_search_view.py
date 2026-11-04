@@ -146,14 +146,11 @@ class JoinSearchButton(discord.ui.Button):
                     )
                     return
 
-        # Проверить тег пользователя
-        user_tag = None
-        for role in interaction.user.roles:
-            if role.name == "r!z3":
-                user_tag = role.name
-                break
+        # Проверить тег пользователя (как в обычных турнирах)
+        from config import GUILD_ID
+        has_tag = interaction.user.primary_guild and interaction.user.primary_guild.id == GUILD_ID
         
-        if not user_tag:
+        if not has_tag:
             await interaction.response.send_message("❌ Для входа в поиск нужен тег r!z3.", ephemeral=True)
             return
 
