@@ -320,6 +320,8 @@ class UltimatumOrgMenuView(discord.ui.View):
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def start_callback(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        
         from ultimatum.tournament import UltimatumTournament
         tournament_logic = UltimatumTournament(ultimatum_store)
 
@@ -402,7 +404,7 @@ class UltimatumRemovePlayerSelect(discord.ui.Select):
         
         await interaction.followup.send("✅ Игрок удален", ephemeral=True)
         
-        # Update original message
+        # Update original tournament message
         try:
             tournament = await ultimatum_store.get_tournament(self.tournament_id)
             from cogs.ultimatum import UltimatumCog
@@ -410,7 +412,13 @@ class UltimatumRemovePlayerSelect(discord.ui.Select):
             if cog:
                 new_embed = await cog._build_tournament_embed(tournament)
                 new_view = await build_ultimatum_setup_view(self.guild_id, self.channel_id, tournament)
-                await interaction.message.edit(embed=new_embed, view=new_view)
+                # Get the tournament message from the channel
+                channel = interaction.client.get_channel(self.channel_id)
+                if channel:
+                    async for msg in channel.history(limit=10):
+                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
+                            await msg.edit(embed=new_embed, view=new_view)
+                            break
         except Exception as e:
             logger.error(f"Error updating tournament message after player removal: {e}", exc_info=True)
 
@@ -528,10 +536,6 @@ async def build_ultimatum_setup_view(guild_id: int, channel_id: int, tournament=
     # Add leave button
     leave_button = UltimatumLeaveButton(guild_id, channel_id)
     view.add_item(leave_button)
-
-    # Add start button
-    start_button = UltimatumStartButton(guild_id, channel_id)
-    view.add_item(start_button)
 
     # Add org menu button
     org_button = UltimatumOrgMenuButton(guild_id, channel_id)

@@ -121,7 +121,7 @@ class Player:
     @property
     def record(self) -> str:
         """Get win-loss record."""
-        return f"{self.wins}-{self.losses}"
+        return f" ({self.wins}:{self.losses})"
 
     @property
     def is_eliminated(self) -> bool:

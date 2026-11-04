@@ -207,9 +207,8 @@ class UltimatumWinnerButton(discord.ui.Button):
             )
             return
 
-        # Check if user is admin
-        from utils.permissions import is_org_check
-        is_admin = is_org_check(interaction.user, interaction.guild)
+        # Get matches for this round
+        matches = await ultimatum_store.get_matches(self.tournament_id, self.round_number)
 
         # Build options with player names
         options = []
