@@ -206,19 +206,6 @@ class UltimatumWinnerButton(discord.ui.Button):
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-        select = UltimatumSelectWinnerMatch(self.tournament_id, self.round_number, options)
-        
-        view = discord.ui.View()
-        view.add_item(select)
-        
-        embed = discord.Embed(
-            title="🏆 Выберите матч",
-            description="Выберите матч для определения победителя",
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
 
 class UltimatumSelectMatch(discord.ui.Select):
     """Select menu for choosing match for room input."""
