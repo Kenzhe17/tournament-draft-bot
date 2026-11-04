@@ -26,7 +26,6 @@ class UltimatumCog(commands.Cog):
         self.tournament_logic = UltimatumTournament(ultimatum_store)
 
     ultimatum_group = app_commands.Group(name="ultimatum", description="Ultimatum Solo Tournament")
-    tournament_group = app_commands.Group(name="tournament", description="Tournament management")
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
     @app_commands.describe(name="Tournament name")
@@ -280,7 +279,7 @@ class UltimatumCog(commands.Cog):
 
         return view
 
-    @tournament_group.command(name="history", description="View tournament history")
+    @ultimatum_group.command(name="history", description="View tournament history")
     @app_commands.describe(limit="Number of recent tournaments to show (default: 5)")
     async def tournament_history(
         self,
@@ -336,7 +335,7 @@ class UltimatumCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @tournament_group.command(name="ranking", description="View final rankings of completed tournament")
+    @ultimatum_group.command(name="ranking", description="View final rankings of completed tournament")
     @app_commands.describe(tournament_id="Tournament ID (leave empty for latest completed)")
     async def tournament_ranking(
         self,
