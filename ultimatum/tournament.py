@@ -40,6 +40,35 @@ class UltimatumTournament:
         await self.create_round(tournament_id, 1, bot)
 
         logger.info(f"Tournament {tournament_id} started with {len(players)} players")
+        
+        # Send round embed to tournament channel
+        if bot and tournament.guild_id:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild:
+                from views.ultimatum_view import build_ultimatum_round_embed, build_ultimatum_round_view, round_messages
+                try:
+                    new_embed = await build_ultimatum_round_embed(tournament_id, 1, guild)
+                    new_view = await build_ultimatum_round_view(bot, tournament_id, 1)
+                    
+                    # Find tournament channel and send message
+                    for channel in guild.text_channels:
+                        async for msg in channel.history(limit=20):
+                            if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
+                                # Send round message
+                                round_message = await channel.send(embed=new_embed, view=new_view)
+                                logger.info(f"Sent round message: {round_message.id}")
+                                
+                                # Track the round message
+                                round_messages[guild.id] = (channel.id, round_message.id)
+                                
+                                # Delete setup message
+                                await msg.delete()
+                                logger.info("Deleted setup message after start")
+                                break
+                        if guild.id in round_messages:
+                            break
+                except Exception as e:
+                    logger.error(f"Error sending round embed: {e}", exc_info=True)
 
     async def create_round(self, tournament_id: str, round_number: int, bot=None) -> None:
         """Create a new round with matches."""
