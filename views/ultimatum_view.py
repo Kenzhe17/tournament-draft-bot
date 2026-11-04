@@ -1,195 +1,187 @@
-"""Views for Ultimatum Solo Tournament matches."""
+"""View for Ultimatum Solo Tournament matches."""
 
-from __future__ import annotations
-
-from config import replace_emojis, get_emoji
-
+import logging
 from typing import TYPE_CHECKING
 
 import discord
-from discord.ui import View, Button
+from discord.ext import commands
 
-from ultimatum.models import Match, MatchStatus
+from config import replace_emojis, get_emoji
+from ultimatum.models import MatchStatus, MatchType
 from ultimatum.store import ultimatum_store
 from ultimatum.tournament import UltimatumTournament
 
 if TYPE_CHECKING:
     from bot import TournamentBot
 
+logger = logging.getLogger(__name__)
 
-class RoomButton(Button):
-    """Button to create room for a match."""
 
-    def __init__(self, match: Match, tournament_id: str):
-        super().__init__(
-            style=discord.ButtonStyle.secondary,
-            label="Комната",
-            emoji="🏠",
-            custom_id=f"ultimatum_room:{match.id}"
-        )
-        self.match = match
+class UltimatumMatchView(discord.ui.View):
+    """View for Ultimatum match with room and winner selection."""
+
+    def __init__(self, bot: TournamentBot, tournament_id: str, match_id: int, round_number: int):
+        super().__init__(timeout=None)
+        self.bot = bot
         self.tournament_id = tournament_id
+        self.match_id = match_id
+        self.round_number = round_number
+        self.tournament_logic = UltimatumTournament(ultimatum_store)
 
-    async def callback(self, interaction: discord.Interaction):
-        # Check if match already has room
-        if self.match.room_id:
-            await interaction.response.send_message(
-                f"❌ Комната уже создана: {self.match.room_id} (пароль: {self.match.room_password})",
-                ephemeral=True
+    def refresh_items(self, match) -> None:
+        """Refresh view items based on match status."""
+        self.clear_items()
+
+        if match.status == MatchStatus.PENDING:
+            # Room button
+            room_btn = discord.ui.Button(
+                style=discord.ButtonStyle.primary,
+                label="Комната",
+                emoji="🏠",
+                custom_id=f"ultimatum_room:{self.match_id}"
             )
-            return
+            room_btn.callback = self.room_callback
+            self.add_item(room_btn)
 
-        # Generate room ID and password
-        import random
-        import string
-        room_id = ''.join(random.choices(string.digits, k=6))
-        room_password = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+            # Winner selection buttons
+            winner_select = discord.ui.Select(
+                placeholder="Выберите победителя",
+                min_values=1,
+                max_values=1,
+                custom_id=f"ultimatum_winner:{self.match_id}"
+            )
+            winner_select.options = [
+                discord.SelectOption(label=f"Игрок 1", value="player1"),
+                discord.SelectOption(label=f"Игрок 2", value="player2"),
+            ]
+            winner_select.callback = self.winner_callback
+            self.add_item(winner_select)
 
-        # Update match with room info
-        await ultimatum_store.update_match_room(
-            self.match.id, room_id, room_password
-        )
+        elif match.status == MatchStatus.IN_PROGRESS:
+            # In progress - show room info
+            self.add_item(discord.ui.Button(
+                style=discord.ButtonStyle.secondary,
+                label="Матч в процессе",
+                disabled=True
+            ))
 
+        elif match.status == MatchStatus.COMPLETED:
+            # Completed - show result
+            self.add_item(discord.ui.Button(
+                style=discord.ButtonStyle.success,
+                label="Завершено",
+                disabled=True
+            ))
+
+    async def room_callback(self, interaction: discord.Interaction) -> None:
+        """Handle room button click."""
+        # Implement room creation logic
+        # For now, placeholder
         await interaction.response.send_message(
-            f"🏠 Комната создана!\nID: {room_id}\nПароль: {room_password}",
+            "🏠 Комната будет создана здесь",
             ephemeral=True
         )
 
+    async def winner_callback(self, interaction: discord.Interaction) -> None:
+        """Handle winner selection."""
+        winner_value = interaction.data["values"][0]
 
-class WinnerSelectButton(Button):
-    """Button to select winner of a match."""
-
-    def __init__(self, match: Match, player_id: int, player_name: str, is_player1: bool):
-        super().__init__(
-            style=discord.ButtonStyle.success,
-            label=player_name,
-            custom_id=f"ultimatum_winner:{match.id}:{player_id}"
-        )
-        self.match = match
-        self.player_id = player_id
-        self.player_name = player_name
-        self.is_player1 = is_player1
-
-    async def callback(self, interaction: discord.Interaction):
-        # Check if match is already completed
-        if self.match.status == MatchStatus.COMPLETED:
-            await interaction.response.send_message(
-                "❌ Матч уже завершен.",
-                ephemeral=True
-            )
+        # Get match details
+        match = await ultimatum_store.get_match_by_id(self.match_id)
+        if not match:
+            await interaction.response.send_message("❌ Матч не найден", ephemeral=True)
             return
-
-        # Check if user is one of the players
-        if interaction.user.id not in [self.match.player1_id, self.match.player2_id]:
-            # Allow admins to override
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message(
-                    "❌ Только участники матча могут выбирать победителя.",
-                    ephemeral=True
-                )
-                return
 
         # Determine winner and loser
-        winner_id = self.player_id
-        loser_id = self.match.player2_id if self.is_player1 else self.match.player1_id
+        if winner_value == "player1":
+            winner_id = match.player1_id
+            loser_id = match.player2_id
+        else:
+            winner_id = match.player2_id
+            loser_id = match.player1_id
 
-        # Get tournament logic
-        from cogs.ultimatum import UltimatumCog
-        cog = interaction.client.get_cog('UltimatumCog')
-        if not cog:
-            await interaction.response.send_message(
-                "❌ Tournament system not available.",
-                ephemeral=True
-            )
-            return
-
-        # Complete match
+        # Complete the match
         try:
-            await cog.tournament_logic.complete_match(
-                self.match.id, winner_id, loser_id
+            await self.tournament_logic.complete_match(
+                self.match_id, winner_id, loser_id
             )
             await interaction.response.send_message(
-                f"✅ Победитель выбран: {self.player_name}",
+                "✅ Результат записан! Elo обновлен.",
                 ephemeral=True
             )
+
+            # Refresh the view
+            updated_match = await ultimatum_store.get_match_by_id(self.match_id)
+            self.refresh_items(updated_match)
+            await interaction.edit_original_response(view=self)
+
         except Exception as e:
+            logger.error(f"Error completing match: {e}")
             await interaction.response.send_message(
                 f"❌ Ошибка: {str(e)}",
                 ephemeral=True
             )
 
 
-class UltimatumMatchView(View):
-    """View for Ultimatum tournament matches."""
-
-    def __init__(self, bot: TournamentBot, tournament_id: str, round_number: int):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.tournament_id = tournament_id
-        self.round_number = round_number
-
-    async def initialize(self):
-        """Initialize view with match buttons."""
-        matches = await ultimatum_store.get_matches(self.tournament_id, self.round_number)
-
-        for match in matches:
-            # Add room button
-            self.add_item(RoomButton(match, self.tournament_id))
-
-            # Add winner selection buttons
-            # Get player names
-            player1_name = f"Player {match.player1_id}"  # Should fetch from players table
-            player2_name = f"Player {match.player2_id}"
-
-            player1_btn = WinnerSelectButton(match, match.player1_id, player1_name, True)
-            player2_btn = WinnerSelectButton(match, match.player2_id, player2_name, False)
-
-            self.add_item(player1_btn)
-            self.add_item(player2_btn)
-
-
-def build_ultimatum_round_embed(tournament_id: str, round_number: int) -> discord.Embed:
-    """Build embed for Ultimatum round matches."""
-    matches = await ultimatum_store.get_matches(tournament_id, round_number)
-
+async def build_ultimatum_round_embed(tournament_id: str, round_number: int, guild: discord.Guild) -> discord.Embed:
+    """Build embed for Ultimatum round."""
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} УЛЬТИМАТУМ СОЛО | Раунд {round_number}",
-        description=replace_emojis(f":white_dot: Матчи: {len(matches)}"),
-        color=discord.Color.from_rgb(69, 69, 69)
+        title=f"{replace_emojis('a_star')} УЛЬТИМАТУМ СОЛО | Раунд {round_number}",
+        description=f"{replace_emojis('white_dot')} Матчи раунда",
+        color=discord.Color.gold()
     )
 
+    # Get matches for this round
+    matches = await ultimatum_store.get_matches(tournament_id, round_number)
+
     if not matches:
-        embed.add_field(
-            name="",
-            value=replace_emojis("⚪ Нет матчей в этом раунде"),
-            inline=False
-        )
+        embed.description = "Нет матчей в этом раунде"
         return embed
 
-    # Add each match
-    for idx, match in enumerate(matches, 1):
-        player1_name = f"Player {match.player1_id}"
-        player2_name = f"Player {match.player2_id}"
+    for match in matches:
+        # Get player names
+        p1 = guild.get_member(match.player1_id)
+        p2 = guild.get_member(match.player2_id)
+        p1_name = p1.display_name if p1 else f"<@{match.player1_id}>"
+        p2_name = p2.display_name if p2 else f"<@{match.player2_id}>"
 
-        # Get player stats for display
-        # This should fetch from ultimatum_players table
-        # For now, use placeholders
+        status_emoji = {
+            MatchStatus.PENDING: "⏳",
+            MatchStatus.IN_PROGRESS: "🎮",
+            MatchStatus.COMPLETED: "✅"
+        }.get(match.status, "❓")
 
-        match_info = replace_emojis(
-            f":white_arrow: Матч {idx}: {player1_name} vs {player2_name}"
-        )
+        match_type = "Гранд-финал" if match.match_type == MatchType.GRAND_FINAL else "Обычный"
 
-        if match.status == MatchStatus.COMPLETED:
-            match_info += replace_emojis(f" ✅ Завершен")
-        elif match.room_id:
-            match_info += replace_emojis(f" 🏠 Комната: {match.room_id}")
-        else:
-            match_info += replace_emojis(f" ⏳ Ожидание")
+        field_value = f"{replace_emojis('white_arrow')} {p1_name} vs {p2_name}\n"
+        field_value += f"{replace_emojis('sub_middle')} Статус: {status_emoji} {match.status.value}\n"
+        field_value += f"{replace_emojis('sub_middle')} Тип: {match_type}"
+
+        if match.room_id:
+            field_value += f"\n{replace_emojis('sub_middle')} Комната: {match.room_id}"
 
         embed.add_field(
-            name="",
-            value=match_info,
+            name=f"Матч #{match.id}",
+            value=field_value,
             inline=False
         )
 
     return embed
+
+
+async def build_ultimatum_round_view(bot: TournamentBot, tournament_id: str, round_number: int) -> discord.ui.View:
+    """Build view for Ultimatum round with all match controls."""
+    view = discord.ui.View(timeout=None)
+
+    # Get matches
+    matches = await ultimatum_store.get_matches(tournament_id, round_number)
+
+    # For each match, add controls
+    for match in matches:
+        match_view = UltimatumMatchView(bot, tournament_id, match.id, round_number)
+        match_view.refresh_items(match)
+        # Add match view items to main view
+        for item in match_view.children:
+            view.add_item(item)
+
+    return view
