@@ -107,3 +107,53 @@ CREATE INDEX IF NOT EXISTS idx_ultimatum_matches_status ON ultimatum_matches(sta
 CREATE INDEX IF NOT EXISTS idx_ultimatum_match_history_players ON ultimatum_match_history(player1_id, player2_id);
 CREATE INDEX IF NOT EXISTS idx_ultimatum_audit_log_tournament ON ultimatum_audit_log(tournament_id);
 """
+
+# Elo Rating System Schema
+ELO_SCHEMA = """
+-- Elo ratings table
+CREATE TABLE IF NOT EXISTS elo_ratings (
+    id BIGSERIAL PRIMARY KEY,
+    discord_id BIGINT UNIQUE NOT NULL,
+    username VARCHAR(100),
+    elo INTEGER NOT NULL DEFAULT 1000,
+    peak_elo INTEGER NOT NULL DEFAULT 1000,
+    rated_matches INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Elo change history
+CREATE TABLE IF NOT EXISTS elo_history (
+    id BIGSERIAL PRIMARY KEY,
+    match_id BIGINT,
+    tournament_id TEXT,
+    player_id BIGINT NOT NULL,
+    opponent_id BIGINT NOT NULL,
+    elo_before INTEGER NOT NULL,
+    elo_after INTEGER NOT NULL,
+    elo_change INTEGER NOT NULL,
+    opponent_elo_before INTEGER NOT NULL,
+    expected_score NUMERIC(10,8),
+    k_factor INTEGER NOT NULL,
+    result VARCHAR(10) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Elo seasons (for future use)
+CREATE TABLE IF NOT EXISTS elo_seasons (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    started_at TIMESTAMP,
+    ended_at TIMESTAMP,
+    status VARCHAR(20)
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_elo_ratings_discord ON elo_ratings(discord_id);
+CREATE INDEX IF NOT EXISTS idx_elo_ratings_elo ON elo_ratings(elo DESC);
+CREATE INDEX IF NOT EXISTS idx_elo_history_player ON elo_history(player_id);
+CREATE INDEX IF NOT EXISTS idx_elo_history_match ON elo_history(match_id);
+CREATE INDEX IF NOT EXISTS idx_elo_history_tournament ON elo_history(tournament_id);
+"""

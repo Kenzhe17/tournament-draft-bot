@@ -111,6 +111,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.mm")
         await self.load_extension("cogs.ultimatum")
+        await self.load_extension("cogs.elo")
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")

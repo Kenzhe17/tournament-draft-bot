@@ -525,8 +525,9 @@ async def init_db() -> None:
         """)
 
         # Create Ultimatum tournament tables
-        from ultimatum.ultimatum_schema import ULTIMATUM_SCHEMA
+        from ultimatum.ultimatum_schema import ULTIMATUM_SCHEMA, ELO_SCHEMA
         await conn.execute(ULTIMATUM_SCHEMA)
+        await conn.execute(ELO_SCHEMA)
 
         # Create teams table for BR tournament team format
         await conn.execute("""
