@@ -112,10 +112,14 @@ class UltimatumTournament:
         bot=None
     ) -> None:
         """Complete a match and update player stats."""
+        logger.info(f"Completing match {match_id}: winner={winner_id}, loser={loser_id}")
+        
         # Get match details
         match = await self.store.get_match_by_id(match_id)
         if not match:
             raise ValueError("Match not found")
+
+        logger.info(f"Match details: tournament_id={match.tournament_id}, round={match.round_number}, type={match.match_type}")
 
         # Update match in database
         await self.store.complete_match(match_id, winner_id, loser_id)
@@ -142,8 +146,11 @@ class UltimatumTournament:
             loser.losses + 1
         )
 
+        logger.info(f"Player stats updated: winner={winner_id} ({winner.wins+1}:{winner.losses}), loser={loser_id} ({loser.wins}:{loser.losses+1})")
+
         # Check if loser should be eliminated (2 losses)
         if loser.losses + 1 >= 2:
+            logger.info(f"Player {loser_id} eliminated (2 losses)")
             await self.eliminate_player(match.tournament_id, loser_id, match.round_number, bot)
 
         # Update Elo ratings (only for normal matches, not for byes)
@@ -162,10 +169,12 @@ class UltimatumTournament:
                 logger.error(f"Failed to update Elo: {e}")
         elif match.match_type == MatchType.GRAND_FINAL:
             # Grand final: determine champion and runner-up
+            logger.info("Grand final match completed, calling _complete_grand_final")
             await self._complete_grand_final(match.tournament_id, winner_id, loser_id, bot)
 
         # Check if round is complete (skip for grand final)
         if match.match_type != MatchType.GRAND_FINAL:
+            logger.info(f"Checking round {match.round_number} completion for tournament {match.tournament_id}")
             await self._check_round_completion(match.tournament_id, match.round_number, bot)
 
     async def _complete_grand_final(
