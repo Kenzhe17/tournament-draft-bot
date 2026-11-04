@@ -147,6 +147,9 @@ class Tournament:
     # Организатор турнира (user_id)
     organizer_id: int = 0
 
+    # MM поиск который создал этот турнир (channel_id)
+    mm_search_channel_id: int = 0
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -1156,6 +1159,18 @@ class Tournament:
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
 
+        # Reset MM search if this tournament was created from MM
+        if self.mm_search_channel_id > 0:
+            try:
+                from storage.mm_search_store import mm_search_store
+                search = mm_search_store.get(self.guild_id, self.mm_search_channel_id)
+                if search:
+                    # Search is already cleared, but we can verify
+                    pass
+            except Exception as e:
+                import logging
+                logging.warning(f"Error resetting MM search: {e}")
+
         # Update organizer setup embed if it exists
         try:
             from config import TOURNAMENT_CHANNELS
@@ -1405,6 +1420,7 @@ class Tournament:
             "winner_team_index": self.winner_team_index,
             "organizer_id": self.organizer_id,
             "eliminated_teams": list(self.eliminated_teams),
+            "mm_search_channel_id": self.mm_search_channel_id,
         }
 
     @classmethod
@@ -1451,6 +1467,7 @@ class Tournament:
             winner_team_index=data.get("winner_team_index"),
             organizer_id=data.get("organizer_id", 0),
             eliminated_teams=set(data.get("eliminated_teams", [])),
+            mm_search_channel_id=data.get("mm_search_channel_id", 0),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())

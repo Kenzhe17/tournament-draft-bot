@@ -35,10 +35,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Auto tournament channels
-AUTO_CHANNELS = [1564628503930871811, 1564629925494001744]
-MAX_AUTO_TOURNAMENTS = 2
-
 # Список «опасных» прав для проверки 2FA
 DANGEROUS_PERMS = {
     "administrator": "Администратор",
@@ -71,7 +67,6 @@ class TournamentCog(commands.Cog):
 
     def __init__(self, bot: TournamentBot):
         self.bot = bot
-        self._auto_timers: dict[tuple[int, int], asyncio.Task] = {}  # (guild_id, channel_id) -> Task
 
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
@@ -184,25 +179,6 @@ class TournamentCog(commands.Cog):
         from utils.logging import log_tournament_created
         await log_tournament_created(self.bot, interaction.guild, interaction.user, size, formation)
 
-        # Auto-start for specific channels
-        if interaction.channel_id in AUTO_CHANNELS:
-            # Check max tournaments limit
-            current_tournaments = len([t for t in store.all() if t.guild_id == interaction.guild_id and t.channel_id in AUTO_CHANNELS])
-            if current_tournaments >= MAX_AUTO_TOURNAMENTS:
-                await interaction.response.send_message(
-                    f"❌ Достигнут лимит одновременных турниров ({MAX_AUTO_TOURNAMENTS}). Подождите завершения.",
-                    ephemeral=True
-                )
-                store.delete(interaction.guild_id, interaction.channel_id)
-                return
-
-            # Set to auto mode
-            tournament.is_auto = True
-            tournament.registration = RegistrationState.OPEN
-            store.set(tournament)
-
-            # Timer will start when first player joins
-
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
@@ -256,63 +232,6 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
-
-    def _start_auto_timer(self, guild_id: int, channel_id: int, tournament) -> None:
-        """Start auto-timer for tournament."""
-        async def timer_task():
-            try:
-                await asyncio.sleep(600)  # 10 minutes
-
-                # Check if tournament still exists
-                tournament = store.get(guild_id, channel_id)
-                if not tournament or tournament.phase != TournamentPhase.SETUP:
-                    return
-
-                # Auto-cancel if not full
-                if tournament.formation_mode == FormationMode.RANDOM:
-                    current = len(tournament.players_pool)
-                    required = int(tournament.size.value)
-                else:
-                    current = len(tournament.circle1) + len(tournament.circle2) + len(tournament.circle3) + len(tournament.circle4)
-                    required = int(tournament.size.value)
-
-                if current < required:
-                    # Reset tournament
-                    if tournament.formation_mode == FormationMode.RANDOM:
-                        tournament.players_pool = []
-                        tournament.player_user_ids = {}
-                    else:
-                        tournament.circle1 = []
-                        tournament.circle2 = []
-                        tournament.circle3 = []
-                        tournament.circle4 = []
-                        tournament.captains = []
-                        tournament.player_user_ids = {}
-                    store.set(tournament)
-
-                    # Update message
-                    try:
-                        channel = self.bot.get_channel(channel_id)
-                        if channel:
-                            message = await channel.fetch_message(tournament.message_id)
-                            embed = await build_setup_embed(tournament, channel)
-                            await message.edit(embed=embed)
-                    except Exception as e:
-                        logger.error(f"Error updating auto-timer message: {e}")
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                logger.error(f"Error in auto-timer task: {e}")
-
-        task = asyncio.create_task(timer_task())
-        self._auto_timers[(guild_id, channel_id)] = task
-
-    def _cancel_auto_timer(self, guild_id: int, channel_id: int) -> None:
-        """Cancel auto-timer for a channel."""
-        key = (guild_id, channel_id)
-        if key in self._auto_timers:
-            self._auto_timers[key].cancel()
-            del self._auto_timers[key]
 
     @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
     @is_bot_owner()
