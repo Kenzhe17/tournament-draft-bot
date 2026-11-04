@@ -214,6 +214,13 @@ class TournamentCog(commands.Cog):
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
+        # Разблокировать канал если он был заблокирован поиском
+        if hasattr(self.bot, 'mm_cog'):
+            from cogs.mm import LOCKED_CHANNELS
+            if interaction.channel_id in LOCKED_CHANNELS:
+                del LOCKED_CHANNELS[interaction.channel_id]
+                logger.info(f"Channel {interaction.channel_id} unlocked after tournament deletion")
+
         # Сбросить лимит поиска если освободился турнир
         if hasattr(self.bot, 'mm_cog'):
             await self.bot.mm_cog.reset_search_limit(interaction.guild_id)

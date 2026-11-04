@@ -1223,6 +1223,20 @@ class Tournament:
         self.winner_team_index = team_index
         self.phase = TournamentPhase.COMPLETE
 
+        # Unlock MM search channel if this tournament was created from MM
+        if self.mm_search_channel_id > 0:
+            try:
+                bot = get_bot_instance()
+                if bot and hasattr(bot, 'mm_cog'):
+                    from cogs.mm import LOCKED_CHANNELS
+                    if self.channel_id in LOCKED_CHANNELS:
+                        del LOCKED_CHANNELS[self.channel_id]
+                        import logging
+                        logging.info(f"Channel {self.channel_id} unlocked after tournament completion")
+            except Exception as e:
+                import logging
+                logging.warning(f"Error unlocking MM channel: {e}")
+
         # Reset MM search if this tournament was created from MM
         if self.mm_search_channel_id > 0:
             try:
