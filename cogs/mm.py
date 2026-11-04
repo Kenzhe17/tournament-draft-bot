@@ -267,11 +267,24 @@ class MMCog(commands.Cog):
         if len(teams[0]) > 3:
             tournament.circle4 = [team[3] for team in teams]
 
-        # Автоматически стартовать турнир
-        tournament.phase = TournamentPhase.TEAMS
+        # Автоматически стартовать турнир и перейти к фазе матчей
+        tournament.phase = TournamentPhase.QUALIFIERS
         tournament.is_test = True  # Отключить ставки для random-auto
         
-        logger.info("Tournament created with random-auto formation and auto-started")
+        # Создать команды из распределенных игроков
+        tournament.teams = []
+        for i, team_players in enumerate(teams):
+            team_data = {
+                "players": team_players,
+                "captain": team_players[0] if team_players else None,
+                "team_number": i
+            }
+            tournament.teams.append(team_data)
+        
+        # Сгенерировать матчи
+        tournament.generate_qualifiers()
+        
+        logger.info("Tournament created with random-auto formation, auto-started and matches generated")
 
         # Построить embed
         embed = await build_setup_embed(tournament, guild)
@@ -297,11 +310,6 @@ class MMCog(commands.Cog):
             await search_message.edit(embed=search_embed, view=search_view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
-
-        # Уведомить в канале поиска
-        await interaction_channel.send(
-            f"✅ Турнир создан! Перейдите в канал {tournament_channel.mention} для игры."
-        )
 
     async def reset_search_limit(self, guild_id: int) -> None:
         """Сбросить выбранный канал поиска если освободился турнир."""
