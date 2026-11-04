@@ -127,8 +127,15 @@ class UltimatumRoomsButton(discord.ui.Button):
                 label=f"Матч #{match.id}: {match.player1_id} vs {match.player2_id}",
                 value=str(match.id)
             )
-            for match in matches
+            for match in matches if not match.room_id  # Only show matches without room
         ]
+        
+        if not options:
+            await interaction.response.send_message(
+                "Все матчи уже имеют комнаты.",
+                ephemeral=True
+            )
+            return
 
         select = UltimatumSelectMatch(self.tournament_id, self.round_number)
         select.options = options
@@ -171,8 +178,15 @@ class UltimatumWinnerButton(discord.ui.Button):
                 label=f"Матч #{match.id}: {match.player1_id} vs {match.player2_id}",
                 value=str(match.id)
             )
-            for match in matches
+            for match in matches if match.status == MatchStatus.PENDING  # Only show pending matches
         ]
+        
+        if not options:
+            await interaction.response.send_message(
+                "Все матчи завершены.",
+                ephemeral=True
+            )
+            return
 
         select = UltimatumSelectWinnerMatch(self.tournament_id, self.round_number, options)
         
