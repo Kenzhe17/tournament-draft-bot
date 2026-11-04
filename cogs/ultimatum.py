@@ -427,7 +427,7 @@ class UltimatumCog(commands.Cog):
                 elif player.final_place == 3:
                     medal = "🥉"
 
-                ranking_text += f"{medal} **#{player.final_place}** {player.username} ({player.record})\n"
+                ranking_text += f"{medal} **#{player.final_place}** {player.username}{player.record}\n"
 
         embed.add_field(
             name="Final Standings",
@@ -491,7 +491,7 @@ class UltimatumCog(commands.Cog):
 
             embed.add_field(
                 name=f"{result_emoji} vs {opponent_name}",
-                value=f"{match_type} {match.round_number} | {player.record}",
+                value=f"{match_type} {match.round_number} | {player.wins}:{player.losses}",
                 inline=False
             )
 
@@ -542,7 +542,7 @@ class UltimatumCog(commands.Cog):
 
             embed.add_field(
                 name=f"{medal}{idx + 1}. {player.username} {status_emoji}",
-                value=f"{player.record} | Статус: {player.status.value}",
+                value=f"{player.wins}:{player.losses} | Статус: {player.status.value}",
                 inline=False
             )
 

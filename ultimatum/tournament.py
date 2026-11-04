@@ -360,8 +360,8 @@ class UltimatumTournament:
                         logger.error(f"Error adding role to grand final player: {e}")
 
         logger.info(
-            f"Grand final created: {direct_pass.username} ({direct_pass.record}) vs "
-            f"{qualifier.username} ({qualifier.record})"
+            f"Grand final created: {direct_pass.username} ({direct_pass.wins}:{direct_pass.losses}) vs "
+            f"{qualifier.username} ({qualifier.wins}:{qualifier.losses})"
         )
 
     async def eliminate_player(
