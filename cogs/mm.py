@@ -176,6 +176,10 @@ class MMCog(commands.Cog):
                 if not search:
                     return
 
+                # Не отправлять уведомление если в поиске 0 человек
+                if len(search.players) == 0:
+                    return
+
                 # Отправить уведомление о поиске в канал уведомлений
                 try:
                     from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID

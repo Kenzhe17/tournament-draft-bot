@@ -115,12 +115,22 @@ class JoinSearchButton(discord.ui.Button):
                 tournament_channel = self.bot.get_channel(channel_id)
                 if tournament_channel:
                     tournament = store.get(self.guild_id, tournament_channel.id)
+                    # Турнир считается активным только если есть реальные игроки (user_id > 0)
                     if not tournament or tournament.phase == TournamentPhase.COMPLETE:
                         # Канал свободен - заблокировать его для этого поиска
                         search.tournament_channel_id = channel_id
                         LOCKED_CHANNELS[channel_id] = self.channel_id
                         mm_search_store.set(search)
                         break
+                    else:
+                        # Проверить есть ли реальные игроки в турнире
+                        has_real_players = any(uid > 0 for uid in tournament.player_user_ids.values())
+                        if not has_real_players:
+                            # Турнир без реальных игроков - считаем как свободный
+                            search.tournament_channel_id = channel_id
+                            LOCKED_CHANNELS[channel_id] = self.channel_id
+                            mm_search_store.set(search)
+                            break
             else:
                 # Все каналы заняты или заблокированы
                 await interaction.response.send_message(
