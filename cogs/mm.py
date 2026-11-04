@@ -176,13 +176,38 @@ class MMCog(commands.Cog):
         tournament.mm_search_channel_id = search.channel_id
 
         # Добавить игроков в пул с их SR
+        players_with_sr = []
         for player_name in search.players:
             user_id = search.player_user_ids.get(player_name, 0)
             tournament.players_pool.append(player_name)
             tournament.player_user_ids[player_name] = user_id
+            
+            # Получить SR игрока
+            from storage.player_stats_store import player_stats_store
+            stats = await player_stats_store.get(guild.id, user_id)
+            sr = stats.skill_rating if stats else 0.0
+            players_with_sr.append((player_name, sr))
 
         # Закрыть регистрацию
         tournament.registration = RegistrationState.CLOSED
+
+        # Распределить игроков по SR для random-auto
+        teams = tournament.distribute_players_random_auto(players_with_sr)
+        
+        # Заполнить круги из распределенных команд
+        tournament.circle1 = [team[0] for team in teams]  # Капитаны
+        if len(teams[0]) > 1:
+            tournament.circle2 = [team[1] for team in teams]
+        if len(teams[0]) > 2:
+            tournament.circle3 = [team[2] for team in teams]
+        if len(teams[0]) > 3:
+            tournament.circle4 = [team[3] for team in teams]
+
+        # Автоматически стартовать турнир
+        tournament.phase = TournamentPhase.TEAMS
+        tournament.is_test = True  # Отключить ставки для random-auto
+        
+        logger.info("Tournament created with random-auto formation and auto-started")
 
         # Построить embed
         embed = await build_setup_embed(tournament, guild)
