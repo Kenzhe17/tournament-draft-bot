@@ -66,7 +66,7 @@ class UltimatumCog(commands.Cog):
         )
 
         # Send setup embed with Join button
-        embed = self._build_tournament_embed(tournament)
+        embed = await self._build_tournament_embed(tournament)
         view = build_ultimatum_setup_view(interaction.guild_id, interaction.channel_id, 0)
         message = await interaction.channel.send(embed=embed, view=view)
 
