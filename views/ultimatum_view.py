@@ -200,16 +200,9 @@ class UltimatumWinnerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         is_admin = is_org_check(interaction.user, interaction.guild)
         
-        # Check if user is in any match in this round
-        matches = await ultimatum_store.get_matches(self.tournament_id, self.round_number)
-        user_in_match = any(
-            match.player1_id == interaction.user.id or match.player2_id == interaction.user.id
-            for match in matches
-        )
-        
-        if not is_admin and not user_in_match:
+        if not is_admin:
             await interaction.response.send_message(
-                "❌ Только админы или участники матчей могут выбирать победителя.",
+                "❌ Только админы могут выбирать победителя.",
                 ephemeral=True
             )
             return

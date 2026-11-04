@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS ultimatum_tournaments (
     guild_id BIGINT NOT NULL,
     status TEXT NOT NULL DEFAULT 'DRAFT',  -- DRAFT, REGISTRATION, READY, IN_PROGRESS, ROUND_IN_PROGRESS, ROUND_COMPLETED, GRAND_FINAL, COMPLETED, CANCELLED
     current_round INTEGER DEFAULT 0,
+    is_open BOOLEAN DEFAULT FALSE,  -- If False, only players with r!z3 tag can join
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
@@ -125,6 +126,17 @@ BEGIN
         WHERE table_name = 'ultimatum_players' AND column_name = 'elimination_round'
     ) THEN
         ALTER TABLE ultimatum_players ADD COLUMN elimination_round INTEGER;
+    END IF;
+END $$;
+
+-- Migration: Add is_open column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'ultimatum_tournaments' AND column_name = 'is_open'
+    ) THEN
+        ALTER TABLE ultimatum_tournaments ADD COLUMN is_open BOOLEAN DEFAULT FALSE;
     END IF;
 END $$;
 

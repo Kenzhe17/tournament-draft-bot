@@ -33,10 +33,10 @@ class UltimatumStore:
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO ultimatum_tournaments (id, name, guild_id, status, created_by)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO ultimatum_tournaments (id, name, guild_id, status, is_open, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 """,
-                tournament_id, name, guild_id, TournamentStatus.DRAFT.value, created_by
+                tournament_id, name, guild_id, TournamentStatus.DRAFT.value, False, created_by
             )
 
         return Tournament(
@@ -44,6 +44,7 @@ class UltimatumStore:
             name=name,
             guild_id=guild_id,
             status=TournamentStatus.DRAFT,
+            is_open=False,
             created_by=created_by,
             created_at=datetime.now()
         )
@@ -64,6 +65,7 @@ class UltimatumStore:
                 guild_id=row["guild_id"],
                 status=TournamentStatus(row["status"]),
                 current_round=row["current_round"],
+                is_open=row.get("is_open", False),
                 created_at=row["created_at"],
                 started_at=row["started_at"],
                 completed_at=row["completed_at"],
@@ -96,6 +98,7 @@ class UltimatumStore:
                 guild_id=row["guild_id"],
                 status=TournamentStatus(row["status"]),
                 current_round=row["current_round"],
+                is_open=row.get("is_open", False),
                 created_at=row["created_at"],
                 started_at=row["started_at"],
                 completed_at=row["completed_at"],
@@ -615,6 +618,31 @@ class UltimatumStore:
                 WHERE match_id = $1
                 """,
                 match_id
+            )
+
+    async def set_tournament_open(self, tournament_id: str, is_open: bool) -> None:
+        """Set tournament open/closed status."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_tournaments
+                SET is_open = $1
+                WHERE id = $2
+                """,
+                is_open, tournament_id
+            )
+
+    async def remove_player(self, tournament_id: str, discord_id: int) -> None:
+        """Remove player from tournament."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                DELETE FROM ultimatum_players
+                WHERE tournament_id = $1 AND discord_id = $2
+                """,
+                tournament_id, discord_id
             )
 
 

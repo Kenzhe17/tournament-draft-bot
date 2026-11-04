@@ -203,6 +203,9 @@ class UltimatumTournament:
         """Check if all matches in round are complete and start next round."""
         matches = await self.store.get_matches(tournament_id, round_number)
 
+        logger.info(f"Checking round {round_number} completion for tournament {tournament_id}")
+        logger.info(f"Total matches: {len(matches)}, Completed: {sum(1 for m in matches if m.status == MatchStatus.COMPLETED)}")
+
         # Check if all matches are completed
         all_complete = all(m.status == MatchStatus.COMPLETED for m in matches)
 
@@ -225,7 +228,12 @@ class UltimatumTournament:
         # Start next round automatically
         next_round = round_number + 1
         logger.info(f"Starting round {next_round} for tournament {tournament_id}")
-        await self.create_round(tournament_id, next_round, bot)
+        try:
+            await self.create_round(tournament_id, next_round, bot)
+            logger.info(f"Round {next_round} created successfully")
+        except Exception as e:
+            logger.error(f"Error creating round {next_round}: {e}", exc_info=True)
+            return
         
         # Update round embed to show new round
         if bot:
@@ -234,7 +242,11 @@ class UltimatumTournament:
             if tournament and tournament.guild_id:
                 guild = bot.get_guild(tournament.guild_id)
                 if guild and guild.id in round_messages:
-                    await update_round_embed(guild, tournament_id, next_round, bot)
+                    try:
+                        await update_round_embed(guild, tournament_id, next_round, bot)
+                        logger.info(f"Round embed updated to round {next_round}")
+                    except Exception as e:
+                        logger.error(f"Error updating round embed: {e}", exc_info=True)
 
     async def _should_create_grand_final(
         self,
