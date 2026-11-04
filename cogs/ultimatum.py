@@ -248,152 +248,64 @@ class UltimatumCog(commands.Cog):
 
         return embed
 
-    @ultimatum_group.command(name="history", description="View tournament history")
-    @app_commands.describe(limit="Number of recent tournaments to show (default: 5)")
-    async def tournament_history(
-        self,
-        interaction: discord.Interaction,
-        limit: int = 5
-    ) -> None:
-        """View tournament history for this guild."""
-        pool = await get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT * FROM ultimatum_tournaments
-                WHERE guild_id = $1
-                ORDER BY created_at DESC
-                LIMIT $2
-                """,
-                interaction.guild_id, limit
-            )
 
-        if not rows:
-            await interaction.response.send_message(
-                "No tournament history found.",
-                ephemeral=True
-            )
-            return
 
-        embed = discord.Embed(
-            title="📜 Tournament History",
-            color=discord.Color.blue()
-        )
-
-        for row in rows:
-            status_emoji = {
-                "DRAFT": "📝",
-                "REGISTRATION": "📋",
-                "READY": "✅",
-                "IN_PROGRESS": "🎮",
-                "ROUND_IN_PROGRESS": "⚔️",
-                "ROUND_COMPLETED": "✅",
-                "GRAND_FINAL": "🏆",
-                "COMPLETED": "🎉",
-                "CANCELLED": "❌",
-            }
-
-            emoji = status_emoji.get(row["status"], "❓")
-            created_date = row["created_at"].strftime("%Y-%m-%d") if row["created_at"] else "N/A"
-
-            embed.add_field(
-                name=f"{emoji} {row['name']}",
-                value=f"Status: {row['status']}\nCreated: {created_date}\nRounds: {row['current_round']}",
-                inline=False
-            )
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @ultimatum_group.command(name="ranking", description="View final rankings of completed tournament")
-    @app_commands.describe(tournament_id="Tournament ID (leave empty for latest completed)")
-    async def tournament_ranking(
-        self,
-        interaction: discord.Interaction,
-        tournament_id: Optional[str] = None
-    ) -> None:
-        """View final rankings of a completed tournament."""
-        # Get tournament
-        if tournament_id:
-            tournament = await ultimatum_store.get_tournament(tournament_id)
-        else:
-            # Get latest completed tournament
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT * FROM ultimatum_tournaments
-                    WHERE guild_id = $1 AND status = $2
-                    ORDER BY completed_at DESC
-                    LIMIT 1
-                    """,
-                    interaction.guild_id, TournamentStatus.COMPLETED.value
-                )
-                if not row:
-                    await interaction.response.send_message(
-                        "No completed tournaments found.",
-                        ephemeral=True
-                    )
-                    return
-                tournament = Tournament(
-                    id=row["id"],
-                    name=row["name"],
-                    guild_id=row["guild_id"],
-                    status=TournamentStatus(row["status"]),
-                    current_round=row["current_round"],
-                    created_at=row["created_at"],
-                    started_at=row["started_at"],
-                    completed_at=row["completed_at"],
-                    created_by=row["created_by"],
-                )
-
+    @app_commands.command(name="ulti", description="Show current Ultimatum tournament ranking")
+    async def ulti(self, interaction: discord.Interaction) -> None:
+        """Show current tournament standings."""
+        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
         if not tournament:
             await interaction.response.send_message(
-                "Tournament not found.",
+                "❌ No active tournament found.",
                 ephemeral=True
             )
             return
 
-        if tournament.status != TournamentStatus.COMPLETED:
-            await interaction.response.send_message(
-                "Tournament is not completed yet.",
-                ephemeral=True
-            )
-            return
-
-        # Get players with final places
+        # Get all players
         players = await ultimatum_store.get_players(tournament.id)
-        sorted_players = sorted(players, key=lambda p: p.final_place or 999)
 
-        embed = discord.Embed(
-            title=f"🏆 Final Rankings: {tournament.name}",
-            description=f"Completed: {tournament.completed_at.strftime('%Y-%m-%d') if tournament.completed_at else 'N/A'}",
-            color=discord.Color.gold()
+        # Sort by wins, then by fewer losses
+        sorted_players = sorted(
+            players,
+            key=lambda p: (-p.wins, p.losses if p.losses else 0)
         )
 
-        # Group by ranks for display
-        ranking_text = ""
-        for player in sorted_players:
-            if player.final_place:
-                medal = ""
-                if player.final_place == 1:
-                    medal = "🥇"
-                elif player.final_place == 2:
-                    medal = "🥈"
-                elif player.final_place == 3:
-                    medal = "🥉"
+        embed = discord.Embed(
+            title=f"{get_emoji('a_star')} 🏆 16 | УЛЬТИМАТУМ СОЛО",
+            description=f"{get_emoji('white_arrow')} Организатор: <@{tournament.created_by}>\n{get_emoji('white_dot')} Раунд: {tournament.current_round}",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
 
-                ranking_text += f"{medal} **#{player.final_place}** {player.username}{player.record}\n"
+        ranking_text = ""
+        for idx, player in enumerate(sorted_players):
+            medal = ""
+            if idx == 0:
+                medal = f"{get_emoji('winner')} "
+            elif idx == 1:
+                medal = f"{get_emoji('sub_middle')} "
+            elif idx == 2:
+                medal = f"{get_emoji('sub_directory')} "
+
+            status_emoji = {
+                PlayerStatus.CHAMPION: f"{get_emoji('winner')}",
+                PlayerStatus.GRAND_FINAL_LOSER: f"{get_emoji('sub_middle')}",
+                PlayerStatus.GRAND_FINALIST: f"{get_emoji('sub_directory')}",
+                PlayerStatus.ELIMINATED: f"{get_emoji('x_red')}",
+                PlayerStatus.ACTIVE: ""
+            }.get(player.status, "")
+
+            ranking_text += f"{get_emoji('white_arrow')} {medal}{idx + 1}. {player.username} {status_emoji} {get_emoji('white_dot')} {player.wins}:{player.losses}\n"
 
         embed.add_field(
-            name="Final Standings",
-            value=ranking_text or "No rankings available",
+            name=f"{get_emoji('white_dot')} Рейтинг",
+            value=ranking_text or "Нет игроков",
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="tournament_history", description="Show your Ultimatum tournament history")
-    async def tournament_history(self, interaction: discord.Interaction) -> None:
+    @app_commands.command(name="ulti_history", description="Show your Ultimatum tournament match history")
+    async def ulti_history(self, interaction: discord.Interaction) -> None:
         """Show player's tournament match history."""
         tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
         if not tournament:
@@ -429,9 +341,9 @@ class UltimatumCog(commands.Cog):
             return
 
         embed = discord.Embed(
-            title=f"📊 История матчей: {player.username}",
-            description=f"Записей: {len(player_matches)}",
-            color=discord.Color.blue()
+            title=f"{get_emoji('a_star')} 📊 История матчей: {player.username}",
+            description=f"{get_emoji('white_dot')} Записей: {len(player_matches)}",
+            color=discord.Color.from_rgb(69, 69, 69)
         )
 
         for match in player_matches:
@@ -440,68 +352,17 @@ class UltimatumCog(commands.Cog):
             opponent_name = opponent.username if opponent else "Unknown"
 
             is_winner = match.winner_id == interaction.user.id
-            result_emoji = "✅" if is_winner else "❌"
+            result_emoji = f"{get_emoji('check_green')}" if is_winner else f"{get_emoji('x_red')}"
 
             match_type = "Гранд-финал" if match.match_type == MatchType.GRAND_FINAL else "Раунд"
 
             embed.add_field(
                 name=f"{result_emoji} vs {opponent_name}",
-                value=f"{match_type} {match.round_number} | {player.wins}:{player.losses}",
+                value=f"{get_emoji('white_dot')} {match_type} {match.round_number} | {player.wins}:{player.losses}",
                 inline=False
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="tournament_ranking", description="Show current Ultimatum tournament ranking")
-    async def tournament_ranking(self, interaction: discord.Interaction) -> None:
-        """Show current tournament standings."""
-        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ No active tournament found.",
-                ephemeral=True
-            )
-            return
-
-        # Get all players
-        players = await ultimatum_store.get_players(tournament.id)
-
-        # Sort by wins, then by fewer losses
-        sorted_players = sorted(
-            players,
-            key=lambda p: (-p.wins, p.losses if p.losses else 0)
-        )
-
-        embed = discord.Embed(
-            title=f"🏆 Рейтинг турнира: {tournament.name}",
-            description=f"Раунд {tournament.current_round}",
-            color=discord.Color.gold()
-        )
-
-        for idx, player in enumerate(sorted_players):
-            medal = ""
-            if idx == 0:
-                medal = "🥇 "
-            elif idx == 1:
-                medal = "🥈 "
-            elif idx == 2:
-                medal = "🥉 "
-
-            status_emoji = {
-                PlayerStatus.CHAMPION: "👑",
-                PlayerStatus.GRAND_FINAL_LOSER: "🥈",
-                PlayerStatus.GRAND_FINALIST: "⭐",
-                PlayerStatus.ELIMINATED: "💀",
-                PlayerStatus.ACTIVE: ""
-            }.get(player.status, "")
-
-            embed.add_field(
-                name=f"{medal}{idx + 1}. {player.username} {status_emoji}",
-                value=f"{player.wins}:{player.losses} | Статус: {player.status.value}",
-                inline=False
-            )
-
-        await interaction.response.send_message(embed=embed)
 
     async def on_interaction(self, interaction: discord.Interaction) -> None:
         """Handle custom interaction events for Ultimatum buttons."""
