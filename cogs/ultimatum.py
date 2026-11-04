@@ -61,7 +61,7 @@ class UltimatumCog(commands.Cog):
         tournament.status = TournamentStatus.REGISTRATION
 
         await interaction.response.send_message(
-            f"✅ Tournament '{name}' created! ID: {tournament.id}",
+            f"✅ Tournament '{tournament_name}' created! ID: {tournament.id}",
             ephemeral=True
         )
 
