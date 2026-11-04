@@ -212,7 +212,7 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
 
         # Обновить embed поиска
-        search_embed = build_search_embed(search, guild)
+        search_embed = await build_search_embed(search, guild)
         search_view = build_search_view(self.bot, search)
         try:
             search_message = await interaction_channel.fetch_message(search.message_id)
@@ -244,7 +244,7 @@ class MMCog(commands.Cog):
                             channel = self.bot.get_channel(search.channel_id)
                             if channel:
                                 message = await channel.fetch_message(search.message_id)
-                                embed = build_search_embed(search, channel.guild)
+                                embed = await build_search_embed(search, channel.guild)
                                 view = build_search_view(self.bot, search)
                                 await message.edit(embed=embed, view=view)
                         except Exception as e:
