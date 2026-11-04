@@ -113,7 +113,13 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
             pass
         
         # Update the round embed to show room info
-        # TODO: Update message with new embed
+        from views.ultimatum_view import update_round_embed
+        from ultimatum.store import ultimatum_store
+        
+        # Get match to get tournament_id and round_number
+        match = await ultimatum_store.get_match_by_id(self.match_id)
+        if match:
+            await update_round_embed(interaction.guild, match.tournament_id, self.round_number)
 
 
 async def send_ultimatum_room_notifications(

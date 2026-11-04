@@ -188,6 +188,10 @@ class UltimatumStartButton(discord.ui.Button):
                     round_message = await interaction.channel.send(embed=new_embed, view=new_view)
                     logger.info(f"Sent round message: {round_message.id}")
                     
+                    # Track the round message for future updates
+                    from views.ultimatum_view import round_messages
+                    round_messages[interaction.guild_id] = (interaction.channel_id, round_message.id)
+                    
                     # Delete old setup message
                     await interaction.message.delete()
                     logger.info("Deleted old setup message")

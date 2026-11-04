@@ -17,6 +17,27 @@ logger = logging.getLogger(__name__)
 # Cooldown tracking for room submissions
 room_cooldowns = {}
 
+# Track round messages for updates: {guild_id: (channel_id, message_id)}
+round_messages = {}
+
+
+async def update_round_embed(guild: discord.Guild, tournament_id: str, round_number: int) -> None:
+    """Update the round embed with current match information."""
+    if guild.id not in round_messages:
+        return
+    
+    try:
+        channel_id, message_id = round_messages[guild.id]
+        channel = guild.get_channel(channel_id)
+        if not channel:
+            return
+        
+        message = await channel.fetch_message(message_id)
+        new_embed = await build_ultimatum_round_embed(tournament_id, round_number, guild)
+        await message.edit(embed=new_embed)
+    except Exception as e:
+        logger.error(f"Error updating round embed: {e}", exc_info=True)
+
 
 async def build_ultimatum_round_embed(tournament_id: str, round_number: int, guild: discord.Guild) -> discord.Embed:
     """Build embed for Ultimatum round."""
@@ -46,7 +67,7 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
             field_value += f"\n{replace_emojis('sub_middle')} Комната: {match.room_id}"
 
         embed.add_field(
-            name=f"Матч #{match.id}",
+            name="\u200b",  # Zero-width space
             value=field_value,
             inline=False
         )

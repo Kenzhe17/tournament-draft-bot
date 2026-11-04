@@ -99,7 +99,9 @@ class UltimatumCog(commands.Cog):
                             ephemeral=True
                         )
                         
-                        # TODO: Update round embed
+                        # Update round embed
+                        from views.ultimatum_view import update_round_embed
+                        await update_round_embed(interaction.guild, match.tournament_id, match.round_number)
                     else:
                         # No consensus - clear votes
                         await ultimatum_store.clear_votes(match_id)
@@ -693,7 +695,9 @@ class UltimatumCog(commands.Cog):
                             ephemeral=True
                         )
                         
-                        # TODO: Update round embed
+                        # Update round embed
+                        from views.ultimatum_view import update_round_embed
+                        await update_round_embed(interaction.guild, match.tournament_id, match.round_number)
                     else:
                         # No consensus - clear votes
                         await ultimatum_store.clear_votes(match_id)
