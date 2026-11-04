@@ -1132,16 +1132,10 @@ class RobGroupStartButton(discord.ui.Button):
                     percent = random.uniform(0.1, 0.5)
                     potential = int(victim_balance * percent)
 
-                    # Применить бонус к добыче от питомцев участников
-                    if group_pet_bonuses["loot_bonus"] > 0:
-                        potential = int(potential * (1 + group_pet_bonuses["loot_bonus"] / 100))
+                    # Питомцы в групповых ограблениях не работают - бонусы отключены
+                    # Бонус к добыче и защита жертвы не применяются
 
                     loot = min(potential, group_cap)
-
-                    # Применить снижение потерь жертвы (Сохранность капитала)
-                    if group_pet_bonuses["victim_defense_bonus"] > 0:
-                        loss_reduction = group_pet_bonuses["victim_defense_bonus"] / 100
-                        loot = int(loot * (1 - loss_reduction))
 
                     await user_balance_store.subtract_balance(guild_id, victim_id, loot)
 
@@ -1204,16 +1198,8 @@ class RobGroupStartButton(discord.ui.Button):
             else:
                 stolen_amount = loot
 
-            # Формировать текст бонусов питомцев
+            # Питомцы в групповых ограблениях больше не работают - бонусы отключены
             bonus_text = ""
-            if group_pet_bonuses["success_bonus"] > 0:
-                names = ", ".join(group_pet_bonuses["success_names"])
-                bonus_text += f"\n\n🐾 **Лисы-разведчики ({names}):** +{group_pet_bonuses['success_bonus']:.1f}% к шансу успеха!"
-            if group_pet_bonuses["loot_bonus"] > 0:
-                names = ", ".join(group_pet_bonuses["loot_names"])
-                bonus_text += f"\n\n🐾 **Еноты-грабители ({names}):** +{group_pet_bonuses['loot_bonus']:.1f}% к кушу!"
-            if group_pet_bonuses["victim_defense_bonus"] > 0:
-                bonus_text += f"\n\n🐾 **{group_pet_bonuses['victim_defense_name']}:** Защитил {group_pet_bonuses['victim_defense_bonus']:.1f}% монет!"
 
             embed = discord.Embed(
                 title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
