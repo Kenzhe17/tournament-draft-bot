@@ -68,11 +68,14 @@ class MMCog(commands.Cog):
             format=format
         )
 
-        embed = build_search_embed(search, interaction.guild)
+        # Сначала отправить ephemeral сообщение
+        await interaction.response.send_message("✅ Поиск создан!", ephemeral=True)
+
+        embed = await build_search_embed(search, interaction.guild)
         view = build_search_view(self.bot, search)
 
-        await interaction.response.send_message(embed=embed, view=view)
-        message = await interaction.original_response()
+        # Отправить вечный embed
+        message = await interaction.channel.send(embed=embed, view=view)
 
         search.message_id = message.id
         mm_search_store.set(search)

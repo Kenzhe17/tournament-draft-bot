@@ -23,20 +23,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
+async def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
     """Построить embed для поиска."""
     format_name = "Duo (2x2)" if search.format == MMFormat.DUO else "БО (4x4)"
     required = search.required_players
     current = len(search.players)
 
     embed = discord.Embed(
-        title=replace_emojis(f":a_star: :winner: {format_name} | ПОИСК"),
-        description=replace_emojis(f":white_dot: Информация о поиске:\n"
-                                   f":sub_middle: Формат: {format_name}\n"
-                                   f":sub_middle: Игроки: {current}/{required}\n"
-                                   f":sub_directory: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}\n\n"
-                                   f":white_dot: Игроки в поиске:\n\n"
-                                   f"Нажмите кнопку ниже чтобы войти в поиск"),
+        title="⭐ 🏆 " + format_name + " | ПОИСК",
+        description="• Информация о поиске:\n"
+                    "┣ Формат: " + format_name + "\n"
+                    "┣ Игроки: " + str(current) + "/" + str(required) + "\n"
+                    "┗ Таймер: " + ('Запущен' if search.timer_started else 'Ожидание первого игрока') + "\n\n"
+                    "• Игроки в поиске:\n\n"
+                    "Нажмите кнопку ниже чтобы войти в поиск",
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
@@ -46,11 +46,11 @@ def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
         for player_name in search.players:
             user_id = search.player_user_ids.get(player_name, 0)
             if user_id > 0:
-                stats = player_stats_store.get(guild.id, user_id)
+                stats = await player_stats_store.get(guild.id, user_id)
                 sr = stats.skill_rating if stats else 1.0
-                player_info.append(f":white_arrow: {player_name} (SR: {sr:.1f})")
+                player_info.append("→ " + player_name + " (SR: " + f"{sr:.1f}" + ")")
             else:
-                player_info.append(f":white_arrow: {player_name}")
+                player_info.append("→ " + player_name)
         embed.add_field(name="", value="\n".join(player_info), inline=False)
 
     return embed
@@ -176,7 +176,7 @@ class JoinSearchButton(discord.ui.Button):
                 return
 
         # Обновить embed
-        embed = build_search_embed(search, interaction.guild)
+        embed = await build_search_embed(search, interaction.guild)
         view = build_search_view(self.bot, search)
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -215,7 +215,7 @@ class LeaveSearchButton(discord.ui.Button):
         mm_search_store.set(search)
 
         # Обновить embed
-        embed = build_search_embed(search, interaction.guild)
+        embed = await build_search_embed(search, interaction.guild)
         view = build_search_view(self.bot, search)
         await interaction.response.edit_message(embed=embed, view=view)
 
