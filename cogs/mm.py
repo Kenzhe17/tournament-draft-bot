@@ -195,7 +195,7 @@ class MMCog(commands.Cog):
                 if not search:
                     return
 
-                # Если не заполнен, сбросить игроков и разблокировать канал
+                # Если не заполнен, кикнуть игроков и сбросить канал
                 if not search.is_full:
                     player_count = len(search.players)
                     
@@ -203,7 +203,11 @@ class MMCog(commands.Cog):
                     if search.tournament_channel_id in LOCKED_CHANNELS:
                         del LOCKED_CHANNELS[search.tournament_channel_id]
                     
-                    search.clear()
+                    # Кикнуть игроков но сохранить поиск активным
+                    search.players = []
+                    search.player_user_ids = {}
+                    search.timer_started = False
+                    search.tournament_channel_id = 0
                     mm_search_store.set(search)
 
                     # Обновить сообщение
@@ -215,7 +219,7 @@ class MMCog(commands.Cog):
                             view = build_search_view(self.bot, search)
                             await message.edit(embed=embed, view=view)
                             await channel.send(
-                                f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска."
+                                f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
                             )
                     except Exception as e:
                         logger.error(f"Error updating search timer message: {e}")
