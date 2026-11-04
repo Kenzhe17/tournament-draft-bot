@@ -9,6 +9,7 @@ from ultimatum.models import (
 )
 from ultimatum.store import UltimatumStore
 from ultimatum.matchmaking import Matchmaker
+from ultimatum.elo_store import elo_store
 
 logger = logging.getLogger(__name__)
 
@@ -94,27 +95,82 @@ class UltimatumTournament:
     ) -> None:
         """Complete a match and update player stats."""
         # Get match details
-        matches = await self.store.get_matches(None)  # This needs tournament_id
-        # For now, we'll need to get match by ID from database
-        # This is a simplified version - in production we'd query properly
+        match = await self.store.get_match_by_id(match_id)
+        if not match:
+            raise ValueError("Match not found")
 
-        # Update match
+        # Update match in database
         await self.store.complete_match(match_id, winner_id, loser_id)
 
-        # Update player stats
-        # We need tournament_id to update player stats
-        # This requires fetching the match first
-        # For now, skip this - will be fixed in complete implementation
+        # Get players
+        winner = await self.store.get_player_by_discord_id(match.tournament_id, winner_id)
+        loser = await self.store.get_player_by_discord_id(match.tournament_id, loser_id)
 
-        # Check if loser should be eliminated
-        if loser_id:
-            # Get player stats
-            # Need to fetch player and check losses
-            # For now, placeholder
-            pass
+        if not winner or not loser:
+            raise ValueError("Player not found")
+
+        # Update player stats (wins/losses)
+        await self.store.update_player_stats(
+            match.tournament_id,
+            winner_id,
+            winner.wins + 1,
+            winner.losses
+        )
+
+        await self.store.update_player_stats(
+            match.tournament_id,
+            loser_id,
+            loser.wins,
+            loser.losses + 1
+        )
+
+        # Check if loser should be eliminated (2 losses)
+        if loser.losses + 1 >= 2:
+            await self.eliminate_player(match.tournament_id, loser_id)
+
+        # Update Elo ratings (only for normal matches, not for byes)
+        if match.match_type == MatchType.NORMAL:
+            try:
+                await elo_store.update_elo(
+                    match_id,
+                    match.tournament_id,
+                    winner_id,
+                    loser_id,
+                    winner.username,
+                    loser.username
+                )
+                logger.info(f"Elo updated for match {match_id}")
+            except Exception as e:
+                logger.error(f"Failed to update Elo: {e}")
 
         # Check if round is complete
-        # await self._check_round_completion(tournament_id, round_number)
+        await self._check_round_completion(match.tournament_id, match.round_number)
+
+    async def _check_round_completion(self, tournament_id: str, round_number: int) -> None:
+        """Check if all matches in round are complete and start next round."""
+        matches = await self.store.get_matches(tournament_id, round_number)
+
+        # Check if all matches are completed
+        all_complete = all(m.status == MatchStatus.COMPLETED for m in matches)
+
+        if not all_complete:
+            return
+
+        # Mark round as completed
+        await self.store.update_round_status(
+            tournament_id, round_number, RoundStatus.COMPLETED
+        )
+
+        # Update tournament status
+        await self.store.update_tournament_status(
+            tournament_id, TournamentStatus.ROUND_COMPLETED
+        )
+
+        logger.info(f"Round {round_number} completed for tournament {tournament_id}")
+
+        # Start next round automatically
+        next_round = round_number + 1
+        await self.create_round(tournament_id, next_round)
 
     async def _should_create_grand_final(
         self,

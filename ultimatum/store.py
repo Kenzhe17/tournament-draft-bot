@@ -214,6 +214,35 @@ class UltimatumStore:
                 for row in rows
             ]
 
+    async def get_player_by_discord_id(
+        self,
+        tournament_id: str,
+        discord_id: int
+    ) -> Optional[Player]:
+        """Get player by Discord ID."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM ultimatum_players
+                WHERE tournament_id = $1 AND discord_id = $2
+                """,
+                tournament_id, discord_id
+            )
+            if not row:
+                return None
+            return Player(
+                id=row["id"],
+                tournament_id=row["tournament_id"],
+                discord_id=row["discord_id"],
+                username=row["username"],
+                wins=row["wins"],
+                losses=row["losses"],
+                status=PlayerStatus(row["status"]),
+                final_place=row["final_place"],
+                created_at=row["created_at"],
+            )
+
     async def update_player_stats(
         self,
         tournament_id: str,
@@ -335,6 +364,32 @@ class UltimatumStore:
                 """,
                 winner_id, loser_id, MatchStatus.COMPLETED.value,
                 datetime.now(), match_id
+            )
+
+    async def get_match_by_id(self, match_id: int) -> Optional[Match]:
+        """Get match by database ID."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM ultimatum_matches WHERE id = $1",
+                match_id
+            )
+            if not row:
+                return None
+            return Match(
+                id=row["id"],
+                tournament_id=row["tournament_id"],
+                round_number=row["round_number"],
+                player1_id=row["player1_id"],
+                player2_id=row["player2_id"],
+                winner_id=row["winner_id"],
+                loser_id=row["loser_id"],
+                status=MatchStatus(row["status"]),
+                match_type=MatchType(row["match_type"]),
+                room_id=row["room_id"],
+                room_password=row["room_password"],
+                created_at=row["created_at"],
+                completed_at=row["completed_at"],
             )
 
     async def create_round(self, tournament_id: str, round_number: int) -> Round:
