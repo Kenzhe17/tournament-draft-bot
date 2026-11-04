@@ -181,7 +181,7 @@ class MMCog(commands.Cog):
                     search_channel = self.bot.get_channel(channel_id)
                     if search_channel:
                         current = len(search.players)
-                        required = search.required
+                        required = search.required_players
                         await search_channel.send(
                             f"🔍 Прямо сейчас поиск игроков в канале {search_channel.mention}! ({current}/{required})"
                         )

@@ -918,6 +918,10 @@ class AdminConfirmView(View):
                 captain = team_data.get("captain", "")
                 players_list = team_data.get("players", [])
 
+                # For random-auto mode, captain is the first player in players_list
+                if tournament.formation_mode == "random-auto" and players_list:
+                    captain = players_list[0]
+
                 # Add captain
                 if captain:
                     kd_data = temp_stats.get(captain, {})

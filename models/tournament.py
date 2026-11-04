@@ -1196,7 +1196,7 @@ class Tournament:
                                 kills=kills,
                                 deaths=deaths,
                                 current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games_played > 0 else 0,
+                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
                                 avg_deaths=0,
                                 avg_server_elo=avg_server_elo,
                                 leaderboard_rank=leaderboard_rank
@@ -1218,7 +1218,7 @@ class Tournament:
                                 player_stats.kd_ratio = player_stats.total_kills
                             
                             # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games_played
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
                             
                             await player_stats_store.set(player_stats)
                     except Exception as e:
@@ -1327,7 +1327,7 @@ class Tournament:
                                 kills=kills,
                                 deaths=deaths,
                                 current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games_played > 0 else 0,
+                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
                                 avg_deaths=0,
                                 avg_server_elo=avg_server_elo,
                                 leaderboard_rank=leaderboard_rank
@@ -1349,7 +1349,7 @@ class Tournament:
                                 player_stats.kd_ratio = player_stats.total_kills
                             
                             # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games_played
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
                             
                             await player_stats_store.set(player_stats)
                     except Exception as e:
@@ -1413,7 +1413,7 @@ class Tournament:
                                 kills=kills,
                                 deaths=deaths,
                                 current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games_played > 0 else 0,
+                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
                                 avg_deaths=0,
                                 avg_server_elo=avg_server_elo,
                                 leaderboard_rank=leaderboard_rank
@@ -1435,7 +1435,7 @@ class Tournament:
                                 player_stats.kd_ratio = player_stats.total_kills
                             
                             # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games_played
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
                             
                             await player_stats_store.set(player_stats)
                     except Exception as e:

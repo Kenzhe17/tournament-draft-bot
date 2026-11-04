@@ -35,7 +35,7 @@ async def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.
                                   "sub_middle Формат: " + format_name + "\n"
                                   "sub_middle Игроки: " + str(current) + "/" + str(required) + "\n"
                                   "sub_directory Таймер: " + ('Запущен' if search.timer_started else 'Ожидание первого игрока') + "\n\n"
-                                  "white_dot Игроки в поиске:\n\n"
+                                  "white_arrow Игроки в поиске:\n\n"
                                   "Нажмите кнопку ниже чтобы войти в поиск"),
         color=discord.Color.from_rgb(69, 69, 69)
     )
