@@ -198,7 +198,7 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             # Get players from both teams
             all_players = []
             if hasattr(tournament, 'teams'):
-                for team_idx in [team1_idx, team2_idx]:
+                for team_idx in [team1_index, team2_index]:
                     if team_idx < len(tournament.teams):
                         team_data = tournament.teams[team_idx]
                         if tournament.formation_mode == "random-auto":

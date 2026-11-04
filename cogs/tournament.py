@@ -77,14 +77,22 @@ class TournamentCog(commands.Cog):
         self, interaction: discord.Interaction, size: str, formation: str = "elo"
     ) -> None:
         """Создать турнир с указанным размером."""
-        # Проверить если канал заблокирован поиском
+        # Проверить если канал заблокирован поиском (только если есть активные игроки)
         from cogs.mm import LOCKED_CHANNELS
         if interaction.channel_id in LOCKED_CHANNELS:
-            await interaction.response.send_message(
-                "❌ Этот канал заблокирован для поиска MM. Используйте другой канал или дождитесь завершения поиска.",
-                ephemeral=True
-            )
-            return
+            # Проверить если поиск действительно активен (есть игроки)
+            from storage.mm_search_store import mm_search_store
+            search_channel_id = LOCKED_CHANNELS[interaction.channel_id]
+            search = mm_search_store.get(interaction.guild_id, search_channel_id)
+            if search and search.players:
+                await interaction.response.send_message(
+                    "❌ Этот канал заблокирован для поиска MM. Используйте другой канал или дождитесь завершения поиска.",
+                    ephemeral=True
+                )
+                return
+            else:
+                # Поиск пустой, разблокировать канал
+                del LOCKED_CHANNELS[interaction.channel_id]
 
         existing = store.get(interaction.guild_id, interaction.channel_id)
         if existing:
@@ -1132,16 +1140,22 @@ class TournamentCog(commands.Cog):
         # Ultimatum статистика
         try:
             from ultimatum.elo_store import elo_store
-            ultimatum_elo = await elo_store.get_elo(target_user.id)
+            ultimatum_elo = await elo_store.get_player(target_user.id)
             logger.info(f"Ultimatum stats for {target_user.id}: {ultimatum_elo}")
             if ultimatum_elo:
                 description_parts.append("")
                 description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
-                description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {ultimatum_elo.rated_matches} игр")
-                description_parts.append(f"{replace_emojis('sub_middle')} Побед: {ultimatum_elo.wins}")
-                description_parts.append(f"{replace_emojis('sub_directory')} ELO: {ultimatum_elo.elo}")
+                description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {ultimatum_elo.get('rated_matches', 0)} игр")
+                description_parts.append(f"{replace_emojis('sub_middle')} Побед: {ultimatum_elo.get('wins', 0)}")
+                description_parts.append(f"{replace_emojis('sub_directory')} ELO: {ultimatum_elo.get('elo', 1000)}")
             else:
                 logger.info(f"No Ultimatum stats found for {target_user.id}")
+                # Show default values even if no record
+                description_parts.append("")
+                description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
+                description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: 0 игр")
+                description_parts.append(f"{replace_emojis('sub_middle')} Побед: 0")
+                description_parts.append(f"{replace_emojis('sub_directory')} ELO: 1000")
         except Exception as e:
             logger.error(f"Error getting Ultimatum stats: {e}", exc_info=True)
 
