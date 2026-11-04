@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 # Cooldown tracking for room submissions
 room_cooldowns = {}
 
-# Tracking for winner votes (temporary - in production should use database)
-winner_votes = {}  # {match_id: {user_id: winner_id}}
-
 
 class UltimatumMatchView(discord.ui.View):
     """View for Ultimatum match with room and winner selection."""
@@ -352,70 +349,3 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-
-
-class UltimatumVoteWinnerButton(discord.ui.Button):
-    """Button for voting on match winner."""
-
-    def __init__(self, match_id: int, voted_winner_id: int, other_player_id: int, tournament_id: str):
-        super().__init__(
-            style=discord.ButtonStyle.primary,
-            label="",  # Will be set dynamically
-            custom_id=f"ultimatum_vote_winner:{match_id}:{voted_winner_id}"
-        )
-        self.match_id = match_id
-        self.voted_winner_id = voted_winner_id
-        self.other_player_id = other_player_id
-        self.tournament_id = tournament_id
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Check if user is one of the players
-        if interaction.user.id not in [self.voted_winner_id, self.other_player_id]:
-            await interaction.response.send_message(
-                "❌ Только участники матча могут голосовать.",
-                ephemeral=True
-            )
-            return
-        
-        # Record vote in global tracker
-        if self.match_id not in winner_votes:
-            winner_votes[self.match_id] = {}
-        
-        winner_votes[self.match_id][interaction.user.id] = self.voted_winner_id
-        
-        # Check votes
-        match_votes = winner_votes[self.match_id]
-        votes_for_other = sum(1 for v in match_votes.values() if v == self.other_player_id)
-        votes_for_winner = sum(1 for v in match_votes.values() if v == self.voted_winner_id)
-        
-        total_votes = len(match_votes)
-        
-        if total_votes >= 2:
-            # Both players voted - check consensus
-            if votes_for_winner == 2:
-                # Consensus! Complete match
-                from ultimatum.tournament import UltimatumTournament
-                tournament_logic = UltimatumTournament(ultimatum_store)
-                await tournament_logic.complete_match(self.match_id, self.voted_winner_id, self.other_player_id)
-                
-                # Clear votes
-                del winner_votes[self.match_id]
-                
-                await interaction.response.send_message(
-                    f"✅ Победитель определен",
-                    ephemeral=True
-                )
-                
-                # TODO: Update round embed
-            else:
-                # No consensus - reset votes
-                del winner_votes[self.match_id]
-                await interaction.response.send_message(
-                    "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
-                    ephemeral=True
-                )
-        else:
-            await interaction.response.send_message(
-                f"Голос записан. Ожидание голоса второго игрока...",
-                ephemeral=True
-            )
