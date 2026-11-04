@@ -110,6 +110,13 @@ class UltimatumJoinButton(discord.ui.Button):
 
             logger.info(f"User {interaction.user.id} joined Ultimatum tournament {tournament.id}")
 
+        except Exception as e:
+            logger.error(f"Error in UltimatumJoinButton callback: {e}", exc_info=True)
+            await interaction.response.send_message(
+                "❌ Произошла ошибка при входе в турнир.",
+                ephemeral=True
+            )
+
 
 class UltimatumStartButton(discord.ui.Button):
     """Button for starting Ultimatum tournament."""
