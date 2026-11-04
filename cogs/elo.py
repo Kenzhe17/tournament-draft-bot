@@ -114,7 +114,7 @@ class EloCog(commands.Cog):
 
             embed.add_field(
                 name=f"{medal}#{idx} {player['username']}",
-                value=f"{player['elo']} Elo",
+                value=f"{player['elo']} ELO",
                 inline=False
             )
 
