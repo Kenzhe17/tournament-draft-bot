@@ -1151,76 +1151,9 @@ class Tournament:
 
     async def confirm_qualifier_winner_async(self, match_index: int, team_index: int) -> bool:
         """
-        Асинхронная версия для сохранения статистики и ELO.
+        Асинхронная версия подтверждения победителя.
+        Статистика и ELO обрабатываются через process_match_result в views.
         """
-        from storage.player_stats_store import player_stats_store
-        from utils.rating_calculator import calculate_balanced_elo_change, get_server_average_elo, get_leaderboard_rank, update_player_stats_from_match
-        
-        match = self.qualifier_matches[match_index]
-        winner_idx = team_index
-        loser_idx = match[0] if match[1] == team_index else match[1]
-        
-        # Get server average ELO for all players
-        avg_server_elo = await get_server_average_elo(self.guild_id)
-        
-        # Save stats for all players in the match
-        match_id = f"{self.id}_qualifier_{match_index}"
-        if match_id in self.temp_match_stats:
-            for player_name, stats in self.temp_match_stats[match_id].items():
-                kills = stats.get("kills", 0)
-                deaths = stats.get("deaths", 0)
-                
-                # Get user_id
-                user_id = self.player_user_ids.get(player_name, 0)
-                if user_id:
-                    try:
-                        player_stats = await player_stats_store.get(self.guild_id, user_id)
-                        if player_stats:
-                            # Determine which team the player belongs to
-                            player_team_idx = None
-                            for idx, team in enumerate(self.teams):
-                                if "players" in team and player_name in team["players"]:
-                                    player_team_idx = idx
-                                    break
-                            
-                            # Determine if player's team won
-                            team_won = (player_team_idx == winner_idx) if player_team_idx is not None else False
-                            
-                            # Get leaderboard rank
-                            leaderboard_rank = await get_leaderboard_rank(self.guild_id, user_id)
-                            
-                            # Calculate ELO change (position 1 for simplicity in random-auto)
-                            elo_change = calculate_balanced_elo_change(
-                                position=1,
-                                team_won=team_won,
-                                kills=kills,
-                                deaths=deaths,
-                                current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
-                                avg_deaths=0,
-                                avg_server_elo=avg_server_elo,
-                                leaderboard_rank=leaderboard_rank
-                            )
-                            
-                            # Update player stats with ELO change
-                            player_stats = update_player_stats_from_match(
-                                player_stats,
-                                kills=kills,
-                                deaths=deaths,
-                                elo_change=elo_change,
-                                team_won=team_won
-                            )
-                            
-
-                            
-                            # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
-                            
-                            await player_stats_store.set(player_stats)
-                    except Exception as e:
-                        import logging
-                        logging.error(f"Error updating player stats for {player_name}: {e}")
-        
         # Confirm winner
         return self.confirm_qualifier_winner(match_index, team_index)
 
@@ -1278,76 +1211,9 @@ class Tournament:
 
     async def confirm_semifinal_winner_async(self, match_index: int, team_index: int) -> bool:
         """
-        Асинхронная версия для сохранения статистики и ELO.
+        Асинхронная версия подтверждения победителя.
+        Статистика и ELO обрабатываются через process_match_result в views.
         """
-        from storage.player_stats_store import player_stats_store
-        from utils.rating_calculator import calculate_balanced_elo_change, get_server_average_elo, get_leaderboard_rank, update_player_stats_from_match
-        
-        match = self.semifinal_matches[match_index]
-        winner_idx = team_index
-        loser_idx = match[0] if match[1] == team_index else match[1]
-        
-        # Get server average ELO for all players
-        avg_server_elo = await get_server_average_elo(self.guild_id)
-        
-        # Save stats for all players in the match
-        match_id = f"{self.id}_semifinal_{match_index}"
-        if match_id in self.temp_match_stats:
-            for player_name, stats in self.temp_match_stats[match_id].items():
-                kills = stats.get("kills", 0)
-                deaths = stats.get("deaths", 0)
-                
-                # Get user_id
-                user_id = self.player_user_ids.get(player_name, 0)
-                if user_id:
-                    try:
-                        player_stats = await player_stats_store.get(self.guild_id, user_id)
-                        if player_stats:
-                            # Determine which team the player belongs to
-                            player_team_idx = None
-                            for idx, team in enumerate(self.teams):
-                                if "players" in team and player_name in team["players"]:
-                                    player_team_idx = idx
-                                    break
-                            
-                            # Determine if player's team won
-                            team_won = (player_team_idx == winner_idx) if player_team_idx is not None else False
-                            
-                            # Get leaderboard rank
-                            leaderboard_rank = await get_leaderboard_rank(self.guild_id, user_id)
-                            
-                            # Calculate ELO change (position 1 for simplicity in random-auto)
-                            elo_change = calculate_balanced_elo_change(
-                                position=1,
-                                team_won=team_won,
-                                kills=kills,
-                                deaths=deaths,
-                                current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
-                                avg_deaths=0,
-                                avg_server_elo=avg_server_elo,
-                                leaderboard_rank=leaderboard_rank
-                            )
-                            
-                            # Update player stats with ELO change
-                            player_stats = update_player_stats_from_match(
-                                player_stats,
-                                kills=kills,
-                                deaths=deaths,
-                                elo_change=elo_change,
-                                team_won=team_won
-                            )
-                            
-
-                            
-                            # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
-                            
-                            await player_stats_store.set(player_stats)
-                    except Exception as e:
-                        import logging
-                        logging.error(f"Error updating player stats for {player_name}: {e}")
-        
         # Confirm winner
         return self.confirm_semifinal_winner(match_index, team_index)
 
@@ -1362,73 +1228,9 @@ class Tournament:
         # Don't set phase to COMPLETE yet, wait for confirmation
 
     async def confirm_final_winner(self, team_index: int) -> None:
-        """Подтвердить победителя финала с сохранением статистики."""
-        from storage.player_stats_store import player_stats_store
-        from utils.rating_calculator import calculate_balanced_elo_change, get_server_average_elo, get_leaderboard_rank, update_player_stats_from_match
-        
+        """Подтвердить победителя финала."""
         # Determine loser team
         loser_idx = self.final_teams[0] if self.final_teams[1] == team_index else self.final_teams[1]
-        
-        # Get server average ELO for all players
-        avg_server_elo = await get_server_average_elo(self.guild_id)
-        
-        # Save stats for all players in the final match
-        match_id = f"{self.id}_final_0"
-        if match_id in self.temp_match_stats:
-            for player_name, stats in self.temp_match_stats[match_id].items():
-                kills = stats.get("kills", 0)
-                deaths = stats.get("deaths", 0)
-                
-                # Get user_id
-                user_id = self.player_user_ids.get(player_name, 0)
-                if user_id:
-                    try:
-                        player_stats = await player_stats_store.get(self.guild_id, user_id)
-                        if player_stats:
-                            # Determine which team the player belongs to
-                            player_team_idx = None
-                            for idx, team in enumerate(self.teams):
-                                if "players" in team and player_name in team["players"]:
-                                    player_team_idx = idx
-                                    break
-                            
-                            # Determine if player's team won
-                            team_won = (player_team_idx == team_index) if player_team_idx is not None else False
-                            
-                            # Get leaderboard rank
-                            leaderboard_rank = await get_leaderboard_rank(self.guild_id, user_id)
-                            
-                            # Calculate ELO change (position 1 for simplicity in random-auto)
-                            elo_change = calculate_balanced_elo_change(
-                                position=1,
-                                team_won=team_won,
-                                kills=kills,
-                                deaths=deaths,
-                                current_elo=player_stats.elo,
-                                avg_kills=player_stats.avg_kills if player_stats.games > 0 else 0,
-                                avg_deaths=0,
-                                avg_server_elo=avg_server_elo,
-                                leaderboard_rank=leaderboard_rank
-                            )
-                            
-                            # Update player stats with ELO change
-                            player_stats = update_player_stats_from_match(
-                                player_stats,
-                                kills=kills,
-                                deaths=deaths,
-                                elo_change=elo_change,
-                                team_won=team_won
-                            )
-                            
-
-                            
-                            # Update AVG kills
-                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
-                            
-                            await player_stats_store.set(player_stats)
-                    except Exception as e:
-                        import logging
-                        logging.error(f"Error updating player stats for {player_name}: {e}")
         
         # Mark loser as eliminated
         self.eliminate_team(loser_idx)

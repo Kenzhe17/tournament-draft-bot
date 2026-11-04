@@ -269,13 +269,26 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                         import logging
                         logging.info(f"Auto-confirming winner: match_type={self.match_type}, match_index={self.match_index}, winner_idx={auto_winner_idx}")
                         
-                        # Call tournament confirmation methods directly
+                        # Set winner in tournament
                         if self.match_type == "qualifier":
-                            await tournament.confirm_qualifier_winner_async(self.match_index, auto_winner_idx)
+                            tournament.qualifier_winners[self.match_index] = auto_winner_idx
                         elif self.match_type == "semifinal":
-                            await tournament.confirm_semifinal_winner_async(self.match_index, auto_winner_idx)
+                            tournament.semifinal_pending_winners[self.match_index] = auto_winner_idx
                         elif self.match_type == "final":
-                            await tournament.confirm_final_winner(auto_winner_idx)
+                            tournament.final_pending_winner = auto_winner_idx
+                        
+                        store.set(tournament)
+                        
+                        # Process match result with stats (same as manual confirmation)
+                        from views.kd_input_view import process_match_result
+                        await process_match_result(self.guild_id, tournament, {
+                            "match_type": self.match_type,
+                            "match_index": self.match_index,
+                            "winning_team_index": auto_winner_idx,
+                            "team1_index": self.team_a_index,
+                            "team2_index": self.team_b_index,
+                            "temp_kd_data": tournament.temp_match_stats[match_id]
+                        }, interaction)
                         
                         # Clear temp stats
                         if match_id in tournament.temp_match_stats:
