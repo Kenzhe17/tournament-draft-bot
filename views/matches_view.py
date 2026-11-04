@@ -81,7 +81,7 @@ class AdminStatsMatchButton(discord.ui.Button):
         # Check permissions
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -224,7 +224,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав!"),
                 ephemeral=True
             )
             return
@@ -475,7 +475,7 @@ class CancelWinnerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав!"),
                 ephemeral=True
             )
             return
@@ -771,7 +771,7 @@ class AdminPanelSelect(discord.ui.Select):
         # Check permissions
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -850,7 +850,7 @@ class ConfirmWinnerButton(discord.ui.Button):
         # Check permissions
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return
@@ -1357,7 +1357,7 @@ class TeamWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели! (роль 'org', ORG-1/2/3)"),
+                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
                 ephemeral=True
             )
             return

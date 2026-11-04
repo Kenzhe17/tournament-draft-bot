@@ -39,7 +39,7 @@ class FinalWinnerButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if not is_org_check(interaction.user, interaction.guild):
             await interaction.response.send_message(
-                replace_emojis("❌ Только организаторы (роль 'org', ORG-1/2/3) могут фиксировать результаты."),
+                replace_emojis("❌ Только организаторы (роль 'org') могут фиксировать результаты."),
                 ephemeral=True,
             )
             return

@@ -280,9 +280,132 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                             "temp_kd_data": tournament.temp_match_stats[match_id]
                         }, interaction)
                         
+                        # Save match to history (same as manual confirmation)
+                        from storage.match_history_store import match_history_store
+                        from models.match_history import MatchHistory
+                        from datetime import datetime
+                        from storage.player_stats_store import player_stats_store
+                        
+                        # Get match teams
+                        if self.match_type == "qualifier":
+                            match = tournament.qualifier_matches[self.match_index]
+                        elif self.match_type == "semifinal":
+                            match = tournament.semifinal_matches[self.match_index]
+                        elif self.match_type == "final":
+                            match = tournament.final_teams
+                        else:
+                            match = (0, 0)
+                        
+                        team_a_idx, team_b_idx = match
+                        team_a = tournament.teams[team_a_idx] if team_a_idx < len(tournament.teams) else {}
+                        team_b = tournament.teams[team_b_idx] if team_b_idx < len(tournament.teams) else {}
+                        
+                        team_a_name = tournament.team_names.get(team_a_idx, team_a.get("captain", f"Team {team_a_idx}"))
+                        team_b_name = tournament.team_names.get(team_b_idx, team_b.get("captain", f"Team {team_b_idx}"))
+                        
+                        # Prepare teammates and opponents
+                        def prepare_players_data(team_data: dict, temp_stats: dict, user_ids: dict) -> list:
+                            players = []
+                            captain = team_data.get("captain", "")
+                            players_list = team_data.get("players", [])
+                            
+                            if tournament.formation_mode == "random-auto" and players_list:
+                                captain = players_list[0]
+                            
+                            if captain:
+                                kd_data = temp_stats.get(captain, {})
+                                kills = kd_data.get("kills", 0)
+                                deaths = kd_data.get("deaths", 0)
+                                players.append({"name": captain, "kills": kills, "deaths": deaths, "user_id": user_ids.get(captain)})
+                            
+                            for player in players_list:
+                                if player != captain:
+                                    kd_data = temp_stats.get(player, {})
+                                    kills = kd_data.get("kills", 0)
+                                    deaths = kd_data.get("deaths", 0)
+                                    players.append({"name": player, "kills": kills, "deaths": deaths, "user_id": user_ids.get(player)})
+                            
+                            return players
+                        
+                        user_ids = {}
+                        user_ids.update(tournament.player_user_ids)
+                        all_stats = await player_stats_store.get_all(self.guild_id)
+                        for stat in all_stats:
+                            user_ids[stat.name] = stat.user_id
+                        
+                        team_a_players = prepare_players_data(team_a, tournament.temp_match_stats[match_id], user_ids)
+                        team_b_players = prepare_players_data(team_b, tournament.temp_match_stats[match_id], user_ids)
+                        
+                        # Save history for each player
+                        for player_name, kd_data in tournament.temp_match_stats[match_id].items():
+                            kills = kd_data.get("kills", 0)
+                            deaths = kd_data.get("deaths", 0)
+                            
+                            is_team_a = player_name in [p["name"] for p in team_a_players]
+                            is_team_b = player_name in [p["name"] for p in team_b_players]
+                            
+                            if not (is_team_a or is_team_b):
+                                continue
+                            
+                            user_id = user_ids.get(player_name)
+                            if not user_id:
+                                continue
+                            
+                            if is_team_a:
+                                my_team_idx = team_a_idx
+                                my_team_name = team_a_name
+                                my_teammates = team_a_players
+                                opp_team_idx = team_b_idx
+                                opp_team_name = team_b_name
+                                opponents = team_b_players
+                            else:
+                                my_team_idx = team_b_idx
+                                my_team_name = team_b_name
+                                my_teammates = team_b_players
+                                opp_team_idx = team_a_idx
+                                opp_team_name = team_a_name
+                                opponents = team_a_players
+                            
+                            team_won = (my_team_idx == auto_winner_idx)
+                            result = "WIN" if team_won else "LOSS"
+                            
+                            # Get ELO change from player stats
+                            player_stats = await player_stats_store.get(self.guild_id, user_id)
+                            elo_change = player_stats.last_elo_change if player_stats else 0
+                            
+                            match_entry = MatchHistory(
+                                guild_id=self.guild_id,
+                                user_id=user_id,
+                                tournament_id=tournament.id,
+                                date=datetime.now(),
+                                match_type=self.match_type,
+                                match_index=self.match_index,
+                                team_index=my_team_idx,
+                                team_name=my_team_name,
+                                teammates=my_teammates,
+                                opponent_team_index=opp_team_idx,
+                                opponent_team_name=opp_team_name,
+                                opponents=opponents,
+                                kills=kills,
+                                deaths=deaths,
+                                result=result,
+                                elo_change=elo_change
+                            )
+                            
+                            await match_history_store.add(match_entry)
+                        
                         # Clear temp stats
                         if match_id in tournament.temp_match_stats:
                             del tournament.temp_match_stats[match_id]
+                        store.set(tournament)
+                        
+                        # Confirm winner in tournament
+                        if self.match_type == "qualifier":
+                            tournament.confirm_qualifier_winner(self.match_index, auto_winner_idx)
+                        elif self.match_type == "semifinal":
+                            tournament.confirm_semifinal_winner(self.match_index, auto_winner_idx)
+                        elif self.match_type == "final":
+                            tournament.confirm_final_winner(auto_winner_idx)
                         store.set(tournament)
                         
                         # Update tournament message
