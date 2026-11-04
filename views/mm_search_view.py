@@ -146,6 +146,17 @@ class JoinSearchButton(discord.ui.Button):
                     )
                     return
 
+        # Проверить тег пользователя
+        user_tag = None
+        for role in interaction.user.roles:
+            if role.name == "r!z3":
+                user_tag = role.name
+                break
+        
+        if not user_tag:
+            await interaction.response.send_message("❌ Для входа в поиск нужен тег r!z3.", ephemeral=True)
+            return
+
         # Добавить игрока
         player_name = interaction.user.display_name
         if not search.add_player(player_name, interaction.user.id):

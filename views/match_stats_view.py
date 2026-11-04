@@ -1005,9 +1005,9 @@ class AdminConfirmView(View):
 
             # Confirm winner (this may trigger phase transition)
             if self.match_type == "qualifier":
-                tournament.confirm_qualifier_winner(self.match_index, winning_team_index)
+                await tournament.confirm_qualifier_winner_async(self.match_index, winning_team_index)
             elif self.match_type == "semifinal":
-                tournament.confirm_semifinal_winner(self.match_index, winning_team_index)
+                await tournament.confirm_semifinal_winner_async(self.match_index, winning_team_index)
             else:  # final
                 logging.info(f"Confirming final winner: team_index={winning_team_index}")
                 try:

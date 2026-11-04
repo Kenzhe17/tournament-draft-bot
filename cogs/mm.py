@@ -169,8 +169,8 @@ class MMCog(commands.Cog):
         """Запустить таймер для поиска."""
         async def timer_task():
             try:
-                # Уведомление через минуту после старта
-                await asyncio.sleep(60)  # 1 минута
+                # Уведомление через 15 секунд после старта
+                await asyncio.sleep(15)  # 15 секунд
                 
                 search = mm_search_store.get(guild_id, channel_id)
                 if not search:
