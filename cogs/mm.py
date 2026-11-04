@@ -258,14 +258,8 @@ class MMCog(commands.Cog):
         # Распределить игроков по SR для random-auto
         teams = tournament.distribute_players_random_auto(players_with_sr)
         
-        # Заполнить круги из распределенных команд
-        tournament.circle1 = [team[0] for team in teams]  # Капитаны
-        if len(teams[0]) > 1:
-            tournament.circle2 = [team[1] for team in teams]
-        if len(teams[0]) > 2:
-            tournament.circle3 = [team[2] for team in teams]
-        if len(teams[0]) > 3:
-            tournament.circle4 = [team[3] for team in teams]
+        # НЕ заполнять круги - команды создаются напрямую
+        # Для random-auto круги не используются, только teams
 
         # Автоматически стартовать турнир и перейти к фазе матчей
         tournament.phase = TournamentPhase.QUALIFIERS
@@ -298,8 +292,19 @@ class MMCog(commands.Cog):
         
         logger.info("Tournament created with random-auto formation, auto-started and matches generated")
 
-        # Построить embed
-        embed = await build_setup_embed(tournament, guild)
+        # Построить embed в зависимости от фазы
+        if tournament.phase == TournamentPhase.FINAL:
+            from utils.embeds import build_final_embed
+            embed = await build_final_embed(tournament, guild)
+        elif tournament.phase == TournamentPhase.QUALIFIERS:
+            from utils.embeds import build_qualifiers_embed
+            embed = await build_qualifiers_embed(tournament, guild)
+        elif tournament.phase == TournamentPhase.SEMIFINALS:
+            from utils.embeds import build_semifinals_embed
+            embed = await build_semifinals_embed(tournament, guild)
+        else:
+            embed = await build_setup_embed(tournament, guild)
+        
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
 
