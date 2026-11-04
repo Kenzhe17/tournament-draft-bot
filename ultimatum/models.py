@@ -49,6 +49,16 @@ class RoundStatus(str, Enum):
 
 
 @dataclass
+class Vote:
+    """Vote for match winner."""
+    id: str
+    match_id: int
+    user_id: int
+    voted_winner_id: int
+    created_at: datetime
+
+
+@dataclass
 class Tournament:
     """Tournament model."""
     id: str

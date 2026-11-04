@@ -336,7 +336,6 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
             label=p1.username,
             custom_id=f"ultimatum_vote_winner:{match_id}:{match.player1_id}"
         )
-        p1_btn.callback = UltimatumVoteWinnerButton(match_id, match.player1_id, match.player2_id, self.tournament_id).callback
         view.add_item(p1_btn)
         
         p2_btn = discord.ui.Button(
@@ -344,7 +343,6 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
             label=p2.username,
             custom_id=f"ultimatum_vote_winner:{match_id}:{match.player2_id}"
         )
-        p2_btn.callback = UltimatumVoteWinnerButton(match_id, match.player2_id, match.player1_id, self.tournament_id).callback
         view.add_item(p2_btn)
         
         embed = discord.Embed(

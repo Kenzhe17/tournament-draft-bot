@@ -10,7 +10,7 @@ import asyncpg
 from storage.db import get_pool
 from ultimatum.models import (
     Tournament, Player, Match, Round, Ranking,
-    MatchHistory, AuditLog,
+    MatchHistory, AuditLog, Vote,
     TournamentStatus, PlayerStatus, MatchStatus, MatchType, RoundStatus
 )
 
@@ -538,6 +538,83 @@ class UltimatumStore:
                 VALUES ($1, $2, $3, $4)
                 """,
                 tournament_id, actor_discord_id, action, details
+            )
+
+    async def record_vote(
+        self,
+        match_id: int,
+        user_id: int,
+        voted_winner_id: int
+    ) -> None:
+        """Record a vote for match winner."""
+        pool = await get_pool()
+        vote_id = str(uuid.uuid4())
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO ultimatum_votes (id, match_id, user_id, voted_winner_id)
+                VALUES ($1, $2, $3, $4)
+                """,
+                vote_id, match_id, user_id, voted_winner_id
+            )
+
+    async def get_vote(
+        self,
+        match_id: int,
+        user_id: int
+    ) -> Optional[Vote]:
+        """Get vote by match and user."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM ultimatum_votes
+                WHERE match_id = $1 AND user_id = $2
+                """,
+                match_id, user_id
+            )
+            if row:
+                return Vote(
+                    id=row["id"],
+                    match_id=row["match_id"],
+                    user_id=row["user_id"],
+                    voted_winner_id=row["voted_winner_id"],
+                    created_at=row["created_at"]
+                )
+        return None
+
+    async def get_votes(self, match_id: int) -> List[Vote]:
+        """Get all votes for a match."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM ultimatum_votes
+                WHERE match_id = $1
+                """,
+                match_id
+            )
+            return [
+                Vote(
+                    id=row["id"],
+                    match_id=row["match_id"],
+                    user_id=row["user_id"],
+                    voted_winner_id=row["voted_winner_id"],
+                    created_at=row["created_at"]
+                )
+                for row in rows
+            ]
+
+    async def clear_votes(self, match_id: int) -> None:
+        """Clear all votes for a match."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                DELETE FROM ultimatum_votes
+                WHERE match_id = $1
+                """,
+                match_id
             )
 
 

@@ -25,6 +25,7 @@ class UltimatumCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.tournament_logic = UltimatumTournament(ultimatum_store)
+        self.bot.tree.add_listener(self.on_interaction)
 
     ultimatum_group = app_commands.Group(name="ultimatum", description="Ultimatum Solo Tournament")
 
@@ -532,6 +533,93 @@ class UltimatumCog(commands.Cog):
             )
 
         await interaction.response.send_message(embed=embed)
+
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        """Handle custom interaction events for Ultimatum buttons."""
+        if not interaction.data:
+            return
+        
+        custom_id = interaction.data.get("custom_id")
+        if not custom_id:
+            return
+        
+        # Handle winner vote buttons
+        if custom_id.startswith("ultimatum_vote_winner:"):
+            parts = custom_id.split(":")
+            if len(parts) >= 3:
+                match_id = int(parts[1])
+                voted_winner_id = int(parts[2])
+                
+                # Get match details
+                match = await ultimatum_store.get_match_by_id(match_id)
+                if not match:
+                    await interaction.response.send_message("Матч не найден", ephemeral=True)
+                    return
+                
+                # Determine other player
+                other_player_id = match.player2_id if voted_winner_id == match.player1_id else match.player1_id
+                
+                # Check if user is one of the players
+                if interaction.user.id not in [voted_winner_id, other_player_id]:
+                    await interaction.response.send_message(
+                        "❌ Только участники матча могут голосовать.",
+                        ephemeral=True
+                    )
+                    return
+                
+                # Get tournament
+                tournament = await ultimatum_store.get_tournament(match.tournament_id)
+                if not tournament:
+                    await interaction.response.send_message("Турнир не найден", ephemeral=True)
+                    return
+                
+                # Record vote in database
+                from ultimatum.store import ultimatum_store
+                existing_vote = await ultimatum_store.get_vote(match_id, interaction.user.id)
+                
+                if existing_vote:
+                    await interaction.response.send_message(
+                        "❌ Вы уже проголосовали.",
+                        ephemeral=True
+                    )
+                    return
+                
+                await ultimatum_store.record_vote(match_id, interaction.user.id, voted_winner_id)
+                
+                # Check all votes for this match
+                votes = await ultimatum_store.get_votes(match_id)
+                
+                if len(votes) >= 2:
+                    # Check consensus
+                    vote_counts = {}
+                    for vote in votes:
+                        vote_counts[vote.voted_winner_id] = vote_counts.get(vote.voted_winner_id, 0) + 1
+                    
+                    if vote_counts.get(voted_winner_id, 0) >= 2:
+                        # Consensus! Complete match
+                        await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id)
+                        
+                        # Clear votes
+                        await ultimatum_store.clear_votes(match_id)
+                        
+                        await interaction.response.send_message(
+                            f"✅ Победитель определен",
+                            ephemeral=True
+                        )
+                        
+                        # TODO: Update round embed
+                    else:
+                        # No consensus - clear votes
+                        await ultimatum_store.clear_votes(match_id)
+                        await interaction.response.send_message(
+                            "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
+                            ephemeral=True
+                        )
+                else:
+                    await interaction.response.send_message(
+                        f"Голос записан. Ожидание голоса второго игрока...",
+                        ephemeral=True
+                    )
 
 
 async def setup(bot: commands.Bot) -> None:
