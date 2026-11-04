@@ -182,6 +182,33 @@ class UltimatumCog(commands.Cog):
 
         logger.info(f"Test fill: added {added} players to tournament {tournament.id}")
 
+    @ultimatum_group.command(name="delete", description="Delete active Ultimatum tournament")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def delete_tournament(self, interaction: discord.Interaction) -> None:
+        """Delete the active tournament."""
+        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ No active tournament found.",
+                ephemeral=True
+            )
+            return
+
+        # Delete tournament from database
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM ultimatum_tournaments WHERE id = $1",
+                tournament.id
+            )
+
+        await interaction.response.send_message(
+            f"✅ Tournament '{tournament.name}' deleted.",
+            ephemeral=True
+        )
+
+        logger.info(f"Tournament {tournament.id} deleted by {interaction.user.id}")
+
     def _build_tournament_embed(self, tournament) -> discord.Embed:
         """Build tournament status embed in regular tournament style."""
         status_emoji = {
