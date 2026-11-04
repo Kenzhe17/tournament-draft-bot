@@ -346,7 +346,33 @@ class JoinPoolButton(discord.ui.Button):
             # Add player to pool
             tournament.players_pool.append(user_name)
             tournament.player_user_ids[user_name] = interaction.user.id
+
+            # Start auto-timer if this is first player
+            was_first = len(tournament.players_pool) == 1
+
             store.set(tournament)
+
+            # Start timer for first player
+            if was_first and getattr(tournament, 'is_auto', False):
+                from cogs.tournament import TournamentCog
+                cog = interaction.client.get_cog('TournamentCog')
+                if cog:
+                    cog._start_auto_timer(self.guild_id, self.channel_id, tournament)
+
+            # Check auto-start
+            if getattr(tournament, 'is_auto', False):
+                current = len(tournament.players_pool)
+                required = int(tournament.size.value)
+                if current >= required:
+                    # Auto-start tournament
+                    tournament.registration = RegistrationState.CLOSED
+                    store.set(tournament)
+
+                    # Cancel auto-timer
+                    from cogs.tournament import TournamentCog
+                    cog = interaction.client.get_cog('TournamentCog')
+                    if cog:
+                        cog._cancel_auto_timer(self.guild_id, self.channel_id)
 
             # Update message using bot from interaction
             bot = interaction.client
