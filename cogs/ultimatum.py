@@ -58,7 +58,8 @@ class UltimatumCog(commands.Cog):
         await ultimatum_store.update_tournament_status(
             tournament.id, TournamentStatus.REGISTRATION
         )
-        tournament.status = TournamentStatus.REGISTRATION
+        # Reload tournament from database to get updated status
+        tournament = await ultimatum_store.get_tournament(tournament.id)
 
         await interaction.response.send_message(
             f"✅ Tournament '{tournament_name}' created! ID: {tournament.id}",
