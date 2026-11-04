@@ -10,6 +10,7 @@ from config import replace_emojis, get_emoji
 from ultimatum.models import MatchStatus, MatchType
 from ultimatum.store import ultimatum_store
 from ultimatum.tournament import UltimatumTournament
+from views.ultimatum_room_modal import UltimatumRoomModal
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -75,12 +76,9 @@ class UltimatumMatchView(discord.ui.View):
 
     async def room_callback(self, interaction: discord.Interaction) -> None:
         """Handle room button click."""
-        # Implement room creation logic
-        # For now, placeholder
-        await interaction.response.send_message(
-            "🏠 Комната будет создана здесь",
-            ephemeral=True
-        )
+        # Show modal for room ID and password
+        modal = UltimatumRoomModal(self.match_id, self.tournament_id)
+        await interaction.response.send_modal(modal)
 
     async def winner_callback(self, interaction: discord.Interaction) -> None:
         """Handle winner selection."""
