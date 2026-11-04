@@ -38,6 +38,12 @@ class UltimatumCog(commands.Cog):
         
         # Handle winner vote buttons
         if custom_id.startswith("ultimatum_vote_winner:"):
+            # Defer to avoid timeout
+            try:
+                await interaction.response.defer(ephemeral=True)
+            except discord.NotFound:
+                pass
+            
             parts = custom_id.split(":")
             if len(parts) >= 3:
                 match_id = int(parts[1])
@@ -46,7 +52,7 @@ class UltimatumCog(commands.Cog):
                 # Get match details
                 match = await ultimatum_store.get_match_by_id(match_id)
                 if not match:
-                    await interaction.response.send_message("Матч не найден", ephemeral=True)
+                    await interaction.followup.send("Матч не найден", ephemeral=True)
                     return
                 
                 # Determine other player
@@ -59,7 +65,7 @@ class UltimatumCog(commands.Cog):
                 if is_admin:
                     # Admin can directly complete match
                     await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id, self.bot)
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"✅ Победитель определен (админ)",
                         ephemeral=True
                     )
@@ -71,7 +77,7 @@ class UltimatumCog(commands.Cog):
                 
                 # Check if user is one of the players
                 if interaction.user.id not in [voted_winner_id, other_player_id]:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         "❌ Только участники матча могут голосовать.",
                         ephemeral=True
                     )
@@ -80,14 +86,14 @@ class UltimatumCog(commands.Cog):
                 # Get tournament
                 tournament = await ultimatum_store.get_tournament(match.tournament_id)
                 if not tournament:
-                    await interaction.response.send_message("Турнир не найден", ephemeral=True)
+                    await interaction.followup.send("Турнир не найден", ephemeral=True)
                     return
                 
                 # Record vote in database
                 existing_vote = await ultimatum_store.get_vote(match_id, interaction.user.id)
                 
                 if existing_vote:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         "❌ Вы уже проголосовали.",
                         ephemeral=True
                     )
@@ -111,7 +117,7 @@ class UltimatumCog(commands.Cog):
                         # Clear votes
                         await ultimatum_store.clear_votes(match_id)
                         
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"✅ Победитель определен",
                             ephemeral=True
                         )
@@ -122,12 +128,12 @@ class UltimatumCog(commands.Cog):
                     else:
                         # No consensus - clear votes
                         await ultimatum_store.clear_votes(match_id)
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
                             ephemeral=True
                         )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Голос записан. Ожидание голоса второго игрока...",
                         ephemeral=True
                     )
@@ -722,7 +728,7 @@ class UltimatumCog(commands.Cog):
                         # Clear votes
                         await ultimatum_store.clear_votes(match_id)
                         
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             f"✅ Победитель определен",
                             ephemeral=True
                         )
@@ -733,12 +739,12 @@ class UltimatumCog(commands.Cog):
                     else:
                         # No consensus - clear votes
                         await ultimatum_store.clear_votes(match_id)
-                        await interaction.response.send_message(
+                        await interaction.followup.send(
                             "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
                             ephemeral=True
                         )
                 else:
-                    await interaction.response.send_message(
+                    await interaction.followup.send(
                         f"Голос записан. Ожидание голоса второго игрока...",
                         ephemeral=True
                     )
