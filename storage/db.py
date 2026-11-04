@@ -524,6 +524,10 @@ async def init_db() -> None:
             ON player_stats(guild_id, level DESC, xp DESC)
         """)
 
+        # Create Ultimatum tournament tables
+        from ultimatum.ultimatum_schema import ULTIMATUM_SCHEMA
+        await conn.execute(ULTIMATUM_SCHEMA)
+
         # Create teams table for BR tournament team format
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS teams (
