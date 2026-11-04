@@ -24,18 +24,21 @@ round_messages = {}
 async def update_round_embed(guild: discord.Guild, tournament_id: str, round_number: int, bot: commands.Bot) -> None:
     """Update the round embed with current match information."""
     if guild.id not in round_messages:
+        logger.warning(f"No round message tracked for guild {guild.id}")
         return
     
     try:
         channel_id, message_id = round_messages[guild.id]
         channel = guild.get_channel(channel_id)
         if not channel:
+            logger.warning(f"Channel {channel_id} not found for guild {guild.id}")
             return
         
         message = await channel.fetch_message(message_id)
         new_embed = await build_ultimatum_round_embed(tournament_id, round_number, guild)
         new_view = await build_ultimatum_round_view(bot, tournament_id, round_number)
         await message.edit(embed=new_embed, view=new_view)
+        logger.info(f"Updated round embed for tournament {tournament_id}, round {round_number}")
     except Exception as e:
         logger.error(f"Error updating round embed: {e}", exc_info=True)
 
@@ -123,13 +126,24 @@ class UltimatumRoomsButton(discord.ui.Button):
             await interaction.response.send_message("Нет матчей в этом раунде", ephemeral=True)
             return
 
-        options = [
-            discord.SelectOption(
-                label=f"Матч #{match.id}: {match.player1_id} vs {match.player2_id}",
-                value=str(match.id)
+        # Build options with player names
+        options = []
+        for match in matches:
+            if match.room_id:
+                continue  # Skip matches with room
+            
+            # Get player names
+            p1 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player1_id)
+            p2 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player2_id)
+            p1_name = p1.username if p1 else f"<@{match.player1_id}>"
+            p2_name = p2.username if p2 else f"<@{match.player2_id}>"
+            
+            options.append(
+                discord.SelectOption(
+                    label=f"{p1_name} vs {p2_name}",
+                    value=str(match.id)
+                )
             )
-            for match in matches if not match.room_id  # Only show matches without room
-        ]
         
         if not options:
             await interaction.response.send_message(
@@ -178,13 +192,24 @@ class UltimatumWinnerButton(discord.ui.Button):
         from utils.permissions import is_org_check
         is_admin = is_org_check(interaction.user, interaction.guild)
 
-        options = [
-            discord.SelectOption(
-                label=f"Матч #{match.id}: {match.player1_id} vs {match.player2_id}",
-                value=str(match.id)
+        # Build options with player names
+        options = []
+        for match in matches:
+            if match.status != MatchStatus.PENDING:
+                continue  # Only show pending matches
+            
+            # Get player names
+            p1 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player1_id)
+            p2 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player2_id)
+            p1_name = p1.username if p1 else f"<@{match.player1_id}>"
+            p2_name = p2.username if p2 else f"<@{match.player2_id}>"
+            
+            options.append(
+                discord.SelectOption(
+                    label=f"{p1_name} vs {p2_name}",
+                    value=str(match.id)
+                )
             )
-            for match in matches if match.status == MatchStatus.PENDING  # Only show pending matches
-        ]
         
         if not options:
             await interaction.response.send_message(
