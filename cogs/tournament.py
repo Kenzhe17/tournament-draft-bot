@@ -1137,7 +1137,16 @@ class TournamentCog(commands.Cog):
         description_parts.append(f"{replace_emojis('white_dot')} Сыграно: {total_games_played} игр")
         description_parts.append(f"{replace_emojis('sub_middle')} Побед: {total_games_won} `({win_rate:.1f}%)`")
 
-        # Ultimatum статистика
+        # Show K/D and kills only if player has played games
+        if total_games_played > 0:
+            description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
+            description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {stats.skill_rating:.1f}/10.0")
+            description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
+        else:
+            description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
+
+        # Ultimatum статистика (после Max Kills)
         try:
             from ultimatum.elo_store import elo_store
             ultimatum_elo = await elo_store.get_player(target_user.id)
@@ -1158,15 +1167,6 @@ class TournamentCog(commands.Cog):
                 description_parts.append(f"{replace_emojis('sub_directory')} ELO: 1000")
         except Exception as e:
             logger.error(f"Error getting Ultimatum stats: {e}", exc_info=True)
-
-        # Show K/D and kills only if player has played games
-        if total_games_played > 0:
-            description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
-            description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
-            description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {stats.skill_rating:.1f}/10.0")
-            description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
-        else:
-            description_parts.append(f"{replace_emojis('sub_directory')} Ещё не играл в турниры")
 
         description_parts.append("")
 

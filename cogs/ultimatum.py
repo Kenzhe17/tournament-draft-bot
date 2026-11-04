@@ -30,6 +30,7 @@ class UltimatumCog(commands.Cog):
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
     @app_commands.checks.has_permissions(administrator=True)
+    @commands.is_owner()
     async def create_tournament(
         self,
         interaction: discord.Interaction
