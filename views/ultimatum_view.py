@@ -173,6 +173,10 @@ class UltimatumWinnerButton(discord.ui.Button):
             await interaction.response.send_message("Нет матчей в этом раунде", ephemeral=True)
             return
 
+        # Check if user is admin
+        from utils.permissions import is_org_check
+        is_admin = is_org_check(interaction.user, interaction.guild)
+
         options = [
             discord.SelectOption(
                 label=f"Матч #{match.id}: {match.player1_id} vs {match.player2_id}",
@@ -187,6 +191,19 @@ class UltimatumWinnerButton(discord.ui.Button):
                 ephemeral=True
             )
             return
+
+        select = UltimatumSelectWinnerMatch(self.tournament_id, self.round_number, options, is_admin)
+        
+        view = discord.ui.View()
+        view.add_item(select)
+        
+        embed = discord.Embed(
+            title="🏆 Выберите матч",
+            description="Выберите матч для определения победителя" + (" (Админ)" if is_admin else ""),
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
         select = UltimatumSelectWinnerMatch(self.tournament_id, self.round_number, options)
         
@@ -231,7 +248,7 @@ class UltimatumSelectMatch(discord.ui.Select):
 class UltimatumSelectWinnerMatch(discord.ui.Select):
     """Select menu for choosing match for winner selection."""
 
-    def __init__(self, tournament_id: str, round_number: int, options=None):
+    def __init__(self, tournament_id: str, round_number: int, options=None, is_admin=False):
         super().__init__(
             placeholder="Выберите матч для определения победителя",
             custom_id=f"ultimatum_select_winner_match:{tournament_id}:{round_number}",
@@ -239,6 +256,7 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         )
         self.tournament_id = tournament_id
         self.round_number = round_number
+        self.is_admin = is_admin
 
     async def callback(self, interaction: discord.Interaction) -> None:
         match_id = int(self.values[0])
@@ -274,9 +292,15 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         )
         view.add_item(p2_btn)
         
+        description = f"{p1.username} vs {p2.username}\n\n"
+        if self.is_admin:
+            description += "Админ может напрямую выбрать победителя."
+        else:
+            description += "Оба игрока должны нажать на одного и того же для подтверждения."
+        
         embed = discord.Embed(
             title="🏆 Выберите победителя",
-            description=f"{p1.username} vs {p2.username}\n\nОба игрока должны нажать на одного и того же для подтверждения.",
+            description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
         

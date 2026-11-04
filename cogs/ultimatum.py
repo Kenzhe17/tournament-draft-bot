@@ -52,6 +52,23 @@ class UltimatumCog(commands.Cog):
                 # Determine other player
                 other_player_id = match.player2_id if voted_winner_id == match.player1_id else match.player1_id
                 
+                # Check if user is admin
+                from utils.permissions import is_org_check
+                is_admin = is_org_check(interaction.user, interaction.guild)
+                
+                if is_admin:
+                    # Admin can directly complete match
+                    await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id)
+                    await interaction.response.send_message(
+                        f"✅ Победитель определен (админ)",
+                        ephemeral=True
+                    )
+                    
+                    # Update round embed
+                    from views.ultimatum_view import update_round_embed
+                    await update_round_embed(interaction.guild, match.tournament_id, match.round_number)
+                    return
+                
                 # Check if user is one of the players
                 if interaction.user.id not in [voted_winner_id, other_player_id]:
                     await interaction.response.send_message(
