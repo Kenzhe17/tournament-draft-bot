@@ -525,9 +525,13 @@ async def init_db() -> None:
         """)
 
         # Create Ultimatum tournament tables
-        from ultimatum.ultimatum_schema import ULTIMATUM_SCHEMA, ELO_SCHEMA
-        await conn.execute(ULTIMATUM_SCHEMA)
-        await conn.execute(ELO_SCHEMA)
+        try:
+            from ultimatum import ULTIMATUM_SCHEMA, ELO_SCHEMA
+            await conn.execute(ULTIMATUM_SCHEMA)
+            await conn.execute(ELO_SCHEMA)
+            logger.info("Ultimatum tables initialized successfully")
+        except ImportError as e:
+            logger.error(f"Failed to initialize database: {e}")
 
         # Create teams table for BR tournament team format
         await conn.execute("""
