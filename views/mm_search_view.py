@@ -96,7 +96,7 @@ class JoinSearchButton(discord.ui.Button):
             if other_search.channel_id != self.channel_id:
                 if interaction.user.id in other_search.player_user_ids.values():
                     await interaction.response.send_message(
-                        "❌ Вы уже в другом поиске. Выйдите из него сначала.",
+                        "❌ Вы уже в другом поиске. Выйдите из него сначала. Используйте /mm delete для удаления всех поисков.",
                         ephemeral=True
                     )
                     return
