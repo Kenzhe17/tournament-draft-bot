@@ -12,7 +12,7 @@ from discord.ext import commands
 
 from config import replace_emojis
 from models.mm_search import MMFormat, MMSearch
-from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase
+from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
 from storage.mm_search_store import mm_search_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
