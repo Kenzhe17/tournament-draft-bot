@@ -28,13 +28,19 @@ def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
     required = search.required_players
     current = len(search.players)
 
+    description = replace_emojis(f":white_dot: Информация о поиске:\n"
+                                f":sub_middle: Формат: {format_name}\n"
+                                f":sub_middle: Игроки: {current}/{required}\n"
+                                f":sub_middle: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}")
+    
+    if search.has_limit_reached:
+        description += replace_emojis("\n\n:warning: Достигнут лимит активных турниров (2). Ожидайте завершения одного из турниров.")
+    
+    description += replace_emojis("\n\n:white_dot: Игроки в поиске:")
+
     embed = discord.Embed(
         title=replace_emojis(f":a_star: :winner: {format_name} | ПОИСК"),
-        description=replace_emojis(f":white_dot: Информация о поиске:\n"
-                                   f":sub_middle: Формат: {format_name}\n"
-                                   f":sub_middle: Игроки: {current}/{required}\n"
-                                   f":sub_middle: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}\n\n"
-                                   f":white_dot: Игроки в поиске:"),
+        description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
@@ -78,6 +84,13 @@ class JoinSearchButton(discord.ui.Button):
         search = mm_search_store.get(self.guild_id, self.channel_id)
         if not search:
             await interaction.response.send_message("❌ Поиск не найден.", ephemeral=True)
+            return
+
+        if search.has_limit_reached:
+            await interaction.response.send_message(
+                "❌ Достигнут лимит активных турниров (2). Ожидайте завершения одного из турниров.",
+                ephemeral=True
+            )
             return
 
         if search.is_full:
