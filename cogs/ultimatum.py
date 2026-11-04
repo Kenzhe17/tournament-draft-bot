@@ -209,7 +209,7 @@ class UltimatumCog(commands.Cog):
 
         logger.info(f"Tournament {tournament.id} deleted by {interaction.user.id}")
 
-    def _build_tournament_embed(self, tournament) -> discord.Embed:
+    async def _build_tournament_embed(self, tournament) -> discord.Embed:
         """Build tournament status embed in regular tournament style."""
         status_emoji = {
             TournamentStatus.DRAFT: "📝",
@@ -226,6 +226,17 @@ class UltimatumCog(commands.Cog):
         emoji = status_emoji.get(tournament.status, "❓")
         status_text = "Открыто" if tournament.status == TournamentStatus.REGISTRATION else tournament.status.value
 
+        # Get players and format them with cosmetics
+        players = await ultimatum_store.get_players(tournament.id)
+        player_strings = []
+        for player in players:
+            # Format name with cosmetics like regular tournaments
+            from utils.cosmetics import format_player_name
+            formatted_name = format_player_name(tournament.guild_id, player.discord_id, player.username)
+            player_strings.append(formatted_name)
+
+        players_text = ", ".join(player_strings) if player_strings else "*"
+
         # Build description in regular tournament style like build_setup_embed
         description = (
             f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.created_by}>\n\n"
@@ -234,13 +245,13 @@ class UltimatumCog(commands.Cog):
             f"{replace_emojis('sub_middle')} Режим формирования: RANDOM\n"
             f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
             f"{replace_emojis('white_dot')} **Пул игроков:**\n"
-            f"{replace_emojis('white_arrow')} *\n\n"
+            f"{replace_emojis('white_arrow')} {players_text}\n\n"
             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
             f"{replace_emojis('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} 16 | {status_text} | RANDOM",
+            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} 16 | УЛЬТИМАТУМ СОЛО",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )

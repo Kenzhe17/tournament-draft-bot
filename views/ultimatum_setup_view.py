@@ -5,10 +5,16 @@ import logging
 import discord
 from discord.ext import commands
 
+from config import replace_emojis, get_emoji, GUILD_ID
 from ultimatum.models import TournamentStatus
 from ultimatum.store import ultimatum_store
 
 logger = logging.getLogger(__name__)
+
+
+def has_guild_tag(user: discord.Member) -> bool:
+    """Check if user has the guild tag for our server (primary_guild check)."""
+    return user.primary_guild and user.primary_guild.id == GUILD_ID
 
 
 class UltimatumJoinButton(discord.ui.Button):
@@ -39,6 +45,14 @@ class UltimatumJoinButton(discord.ui.Button):
             if tournament.status != TournamentStatus.REGISTRATION:
                 await interaction.response.send_message(
                     "❌ Турнир не в фазе регистрации.",
+                    ephemeral=True
+                )
+                return
+
+            # Check if user has guild tag
+            if not has_guild_tag(interaction.user):
+                await interaction.response.send_message(
+                    f"{replace_emojis('❌')} Для участия нужен тег {get_emoji('guild_tag')}r!z3",
                     ephemeral=True
                 )
                 return
