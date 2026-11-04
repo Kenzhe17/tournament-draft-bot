@@ -1211,6 +1211,11 @@ class Tournament:
                                 team_won=team_won
                             )
                             
+
+                            
+                            # Update AVG kills
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
+                            
                             await player_stats_store.set(player_stats)
                     except Exception as e:
                         import logging
@@ -1333,6 +1338,11 @@ class Tournament:
                                 team_won=team_won
                             )
                             
+
+                            
+                            # Update AVG kills
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
+                            
                             await player_stats_store.set(player_stats)
                     except Exception as e:
                         import logging
@@ -1409,6 +1419,11 @@ class Tournament:
                                 elo_change=elo_change,
                                 team_won=team_won
                             )
+                            
+
+                            
+                            # Update AVG kills
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games
                             
                             await player_stats_store.set(player_stats)
                     except Exception as e:
