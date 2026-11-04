@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
     """Построить embed для поиска."""
-    format_name = "Duo (2x2)" if search.format == MMFormat.DUO else "Squad (4x4)"
+    format_name = "Duo (2x2)" if search.format == MMFormat.DUO else "БО (4x4)"
     required = search.required_players
     current = len(search.players)
 
