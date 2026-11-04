@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID
+from config import BOT_OWNER_ID, replace_emojis, get_emoji
 from storage.db import get_pool
 from ultimatum.models import TournamentStatus, PlayerStatus, Tournament
 from ultimatum.store import ultimatum_store
@@ -52,6 +52,12 @@ class UltimatumCog(commands.Cog):
             guild_id=interaction.guild_id,
             created_by=interaction.user.id
         )
+
+        # Update status to REGISTRATION
+        await ultimatum_store.update_tournament_status(
+            tournament.id, TournamentStatus.REGISTRATION
+        )
+        tournament.status = TournamentStatus.REGISTRATION
 
         await interaction.response.send_message(
             f"✅ Tournament '{name}' created! ID: {tournament.id}",
@@ -176,7 +182,7 @@ class UltimatumCog(commands.Cog):
         logger.info(f"Test fill: added {added} players to tournament {tournament.id}")
 
     def _build_tournament_embed(self, tournament) -> discord.Embed:
-        """Build tournament status embed."""
+        """Build tournament status embed in regular tournament style."""
         status_emoji = {
             TournamentStatus.DRAFT: "📝",
             TournamentStatus.REGISTRATION: "📋",
@@ -191,23 +197,25 @@ class UltimatumCog(commands.Cog):
 
         emoji = status_emoji.get(tournament.status, "❓")
 
+        # Build description in regular tournament style
+        description_parts = []
+        description_parts.append(f"{replace_emojis('white_arrow')} **{emoji} УЛЬТИМАТУМ СОЛО: {tournament.name}**")
+        description_parts.append("")
+        description_parts.append(f"{replace_emojis('white_dot')} **Статус:** {tournament.status.value}")
+        description_parts.append(f"{replace_emojis('white_dot')} **Раунд:** {tournament.current_round}")
+        description_parts.append("")
+        description_parts.append(f"{replace_emojis('white_dot')} **Режим:** Solo Elimination (2 losses = out)")
+        description_parts.append(f"{replace_emojis('white_dot')} **Формат:** 16 игроков")
+        description_parts.append(f"{replace_emojis('white_dot')} **Гранд-финал:** 4-0 Direct Pass / 5-1 Qualifier")
+        description_parts.append("")
+        description_parts.append(f"{replace_emojis('a_star')} Используйте кнопки ниже для управления")
+
         embed = discord.Embed(
-            title=f"{emoji} УЛЬТИМАТУМ СОЛО: {tournament.name}",
-            description=f"Статус: {tournament.status.value}",
-            color=discord.Color.gold()
+            title=f"{replace_emojis('a_star')} ТУРНИР",
+            description="\n".join(description_parts),
+            color=discord.Color.from_rgb(69, 69, 69)
         )
-
-        embed.add_field(
-            name="Участники",
-            value="0/16",  # Will update with actual count
-            inline=True
-        )
-
-        embed.add_field(
-            name="Текущий раунд",
-            value=str(tournament.current_round),
-            inline=True
-        )
+        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1095082979505274880/1108998207315419218/tournament.png")
 
         return embed
 
