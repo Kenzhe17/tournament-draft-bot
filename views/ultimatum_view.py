@@ -21,7 +21,7 @@ room_cooldowns = {}
 round_messages = {}
 
 
-async def update_round_embed(guild: discord.Guild, tournament_id: str, round_number: int) -> None:
+async def update_round_embed(guild: discord.Guild, tournament_id: str, round_number: int, bot: commands.Bot) -> None:
     """Update the round embed with current match information."""
     if guild.id not in round_messages:
         return
@@ -34,7 +34,8 @@ async def update_round_embed(guild: discord.Guild, tournament_id: str, round_num
         
         message = await channel.fetch_message(message_id)
         new_embed = await build_ultimatum_round_embed(tournament_id, round_number, guild)
-        await message.edit(embed=new_embed)
+        new_view = await build_ultimatum_round_view(bot, tournament_id, round_number)
+        await message.edit(embed=new_embed, view=new_view)
     except Exception as e:
         logger.error(f"Error updating round embed: {e}", exc_info=True)
 

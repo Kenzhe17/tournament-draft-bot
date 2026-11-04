@@ -119,7 +119,7 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
         # Get match to get tournament_id and round_number
         match = await ultimatum_store.get_match_by_id(self.match_id)
         if match:
-            await update_round_embed(interaction.guild, match.tournament_id, self.round_number)
+            await update_round_embed(interaction.guild, match.tournament_id, self.round_number, interaction.client)
 
 
 async def send_ultimatum_room_notifications(
