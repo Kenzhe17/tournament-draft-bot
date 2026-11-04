@@ -25,10 +25,11 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
         max_length=20
     )
 
-    def __init__(self, match_id: int, tournament_id: str):
+    def __init__(self, match_id: int, tournament_id: str, round_number: int = 1):
         super().__init__()
         self.match_id = match_id
         self.tournament_id = tournament_id
+        self.round_number = round_number
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Handle room ID and password submission."""
@@ -110,6 +111,9 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
             await interaction.followup.send("✅ Комната создана и данные отправлены.", ephemeral=True)
         except (discord.NotFound, discord.DiscordServerError):
             pass
+        
+        # Update the round embed to show room info
+        # TODO: Update message with new embed
 
 
 async def send_ultimatum_room_notifications(

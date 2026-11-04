@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 # Cooldown tracking for room submissions
 room_cooldowns = {}
 
+# Tracking for winner votes (temporary - in production should use database)
+winner_votes = {}  # {match_id: {user_id: winner_id}}
+
 
 class UltimatumMatchView(discord.ui.View):
     """View for Ultimatum match with room and winner selection."""
@@ -162,21 +165,11 @@ async def build_ultimatum_round_view(bot: commands.Bot, tournament_id: str, roun
     view = discord.ui.View(timeout=None)
 
     # Room data button
-    room_btn = discord.ui.Button(
-        style=discord.ButtonStyle.primary,
-        label="📋 Данные Комнаты",
-        custom_id=f"ultimatum_rooms:{tournament_id}:{round_number}"
-    )
-    room_btn.callback = UltimatumRoomsButton(tournament_id, round_number, bot).callback
+    room_btn = UltimatumRoomsButton(tournament_id, round_number, bot)
     view.add_item(room_btn)
 
     # Winner selection button
-    winner_btn = discord.ui.Button(
-        style=discord.ButtonStyle.success,
-        label="🏆 Выбрать Победителя",
-        custom_id=f"ultimatum_winner:{tournament_id}:{round_number}"
-    )
-    winner_btn.callback = UltimatumWinnerButton(tournament_id, round_number, bot).callback
+    winner_btn = UltimatumWinnerButton(tournament_id, round_number, bot)
     view.add_item(winner_btn)
 
     return view
@@ -222,11 +215,8 @@ class UltimatumRoomsButton(discord.ui.Button):
             for match in matches
         ]
 
-        select = discord.ui.Select(
-            placeholder="Выберите матч для добавления комнаты",
-            options=options,
-            custom_id=f"ultimatum_select_match:{self.tournament_id}:{self.round_number}"
-        )
+        select = UltimatumSelectMatch(self.tournament_id, self.round_number)
+        select.options = options
         
         view = discord.ui.View()
         view.add_item(select)
@@ -269,11 +259,7 @@ class UltimatumWinnerButton(discord.ui.Button):
             for match in matches
         ]
 
-        select = discord.ui.Select(
-            placeholder="Выберите матч для определения победителя",
-            options=options,
-            custom_id=f"ultimatum_select_winner_match:{self.tournament_id}:{self.round_number}"
-        )
+        select = UltimatumSelectWinnerMatch(self.tournament_id, self.round_number, options)
         
         view = discord.ui.View()
         view.add_item(select)
@@ -285,3 +271,153 @@ class UltimatumWinnerButton(discord.ui.Button):
         )
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class UltimatumSelectMatch(discord.ui.Select):
+    """Select menu for choosing match for room input."""
+
+    def __init__(self, tournament_id: str, round_number: int, options=None):
+        super().__init__(
+            placeholder="Выберите матч для добавления комнаты",
+            custom_id=f"ultimatum_select_match:{tournament_id}:{round_number}",
+            options=options or []
+        )
+        self.tournament_id = tournament_id
+        self.round_number = round_number
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        match_id = int(self.values[0])
+        
+        # Open modal for room input
+        modal = UltimatumRoomModal(match_id, self.tournament_id, self.round_number)
+        try:
+            await interaction.response.send_modal(modal)
+        except discord.NotFound:
+            await interaction.followup.send(
+                "Время взаимодействия истекло. Попробуйте снова.",
+                ephemeral=True
+            )
+
+
+class UltimatumSelectWinnerMatch(discord.ui.Select):
+    """Select menu for choosing match for winner selection."""
+
+    def __init__(self, tournament_id: str, round_number: int, options=None):
+        super().__init__(
+            placeholder="Выберите матч для определения победителя",
+            custom_id=f"ultimatum_select_winner_match:{tournament_id}:{round_number}",
+            options=options or []
+        )
+        self.tournament_id = tournament_id
+        self.round_number = round_number
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        match_id = int(self.values[0])
+        
+        # Get match details
+        match = await ultimatum_store.get_match_by_id(match_id)
+        if not match:
+            await interaction.response.send_message("Матч не найден", ephemeral=True)
+            return
+        
+        # Get players
+        p1 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player1_id)
+        p2 = await ultimatum_store.get_player_by_discord_id(self.tournament_id, match.player2_id)
+        
+        if not p1 or not p2:
+            await interaction.response.send_message("Игроки не найдены", ephemeral=True)
+            return
+        
+        # Create buttons for each player
+        view = discord.ui.View()
+        
+        p1_btn = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label=p1.username,
+            custom_id=f"ultimatum_vote_winner:{match_id}:{match.player1_id}"
+        )
+        p1_btn.callback = UltimatumVoteWinnerButton(match_id, match.player1_id, match.player2_id, self.tournament_id).callback
+        view.add_item(p1_btn)
+        
+        p2_btn = discord.ui.Button(
+            style=discord.ButtonStyle.primary,
+            label=p2.username,
+            custom_id=f"ultimatum_vote_winner:{match_id}:{match.player2_id}"
+        )
+        p2_btn.callback = UltimatumVoteWinnerButton(match_id, match.player2_id, match.player1_id, self.tournament_id).callback
+        view.add_item(p2_btn)
+        
+        embed = discord.Embed(
+            title="🏆 Выберите победителя",
+            description=f"{p1.username} vs {p2.username}\n\nОба игрока должны нажать на одного и того же для подтверждения.",
+            color=discord.Color.from_rgb(69, 69, 69)
+        )
+        
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+class UltimatumVoteWinnerButton(discord.ui.Button):
+    """Button for voting on match winner."""
+
+    def __init__(self, match_id: int, voted_winner_id: int, other_player_id: int, tournament_id: str):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="",  # Will be set dynamically
+            custom_id=f"ultimatum_vote_winner:{match_id}:{voted_winner_id}"
+        )
+        self.match_id = match_id
+        self.voted_winner_id = voted_winner_id
+        self.other_player_id = other_player_id
+        self.tournament_id = tournament_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        # Check if user is one of the players
+        if interaction.user.id not in [self.voted_winner_id, self.other_player_id]:
+            await interaction.response.send_message(
+                "❌ Только участники матча могут голосовать.",
+                ephemeral=True
+            )
+            return
+        
+        # Record vote in global tracker
+        if self.match_id not in winner_votes:
+            winner_votes[self.match_id] = {}
+        
+        winner_votes[self.match_id][interaction.user.id] = self.voted_winner_id
+        
+        # Check votes
+        match_votes = winner_votes[self.match_id]
+        votes_for_other = sum(1 for v in match_votes.values() if v == self.other_player_id)
+        votes_for_winner = sum(1 for v in match_votes.values() if v == self.voted_winner_id)
+        
+        total_votes = len(match_votes)
+        
+        if total_votes >= 2:
+            # Both players voted - check consensus
+            if votes_for_winner == 2:
+                # Consensus! Complete match
+                from ultimatum.tournament import UltimatumTournament
+                tournament_logic = UltimatumTournament(ultimatum_store)
+                await tournament_logic.complete_match(self.match_id, self.voted_winner_id, self.other_player_id)
+                
+                # Clear votes
+                del winner_votes[self.match_id]
+                
+                await interaction.response.send_message(
+                    f"✅ Победитель определен",
+                    ephemeral=True
+                )
+                
+                # TODO: Update round embed
+            else:
+                # No consensus - reset votes
+                del winner_votes[self.match_id]
+                await interaction.response.send_message(
+                    "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                f"Голос записан. Ожидание голоса второго игрока...",
+                ephemeral=True
+            )
