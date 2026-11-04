@@ -511,7 +511,7 @@ class UltimatumStartButton(discord.ui.Button):
             )
 
 
-def build_ultimatum_setup_view(guild_id: int, channel_id: int, tournament=None) -> discord.ui.View:
+async def build_ultimatum_setup_view(guild_id: int, channel_id: int, tournament=None) -> discord.ui.View:
     """Build setup view for Ultimatum tournament."""
     view = discord.ui.View(timeout=None)
 
