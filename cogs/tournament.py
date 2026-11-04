@@ -205,6 +205,10 @@ class TournamentCog(commands.Cog):
         store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
+        # Сбросить лимит поиска если освободился турнир
+        if hasattr(self.bot, 'mm_cog'):
+            await self.bot.mm_cog.reset_search_limit(interaction.guild_id)
+
         # Update organizer setup embed if it exists
         from storage.organizer_store import organizer_store as org_store
         for channel_id in TOURNAMENT_CHANNELS:
