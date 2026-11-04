@@ -231,8 +231,12 @@ class UltimatumCog(commands.Cog):
         player_strings = []
         for player in players:
             # Format name with cosmetics like regular tournaments
-            from utils.cosmetics import format_player_name
-            formatted_name = format_player_name(tournament.guild_id, player.discord_id, player.username)
+            # For test players (fake IDs >= 1000000), just use username
+            if player.discord_id >= 1000000:
+                formatted_name = player.username
+            else:
+                from utils.cosmetics import format_player_name
+                formatted_name = format_player_name(tournament.guild_id, player.discord_id, player.username)
             player_strings.append(formatted_name)
 
         players_text = ", ".join(player_strings) if player_strings else "*"

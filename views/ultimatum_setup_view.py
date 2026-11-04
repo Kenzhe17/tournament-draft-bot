@@ -169,9 +169,23 @@ class UltimatumStartButton(discord.ui.Button):
                 ephemeral=True
             )
 
-            # Update the view to remove start button
-            self.view.clear_items()
-            await interaction.message.edit(view=self.view)
+            # Update the embed and view
+            try:
+                from cogs.ultimatum import UltimatumCog
+                cog = interaction.client.get_cog('UltimatumCog')
+                if cog:
+                    tournament = await ultimatum_store.get_tournament(tournament.id)
+                    new_embed = await cog._build_tournament_embed(tournament)
+                    # Clear view or update with round view
+                    self.view.clear_items()
+                    await interaction.message.edit(embed=new_embed, view=self.view)
+                else:
+                    self.view.clear_items()
+                    await interaction.message.edit(view=self.view)
+            except discord.NotFound:
+                pass
+            except Exception as e:
+                logger.error(f"Error updating tournament message after start: {e}")
 
             logger.info(f"Ultimatum tournament {tournament.id} started by {interaction.user.id}")
 
