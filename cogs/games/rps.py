@@ -711,14 +711,17 @@ class RPSPlayAgainButton(discord.ui.Button):
                 )
                 return
 
-            # Hold escrow
-            escrow_success = await hold_escrow(user_id, guild_id, self.bet)
-            if not escrow_success:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Не удалось удержать ставку."),
-                    ephemeral=True
-                )
-                return
+            # Deduct bet directly (not escrow for play again)
+            lock = get_user_lock(guild_id, user_id)
+            async with lock:
+                balance = await user_balance_store.get_balance(guild_id, user_id)
+                if balance < self.bet:
+                    await interaction.response.send_message(
+                        replace_emojis("❌ Недостаточно монет."),
+                        ephemeral=True
+                    )
+                    return
+                await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
 
             # Create new game
             game_id = f"rps_{user_id}_{guild_id}_{asyncio.get_event_loop().time()}"
@@ -769,16 +772,31 @@ class RPSPlayAgainButton(discord.ui.Button):
                     )
                     return
 
-                # Hold escrow for both
-                initiator_escrow = await hold_escrow(self.initiator_id, guild_id, self.bet)
-                opponent_escrow = await hold_escrow(self.opponent_id, guild_id, self.bet)
+                # Deduct bets directly (not escrow for play again)
+                initiator_lock = get_user_lock(guild_id, self.initiator_id)
+                opponent_lock = get_user_lock(guild_id, self.opponent_id)
 
-                if not initiator_escrow or not opponent_escrow:
-                    await interaction.response.send_message(
-                        replace_emojis("❌ Не удалось удержать ставку."),
-                        ephemeral=True
-                    )
-                    return
+                async with initiator_lock:
+                    initiator_balance = await user_balance_store.get_balance(guild_id, self.initiator_id)
+                    if initiator_balance < self.bet:
+                        await interaction.response.send_message(
+                            replace_emojis("❌ Недостаточно монет у инициатора."),
+                            ephemeral=True
+                        )
+                        return
+                    await user_balance_store.subtract_balance(guild_id, self.initiator_id, self.bet)
+
+                async with opponent_lock:
+                    opponent_balance = await user_balance_store.get_balance(guild_id, self.opponent_id)
+                    if opponent_balance < self.bet:
+                        # Return initiator's bet
+                        await user_balance_store.add_balance(guild_id, self.initiator_id, self.bet)
+                        await interaction.response.send_message(
+                            replace_emojis("❌ Недостаточно монет у оппонента."),
+                            ephemeral=True
+                        )
+                        return
+                    await user_balance_store.subtract_balance(guild_id, self.opponent_id, self.bet)
 
                 # Create new game
                 game = GameSession(
