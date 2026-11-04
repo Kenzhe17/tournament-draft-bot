@@ -59,8 +59,14 @@ class UltimatumTournament:
             await self._create_grand_final(tournament_id, players, bot)
             return
 
-        # Create round in database
-        await self.store.create_round(tournament_id, round_number)
+        # Create round in database (handle duplicate key error)
+        try:
+            await self.store.create_round(tournament_id, round_number)
+        except Exception as e:
+            if "duplicate key" in str(e).lower():
+                logger.warning(f"Round {round_number} already exists for tournament {tournament_id}, skipping creation")
+                return
+            raise
 
         # Create matches using matchmaking
         player_pairs = await self.matchmaker.create_matches(
