@@ -181,8 +181,10 @@ class UltimatumStartButton(discord.ui.Button):
                     # Build round embed for round 1
                     new_embed = await build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
                     new_view = await build_ultimatum_round_view(interaction.client, tournament.id, 1)
-                    # Edit message with round embed and view
-                    await interaction.message.edit(embed=new_embed, view=new_view)
+                    # Send new message with round embed and view instead of editing
+                    await interaction.channel.send(embed=new_embed, view=new_view)
+                    # Delete old setup message
+                    await interaction.message.delete()
                 else:
                     # Fallback: just clear items
                     self.view.clear_items()
