@@ -167,7 +167,27 @@ class MMCog(commands.Cog):
         """Запустить таймер для поиска."""
         async def timer_task():
             try:
-                await asyncio.sleep(600)  # 10 минут
+                # Уведомление через минуту после старта
+                await asyncio.sleep(60)  # 1 минута
+                
+                search = mm_search_store.get(guild_id, channel_id)
+                if not search:
+                    return
+
+                # Отправить уведомление о поиске
+                try:
+                    search_channel = self.bot.get_channel(channel_id)
+                    if search_channel:
+                        current = len(search.players)
+                        required = search.required
+                        await search_channel.send(
+                            f"🔍 Прямо сейчас поиск игроков в канале {search_channel.mention}! ({current}/{required})"
+                        )
+                except Exception as e:
+                    logger.error(f"Error sending search notification: {e}")
+
+                # Продолжить таймер до 10 минут
+                await asyncio.sleep(540)  # Оставшиеся 9 минут
 
                 search = mm_search_store.get(guild_id, channel_id)
                 if not search:

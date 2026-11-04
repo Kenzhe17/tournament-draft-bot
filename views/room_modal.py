@@ -192,4 +192,36 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     # Send to general channel (1200125075156910181)
     general_channel = bot.get_channel(1200125075156910181)
     if general_channel:
-        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>")
+        # Get all players for the match
+        from models.tournament import Tournament
+        if isinstance(tournament, Tournament):
+            # Get players from both teams
+            all_players = []
+            if hasattr(tournament, 'teams'):
+                for team_idx in [team1_idx, team2_idx]:
+                    if team_idx < len(tournament.teams):
+                        team_data = tournament.teams[team_idx]
+                        if tournament.formation_mode == "random-auto":
+                            all_players.extend(team_data.get("players", []))
+                        else:
+                            # Get players from circles
+                            for circle in range(1, 5):
+                                player = team_data.get(f"circle{circle}")
+                                if player:
+                                    all_players.append(player)
+            
+            # Create mentions if we have user_ids
+            player_mentions = []
+            if hasattr(tournament, 'player_user_ids'):
+                for player_name in all_players:
+                    user_id = tournament.player_user_ids.get(player_name)
+                    if user_id:
+                        player_mentions.append(f"<@{user_id}>")
+                    else:
+                        player_mentions.append(player_name)
+            
+            players_text = ", ".join(player_mentions) if player_mentions else ""
+        else:
+            players_text = ""
+        
+        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>\n\n:white_dot: Игроки: {players_text}")

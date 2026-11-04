@@ -598,12 +598,19 @@ class AdminStatsTeamButton(discord.ui.Button):
                 player = team_data.get(f"circle{circle}")
                 if player:
                     players.append(player)
+        elif self.tournament.formation_mode == FormationMode.RANDOM_AUTO:
+            # Random-auto mode: use teams.players list
+            players = team_data.get("players", [])
         else:
             # ELO/SKILL mode: circles
             for circle in range(1, 5):
                 player = team_data.get(f"circle{circle}")
                 if player:
                     players.append(player)
+
+        if not players:
+            await interaction.response.send_message("❌ Нет игроков в команде.", ephemeral=True)
+            return
 
         # Open modal with K/D fields for this team's players
         modal = AdminStatsModal(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.team_index, self.team_name, players)
