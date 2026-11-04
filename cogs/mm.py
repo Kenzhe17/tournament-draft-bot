@@ -72,8 +72,7 @@ class MMCog(commands.Cog):
         tournament.message_id = message.id
         mm_store.set(tournament)
 
-        # Start 10-minute timer
-        self._start_timer(interaction.guild_id, interaction.channel_id, tournament)
+        # Timer will start when first player joins
 
     def _start_timer(self, guild_id: int, channel_id: int, tournament) -> None:
         """Start 10-minute timer for matchmaking."""
@@ -86,22 +85,24 @@ class MMCog(commands.Cog):
                 if not tournament or tournament.phase == MMPhase.COMPLETE:
                     return
 
-                # Cancel matchmaking if not full
+                # Kick players if not full
                 if not tournament.is_full():
-                    # Delete tournament
-                    mm_store.delete(guild_id, channel_id)
+                    # Clear players and reset timer
+                    player_count = len(tournament.players)
+                    tournament.players = []
+                    tournament.first_player_time = ""
+                    mm_store.set(tournament)
 
                     # Update message
                     try:
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             message = await channel.fetch_message(tournament.message_id)
-                            embed = discord.Embed(
-                                title="⏰ Matchmaking отменен",
-                                description="Не набралось достаточно игроков за 10 минут.",
-                                color=discord.Color.red()
-                            )
-                            await message.edit(embed=embed, view=None)
+                            embed = create_searching_embed(tournament)
+                            view = MMRegistrationView(guild_id, channel_id, tournament)
+                            await message.edit(embed=embed, view=view)
+                            # Send notification
+                            await channel.send(f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска.")
                     except Exception as e:
                         logger.error(f"Error updating timer message: {e}")
             except asyncio.CancelledError:

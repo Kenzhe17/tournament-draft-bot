@@ -92,7 +92,18 @@ class JoinMMButton(Button):
             await interaction.response.send_message("❌ Поиск уже заполнен или вы уже в поиске.", ephemeral=True)
             return
 
+        # Start timer if this is first player
+        was_first = len(tournament.players) == 1
+
         mm_store.set(tournament)
+
+        # Start timer for first player
+        if was_first:
+            from cogs.mm import MMCog
+            # Get the cog from bot to start timer
+            cog = interaction.client.get_cog('MMCog')
+            if cog:
+                cog._start_timer(self.guild_id, self.channel_id, tournament)
 
         # Update embed
         embed = create_searching_embed(tournament)
@@ -103,6 +114,12 @@ class JoinMMButton(Button):
 
         # Check if full
         if tournament.is_full():
+            # Cancel timer
+            from cogs.mm import MMCog
+            cog = interaction.client.get_cog('MMCog')
+            if cog:
+                cog._cancel_timer(self.guild_id, self.channel_id)
+
             # Form teams and start
             tournament.form_teams_balanced()
             mm_store.set(tournament)
