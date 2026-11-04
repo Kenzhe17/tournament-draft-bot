@@ -1149,6 +1149,50 @@ class Tournament:
             return True
         return False
 
+    async def confirm_qualifier_winner_async(self, match_index: int, team_index: int, guild_id: int) -> bool:
+        """
+        Асинхронная версия для сохранения статистики и ELO.
+        """
+        from storage.player_stats_store import player_stats_store
+        
+        match = self.qualifier_matches[match_index]
+        winner_idx = team_index
+        loser_idx = match[0] if match[1] == team_index else match[1]
+        
+        # Save stats for all players in the match
+        match_id = f"{self.id}_qualifier_{match_index}"
+        if match_id in self.temp_match_stats:
+            for player_name, stats in self.temp_match_stats[match_id].items():
+                kills = stats.get("kills", 0)
+                deaths = stats.get("deaths", 0)
+                
+                # Get user_id
+                user_id = self.player_user_ids.get(player_name, 0)
+                if user_id:
+                    try:
+                        player_stats = await player_stats_store.get(guild_id, user_id)
+                        if player_stats:
+                            # Update K/D
+                            player_stats.total_kills += kills
+                            player_stats.total_deaths += deaths
+                            player_stats.games_played += 1
+                            if kills > player_stats.best_match_kills:
+                                player_stats.best_match_kills = kills
+                            # Recalculate KD ratio
+                            if player_stats.total_deaths > 0:
+                                player_stats.kd_ratio = player_stats.total_kills / player_stats.total_deaths
+                            else:
+                                player_stats.kd_ratio = player_stats.total_kills
+                            # Update AVG kills
+                            player_stats.avg_kills = player_stats.total_kills / player_stats.games_played
+                            await player_stats_store.set(player_stats)
+                    except Exception as e:
+                        import logging
+                        logging.error(f"Error updating player stats for {player_name}: {e}")
+        
+        # Confirm winner
+        return self.confirm_qualifier_winner(match_index, team_index)
+
     def generate_semifinals_from_qualifiers(self) -> None:
         """Сгенерировать полуфиналы из победителей отборочных."""
         # 4 qualifier winners advance to semifinals: 2 matches
