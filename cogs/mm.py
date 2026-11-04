@@ -195,7 +195,7 @@ class MMCog(commands.Cog):
                         
                         embed = discord.Embed(
                             title="🔍 Поиск игроков",
-                            description=f"Прямо сейчас поиск игроков в канале {search_channel.mention}!",
+                            description=f"{search_channel.mention}",
                             color=discord.Color.from_rgb(69, 69, 69)
                         )
                         embed.add_field(name="Игроки", value=f"{current}/{required}", inline=True)
