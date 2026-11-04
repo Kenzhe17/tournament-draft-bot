@@ -110,7 +110,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.isolate")
         await self.load_extension("cogs.br")
         await self.load_extension("cogs.mm")
-        await self.load_extension("cogs.ultimatum")
+        # await self.load_extension("cogs.ultimatum")  # Temporarily disabled - folder not deploying to Railway
         await self.load_extension("cogs.elo")
         await self.load_extension("cogs.team")
         await self.load_extension("cogs.bot_settings")
