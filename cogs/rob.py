@@ -986,7 +986,8 @@ class RobGroupStartButton(discord.ui.Button):
         bonus = (member_count - 1) * 6
         success_chance = min(base_chance + bonus, 90) / 100
 
-        # Бонусы питомцев для группового ограбления
+        # Бонусы питомцев для группового ограбления ОТКЛЮЧЕНЫ
+        # В групповых ограблениях питомцы не дают бонусов к шансу ограбления
         group_pet_bonuses = {
             "success_bonus": 0,
             "success_names": [],
@@ -995,38 +996,6 @@ class RobGroupStartButton(discord.ui.Button):
             "victim_defense_bonus": 0,
             "victim_defense_name": None,
         }
-
-        # Применить бонусы питомцев каждого участника
-        for member_id in members:
-            try:
-                from storage.pet_store import pet_store
-                pet = await pet_store.get_user_pet(guild_id, member_id)
-
-                if pet:
-                    # Списать энергию за использование способности
-                    energy_consumed = await pet_store.consume_energy_for_ability(guild_id, member_id, "rob")
-
-                    if energy_consumed:
-                        from storage.pet_store import pet_catalog
-                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
-
-                        if pet_def:  # Способности открыты с 1 возраста
-                            ability = pet_def["abilities"][1]
-                            if ability["name"] == "Ловкие лапы":
-                                bonus_value = ability.get("max_val", 0)
-                                group_pet_bonuses["success_bonus"] += bonus_value
-                                group_pet_bonuses["success_names"].append(pet.pet_name)
-
-                            if ability["name"] == "Чужой кошелёк":
-                                loot_bonus = ability.get("max_val", 0)
-                                group_pet_bonuses["loot_bonus"] += loot_bonus
-                                group_pet_bonuses["loot_names"].append(pet.pet_name)
-            except Exception as e:
-                logger.error(f"Error applying group pet bonus: {e}")
-
-        # Применить итоговый бонус к шансу успеха
-        success_chance += group_pet_bonuses["success_bonus"] / 100
-        success_chance = min(1.0, success_chance)  # Максимум 100%
 
         # Применить защиту жертвы
         try:

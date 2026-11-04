@@ -261,7 +261,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
     def __init__(self, bet: int, opponent_id: Optional[int] = None):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
         self.bet = bet
         self.opponent_id = opponent_id
 

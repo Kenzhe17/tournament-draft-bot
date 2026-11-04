@@ -683,30 +683,17 @@ class PvPChoiceView(RPSView):
 
 
 class RPSPlayAgainButton(discord.ui.Button):
-    """Кнопка сыграть снова."""
+    """Кнопка сыграть снова (УДАЛЕНО)."""
 
     def __init__(self, bet: int, initiator_id: Optional[int] = None, opponent_id: Optional[int] = None):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
         self.bet = bet
         self.initiator_id = initiator_id
         self.opponent_id = opponent_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Перезапустить игру с теми же параметрами."""
-        if self.initiator_id and interaction.user.id != self.initiator_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
-            return
-
-        guild_id = interaction.guild_id
-        user_id = interaction.user.id
-
-        # PvE mode - immediate restart
-        if self.opponent_id is None:
-            # Check balance
-            balance = await check_balance(user_id, guild_id, self.bet)
-            if not balance:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Недостаточно баланса."),
+        """Кнопка отключена."""
+        await interaction.response.send_message("❌ Эта функция отключена.", ephemeral=True)
                     ephemeral=True
                 )
                 return

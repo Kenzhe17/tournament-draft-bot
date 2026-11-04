@@ -269,23 +269,17 @@ class CoinFlipDeclineButton(discord.ui.Button):
 
 
 class CoinFlipPlayAgainButton(discord.ui.Button):
-    """Кнопка сыграть снова."""
+    """Кнопка сыграть снова (УДАЛЕНО)."""
 
     def __init__(self, bet: int, opponent_id: Optional[int] = None, user_id: int = None):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
         self.bet = bet
         self.opponent_id = opponent_id
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Перезапустить игру с теми же параметрами."""
-        if self.user_id and interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
-            return
-
-        opponent = None
-        if self.opponent_id:
-            opponent = interaction.guild.get_member(self.opponent_id)
+        """Кнопка отключена."""
+        await interaction.response.send_message("❌ Эта функция отключена.", ephemeral=True)
 
         # For play again, we need to edit the existing message
         # First create the game
