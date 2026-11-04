@@ -12,6 +12,7 @@ from discord.ext import commands
 
 from config import replace_emojis, get_emoji
 from models.mm_search import MMFormat, MMSearch
+from models.tournament import TournamentPhase
 from storage.mm_search_store import mm_search_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -33,8 +34,9 @@ def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
         description=replace_emojis(f":white_dot: Информация о поиске:\n"
                                    f":sub_middle: Формат: {format_name}\n"
                                    f":sub_middle: Игроки: {current}/{required}\n"
-                                   f":sub_middle: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}\n\n"
-                                   f":white_dot: Игроки в поиске:"),
+                                   f":sub_directory: Таймер: {'Запущен' if search.timer_started else 'Ожидание первого игрока'}\n\n"
+                                   f":white_dot: Игроки в поиске:\n\n"
+                                   f"Нажмите кнопку ниже чтобы войти в поиск"),
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
@@ -50,12 +52,6 @@ def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
             else:
                 player_info.append(f":white_arrow: {player_name}")
         embed.add_field(name="", value="\n".join(player_info), inline=False)
-
-    embed.add_field(
-        name="",
-        value=replace_emojis(":a_adot_smaller: Нажмите кнопку ниже чтобы войти в поиск"),
-        inline=False
-    )
 
     return embed
 

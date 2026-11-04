@@ -50,23 +50,36 @@ class UltimatumTournament:
                     new_embed = await build_ultimatum_round_embed(tournament_id, 1, guild)
                     new_view = await build_ultimatum_round_view(bot, tournament_id, 1)
                     
-                    # Find tournament channel and send message
+                    # Find tournament channel with Ultimatum setup embed
+                    setup_message = None
+                    target_channel = None
+                    
                     for channel in guild.text_channels:
-                        async for msg in channel.history(limit=20):
-                            if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                                # Send round message
-                                round_message = await channel.send(embed=new_embed, view=new_view)
-                                logger.info(f"Sent round message: {round_message.id}")
-                                
-                                # Track the round message
-                                round_messages[guild.id] = (channel.id, round_message.id)
-                                
-                                # Delete setup message
-                                await msg.delete()
-                                logger.info("Deleted setup message after start")
-                                break
-                        if guild.id in round_messages:
+                        async for msg in channel.history(limit=50):
+                            if msg.embeds and msg.embeds[0].title:
+                                title = msg.embeds[0].title
+                                if "УЛЬТИМАТУМ" in title and "РЕГИСТРАЦИЯ" in title:
+                                    setup_message = msg
+                                    target_channel = channel
+                                    break
+                        if setup_message:
                             break
+                    
+                    if target_channel and setup_message:
+                        # Send round message first
+                        round_message = await target_channel.send(embed=new_embed, view=new_view)
+                        logger.info(f"Sent round message: {round_message.id}")
+                        
+                        # Track the round message
+                        round_messages[guild.id] = (target_channel.id, round_message.id)
+                        
+                        # Delete setup message after round message is sent
+                        await setup_message.delete()
+                        logger.info("Deleted setup message after start")
+                    else:
+                        logger.warning("Could not find Ultimatum setup embed to replace")
+                        # Try to send to same channel as tournament is registered
+                        # or find by searching for tournament_id in message content
                 except Exception as e:
                     logger.error(f"Error sending round embed: {e}", exc_info=True)
 
