@@ -1,7 +1,6 @@
 """View for Ultimatum Solo Tournament matches."""
 
 import logging
-from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
@@ -12,16 +11,13 @@ from ultimatum.store import ultimatum_store
 from ultimatum.tournament import UltimatumTournament
 from views.ultimatum_room_modal import UltimatumRoomModal
 
-if TYPE_CHECKING:
-    from bot import TournamentBot
-
 logger = logging.getLogger(__name__)
 
 
 class UltimatumMatchView(discord.ui.View):
     """View for Ultimatum match with room and winner selection."""
 
-    def __init__(self, bot: TournamentBot, tournament_id: str, match_id: int, round_number: int):
+    def __init__(self, bot: commands.Bot, tournament_id: str, match_id: int, round_number: int):
         super().__init__(timeout=None)
         self.bot = bot
         self.tournament_id = tournament_id
@@ -167,7 +163,7 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
     return embed
 
 
-async def build_ultimatum_round_view(bot: TournamentBot, tournament_id: str, round_number: int) -> discord.ui.View:
+async def build_ultimatum_round_view(bot: commands.Bot, tournament_id: str, round_number: int) -> discord.ui.View:
     """Build view for Ultimatum round with all match controls."""
     view = discord.ui.View(timeout=None)
 
