@@ -142,9 +142,43 @@ class UltimatumTournament:
                 logger.info(f"Elo updated for match {match_id}")
             except Exception as e:
                 logger.error(f"Failed to update Elo: {e}")
+        elif match.match_type == MatchType.GRAND_FINAL:
+            # Grand final: determine champion and runner-up
+            await self._complete_grand_final(match.tournament_id, winner_id, loser_id)
 
-        # Check if round is complete
-        await self._check_round_completion(match.tournament_id, match.round_number)
+        # Check if round is complete (skip for grand final)
+        if match.match_type != MatchType.GRAND_FINAL:
+            await self._check_round_completion(match.tournament_id, match.round_number)
+
+    async def _complete_grand_final(
+        self,
+        tournament_id: str,
+        winner_id: int,
+        loser_id: int
+    ) -> None:
+        """Complete grand final and determine champion."""
+        # Set champion status
+        await self.store.update_player_stats(
+            tournament_id,
+            winner_id,
+            None,
+            None,
+            PlayerStatus.CHAMPION
+        )
+
+        # Set runner-up status
+        await self.store.update_player_stats(
+            tournament_id,
+            loser_id,
+            None,
+            None,
+            PlayerStatus.GRAND_FINAL_LOSER
+        )
+
+        # Finalize tournament with rankings
+        await self.finalize_tournament(tournament_id)
+
+        logger.info(f"Grand final completed: Champion {winner_id}, Runner-up {loser_id}")
 
     async def _check_round_completion(self, tournament_id: str, round_number: int) -> None:
         """Check if all matches in round are complete and start next round."""
@@ -177,18 +211,35 @@ class UltimatumTournament:
         tournament_id: str,
         players: List[Player]
     ) -> bool:
-        """Check if grand final conditions are met."""
-        # Grand final when:
-        # - One player has 4-0 (direct pass)
-        # - One player emerges from 3-1 bracket
-        # - Only 2 active players remain
+        """Check if grand final conditions are met.
 
+        Grand final scenarios:
+        1. 4-0 Direct Pass: One player has 4-0 record, other emerges from 3-1 bracket
+        2. 5-1 Qualifier: Both players have 1 loss, but only 2 remain
+
+        Grand final is created when:
+        - Exactly 2 active players remain
+        - AND (one has 4-0 OR both have >= 4 wins with max 1 loss)
+        """
         if len(players) != 2:
             return False
 
-        # Check if one has 4-0
-        has_4_0 = any(p.wins == 4 and p.losses == 0 for p in players)
+        p1, p2 = players[0], players[1]
+
+        # Scenario 1: 4-0 Direct Pass
+        # One player has perfect 4-0, other has any record
+        has_4_0 = (p1.wins == 4 and p1.losses == 0) or (p2.wins == 4 and p2.losses == 0)
         if has_4_0:
+            return True
+
+        # Scenario 2: 5-1 Qualifier
+        # Both players have at least 4 wins and max 1 loss
+        # (This happens when both come from 3-1 bracket and win their matches)
+        both_strong = (
+            p1.wins >= 4 and p1.losses <= 1 and
+            p2.wins >= 4 and p2.losses <= 1
+        )
+        if both_strong:
             return True
 
         return False
@@ -199,21 +250,38 @@ class UltimatumTournament:
         players: List[Player]
     ) -> None:
         """Create grand final match."""
-        player1, player2 = players[0], players[1]
+        # Sort players by wins, then by fewer losses
+        sorted_players = sorted(
+            players,
+            key=lambda p: (-p.wins, p.losses)
+        )
+        player1, player2 = sorted_players[0], sorted_players[1]
 
-        # Set grand finalist status
+        # The 4-0 player gets direct pass status
+        if player1.wins == 4 and player1.losses == 0:
+            direct_pass = player1
+            qualifier = player2
+        elif player2.wins == 4 and player2.losses == 0:
+            direct_pass = player2
+            qualifier = player1
+        else:
+            # Neither has 4-0, this shouldn't happen with current logic
+            direct_pass = sorted_players[0]
+            qualifier = sorted_players[1]
+
+        # Set grand finalist status for both
         await self.store.update_player_stats(
-            tournament_id, player1.discord_id, player1.wins, player1.losses,
+            tournament_id, direct_pass.discord_id, direct_pass.wins, direct_pass.losses,
             PlayerStatus.GRAND_FINALIST
         )
         await self.store.update_player_stats(
-            tournament_id, player2.discord_id, player2.wins, player2.losses,
+            tournament_id, qualifier.discord_id, qualifier.wins, qualifier.losses,
             PlayerStatus.GRAND_FINALIST
         )
 
         # Create grand final match
         await self.store.create_match(
-            tournament_id, 999, player1.discord_id, player2.discord_id, MatchType.GRAND_FINAL
+            tournament_id, 999, direct_pass.discord_id, qualifier.discord_id, MatchType.GRAND_FINAL
         )
 
         # Update tournament status
@@ -221,7 +289,10 @@ class UltimatumTournament:
             tournament_id, TournamentStatus.GRAND_FINAL
         )
 
-        logger.info(f"Grand final created: {player1.username} vs {player2.username}")
+        logger.info(
+            f"Grand final created: {direct_pass.username} ({direct_pass.record}) vs "
+            f"{qualifier.username} ({qualifier.record})"
+        )
 
     async def eliminate_player(
         self,
@@ -239,24 +310,34 @@ class UltimatumTournament:
         # Get all players
         players = await self.store.get_players(tournament_id)
 
-        # Sort by wins, then by fewer losses, then by elimination round
-        # This is simplified - real implementation needs more sophisticated ranking
+        # Sort by status (champion first), then by wins, then by fewer losses
+        status_priority = {
+            PlayerStatus.CHAMPION: 0,
+            PlayerStatus.GRAND_FINAL_LOSER: 1,
+            PlayerStatus.GRAND_FINALIST: 2,
+            PlayerStatus.ELIMINATED: 3,
+            PlayerStatus.ACTIVE: 4,
+        }
+
         sorted_players = sorted(
             players,
-            key=lambda p: (-p.wins, p.losses if p.losses else 0)
+            key=lambda p: (
+                status_priority.get(p.status, 99),
+                -p.wins,
+                p.losses if p.losses else 0
+            )
         )
 
-        # Assign places
+        # Assign places 1-16
         for idx, player in enumerate(sorted_players):
             place = idx + 1
-            await self.store.update_player_stats(
-                tournament_id, player.discord_id, player.wins, player.losses, player.status
+            await self.store.update_player_final_place(
+                tournament_id, player.discord_id, place
             )
-            # Update final_place in database (need to add this to store)
 
         # Update tournament status
         await self.store.update_tournament_status(
             tournament_id, TournamentStatus.COMPLETED
         )
 
-        logger.info(f"Tournament {tournament_id} finalized")
+        logger.info(f"Tournament {tournament_id} finalized with {len(players)} players")

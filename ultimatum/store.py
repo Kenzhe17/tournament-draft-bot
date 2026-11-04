@@ -273,6 +273,24 @@ class UltimatumStore:
                     wins, losses, tournament_id, discord_id
                 )
 
+    async def update_player_final_place(
+        self,
+        tournament_id: str,
+        discord_id: int,
+        final_place: int
+    ) -> None:
+        """Update player's final place in tournament."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ultimatum_players
+                SET final_place = $1
+                WHERE tournament_id = $2 AND discord_id = $3
+                """,
+                final_place, tournament_id, discord_id
+            )
+
     async def create_match(
         self,
         tournament_id: str,
