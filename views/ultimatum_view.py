@@ -165,17 +165,31 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
 
 async def build_ultimatum_round_view(bot: commands.Bot, tournament_id: str, round_number: int) -> discord.ui.View:
     """Build view for Ultimatum round with all match controls."""
+    # Use pagination to handle many matches
     view = discord.ui.View(timeout=None)
 
     # Get matches
     matches = await ultimatum_store.get_matches(tournament_id, round_number)
 
+    # Limit to first 4 matches to stay under 25 item limit
+    # Each match needs ~3 items (room button, select menu, maybe more)
+    matches_to_show = matches[:4]
+
     # For each match, add controls
-    for match in matches:
+    for match in matches_to_show:
         match_view = UltimatumMatchView(bot, tournament_id, match.id, round_number)
         match_view.refresh_items(match)
         # Add match view items to main view
         for item in match_view.children:
             view.add_item(item)
+
+    # Add pagination button if more matches exist
+    if len(matches) > 4:
+        next_btn = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="Далее (4+ матчей)",
+            custom_id=f"ultimatum_round_next:{tournament_id}:{round_number}:4"
+        )
+        view.add_item(next_btn)
 
     return view
