@@ -103,33 +103,30 @@ class JoinSearchButton(discord.ui.Button):
 
         # Если это первый игрок - выбрать канал для турнира
         if not search.tournament_channel_id:
-            # Проверить канал 1
-            channel_1 = self.bot.get_channel(1549809898643001484)
-            if channel_1:
-                tournament_1 = store.get(self.guild_id, channel_1.id)
-                if not tournament_1 or tournament_1.phase == TournamentPhase.COMPLETE:
-                    search.tournament_channel_id = channel_1.id
-                    mm_search_store.set(search)
-                else:
-                    # Канал 1 занят, проверить канал 2
-                    channel_2 = self.bot.get_channel(1567611808884465814)
-                    if channel_2:
-                        tournament_2 = store.get(self.guild_id, channel_2.id)
-                        if not tournament_2 or tournament_2.phase == TournamentPhase.COMPLETE:
-                            search.tournament_channel_id = channel_2.id
-                            mm_search_store.set(search)
-                        else:
-                            # Оба канала заняты
-                            await interaction.response.send_message(
-                                "❌ Все каналы для турниров заняты. Ожидайте завершения одного из турниров.",
-                                ephemeral=True
-                            )
-                            return
-                    else:
-                        await interaction.response.send_message("❌ Канал для турниров не найден.", ephemeral=True)
-                        return
+            from cogs.mm import TOURNAMENT_CHANNEL_IDS, LOCKED_CHANNELS
+            
+            # Проверить каналы по очереди
+            for channel_id in TOURNAMENT_CHANNEL_IDS:
+                # Проверить если канал заблокирован другим поиском
+                if channel_id in LOCKED_CHANNELS:
+                    continue
+                    
+                # Проверить если канал занят активным турниром
+                tournament_channel = self.bot.get_channel(channel_id)
+                if tournament_channel:
+                    tournament = store.get(self.guild_id, tournament_channel.id)
+                    if not tournament or tournament.phase == TournamentPhase.COMPLETE:
+                        # Канал свободен - заблокировать его для этого поиска
+                        search.tournament_channel_id = channel_id
+                        LOCKED_CHANNELS[channel_id] = self.channel_id
+                        mm_search_store.set(search)
+                        break
             else:
-                await interaction.response.send_message("❌ Канал для турниров не найден.", ephemeral=True)
+                # Все каналы заняты или заблокированы
+                await interaction.response.send_message(
+                    "❌ Все каналы для турниров заняты. Ожидайте завершения одного из турниров.",
+                    ephemeral=True
+                )
                 return
         else:
             # Если канал уже выбран, проверить что он свободен
@@ -138,6 +135,9 @@ class JoinSearchButton(discord.ui.Button):
                 tournament = store.get(self.guild_id, tournament_channel.id)
                 if tournament and tournament.phase != TournamentPhase.COMPLETE:
                     # Канал занят, сбросить выбор
+                    from cogs.mm import LOCKED_CHANNELS
+                    if search.tournament_channel_id in LOCKED_CHANNELS:
+                        del LOCKED_CHANNELS[search.tournament_channel_id]
                     search.tournament_channel_id = 0
                     mm_search_store.set(search)
                     await interaction.response.send_message(

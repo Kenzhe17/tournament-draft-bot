@@ -77,6 +77,15 @@ class TournamentCog(commands.Cog):
         self, interaction: discord.Interaction, size: str, formation: str = "elo"
     ) -> None:
         """Создать турнир с указанным размером."""
+        # Проверить если канал заблокирован поиском
+        from cogs.mm import LOCKED_CHANNELS
+        if interaction.channel_id in LOCKED_CHANNELS:
+            await interaction.response.send_message(
+                "❌ Этот канал заблокирован для поиска MM. Используйте другой канал или дождитесь завершения поиска.",
+                ephemeral=True
+            )
+            return
+
         existing = store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             # Проверяем фазу существующего турнира

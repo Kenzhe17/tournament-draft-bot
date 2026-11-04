@@ -25,8 +25,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Каналы для турниров
-TOURNAMENT_CHANNEL_ID = 1549809898643001484
-TOURNAMENT_CHANNEL_ID_2 = 1567611808884465814
+TOURNAMENT_CHANNEL_IDS = [1549809898643001484, 1563149967303118949, 1563149951033151609]
+
+# Заблокированные каналы для поиска
+LOCKED_CHANNELS: dict[int, str] = {}  # channel_id -> search_channel_id
 
 
 class MMCog(commands.Cog):
@@ -193,9 +195,14 @@ class MMCog(commands.Cog):
                 if not search:
                     return
 
-                # Если не заполнен, сбросить игроков
+                # Если не заполнен, сбросить игроков и разблокировать канал
                 if not search.is_full:
                     player_count = len(search.players)
+                    
+                    # Разблокировать канал
+                    if search.tournament_channel_id in LOCKED_CHANNELS:
+                        del LOCKED_CHANNELS[search.tournament_channel_id]
+                    
                     search.clear()
                     mm_search_store.set(search)
 
@@ -335,6 +342,10 @@ class MMCog(commands.Cog):
 
         logger.info("Создан турнир из поиска %s в канале %s", search.format.value, tournament_channel.id)
 
+        # Разблокировать канал после создания турнира
+        if tournament_channel_id in LOCKED_CHANNELS:
+            del LOCKED_CHANNELS[tournament_channel_id]
+
         # Сбросить поиск
         search.clear()
         mm_search_store.set(search)
@@ -358,7 +369,9 @@ class MMCog(commands.Cog):
                 if tournament_channel:
                     tournament = store.get(guild_id, tournament_channel.id)
                     if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                        # Канал свободен, сбросить выбор
+                        # Канал свободен, разблокировать и сбросить выбор
+                        if search.tournament_channel_id in LOCKED_CHANNELS:
+                            del LOCKED_CHANNELS[search.tournament_channel_id]
                         search.tournament_channel_id = 0
                         mm_search_store.set(search)
                         
