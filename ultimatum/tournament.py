@@ -207,6 +207,7 @@ class UltimatumTournament:
         all_complete = all(m.status == MatchStatus.COMPLETED for m in matches)
 
         if not all_complete:
+            logger.info(f"Round {round_number} not complete yet for tournament {tournament_id}")
             return
 
         # Mark round as completed
@@ -223,7 +224,17 @@ class UltimatumTournament:
 
         # Start next round automatically
         next_round = round_number + 1
+        logger.info(f"Starting round {next_round} for tournament {tournament_id}")
         await self.create_round(tournament_id, next_round, bot)
+        
+        # Update round embed to show new round
+        if bot:
+            from views.ultimatum_view import update_round_embed, round_messages
+            tournament = await self.store.get_tournament(tournament_id)
+            if tournament and tournament.guild_id:
+                guild = bot.get_guild(tournament.guild_id)
+                if guild and guild.id in round_messages:
+                    await update_round_embed(guild, tournament_id, next_round, bot)
 
     async def _should_create_grand_final(
         self,

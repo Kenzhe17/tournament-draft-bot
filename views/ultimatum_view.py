@@ -310,11 +310,7 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
         # Create custom view with button callbacks
         view = UltimatumWinnerSelectionView(match_id, match.player1_id, match.player2_id, p1.username, p2.username, self.tournament_id, self.is_admin)
         
-        description = f"{p1.username} vs {p2.username}\n\n"
-        if self.is_admin:
-            description += "Админ может напрямую выбрать победителя."
-        else:
-            description += "Оба игрока должны нажать на одного и того же для подтверждения."
+        description = f"{p1.username} vs {p2.username}\n\nАдмин может напрямую выбрать победителя."
         
         embed = discord.Embed(
             title="🏆 Выберите победителя",
@@ -368,89 +364,38 @@ class UltimatumWinnerSelectionView(discord.ui.View):
         except discord.InteractionResponded:
             pass
         
+        # Check if match is already completed
+        match = await ultimatum_store.get_match_by_id(self.match_id)
+        if not match:
+            await interaction.followup.send("Матч не найден", ephemeral=True)
+            return
+        
+        if match.status == MatchStatus.COMPLETED:
+            await interaction.followup.send("❌ Матч уже завершен.", ephemeral=True)
+            return
+        
         # Check if user is admin
         from utils.permissions import is_org_check
         is_admin = is_org_check(interaction.user, interaction.guild)
         
-        if is_admin:
-            # Admin can directly complete match
-            from ultimatum.tournament import UltimatumTournament
-            tournament_logic = UltimatumTournament(ultimatum_store)
-            await tournament_logic.complete_match(self.match_id, voted_winner_id, other_player_id, interaction.client)
-            
+        if not is_admin:
             await interaction.followup.send(
-                f"✅ Победитель определен (админ)",
-                ephemeral=True
-            )
-            
-            # Update round embed
-            from views.ultimatum_view import update_round_embed
-            match = await ultimatum_store.get_match_by_id(self.match_id)
-            await update_round_embed(interaction.guild, match.tournament_id, match.round_number, interaction.client)
-            return
-        
-        # Check if user is one of the players
-        if interaction.user.id not in [voted_winner_id, other_player_id]:
-            await interaction.followup.send(
-                "❌ Только участники матча могут голосовать.",
+                "❌ Только админы могут выбирать победителя.",
                 ephemeral=True
             )
             return
         
-        # Get tournament
-        tournament = await ultimatum_store.get_tournament(self.tournament_id)
-        if not tournament:
-            await interaction.followup.send("Турнир не найден", ephemeral=True)
-            return
+        # Admin can directly complete match
+        from ultimatum.tournament import UltimatumTournament
+        tournament_logic = UltimatumTournament(ultimatum_store)
+        await tournament_logic.complete_match(self.match_id, voted_winner_id, other_player_id, interaction.client)
         
-        # Record vote in database
-        existing_vote = await ultimatum_store.get_vote(self.match_id, interaction.user.id)
+        await interaction.followup.send(
+            f"✅ Победитель определен (админ)",
+            ephemeral=True
+        )
         
-        if existing_vote:
-            await interaction.followup.send(
-                "❌ Вы уже проголосовали.",
-                ephemeral=True
-            )
-            return
-        
-        await ultimatum_store.record_vote(self.match_id, interaction.user.id, voted_winner_id)
-        
-        # Check all votes for this match
-        votes = await ultimatum_store.get_votes(self.match_id)
-        
-        if len(votes) >= 2:
-            # Check consensus
-            vote_counts = {}
-            for vote in votes:
-                vote_counts[vote.voted_winner_id] = vote_counts.get(vote.voted_winner_id, 0) + 1
-            
-            if vote_counts.get(voted_winner_id, 0) >= 2:
-                # Consensus! Complete match
-                from ultimatum.tournament import UltimatumTournament
-                tournament_logic = UltimatumTournament(ultimatum_store)
-                await tournament_logic.complete_match(self.match_id, voted_winner_id, other_player_id, interaction.client)
-                
-                # Clear votes
-                await ultimatum_store.clear_votes(self.match_id)
-                
-                await interaction.followup.send(
-                    f"✅ Победитель определен",
-                    ephemeral=True
-                )
-                
-                # Update round embed
-                from views.ultimatum_view import update_round_embed
-                match = await ultimatum_store.get_match_by_id(self.match_id)
-                await update_round_embed(interaction.guild, match.tournament_id, match.round_number, interaction.client)
-            else:
-                # No consensus - clear votes
-                await ultimatum_store.clear_votes(self.match_id)
-                await interaction.followup.send(
-                    "❌ Нет консенсуса. Игроки выбрали разных победителей. Попробуйте снова.",
-                    ephemeral=True
-                )
-        else:
-            await interaction.followup.send(
-                f"Голос записан. Ожидание голоса второго игрока...",
-                ephemeral=True
-            )
+        # Update round embed
+        from views.ultimatum_view import update_round_embed
+        match = await ultimatum_store.get_match_by_id(self.match_id)
+        await update_round_embed(interaction.guild, match.tournament_id, match.round_number, interaction.client)
