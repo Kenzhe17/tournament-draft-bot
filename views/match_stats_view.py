@@ -65,10 +65,22 @@ class CaptainFillButton(Button):
         if match_id in tournament.temp_match_stats:
             # Check if any player from this team has stats filled
             team_filled = False
-            for player_name, circle in [(team.get(f"circle{c}"), c) for c in range(1, 5)]:
-                if player_name and player_name in tournament.temp_match_stats[match_id]:
-                    team_filled = True
-                    break
+            
+            if tournament.formation_mode == "random-auto":
+                # Random-auto mode: check players list
+                team = tournament.teams[self.team_index] if self.team_index < len(tournament.teams) else {}
+                players_list = team.get("players", [])
+                for player_name in players_list:
+                    if player_name in tournament.temp_match_stats[match_id]:
+                        team_filled = True
+                        break
+            else:
+                # Other modes: check circles
+                for player_name, circle in [(team.get(f"circle{c}"), c) for c in range(1, 5)]:
+                    if player_name and player_name in tournament.temp_match_stats[match_id]:
+                        team_filled = True
+                        break
+            
             if team_filled:
                 await interaction.response.send_message(replace_emojis("❌ Статистика вашей команды уже заполнена."), ephemeral=True)
                 return
@@ -100,10 +112,18 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
         # Get team players
         team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
         self.players = []
-        for circle in range(1, 5):
-            player = team.get(f"circle{circle}")
-            if player:
-                self.players.append((player, circle))
+        
+        if tournament.formation_mode == "random-auto":
+            # Random-auto mode: use teams.players list
+            players_list = team.get("players", [])
+            for i, player_name in enumerate(players_list):
+                self.players.append((player_name, i + 1))  # Use 1-based index as circle
+        else:
+            # Other modes: use circles
+            for circle in range(1, 5):
+                player = team.get(f"circle{circle}")
+                if player:
+                    self.players.append((player, circle))
 
         # Create input fields for each player (format: kills/deaths)
         for i, (player_name, circle) in enumerate(self.players):
