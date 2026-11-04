@@ -106,7 +106,7 @@ class MMCog(commands.Cog):
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             message = await channel.fetch_message(search.message_id)
-                            embed = build_search_embed(search, channel.guild)
+                            embed = await build_search_embed(search, channel.guild)
                             view = build_search_view(self.bot, search)
                             await message.edit(embed=embed, view=view)
                             await channel.send(
