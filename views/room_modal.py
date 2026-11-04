@@ -224,4 +224,4 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         else:
             players_text = ""
         
-        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>\n\n:white_arrow: Игроки: {players_text}")
+        await general_channel.send(content=f"{pings}\n\n:white_arrow: Игроки: {players_text}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>")
