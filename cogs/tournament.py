@@ -1109,6 +1109,19 @@ class TournamentCog(commands.Cog):
         description_parts.append(f"{replace_emojis('white_dot')} Сыграно: {total_games_played} игр")
         description_parts.append(f"{replace_emojis('sub_middle')} Побед: {total_games_won} `({win_rate:.1f}%)`")
 
+        # Ultimatum статистика
+        try:
+            from ultimatum.elo_store import elo_store
+            ultimatum_elo = await elo_store.get_elo(target_user.id)
+            if ultimatum_elo:
+                description_parts.append("")
+                description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
+                description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {ultimatum_elo.rated_matches} игр")
+                description_parts.append(f"{replace_emojis('sub_middle')} Побед: {ultimatum_elo.wins}")
+                description_parts.append(f"{replace_emojis('sub_directory')} ELO: {ultimatum_elo.elo}")
+        except Exception as e:
+            logger.error(f"Error getting Ultimatum stats: {e}")
+
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
             description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")

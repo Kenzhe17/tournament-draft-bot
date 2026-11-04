@@ -250,60 +250,6 @@ class UltimatumCog(commands.Cog):
 
 
 
-    @app_commands.command(name="ulti", description="Show current Ultimatum tournament ranking")
-    async def ulti(self, interaction: discord.Interaction) -> None:
-        """Show current tournament standings."""
-        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
-        if not tournament:
-            await interaction.response.send_message(
-                "❌ No active tournament found.",
-                ephemeral=True
-            )
-            return
-
-        # Get all players
-        players = await ultimatum_store.get_players(tournament.id)
-
-        # Sort by wins, then by fewer losses
-        sorted_players = sorted(
-            players,
-            key=lambda p: (-p.wins, p.losses if p.losses else 0)
-        )
-
-        embed = discord.Embed(
-            title=f"{get_emoji('a_star')} 🏆 16 | УЛЬТИМАТУМ СОЛО",
-            description=f"{get_emoji('white_arrow')} Организатор: <@{tournament.created_by}>\n{get_emoji('white_dot')} Раунд: {tournament.current_round}",
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-
-        ranking_text = ""
-        for idx, player in enumerate(sorted_players):
-            medal = ""
-            if idx == 0:
-                medal = f"{get_emoji('winner')} "
-            elif idx == 1:
-                medal = f"{get_emoji('sub_middle')} "
-            elif idx == 2:
-                medal = f"{get_emoji('sub_directory')} "
-
-            status_emoji = {
-                PlayerStatus.CHAMPION: f"{get_emoji('winner')}",
-                PlayerStatus.GRAND_FINAL_LOSER: f"{get_emoji('sub_middle')}",
-                PlayerStatus.GRAND_FINALIST: f"{get_emoji('sub_directory')}",
-                PlayerStatus.ELIMINATED: f"{get_emoji('x_red')}",
-                PlayerStatus.ACTIVE: ""
-            }.get(player.status, "")
-
-            ranking_text += f"{get_emoji('white_arrow')} {medal}{idx + 1}. {player.username} {status_emoji} {get_emoji('white_dot')} {player.wins}:{player.losses}\n"
-
-        embed.add_field(
-            name=f"{get_emoji('white_dot')} Рейтинг",
-            value=ranking_text or "Нет игроков",
-            inline=False
-        )
-
-        await interaction.response.send_message(embed=embed)
-
     @app_commands.command(name="ulti_history", description="Show your Ultimatum tournament match history")
     async def ulti_history(self, interaction: discord.Interaction) -> None:
         """Show player's tournament match history."""
