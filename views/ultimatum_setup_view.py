@@ -179,8 +179,8 @@ class UltimatumStartButton(discord.ui.Button):
                 if cog:
                     tournament = await ultimatum_store.get_tournament(tournament.id)
                     # Build round embed for round 1
-                    new_embed = build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
-                    new_view = build_ultimatum_round_view(interaction.client, tournament.id, 1)
+                    new_embed = await build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
+                    new_view = await build_ultimatum_round_view(interaction.client, tournament.id, 1)
                     # Edit message with round embed and view
                     await interaction.message.edit(embed=new_embed, view=new_view)
                 else:

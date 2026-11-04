@@ -181,6 +181,21 @@ class UltimatumCog(commands.Cog):
             ephemeral=True
         )
 
+        # Update the tournament message to show new players
+        try:
+            tournament = await ultimatum_store.get_tournament(tournament.id)
+            embed = await self._build_tournament_embed(tournament)
+            # Find the setup message and update it
+            messages = interaction.channel.history(limit=10)
+            async for msg in messages:
+                if msg.author == interaction.client.user and msg.embeds:
+                    # Check if this is the tournament embed
+                    if tournament.name in msg.embeds[0].title or "УЛЬТИМАТУМ СОЛО" in msg.embeds[0].title:
+                        await msg.edit(embed=embed)
+                        break
+        except Exception as e:
+            logger.error(f"Error updating tournament message after test fill: {e}")
+
         logger.info(f"Test fill: added {added} players to tournament {tournament.id}")
 
     @ultimatum_group.command(name="delete", description="Delete active Ultimatum tournament")
