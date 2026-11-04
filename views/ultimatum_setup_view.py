@@ -357,10 +357,30 @@ class UltimatumOrgMenuView(discord.ui.View):
         
         new_state = not self.tournament.is_open
         await ultimatum_store.set_tournament_open(self.tournament.id, new_state)
+        
+        # Reload tournament to get updated state
+        self.tournament = await ultimatum_store.get_tournament(self.tournament.id)
+        
         await interaction.followup.send(
             f"✅ Турнир {'открыт' if new_state else 'закрыт'}",
             ephemeral=True
         )
+        
+        # Update tournament message
+        try:
+            from cogs.ultimatum import UltimatumCog
+            cog = interaction.client.get_cog('UltimatumCog')
+            if cog:
+                new_embed = await cog._build_tournament_embed(self.tournament)
+                # Find and update tournament message
+                channel = interaction.client.get_channel(self.channel_id)
+                if channel:
+                    async for msg in channel.history(limit=10):
+                        if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
+                            await msg.edit(embed=new_embed)
+                            break
+        except Exception as e:
+            logger.error(f"Error updating tournament message after toggle: {e}", exc_info=True)
 
     async def remove_player_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)

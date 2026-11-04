@@ -1113,14 +1113,17 @@ class TournamentCog(commands.Cog):
         try:
             from ultimatum.elo_store import elo_store
             ultimatum_elo = await elo_store.get_elo(target_user.id)
+            logger.info(f"Ultimatum stats for {target_user.id}: {ultimatum_elo}")
             if ultimatum_elo:
                 description_parts.append("")
                 description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
                 description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {ultimatum_elo.rated_matches} игр")
                 description_parts.append(f"{replace_emojis('sub_middle')} Побед: {ultimatum_elo.wins}")
                 description_parts.append(f"{replace_emojis('sub_directory')} ELO: {ultimatum_elo.elo}")
+            else:
+                logger.info(f"No Ultimatum stats found for {target_user.id}")
         except Exception as e:
-            logger.error(f"Error getting Ultimatum stats: {e}")
+            logger.error(f"Error getting Ultimatum stats: {e}", exc_info=True)
 
         # Show K/D and kills only if player has played games
         if total_games_played > 0:
