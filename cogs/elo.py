@@ -18,7 +18,7 @@ class EloCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="elo", description="Show your Elo rating")
+    @app_commands.command(name="ulti", description="Show your Ultimatum Elo rating")
     async def show_elo(self, interaction: discord.Interaction) -> None:
         """Show personal Elo rating."""
         player = await elo_store.get_player(interaction.user.id)
@@ -120,7 +120,7 @@ class EloCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="elo_history", description="Show your Elo match history")
+    @app_commands.command(name="ulti_history", description="Show your Ultimatum Elo match history")
     async def show_history(self, interaction: discord.Interaction) -> None:
         """Show last 10 rated matches."""
         history = await elo_store.get_player_history(interaction.user.id, 10)

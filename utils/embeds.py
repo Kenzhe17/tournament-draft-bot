@@ -1278,6 +1278,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     from storage.redis_client import get_leaderboard, set_leaderboard
     from cogs.tournament import get_rank_emoji
     from config import replace_emojis
+    from ultimatum.elo_store import elo_store
 
     # Try to get from cache first
     cached_data = await get_leaderboard(guild_id, leaderboard_type)
@@ -1290,6 +1291,8 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             players = await player_stats_store.get_leaderboard_by_level(guild_id, page, per_page=10)
         elif leaderboard_type == "money":
             players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
+        elif leaderboard_type == "ulti_elo":
+            players = await elo_store.get_leaderboard(limit=10, offset=(page - 1) * 10)
         else:  # elo
             players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
 
@@ -1304,11 +1307,19 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     elif leaderboard_type == "money":
         title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
         color = discord.Color.from_rgb(241, 196, 15)  # Пастельно-золотой
+    elif leaderboard_type == "ulti_elo":
+        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
+        color = discord.Color.from_rgb(46, 204, 113)  # Пастельно-зеленый
     else:  # elo
         title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | ELO"
         color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
 
-    total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
+    # Get total pages based on type
+    if leaderboard_type == "ulti_elo":
+        total_pages = await elo_store.get_leaderboard_count()
+        total_pages = (total_pages + 9) // 10  # Round up
+    else:
+        total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
     embed = discord.Embed(
         title=title,
@@ -1349,6 +1360,27 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             formatted_name = format_player_name(guild_id, player.user_id, player.name)
 
             line = f"{rank_emoji} {formatted_name} — {balance:,} {get_emoji('money')}"
+            lines.append(line)
+    elif leaderboard_type == "ulti_elo":
+        # Ultimatum Elo has different structure (dict from elo_store)
+        for i, player in enumerate(players):
+            rank = global_rank + i + 1
+
+            # Highlight top 3 with custom medals
+            if rank == 1:
+                rank_emoji = get_emoji("gold_medal") or "🥇"
+            elif rank == 2:
+                rank_emoji = get_emoji("silver_medal") or "🥈"
+            elif rank == 3:
+                rank_emoji = get_emoji("bronze_medal") or "🥉"
+            else:
+                rank_emoji = f"{rank}."
+
+            # Ultimatum Elo players are dicts with 'username' and 'elo'
+            username = player.get('username', 'Unknown')
+            elo = player.get('elo', 0)
+
+            line = f"{rank_emoji} {username} — {elo} Elo"
             lines.append(line)
     else:
         for i, player in enumerate(players):
