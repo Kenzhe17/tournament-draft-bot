@@ -163,7 +163,7 @@ class UltimatumStartButton(discord.ui.Button):
             tournament_logic = UltimatumTournament(ultimatum_store)
 
             # Start tournament
-            await tournament_logic.start_tournament(tournament.id)
+            await tournament_logic.start_tournament(tournament.id, interaction.client)
 
             await interaction.response.send_message(
                 "✅ Турнир начался!",

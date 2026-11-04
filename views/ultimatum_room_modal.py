@@ -34,6 +34,31 @@ class UltimatumRoomModal(discord.ui.Modal, title="Комната игры"):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Handle room ID and password submission."""
         from ultimatum.store import ultimatum_store
+        from utils.permissions import is_org_check
+
+        # Check if user is admin
+        is_admin = is_org_check(interaction.user, interaction.guild)
+        
+        # Get match details
+        match = await ultimatum_store.get_match_by_id(self.match_id)
+        if not match:
+            try:
+                await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
+            return
+        
+        # Check if user is in this match or is admin
+        user_in_match = match.player1_id == interaction.user.id or match.player2_id == interaction.user.id
+        if not is_admin and not user_in_match:
+            try:
+                await interaction.response.send_message(
+                    "❌ Только участники матча или админы могут добавлять комнату.",
+                    ephemeral=True
+                )
+            except (discord.NotFound, discord.DiscordServerError):
+                pass
+            return
 
         # Defer immediately to avoid timeout
         try:

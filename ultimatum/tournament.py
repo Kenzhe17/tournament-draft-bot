@@ -21,7 +21,7 @@ class UltimatumTournament:
         self.store = store
         self.matchmaker = Matchmaker(store)
 
-    async def start_tournament(self, tournament_id: str) -> None:
+    async def start_tournament(self, tournament_id: str, bot=None) -> None:
         """Start tournament after registration is complete."""
         tournament = await self.store.get_tournament(tournament_id)
         if not tournament:
@@ -37,11 +37,11 @@ class UltimatumTournament:
         )
 
         # Create first round
-        await self.create_round(tournament_id, 1)
+        await self.create_round(tournament_id, 1, bot)
 
         logger.info(f"Tournament {tournament_id} started with {len(players)} players")
 
-    async def create_round(self, tournament_id: str, round_number: int) -> None:
+    async def create_round(self, tournament_id: str, round_number: int, bot=None) -> None:
         """Create a new round with matches."""
         tournament = await self.store.get_tournament(tournament_id)
         if not tournament:
@@ -56,7 +56,7 @@ class UltimatumTournament:
 
         # Check for grand final condition
         if await self._should_create_grand_final(tournament_id, players):
-            await self._create_grand_final(tournament_id, players)
+            await self._create_grand_final(tournament_id, players, bot)
             return
 
         # Create round in database
@@ -85,13 +85,31 @@ class UltimatumTournament:
             tournament_id, TournamentStatus.ROUND_IN_PROGRESS, round_number
         )
 
+        # Add tournament role to all players in matches
+        if bot and tournament.guild_id:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild:
+                role = guild.get_role(1567580142744895561)
+                if role:
+                    for p1_id, p2_id in player_pairs:
+                        try:
+                            member1 = guild.get_member(p1_id)
+                            member2 = guild.get_member(p2_id)
+                            if member1:
+                                await member1.add_roles(role)
+                            if member2:
+                                await member2.add_roles(role)
+                        except Exception as e:
+                            logger.error(f"Error adding role to player: {e}")
+
         logger.info(f"Round {round_number} created with {len(player_pairs)} matches")
 
     async def complete_match(
         self,
         match_id: int,
         winner_id: int,
-        loser_id: int
+        loser_id: int,
+        bot=None
     ) -> None:
         """Complete a match and update player stats."""
         # Get match details
@@ -126,7 +144,7 @@ class UltimatumTournament:
 
         # Check if loser should be eliminated (2 losses)
         if loser.losses + 1 >= 2:
-            await self.eliminate_player(match.tournament_id, loser_id, match.round_number)
+            await self.eliminate_player(match.tournament_id, loser_id, match.round_number, bot)
 
         # Update Elo ratings (only for normal matches, not for byes)
         if match.match_type == MatchType.NORMAL:
@@ -144,17 +162,18 @@ class UltimatumTournament:
                 logger.error(f"Failed to update Elo: {e}")
         elif match.match_type == MatchType.GRAND_FINAL:
             # Grand final: determine champion and runner-up
-            await self._complete_grand_final(match.tournament_id, winner_id, loser_id)
+            await self._complete_grand_final(match.tournament_id, winner_id, loser_id, bot)
 
         # Check if round is complete (skip for grand final)
         if match.match_type != MatchType.GRAND_FINAL:
-            await self._check_round_completion(match.tournament_id, match.round_number)
+            await self._check_round_completion(match.tournament_id, match.round_number, bot)
 
     async def _complete_grand_final(
         self,
         tournament_id: str,
         winner_id: int,
-        loser_id: int
+        loser_id: int,
+        bot=None
     ) -> None:
         """Complete grand final and determine champion."""
         # Set champion status
@@ -176,11 +195,11 @@ class UltimatumTournament:
         )
 
         # Finalize tournament with rankings
-        await self.finalize_tournament(tournament_id)
+        await self.finalize_tournament(tournament_id, bot)
 
         logger.info(f"Grand final completed: Champion {winner_id}, Runner-up {loser_id}")
 
-    async def _check_round_completion(self, tournament_id: str, round_number: int) -> None:
+    async def _check_round_completion(self, tournament_id: str, round_number: int, bot=None) -> None:
         """Check if all matches in round are complete and start next round."""
         matches = await self.store.get_matches(tournament_id, round_number)
 
@@ -204,7 +223,7 @@ class UltimatumTournament:
 
         # Start next round automatically
         next_round = round_number + 1
-        await self.create_round(tournament_id, next_round)
+        await self.create_round(tournament_id, next_round, bot)
 
     async def _should_create_grand_final(
         self,
@@ -247,9 +266,12 @@ class UltimatumTournament:
     async def _create_grand_final(
         self,
         tournament_id: str,
-        players: List[Player]
+        players: List[Player],
+        bot=None
     ) -> None:
         """Create grand final match."""
+        tournament = await self.store.get_tournament(tournament_id)
+        
         # Sort players by wins, then by fewer losses
         sorted_players = sorted(
             players,
@@ -289,6 +311,22 @@ class UltimatumTournament:
             tournament_id, TournamentStatus.GRAND_FINAL
         )
 
+        # Add tournament role to grand final players
+        if bot and tournament and tournament.guild_id:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild:
+                role = guild.get_role(1567580142744895561)
+                if role:
+                    try:
+                        member1 = guild.get_member(direct_pass.discord_id)
+                        member2 = guild.get_member(qualifier.discord_id)
+                        if member1:
+                            await member1.add_roles(role)
+                        if member2:
+                            await member2.add_roles(role)
+                    except Exception as e:
+                        logger.error(f"Error adding role to grand final player: {e}")
+
         logger.info(
             f"Grand final created: {direct_pass.username} ({direct_pass.record}) vs "
             f"{qualifier.username} ({qualifier.record})"
@@ -298,7 +336,8 @@ class UltimatumTournament:
         self,
         tournament_id: str,
         discord_id: int,
-        elimination_round: Optional[int] = None
+        elimination_round: Optional[int] = None,
+        bot=None
     ) -> None:
         """Eliminate a player (2 losses)."""
         tournament = await self.store.get_tournament(tournament_id)
@@ -308,9 +347,23 @@ class UltimatumTournament:
             tournament_id, discord_id, None, None,
             PlayerStatus.ELIMINATED, round_num
         )
+        
+        # Remove tournament role from eliminated player
+        if bot and tournament and tournament.guild_id:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild:
+                role = guild.get_role(1567580142744895561)
+                if role:
+                    try:
+                        member = guild.get_member(discord_id)
+                        if member:
+                            await member.remove_roles(role)
+                    except Exception as e:
+                        logger.error(f"Error removing role from eliminated player: {e}")
+        
         logger.info(f"Player {discord_id} eliminated from tournament {tournament_id} in round {round_num}")
 
-    async def finalize_tournament(self, tournament_id: str) -> None:
+    async def finalize_tournament(self, tournament_id: str, bot=None) -> None:
         """Finalize tournament and calculate rankings 1-16.
 
         Ranking criteria (in order):
@@ -319,6 +372,8 @@ class UltimatumTournament:
         3. Total losses (fewer losses = better)
         4. Elimination round (later = better, for eliminated players)
         """
+        tournament = await self.store.get_tournament(tournament_id)
+        
         # Get all players
         players = await self.store.get_players(tournament_id)
 
@@ -352,6 +407,20 @@ class UltimatumTournament:
         await self.store.update_tournament_status(
             tournament_id, TournamentStatus.COMPLETED
         )
+
+        # Remove tournament role from all players
+        if bot and tournament and tournament.guild_id:
+            guild = bot.get_guild(tournament.guild_id)
+            if guild:
+                role = guild.get_role(1567580142744895561)
+                if role:
+                    for player in players:
+                        try:
+                            member = guild.get_member(player.discord_id)
+                            if member:
+                                await member.remove_roles(role)
+                        except Exception as e:
+                            logger.error(f"Error removing role from player {player.discord_id}: {e}")
 
         logger.info(f"Tournament {tournament_id} finalized with {len(sorted_players)} players ranked")
 

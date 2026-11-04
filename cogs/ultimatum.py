@@ -58,7 +58,7 @@ class UltimatumCog(commands.Cog):
                 
                 if is_admin:
                     # Admin can directly complete match
-                    await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id)
+                    await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id, self.bot)
                     await interaction.response.send_message(
                         f"✅ Победитель определен (админ)",
                         ephemeral=True
@@ -106,7 +106,7 @@ class UltimatumCog(commands.Cog):
                     
                     if vote_counts.get(voted_winner_id, 0) >= 2:
                         # Consensus! Complete match
-                        await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id)
+                        await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id, self.bot)
                         
                         # Clear votes
                         await ultimatum_store.clear_votes(match_id)
@@ -702,7 +702,7 @@ class UltimatumCog(commands.Cog):
                     
                     if vote_counts.get(voted_winner_id, 0) >= 2:
                         # Consensus! Complete match
-                        await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id)
+                        await self.tournament_logic.complete_match(match_id, voted_winner_id, other_player_id, self.bot)
                         
                         # Clear votes
                         await ultimatum_store.clear_votes(match_id)
