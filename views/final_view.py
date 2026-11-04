@@ -117,17 +117,27 @@ class FinalView(discord.ui.View):
         from views.match_stats_view import CaptainFillButton
         if tournament.phase == TournamentPhase.FINAL:
             match_id = f"{tournament.id}_final_0"
+            
             # Check if team 0 has filled stats
-            team0_filled = any(
-                tournament.teams[final_teams[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
-                for c in range(1, 5)
-            )
+            if tournament.formation_mode == "random-auto":
+                team0_players = tournament.teams[final_teams[0]].get("players", [])
+                team0_filled = any(player in tournament.temp_match_stats.get(match_id, {}) for player in team0_players)
+            else:
+                team0_filled = any(
+                    tournament.teams[final_teams[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
             if not team0_filled:
                 self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[0]))
+            
             # Check if team 1 has filled stats
-            team1_filled = any(
-                tournament.teams[final_teams[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
-                for c in range(1, 5)
-            )
+            if tournament.formation_mode == "random-auto":
+                team1_players = tournament.teams[final_teams[1]].get("players", [])
+                team1_filled = any(player in tournament.temp_match_stats.get(match_id, {}) for player in team1_players)
+            else:
+                team1_filled = any(
+                    tournament.teams[final_teams[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
+                    for c in range(1, 5)
+                )
             if not team1_filled:
                 self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[1]))
