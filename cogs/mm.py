@@ -270,6 +270,7 @@ class MMCog(commands.Cog):
         # Автоматически стартовать турнир и перейти к фазе матчей
         tournament.phase = TournamentPhase.QUALIFIERS
         tournament.is_test = True  # Отключить ставки для random-auto
+        tournament.betting_open = False  # Явно отключить ставки
         
         # Создать команды из распределенных игроков
         tournament.teams = []
@@ -281,8 +282,19 @@ class MMCog(commands.Cog):
             }
             tournament.teams.append(team_data)
         
-        # Сгенерировать матчи
-        tournament.generate_qualifiers()
+        # Сгенерировать матчи в зависимости от размера
+        if tournament_size == TournamentSize.EIGHT:
+            # 2 команды - 1 финальный матч
+            tournament.qualifier_matches = []
+            tournament.final_teams = [0, 1]
+            tournament.phase = TournamentPhase.FINAL
+        elif tournament_size == TournamentSize.SIXTEEN:
+            # 4 команды - 2 полуфинала
+            tournament.qualifier_matches = [(0, 1), (2, 3)]
+            tournament.qualifier_winners = [None, None]
+        else:
+            # 32 игрока - 8 команд, 4 отборочных
+            tournament.generate_qualifiers()
         
         logger.info("Tournament created with random-auto formation, auto-started and matches generated")
 

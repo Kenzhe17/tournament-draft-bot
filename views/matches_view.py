@@ -1386,9 +1386,10 @@ class QualifiersView(discord.ui.View):
         # if has_editable_team:
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
-        # Add betting buttons
-        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
-        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
+        # Add betting buttons (skip for random-auto)
+        if tournament.formation_mode != "random-auto":
+            self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
+            self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
@@ -1444,9 +1445,10 @@ class SemifinalsView(discord.ui.View):
         # if has_editable_team:
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
-        # Add betting buttons
-        self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
-        self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
+        # Add betting buttons (skip for random-auto)
+        if tournament.formation_mode != "random-auto":
+            self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
+            self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
