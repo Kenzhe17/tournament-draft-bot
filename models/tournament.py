@@ -1360,10 +1360,9 @@ class Tournament:
         return self.confirm_semifinal_winner(match_index, team_index)
 
     def generate_final_from_semifinals(self) -> None:
-            # Start betting phase for final
-            self.start_betting_phase("final")
-            return True
-        return False
+        """Сгенерировать финал из победителей полуфиналов."""
+        # Start betting phase for final
+        self.start_betting_phase("final")
 
     def set_final_winner(self, team_index: int) -> None:
         """Записать победителя финала (pending confirmation)."""

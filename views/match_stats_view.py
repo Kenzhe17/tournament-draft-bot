@@ -108,6 +108,16 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
         self.match_type = match_type
         self.match_index = match_index
         self.team_index = team_index
+        
+        # Get match teams for auto-confirmation
+        if match_type == "qualifier":
+            match = tournament.qualifier_matches[match_index]
+        elif match_type == "semifinal":
+            match = tournament.semifinal_matches[match_index]
+        else:  # final
+            match = (tournament.final_teams[0], tournament.final_teams[1])
+        
+        self.team_a_index, self.team_b_index = match
 
         # Get team players
         team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
@@ -200,9 +210,88 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
+            # Check if both teams filled stats (for random-auto auto-confirmation)
+            message = "✅ Статистика заполнена. Кнопка капитана для вашей команды исчезла."
+            
+            if tournament.formation_mode == "random-auto":
+                # Check if both teams filled stats
+                both_teams_filled = True
+                for team_idx in [self.team_a_index, self.team_b_index]:
+                    team = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
+                    players_list = team.get("players", [])
+                    team_has_stats = False
+                    for player_name in players_list:
+                        if player_name in tournament.temp_match_stats[match_id]:
+                            team_has_stats = True
+                            break
+                    if not team_has_stats:
+                        both_teams_filled = False
+                        break
+                
+                if both_teams_filled:
+                    # Check auto-confirmation conditions
+                    # Condition 1: kills_A == deaths_B
+                    # Condition 2: deaths_A == kills_B
+                    team_a_idx = self.team_a_index
+                    team_b_idx = self.team_b_index
+                    
+                    team_a = tournament.teams[team_a_idx] if team_a_idx < len(tournament.teams) else {}
+                    team_b = tournament.teams[team_b_idx] if team_b_idx < len(tournament.teams) else {}
+                    
+                    team_a_players = team_a.get("players", [])
+                    team_b_players = team_b.get("players", [])
+                    
+                    # Calculate totals
+                    team_a_kills = sum(tournament.temp_match_stats[match_id].get(p, {}).get("kills", 0) for p in team_a_players)
+                    team_a_deaths = sum(tournament.temp_match_stats[match_id].get(p, {}).get("deaths", 0) for p in team_a_players)
+                    team_b_kills = sum(tournament.temp_match_stats[match_id].get(p, {}).get("kills", 0) for p in team_b_players)
+                    team_b_deaths = sum(tournament.temp_match_stats[match_id].get(p, {}).get("deaths", 0) for p in team_b_players)
+                    
+                    # Check conditions
+                    condition1 = (team_a_kills == team_b_deaths)
+                    condition2 = (team_a_deaths == team_b_kills)
+                    
+                    if condition1 and condition2:
+                        # Auto-confirm winner based on kills
+                        auto_winner_idx = team_a_idx if team_a_kills > team_b_kills else team_b_idx
+                        
+                        # Set winner in tournament
+                        if self.match_type == "qualifier":
+                            tournament.qualifier_winners[self.match_index] = auto_winner_idx
+                        elif self.match_type == "semifinal":
+                            tournament.semifinal_pending_winners[self.match_index] = auto_winner_idx
+                        elif self.match_type == "final":
+                            tournament.final_pending_winner = auto_winner_idx
+                        
+                        store.set(tournament)
+                        
+                        # Log auto-confirmation
+                        import logging
+                        logging.info(f"Auto-confirming winner: match_type={self.match_type}, match_index={self.match_index}, winner_idx={auto_winner_idx}")
+                        
+                        # Call tournament confirmation methods directly
+                        if self.match_type == "qualifier":
+                            await tournament.confirm_qualifier_winner_async(self.match_index, auto_winner_idx)
+                        elif self.match_type == "semifinal":
+                            await tournament.confirm_semifinal_winner_async(self.match_index, auto_winner_idx)
+                        elif self.match_type == "final":
+                            await tournament.confirm_final_winner(auto_winner_idx)
+                        
+                        # Clear temp stats
+                        if match_id in tournament.temp_match_stats:
+                            del tournament.temp_match_stats[match_id]
+                        store.set(tournament)
+                        
+                        # Update tournament message
+                        await bot.update_tournament_message(interaction.guild, tournament)
+                        
+                        message = f"✅ Статистика заполнена. Победитель автоматически подтвержден (Команда {auto_winner_idx})."
+                    else:
+                        message += " Статистика заполнена обеими командами, но условия автоподтверждения не выполнены. Требуется ручное подтверждение победителя."
+
             # Notify user that button will disappear
             await interaction.followup.send(
-                replace_emojis("✅ Статистика заполнена. Кнопка капитана для вашей команды исчезла."),
+                replace_emojis(message),
                 ephemeral=True
             )
         except Exception as e:
