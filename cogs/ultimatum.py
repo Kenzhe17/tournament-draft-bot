@@ -215,6 +215,117 @@ class UltimatumCog(commands.Cog):
 
         return view
 
+    @app_commands.command(name="tournament_history", description="Show your Ultimatum tournament history")
+    async def tournament_history(self, interaction: discord.Interaction) -> None:
+        """Show player's tournament match history."""
+        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ No active tournament found.",
+                ephemeral=True
+            )
+            return
+
+        # Get player's matches
+        player = await ultimatum_store.get_player_by_discord_id(tournament.id, interaction.user.id)
+        if not player:
+            await interaction.response.send_message(
+                "❌ You're not registered in this tournament.",
+                ephemeral=True
+            )
+            return
+
+        # Get all matches for this tournament
+        all_matches = await ultimatum_store.get_matches(tournament.id)
+
+        # Filter matches where player participated
+        player_matches = [
+            m for m in all_matches
+            if m.player1_id == interaction.user.id or m.player2_id == interaction.user.id
+        ]
+
+        if not player_matches:
+            await interaction.response.send_message(
+                "❌ No matches played yet.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title=f"📊 История матчей: {player.username}",
+            description=f"Записей: {len(player_matches)}",
+            color=discord.Color.blue()
+        )
+
+        for match in player_matches:
+            opponent_id = match.player2_id if match.player1_id == interaction.user.id else match.player1_id
+            opponent = await ultimatum_store.get_player_by_discord_id(tournament.id, opponent_id)
+            opponent_name = opponent.username if opponent else "Unknown"
+
+            is_winner = match.winner_id == interaction.user.id
+            result_emoji = "✅" if is_winner else "❌"
+
+            match_type = "Гранд-финал" if match.match_type == MatchType.GRAND_FINAL else "Раунд"
+
+            embed.add_field(
+                name=f"{result_emoji} vs {opponent_name}",
+                value=f"{match_type} {match.round_number} | {player.record}",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="tournament_ranking", description="Show current Ultimatum tournament ranking")
+    async def tournament_ranking(self, interaction: discord.Interaction) -> None:
+        """Show current tournament standings."""
+        tournament = await ultimatum_store.get_active_tournament(interaction.guild_id)
+        if not tournament:
+            await interaction.response.send_message(
+                "❌ No active tournament found.",
+                ephemeral=True
+            )
+            return
+
+        # Get all players
+        players = await ultimatum_store.get_players(tournament.id)
+
+        # Sort by wins, then by fewer losses
+        sorted_players = sorted(
+            players,
+            key=lambda p: (-p.wins, p.losses if p.losses else 0)
+        )
+
+        embed = discord.Embed(
+            title=f"🏆 Рейтинг турнира: {tournament.name}",
+            description=f"Раунд {tournament.current_round}",
+            color=discord.Color.gold()
+        )
+
+        for idx, player in enumerate(sorted_players):
+            medal = ""
+            if idx == 0:
+                medal = "🥇 "
+            elif idx == 1:
+                medal = "🥈 "
+            elif idx == 2:
+                medal = "🥉 "
+
+            status_emoji = {
+                PlayerStatus.CHAMPION: "👑",
+                PlayerStatus.GRAND_FINAL_LOSER: "🥈",
+                PlayerStatus.GRAND_FINALIST: "⭐",
+                PlayerStatus.ELIMINATED: "💀",
+                PlayerStatus.ACTIVE: ""
+            }.get(player.status, "")
+
+            embed.add_field(
+                name=f"{medal}{idx + 1}. {player.username} {status_emoji}",
+                value=f"{player.record} | Статус: {player.status.value}",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)
+
 
 async def setup(bot: commands.Bot) -> None:
     """Register cog."""
