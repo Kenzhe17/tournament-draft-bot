@@ -34,6 +34,8 @@ COPY utils/ utils/
 
 COPY views/ views/
 
+COPY ultimatum/ ultimatum/
+
 
 
 CMD ["python", "bot.py"]
