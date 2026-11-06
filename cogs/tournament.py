@@ -13,22 +13,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
-from models.tournament import (
-    FormationMode,
-    RegistrationState,
-    Tournament,
-    TournamentPhase,
-    TournamentSize,
-)
-from storage.json_store import store
-from storage.player_stats_store import player_stats_store
-from storage.user_balance_store import user_balance_store
-from storage.user_bank_store import user_bank_store
-from storage.betting_stats_store import betting_stats_store
-from utils.embeds import build_setup_embed
+from core.models import TournamentState, TournamentPhase, TournamentSize, FormationMode, RegistrationState
+from services.tournament_service import TournamentService
+from services.player_stats_service import PlayerStatsService
+from services.match_history_service import MatchHistoryService
+from utils.embeds import build_tournament_embed
 from utils.permissions import is_admin, is_org, is_bot_owner, is_channel_organizer_decorator
-from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
-from views.org_role_view import setup_org_role_message
+from views.tournament_view import TournamentView
 
 if TYPE_CHECKING:
     from bot import TournamentBot
