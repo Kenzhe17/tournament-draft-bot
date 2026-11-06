@@ -172,8 +172,6 @@ class Tournament:
     # MM поиск который создал этот турнир (channel_id)
     mm_search_channel_id: int = 0
 
-
-
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""

@@ -6,7 +6,6 @@ from datetime import datetime
 
 from storage.match_history_store import match_history_store
 from models.match_history import MatchHistory
-from utils.design import DesignEmbed
 
 
 class HistoryView(discord.ui.View):
@@ -57,67 +56,6 @@ class HistoryView(discord.ui.View):
             self.add_item(disabled_button)
 
 
-class _HistNavButton(discord.ui.Button):
-    """Кнопка навигации истории (CV2, с явной ссылкой на view)."""
-
-    def __init__(self, view: "HistoryLayoutView", delta: int,
-                 label: str, disabled: bool):
-        super().__init__(style=discord.ButtonStyle.primary,
-                         label=label, disabled=disabled)
-        self.delta = delta
-        self.view_ref = view
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        view = self.view_ref
-        new_page = view.current_page + self.delta
-        if not (0 <= new_page < view.total_pages):
-            await interaction.response.defer()
-            return
-        view.current_page = new_page
-        embed = create_history_embed(
-            view.guild_id, view.user_id, view.matches, view.stats,
-            view.current_page, view.user_name, view.limit)
-        member = interaction.guild.get_member(view.user_id) if interaction.guild else None
-        if member is None:
-            try:
-                member = await interaction.client.fetch_user(view.user_id)
-            except Exception:
-                member = None
-        if member:
-            embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
-        view.set_embed(embed)
-        await interaction.response.edit_message(view=view)
-
-
-class HistoryLayoutView(discord.ui.LayoutView):
-    """CV2-вариант истории матчей: карточка + навигация."""
-
-    def __init__(self, guild_id: int, user_id: int, matches: List[MatchHistory],
-                 stats: dict, user_name: str = "", limit: int = 10):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.user_id = user_id
-        self.matches = matches
-        self.stats = stats
-        self.user_name = user_name
-        self.limit = limit
-        self.current_page = 0
-        self.total_pages = len(matches) + 1  # +1 for stats page
-
-    def set_embed(self, embed: discord.Embed) -> None:
-        """Установить embed как карточку и перестроить навигацию."""
-        from utils.design.cv2 import container_from_embed
-        self.clear_items()
-        self.add_item(container_from_embed(embed))
-        row = discord.ui.ActionRow()
-        row.add_item(_HistNavButton(
-            self, -1, "◀", disabled=self.current_page <= 0))
-        row.add_item(_HistNavButton(
-            self, 1, "▶", disabled=self.current_page >= self.total_pages - 1))
-        self.add_item(row)
-
-
 class PrevButton(discord.ui.Button):
     """Кнопка 'Назад'."""
 
@@ -136,15 +74,6 @@ class PrevButton(discord.ui.Button):
                 parent_view.current_page -= 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                member = interaction.guild.get_member(parent_view.user_id) if interaction.guild else None
-                if member is None:
-                    try:
-                        member = await interaction.client.fetch_user(parent_view.user_id)
-                    except Exception:
-                        member = None
-                if member:
-                    embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-                embed.set_footer(text="DISCORD SERVER r1z3")
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -168,15 +97,6 @@ class NextButton(discord.ui.Button):
                 parent_view.current_page += 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                member = interaction.guild.get_member(parent_view.user_id) if interaction.guild else None
-                if member is None:
-                    try:
-                        member = await interaction.client.fetch_user(parent_view.user_id)
-                    except Exception:
-                        member = None
-                if member:
-                    embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
-                embed.set_footer(text="DISCORD SERVER r1z3")
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -232,10 +152,10 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
 
         title = f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ"
-        embed = DesignEmbed(
+        embed = discord.Embed(
             title=title,
             description="\n".join(description_parts),
-            category="stats"
+            color=discord.Color.from_rgb(69, 69, 69)
         )
     else:
         # Показываем конкретный матч (page - 1 = индекс в списке, так как page 0 это статистика)
@@ -279,16 +199,16 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             if match.bet_amount > 0:
                 description_parts.append(f"{replace_emojis('a_dot_smaller')} Ставка: {match.bet_amount} → {match.bet_win} {get_emoji('money')}")
 
-            embed = DesignEmbed(
+            embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
                 description="\n".join(description_parts),
-                category="stats"
+                color=discord.Color.from_rgb(69, 69, 69)
             )
         else:
-            embed = DesignEmbed(
+            embed = discord.Embed(
                 title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ",
                 description="Матч не найден",
-                category="neutral"
+                color=discord.Color.from_rgb(69, 69, 69)
             )
 
     return embed

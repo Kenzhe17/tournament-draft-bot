@@ -135,13 +135,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 if player:
                     self.players.append((player, circle))
 
-        # Create input fields for each player (format: kills/deaths/assists/damage)
+        # Create input fields for each player (format: kills/deaths)
         for i, (player_name, circle) in enumerate(self.players):
             kd_input = TextInput(
                 label=player_name,
-                placeholder="K/D/A/DMG (например: 8/2/1/500)",
+                placeholder="Убийства/Смерти (например: 8/2)",
                 required=False,
-                max_length=20
+                max_length=7
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
@@ -160,18 +160,17 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 kd_field = getattr(self, f"kd_{i}")
 
                 if not kd_field.value:
-                    kills = deaths = assists = damage = 0
+                    kills = 0
+                    deaths = 0
                 else:
                     try:
-                        # Parse format: "kills/deaths[/assists[/damage]]"
-                        parts = [p.strip() for p in kd_field.value.split('/')]
-                        kills = int(parts[0]) if parts[0] else 0
-                        deaths = int(parts[1]) if len(parts) > 1 and parts[1] else 0
-                        assists = int(parts[2]) if len(parts) > 2 and parts[2] else 0
-                        damage = int(parts[3]) if len(parts) > 3 and parts[3] else 0
+                        # Parse format: "kills/deaths"
+                        kd_parts = kd_field.value.split('/')
+                        kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
+                        deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                     except (ValueError, IndexError):
                         await interaction.followup.send(
-                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D/A/DMG (например: 8/2/1/500)"),
+                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                             ephemeral=True
                         )
                         return
@@ -179,8 +178,6 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 stats[player_name] = {
                     "kills": kills,
                     "deaths": deaths,
-                    "assists": assists,
-                    "damage": damage,
                     "circle": circle
                 }
 
@@ -213,9 +210,214 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             bot = interaction.client  # type: ignore[assignment]
             await bot.update_tournament_message(interaction.guild, tournament)
 
+            # Check if both teams filled stats (for random-auto auto-confirmation)
+            message = "✅ Статистика заполнена. Кнопка капитана для вашей команды исчезла."
+            
+            if tournament.formation_mode == "random-auto":
+                # Check if both teams filled stats
+                both_teams_filled = True
+                for team_idx in [self.team_a_index, self.team_b_index]:
+                    team = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
+                    players_list = team.get("players", [])
+                    team_has_stats = False
+                    for player_name in players_list:
+                        if player_name in tournament.temp_match_stats[match_id]:
+                            team_has_stats = True
+                            break
+                    if not team_has_stats:
+                        both_teams_filled = False
+                        break
+                
+                if both_teams_filled:
+                    # Check auto-confirmation conditions
+                    # Condition 1: kills_A == deaths_B
+                    # Condition 2: deaths_A == kills_B
+                    team_a_idx = self.team_a_index
+                    team_b_idx = self.team_b_index
+                    
+                    team_a = tournament.teams[team_a_idx] if team_a_idx < len(tournament.teams) else {}
+                    team_b = tournament.teams[team_b_idx] if team_b_idx < len(tournament.teams) else {}
+                    
+                    team_a_players = team_a.get("players", [])
+                    team_b_players = team_b.get("players", [])
+                    
+                    # Calculate totals
+                    team_a_kills = sum(tournament.temp_match_stats[match_id].get(p, {}).get("kills", 0) for p in team_a_players)
+                    team_a_deaths = sum(tournament.temp_match_stats[match_id].get(p, {}).get("deaths", 0) for p in team_a_players)
+                    team_b_kills = sum(tournament.temp_match_stats[match_id].get(p, {}).get("kills", 0) for p in team_b_players)
+                    team_b_deaths = sum(tournament.temp_match_stats[match_id].get(p, {}).get("deaths", 0) for p in team_b_players)
+                    
+                    # Check conditions
+                    condition1 = (team_a_kills == team_b_deaths)
+                    condition2 = (team_a_deaths == team_b_kills)
+                    
+                    if condition1 and condition2:
+                        # Auto-confirm winner based on kills
+                        auto_winner_idx = team_a_idx if team_a_kills > team_b_kills else team_b_idx
+                        
+                        # Log auto-confirmation
+                        import logging
+                        logging.info(f"Auto-confirming winner: match_type={self.match_type}, match_index={self.match_index}, winner_idx={auto_winner_idx}")
+                        
+                        # Set winner in tournament
+                        if self.match_type == "qualifier":
+                            tournament.qualifier_winners[self.match_index] = auto_winner_idx
+                        elif self.match_type == "semifinal":
+                            tournament.semifinal_pending_winners[self.match_index] = auto_winner_idx
+                        elif self.match_type == "final":
+                            tournament.final_pending_winner = auto_winner_idx
+                        
+                        store.set(tournament)
+                        
+                        # Process match result with stats (same as manual confirmation)
+                        from views.kd_input_view import process_match_result
+                        await process_match_result(self.guild_id, tournament, {
+                            "match_type": self.match_type,
+                            "match_index": self.match_index,
+                            "winning_team_index": auto_winner_idx,
+                            "team1_index": self.team_a_index,
+                            "team2_index": self.team_b_index,
+                            "temp_kd_data": tournament.temp_match_stats[match_id]
+                        }, interaction)
+                        
+                        # Save match to history (same as manual confirmation)
+                        from storage.match_history_store import match_history_store
+                        from models.match_history import MatchHistory
+                        from datetime import datetime
+                        from storage.player_stats_store import player_stats_store
+                        
+                        # Get match teams
+                        if self.match_type == "qualifier":
+                            match = tournament.qualifier_matches[self.match_index]
+                        elif self.match_type == "semifinal":
+                            match = tournament.semifinal_matches[self.match_index]
+                        elif self.match_type == "final":
+                            match = tournament.final_teams
+                        else:
+                            match = (0, 0)
+                        
+                        team_a_idx, team_b_idx = match
+                        team_a = tournament.teams[team_a_idx] if team_a_idx < len(tournament.teams) else {}
+                        team_b = tournament.teams[team_b_idx] if team_b_idx < len(tournament.teams) else {}
+                        
+                        team_a_name = tournament.team_names.get(team_a_idx, team_a.get("captain", f"Team {team_a_idx}"))
+                        team_b_name = tournament.team_names.get(team_b_idx, team_b.get("captain", f"Team {team_b_idx}"))
+                        
+                        # Prepare teammates and opponents
+                        def prepare_players_data(team_data: dict, temp_stats: dict, user_ids: dict) -> list:
+                            players = []
+                            captain = team_data.get("captain", "")
+                            players_list = team_data.get("players", [])
+                            
+                            if tournament.formation_mode == "random-auto" and players_list:
+                                captain = players_list[0]
+                            
+                            if captain:
+                                kd_data = temp_stats.get(captain, {})
+                                kills = kd_data.get("kills", 0)
+                                deaths = kd_data.get("deaths", 0)
+                                players.append({"name": captain, "kills": kills, "deaths": deaths, "user_id": user_ids.get(captain)})
+                            
+                            for player in players_list:
+                                if player != captain:
+                                    kd_data = temp_stats.get(player, {})
+                                    kills = kd_data.get("kills", 0)
+                                    deaths = kd_data.get("deaths", 0)
+                                    players.append({"name": player, "kills": kills, "deaths": deaths, "user_id": user_ids.get(player)})
+                            
+                            return players
+                        
+                        user_ids = {}
+                        user_ids.update(tournament.player_user_ids)
+                        all_stats = await player_stats_store.get_all(self.guild_id)
+                        for stat in all_stats:
+                            user_ids[stat.name] = stat.user_id
+                        
+                        team_a_players = prepare_players_data(team_a, tournament.temp_match_stats[match_id], user_ids)
+                        team_b_players = prepare_players_data(team_b, tournament.temp_match_stats[match_id], user_ids)
+                        
+                        # Save history for each player
+                        for player_name, kd_data in tournament.temp_match_stats[match_id].items():
+                            kills = kd_data.get("kills", 0)
+                            deaths = kd_data.get("deaths", 0)
+                            
+                            is_team_a = player_name in [p["name"] for p in team_a_players]
+                            is_team_b = player_name in [p["name"] for p in team_b_players]
+                            
+                            if not (is_team_a or is_team_b):
+                                continue
+                            
+                            user_id = user_ids.get(player_name)
+                            if not user_id:
+                                continue
+                            
+                            if is_team_a:
+                                my_team_idx = team_a_idx
+                                my_team_name = team_a_name
+                                my_teammates = team_a_players
+                                opp_team_idx = team_b_idx
+                                opp_team_name = team_b_name
+                                opponents = team_b_players
+                            else:
+                                my_team_idx = team_b_idx
+                                my_team_name = team_b_name
+                                my_teammates = team_b_players
+                                opp_team_idx = team_a_idx
+                                opp_team_name = team_a_name
+                                opponents = team_a_players
+                            
+                            team_won = (my_team_idx == auto_winner_idx)
+                            result = "WIN" if team_won else "LOSS"
+                            
+                            # Get ELO change from player stats
+                            player_stats = await player_stats_store.get(self.guild_id, user_id)
+                            elo_change = player_stats.last_elo_change if player_stats else 0
+                            
+                            match_entry = MatchHistory(
+                                guild_id=self.guild_id,
+                                user_id=user_id,
+                                tournament_id=tournament.id,
+                                date=datetime.now(),
+                                match_type=self.match_type,
+                                match_index=self.match_index,
+                                team_index=my_team_idx,
+                                team_name=my_team_name,
+                                teammates=my_teammates,
+                                opponent_team_index=opp_team_idx,
+                                opponent_team_name=opp_team_name,
+                                opponents=opponents,
+                                kills=kills,
+                                deaths=deaths,
+                                result=result,
+                                elo_change=elo_change
+                            )
+                            
+                            await match_history_store.add(match_entry)
+                        
+                        # Clear temp stats
+                        if match_id in tournament.temp_match_stats:
+                            del tournament.temp_match_stats[match_id]
+                        store.set(tournament)
+                        
+                        # Confirm winner in tournament
+                        if self.match_type == "qualifier":
+                            tournament.confirm_qualifier_winner(self.match_index, auto_winner_idx)
+                        elif self.match_type == "semifinal":
+                            tournament.confirm_semifinal_winner(self.match_index, auto_winner_idx)
+                        elif self.match_type == "final":
+                            tournament.confirm_final_winner(auto_winner_idx)
+                        store.set(tournament)
+                        
+                        # Update tournament message
+                        await bot.update_tournament_message(interaction.guild, tournament)
+                        
+                        message = f"✅ Статистика заполнена. Победитель автоматически подтвержден (Команда {auto_winner_idx})."
+                    else:
+                        message += " Статистика заполнена обеими командами, но условия автоподтверждения не выполнены. Требуется ручное подтверждение победителя."
+
             # Notify user that button will disappear
             await interaction.followup.send(
-                replace_emojis("✅ Статистика заполнена. Кнопка капитана для вашей команды исчезла."),
+                replace_emojis(message),
                 ephemeral=True
             )
         except Exception as e:
@@ -429,16 +631,15 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             # Pre-fill with captain-submitted stats if available
             existing_stat = temp_stats.get(player_name, {})
             if existing_stat:
-                default_value = (f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
-                                 f"/{existing_stat.get('assists', 0)}/{existing_stat.get('damage', 0)}")
+                default_value = f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
             else:
                 default_value = ""
 
             kd_input = TextInput(
                 label=player_name,
-                placeholder="K/D/A/DMG (например: 8/2/1/500)",
+                placeholder="Убийства/Смерти (например: 8/2)",
                 required=False,
-                max_length=20,
+                max_length=7,
                 default=default_value
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -460,18 +661,17 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             kd_field = getattr(self, f"kd_{i}")
 
             if not kd_field.value:
-                kills = deaths = assists = damage = 0
+                kills = 0
+                deaths = 0
             else:
                 try:
-                    # Parse format: "kills/deaths[/assists[/damage]]"
-                    parts = [p.strip() for p in kd_field.value.split('/')]
-                    kills = int(parts[0]) if parts[0] else 0
-                    deaths = int(parts[1]) if len(parts) > 1 and parts[1] else 0
-                    assists = int(parts[2]) if len(parts) > 2 and parts[2] else 0
-                    damage = int(parts[3]) if len(parts) > 3 and parts[3] else 0
+                    # Parse format: "kills/deaths"
+                    kd_parts = kd_field.value.split('/')
+                    kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
+                    deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
                 except (ValueError, IndexError):
                     await interaction.followup.send(
-                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D/A/DMG (например: 8/2/1/500)"),
+                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
                         ephemeral=True
                     )
                     return
@@ -479,8 +679,6 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             stats[player_name] = {
                 "kills": kills,
                 "deaths": deaths,
-                "assists": assists,
-                "damage": damage,
                 "circle": circle
             }
 
@@ -855,10 +1053,7 @@ class AdminConfirmView(View):
                     kd_data = temp_stats.get(captain, {})
                     kills = kd_data.get("kills", 0)
                     deaths = kd_data.get("deaths", 0)
-                    players.append({"name": captain, "kills": kills, "deaths": deaths,
-                                    "assists": kd_data.get("assists", 0),
-                                    "damage": kd_data.get("damage", 0),
-                                    "user_id": user_ids.get(captain)})
+                    players.append({"name": captain, "kills": kills, "deaths": deaths, "user_id": user_ids.get(captain)})
 
                 # Add other players
                 for player in players_list:
@@ -866,10 +1061,7 @@ class AdminConfirmView(View):
                         kd_data = temp_stats.get(player, {})
                         kills = kd_data.get("kills", 0)
                         deaths = kd_data.get("deaths", 0)
-                        players.append({"name": player, "kills": kills, "deaths": deaths,
-                                        "assists": kd_data.get("assists", 0),
-                                        "damage": kd_data.get("damage", 0),
-                                        "user_id": user_ids.get(player)})
+                        players.append({"name": player, "kills": kills, "deaths": deaths, "user_id": user_ids.get(player)})
 
                 return players
 
@@ -955,8 +1147,6 @@ class AdminConfirmView(View):
                     opponents=opponents,
                     kills=kd_data.get("kills", 0),
                     deaths=kd_data.get("deaths", 0),
-                    assists=kd_data.get("assists", 0),
-                    damage=kd_data.get("damage", 0),
                     result=result,
                     elo_change=elo_change
                 )

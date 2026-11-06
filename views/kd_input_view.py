@@ -316,15 +316,12 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
                 logger.error(f"Error applying pet ELO bonus: {e}")
 
             # Update stats
-            _kd_full = temp_kd_data.get(player_name, {})
             updated_stats = update_player_stats_from_match(
                 stats=stats,
                 kills=kills,
                 deaths=deaths,
                 elo_change=elo_change,
-                team_won=team_won,
-                assists=_kd_full.get('assists', 0),
-                damage=_kd_full.get('damage', 0)
+                team_won=team_won
             )
 
             # Save pet ELO bonus for profile display

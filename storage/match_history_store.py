@@ -39,8 +39,6 @@ class MatchHistoryStore:
                 opponents JSON NOT NULL,
                 kills INTEGER NOT NULL,
                 deaths INTEGER NOT NULL,
-                assists INTEGER DEFAULT 0,
-                damage INTEGER DEFAULT 0,
                 result TEXT NOT NULL,
                 elo_change INTEGER NOT NULL,
                 bet_amount INTEGER DEFAULT 0,
@@ -54,12 +52,6 @@ class MatchHistoryStore:
             CREATE INDEX IF NOT EXISTS idx_match_history_user_date
             ON match_history(guild_id, user_id, date DESC)
         """)
-
-        # Миграция: assists/damage для существующих таблиц
-        await conn.execute(
-            "ALTER TABLE match_history ADD COLUMN IF NOT EXISTS assists INTEGER DEFAULT 0")
-        await conn.execute(
-            "ALTER TABLE match_history ADD COLUMN IF NOT EXISTS damage INTEGER DEFAULT 0")
 
     def load(self) -> None:
         """Загрузить историю из файла (fallback)."""
@@ -104,7 +96,7 @@ class MatchHistoryStore:
                         SELECT guild_id, user_id, match_id, tournament_id, date,
                                match_type, match_index, team_index, team_name,
                                teammates, opponent_team_index, opponent_team_name,
-                               opponents, kills, deaths, assists, damage, result, elo_change,
+                               opponents, kills, deaths, result, elo_change,
                                bet_amount, bet_win, bet_team
                         FROM match_history
                         WHERE guild_id = $1 AND user_id = $2
@@ -130,8 +122,6 @@ class MatchHistoryStore:
                             opponents=json.loads(row["opponents"]) if isinstance(row["opponents"], str) else row["opponents"],
                             kills=row["kills"],
                             deaths=row["deaths"],
-                            assists=row.get("assists", 0),
-                            damage=row.get("damage", 0),
                             result=row["result"],
                             elo_change=row["elo_change"],
                             bet_amount=row.get("bet_amount", 0),
@@ -173,15 +163,14 @@ class MatchHistoryStore:
                         (guild_id, user_id, match_id, tournament_id, date,
                          match_type, match_index, team_index, team_name,
                          teammates, opponent_team_index, opponent_team_name,
-                         opponents, kills, deaths, assists, damage, result, elo_change,
+                         opponents, kills, deaths, result, elo_change,
                          bet_amount, bet_win, bet_team)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                         """,
                         match.guild_id, match.user_id, match.match_id, match.tournament_id,
                         match.date, match.match_type, match.match_index, match.team_index,
                         match.team_name, json.dumps(match.teammates), match.opponent_team_index,
                         match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
-                        match.assists, match.damage,
                         match.result, match.elo_change, match.bet_amount, match.bet_win,
                         match.bet_team
                     )
@@ -195,15 +184,14 @@ class MatchHistoryStore:
                             (guild_id, user_id, match_id, tournament_id, date,
                              match_type, match_index, team_index, team_name,
                              teammates, opponent_team_index, opponent_team_name,
-                             opponents, kills, deaths, assists, damage, result, elo_change,
+                             opponents, kills, deaths, result, elo_change,
                              bet_amount, bet_win, bet_team)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
                             """,
                             match.guild_id, match.user_id, match.match_id, match.tournament_id,
                             match.date, match.match_type, match.match_index, match.team_index,
                             match.team_name, json.dumps(match.teammates), match.opponent_team_index,
                             match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
-                            match.assists, match.damage,
                             match.result, match.elo_change, match.bet_amount, match.bet_win,
                             match.bet_team
                         )

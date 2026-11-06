@@ -1,4 +1,4 @@
-"""View для matchmaking поиска (Components V2)."""
+"""View для matchmaking поиска."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from models.tournament import TournamentPhase
 from storage.mm_search_store import mm_search_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
-from utils.design.cv2 import container_from_embed
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -105,13 +104,13 @@ class JoinSearchButton(discord.ui.Button):
         # Если это первый игрок - выбрать канал для турнира
         if not search.tournament_channel_id:
             from cogs.mm import TOURNAMENT_CHANNEL_IDS, LOCKED_CHANNELS
-
+            
             # Проверить каналы по очереди
             for channel_id in TOURNAMENT_CHANNEL_IDS:
                 # Проверить если канал заблокирован другим поиском
                 if channel_id in LOCKED_CHANNELS:
                     continue
-
+                    
                 # Проверить если канал занят активным турниром
                 tournament_channel = self.bot.get_channel(channel_id)
                 if tournament_channel:
@@ -150,7 +149,7 @@ class JoinSearchButton(discord.ui.Button):
         # Проверить тег пользователя (как в обычных турнирах)
         from config import GUILD_ID
         has_tag = interaction.user.primary_guild and interaction.user.primary_guild.id == GUILD_ID
-
+        
         if not has_tag:
             await interaction.response.send_message("❌ Для входа в поиск нужен тег r!z3.", ephemeral=True)
             return
@@ -184,9 +183,10 @@ class JoinSearchButton(discord.ui.Button):
                 await interaction.response.send_message("❌ Ошибка системы MM.", ephemeral=True)
                 return
 
-        # Обновить сообщение (CV2 view)
-        view = await build_search_view(self.bot, search, interaction.guild)
-        await interaction.response.edit_message(view=view)
+        # Обновить embed
+        embed = await build_search_embed(search, interaction.guild)
+        view = build_search_view(self.bot, search)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
 class LeaveSearchButton(discord.ui.Button):
@@ -222,22 +222,15 @@ class LeaveSearchButton(discord.ui.Button):
 
         mm_search_store.set(search)
 
-        # Обновить сообщение (CV2 view)
-        view = await build_search_view(self.bot, search, interaction.guild)
-        await interaction.response.edit_message(view=view)
+        # Обновить embed
+        embed = await build_search_embed(search, interaction.guild)
+        view = build_search_view(self.bot, search)
+        await interaction.response.edit_message(embed=embed, view=view)
 
 
-async def build_search_view(bot: TournamentBot, search: MMSearch,
-                            guild: discord.Guild | None = None) -> discord.ui.LayoutView:
-    """Построить CV2-view для поиска (карточка + кнопки)."""
-    guild = guild or bot.get_guild(search.guild_id)
-    embed = await build_search_embed(search, guild)
-
-    view = discord.ui.LayoutView(timeout=None)
-    view.add_item(container_from_embed(embed))
-
-    row = discord.ui.ActionRow()
-    row.add_item(JoinSearchButton(bot, search.guild_id, search.channel_id))
-    row.add_item(LeaveSearchButton(bot, search.guild_id, search.channel_id))
-    view.add_item(row)
+def build_search_view(bot: TournamentBot, search: MMSearch) -> discord.ui.View:
+    """Построить view для поиска."""
+    view = discord.ui.View(timeout=None)
+    view.add_item(JoinSearchButton(bot, search.guild_id, search.channel_id))
+    view.add_item(LeaveSearchButton(bot, search.guild_id, search.channel_id))
     return view

@@ -14,10 +14,10 @@ from config import replace_emojis
 from models.mm_search import MMFormat, MMSearch
 from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
 from storage.mm_search_store import mm_search_store
-from storage.compatibility_store import compatibility_store as store
+from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_setup_embed
-from views.mm_search_view import build_search_view
+from views.mm_search_view import build_search_embed, build_search_view
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -37,17 +37,7 @@ class MMCog(commands.Cog):
     def __init__(self, bot: TournamentBot):
         self.bot = bot
         self._search_timers: dict[tuple[int, int], asyncio.Task] = {}
-        # (guild_id, search_channel_id) -> временный войс-канал лобби
-        self._voice_channels: dict[tuple[int, int], int] = {}
-        self._voice_cleanup_task: asyncio.Task | None = None
         self.bot.mm_cog = self  # Регистрация для доступа из view
-
-    async def cog_load(self) -> None:
-        self._voice_cleanup_task = asyncio.create_task(self._voice_cleanup_loop())
-
-    async def cog_unload(self) -> None:
-        if self._voice_cleanup_task:
-            self._voice_cleanup_task.cancel()
 
     mm_group = app_commands.Group(name="mm", description="Matchmaking поиск")
 
@@ -128,10 +118,11 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
         
         # Обновить embed
-        view = await build_search_view(self.bot, search, interaction.guild)
+        embed = await build_search_embed(search, interaction.guild)
+        view = build_search_view(self.bot, search)
         try:
             message = await interaction.channel.fetch_message(search.message_id)
-            await message.edit(view=view)
+            await message.edit(embed=embed, view=view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
         
@@ -160,10 +151,11 @@ class MMCog(commands.Cog):
         # Сначала отправить ephemeral сообщение
         await interaction.response.send_message("✅ Поиск создан!", ephemeral=True)
 
-        view = await build_search_view(self.bot, search, interaction.guild)
+        embed = await build_search_embed(search, interaction.guild)
+        view = build_search_view(self.bot, search)
 
         # Отправить вечный embed
-        message = await interaction.channel.send(view=view)
+        message = await interaction.channel.send(embed=embed, view=view)
 
         search.message_id = message.id
         mm_search_store.set(search)
@@ -243,8 +235,9 @@ class MMCog(commands.Cog):
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             message = await channel.fetch_message(search.message_id)
-                            view = await build_search_view(self.bot, search, channel.guild)
-                            await message.edit(view=view)
+                            embed = await build_search_embed(search, channel.guild)
+                            view = build_search_view(self.bot, search)
+                            await message.edit(embed=embed, view=view)
                             await channel.send(
                                 f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
                             )
@@ -369,12 +362,9 @@ class MMCog(commands.Cog):
         # Отправить в канал турниров
         message = await tournament_channel.send(embed=embed, view=view)
         tournament.message_id = message.id
-        store.set_sync(tournament)
+        store.set(tournament)
 
         logger.info("Создан турнир из поиска %s в канале %s", search.format.value, tournament_channel.id)
-
-        # Временная войс-комната лобби для игроков (как в team-matchmaking референсе)
-        await self._create_lobby_voice(guild, search, tournament_channel)
 
         # Разблокировать канал после создания турнира
         if tournament_channel_id in LOCKED_CHANNELS:
@@ -385,66 +375,13 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
 
         # Обновить embed поиска
-        search_view = await build_search_view(self.bot, search, guild)
+        search_embed = await build_search_embed(search, guild)
+        search_view = build_search_view(self.bot, search)
         try:
             search_message = await interaction_channel.fetch_message(search.message_id)
-            await search_message.edit(view=search_view)
+            await search_message.edit(embed=search_embed, view=search_view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
-
-    # ---------- временная войс-комната лобби ----------
-
-    async def _create_lobby_voice(self, guild: discord.Guild, search: MMSearch,
-                                  tournament_channel: discord.TextChannel) -> None:
-        """Создать временный войс для игроков поиска (auto-cleanup)."""
-        try:
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(connect=False),
-                guild.me: discord.PermissionOverwrite(
-                    connect=True, manage_channels=True),
-            }
-            for uid in search.player_user_ids.values():
-                if not uid or uid <= 0:
-                    continue
-                member = guild.get_member(uid)
-                if member:
-                    overwrites[member] = discord.PermissionOverwrite(
-                        connect=True, view_channel=True, speak=True)
-            vc = await guild.create_voice_channel(
-                name=f"mm-lobby-{len(search.players)}",
-                overwrites=overwrites,
-                reason="MM lobby",
-            )
-            self._voice_channels[(guild.id, search.channel_id)] = vc.id
-            await tournament_channel.send(
-                f"{replace_emojis('white_arrow Лобби')}: {vc.mention}")
-            logger.info("MM lobby voice created: %s", vc.id)
-        except Exception as e:
-            logger.warning("MM lobby voice failed: %s", e)
-
-    async def _delete_lobby_voice(self, guild_id: int, channel_id: int) -> None:
-        """Удалить временный войс лобби, если он есть."""
-        key = (guild_id, channel_id)
-        vc_id = self._voice_channels.pop(key, None)
-        if not vc_id:
-            return
-        guild = self.bot.get_guild(guild_id)
-        vc = guild.get_channel(vc_id) if guild else None
-        if vc:
-            try:
-                await vc.delete(reason="MM lobby closed")
-            except Exception as e:
-                logger.warning("MM lobby voice delete failed: %s", e)
-
-    async def _voice_cleanup_loop(self) -> None:
-        """Каждые 60 сек удалять пустые/несуществующие лобби-каналы."""
-        while True:
-            await asyncio.sleep(60)
-            for (guild_id, channel_id), vc_id in list(self._voice_channels.items()):
-                guild = self.bot.get_guild(guild_id)
-                vc = guild.get_channel(vc_id) if guild else None
-                if vc is None or len(vc.members) == 0:
-                    await self._delete_lobby_voice(guild_id, channel_id)
 
     async def reset_search_limit(self, guild_id: int) -> None:
         """Сбросить выбранный канал поиска если освободился турнир."""
@@ -454,7 +391,7 @@ class MMCog(commands.Cog):
                 # Проверить что канал свободен или турнир завершен
                 tournament_channel = self.bot.get_channel(search.tournament_channel_id)
                 if tournament_channel:
-                    tournament = store.get_sync(guild_id, tournament_channel.id)
+                    tournament = store.get(guild_id, tournament_channel.id)
                     if not tournament or tournament.phase == TournamentPhase.COMPLETE:
                         # Канал свободен или турнир завершен, разблокировать и сбросить выбор
                         if search.tournament_channel_id in LOCKED_CHANNELS:
@@ -467,8 +404,9 @@ class MMCog(commands.Cog):
                             channel = self.bot.get_channel(search.channel_id)
                             if channel:
                                 message = await channel.fetch_message(search.message_id)
-                                view = await build_search_view(self.bot, search, channel.guild)
-                                await message.edit(view=view)
+                                embed = await build_search_embed(search, channel.guild)
+                                view = build_search_view(self.bot, search)
+                                await message.edit(embed=embed, view=view)
                         except Exception as e:
                             logger.error(f"Error resetting search channel: {e}")
 
@@ -477,14 +415,6 @@ class MMCog(commands.Cog):
         if channel_id in LOCKED_CHANNELS:
             del LOCKED_CHANNELS[channel_id]
             logger.info(f"Channel {channel_id} unlocked after tournament completion")
-        # Закрыть лобби-войс, связанный с этим каналом турнира
-        for (gid, search_ch), vc_id in list(self._voice_channels.items()):
-            if gid == guild_id:
-                guild = self.bot.get_guild(gid)
-                vc = guild.get_channel(vc_id) if guild else None
-                # Если войс пуст — удаляем сразу
-                if vc is None or len(vc.members) == 0:
-                    await self._delete_lobby_voice(gid, search_ch)
 
 
 async def setup(bot: TournamentBot) -> None:

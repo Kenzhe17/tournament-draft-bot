@@ -59,20 +59,19 @@ class CoinFlipView(discord.ui.View):
         super().__init__(timeout=60)
         self.game = game
 
-    def create_game_embed(self, state: str = "menu", initiator=None) -> discord.Embed:
+    def create_game_embed(self, state: str = "menu", initiator_avatar: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
             title=f"{replace_emojis('a_sparkle')} **COIN FLIP | /coin_flip**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         if state == "menu":
             mode = "PvP" if self.game.opponent_id else "PvE"
             opponent = f"<@{self.game.opponent_id}>" if self.game.opponent_id else "Бот"
 
-            if initiator:
-                embed.set_author(name=initiator.display_name, icon_url=initiator.display_avatar.url)
+            if initiator_avatar:
+                embed.set_thumbnail(url=initiator_avatar)
 
             embed.add_field(
                 name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
@@ -330,7 +329,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
 
         view.add_item(CoinFlipCancelButton(game))
 
-        embed = view.create_game_embed("menu", interaction.user)
+        embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
 
         # Edit the existing message instead of sending new one
         await interaction.response.edit_message(embed=embed, view=view)
@@ -458,5 +457,5 @@ async def create_coin_flip_game(
 
     view.add_item(CoinFlipCancelButton(game))
 
-    embed = view.create_game_embed("menu", interaction.user)
+    embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed, view=view)

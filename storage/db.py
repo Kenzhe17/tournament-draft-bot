@@ -140,26 +140,6 @@ async def init_db() -> None:
             pass
 
         try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_assists INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_damage INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS reputation INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
-            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS invite_count INTEGER DEFAULT 0")
-        except asyncpg.DuplicateColumnError:
-            pass
-
-        try:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_elo_change INTEGER DEFAULT 0")
         except asyncpg.DuplicateColumnError:
             pass
@@ -215,12 +195,6 @@ async def init_db() -> None:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS daily_coins_date TEXT DEFAULT ''")
         except asyncpg.DuplicateColumnError:
             pass
-
-        # match_history: assists/damage (IF EXISTS — таблица может ещё не быть создана)
-        await conn.execute(
-            "ALTER TABLE IF EXISTS match_history ADD COLUMN IF NOT EXISTS assists INTEGER DEFAULT 0")
-        await conn.execute(
-            "ALTER TABLE IF EXISTS match_history ADD COLUMN IF NOT EXISTS damage INTEGER DEFAULT 0")
 
         # Create user_balance table for economy system
         await conn.execute("""
@@ -548,121 +522,6 @@ async def init_db() -> None:
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_player_stats_guild_level
             ON player_stats(guild_id, level DESC, xp DESC)
-        """)
-
-        # Tournament system tables (tourney_ prefix to avoid collisions
-        # with existing teams/match_history tables used by other features)
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_tournaments (
-                tournament_id TEXT PRIMARY KEY,
-                guild_id BIGINT NOT NULL,
-                channel_id BIGINT NOT NULL,
-                phase TEXT NOT NULL DEFAULT 'setup',
-                size INTEGER NOT NULL DEFAULT 8,
-                formation_mode TEXT NOT NULL DEFAULT 'manual',
-                registration_state TEXT NOT NULL DEFAULT 'closed',
-                organizer_id BIGINT NOT NULL DEFAULT 0,
-                created_at DOUBLE PRECISION NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                UNIQUE(guild_id, channel_id)
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_teams (
-                team_id INTEGER NOT NULL,
-                tournament_id TEXT NOT NULL REFERENCES tourney_tournaments(tournament_id) ON DELETE CASCADE,
-                name TEXT NOT NULL,
-                is_complete BOOLEAN NOT NULL DEFAULT FALSE,
-                PRIMARY KEY (tournament_id, team_id)
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_team_players (
-                tournament_id TEXT NOT NULL,
-                team_id INTEGER NOT NULL,
-                player_id BIGINT NOT NULL,
-                PRIMARY KEY (tournament_id, team_id, player_id),
-                FOREIGN KEY (tournament_id, team_id) REFERENCES tourney_teams(tournament_id, team_id) ON DELETE CASCADE
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_matches (
-                match_id TEXT PRIMARY KEY,
-                tournament_id TEXT NOT NULL REFERENCES tourney_tournaments(tournament_id) ON DELETE CASCADE,
-                team1_id INTEGER NOT NULL,
-                team2_id INTEGER NOT NULL,
-                winner_id INTEGER,
-                is_completed BOOLEAN NOT NULL DEFAULT FALSE,
-                stats_submitted BOOLEAN NOT NULL DEFAULT FALSE,
-                match_type TEXT NOT NULL
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_match_history (
-                id SERIAL PRIMARY KEY,
-                tournament_id TEXT NOT NULL,
-                match_id TEXT NOT NULL,
-                player_id BIGINT NOT NULL,
-                player_name TEXT NOT NULL,
-                kills INTEGER NOT NULL,
-                deaths INTEGER NOT NULL,
-                won BOOLEAN NOT NULL,
-                elo_change INTEGER NOT NULL,
-                played_at TIMESTAMP NOT NULL DEFAULT NOW()
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_mm_searches (
-                search_id TEXT PRIMARY KEY,
-                guild_id BIGINT NOT NULL,
-                channel_id BIGINT NOT NULL,
-                format_type TEXT NOT NULL,
-                organizer_id BIGINT NOT NULL DEFAULT 0,
-                created_at DOUBLE PRECISION NOT NULL,
-                is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                UNIQUE(guild_id, channel_id)
-            )
-        """)
-
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS tourney_mm_search_players (
-                search_id TEXT NOT NULL REFERENCES tourney_mm_searches(search_id) ON DELETE CASCADE,
-                player_id BIGINT NOT NULL,
-                player_name TEXT NOT NULL,
-                joined_at DOUBLE PRECISION NOT NULL,
-                PRIMARY KEY (search_id, player_id)
-            )
-        """)
-
-        # Create indexes for tournament tables
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tourney_tournaments_guild_channel
-            ON tourney_tournaments(guild_id, channel_id)
-        """)
-
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tourney_teams_tournament
-            ON tourney_teams(tournament_id)
-        """)
-
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tourney_matches_tournament
-            ON tourney_matches(tournament_id)
-        """)
-
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tourney_match_history_player
-            ON tourney_match_history(player_id)
-        """)
-
-        await conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_tourney_mm_searches_guild_channel
-            ON tourney_mm_searches(guild_id, channel_id)
         """)
 
         # Create Ultimatum tournament tables
