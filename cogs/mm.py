@@ -14,7 +14,7 @@ from config import replace_emojis
 from models.mm_search import MMFormat, MMSearch
 from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
 from storage.mm_search_store import mm_search_store
-from storage.json_store import store
+from storage.compatibility_store import compatibility_store as store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_setup_embed
 from views.mm_search_view import build_search_embed, build_search_view
@@ -362,7 +362,7 @@ class MMCog(commands.Cog):
         # Отправить в канал турниров
         message = await tournament_channel.send(embed=embed, view=view)
         tournament.message_id = message.id
-        store.set(tournament)
+        store.set_sync(tournament)
 
         logger.info("Создан турнир из поиска %s в канале %s", search.format.value, tournament_channel.id)
 
@@ -391,7 +391,7 @@ class MMCog(commands.Cog):
                 # Проверить что канал свободен или турнир завершен
                 tournament_channel = self.bot.get_channel(search.tournament_channel_id)
                 if tournament_channel:
-                    tournament = store.get(guild_id, tournament_channel.id)
+                    tournament = store.get_sync(guild_id, tournament_channel.id)
                     if not tournament or tournament.phase == TournamentPhase.COMPLETE:
                         # Канал свободен или турнир завершен, разблокировать и сбросить выбор
                         if search.tournament_channel_id in LOCKED_CHANNELS:
