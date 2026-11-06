@@ -251,16 +251,6 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
             )
             return
 
-        # Guard: матч мог быть уже завершён через arbiter-панель
-        _fresh = store.get(self.guild_id, self.channel_id)
-        _resolved_id = f"{(_fresh or self.tournament).id}_{self.match_type}_{self.match_index}"
-        if _fresh and _resolved_id in getattr(_fresh, "resolved_matches", set()):
-            await interaction.response.send_message(
-                replace_emojis("✅ Этот матч уже завершён через arbiter-панель."),
-                ephemeral=True
-            )
-            return
-
         # Stats are filled - process match with stats
         from views.kd_input_view import process_match_result
         await process_match_result(self.guild_id, self.tournament, {
@@ -420,7 +410,6 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         elif self.match_type == "final":
             await tournament.confirm_final_winner(self.team_index)
 
-        tournament.resolved_matches.add(_resolved_id)
         store.set(tournament)
 
         # Resolve bets for this match

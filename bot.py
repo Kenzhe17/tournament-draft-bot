@@ -72,12 +72,6 @@ class TournamentBot(commands.Bot):
                 from storage.db import init_db
                 from storage.bet_store import bet_store
                 await init_db()
-                try:
-                    from arbiter.db import init_arbiter_schema
-                    await init_arbiter_schema()
-                    logger.info("Arbiter schema initialized")
-                except Exception as e:
-                    logger.error("Failed to init arbiter schema: %s", e)
                 player_stats_store.enable_db()
                 user_balance_store.enable_db()
                 bet_store.enable_db()
@@ -122,7 +116,6 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.freefire")
-        await self.load_extension("cogs.arbiter")
         await self.load_extension("cogs.invites")
 
         # Load teams from PostgreSQL after extensions are loaded
@@ -280,13 +273,6 @@ class TournamentBot(commands.Bot):
             await message.edit(embed=embed, view=view)
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
-
-        # Arbiter bridge: создать match-панели для матчей текущей фазы
-        try:
-            from arbiter.services.legacy_bridge import ensure_matches_for_phase
-            await ensure_matches_for_phase(self, guild, tournament)
-        except Exception as exc:
-            logger.warning("legacy_bridge ensure failed: %s", exc)
 
     async def betting_timer_loop(self) -> None:
         """Background task to update betting timer in tournament messages."""

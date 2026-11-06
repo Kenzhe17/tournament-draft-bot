@@ -40,10 +40,6 @@ COPY views/ views/
 
 COPY ultimatum/ ultimatum/
 
-COPY arbiter/ arbiter/
-
-COPY ocr/ ocr/
-
 
 
 CMD ["python", "bot.py"]
