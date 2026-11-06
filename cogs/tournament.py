@@ -13,13 +13,22 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import TOURNAMENT_CHANNELS, BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL, NOTIFICATION_ROLE_ID, NOTIFICATION_CHANNEL_ID
-from core.models import TournamentState, TournamentPhase, TournamentSize, FormationMode, RegistrationState
-from services.tournament_service import TournamentService
-from services.player_stats_service import PlayerStatsService
-from services.match_history_service import MatchHistoryService
-from utils.embeds import build_tournament_embed
+from models.tournament import (
+    FormationMode,
+    RegistrationState,
+    Tournament,
+    TournamentPhase,
+    TournamentSize,
+)
+from storage.compatibility_store import compatibility_store as store
+from storage.player_stats_store import player_stats_store
+from storage.user_balance_store import user_balance_store
+from storage.user_bank_store import user_bank_store
+from storage.betting_stats_store import betting_stats_store
+from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org, is_bot_owner, is_channel_organizer_decorator
-from views.tournament_view import TournamentView
+from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
+from views.org_role_view import setup_org_role_message
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -68,10 +77,10 @@ class TournamentCog(commands.Cog):
         self, interaction: discord.Interaction, size: str, formation: str = "elo"
     ) -> None:
         """Создать турнир с указанным размером."""
-        # Проверить если канал заблокирован поиском (только если есть активные игроки)
+        # Check if channel is locked by MM search
         from cogs.mm import LOCKED_CHANNELS
         if interaction.channel_id in LOCKED_CHANNELS:
-            # Проверить если поиск действительно активен (есть игроки)
+            # Check if search is actually active (has players)
             from storage.mm_search_store import mm_search_store
             search_channel_id = LOCKED_CHANNELS[interaction.channel_id]
             search = mm_search_store.get(interaction.guild_id, search_channel_id)
@@ -82,12 +91,12 @@ class TournamentCog(commands.Cog):
                 )
                 return
             else:
-                # Поиск пустой, разблокировать канал
+                # Search is empty, unlock channel
                 del LOCKED_CHANNELS[interaction.channel_id]
 
-        existing = store.get(interaction.guild_id, interaction.channel_id)
+        existing = store.get_sync(interaction.guild_id, interaction.channel_id)
         if existing:
-            # Проверяем фазу существующего турнира
+            # Check phase of existing tournament
             if existing.phase != TournamentPhase.COMPLETE:
                 await interaction.response.send_message(
                     replace_emojis("❌ На этом канале уже есть активный турнир. Удалите его с помощью `/tournament delete`, чтобы создать новый."),
@@ -95,7 +104,7 @@ class TournamentCog(commands.Cog):
                 )
                 asyncio.create_task(_delete_ephemeral_later(interaction))
                 return
-            # Если турнир завершен, можно удалить и создать новый
+            # If tournament is complete, can delete and create new
             if existing.message_id:
                 try:
                     channel = interaction.guild.get_channel(existing.channel_id)
@@ -104,7 +113,7 @@ class TournamentCog(commands.Cog):
                         await message.edit(view=None)
                 except Exception:
                     pass
-            store.delete(interaction.guild_id, interaction.channel_id)
+            await store.delete(interaction.guild_id, interaction.channel_id)
 
         # Validate size
         try:
@@ -149,7 +158,7 @@ class TournamentCog(commands.Cog):
         message = await interaction.channel.send(embed=embed, view=view)
 
         tournament.message_id = message.id
-        store.set(tournament)
+        store.set_sync(tournament)
 
         # Send notification to notification channel
         await send_tournament_notification(tournament, interaction.guild, "Создан новый турнир")
@@ -191,7 +200,7 @@ class TournamentCog(commands.Cog):
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
         """Удалить текущий турнир."""
-        existing = store.get(interaction.guild_id, interaction.channel_id)
+        existing = store.get_sync(interaction.guild_id, interaction.channel_id)
         if not existing:
             await interaction.response.send_message(
                 replace_emojis("❌ На этом сервере нет активного турнира."),
@@ -210,7 +219,7 @@ class TournamentCog(commands.Cog):
             except Exception as e:
                 logger.warning(f"Не удалось удалить сообщение турнира: {e}")
 
-        store.delete(interaction.guild_id, interaction.channel_id)
+        await store.delete(interaction.guild_id, interaction.channel_id)
         logger.info("Турнир удален на сервере %s", interaction.guild_id)
 
         # Разблокировать канал если он был заблокирован поиском
@@ -257,7 +266,7 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(keep_players="Сохранить реальных игроков и добавить ботов только для заполнения", no_bots="Не добавлять ботов, запустить только с реальными игроками")
     async def test_start(self, interaction: discord.Interaction, keep_players: bool = False, no_bots: bool = False) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
-        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        tournament = store.get_sync(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
@@ -373,7 +382,7 @@ class TournamentCog(commands.Cog):
                 for i, player_name in enumerate(tournament.circle4):
                     tournament.player_user_ids[player_name] = base_user_id - 300 - i
 
-        store.set(tournament)
+        store.set_sync(tournament)
 
         message = f"🧪 Турнир заполнен {required_players} тестовыми игроками! Нажмите Старт для запуска."
         if keep_players:
@@ -388,7 +397,7 @@ class TournamentCog(commands.Cog):
     @is_bot_owner()
     async def start_real_only(self, interaction: discord.Interaction) -> None:
         """Запустить турнир только с реальными игроками."""
-        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        tournament = store.get_sync(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Сначала создайте турнир командой `/tournament`."),
@@ -2461,7 +2470,7 @@ class TournamentCog(commands.Cog):
     @is_bot_owner()
     async def trstattest(self, interaction: discord.Interaction) -> None:
         """Рандомно заполнить статистику для всех игроков в текущем турнире."""
-        tournament = store.get(interaction.guild_id, interaction.channel_id)
+        tournament = store.get_sync(interaction.guild_id, interaction.channel_id)
         if not tournament:
             await interaction.response.send_message(
                 replace_emojis("❌ Турнир не найден в этом канале."),
@@ -2524,7 +2533,7 @@ class TournamentCog(commands.Cog):
             total_filled += 1
 
         # Save tournament
-        store.set(tournament)
+        store.set_sync(tournament)
 
         await interaction.response.send_message(
             replace_emojis(f"✅ Статистика рандомно заполнена для {total_filled} матчей."),
