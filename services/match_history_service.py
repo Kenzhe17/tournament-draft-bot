@@ -30,7 +30,7 @@ class MatchHistoryService:
         async with pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO match_history (
+                INSERT INTO tourney_match_history (
                     tournament_id, match_id, player_id, player_name,
                     kills, deaths, won, elo_change
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

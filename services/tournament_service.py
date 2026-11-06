@@ -56,7 +56,7 @@ class TournamentService:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT * FROM tournaments WHERE guild_id = $1 AND channel_id = $2",
+                "SELECT * FROM tourney_tournaments WHERE guild_id = $1 AND channel_id = $2",
                 guild_id, channel_id
             )
 
@@ -79,7 +79,7 @@ class TournamentService:
 
             # Load teams
             team_rows = await conn.fetch(
-                "SELECT * FROM teams WHERE tournament_id = $1",
+                "SELECT * FROM tourney_teams WHERE tournament_id = $1",
                 tournament.tournament_id
             )
             for team_row in team_rows:
@@ -91,7 +91,7 @@ class TournamentService:
 
                 # Load team players
                 player_rows = await conn.fetch(
-                    "SELECT player_id FROM team_players WHERE tournament_id = $1 AND team_id = $2",
+                    "SELECT player_id FROM tourney_team_players WHERE tournament_id = $1 AND team_id = $2",
                     tournament.tournament_id, team.team_id
                 )
                 team.players = [row["player_id"] for row in player_rows]
@@ -100,7 +100,7 @@ class TournamentService:
 
             # Load matches
             match_rows = await conn.fetch(
-                "SELECT * FROM matches WHERE tournament_id = $1",
+                "SELECT * FROM tourney_matches WHERE tournament_id = $1",
                 tournament.tournament_id
             )
             for match_row in match_rows:
@@ -128,14 +128,14 @@ class TournamentService:
         async with pool.acquire() as conn:
             # Get tournament_id first
             row = await conn.fetchrow(
-                "SELECT tournament_id FROM tournaments WHERE guild_id = $1 AND channel_id = $2",
+                "SELECT tournament_id FROM tourney_tournaments WHERE guild_id = $1 AND channel_id = $2",
                 guild_id, channel_id
             )
             if row:
                 tournament_id = row["tournament_id"]
                 # Delete related data (cascade will handle teams, matches, etc.)
                 await conn.execute(
-                    "DELETE FROM tournaments WHERE tournament_id = $1",
+                    "DELETE FROM tourney_tournaments WHERE tournament_id = $1",
                     tournament_id
                 )
                 logger.info("Deleted tournament %s", tournament_id)
@@ -148,7 +148,7 @@ class TournamentService:
             # Upsert tournament
             await conn.execute(
                 """
-                INSERT INTO tournaments (
+                INSERT INTO tourney_tournaments (
                     tournament_id, guild_id, channel_id, phase, size,
                     formation_mode, registration_state, organizer_id,
                     created_at, is_active
@@ -178,7 +178,7 @@ class TournamentService:
             for team in tournament.teams.values():
                 await conn.execute(
                     """
-                    INSERT INTO teams (team_id, tournament_id, name, is_complete)
+                    INSERT INTO tourney_teams (team_id, tournament_id, name, is_complete)
                     VALUES ($1, $2, $3, $4)
                     ON CONFLICT (tournament_id, team_id) DO UPDATE SET
                         name = EXCLUDED.name,
@@ -194,7 +194,7 @@ class TournamentService:
                 for player_id in team.players:
                     await conn.execute(
                         """
-                        INSERT INTO team_players (tournament_id, team_id, player_id)
+                        INSERT INTO tourney_team_players (tournament_id, team_id, player_id)
                         VALUES ($1, $2, $3)
                         ON CONFLICT (tournament_id, team_id, player_id) DO NOTHING
                         """,
@@ -207,7 +207,7 @@ class TournamentService:
             for match in tournament.matches.values():
                 await conn.execute(
                     """
-                    INSERT INTO matches (
+                    INSERT INTO tourney_matches (
                         match_id, tournament_id, team1_id, team2_id,
                         winner_id, is_completed, stats_submitted, match_type
                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -325,7 +325,7 @@ class TournamentService:
         pool = await get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT tournament_id, channel_id FROM tournaments WHERE guild_id = $1 AND is_active = TRUE",
+                "SELECT tournament_id, channel_id FROM tourney_tournaments WHERE guild_id = $1 AND is_active = TRUE",
                 guild_id
             )
 

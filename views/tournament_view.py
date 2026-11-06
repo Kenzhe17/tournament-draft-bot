@@ -9,7 +9,6 @@ import discord
 
 from core.models import TournamentState, TournamentPhase
 from services.tournament_service import TournamentService
-from utils.embeds import build_tournament_embed
 from utils.permissions import is_org_check
 
 logger = logging.getLogger(__name__)
@@ -50,8 +49,8 @@ class TournamentView(discord.ui.View):
 
     async def update_embed(self, interaction: discord.Interaction) -> None:
         """Update tournament embed."""
-        embed = build_tournament_embed(self.tournament)
-        await interaction.response.edit_message(embed=embed, view=self)
+        # TODO: build embed via utils.embeds once migrated
+        await interaction.response.edit_message(view=self)
 
 
 class StartTournamentButton(discord.ui.Button):
