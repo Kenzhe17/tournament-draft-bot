@@ -42,7 +42,7 @@ class ArbiterCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        ""6 Persistent views для активных матчей."""
+        """Persistent views для активных матчей."""
         try:
             await init_arbiter_schema()
             orgs = await _list_orgs()
