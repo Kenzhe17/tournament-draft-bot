@@ -1,5 +1,6 @@
 """View для редактирования профиля."""
 from config import replace_emojis, get_emoji
+from utils.design import partial_emoji
 
 import discord
 from storage.player_stats_store import player_stats_store
@@ -26,6 +27,7 @@ class SettingsButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Настройки",
+            emoji=partial_emoji("settings"),
             custom_id=f"profile_settings:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -52,6 +54,7 @@ class ProfileEditButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Изменить профиль",
+            emoji=partial_emoji("pencil"),
             custom_id=f"profile_edit:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id

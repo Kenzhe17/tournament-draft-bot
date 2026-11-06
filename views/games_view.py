@@ -1,5 +1,6 @@
 """Enhanced view for mini-games menu with categories and game cards."""
 from config import replace_emojis, get_emoji
+from utils.design import DesignEmbed, partial_emoji
 
 import discord
 from discord.ui import Button, View, Select
@@ -91,10 +92,10 @@ class GameCategorySelect(Select):
 
         games_text = "\n".join(games_list)
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
             description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="game"
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         embed.set_footer(text="DISCORD SERVER r1z3")
@@ -178,10 +179,10 @@ class GameSelect(Select):
         else:
             status_text = "В разработке"
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} {game.name.upper()} | Игровой режим",
             description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Канал: <#1561707634938351728>\n{replace_emojis('sub_middle')} Команда: `/{game.command} bet:100`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {get_emoji('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="game"
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         embed.set_footer(text="DISCORD SERVER r1z3")
@@ -224,8 +225,9 @@ class PlayButton(Button):
     def __init__(self, game, user_id: int, guild_id: int):
         is_ready = game.status in ("ready", "available")
         super().__init__(
-            label="Сыграть",
+            label="Играть",
             style=discord.ButtonStyle.primary,
+            emoji=partial_emoji("game"),
             custom_id=f"play_{game.id}",
             disabled=not is_ready
         )
@@ -247,7 +249,7 @@ class PlayButton(Button):
             else:
                 guide_text = "Информация недоступна"
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('📖')} {self.game.name}",
                 description=guide_text,
                 color=discord.Color.from_rgb(218, 165, 32)  # goldenrod
@@ -255,10 +257,10 @@ class PlayButton(Button):
         else:
             command = f"/{self.game.command} bet:100"
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
                 description=f"Играйте на канале <#1561707634938351728>\n\n**Команда:** `{command}`\n\n{replace_emojis('💡')} Скопируйте команду, замените значение ставки и отправьте её в чат.",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="game"
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -271,6 +273,7 @@ class BackToCategoryButton(Button):
         super().__init__(
             label="К категории",
             style=discord.ButtonStyle.secondary,
+            emoji=partial_emoji("back"),
             custom_id=f"back_to_category_{category}"
         )
         self.user_id = user_id
@@ -303,10 +306,10 @@ class BackToCategoryButton(Button):
 
         games_text = "\n".join(games_list)
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {page} из {total_pages}",
             description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('a_dot_smaller')} Игр в категории: {len(games)}\n\n{replace_emojis('white_dot')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="game"
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         embed.set_footer(text="DISCORD SERVER r1z3")
@@ -327,8 +330,9 @@ class BackToMainMenuButton(Button):
 
     def __init__(self, user_id: int, guild_id: int):
         super().__init__(
-            label="🚪 В главное меню",
+            label="Меню",
             style=discord.ButtonStyle.secondary,
+            emoji=partial_emoji("home"),
             custom_id="back_to_main"
         )
         self.user_id = user_id
@@ -345,10 +349,10 @@ class BackToMainMenuButton(Button):
         ready_games = [g for g in all_games if g.status in ("ready", "available")]
         dev_games = [g for g in all_games if g.status == "dev"]
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} � В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
-            color=discord.Color.from_rgb(69, 69, 69)
+            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} 🔒 В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
+            category="game"
         )
         embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
         embed.set_footer(text="DISCORD SERVER r1z3")
@@ -362,8 +366,9 @@ class BackButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="◀",
-            style=discord.ButtonStyle.primary,
+            label="Назад",
+            style=discord.ButtonStyle.secondary,
+            emoji=partial_emoji("back"),
             custom_id=f"back_page_{category}_{page}",
             disabled=page == 1
         )
@@ -395,10 +400,10 @@ class BackButton(Button):
 
             games_text = "\n".join(games_list)
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
                 description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="game"
             )
             embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
             embed.set_footer(text="DISCORD SERVER r1z3")
@@ -419,8 +424,9 @@ class ForwardButton(Button):
 
     def __init__(self, user_id: int, guild_id: int, category: str, page: int, total_pages: int):
         super().__init__(
-            label="▶",
-            style=discord.ButtonStyle.primary,
+            label="Вперёд",
+            style=discord.ButtonStyle.secondary,
+            emoji=partial_emoji("forward"),
             custom_id=f"forward_page_{category}_{page}",
             disabled=page == total_pages
         )
@@ -452,10 +458,10 @@ class ForwardButton(Button):
 
             games_text = "\n".join(games_list)
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('a_star')} {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
                 description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="game"
             )
             embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
             embed.set_footer(text="DISCORD SERVER r1z3")

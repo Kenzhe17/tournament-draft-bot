@@ -6,6 +6,7 @@ from datetime import datetime
 
 from storage.match_history_store import match_history_store
 from models.match_history import MatchHistory
+from utils.design import DesignEmbed
 
 
 class HistoryView(discord.ui.View):
@@ -170,10 +171,10 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
 
         title = f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ"
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=title,
             description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="stats"
         )
     else:
         # Показываем конкретный матч (page - 1 = индекс в списке, так как page 0 это статистика)
@@ -217,16 +218,16 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             if match.bet_amount > 0:
                 description_parts.append(f"{replace_emojis('a_dot_smaller')} Ставка: {match.bet_amount} → {match.bet_win} {get_emoji('money')}")
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
                 description="\n".join(description_parts),
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="stats"
             )
         else:
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ",
                 description="Матч не найден",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="neutral"
             )
 
     return embed

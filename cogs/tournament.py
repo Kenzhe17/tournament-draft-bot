@@ -26,6 +26,7 @@ from storage.user_balance_store import user_balance_store
 from storage.user_bank_store import user_bank_store
 from storage.betting_stats_store import betting_stats_store
 from utils.embeds import build_setup_embed
+from utils.design import DesignEmbed
 from utils.permissions import is_admin, is_org, is_bot_owner, is_channel_organizer_decorator
 from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
 from views.org_role_view import setup_org_role_message
@@ -476,13 +477,13 @@ class TournamentCog(commands.Cog):
         safe = await user_bank_store.get_bank_balance(interaction.guild_id, interaction.user.id)
         total = cash + safe
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{get_emoji('a_star')} **БАЛАНС ПОЛЬЗОВАТЕЛЯ | /balance**",
             description=f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n{get_emoji('white_arrow')} **Наличные:** **`{cash:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **В сейфе:** **`{safe:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **Всего:** **`{total:,}`** {get_emoji('money')}\n\n{get_emoji('white_dot')} *Используйте `/daily` для получения награды или посетите магазин.*",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="economy",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         try:
             await interaction.response.send_message(embed=embed, ephemeral=False)
@@ -584,12 +585,12 @@ class TournamentCog(commands.Cog):
             rank = get_rank_emoji(stats.level)
 
         # Создать embed в новом формате
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="economy",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
         embed.description = (
             f"Добро пожаловать в игровой магазин {replace_emojis('a_star')}\n"
             f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
@@ -718,13 +719,13 @@ class TournamentCog(commands.Cog):
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Максимум 1 тег и 1 значок одновременно")
 
         # Создать embed
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} ИНВЕНТАРЬ ПОЛЬЗОВАТЕЛЯ",
             description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="economy",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Создать View с select menu
         view = discord.ui.View()
@@ -784,13 +785,13 @@ class TournamentCog(commands.Cog):
         ready_games = [g for g in all_games if g.status in ("ready", "available")]
         dev_games = [g for g in all_games if g.status == "dev"]
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} МИНИ-ИГРЫ | Главное меню",
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} 🔒 В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="game",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -1203,13 +1204,13 @@ class TournamentCog(commands.Cog):
                     description_parts.append("")
 
         # Создать embed
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
             description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="profile",
+            author=target_user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
@@ -1292,13 +1293,13 @@ class TournamentCog(commands.Cog):
         progress_bar = create_progress_bar(current_xp, xp_needed)
         xp_remaining = xp_needed - current_xp
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n{replace_emojis('sub_middle')} Уровень: Level {stats.level}\n{replace_emojis('sub_directory')} Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n{replace_emojis('sub_middle')} Прогресс: `{progress_bar}` ({progress_percent}%)\n{replace_emojis('sub_directory')} До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="profile",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         await interaction.response.send_message(embed=embed)
 
@@ -1319,13 +1320,13 @@ class TournamentCog(commands.Cog):
         accuracy = stats["success_rate"]
         lost_bets = stats["total_bets"] - stats["successful_bets"]
 
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"{replace_emojis('a_star')} СТАТИСТИКА СТАВОК | /bet",
             description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {get_emoji('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="economy",
+            author=interaction.user,
+            footer="DISCORD SERVER r1z3"
         )
-        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-        embed.set_footer(text="DISCORD SERVER r1z3")
 
         await interaction.response.send_message(embed=embed)
 
@@ -2024,12 +2025,12 @@ class TournamentCog(commands.Cog):
             )
 
             fee_display = int(base_fee_percent * 100)
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=replace_emojis("Передача монет"),
-                color=discord.Color.green()
+                category="success",
+                author=interaction.user,
+                footer="DISCORD SERVER r1z3"
             )
-            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="DISCORD SERVER r1z3")
             embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
@@ -2171,26 +2172,26 @@ class TournamentCog(commands.Cog):
             else:  # tag
                 item_display = f"**{item.value}**"
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title="Передача предмета",
                 description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** {int(base_fee_percent * 100)}% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}{pet_bonus_text}",
-                color=discord.Color.green()
+                category="success",
+                author=interaction.user,
+                footer="DISCORD SERVER r1z3"
             )
-            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
         elif result['compensated']:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title="Передача не удалась",
                 description=f"{interaction.user.mention}, у получателя уже есть этот предмет. Комиссия возвращена.",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="warning",
+                author=interaction.user,
+                footer="DISCORD SERVER r1z3"
             )
-            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
         else:
@@ -2388,13 +2389,13 @@ class TournamentCog(commands.Cog):
             # Fire emoji for streaks
             fire_emoji = "🔥" if streak >= 3 else ""
 
-            embed = discord.Embed(
+            embed = DesignEmbed(
                 title=f"{replace_emojis('a_star')} ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
                 description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {get_emoji('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
-                color=discord.Color.from_rgb(69, 69, 69)
+                category="economy",
+                author=interaction.user,
+                footer="DISCORD SERVER r1z3"
             )
-            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
-            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 

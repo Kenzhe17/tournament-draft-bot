@@ -5,6 +5,7 @@ from __future__ import annotations
 import discord
 
 from config import ORGANIZER_THUMBNAIL_URL, replace_emojis, get_emoji
+from utils.design import DesignEmbed
 # ДОБАВЛЕНО: TournamentSize в список импорта
 from models.tournament import FormationMode, RegistrationState, Tournament, TournamentPhase, TournamentSize
 from storage.bet_store import bet_store
@@ -252,7 +253,7 @@ def build_help_category_embed(category: str) -> discord.Embed:
     }
 
     cat_data = categories.get(category, categories["tournament"])
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{cat_data['emoji']} {cat_data['title']}",
         color=cat_data['color']
     )
@@ -327,10 +328,10 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
     stats = await player_stats_store.get(guild_id, user.id)
 
     if not stats:
-        embed = discord.Embed(
+        embed = DesignEmbed(
             title=f"📊 Статистика {user.display_name}",
             description="❌ Статистика не найдена. Игрок ещё не участвовал в турнирах.",
-            color=discord.Color.red()
+            category="error"
         )
         return embed
 
@@ -346,9 +347,9 @@ async def build_player_stats_embed(guild_id: int, user: discord.Member) -> disco
     elo_diff = stats.elo - server_avg_elo
     elo_diff_text = f"+{elo_diff}" if elo_diff > 0 else str(elo_diff)
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"📊 Статистика {user.display_name}",
-        color=discord.Color.dark_blue()
+        category="stats"
     )
 
     # Basic stats
@@ -629,10 +630,10 @@ async def build_setup_embed(
             f"{replace_emojis('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} {tournament.size.value} | {status_text} | {formation_text}",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
     return embed
@@ -718,10 +719,10 @@ async def build_draft_embed(
         + warning
     )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} ⚔️ Порядок капитанов | Фаза Драфта",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
     return embed
@@ -733,7 +734,7 @@ async def build_teams_embed(
     """Embed с итоговыми командами (deprecated - skipped)."""
     # This function is kept for backward compatibility but shouldn't be used
     # since we skip the TEAMS phase now
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title="🏆 Сформированные Команды",
         color=discord.Color.dark_green(),
     )
@@ -800,10 +801,10 @@ async def build_qualifiers_embed(
         + "\n\n".join(matches_section) + "\n\n\n"
     )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ОТБОР",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
     if footer:
@@ -900,10 +901,10 @@ async def build_semifinals_embed(
         + "\n\n".join(matches_section) + "\n\n\n"
     )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
     if footer:
@@ -992,10 +993,10 @@ async def build_final_embed(
         f"{replace_emojis('white_dot')} **Участники команд:**\n"
     )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
     if footer:
@@ -1047,10 +1048,10 @@ async def build_winner_embed(
 
     idx = tournament.winner_team_index
     if idx is None:
-        return discord.Embed(
+        return DesignEmbed(
             title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
             description="Победитель не определен",
-            color=discord.Color.from_rgb(69, 69, 69)
+            category="tournament"
         )
 
     # Get winning team captain name and full roster
@@ -1219,10 +1220,10 @@ async def build_winner_embed(
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        category="tournament"
     )
 
 
@@ -1248,7 +1249,7 @@ async def build_embed_for_phase(
         return await build_final_embed(tournament, guild)
     if phase == TournamentPhase.COMPLETE:
         return await build_winner_embed(tournament, guild)
-    return discord.Embed(title="Ошибка", color=discord.Color.red())
+    return DesignEmbed(title="Ошибка", category="error")
 
 
 def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed:
@@ -1257,7 +1258,7 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     current_xp, xp_needed = stats.get_level_progress()
     progress_bar = create_progress_bar(current_xp, xp_needed)
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title="🎉 ПОВЫШЕНИЕ УРОВНЯ!",
         color=discord.Color.gold(),
     )
@@ -1321,7 +1322,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     else:
         total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
-    embed = discord.Embed(
+    embed = DesignEmbed(
         title=title,
         color=color,
     )
