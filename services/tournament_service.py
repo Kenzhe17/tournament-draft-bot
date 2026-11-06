@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from core.models import (
@@ -14,7 +15,7 @@ from core.models import (
     Team,
     Match,
 )
-from storage.db import db_pool
+from storage.db import get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +53,68 @@ class TournamentService:
     @staticmethod
     async def get_tournament(guild_id: int, channel_id: int) -> Optional[TournamentState]:
         """Get tournament by guild and channel."""
-        # TODO: Implement database query
-        return None
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM tournaments WHERE guild_id = $1 AND channel_id = $2",
+                guild_id, channel_id
+            )
+
+            if not row:
+                return None
+
+            # Load tournament state
+            tournament = TournamentState(
+                tournament_id=row["tournament_id"],
+                guild_id=row["guild_id"],
+                channel_id=row["channel_id"],
+                phase=TournamentPhase(row["phase"]),
+                size=TournamentSize(row["size"]),
+                formation_mode=FormationMode(row["formation_mode"]),
+                registration_state=RegistrationState(row["registration_state"]),
+                organizer_id=row["organizer_id"],
+                created_at=row["created_at"],
+                is_active=row["is_active"],
+            )
+
+            # Load teams
+            team_rows = await conn.fetch(
+                "SELECT * FROM teams WHERE tournament_id = $1",
+                tournament.tournament_id
+            )
+            for team_row in team_rows:
+                team = Team(
+                    team_id=team_row["team_id"],
+                    name=team_row["name"],
+                    is_complete=team_row["is_complete"],
+                )
+
+                # Load team players
+                player_rows = await conn.fetch(
+                    "SELECT player_id FROM team_players WHERE tournament_id = $1 AND team_id = $2",
+                    tournament.tournament_id, team.team_id
+                )
+                team.players = [row["player_id"] for row in player_rows]
+
+                tournament.teams[team.team_id] = team
+
+            # Load matches
+            match_rows = await conn.fetch(
+                "SELECT * FROM matches WHERE tournament_id = $1",
+                tournament.tournament_id
+            )
+            for match_row in match_rows:
+                match = Match(
+                    match_id=match_row["match_id"],
+                    team1_id=match_row["team1_id"],
+                    team2_id=match_row["team2_id"],
+                    winner_id=match_row["winner_id"],
+                    is_completed=match_row["is_completed"],
+                    stats_submitted=match_row["stats_submitted"],
+                )
+                tournament.matches[match.match_id] = match
+
+            return tournament
 
     @staticmethod
     async def update_tournament(tournament: TournamentState) -> None:
@@ -63,14 +124,110 @@ class TournamentService:
     @staticmethod
     async def delete_tournament(guild_id: int, channel_id: int) -> None:
         """Delete tournament."""
-        # TODO: Implement database query
-        pass
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Get tournament_id first
+            row = await conn.fetchrow(
+                "SELECT tournament_id FROM tournaments WHERE guild_id = $1 AND channel_id = $2",
+                guild_id, channel_id
+            )
+            if row:
+                tournament_id = row["tournament_id"]
+                # Delete related data (cascade will handle teams, matches, etc.)
+                await conn.execute(
+                    "DELETE FROM tournaments WHERE tournament_id = $1",
+                    tournament_id
+                )
+                logger.info("Deleted tournament %s", tournament_id)
 
     @staticmethod
     async def _save_tournament(tournament: TournamentState) -> None:
         """Save tournament to database."""
-        # TODO: Implement PostgreSQL storage
-        pass
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # Upsert tournament
+            await conn.execute(
+                """
+                INSERT INTO tournaments (
+                    tournament_id, guild_id, channel_id, phase, size,
+                    formation_mode, registration_state, organizer_id,
+                    created_at, is_active
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT (tournament_id) DO UPDATE SET
+                    phase = EXCLUDED.phase,
+                    size = EXCLUDED.size,
+                    formation_mode = EXCLUDED.formation_mode,
+                    registration_state = EXCLUDED.registration_state,
+                    organizer_id = EXCLUDED.organizer_id,
+                    created_at = EXCLUDED.created_at,
+                    is_active = EXCLUDED.is_active
+                """,
+                tournament.tournament_id,
+                tournament.guild_id,
+                tournament.channel_id,
+                tournament.phase.value,
+                tournament.size.value,
+                tournament.formation_mode.value,
+                tournament.registration_state.value,
+                tournament.organizer_id,
+                tournament.created_at,
+                tournament.is_active,
+            )
+
+            # Save teams
+            for team in tournament.teams.values():
+                await conn.execute(
+                    """
+                    INSERT INTO teams (team_id, tournament_id, name, is_complete)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (tournament_id, team_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        is_complete = EXCLUDED.is_complete
+                    """,
+                    team.team_id,
+                    tournament.tournament_id,
+                    team.name,
+                    team.is_complete,
+                )
+
+                # Save team players
+                for player_id in team.players:
+                    await conn.execute(
+                        """
+                        INSERT INTO team_players (tournament_id, team_id, player_id)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (tournament_id, team_id, player_id) DO NOTHING
+                        """,
+                        tournament.tournament_id,
+                        team.team_id,
+                        player_id,
+                    )
+
+            # Save matches
+            for match in tournament.matches.values():
+                await conn.execute(
+                    """
+                    INSERT INTO matches (
+                        match_id, tournament_id, team1_id, team2_id,
+                        winner_id, is_completed, stats_submitted, match_type
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    ON CONFLICT (match_id) DO UPDATE SET
+                        team1_id = EXCLUDED.team1_id,
+                        team2_id = EXCLUDED.team2_id,
+                        winner_id = EXCLUDED.winner_id,
+                        is_completed = EXCLUDED.is_completed,
+                        stats_submitted = EXCLUDED.stats_submitted,
+                        match_type = EXCLUDED.match_type
+                    """,
+                    match.match_id,
+                    tournament.tournament_id,
+                    match.team1_id,
+                    match.team2_id,
+                    match.winner_id,
+                    match.is_completed,
+                    match.stats_submitted,
+                    match.match_id.split("_")[-1],  # Extract match type from ID
+                )
 
     @staticmethod
     def add_player(tournament: TournamentState, player_id: int, player_name: str) -> bool:
@@ -163,7 +320,19 @@ class TournamentService:
         return True
 
     @staticmethod
-    def get_active_tournaments(guild_id: int) -> list[TournamentState]:
+    async def get_active_tournaments(guild_id: int) -> list[TournamentState]:
         """Get all active tournaments for guild."""
-        # TODO: Implement database query
-        return []
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT tournament_id, channel_id FROM tournaments WHERE guild_id = $1 AND is_active = TRUE",
+                guild_id
+            )
+
+            tournaments = []
+            for row in rows:
+                tournament = await TournamentService.get_tournament(guild_id, row["channel_id"])
+                if tournament:
+                    tournaments.append(tournament)
+
+            return tournaments

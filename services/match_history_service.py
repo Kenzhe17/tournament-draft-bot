@@ -6,7 +6,7 @@ import logging
 from typing import Optional
 
 from models.match_history import MatchHistory
-from storage.db import db_pool
+from storage.db import get_pool
 
 logger = logging.getLogger(__name__)
 
@@ -26,18 +26,24 @@ class MatchHistoryService:
         elo_change: int,
     ) -> None:
         """Save match history for player."""
-        history = MatchHistory(
-            tournament_id=tournament_id,
-            match_id=match_id,
-            player_id=player_id,
-            player_name=player_name,
-            kills=kills,
-            deaths=deaths,
-            won=won,
-            elo_change=elo_change,
-        )
-
-        await MatchHistoryService._save_history(history)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO match_history (
+                    tournament_id, match_id, player_id, player_name,
+                    kills, deaths, won, elo_change
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """,
+                tournament_id,
+                match_id,
+                player_id,
+                player_name,
+                kills,
+                deaths,
+                won,
+                elo_change,
+            )
 
     @staticmethod
     async def get_player_history(player_id: int, limit: int = 10) -> list[MatchHistory]:
