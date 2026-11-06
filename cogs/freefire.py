@@ -15,6 +15,7 @@ from services.freefire_service import (
     freefire_service,
 )
 from utils.design import DesignEmbed, emoji
+from utils.design.cv2 import design_card
 
 logger = logging.getLogger(__name__)
 
@@ -142,31 +143,13 @@ async def ff_info(
 
     nickname = basic.get("nickname", "Unknown")
     signature = social.get("signature") or ""
-    embed = DesignEmbed(
-        title=f"{emoji('game')} FREE FIRE | Профиль",
-        description=(
-            f"**{nickname}** — ID `{uid}`" + (f"\n{signature}" if signature else "")
-        ),
-        category="game",
-        footer="DISCORD SERVER r1z3",
-    )
 
     def _num(key: str):
         v = basic.get(key)
         return f"{v:,}" if isinstance(v, int) else (v if v is not None else "—")
 
-    embed.add_section(
-        f"{emoji('stats')} Основное",
-        "\n".join(
-            [
-                f"• Уровень: **{basic.get('level', '—')}**",
-                f"• Ранг: **{basic.get('rank', '—')}** (макс: {basic.get('maxRank', '—')})",
-                f"• Очки рейтинга: **{_num('rankingPoints')}**",
-                f"• Лайки: **{_num('liked')}**",
-                f"• Регион: {str(basic.get('region', region.value)).upper()}",
-            ]
-        ),
-    )
+    avatar = (basic.get("avatar") or basic.get("headpic")
+              or basic.get("profilePic") or basic.get("profile_pic"))
 
     team_lines = []
     clan_name = clan.get("clanName") or guild.get("name") or guild.get("guildName")
@@ -174,10 +157,25 @@ async def ff_info(
         team_lines.append(f"• {clan.get('clanName') and 'Клан' or 'Гильдия'}: **{clan_name}**")
     if clan.get("memberNum") is not None:
         team_lines.append(f"• Участники: {clan.get('memberNum', '—')}/{clan.get('capacity', '—')}")
-    if team_lines:
-        embed.add_section(f"{emoji('team')} Команда", "\n".join(team_lines))
 
-    await interaction.followup.send(embed=embed)
+    view = design_card(
+        category="game",
+        title="FREE FIRE | Профиль",
+        description=(
+            f"**{nickname}** — ID `{uid}`" + (f"\n{signature}" if signature else "")
+        ),
+        thumbnail_url=avatar if isinstance(avatar, str) and avatar.startswith("http") else None,
+        kv=[
+            ("Уровень", str(basic.get("level", "—"))),
+            ("Ранг", f"{basic.get('rank', '—')} (макс: {basic.get('maxRank', '—')})"),
+            ("Очки рейтинга", str(_num("rankingPoints"))),
+            ("Лайки", str(_num("liked"))),
+            ("Регион", str(basic.get("region", region.value)).upper()),
+        ],
+        sections=[("Команда", "\n".join(team_lines))] if team_lines else None,
+        footer="DISCORD SERVER r1z3",
+    )
+    await interaction.followup.send(view=view)
 
 
 # ----------------------------------------------------------------- /ff stats
@@ -218,14 +216,14 @@ async def ff_stats(
     lines = [f"**{k}** — {_fmt_value(v)}"
              for k, v in _scalar_items(stats, limit=15)]
 
-    embed = DesignEmbed(
-        title=f"{emoji('stats')} FREE FIRE | Статистика",
-        description=(f"ID `{uid}` • режим: **{mode.name}**\n\n"
-                     + ("\n".join(lines) if lines else "Данные отсутствуют.")),
+    view = design_card(
         category="game",
+        title="FREE FIRE | Статистика",
+        description=f"ID `{uid}` • режим: **{mode.name}**",
+        sections=[("Показатели", "\n".join(lines) if lines else "Данные отсутствуют.")],
         footer="DISCORD SERVER r1z3",
     )
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(view=view)
 
 
 # ------------------------------------------------------------------- /ff ban
@@ -247,24 +245,24 @@ async def ff_ban(interaction: discord.Interaction, uid: str) -> None:
     nickname = result.get("nickname", "")
 
     if "not banned" in ban_status or "no ban" in ban_status:
-        embed = DesignEmbed(
-            title=f"{emoji('check')} FREE FIRE | Бан",
+        view = design_card(
+            category="success",
+            title="FREE FIRE | Бан",
             description=f"Аккаунт `{uid}` **не забанен**."
                         + (f"\nИгрок: **{nickname}**" if nickname else ""),
-            category="success",
             footer="DISCORD SERVER r1z3",
         )
     else:
         desc = f"Аккаунт `{uid}` — статус: **{result.get('ban_status', 'banned')}**"
         if period:
-            desc += f"\n{emoji('timer')} Период: **{period}**"
-        embed = DesignEmbed(
-            title=f"{emoji('ban')} FREE FIRE | Бан",
-            description=desc,
+            desc += f"\nПериод: **{period}**"
+        view = design_card(
             category="error",
+            title="FREE FIRE | Бан",
+            description=desc,
             footer="DISCORD SERVER r1z3",
         )
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(view=view)
 
 
 # ---------------------------------------------------------------- /ff banner
@@ -297,13 +295,13 @@ async def ff_banner(
         return
 
     file = discord.File(io.BytesIO(data), filename=f"ff_banner_{uid}.png")
-    embed = DesignEmbed(
-        title=f"{emoji('profile')} FREE FIRE | Баннер",
-        description=f"ID `{uid}`",
+    view = design_card(
         category="game",
+        title="FREE FIRE | Баннер",
+        description=f"ID `{uid}`",
         footer="DISCORD SERVER r1z3",
     )
-    await interaction.followup.send(embed=embed, file=file)
+    await interaction.followup.send(view=view, file=file)
 
 
 # --------------------------------------------------------------- /ff wishlist
@@ -337,16 +335,14 @@ async def ff_wishlist(
             name = str(item)
         lines.append(f"• {name}")
 
-    embed = DesignEmbed(
-        title=f"{emoji('star')} FREE FIRE | Вишлист",
-        description=(
-            f"ID `{uid}` — предметов: **{len(items)}**\n\n"
-            + ("\n".join(lines) if lines else "Вишлист пуст.")
-        ),
+    view = design_card(
         category="game",
+        title="FREE FIRE | Вишлист",
+        description=f"ID `{uid}` — предметов: **{len(items)}**",
+        sections=[("Предметы", "\n".join(lines) if lines else "Вишлист пуст.")],
         footer="DISCORD SERVER r1z3",
     )
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(view=view)
 
 
 # ------------------------------------------------------------- /ff craftland
@@ -381,19 +377,16 @@ async def ff_craftland(
         else []
     )
 
-    embed = DesignEmbed(
-        title=f"{emoji('game')} FREE FIRE | Craftland",
-        description=f"Карта `{code.strip()}`",
+    view = design_card(
         category="game",
+        title="FREE FIRE | Craftland",
+        description=f"Карта `{code.strip()}`",
+        sections=[("Информация",
+                   "\n".join(f"• **{k}** — {_fmt_value(v)}" for k, v in fields)
+                   if fields else "Детали карты недоступны.")],
         footer="DISCORD SERVER r1z3",
     )
-    embed.add_section(
-        f"{emoji('info')} Информация",
-        "\n".join(f"• **{k}** — {_fmt_value(v)}" for k, v in fields)
-        if fields
-        else "Детали карты недоступны.",
-    )
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(view=view)
 
 
 async def setup(bot) -> None:

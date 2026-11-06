@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from arbiter.db import init_arbiter_schema
 from arbiter.enums import OrgRole, TournamentFormat
-from arbiter.panels.match_panel import MatchPanelView, build_match_embed
+from arbiter.panels.match_panel import MatchPanelView, render_match_panel
 from arbiter.services.bracket_service import BracketError, bracket_service
 from arbiter.services.br_service import BrError, br_service
 from arbiter.services.match_service import MatchError, match_service
@@ -250,9 +250,8 @@ class ArbiterCog(commands.Cog):
                 org.id, team_a, team_b, best_of=best_of,
                 channel_id=str(target.id), created_by_id=profile.id,
             )
-            view = MatchPanelView(match.id)
-            msg = await target.send(embed=build_match_embed(match), view=view)
-            self.bot.add_view(view)
+            msg = await render_match_panel(target, match)
+            self.bot.add_view(MatchPanelView(match.id))
             await match_service.set_control_message(match, str(target.id), str(msg.id))
             await interaction.followup.send(
                 embed=DesignEmbed(category="success", title="Матч создан",
@@ -300,9 +299,8 @@ class ArbiterCog(commands.Cog):
             if not org or match.organization_id != org.id:
                 raise OrgError("Матч не принадлежит этой организации.")
             target = interaction.channel
-            view = MatchPanelView(match.id)
-            msg = await target.send(embed=build_match_embed(match), view=view)
-            self.bot.add_view(view)
+            msg = await render_match_panel(target, match)
+            self.bot.add_view(MatchPanelView(match.id))
             await match_service.set_control_message(match, str(target.id), str(msg.id))
             await interaction.followup.send("Панель отправлена.", ephemeral=True)
         except (OrgError, MatchError) as e:

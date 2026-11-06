@@ -28,6 +28,7 @@ from utils.design.components import (
     design_button,
     design_select,
 )
+from utils.design.cv2 import CV2Card, CV2ActionRow, design_card, design_action_row
 
 __all__ = [
     "BG", "DIVIDER", "TEXT", "TEXT_SECONDARY", "TEXT_MUTED",
@@ -36,4 +37,5 @@ __all__ = [
     "fmt_int", "fmt_money", "fmt_percent", "fmt_rating", "fmt_games", "fmt_xp",
     "DesignEmbed", "section", "kv",
     "ButtonRole", "design_button", "design_select",
+    "CV2Card", "CV2ActionRow", "design_card", "design_action_row",
 ]

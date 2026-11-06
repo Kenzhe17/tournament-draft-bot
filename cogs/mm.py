@@ -37,7 +37,17 @@ class MMCog(commands.Cog):
     def __init__(self, bot: TournamentBot):
         self.bot = bot
         self._search_timers: dict[tuple[int, int], asyncio.Task] = {}
+        # (guild_id, search_channel_id) -> временный войс-канал лобби
+        self._voice_channels: dict[tuple[int, int], int] = {}
+        self._voice_cleanup_task: asyncio.Task | None = None
         self.bot.mm_cog = self  # Регистрация для доступа из view
+
+    async def cog_load(self) -> None:
+        self._voice_cleanup_task = asyncio.create_task(self._voice_cleanup_loop())
+
+    async def cog_unload(self) -> None:
+        if self._voice_cleanup_task:
+            self._voice_cleanup_task.cancel()
 
     mm_group = app_commands.Group(name="mm", description="Matchmaking поиск")
 
@@ -366,6 +376,9 @@ class MMCog(commands.Cog):
 
         logger.info("Создан турнир из поиска %s в канале %s", search.format.value, tournament_channel.id)
 
+        # Временная войс-комната лобби для игроков (как в team-matchmaking референсе)
+        await self._create_lobby_voice(guild, search, tournament_channel)
+
         # Разблокировать канал после создания турнира
         if tournament_channel_id in LOCKED_CHANNELS:
             del LOCKED_CHANNELS[tournament_channel_id]
@@ -382,6 +395,60 @@ class MMCog(commands.Cog):
             await search_message.edit(embed=search_embed, view=search_view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
+
+    # ---------- временная войс-комната лобби ----------
+
+    async def _create_lobby_voice(self, guild: discord.Guild, search: MMSearch,
+                                  tournament_channel: discord.TextChannel) -> None:
+        """Создать временный войс для игроков поиска (auto-cleanup)."""
+        try:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(connect=False),
+                guild.me: discord.PermissionOverwrite(
+                    connect=True, manage_channels=True),
+            }
+            for uid in search.player_user_ids.values():
+                if not uid or uid <= 0:
+                    continue
+                member = guild.get_member(uid)
+                if member:
+                    overwrites[member] = discord.PermissionOverwrite(
+                        connect=True, view_channel=True, speak=True)
+            vc = await guild.create_voice_channel(
+                name=f"mm-lobby-{len(search.players)}",
+                overwrites=overwrites,
+                reason="MM lobby",
+            )
+            self._voice_channels[(guild.id, search.channel_id)] = vc.id
+            await tournament_channel.send(
+                f"{replace_emojis('white_arrow Лобби')}: {vc.mention}")
+            logger.info("MM lobby voice created: %s", vc.id)
+        except Exception as e:
+            logger.warning("MM lobby voice failed: %s", e)
+
+    async def _delete_lobby_voice(self, guild_id: int, channel_id: int) -> None:
+        """Удалить временный войс лобби, если он есть."""
+        key = (guild_id, channel_id)
+        vc_id = self._voice_channels.pop(key, None)
+        if not vc_id:
+            return
+        guild = self.bot.get_guild(guild_id)
+        vc = guild.get_channel(vc_id) if guild else None
+        if vc:
+            try:
+                await vc.delete(reason="MM lobby closed")
+            except Exception as e:
+                logger.warning("MM lobby voice delete failed: %s", e)
+
+    async def _voice_cleanup_loop(self) -> None:
+        """Каждые 60 сек удалять пустые/несуществующие лобби-каналы."""
+        while True:
+            await asyncio.sleep(60)
+            for (guild_id, channel_id), vc_id in list(self._voice_channels.items()):
+                guild = self.bot.get_guild(guild_id)
+                vc = guild.get_channel(vc_id) if guild else None
+                if vc is None or len(vc.members) == 0:
+                    await self._delete_lobby_voice(guild_id, channel_id)
 
     async def reset_search_limit(self, guild_id: int) -> None:
         """Сбросить выбранный канал поиска если освободился турнир."""
@@ -415,6 +482,14 @@ class MMCog(commands.Cog):
         if channel_id in LOCKED_CHANNELS:
             del LOCKED_CHANNELS[channel_id]
             logger.info(f"Channel {channel_id} unlocked after tournament completion")
+        # Закрыть лобби-войс, связанный с этим каналом турнира
+        for (gid, search_ch), vc_id in list(self._voice_channels.items()):
+            if gid == guild_id:
+                guild = self.bot.get_guild(gid)
+                vc = guild.get_channel(vc_id) if guild else None
+                # Если войс пуст — удаляем сразу
+                if vc is None or len(vc.members) == 0:
+                    await self._delete_lobby_voice(gid, search_ch)
 
 
 async def setup(bot: TournamentBot) -> None:

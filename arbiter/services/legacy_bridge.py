@@ -17,7 +17,7 @@ import logging
 import discord
 
 from arbiter.models import Match
-from arbiter.panels.match_panel import MatchPanelView, build_match_embed
+from arbiter.panels.match_panel import MatchPanelView, render_match_panel
 from arbiter.services.match_service import match_service
 from arbiter.services.org_service import org_service
 
@@ -107,9 +107,8 @@ async def ensure_matches_for_phase(bot, guild: discord.Guild, tournament) -> Non
                     created_by_id=str(organizer_id) if organizer_id else None,
                     external_ref=ref,
                 )
-            view = MatchPanelView(existing.id)
-            msg = await channel.send(embed=build_match_embed(existing), view=view)
-            bot.add_view(view)
+            msg = await render_match_panel(channel, existing)
+            bot.add_view(MatchPanelView(existing.id))
             await match_service.set_control_message(existing, str(channel.id), str(msg.id))
             logger.info("legacy_bridge: arbiter match %s for %s",
                         existing.public_code, ref)

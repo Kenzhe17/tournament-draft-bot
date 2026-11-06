@@ -108,38 +108,89 @@ def build_match_embed(
     return embed
 
 
+def build_match_cv2_items(
+    match: Match,
+    map_results: list[MapResult] | None = None,
+    vetoes: list | None = None,
+    refs: list | None = None,
+) -> list:
+    """CV2-блоки состояния матча (Container с accent-цветом категории)."""
+    from discord import ui as _ui
+    from utils.design.cv2 import _color
+
+    items: list = [
+        _ui.TextDisplay(f"## Матч {match.public_code} — BO{match.best_of}"),
+        _ui.TextDisplay(f"**{match.team_a_name}** vs **{match.team_b_name}**"),
+        _ui.Separator(visible=False, spacing=discord.SeparatorSpacing.small),
+        _ui.TextDisplay(
+            f"**Статус** — {_STATUS_LABEL.get(match.status, match.status.value)}\n"
+            f"**Счёт** — **{match.team_a_score}** — **{match.team_b_score}**"),
+    ]
+    if match.final_map:
+        items.append(_ui.TextDisplay(f"**Финальная карта** — {match.final_map}"))
+    if match.dispute_reason:
+        items.append(_ui.TextDisplay(f"**Диспут** — {match.dispute_reason[:200]}"))
+
+    if map_results:
+        lines = [
+            f"Карта {mr.map_index + 1} ({mr.map_name}): "
+            f"**{mr.team_a_score}**—**{mr.team_b_score}**"
+            for mr in map_results
+        ]
+        items.append(_ui.TextDisplay(
+            f"**Карты**\n" + ("\n".join(lines) if lines else "—")))
+
+    if vetoes:
+        lines = [f"{v.kind.value}: {v.team_slot} → {v.map_name}" for v in vetoes]
+        items.append(_ui.TextDisplay(
+            f"**Veto/Баны**\n" + ("\n".join(lines) if lines else "—")))
+
+    if refs:
+        names = [f"<@{a.discord_user_id}>" if a.discord_user_id else "—"
+                 for a in refs]
+        items.append(_ui.TextDisplay(
+            f"**Судьи** — {', '.join(names) if names else '—'}"))
+
+    items.append(_ui.TextDisplay(f"-# ID: {match.id}"))
+    category = _STATUS_CATEGORY.get(match.status, "neutral")
+    return [_ui.Container(*items, accent_colour=_color(category))]
+
+
 async def render_match_panel(channel: discord.abc.Messageable, match: Match,
                              *, view: ui.View | None = None) -> discord.Message:
-    """Отправить/обновить панель матча в канале."""
+    """Отправить/обновить панель матча в канале (Components V2)."""
     results = await match_service.list_map_results(match.id)
     vetoes = await match_service.list_veto_actions(match.id)
     refs = await match_service.list_active_refs(match.id)
-    # маппим profile_id -> discord_user_id для отображения
     refs_display = []
     for a in refs:
         p = await org_service.get_profile_by_id(a.user_profile_id)
         refs_display.append(type("R", (), {"discord_user_id": p.discord_user_id if p else None})())
-    embed = build_match_embed(match, results, vetoes, refs_display)
-    v = view or MatchPanelView(match.id)
-    return await channel.send(embed=embed, view=v)
+    v = view or MatchPanelView(match.id, match, results, vetoes, refs_display)
+    return await channel.send(view=v)
 
 
-class MatchPanelView(ui.View):
-    """Persistent view панели матча."""
+class MatchPanelView(ui.LayoutView):
+    """Persistent CV2-панель матча (LayoutView + ActionRow кнопок)."""
 
-    def __init__(self, match_id: str):
+    def __init__(self, match_id: str, match: Match | None = None,
+                 map_results=None, vetoes=None, refs=None):
         super().__init__(timeout=None)
         self.match_id = match_id
-        self._build_buttons()
-
-    def _build_buttons(self) -> None:
-        for action, label, ek, role in _ACTIONS:
-            btn = design_button(
-                label, emoji=ek, role=role,
-                custom_id=_cid(self.match_id, action),
-            )
-            btn.callback = self._make_callback(action)
-            self.add_item(btn)
+        if match is not None:
+            for item in build_match_cv2_items(match, map_results, vetoes, refs):
+                self.add_item(item)
+        # 9 кнопок -> 2 ActionRow (макс. 5 кнопок в ряду)
+        for chunk in (_ACTIONS[:5], _ACTIONS[5:]):
+            row = ui.ActionRow()
+            for action, label, ek, role in chunk:
+                btn = design_button(
+                    label, emoji=ek, role=role,
+                    custom_id=_cid(self.match_id, action),
+                )
+                btn.callback = self._make_callback(action)
+                row.add_item(btn)
+            self.add_item(row)
 
     def _make_callback(self, action: str):
         async def cb(interaction: discord.Interaction) -> None:
@@ -174,8 +225,8 @@ class MatchPanelView(ui.View):
         for a in refs:
             p = await org_service.get_profile_by_id(a.user_profile_id)
             refs_display.append(type("R", (), {"discord_user_id": p.discord_user_id if p else None})())
-        await interaction.response.edit_message(
-            embed=build_match_embed(match, results, vetoes, refs_display), view=self)
+        new_view = MatchPanelView(match.id, match, results, vetoes, refs_display)
+        await interaction.response.edit_message(view=new_view)
 
     # ---------- actions ----------
 
