@@ -1147,6 +1147,7 @@ class TournamentCog(commands.Cog):
             description_parts.append(f"{replace_emojis('sub_middle')} K/D Ratio: {stats.kd_ratio:.2f}")
             description_parts.append(f"{replace_emojis('sub_middle')} AVG Kills: {stats.avg_kills:.2f}")
             description_parts.append(f"{replace_emojis('sub_middle')} Assists: {stats.total_assists} • Damage: {stats.total_damage:,}")
+            description_parts.append(f"{replace_emojis('sub_middle')} Репутация: {getattr(stats, 'reputation', 0)} • Инвайты: {getattr(stats, 'invite_count', 0)}")
             description_parts.append(f"{replace_emojis('sub_middle')} Skill Rating: {stats.skill_rating:.1f}/10.0")
             description_parts.append(f"{replace_emojis('sub_directory')} Max Kills: {stats.best_match_kills}")
         else:

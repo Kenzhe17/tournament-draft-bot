@@ -1,7 +1,8 @@
-"""Команды Free Fire Community API: /ff info|stats|ban|wishlist|craftland."""
+"""Команды Free Fire API (siambhau FreeFireApi): /ff info|stats|ban|banner|wishlist|craftland."""
 
 from __future__ import annotations
 
+import io
 import logging
 import re
 from typing import Any
@@ -24,7 +25,13 @@ ff_group = app_commands.Group(
 REGION_CHOICES = [
     app_commands.Choice(name="SG (Singapur/Азия)", value="sg"),
     app_commands.Choice(name="IND (Индия)", value="ind"),
-    app_commands.Choice(name="BR (Бразилия/Америка)", value="br"),
+    app_commands.Choice(name="BR (Бразилия)", value="br"),
+    app_commands.Choice(name="BD (Бангладеш)", value="bd"),
+    app_commands.Choice(name="RU / CIS", value="ru"),
+    app_commands.Choice(name="ID (Индонезия)", value="id"),
+    app_commands.Choice(name="TH (Таиланд)", value="th"),
+    app_commands.Choice(name="TW (Тайвань)", value="tw"),
+    app_commands.Choice(name="US", value="us"),
 ]
 
 _UID_PATTERN = re.compile(r"^\d{5,15}$")
@@ -35,14 +42,12 @@ def _check_uid(uid: str) -> bool:
 
 
 def _prettify_key(key: str) -> str:
-    """camelCase / snake_case -> Title Case."""
     spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", key)
     spaced = spaced.replace("_", " ")
     return spaced.strip().title()
 
 
 def _scalar_items(data: dict[str, Any], limit: int = 20) -> list[tuple[str, Any]]:
-    """Скалярные поля словаря для embed (пропуская вложенные структуры)."""
     items = []
     for key, value in data.items():
         if isinstance(value, (dict, list)):
@@ -53,22 +58,15 @@ def _scalar_items(data: dict[str, Any], limit: int = 20) -> list[tuple[str, Any]
     return items
 
 
-def _career_fields(career: dict[str, Any], limit: int = 15) -> list[str]:
-    """Строки статистики одного режима (solo/duo/squad)."""
-    if not isinstance(career, dict):
-        return []
-    lines = []
-    for name, value in _scalar_items(career, limit=limit):
-        if isinstance(value, float):
-            value = f"{value:,.1f}"
-        elif isinstance(value, int):
-            value = f"{value:,}"
-        lines.append(f"**{name}** — {value}")
-    return lines
+def _fmt_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:,.1f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return str(value)
 
 
 async def _safe_call(coro):
-    """Вызов API с единообразной обработкой ошибок."""
     try:
         return await coro
     except FreeFireError as e:
@@ -92,12 +90,31 @@ def _no_key_embed() -> DesignEmbed:
         title=f"{emoji('warning')} FREE FIRE | API не настроен",
         description=(
             "Ключ Free Fire API не задан.\n"
-            "Установите переменную `FREEFIRE_API_KEY` "
-            "(ключ на developers.freefirecommunity.com)."
+            "Установите переменную `FREEFIRE_API_KEY`."
         ),
         category="warning",
         footer="DISCORD SERVER r1z3",
     )
+
+
+def _uid_guard(uid: str):
+    return _check_uid(uid)
+
+
+async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
+    """Валидация UID + API ключ. True — можно продолжать."""
+    if not _uid_guard(uid):
+        await interaction.response.send_message(
+            embed=_error_embed(
+                FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
+            ),
+            ephemeral=True,
+        )
+        return False
+    if not freefire_service.configured:
+        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+        return False
+    return True
 
 
 # ------------------------------------------------------------------ /ff info
@@ -109,16 +126,7 @@ async def ff_info(
     region: app_commands.Choice[str],
 ) -> None:
     uid = uid.strip()
-    if not _check_uid(uid):
-        await interaction.response.send_message(
-            embed=_error_embed(
-                FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
-            ),
-            ephemeral=True,
-        )
-        return
-    if not freefire_service.configured:
-        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+    if not await _check_and_key(interaction, uid):
         return
 
     await interaction.response.defer()
@@ -128,10 +136,9 @@ async def ff_info(
         return
 
     basic = result.get("basicInfo") or {}
-    clan = result.get("clanBasicInfo") or {}
-    pet = result.get("petInfo") or {}
+    clan = result.get("clanBasicInfo") or result.get("clanInfo") or {}
+    guild = result.get("guildBasicInfo") or result.get("guildInfo") or {}
     social = result.get("socialInfo") or {}
-    credit = result.get("creditScoreInfo") or {}
 
     nickname = basic.get("nickname", "Unknown")
     signature = social.get("signature") or ""
@@ -156,41 +163,35 @@ async def ff_info(
                 f"• Ранг: **{basic.get('rank', '—')}** (макс: {basic.get('maxRank', '—')})",
                 f"• Очки рейтинга: **{_num('rankingPoints')}**",
                 f"• Лайки: **{_num('liked')}**",
-                f"• Титул: {basic.get('title') or '—'}",
                 f"• Регион: {str(basic.get('region', region.value)).upper()}",
             ]
         ),
     )
 
-    clan_lines = []
-    if clan.get("clanName"):
-        clan_lines.append(f"• Клан: **{clan['clanName']}** (ур. {clan.get('clanLevel', '—')})")
-        clan_lines.append(f"• Участники: {clan.get('memberNum', '—')}/{clan.get('capacity', '—')}")
-    if clan_lines:
-        embed.add_section(f"{emoji('team')} Клан", "\n".join(clan_lines))
-
-    extra_lines = []
-    if pet.get("id"):
-        extra_lines.append(f"• Питомец: ID `{pet['id']}` (ур. {pet.get('level', '—')})")
-    if credit.get("creditScore") is not None:
-        extra_lines.append(f"• Кредитный рейтинг: **{credit['creditScore']}**")
-    if extra_lines:
-        embed.add_section(f"{emoji('info')} Дополнительно", "\n".join(extra_lines))
+    team_lines = []
+    clan_name = clan.get("clanName") or guild.get("name") or guild.get("guildName")
+    if clan_name:
+        team_lines.append(f"• {clan.get('clanName') and 'Клан' or 'Гильдия'}: **{clan_name}**")
+    if clan.get("memberNum") is not None:
+        team_lines.append(f"• Участники: {clan.get('memberNum', '—')}/{clan.get('capacity', '—')}")
+    if team_lines:
+        embed.add_section(f"{emoji('team')} Команда", "\n".join(team_lines))
 
     await interaction.followup.send(embed=embed)
 
 
 # ----------------------------------------------------------------- /ff stats
-@ff_group.command(name="stats", description="Карьерная статистика игрока")
+@ff_group.command(name="stats", description="Статистика игрока Free Fire")
 @app_commands.describe(
-    uid="ID игрока (5-15 цифр)", region="Регион аккаунта", mode="Режим игры"
+    uid="ID игрока (5-15 цифр)", region="Регион аккаунта", mode="Режим/матчмод"
 )
 @app_commands.choices(
     mode=[
-        app_commands.Choice(name="Solo", value="solo"),
-        app_commands.Choice(name="Duo", value="duo"),
-        app_commands.Choice(name="Squad", value="squad"),
-        app_commands.Choice(name="Все режимы", value="all"),
+        app_commands.Choice(name="BR — Карьера", value="br_career"),
+        app_commands.Choice(name="BR — Обычные", value="br_normal"),
+        app_commands.Choice(name="BR — Рейтинг", value="br_ranked"),
+        app_commands.Choice(name="CS — Карьера", value="cs_career"),
+        app_commands.Choice(name="CS — Рейтинг", value="cs_ranked"),
     ]
 )
 async def ff_stats(
@@ -200,56 +201,30 @@ async def ff_stats(
     mode: app_commands.Choice[str],
 ) -> None:
     uid = uid.strip()
-    if not _check_uid(uid):
-        await interaction.response.send_message(
-            embed=_error_embed(
-                FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
-            ),
-            ephemeral=True,
-        )
-        return
-    if not freefire_service.configured:
-        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+    if not await _check_and_key(interaction, uid):
         return
 
+    gamemode, matchmode = mode.value.split("_", 1)
     await interaction.response.defer()
-    result = await _safe_call(freefire_service.get_stats(region.value, uid))
+    result = await _safe_call(
+        freefire_service.get_stats(region.value, uid,
+                                    gamemode=gamemode, matchmode=matchmode.upper())
+    )
     if isinstance(result, FreeFireError):
         await interaction.followup.send(embed=_error_embed(result))
         return
 
-    mode_key = {
-        "solo": "brCareer_solo",
-        "duo": "brCareer_duo",
-        "squad": "brCareer_squad",
-    }
+    stats = result.get("stats") or result
+    lines = [f"**{k}** — {_fmt_value(v)}"
+             for k, v in _scalar_items(stats, limit=15)]
 
     embed = DesignEmbed(
         title=f"{emoji('stats')} FREE FIRE | Статистика",
-        description=f"ID `{uid}` • режим: **{mode.name}**",
+        description=(f"ID `{uid}` • режим: **{mode.name}**\n\n"
+                     + ("\n".join(lines) if lines else "Данные отсутствуют.")),
         category="game",
         footer="DISCORD SERVER r1z3",
     )
-
-    careers: list[tuple[str, dict]] = []
-    if mode.value == "all":
-        for key, value in result.items():
-            if key.startswith("brCareer_") and isinstance(value, dict):
-                careers.append((key.replace("brCareer_", "").title(), value))
-    else:
-        careers.append((mode.name, result.get(mode_key[mode.value]) or {}))
-
-    shown = 0
-    for label, career in careers:
-        lines = _career_fields(career)
-        if not lines:
-            continue
-        embed.add_section(f"{emoji('sword')} {label}", "\n".join(lines))
-        shown += 1
-
-    if shown == 0:
-        embed.description += "\n\nСтатистика по этому режиму отсутствует."
-
     await interaction.followup.send(embed=embed)
 
 
@@ -258,16 +233,7 @@ async def ff_stats(
 @app_commands.describe(uid="ID игрока (5-15 цифр)")
 async def ff_ban(interaction: discord.Interaction, uid: str) -> None:
     uid = uid.strip()
-    if not _check_uid(uid):
-        await interaction.response.send_message(
-            embed=_error_embed(
-                FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
-            ),
-            ephemeral=True,
-        )
-        return
-    if not freefire_service.configured:
-        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+    if not await _check_and_key(interaction, uid):
         return
 
     await interaction.response.defer()
@@ -276,29 +242,68 @@ async def ff_ban(interaction: discord.Interaction, uid: str) -> None:
         await interaction.followup.send(embed=_error_embed(result))
         return
 
-    data = result.get("data") or {}
-    is_banned = data.get("is_banned", 0)
-    period = data.get("period")
+    ban_status = str(result.get("ban_status", "")).lower()
+    period = result.get("ban_period")
+    nickname = result.get("nickname", "")
 
-    if is_banned:
-        desc = f"Аккаунт `{uid}` **забанен**."
+    if "not banned" in ban_status or "no ban" in ban_status:
+        embed = DesignEmbed(
+            title=f"{emoji('check')} FREE FIRE | Бан",
+            description=f"Аккаунт `{uid}` **не забанен**."
+                        + (f"\nИгрок: **{nickname}**" if nickname else ""),
+            category="success",
+            footer="DISCORD SERVER r1z3",
+        )
+    else:
+        desc = f"Аккаунт `{uid}` — статус: **{result.get('ban_status', 'banned')}**"
         if period:
-            desc += f"\n{emoji('timer')} Период бана: **{period}**"
+            desc += f"\n{emoji('timer')} Период: **{period}**"
         embed = DesignEmbed(
             title=f"{emoji('ban')} FREE FIRE | Бан",
             description=desc,
             category="error",
             footer="DISCORD SERVER r1z3",
         )
-    else:
-        embed = DesignEmbed(
-            title=f"{emoji('check')} FREE FIRE | Бан",
-            description=f"Аккаунт `{uid}` **не забанен**.",
-            category="success",
-            footer="DISCORD SERVER r1z3",
-        )
-
     await interaction.followup.send(embed=embed)
+
+
+# ---------------------------------------------------------------- /ff banner
+@ff_group.command(name="banner", description="Баннер профиля Free Fire (PNG)")
+@app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
+async def ff_banner(
+    interaction: discord.Interaction,
+    uid: str,
+    region: app_commands.Choice[str],
+) -> None:
+    uid = uid.strip()
+    if not await _check_and_key(interaction, uid):
+        return
+
+    await interaction.response.defer()
+    try:
+        data, content_type = await freefire_service.get_banner(region.value, uid)
+    except FreeFireError as e:
+        await interaction.followup.send(embed=_error_embed(e))
+        return
+    except Exception:
+        logger.exception("ff banner failed")
+        await interaction.followup.send(embed=_error_embed(
+            FreeFireError("Не удалось получить баннер.", "INTERNAL")))
+        return
+
+    if not data or len(data) < 100:
+        await interaction.followup.send(embed=_error_embed(
+            FreeFireError("Баннер не найден или недоступен.", "NOT_FOUND")))
+        return
+
+    file = discord.File(io.BytesIO(data), filename=f"ff_banner_{uid}.png")
+    embed = DesignEmbed(
+        title=f"{emoji('profile')} FREE FIRE | Баннер",
+        description=f"ID `{uid}`",
+        category="game",
+        footer="DISCORD SERVER r1z3",
+    )
+    await interaction.followup.send(embed=embed, file=file)
 
 
 # --------------------------------------------------------------- /ff wishlist
@@ -310,16 +315,7 @@ async def ff_wishlist(
     region: app_commands.Choice[str],
 ) -> None:
     uid = uid.strip()
-    if not _check_uid(uid):
-        await interaction.response.send_message(
-            embed=_error_embed(
-                FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
-            ),
-            ephemeral=True,
-        )
-        return
-    if not freefire_service.configured:
-        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+    if not await _check_and_key(interaction, uid):
         return
 
     await interaction.response.defer()
@@ -328,16 +324,15 @@ async def ff_wishlist(
         await interaction.followup.send(embed=_error_embed(result))
         return
 
-    items = result.get("wishlist_items") or []
+    items = result.get("wishlist") or result.get("items") or []
+    if isinstance(items, dict):
+        items = list(items.values())
     lines = []
     for item in items[:15]:
         if isinstance(item, dict):
-            name = (
-                item.get("name")
-                or item.get("itemName")
-                or item.get("title")
-                or str(item.get("itemId", item.get("id", "?")))
-            )
+            name = (item.get("name") or item.get("itemName")
+                    or item.get("title") or item.get("itemId")
+                    or str(item.get("id", "?")))
         else:
             name = str(item)
         lines.append(f"• {name}")
@@ -351,7 +346,6 @@ async def ff_wishlist(
         category="game",
         footer="DISCORD SERVER r1z3",
     )
-
     await interaction.followup.send(embed=embed)
 
 
@@ -372,10 +366,15 @@ async def ff_craftland(
         freefire_service.get_craftland(region.value, code.strip())
     )
     if isinstance(result, FreeFireError):
+        # fallback на полные детали
+        result = await _safe_call(
+            freefire_service.get_craftland_details(region.value, code.strip())
+        )
+    if isinstance(result, FreeFireError):
         await interaction.followup.send(embed=_error_embed(result))
         return
 
-    map_info = result.get("map_info") or result
+    map_info = result.get("map_info") or result.get("data") or result
     fields = (
         _scalar_items(map_info, limit=15)
         if isinstance(map_info, dict)
@@ -390,11 +389,10 @@ async def ff_craftland(
     )
     embed.add_section(
         f"{emoji('info')} Информация",
-        "\n".join(f"• **{k}** — {v}" for k, v in fields)
+        "\n".join(f"• **{k}** — {_fmt_value(v)}" for k, v in fields)
         if fields
         else "Детали карты недоступны.",
     )
-
     await interaction.followup.send(embed=embed)
 
 

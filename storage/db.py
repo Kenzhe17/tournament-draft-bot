@@ -150,6 +150,16 @@ async def init_db() -> None:
             pass
 
         try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS reputation INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS invite_count INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_elo_change INTEGER DEFAULT 0")
         except asyncpg.DuplicateColumnError:
             pass
