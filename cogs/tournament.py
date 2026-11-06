@@ -441,19 +441,16 @@ class TournamentCog(commands.Cog):
     @app_commands.command(name="top", description="Показать таблицу лидеров")
     async def top(self, interaction: discord.Interaction) -> None:
         """Показать таблицу лидеров сервера."""
-        from utils.embeds import build_leaderboard_embed
         from views.leaderboard_view import UniversalLeaderboardView
 
         view = UniversalLeaderboardView(interaction.guild_id, interaction.user.id, "elo")
         await view.initialize()
 
-        embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type="elo", user_id=interaction.user.id)
-
         try:
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message(view=view)
         except discord.NotFound:
             # Interaction expired, use followup
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send(view=view)
 
     @app_commands.command(name="help", description="Показать справку по командам")
     async def help_command(self, interaction: discord.Interaction) -> None:
@@ -1063,7 +1060,7 @@ class TournamentCog(commands.Cog):
         from storage.shop_store import inventory_store, shop_store
         from storage.minigame_store import minigame_store
         from utils.cosmetics import format_player_name
-        from views.profile_view import ProfileView
+        from views.profile_view import ProfileLayoutView
 
         # Если пользователь не указан, показываем профиль автора
         target_user = user if user else interaction.user
@@ -1214,17 +1211,17 @@ class TournamentCog(commands.Cog):
             footer="DISCORD SERVER r1z3"
         )
 
-        # Кнопки только для владельца
-        view = ProfileView(interaction.guild_id, target_user.id, is_owner)
+        # Кнопки только для владельца (CV2 LayoutView)
+        view = ProfileLayoutView(embed, interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message(view=view)
 
     @app_commands.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
     async def history(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
         """Показать историю матчей игрока."""
         from storage.match_history_store import match_history_store
-        from views.history_view import HistoryView, create_history_embed
+        from views.history_view import HistoryLayoutView, create_history_embed
 
         # Ограничить limit до 30
         limit = min(max(limit, 1), 30)
@@ -1245,13 +1242,14 @@ class TournamentCog(commands.Cog):
         user_stats = await player_stats_store.get(interaction.guild_id, target_user.id)
         user_name = user_stats.name if user_stats else target_user.display_name
 
-        # Создать view и embed
-        view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
+        # Создать view и embed (CV2)
+        view = HistoryLayoutView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
         embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
         embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
         embed.set_footer(text="DISCORD SERVER r1z3")
+        view.set_embed(embed)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message(view=view)
 
     @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
@@ -1295,15 +1293,25 @@ class TournamentCog(commands.Cog):
         progress_bar = create_progress_bar(current_xp, xp_needed)
         xp_remaining = xp_needed - current_xp
 
-        embed = DesignEmbed(
-            title=f"{replace_emojis('a_star')} УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
-            description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n{replace_emojis('sub_middle')} Уровень: Level {stats.level}\n{replace_emojis('sub_directory')} Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n{replace_emojis('sub_middle')} Прогресс: `{progress_bar}` ({progress_percent}%)\n{replace_emojis('sub_directory')} До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
+        from utils.design.cv2 import design_card
+        view = design_card(
             category="profile",
-            author=interaction.user,
+            title="УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
+            description=(
+                f"{interaction.user.mention}\n\n"
+                f"**Текущий статус:**\n"
+                f"• Уровень: Level {stats.level}\n"
+                f"• Ранг: {rank_title}\n\n"
+                f"**Прогресс опыта:**\n"
+                f"• Прогресс: `{progress_bar}` ({progress_percent}%)\n"
+                f"• До след. уровня: {xp_remaining:,} XP\n\n"
+                f"-# Накопить XP можно через участие в турнирах и победы"
+            ),
+            thumbnail_url=interaction.user.display_avatar.url,
             footer="DISCORD SERVER r1z3"
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(view=view)
 
     @app_commands.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:

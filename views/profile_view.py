@@ -20,6 +20,20 @@ class ProfileView(discord.ui.View):
             self.add_item(SettingsButton(guild_id, user_id))
 
 
+class ProfileLayoutView(discord.ui.LayoutView):
+    """CV2-вариант профиля: карточка из embed + кнопки в ActionRow."""
+
+    def __init__(self, embed: discord.Embed, guild_id: int, user_id: int,
+                 is_owner: bool):
+        super().__init__(timeout=180)
+        from utils.design.cv2 import container_from_embed
+        self.add_item(container_from_embed(embed))
+        if is_owner:
+            row = discord.ui.ActionRow()
+            row.add_item(SettingsButton(guild_id, user_id))
+            self.add_item(row)
+
+
 class SettingsButton(discord.ui.Button):
     """Кнопка настроек."""
 
@@ -236,13 +250,13 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Update the original message with new embed and view
-        view = ProfileView(self.guild_id, self.user_id, True)
+        view = ProfileLayoutView(embed, self.guild_id, self.user_id, True)
         try:
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response(view=view)
         except discord.NotFound:
             # If original response is not available, try followup
             try:
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                await interaction.followup.send(view=view, ephemeral=True)
             except discord.NotFound:
                 # If followup also fails, just log and ignore
                 pass

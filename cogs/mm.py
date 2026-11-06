@@ -17,7 +17,7 @@ from storage.mm_search_store import mm_search_store
 from storage.compatibility_store import compatibility_store as store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_setup_embed
-from views.mm_search_view import build_search_embed, build_search_view
+from views.mm_search_view import build_search_view
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -128,11 +128,10 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
         
         # Обновить embed
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
+        view = await build_search_view(self.bot, search, interaction.guild)
         try:
             message = await interaction.channel.fetch_message(search.message_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit(view=view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
         
@@ -161,11 +160,10 @@ class MMCog(commands.Cog):
         # Сначала отправить ephemeral сообщение
         await interaction.response.send_message("✅ Поиск создан!", ephemeral=True)
 
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
+        view = await build_search_view(self.bot, search, interaction.guild)
 
         # Отправить вечный embed
-        message = await interaction.channel.send(embed=embed, view=view)
+        message = await interaction.channel.send(view=view)
 
         search.message_id = message.id
         mm_search_store.set(search)
@@ -245,9 +243,8 @@ class MMCog(commands.Cog):
                         channel = self.bot.get_channel(channel_id)
                         if channel:
                             message = await channel.fetch_message(search.message_id)
-                            embed = await build_search_embed(search, channel.guild)
-                            view = build_search_view(self.bot, search)
-                            await message.edit(embed=embed, view=view)
+                            view = await build_search_view(self.bot, search, channel.guild)
+                            await message.edit(view=view)
                             await channel.send(
                                 f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
                             )
@@ -388,11 +385,10 @@ class MMCog(commands.Cog):
         mm_search_store.set(search)
 
         # Обновить embed поиска
-        search_embed = await build_search_embed(search, guild)
-        search_view = build_search_view(self.bot, search)
+        search_view = await build_search_view(self.bot, search, guild)
         try:
             search_message = await interaction_channel.fetch_message(search.message_id)
-            await search_message.edit(embed=search_embed, view=search_view)
+            await search_message.edit(view=search_view)
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
 
@@ -471,9 +467,8 @@ class MMCog(commands.Cog):
                             channel = self.bot.get_channel(search.channel_id)
                             if channel:
                                 message = await channel.fetch_message(search.message_id)
-                                embed = await build_search_embed(search, channel.guild)
-                                view = build_search_view(self.bot, search)
-                                await message.edit(embed=embed, view=view)
+                                view = await build_search_view(self.bot, search, channel.guild)
+                                await message.edit(view=view)
                         except Exception as e:
                             logger.error(f"Error resetting search channel: {e}")
 
