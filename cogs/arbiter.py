@@ -511,8 +511,11 @@ class ArbiterCog(commands.Cog):
 
             # Legacy draft match — сопоставить и предложить применить
             from arbiter.services.legacy_bridge import _parse_ext_ref
-            from arbiter.services.ocr_apply import match_ocr_players
+            from arbiter.services.ocr_apply import (
+                auto_index_map, match_ocr_players, roster_names)
             from arbiter.panels.ocr_confirm import OcrConfirmView
+            from arbiter.panels.ocr_mapping import (
+                OcrMappingView, create_pending, get_state, mapping_embed)
             from storage.json_store import store
 
             parsed = _parse_ext_ref(match.external_ref)
@@ -527,30 +530,41 @@ class ArbiterCog(commands.Cog):
                 await interaction.followup.send(embed=_err_embed("Турнир не найден."), ephemeral=True)
                 return
 
-            matched, unmatched = match_ocr_players(tournament, team_a, team_b, players)
             stage = {"qualifier": "Квалифаер", "semifinal": "Полуфинал",
                      "final": "Финал"}.get(m_type, m_type)
+            match_label = f"{stage} #{m_index + 1}"
+            roster = roster_names(tournament, team_a, team_b)
+            auto_map = auto_index_map(tournament, team_a, team_b, players)
+
+            if len(auto_map) < len(players):
+                # Есть нераспознанные — показываем UI привязки ников
+                token = create_pending(
+                    interaction.guild_id, tournament_id, m_type, m_index,
+                    team_a, team_b, match_label, players, roster, auto_map)
+                state = get_state(token)
+                await interaction.followup.send(
+                    embed=mapping_embed(state),
+                    view=OcrMappingView(token), ephemeral=True)
+                return
+
+            matched, unmatched = match_ocr_players(tournament, team_a, team_b, players)
             embed = DesignEmbed(
-                category="info", title=f"OCR → {stage} #{m_index + 1}",
+                category="info", title=f"OCR → {match_label}",
                 description=(f"Матч **{match.public_code}** • "
-                             f"сопоставлено: **{len(matched)}**"
-                             + (f" • не распознано в ростере: **{len(unmatched)}**"
-                                if unmatched else "")))
+                             f"сопоставлено: **{len(matched)}**"))
             for name, kd in list(matched.items())[:20]:
                 embed.add_kv(name,
                              f"K {kd['kills']} • D {kd['deaths']} • "
                              f"A {kd['assists']} • DMG {kd['damage']}"
                              + (f"  _(OCR: {kd['ocr_name']})_" if kd["ocr_name"] != name else ""))
-            if unmatched:
-                embed.add_kv("Не сопоставлены",
-                             ", ".join(p.get("name", "?") for p in unmatched[:10]))
-            embed.set_footer(text="В temp_match_stats запишутся K/D. Assists/Damage — только в превью.")
+            embed.set_footer(text="В temp_match_stats запишутся K/D/A/DMG.")
 
             if not matched:
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             view = OcrConfirmView(interaction.guild_id, tournament_id, m_type,
-                                  m_index, matched, unmatched, f"{stage} #{m_index + 1}")
+                                  m_index, matched, unmatched, match_label,
+                                  cid_suffix=f"_{match.public_code}")
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         except OcrError as e:
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)

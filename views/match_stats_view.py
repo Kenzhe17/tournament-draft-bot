@@ -135,13 +135,13 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 if player:
                     self.players.append((player, circle))
 
-        # Create input fields for each player (format: kills/deaths)
+        # Create input fields for each player (format: kills/deaths/assists/damage)
         for i, (player_name, circle) in enumerate(self.players):
             kd_input = TextInput(
                 label=player_name,
-                placeholder="Убийства/Смерти (например: 8/2)",
+                placeholder="K/D/A/DMG (например: 8/2/1/500)",
                 required=False,
-                max_length=7
+                max_length=20
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
@@ -160,17 +160,18 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 kd_field = getattr(self, f"kd_{i}")
 
                 if not kd_field.value:
-                    kills = 0
-                    deaths = 0
+                    kills = deaths = assists = damage = 0
                 else:
                     try:
-                        # Parse format: "kills/deaths"
-                        kd_parts = kd_field.value.split('/')
-                        kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
-                        deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
+                        # Parse format: "kills/deaths[/assists[/damage]]"
+                        parts = [p.strip() for p in kd_field.value.split('/')]
+                        kills = int(parts[0]) if parts[0] else 0
+                        deaths = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+                        assists = int(parts[2]) if len(parts) > 2 and parts[2] else 0
+                        damage = int(parts[3]) if len(parts) > 3 and parts[3] else 0
                     except (ValueError, IndexError):
                         await interaction.followup.send(
-                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
+                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D/A/DMG (например: 8/2/1/500)"),
                             ephemeral=True
                         )
                         return
@@ -178,6 +179,8 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 stats[player_name] = {
                     "kills": kills,
                     "deaths": deaths,
+                    "assists": assists,
+                    "damage": damage,
                     "circle": circle
                 }
 
@@ -426,15 +429,16 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             # Pre-fill with captain-submitted stats if available
             existing_stat = temp_stats.get(player_name, {})
             if existing_stat:
-                default_value = f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
+                default_value = (f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
+                                 f"/{existing_stat.get('assists', 0)}/{existing_stat.get('damage', 0)}")
             else:
                 default_value = ""
 
             kd_input = TextInput(
                 label=player_name,
-                placeholder="Убийства/Смерти (например: 8/2)",
+                placeholder="K/D/A/DMG (например: 8/2/1/500)",
                 required=False,
-                max_length=7,
+                max_length=20,
                 default=default_value
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -456,17 +460,18 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             kd_field = getattr(self, f"kd_{i}")
 
             if not kd_field.value:
-                kills = 0
-                deaths = 0
+                kills = deaths = assists = damage = 0
             else:
                 try:
-                    # Parse format: "kills/deaths"
-                    kd_parts = kd_field.value.split('/')
-                    kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
-                    deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
+                    # Parse format: "kills/deaths[/assists[/damage]]"
+                    parts = [p.strip() for p in kd_field.value.split('/')]
+                    kills = int(parts[0]) if parts[0] else 0
+                    deaths = int(parts[1]) if len(parts) > 1 and parts[1] else 0
+                    assists = int(parts[2]) if len(parts) > 2 and parts[2] else 0
+                    damage = int(parts[3]) if len(parts) > 3 and parts[3] else 0
                 except (ValueError, IndexError):
                     await interaction.followup.send(
-                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
+                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D/A/DMG (например: 8/2/1/500)"),
                         ephemeral=True
                     )
                     return
@@ -474,6 +479,8 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             stats[player_name] = {
                 "kills": kills,
                 "deaths": deaths,
+                "assists": assists,
+                "damage": damage,
                 "circle": circle
             }
 

@@ -43,6 +43,16 @@ def _team_player_names(tournament, team_idx: int) -> list[str]:
     return names
 
 
+def roster_names(tournament, team_a: int, team_b: int) -> list[str]:
+    """Упорядоченный список канонических имён игроков обеих команд."""
+    names: list[str] = []
+    for idx in (team_a, team_b):
+        for name in _team_player_names(tournament, idx):
+            if name not in names:
+                names.append(name)
+    return names
+
+
 def build_roster_map(tournament, team_a: int, team_b: int) -> dict[str, str]:
     """norm(name) -> каноническое имя игрока для обеих команд."""
     roster: dict[str, str] = {}
@@ -77,6 +87,18 @@ def match_ocr_players(tournament, team_a: int, team_b: int,
         else:
             unmatched.append(p)
     return matched, unmatched
+
+
+def auto_index_map(tournament, team_a: int, team_b: int,
+                   ocr_players: list[dict]) -> dict[int, str]:
+    """{ocr_index: canonical_roster_name} для точных совпадений имён."""
+    roster = build_roster_map(tournament, team_a, team_b)
+    result: dict[int, str] = {}
+    for i, p in enumerate(ocr_players):
+        canonical = roster.get(_norm(p.get("name", "")))
+        if canonical:
+            result[i] = canonical
+    return result
 
 
 async def write_stats_to_tournament(guild_id: int, tournament_id: str,

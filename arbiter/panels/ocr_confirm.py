@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 class OcrConfirmView(ui.View):
     def __init__(self, guild_id: int, tournament_id: str, match_type: str,
                  match_index: int, matched: dict[str, dict],
-                 unmatched: list[dict], match_label: str):
+                 unmatched: list[dict], match_label: str,
+                 cid_suffix: str = ""):
         super().__init__(timeout=300)
         self.guild_id = guild_id
         self.tournament_id = tournament_id
@@ -33,11 +34,11 @@ class OcrConfirmView(ui.View):
         self.match_label = match_label
         self.add_item(design_button(
             label="Применить статистику", role=ButtonRole.SUCCESS,
-            emoji="check", custom_id="ocr_confirm_apply",
+            emoji="check", custom_id=f"ocr_confirm_apply{cid_suffix}",
             callback=self._apply))
         self.add_item(design_button(
             label="Отмена", role=ButtonRole.SECONDARY,
-            emoji="cross", custom_id="ocr_confirm_cancel",
+            emoji="cross", custom_id=f"ocr_confirm_cancel{cid_suffix}",
             callback=self._cancel))
 
     async def _apply(self, interaction: discord.Interaction) -> None:
