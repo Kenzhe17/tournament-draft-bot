@@ -440,6 +440,10 @@ STANDARD_EMOJIS = {
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
 
+    # Removed tree-drawing emojis from the design
+    if emoji_name in ("sub_middle", "sub_directory"):
+        return ""
+
     # Check rank emojis
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]

@@ -229,7 +229,8 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)

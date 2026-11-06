@@ -481,7 +481,8 @@ class TournamentCog(commands.Cog):
             description=f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n{get_emoji('white_arrow')} **Наличные:** **`{cash:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **В сейфе:** **`{safe:,}`** {get_emoji('money')}\n{get_emoji('white_arrow')} **Всего:** **`{total:,}`** {get_emoji('money')}\n\n{get_emoji('white_dot')} *Используйте `/daily` для получения награды или посетите магазин.*",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         try:
             await interaction.response.send_message(embed=embed, ephemeral=False)
@@ -587,7 +588,8 @@ class TournamentCog(commands.Cog):
             title=replace_emojis("МАГАЗИН СЕРВЕРА | Главное меню"),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
         embed.description = (
             f"Добро пожаловать в игровой магазин {replace_emojis('a_star')}\n"
             f"Выберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары."
@@ -721,7 +723,8 @@ class TournamentCog(commands.Cog):
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Создать View с select menu
         view = discord.ui.View()
@@ -786,7 +789,8 @@ class TournamentCog(commands.Cog):
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} 🔒 В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -1204,7 +1208,8 @@ class TournamentCog(commands.Cog):
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=target_user.display_avatar.url)
+        embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
@@ -1240,6 +1245,8 @@ class TournamentCog(commands.Cog):
         # Создать view и embed
         view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
         embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
+        embed.set_author(name=target_user.display_name, icon_url=target_user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         await interaction.response.send_message(embed=embed, view=view)
 
@@ -1290,7 +1297,8 @@ class TournamentCog(commands.Cog):
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n{replace_emojis('sub_middle')} Уровень: Level {stats.level}\n{replace_emojis('sub_directory')} Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n{replace_emojis('sub_middle')} Прогресс: `{progress_bar}` ({progress_percent}%)\n{replace_emojis('sub_directory')} До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         await interaction.response.send_message(embed=embed)
 
@@ -1316,7 +1324,8 @@ class TournamentCog(commands.Cog):
             description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n{replace_emojis('sub_middle')} Всего ставок: {stats['total_bets']}\n{replace_emojis('sub_middle')} Выигрышных: {stats['successful_bets']}\n{replace_emojis('sub_middle')} Проигрышных: {lost_bets}\n{replace_emojis('sub_directory')} Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n{replace_emojis('sub_middle')} Выиграно: +{stats['total_won']} {get_emoji('money')}\n{replace_emojis('sub_directory')} Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         await interaction.response.send_message(embed=embed)
 
@@ -2019,7 +2028,8 @@ class TournamentCog(commands.Cog):
                 title=replace_emojis("Передача монет"),
                 color=discord.Color.green()
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
             embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
@@ -2166,7 +2176,8 @@ class TournamentCog(commands.Cog):
                 description=f"{interaction.user.mention}, Вы успешно **подарили** {item_display} • {replace_emojis(rare_emoji)}\n\n• **Комиссия:** {int(base_fee_percent * 100)}% ({fee} {get_emoji('money')})\n• **Стоимость:** {item.price} {get_emoji('money')}\n\n**Пользователь**\n{replace_emojis('white_arrow')} {user.mention} **получил** — {item_display}{pet_bonus_text}",
                 color=discord.Color.green()
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
         elif result['compensated']:
@@ -2178,7 +2189,8 @@ class TournamentCog(commands.Cog):
                 description=f"{interaction.user.mention}, у получателя уже есть этот предмет. Комиссия возвращена.",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
         else:
@@ -2381,7 +2393,8 @@ class TournamentCog(commands.Cog):
                 description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n{replace_emojis('sub_middle')} Получено: {reward} {get_emoji('money')}\n{replace_emojis('sub_directory')} Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 

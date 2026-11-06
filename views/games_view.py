@@ -96,7 +96,8 @@ class GameCategorySelect(Select):
             description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GamesCategoryView(self.user_id, self.guild_id, category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, category, page))
@@ -182,7 +183,8 @@ class GameSelect(Select):
             description=f"{replace_emojis('white_arrow')} {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n{replace_emojis('sub_middle')} Канал: <#1561707634938351728>\n{replace_emojis('sub_middle')} Команда: `/{game.command} bet:100`\n{replace_emojis('sub_middle')} Категория: {category_info['name']}\n{replace_emojis('sub_middle')} Множитель: {game.multiplier}x\n{replace_emojis('sub_middle')} Мин. ставка: {game.min_bet} {get_emoji('money')}\n{replace_emojis('sub_middle')} Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n{replace_emojis('sub_directory')} Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n{replace_emojis('sub_directory')} {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GameCardView(self.user_id, self.guild_id, game, game.category, self.page)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -306,7 +308,8 @@ class BackToCategoryButton(Button):
             description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n{replace_emojis('a_dot_smaller')} Игр в категории: {len(games)}\n\n{replace_emojis('white_dot')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GamesCategoryView(self.user_id, self.guild_id, self.category, page)
         view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, page))
@@ -347,7 +350,8 @@ class BackToMainMenuButton(Button):
             description=f"{replace_emojis('white_arrow')} {interaction.user.mention}\n\n{replace_emojis('white_dot')} **Информация:**\n{replace_emojis('a_dot_smaller')} Ваш баланс: {balance:,} {get_emoji('money')}\n\n{replace_emojis('white_dot')} **Статус игр:**\n{replace_emojis('a_dot_smaller')} 🔓 Реализовано: **{len(ready_games)}** игр\n{replace_emojis('a_dot_smaller')} � В разработке: **{len(dev_games)}** игр\n\n{replace_emojis('white_dot')} **Категории:**\n{replace_emojis('a_dot_smaller')} **Игры на удачу**\n{replace_emojis('a_dot_smaller')} Быстрые игры на риск: монетка, кубики, угадай число и др.\n{replace_emojis('a_dot_smaller')} **Викторины и головоломки**\n{replace_emojis('a_dot_smaller')} Интеллектуальные состязания, викторины и слова.\n{replace_emojis('a_dot_smaller')} **Казино и ставки**\n{replace_emojis('a_dot_smaller')} Слоты, рулетка, баккара, лотерея и высокие ставки.\n\n{replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже для просмотра списка игр",
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+        embed.set_footer(text="DISCORD SERVER r1z3")
 
         view = GamesMainView(self.user_id, self.guild_id)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -396,7 +400,8 @@ class BackButton(Button):
                 description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
 
             view = GamesCategoryView(self.user_id, self.guild_id, self.category, new_page)
             view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, new_page))
@@ -452,7 +457,8 @@ class ForwardButton(Button):
                 description=f"{replace_emojis('white_arrow')} {category_info['description']}\n\n{replace_emojis('white_dot')} **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n{replace_emojis('sub_directory')} Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
-            embed.set_thumbnail(url=interaction.user.display_avatar.url)
+            embed.set_author(name=interaction.user.display_name, icon_url=interaction.user.display_avatar.url)
+            embed.set_footer(text="DISCORD SERVER r1z3")
 
             view = GamesCategoryView(self.user_id, self.guild_id, self.category, new_page)
             view.add_item(GameSelect(page_games, self.user_id, self.guild_id, self.category, new_page))

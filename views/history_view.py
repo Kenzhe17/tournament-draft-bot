@@ -74,6 +74,15 @@ class PrevButton(discord.ui.Button):
                 parent_view.current_page -= 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
+                member = interaction.guild.get_member(parent_view.user_id) if interaction.guild else None
+                if member is None:
+                    try:
+                        member = await interaction.client.fetch_user(parent_view.user_id)
+                    except Exception:
+                        member = None
+                if member:
+                    embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+                embed.set_footer(text="DISCORD SERVER r1z3")
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
@@ -97,6 +106,15 @@ class NextButton(discord.ui.Button):
                 parent_view.current_page += 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
+                member = interaction.guild.get_member(parent_view.user_id) if interaction.guild else None
+                if member is None:
+                    try:
+                        member = await interaction.client.fetch_user(parent_view.user_id)
+                    except Exception:
+                        member = None
+                if member:
+                    embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
+                embed.set_footer(text="DISCORD SERVER r1z3")
                 await interaction.response.edit_message(embed=embed, view=parent_view)
             else:
                 await interaction.response.defer()
