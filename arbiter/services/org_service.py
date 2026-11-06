@@ -180,6 +180,14 @@ class OrgService:
         async with pool.acquire() as conn:
             return await self._get_or_create_profile(conn, user)
 
+    async def get_profile_by_id(self, profile_id: str) -> UserProfile | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM arb_user_profiles WHERE id = $1", profile_id
+            )
+            return _row_to_profile(row) if row else None
+
     async def get_profile_by_discord_id(self, discord_user_id: str | int) -> UserProfile | None:
         pool = await get_pool()
         async with pool.acquire() as conn:

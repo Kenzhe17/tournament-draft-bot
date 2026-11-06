@@ -11,6 +11,10 @@ from discord.ext import commands
 from arbiter.enums import OrgRole
 from arbiter.services.org_service import OrgError, org_service
 from arbiter.db import init_arbiter_schema
+from arbiter.enums import OrgRole
+from arbiter.panels.match_panel import MatchPanelView, build_match_embed
+from arbiter.services.match_service import MatchError, match_service
+from arbiter.services.org_service import OrgError, org_service
 from utils.design.embeds import DesignEmbed
 
 logger = logging.getLogger(__name__)
@@ -31,6 +35,17 @@ def _err_embed(message: str) -> DesignEmbed:
 class ArbiterCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def cog_load(self) -> None:
+        ""6 Persistent views для активных матчей."""
+        try:
+            await init_arbiter_schema()
+            orgs = await _list_orgs()
+            for org in orgs:
+                for m in await match_service.list_active_matches(org.id):
+                    self.bot.add_view(MatchPanelView(m.id))
+        except Exception as e:
+            logger.error("Failed to register arbiter views: %s", e)
 
     async def _ensure_schema(self) -> None:
         try:
@@ -193,6 +208,109 @@ class ArbiterCog(commands.Cog):
         except Exception as e:
             logger.exception("arb settings failed")
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    # ---------- matches ----------
+
+    arbiter_match = app_commands.Group(name="match", description="Управление матчами",
+                                       parent=arbiter)
+
+    @arbiter_match.command(name="create", description="Создать матч и отправить панель")
+    @app_commands.describe(
+        team_a="Название команды A",
+        team_b="Название команды B",
+        best_of="Формат BO (1-99)",
+        channel="Канал для панели (по умолчанию — текущий)",
+    )
+    async def match_create(
+        self,
+        interaction: discord.Interaction,
+        team_a: str,
+        team_b: str,
+        best_of: int = 1,
+        channel: discord.TextChannel | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org:
+                raise OrgError("Организация не настроена. Используйте /arb setup.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF", "REFEREE"):
+                raise OrgError("Только судьи/админы могут создавать матчи.")
+
+            target = channel or interaction.channel
+            match = await match_service.create_match(
+                org.id, team_a, team_b, best_of=best_of,
+                channel_id=str(target.id), created_by_id=profile.id,
+            )
+            view = MatchPanelView(match.id)
+            msg = await target.send(embed=build_match_embed(match), view=view)
+            self.bot.add_view(view)
+            await match_service.set_control_message(match, str(target.id), str(msg.id))
+            await interaction.followup.send(
+                embed=DesignEmbed(category="success", title="Матч создан",
+                                  description=f"**{team_a}** vs **{team_b}** • BO{best_of}\n"
+                                              f"Код: `{match.public_code}`"),
+                ephemeral=True,
+            )
+        except (OrgError, MatchError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+        except Exception as e:
+            logger.exception("arb match create failed")
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="list", description="Список матчей организации")
+    async def match_list(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org:
+                raise OrgError("Организация не настроена.")
+            matches = await match_service.list_matches(org.id, limit=15)
+            embed = DesignEmbed(category="info", title="Матчи", description=f"**{org.name}**")
+            if not matches:
+                embed.description = "Нет матчей."
+            for m in matches:
+                embed.add_kv(
+                    f"{m.public_code} • {m.status.value}",
+                    f"**{m.team_a_name}** {m.team_a_score}—{m.team_b_score} **{m.team_b_name}** • BO{m.best_of}",
+                )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except OrgError as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="panel", description="Обновить/отправить панель существующего матча")
+    @app_commands.describe(match_id="ID или публичный код матча")
+    async def match_panel(self, interaction: discord.Interaction, match_id: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            target = interaction.channel
+            view = MatchPanelView(match.id)
+            msg = await target.send(embed=build_match_embed(match), view=view)
+            self.bot.add_view(view)
+            await match_service.set_control_message(match, str(target.id), str(msg.id))
+            await interaction.followup.send("Панель отправлена.", ephemeral=True)
+        except (OrgError, MatchError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+
+async def _list_orgs():
+    from storage.db import get_pool
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT id, discord_guild_id, name FROM arb_organizations")
+    return [type("O", (), {"id": r["id"], "discord_guild_id": r["discord_guild_id"],
+                           "name": r["name"]})() for r in rows]
 
 
 async def setup(bot: commands.Bot) -> None:
