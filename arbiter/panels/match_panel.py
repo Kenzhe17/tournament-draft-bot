@@ -259,6 +259,16 @@ class MatchPanelView(ui.View):
                     f"Матч {fresh.public_code} завершён. Победитель: "
                     f"**{fresh.team_a_name if winner == 'teamA' else fresh.team_b_name if winner == 'teamB' else '—'}**",
                     ephemeral=True)
+                # авто-архивация комнаты матча
+                try:
+                    from arbiter.services.room_service import room_service
+                    if interaction.guild:
+                        settings = await org_service.get_settings(fresh.organization_id)
+                        log_ch = (int(settings.match_log_channel_id)
+                                  if settings and settings.match_log_channel_id else None)
+                        await room_service.archive_and_delete(interaction.guild, fresh.id, log_ch)
+                except Exception as e:
+                    logger.warning("Room archive failed: %s", e)
         except MatchError as e:
             try:
                 await interaction.response.send_message(str(e), ephemeral=True)

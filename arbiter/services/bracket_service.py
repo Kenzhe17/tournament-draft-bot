@@ -246,6 +246,7 @@ class BracketService:
                             await self._update_node(conn, node,
                                                     winner_to_node_id=target.id,
                                                     winner_to_slot=node.winner_to_slot)
+                            target.team_a_source = target.team_a_source or node.id
 
                 # Final node champion routing: mark GF
                 if by_round:
@@ -254,6 +255,18 @@ class BracketService:
                     if finals:
                         finals[0].label = "Grand Final"
                         await self._update_node(conn, finals[0], label="Grand Final")
+
+                # Bye propagation: winner of each bye node advances immediately
+                for node in nodes:
+                    if node.status == "bye" and node.winner_to_node_id:
+                        wname = node.team_a_name if node.winner_slot == "teamA" else node.team_b_name
+                        wentry = node.team_a_entry_id if node.winner_slot == "teamA" else node.team_b_entry_id
+                        slot_col = f"team_{node.winner_to_slot[4].lower()}_name"
+                        entry_col = f"team_{node.winner_to_slot[4].lower()}_entry_id"
+                        await conn.execute(
+                            f"UPDATE arb_bracket_nodes SET {slot_col}=$1, {entry_col}=$2, "
+                            f"updated_at=$3 WHERE id=$4",
+                            wname, wentry, utcnow(), node.winner_to_node_id)
 
                 # Third place: losers of semifinals
                 if third_place and rounds >= 2:
@@ -278,6 +291,203 @@ class BracketService:
                                                 team_a_source=semis[0].id,
                                                 team_b_source=semis[1].id)
                         nodes.append(tp)
+        return nodes
+
+    async def generate_double_elimination(self, tournament_id: str,
+                                          entries: list[TournamentEntry],
+                                          best_of: int = 1) -> list[BracketNode]:
+        """Double elimination: winners bracket + losers bracket + grand final.
+
+        Проигравшие матчи WB падают в LB; чемпион LB встречается с чемпионом WB
+        в Grand Final. LB питается динамически: слот заполняется при завершении
+        WB-матча (loser_to) или LB-матча (winner_to).
+        """
+        n = len(entries)
+        if n < 4:
+            raise BracketError("Double elimination требует минимум 4 команды")
+        size = _next_power_of_two(n)
+        rounds = size.bit_length() - 1
+
+        seeded = sorted(entries, key=lambda e: e.seed)
+        bracket_order: list[TournamentEntry | None] = [None] * size
+        order = self._seed_order(size)
+        for i, e in enumerate(seeded):
+            bracket_order[order[i]] = e
+
+        nodes: list[BracketNode] = []
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # ---- Winners bracket (как SE, но финал -> GF) ----
+                wb_rounds: list[list[BracketNode]] = []
+                prev: list[BracketNode] = []
+                for i in range(0, size, 2):
+                    a, b = bracket_order[i], bracket_order[i + 1]
+                    node = BracketNode(
+                        tournament_id=tournament_id, bracket=Bracket.WINNERS,
+                        round_index=0, slot_index=i // 2, best_of=best_of,
+                        team_a_entry_id=a.id if a else None,
+                        team_b_entry_id=b.id if b else None,
+                        team_a_name=a.team_name if a else None,
+                        team_b_name=b.team_name if b else None,
+                        status="pending",
+                    )
+                    if a and not b:
+                        node.status = "bye"; node.winner_slot = "teamA"
+                    elif b and not a:
+                        node.status = "bye"; node.winner_slot = "teamB"
+                    nodes.append(node)
+                    await self._insert_node(conn, node)
+                    prev.append(node)
+                wb_rounds.append(prev)
+
+                round_idx = 1
+                while len(prev) > 1:
+                    curr = []
+                    for i in range(0, len(prev), 2):
+                        node = BracketNode(
+                            tournament_id=tournament_id, bracket=Bracket.WINNERS,
+                            round_index=round_idx, slot_index=i // 2, best_of=best_of,
+                            status="pending",
+                            label="Winners Final" if len(prev) == 2 else f"WB R{round_idx + 1}",
+                        )
+                        nodes.append(node)
+                        await self._insert_node(conn, node)
+                        curr.append(node)
+                    wb_rounds.append(curr)
+                    prev = curr
+                    round_idx += 1
+
+                # winner_to внутри WB
+                for rd, rnodes in enumerate(wb_rounds):
+                    if rd + 1 >= len(wb_rounds):
+                        continue
+                    nxt = wb_rounds[rd + 1]
+                    for i, node in enumerate(rnodes):
+                        if 2 * i < len(nxt) * 2 and i // 2 < len(nxt):
+                            target = nxt[i // 2]
+                            node.winner_to_node_id = target.id
+                            node.winner_to_slot = "teamA" if i % 2 == 0 else "teamB"
+                            await self._update_node(conn, node,
+                                                    winner_to_node_id=target.id,
+                                                    winner_to_slot=node.winner_to_slot)
+
+                # ---- Losers bracket ----
+                # entrants: ('wb', node) = проигравший WB-матча; ('lb', node) = победитель LB-матча
+                pending: list[tuple[str, BracketNode]] = []
+                lb_nodes: list[BracketNode] = []
+                lb_round = 0
+                max_rounds = 2 * rounds + 2
+
+                async def _set_route(src: BracketNode, outcome: str,
+                                     target: BracketNode, slot: str) -> None:
+                    """winner/loser src -> target.slot."""
+                    if outcome == "winner":
+                        await self._update_node(conn, src,
+                                                winner_to_node_id=target.id,
+                                                winner_to_slot=slot)
+                        src.winner_to_node_id = target.id
+                        src.winner_to_slot = slot
+                    else:
+                        await self._update_node(conn, src,
+                                                loser_to_node_id=target.id,
+                                                loser_to_slot=slot)
+                        src.loser_to_node_id = target.id
+                        src.loser_to_slot = slot
+
+                while lb_round < max_rounds:
+                    # новые проигравшие WB этого раунда
+                    new_wb: list[tuple[str, BracketNode]] = []
+                    if lb_round < len(wb_rounds):
+                        for wn in wb_rounds[lb_round]:
+                            new_wb.append(("wb", wn))
+                    entrants = []
+                    # чередуем: WB-лузер vs LB-выживший
+                    i = j = 0
+                    while i < len(new_wb) or j < len(pending):
+                        if i < len(new_wb):
+                            entrants.append(new_wb[i]); i += 1
+                        if j < len(pending):
+                            entrants.append(pending[j]); j += 1
+                    if not entrants:
+                        break
+
+                    round_nodes: list[BracketNode] = []
+                    k = 0
+                    while 2 * k + 1 < len(entrants):
+                        e1, e2 = entrants[2 * k], entrants[2 * k + 1]
+                        node = BracketNode(
+                            tournament_id=tournament_id, bracket=Bracket.LOSERS,
+                            round_index=lb_round, slot_index=k, best_of=best_of,
+                            status="pending",
+                            label=f"LB R{lb_round + 1}",
+                        )
+                        nodes.append(node)
+                        lb_nodes.append(node)
+                        await self._insert_node(conn, node)
+                        # e1 -> teamA, e2 -> teamB
+                        await _set_route(e1[1], "loser" if e1[0] == "wb" else "winner",
+                                         node, "teamA")
+                        await _set_route(e2[1], "loser" if e2[0] == "wb" else "winner",
+                                         node, "teamB")
+                        node.team_a_source = e1[1].id
+                        node.team_b_source = e2[1].id
+                        await self._update_node(conn, node,
+                                                team_a_source=e1[1].id,
+                                                team_b_source=e2[1].id)
+                        round_nodes.append(node)
+                        k += 1
+
+                    leftover = entrants[-1] if len(entrants) % 2 == 1 else None
+                    pending = [("lb", nd) for nd in round_nodes]
+                    if leftover:
+                        pending.insert(0, leftover)  # bye — ждёт следующего раунда
+                    lb_round += 1
+                    if not pending:
+                        break
+                    if lb_round > max_rounds:
+                        break
+
+                # ---- Grand Final ----
+                wb_final = wb_rounds[-1][0]
+                lb_champ = pending[0] if pending else None
+
+                gf = BracketNode(
+                    tournament_id=tournament_id, bracket=Bracket.GRAND_FINAL,
+                    round_index=0, slot_index=0, best_of=best_of,
+                    label="Grand Final", status="pending",
+                )
+                nodes.append(gf)
+                await self._insert_node(conn, gf)
+
+                # WB champ -> GF teamA
+                await self._update_node(conn, wb_final,
+                                        winner_to_node_id=gf.id, winner_to_slot="teamA")
+                wb_final.winner_to_node_id = gf.id
+                wb_final.winner_to_slot = "teamA"
+                gf.team_a_source = wb_final.id
+
+                # LB champ -> GF teamB
+                if lb_champ:
+                    src_node = lb_champ[1]
+                    outcome = "loser" if lb_champ[0] == "wb" else "winner"
+                    await _set_route(src_node, outcome, gf, "teamB")
+                    gf.team_b_source = src_node.id
+                await self._update_node(conn, gf,
+                                        team_a_source=wb_final.id,
+                                        team_b_source=gf.team_b_source)
+
+                # Bye propagation для WB-узлов (имена известны на старте)
+                for node in nodes:
+                    if node.status == "bye" and node.winner_to_node_id and node.bracket == Bracket.WINNERS:
+                        wname = node.team_a_name if node.winner_slot == "teamA" else node.team_b_name
+                        wentry = node.team_a_entry_id if node.winner_slot == "teamA" else node.team_b_entry_id
+                        slot_col = f"team_{node.winner_to_slot[4].lower()}_name"
+                        entry_col = f"team_{node.winner_to_slot[4].lower()}_entry_id"
+                        await conn.execute(
+                            f"UPDATE arb_bracket_nodes SET {slot_col}=$1, {entry_col}=$2, "
+                            f"updated_at=$3 WHERE id=$4",
+                            wname, wentry, utcnow(), node.winner_to_node_id)
         return nodes
 
     async def generate_round_robin(self, tournament_id: str,
@@ -399,14 +609,21 @@ class BracketService:
             "COUNT(*) FILTER (WHERE status IN ('complete','bye')) AS done "
             "FROM arb_bracket_nodes WHERE tournament_id=$1", tournament_id)
         if row and row["total"] > 0 and row["total"] == row["done"]:
-            # champion = winner of grand final / last winners node
+            # champion: grand_final если есть, иначе последний winners узел
             gf = await conn.fetchrow(
                 "SELECT team_a_name, team_b_name, winner_slot FROM arb_bracket_nodes "
-                "WHERE tournament_id=$1 AND bracket='winners' "
-                "ORDER BY round_index DESC LIMIT 1", tournament_id)
+                "WHERE tournament_id=$1 AND bracket='grand_final' LIMIT 1", tournament_id)
             champion = None
             if gf and gf["winner_slot"]:
                 champion = gf["team_a_name"] if gf["winner_slot"] == "teamA" else gf["team_b_name"]
+            if champion is None:
+                gf = await conn.fetchrow(
+                    "SELECT team_a_name, team_b_name, winner_slot FROM arb_bracket_nodes "
+                    "WHERE tournament_id=$1 AND bracket='winners' "
+                    "ORDER BY round_index DESC LIMIT 1", tournament_id)
+                if gf and gf["winner_slot"]:
+                    champion = (gf["team_a_name"] if gf["winner_slot"] == "teamA"
+                                else gf["team_b_name"])
             await conn.execute(
                 "UPDATE arb_tournaments SET status='complete', champion_name=$1, "
                 "completed_at=$2, updated_at=$3 WHERE id=$4",

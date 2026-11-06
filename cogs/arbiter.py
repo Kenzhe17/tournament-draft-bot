@@ -17,6 +17,7 @@ from arbiter.services.match_service import MatchError, match_service
 from arbiter.services.ops_service import OpsError, ops_service
 from arbiter.services.org_service import OrgError, org_service
 from arbiter.services.ocr_service import OcrError, normalize_results, ocr_service
+from arbiter.services.room_service import RoomError, room_service
 from arbiter.services.tournament_service import TournamentError, tournament_service
 from storage.db import get_pool
 from utils.design.embeds import DesignEmbed
@@ -401,6 +402,52 @@ class ArbiterCog(commands.Cog):
         except (OrgError, MatchError, OpsError) as e:
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
 
+    @arbiter_match.command(name="room", description="Создать/удалить комнату матча")
+    @app_commands.describe(match_id="ID или код", action="Действие")
+    @app_commands.choices(action=[
+        app_commands.Choice(name="Создать", value="create"),
+        app_commands.Choice(name="Удалить", value="delete"),
+    ])
+    async def match_room(self, interaction: discord.Interaction, match_id: str,
+                         action: app_commands.Choice[str]) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF", "REFEREE"):
+                raise OrgError("Только судьи/админы.")
+            if action.value == "create":
+                existing = await room_service.get_room(match.id)
+                if existing and existing.get("category_id"):
+                    raise RoomError("Комната уже существует.")
+                res = await room_service.create_match_room(interaction.guild, match.id)
+                embed = DesignEmbed(category="success", title="Комната создана",
+                                    description=f"Категория: <#{res['category_id']}>")
+                embed.add_kv("Team A text", f"<#{res['team_a_text']}>")
+                embed.add_kv("Team A voice", f"<#{res['team_a_voice']}>")
+                embed.add_kv("Team B text", f"<#{res['team_b_text']}>")
+                embed.add_kv("Team B voice", f"<#{res['team_b_voice']}>")
+                embed.add_kv("Main", f"<#{res['main_text']}> / <#{res['main_voice']}>")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                settings = await org_service.get_settings(org.id)
+                await room_service.archive_and_delete(
+                    interaction.guild, match.id,
+                    int(settings.match_log_channel_id) if settings and settings.match_log_channel_id else None)
+                await interaction.followup.send(
+                    embed=DesignEmbed(category="success", title="Комната удалена",
+                                      description="История заархивирована в лог-канал."),
+                    ephemeral=True)
+        except (OrgError, MatchError, RoomError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
     @arbiter_match.command(name="timeline", description="Хронология событий матча")
     @app_commands.describe(match_id="ID или код матча")
     async def match_timeline(self, interaction: discord.Interaction, match_id: str) -> None:
@@ -560,8 +607,10 @@ class ArbiterCog(commands.Cog):
                     t.id, entries, best_of=t.best_of, third_place=t.third_place)
             elif t.format == TournamentFormat.ROUND_ROBIN:
                 await bracket_service.generate_round_robin(t.id, entries, best_of=t.best_of)
+            elif t.format == TournamentFormat.DOUBLE_ELIMINATION:
+                await bracket_service.generate_double_elimination(t.id, entries, best_of=t.best_of)
             else:
-                raise BracketError("double_elimination пока не поддерживается")
+                raise BracketError("Неизвестный формат сетки")
             t = await tournament_service.activate(t)
             matches = await tournament_service.ensure_node_matches(
                 t, org.id, str(channel.id) if channel else None, profile.id)
