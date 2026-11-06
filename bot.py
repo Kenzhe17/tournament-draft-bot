@@ -72,6 +72,12 @@ class TournamentBot(commands.Bot):
                 from storage.db import init_db
                 from storage.bet_store import bet_store
                 await init_db()
+                try:
+                    from arbiter.db import init_arbiter_schema
+                    await init_arbiter_schema()
+                    logger.info("Arbiter schema initialized")
+                except Exception as e:
+                    logger.error("Failed to init arbiter schema: %s", e)
                 player_stats_store.enable_db()
                 user_balance_store.enable_db()
                 bet_store.enable_db()
@@ -116,6 +122,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.bot_settings")
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.freefire")
+        await self.load_extension("cogs.arbiter")
 
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
