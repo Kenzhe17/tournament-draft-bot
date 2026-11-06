@@ -121,6 +121,7 @@ async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
 # ------------------------------------------------------------------ /ff info
 @ff_group.command(name="info", description="Профиль игрока Free Fire")
 @app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
+@app_commands.choices(region=REGION_CHOICES)
 async def ff_info(
     interaction: discord.Interaction,
     uid: str,
@@ -190,7 +191,8 @@ async def ff_info(
         app_commands.Choice(name="BR — Рейтинг", value="br_ranked"),
         app_commands.Choice(name="CS — Карьера", value="cs_career"),
         app_commands.Choice(name="CS — Рейтинг", value="cs_ranked"),
-    ]
+    ],
+    region=REGION_CHOICES,
 )
 async def ff_stats(
     interaction: discord.Interaction,
@@ -268,6 +270,7 @@ async def ff_ban(interaction: discord.Interaction, uid: str) -> None:
 # ---------------------------------------------------------------- /ff banner
 @ff_group.command(name="banner", description="Баннер профиля Free Fire (PNG)")
 @app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
+@app_commands.choices(region=REGION_CHOICES)
 async def ff_banner(
     interaction: discord.Interaction,
     uid: str,
@@ -307,6 +310,7 @@ async def ff_banner(
 # --------------------------------------------------------------- /ff wishlist
 @ff_group.command(name="wishlist", description="Вишлист игрока Free Fire")
 @app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
+@app_commands.choices(region=REGION_CHOICES)
 async def ff_wishlist(
     interaction: discord.Interaction,
     uid: str,
@@ -348,6 +352,7 @@ async def ff_wishlist(
 # ------------------------------------------------------------- /ff craftland
 @ff_group.command(name="craftland", description="Информация о карте Craftland")
 @app_commands.describe(code="Код карты", region="Регион")
+@app_commands.choices(region=REGION_CHOICES)
 async def ff_craftland(
     interaction: discord.Interaction,
     code: str,
