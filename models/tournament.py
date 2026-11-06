@@ -172,6 +172,9 @@ class Tournament:
     # MM поиск который создал этот турнир (channel_id)
     mm_search_channel_id: int = 0
 
+    # Матчи, уже разрешённые через arbiter-панель (match_id -> True)
+    resolved_matches: set = field(default_factory=set)
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -1514,6 +1517,7 @@ class Tournament:
             "organizer_id": self.organizer_id,
             "eliminated_teams": list(self.eliminated_teams),
             "mm_search_channel_id": self.mm_search_channel_id,
+            "resolved_matches": list(self.resolved_matches),
         }
 
     @classmethod
@@ -1562,6 +1566,7 @@ class Tournament:
             eliminated_teams=set(data.get("eliminated_teams", [])),
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
         )
+        t.resolved_matches = set(data.get("resolved_matches", []))
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())
         return t

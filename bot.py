@@ -280,6 +280,13 @@ class TournamentBot(commands.Bot):
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
 
+        # Arbiter bridge: создать match-панели для матчей текущей фазы
+        try:
+            from arbiter.services.legacy_bridge import ensure_matches_for_phase
+            await ensure_matches_for_phase(self, guild, tournament)
+        except Exception as exc:
+            logger.warning("legacy_bridge ensure failed: %s", exc)
+
     async def betting_timer_loop(self) -> None:
         """Background task to update betting timer in tournament messages."""
         import asyncio

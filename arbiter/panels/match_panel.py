@@ -246,6 +246,11 @@ class MatchPanelView(ui.View):
             elif action == "close":
                 fresh = await self._match()
                 winner = await match_service.winner(fresh)
+                if fresh.external_ref and winner is None:
+                    await interaction.followup.send(
+                        "Сначала укажите счёт через «Счёт» (например 1:0), "
+                        "чтобы определить победителя.", ephemeral=True)
+                    return
                 await match_service.complete_match(
                     fresh, winner_slot=winner,
                     result_a=(f"{fresh.team_a_score}-{fresh.maps_to_win - fresh.team_a_score}"
@@ -269,6 +274,20 @@ class MatchPanelView(ui.View):
                         await room_service.archive_and_delete(interaction.guild, fresh.id, log_ch)
                 except Exception as e:
                     logger.warning("Room archive failed: %s", e)
+                # legacy bridge: применить результат к драфт-турниру
+                if fresh.external_ref and interaction.guild:
+                    try:
+                        from arbiter.services.legacy_bridge import resolve_legacy_match
+                        resolved = await resolve_legacy_match(
+                            interaction.guild, interaction.client,
+                            fresh, winner, interaction.user,
+                        )
+                        if resolved:
+                            await interaction.followup.send(
+                                "✅ Результат применён к турниру (Elo/стата/история).",
+                                ephemeral=True)
+                    except Exception as e:
+                        logger.warning("legacy_bridge resolve failed: %s", e)
         except MatchError as e:
             try:
                 await interaction.response.send_message(str(e), ephemeral=True)

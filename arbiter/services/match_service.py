@@ -61,7 +61,7 @@ def _row_to_match(r: asyncpg.Record) -> Match:
         dispute_reason=r["dispute_reason"],
         team_a_role_id=r["team_a_role_id"], team_b_role_id=r["team_b_role_id"],
         roster_locked_at=r["roster_locked_at"], roster_locked_by_id=r["roster_locked_by_id"],
-        final_map=r["final_map"],
+        final_map=r["final_map"], external_ref=r.get("external_ref"),
         created_at=r["created_at"], updated_at=r["updated_at"],
     )
 
@@ -93,6 +93,7 @@ class MatchService:
         referee_claim_mode: str = "open",
         referee_claim_limit: int = 1,
         allow_player_reports: bool = False,
+        external_ref: str | None = None,
     ) -> Match:
         if best_of < 1 or best_of > 99:
             raise MatchError("BO должен быть от 1 до 99")
@@ -107,6 +108,7 @@ class MatchService:
             referee_claim_mode=referee_claim_mode,
             referee_claim_limit=referee_claim_limit,
             allow_player_reports=allow_player_reports,
+            external_ref=external_ref,
         )
         pool = await get_pool()
         async with pool.acquire() as conn:
@@ -114,13 +116,13 @@ class MatchService:
                 "INSERT INTO arb_matches (id, public_code, organization_id, tournament_id, "
                 "channel_id, created_by_id, team_a_name, team_b_name, best_of, map_pool, "
                 "rules_preset, veto_mode, status, referee_claim_mode, referee_claim_limit, "
-                "allow_player_reports, created_at, updated_at) "
-                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)",
+                "allow_player_reports, external_ref, created_at, updated_at) "
+                "VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
                 match.id, match.public_code, org_id, tournament_id, channel_id,
                 created_by_id, match.team_a_name, match.team_b_name, best_of,
                 dumps(match.map_pool), rules_preset, veto_mode.value,
                 MatchStatus.PENDING.value, referee_claim_mode, referee_claim_limit,
-                allow_player_reports, utcnow(), utcnow(),
+                allow_player_reports, external_ref, utcnow(), utcnow(),
             )
             await org_service._audit(conn, org_id, created_by_id, "match.create",
                                      "match", match.id,
@@ -139,6 +141,14 @@ class MatchService:
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM arb_matches WHERE public_code = $1 OR id = $1", code
+            )
+            return _row_to_match(row) if row else None
+
+    async def get_match_by_external_ref(self, external_ref: str) -> Match | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM arb_matches WHERE external_ref = $1", external_ref
             )
             return _row_to_match(row) if row else None
 

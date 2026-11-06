@@ -161,6 +161,7 @@ class Match:
     roster_locked_at: datetime | None = None
     roster_locked_by_id: str | None = None
     final_map: str | None = None
+    external_ref: str | None = None  # связь с legacy-драфт турниром
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
 

@@ -174,10 +174,13 @@ CREATE TABLE IF NOT EXISTS arb_matches (
     roster_locked_at TIMESTAMPTZ,
     roster_locked_by_id TEXT,
     final_map TEXT,
+    external_ref TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS arb_matches_org_idx ON arb_matches(organization_id);
+ALTER TABLE arb_matches ADD COLUMN IF NOT EXISTS external_ref TEXT;
+CREATE INDEX IF NOT EXISTS arb_matches_extref_idx ON arb_matches(external_ref);
 CREATE INDEX IF NOT EXISTS arb_matches_status_idx ON arb_matches(status);
 CREATE INDEX IF NOT EXISTS arb_matches_tournament_idx ON arb_matches(tournament_id);
 
