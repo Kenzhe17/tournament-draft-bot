@@ -140,6 +140,16 @@ async def init_db() -> None:
             pass
 
         try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_assists INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_damage INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_elo_change INTEGER DEFAULT 0")
         except asyncpg.DuplicateColumnError:
             pass
@@ -195,6 +205,12 @@ async def init_db() -> None:
             await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS daily_coins_date TEXT DEFAULT ''")
         except asyncpg.DuplicateColumnError:
             pass
+
+        # match_history: assists/damage (IF EXISTS — таблица может ещё не быть создана)
+        await conn.execute(
+            "ALTER TABLE IF EXISTS match_history ADD COLUMN IF NOT EXISTS assists INTEGER DEFAULT 0")
+        await conn.execute(
+            "ALTER TABLE IF EXISTS match_history ADD COLUMN IF NOT EXISTS damage INTEGER DEFAULT 0")
 
         # Create user_balance table for economy system
         await conn.execute("""

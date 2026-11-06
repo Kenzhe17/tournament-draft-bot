@@ -96,7 +96,9 @@ async def write_stats_to_tournament(guild_id: int, tournament_id: str,
     bucket = tournament.temp_match_stats.setdefault(match_id, {})
     for player, kd in stats.items():
         bucket[player] = {"kills": int(kd.get("kills", 0)),
-                          "deaths": int(kd.get("deaths", 0))}
+                          "deaths": int(kd.get("deaths", 0)),
+                          "assists": int(kd.get("assists", 0)),
+                          "damage": int(kd.get("damage", 0))}
     store.set(tournament)
     logger.info("ocr_apply: wrote %d players to %s", len(stats), match_id)
     return True

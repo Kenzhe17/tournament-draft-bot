@@ -25,6 +25,8 @@ class PlayerStats:
     # New fields for detailed rating system
     total_kills: int = 0
     total_deaths: int = 0
+    total_assists: int = 0
+    total_damage: int = 0
     best_match_kills: int = 0
     total_elo_change: int = 0
     last_elo_change: int = 0  # Sum of all ELO changes
@@ -66,6 +68,8 @@ class PlayerStats:
             "streak_bonus_coins": self.streak_bonus_coins,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
+            "total_assists": self.total_assists,
+            "total_damage": self.total_damage,
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
             "last_elo_change": self.last_elo_change,
@@ -104,6 +108,8 @@ class PlayerStats:
             streak_bonus_coins=data.get("streak_bonus_coins", 0),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
+            total_assists=data.get("total_assists", 0),
+            total_damage=data.get("total_damage", 0),
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
             last_elo_change=data.get("last_elo_change", 0),

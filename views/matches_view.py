@@ -308,7 +308,10 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                     kd_data = temp_stats.get(player, {})
                     kills = kd_data.get("kills", 0)
                     deaths = kd_data.get("deaths", 0)
-                    players.append({"name": player, "kills": kills, "deaths": deaths, "user_id": user_ids.get(player)})
+                    players.append({"name": player, "kills": kills, "deaths": deaths,
+                                    "assists": kd_data.get("assists", 0),
+                                    "damage": kd_data.get("damage", 0),
+                                    "user_id": user_ids.get(player)})
 
             return players
 
@@ -394,6 +397,8 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 opponents=opponents,
                 kills=kd_data.get("kills", 0),
                 deaths=kd_data.get("deaths", 0),
+                assists=kd_data.get("assists", 0),
+                damage=kd_data.get("damage", 0),
                 result=result,
                 elo_change=elo_change
             )

@@ -368,7 +368,9 @@ def update_player_stats_from_match(
     kills: int,
     deaths: int,
     elo_change: int,
-    team_won: bool
+    team_won: bool,
+    assists: int = 0,
+    damage: int = 0
 ) -> PlayerStats:
     """
     Update player stats after a match.
@@ -386,6 +388,8 @@ def update_player_stats_from_match(
     # Update total kills and deaths
     stats.total_kills += kills
     stats.total_deaths += deaths
+    stats.total_assists += assists
+    stats.total_damage += damage
     
     # Update best match kills
     if kills > stats.best_match_kills:

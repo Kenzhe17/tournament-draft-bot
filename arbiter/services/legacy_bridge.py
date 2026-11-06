@@ -186,7 +186,8 @@ def _ensure_temp_stats(tournament, match_type: str, match_index: int,
             if p and p not in players:
                 players.append(p)
     tournament.temp_match_stats[legacy_match_id] = {
-        p: {"kills": 0, "deaths": 0} for p in players
+        p: {"kills": 0, "deaths": 0, "assists": 0, "damage": 0}
+        for p in players
     }
 
 
