@@ -24,6 +24,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot.py config.py ./
 
+COPY core/ core/
+
+COPY services/ services/
+
 COPY cogs/ cogs/
 
 COPY models/ models/
