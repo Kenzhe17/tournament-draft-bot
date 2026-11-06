@@ -377,7 +377,28 @@ class MatchService:
                                          "match.complete", "match", match.id,
                                          {"winner": winner_slot, "a_result": result_a,
                                           "b_result": result_b, "final_map": final_map})
+        # Продвижение в сетке турнира (если матч привязан к bracket node)
+        try:
+            from arbiter.services.bracket_service import bracket_service
+            node = await self._find_node_by_match(match.id)
+            if node and node.status != "complete":
+                await bracket_service.complete_node(
+                    node.id, winner_slot or "teamA",
+                    team_a_score=match.team_a_score, team_b_score=match.team_b_score,
+                    team_a_result=result_a, team_b_result=result_b)
+        except Exception as e:
+            logger.error("Bracket progression failed for match %s: %s", match.id, e)
         return _row_to_match(row)
+
+    async def _find_node_by_match(self, match_id: str):
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id FROM arb_bracket_nodes WHERE match_id=$1", match_id)
+            if row:
+                from arbiter.services.bracket_service import bracket_service
+                return await bracket_service.get_node(row["id"])
+            return None
 
     async def cancel_match(self, match: Match, *, reason: str = "",
                            actor_id: str | None = None) -> Match:

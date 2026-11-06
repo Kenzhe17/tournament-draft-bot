@@ -8,15 +8,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from arbiter.enums import OrgRole
-from arbiter.services.org_service import OrgError, org_service
 from arbiter.db import init_arbiter_schema
-from arbiter.enums import OrgRole
+from arbiter.enums import OrgRole, TournamentFormat
 from arbiter.panels.match_panel import MatchPanelView, build_match_embed
+from arbiter.services.bracket_service import BracketError, bracket_service
 from arbiter.services.match_service import MatchError, match_service
 from arbiter.services.ops_service import OpsError, ops_service
 from arbiter.services.org_service import OrgError, org_service
 from arbiter.services.ocr_service import OcrError, normalize_results, ocr_service
+from arbiter.services.tournament_service import TournamentError, tournament_service
 from utils.design.embeds import DesignEmbed
 
 logger = logging.getLogger(__name__)
@@ -457,6 +457,159 @@ class ArbiterCog(commands.Cog):
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
         except Exception as e:
             logger.exception("ocr failed")
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+
+    # ---------- tournaments ----------
+
+    arbiter_tournament = app_commands.Group(name="tournament", description="Турниры и сетки",
+                                            parent=arbiter)
+
+    @arbiter_tournament.command(name="create", description="Создать турнир")
+    @app_commands.describe(name="Название", game="Игра", best_of="Формат BO",
+                           format_="Формат сетки")
+    @app_commands.choices(format_=[
+        app_commands.Choice(name="Single Elimination", value="single_elimination"),
+        app_commands.Choice(name="Double Elimination", value="double_elimination"),
+        app_commands.Choice(name="Round Robin", value="round_robin"),
+    ])
+    async def tournament_create(
+        self, interaction: discord.Interaction, name: str,
+        game: str | None = None, best_of: int = 1,
+        format_: app_commands.Choice[str] | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org:
+                raise OrgError("Организация не настроена. /arb setup")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF"):
+                raise OrgError("Только организаторы.")
+            fmt = TournamentFormat(format_.value) if format_ else TournamentFormat.SINGLE_ELIMINATION
+            t = await tournament_service.create_tournament(
+                org.id, name, game_title=game, format=fmt, best_of=best_of,
+                created_by_id=profile.id)
+            embed = DesignEmbed(category="success", title="Турнир создан",
+                                description=f"**{t.name}**")
+            embed.add_kv("Код", f"`{t.public_code}`")
+            embed.add_kv("Формат", fmt.value)
+            embed.add_kv("BO", str(best_of))
+            embed.add_kv("Статус", t.status.value)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except (OrgError, TournamentError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_tournament.command(name="add", description="Добавить команду в турнир")
+    @app_commands.describe(tournament_id="ID или код", team="Название команды")
+    async def tournament_add(self, interaction: discord.Interaction,
+                             tournament_id: str, team: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            t = await tournament_service.get_tournament(tournament_id)
+            if not t:
+                raise TournamentError("Турнир не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or t.organization_id != org.id:
+                raise OrgError("Турнир не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF"):
+                raise OrgError("Только организаторы.")
+            entry = await bracket_service.add_entry(t.id, team)
+            await interaction.followup.send(
+                embed=DesignEmbed(category="success", title="Команда добавлена",
+                                  description=f"**{team}** → seed {entry.seed}"),
+                ephemeral=True)
+        except (OrgError, TournamentError, BracketError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_tournament.command(name="bracket", description="Сгенерировать сетку и активировать турнир")
+    @app_commands.describe(tournament_id="ID или код", channel="Канал для матчей")
+    async def tournament_bracket(self, interaction: discord.Interaction,
+                                 tournament_id: str,
+                                 channel: discord.TextChannel | None = None) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            t = await tournament_service.get_tournament(tournament_id)
+            if not t:
+                raise TournamentError("Турнир не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or t.organization_id != org.id:
+                raise OrgError("Турнир не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF"):
+                raise OrgError("Только организаторы.")
+            entries = await bracket_service.list_entries(t.id)
+            if len(entries) < 2:
+                raise BracketError("Нужно минимум 2 команды.")
+            # regenerate: delete old nodes
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                await conn.execute("DELETE FROM arb_bracket_nodes WHERE tournament_id=$1", t.id)
+            if t.format == TournamentFormat.SINGLE_ELIMINATION:
+                await bracket_service.generate_single_elimination(
+                    t.id, entries, best_of=t.best_of, third_place=t.third_place)
+            elif t.format == TournamentFormat.ROUND_ROBIN:
+                await bracket_service.generate_round_robin(t.id, entries, best_of=t.best_of)
+            else:
+                raise BracketError("double_elimination пока не поддерживается")
+            t = await tournament_service.activate(t)
+            matches = await tournament_service.ensure_node_matches(
+                t, org.id, str(channel.id) if channel else None, profile.id)
+            embed = DesignEmbed(category="success", title="Сетка создана",
+                                description=f"**{t.name}** • {len(entries)} команд • {len(matches)} матчей")
+            for m in matches[:10]:
+                embed.add_kv(m.public_code, f"**{m.team_a_name}** vs **{m.team_b_name}**")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except (OrgError, TournamentError, BracketError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_tournament.command(name="standings", description="Таблица турнира (round robin)")
+    @app_commands.describe(tournament_id="ID или код")
+    async def tournament_standings(self, interaction: discord.Interaction,
+                                   tournament_id: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            t = await tournament_service.get_tournament(tournament_id)
+            if not t:
+                raise TournamentError("Турнир не найден.")
+            rows = await bracket_service.standings_round_robin(t.id)
+            embed = DesignEmbed(category="info", title=f"Standings — {t.name}")
+            for i, r in enumerate(rows[:20], 1):
+                embed.add_kv(f"{i}. {r['name']}",
+                             f"W {r['wins']} / L {r['losses']} • maps {r['maps_w']}:{r['maps_l']}")
+            if not rows:
+                embed.description = "Нет завершённых матчей."
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except (OrgError, TournamentError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_tournament.command(name="list", description="Список турниров")
+    async def tournament_list(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org:
+                raise OrgError("Организация не настроена.")
+            ts = await tournament_service.list_tournaments(org.id)
+            embed = DesignEmbed(category="info", title="Турниры", description=f"**{org.name}**")
+            for t in ts[:15]:
+                champ = f" • 🏆 {t.champion_name}" if t.champion_name else ""
+                embed.add_kv(f"{t.public_code} • {t.status.value}{champ}",
+                             f"**{t.name}** • {t.format.value} • BO{t.best_of}")
+            if not ts:
+                embed.description = "Нет турниров."
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except OrgError as e:
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
 
 
