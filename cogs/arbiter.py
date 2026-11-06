@@ -14,7 +14,9 @@ from arbiter.db import init_arbiter_schema
 from arbiter.enums import OrgRole
 from arbiter.panels.match_panel import MatchPanelView, build_match_embed
 from arbiter.services.match_service import MatchError, match_service
+from arbiter.services.ops_service import OpsError, ops_service
 from arbiter.services.org_service import OrgError, org_service
+from arbiter.services.ocr_service import OcrError, normalize_results, ocr_service
 from utils.design.embeds import DesignEmbed
 
 logger = logging.getLogger(__name__)
@@ -301,6 +303,160 @@ class ArbiterCog(commands.Cog):
             await match_service.set_control_message(match, str(target.id), str(msg.id))
             await interaction.followup.send("Панель отправлена.", ephemeral=True)
         except (OrgError, MatchError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="checkin", description="Отметить участие (check-in)")
+    @app_commands.describe(match_id="ID или код матча", game_account="Игровой аккаунт")
+    async def match_checkin(self, interaction: discord.Interaction, match_id: str,
+                            game_account: str | None = None) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            await ops_service.checkin(org.id, match.id, interaction.user.id,
+                                      game_account=game_account)
+            await interaction.followup.send(
+                embed=DesignEmbed(category="success", title="Check-in",
+                                  description="Вы отмечены участником матча."),
+                ephemeral=True)
+        except (OrgError, MatchError, OpsError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="evidence", description="Прикрепить доказательство к матчу")
+    @app_commands.describe(match_id="ID или код матча", url="Ссылка на доказательство",
+                           note="Комментарий")
+    async def match_evidence(self, interaction: discord.Interaction, match_id: str,
+                             url: str, note: str | None = None) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            await ops_service.add_evidence(org.id, match.id, url, note=note,
+                                           submitted_by_id=profile.id)
+            await interaction.followup.send(
+                embed=DesignEmbed(category="success", title="Доказательство добавлено",
+                                  description=url[:200]), ephemeral=True)
+        except (OrgError, MatchError, OpsError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="warn", description="Выдать предупреждение в матче")
+    @app_commands.describe(match_id="ID или код матча", player="Игрок/команда",
+                           rule="Правило", note="Комментарий")
+    async def match_warn(self, interaction: discord.Interaction, match_id: str,
+                         player: str, rule: str, note: str | None = None) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            member = await org_service.get_member(org.id, profile.id)
+            if not member or member.role.value not in ("OWNER", "ADMIN", "MANAGER", "HEAD_REF", "REFEREE"):
+                raise OrgError("Только судьи/админы.")
+            await ops_service.add_warning(org.id, match.id, player, rule,
+                                          note=note, actor_id=profile.id)
+            await interaction.followup.send(
+                embed=DesignEmbed(category="warning", title="Предупреждение",
+                                  description=f"**{player}** — {rule}"), ephemeral=True)
+        except (OrgError, MatchError, OpsError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="pause", description="Записать паузу в матче")
+    @app_commands.describe(match_id="ID или код матча", minutes="Минуты",
+                           reason="Причина")
+    async def match_pause(self, interaction: discord.Interaction, match_id: str,
+                          minutes: int, reason: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            org = await org_service.get_org_by_guild(interaction.guild_id)
+            if not org or match.organization_id != org.id:
+                raise OrgError("Матч не принадлежит этой организации.")
+            profile = await org_service.get_or_create_profile(interaction.user)
+            await ops_service.add_pause(org.id, match.id, minutes, reason,
+                                        actor_id=profile.id)
+            await interaction.followup.send(
+                embed=DesignEmbed(category="info", title="Пауза записана",
+                                  description=f"{minutes} мин — {reason}"), ephemeral=True)
+        except (OrgError, MatchError, OpsError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    @arbiter_match.command(name="timeline", description="Хронология событий матча")
+    @app_commands.describe(match_id="ID или код матча")
+    async def match_timeline(self, interaction: discord.Interaction, match_id: str) -> None:
+        await interaction.response.defer(ephemeral=True)
+        await self._ensure_schema()
+        try:
+            match = await match_service.get_match_by_code(match_id)
+            if not match:
+                raise MatchError("Матч не найден.")
+            events = await ops_service.match_timeline(match.id, limit=20)
+            embed = DesignEmbed(category="info", title=f"Таймлайн {match.public_code}",
+                                description=f"**{match.team_a_name}** vs **{match.team_b_name}**")
+            for ev in events[:15]:
+                actor = ev.get("actor_discord_id") or "system"
+                ts = ev["created_at"].strftime("%H:%M") if ev.get("created_at") else ""
+                embed.add_kv(f"{ts} {ev['action']}", f"<@{actor}>" if actor != "system" else actor)
+            if not events:
+                embed.description = "Событий нет."
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except (OrgError, MatchError) as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+
+    # ---------- OCR ----------
+
+    @arbiter.command(name="ocr", description="Распознать скриншот результата Free Fire (OCR)")
+    @app_commands.describe(image="Скриншот таблицы результатов")
+    async def ocr_parse(self, interaction: discord.Interaction,
+                        image: discord.Attachment) -> None:
+        await interaction.response.defer(ephemeral=True)
+        if not ocr_service.enabled:
+            await interaction.followup.send(
+                embed=DesignEmbed(category="warning", title="OCR не настроен",
+                                  description="Задайте `OCR_SERVICE_URL` (battles-recon)."),
+                ephemeral=True)
+            return
+        try:
+            await interaction.followup.send("Распознаю скриншот…", ephemeral=True)
+            raw = await ocr_service.process_attachment(image)
+            players = normalize_results(raw)
+            if not players:
+                await interaction.followup.send(
+                    embed=DesignEmbed(category="warning", title="OCR",
+                                      description="Не удалось распознать игроков. Попробуйте другой скриншот."),
+                    ephemeral=True)
+                return
+            embed = DesignEmbed(category="info", title="OCR: результаты",
+                                description=f"Распознано игроков: **{len(players)}**")
+            for p in players[:20]:
+                embed.add_kv(
+                    f"#{p['placement']} {p['name']}",
+                    f"Kills {p['kills']} • Deaths {p['deaths']} • "
+                    f"Assists {p['assists']} • DMG {p['damage']}",
+                )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except OcrError as e:
+            await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
+        except Exception as e:
+            logger.exception("ocr failed")
             await interaction.followup.send(embed=_err_embed(str(e)), ephemeral=True)
 
 
