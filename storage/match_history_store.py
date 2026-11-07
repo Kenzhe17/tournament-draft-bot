@@ -221,17 +221,29 @@ class MatchHistoryStore:
                 "win_rate": 0.0,
                 "total_kills": 0,
                 "total_deaths": 0,
+                "total_assists": 0,
+                "total_damage": 0,
                 "kd_ratio": 0.0,
-                "avg_kills": 0.0
+                "kda_ratio": 0.0,
+                "avg_kills": 0.0,
+                "avg_damage": 0.0
             }
 
         wins = sum(1 for m in recent_matches if m.result == "win")
         losses = sum(1 for m in recent_matches if m.result == "loss")
         total_kills = sum(m.kills for m in recent_matches)
         total_deaths = sum(m.deaths for m in recent_matches)
+        total_assists = sum(getattr(m, "assists", 0) for m in recent_matches)
+        total_damage = sum(getattr(m, "damage", 0) for m in recent_matches)
 
         kd_ratio = total_kills / total_deaths if total_deaths > 0 else 0.0
+        kda_ratio = (
+            (total_kills + total_assists) / total_deaths
+            if total_deaths > 0
+            else float(total_kills + total_assists)
+        )
         avg_kills = total_kills / len(recent_matches) if recent_matches else 0.0
+        avg_damage = total_damage / len(recent_matches) if recent_matches else 0.0
         win_rate = (wins / len(recent_matches) * 100) if recent_matches else 0.0
 
         return {
@@ -241,8 +253,12 @@ class MatchHistoryStore:
             "win_rate": win_rate,
             "total_kills": total_kills,
             "total_deaths": total_deaths,
+            "total_assists": total_assists,
+            "total_damage": total_damage,
             "kd_ratio": kd_ratio,
-            "avg_kills": avg_kills
+            "kda_ratio": kda_ratio,
+            "avg_kills": avg_kills,
+            "avg_damage": avg_damage
         }
 
 

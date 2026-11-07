@@ -33,6 +33,8 @@ class MatchHistory:
     deaths: int
     result: str  # win/loss
     elo_change: int
+    assists: int = 0
+    damage: int = 0
 
     # Ставки (опционально)
     bet_amount: int = 0
@@ -59,6 +61,8 @@ class MatchHistory:
             "deaths": self.deaths,
             "result": self.result,
             "elo_change": self.elo_change,
+            "assists": self.assists,
+            "damage": self.damage,
             "bet_amount": self.bet_amount,
             "bet_win": self.bet_win,
             "bet_team": self.bet_team

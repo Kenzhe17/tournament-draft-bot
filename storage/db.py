@@ -196,6 +196,17 @@ async def init_db() -> None:
         except asyncpg.DuplicateColumnError:
             pass
 
+        # K/D/A + damage stats for KDA-based Skill Rating
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_assists INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
+        try:
+            await conn.execute("ALTER TABLE player_stats ADD COLUMN IF NOT EXISTS total_damage INTEGER DEFAULT 0")
+        except asyncpg.DuplicateColumnError:
+            pass
+
         # Create user_balance table for economy system
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS user_balance (

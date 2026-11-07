@@ -144,6 +144,17 @@ class PlayerStats:
         return self.total_kills / self.total_deaths if self.total_deaths > 0 else 0.0
 
     @property
+    def kda_ratio(self) -> float:
+        """K+A/D — убийства + ассисты к смертям."""
+        deaths = self.total_deaths if self.total_deaths > 0 else 1
+        return (self.total_kills + self.total_assists) / deaths
+
+    @property
+    def avg_damage(self) -> float:
+        """Средний урон за игру."""
+        return self.total_damage / self.games if self.games > 0 else 0.0
+
+    @property
     def avg_elo_change(self) -> float:
         """Среднее изменение ELO за игру."""
         return self.total_elo_change / self.games if self.games > 0 else 0.0
@@ -155,37 +166,24 @@ class PlayerStats:
 
     @property
     def skill_rating(self) -> float:
-        """Рейтинг скилла по ВСЕМ статистикам: K/D/A/DMG (шкала 1.0-10.0).
-
-        Считается как средний Performance Score за игру (те же веса,
-        что и в ELO) и нормализуется в диапазон 1.0-10.0.
-        """
-        from utils.elo_config import ELO_CONFIG
-
+        """Рейтинг скилла на основе KDA (K+A/D) и AVG Damage (шкала 1.0-10.0)."""
         if self.games < 3:
             # Штраф за мало игр (менее 3 каток)
             games_multiplier = self.games / 3
         else:
             games_multiplier = 1.0
 
-        g = self.games if self.games > 0 else 1
-        avg_kills = self.total_kills / g
-        avg_deaths = self.total_deaths / g
-        avg_assists = self.total_assists / g
-        avg_damage = self.total_damage / g
+        kda = self.kda_ratio
+        avg_dmg = self.avg_damage
 
-        # Средний Performance Score за игру по всем статистикам
-        score = (
-            avg_kills * ELO_CONFIG["kill_weight"]
-            + avg_assists * ELO_CONFIG["assist_weight"]
-            - avg_deaths * ELO_CONFIG["death_weight"]
-            + avg_damage / ELO_CONFIG["damage_divisor"]
-        )
+        # Сырой индекс: KDA ~0-8, AVG DMG ~500-4000
+        # Типичный игрок (KDA≈2, DMG≈2000) → raw≈120 → SR≈5.3
+        # Топ (KDA≈4+, DMG≈3500+) → raw≈220+ → SR=10.0
+        raw_index = (kda * 20) + (avg_dmg * 0.04)
 
         # Нормализация в диапазон 1.0-10.0
-        lo = ELO_CONFIG["skill_rating_min_score"]
-        hi = ELO_CONFIG["skill_rating_max_score"]
-        rating = 1.0 + (score - lo) / (hi - lo) * 9.0
+        # Raw Index = 30 -> 1.0, Raw Index = 220 -> 10.0
+        rating = 1.0 + ((raw_index - 30) / (220 - 30)) * 9.0
 
         # Применяем штраф за мало игр
         rating *= games_multiplier

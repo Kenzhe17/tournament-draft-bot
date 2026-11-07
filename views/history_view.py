@@ -144,8 +144,9 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Матчей: {stats['total_matches']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Побед: {stats['wins']} | Поражений: {stats['losses']}")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Винрейт: {stats['win_rate']:.1f}%")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D Ratio: {stats['kd_ratio']:.2f}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG Kills: {stats['avg_kills']:.2f}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D/A: {stats['total_kills']}/{stats['total_deaths']}/{stats.get('total_assists', 0)}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} K+A/D: {stats.get('kda_ratio', stats['kd_ratio']):.2f}")
+        description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG DMG: {stats.get('avg_damage', 0):,.0f}")
         description_parts.append("")
 
         if not matches:

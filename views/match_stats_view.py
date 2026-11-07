@@ -383,6 +383,8 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                                 opponents=opponents,
                                 kills=kills,
                                 deaths=deaths,
+                                assists=kd_data.get("assists", 0),
+                                damage=kd_data.get("damage", 0),
                                 result=result,
                                 elo_change=elo_change
                             )
@@ -1140,6 +1142,8 @@ class AdminConfirmView(View):
                     opponents=opponents,
                     kills=kd_data.get("kills", 0),
                     deaths=kd_data.get("deaths", 0),
+                    assists=kd_data.get("assists", 0),
+                    damage=kd_data.get("damage", 0),
                     result=result,
                     elo_change=elo_change
                 )

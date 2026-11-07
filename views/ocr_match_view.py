@@ -1403,6 +1403,8 @@ async def _save_match_history(
                 opponents=opps,
                 kills=kd_data.get("kills", 0),
                 deaths=kd_data.get("deaths", 0),
+                assists=kd_data.get("assists", 0),
+                damage=kd_data.get("damage", 0),
                 result="win" if my_idx == winning_team_index else "loss",
                 elo_change=elo_change,
             )
