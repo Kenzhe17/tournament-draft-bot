@@ -55,6 +55,55 @@ _COLOR_MAP = {
 _DEFAULT_ACCENT = colors.NEUTRAL
 
 
+class _ComposedLayoutView(discord.ui.LayoutView):
+    """LayoutView-обёртка с делегированием к исходному View.
+
+    compose() переносит кнопки обычного discord.ui.View в Container,
+    но обработчики уровня View (interaction_check, on_timeout,
+    on_error, is_finished) должны сохраниться — поэтому LayoutView
+    проксирует их на исходный view-объект.
+    """
+
+    def __init__(self, delegate=None, **kwargs):
+        super().__init__(**kwargs)
+        self._delegate = delegate
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        delegate = self._delegate
+        if delegate is not None and hasattr(delegate, "interaction_check"):
+            return await delegate.interaction_check(interaction)
+        return True
+
+    async def on_timeout(self) -> None:
+        delegate = self._delegate
+        if delegate is not None and hasattr(delegate, "on_timeout"):
+            try:
+                await delegate.on_timeout()
+            except Exception:
+                pass
+        await super().on_timeout()
+
+    async def on_error(
+        self, interaction: discord.Interaction, error: Exception
+    ) -> None:
+        delegate = self._delegate
+        if delegate is not None and hasattr(delegate, "on_error"):
+            await delegate.on_error(interaction, error)
+        else:
+            await super().on_error(interaction, error)
+
+    def is_finished(self) -> bool:
+        if super().is_finished():
+            return True
+        delegate = self._delegate
+        if delegate is not None and hasattr(delegate, "is_finished"):
+            try:
+                return bool(delegate.is_finished())
+            except Exception:
+                return False
+        return False
+
+
 def _accent_from_embed(embed: discord.Embed) -> int:
     """Цвет Embed -> accent_color Container.
 
@@ -214,8 +263,10 @@ def compose(
         for row in _view_rows(view):
             container.add_item(row)
 
-    layout = discord.ui.LayoutView(
-        timeout=getattr(view, "timeout", 180.0)
+    delegate = view if isinstance(view, discord.ui.View) else None
+    layout = _ComposedLayoutView(
+        delegate=delegate,
+        timeout=getattr(view, "timeout", 180.0),
     )
     layout.add_item(container)
     return layout
@@ -264,6 +315,21 @@ def swap_view(
     view=None — убрать все кнопки.
     """
     layout = discord.ui.LayoutView.from_message(message)
+    if not isinstance(layout, _ComposedLayoutView):
+        # from_message возвращает чистый LayoutView — оборачиваем,
+        # чтобы сохранить делегирование interactive-логики
+        delegate = (
+            view
+            if isinstance(view, discord.ui.View)
+            and not isinstance(view, discord.ui.LayoutView)
+            else None
+        )
+        wrapped = _ComposedLayoutView(
+            delegate=delegate, timeout=layout.timeout
+        )
+        for child in layout.children:
+            wrapped.add_item(child)
+        layout = wrapped
 
     # Удаляем старые ActionRow из всех Container'ов верхнего уровня
     for container in layout.children:
