@@ -12,6 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import replace_emojis, get_emoji
+from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
 
 logger = logging.getLogger(__name__)
@@ -236,6 +237,7 @@ async def ff_info(
     guild_info = result.get("guildBasicInfo") or result.get("guildInfo") or {}
     social = result.get("socialInfo") or {}
     pet = result.get("petInfo") or {}
+    profile = result.get("profileInfo") or {}
     credit = result.get("creditScoreInfo") or {}
     diamond = result.get("diamondCostRes") or {}
     prime = basic.get("primeInfo") or {}
@@ -294,8 +296,10 @@ async def ff_info(
     if prime.get("primeLevel"):
         account_lines.append(f"• Prime уровень: **{prime.get('primeLevel')}**")
     if pet.get("id"):
+        pet_item = ff_catalog.get_item(pet.get("id"))
+        pet_name = pet_item.get("name") if pet_item else f"ID `{pet.get('id')}`"
         account_lines.append(
-            f"• Питомец: ID `{pet.get('id')}` ур. **{pet.get('level', '—')}**"
+            f"• Питомец: **{pet_name}** ур. **{pet.get('level', '—')}**"
             + (f" • EXP: {_fmt_value(pet.get('exp'))}" if pet.get("exp") else "")
         )
     embed.add_field(
@@ -314,6 +318,22 @@ async def ff_info(
         embed.add_field(
             name=replace_emojis(f"{get_emoji('team')} Команда"),
             value="\n".join(team_lines),
+            inline=False,
+        )
+
+    avatar_id = profile.get("avatarId")
+    if avatar_id and ff_catalog.get_item(avatar_id):
+        embed.set_thumbnail(url=ff_catalog.icon_url(avatar_id))
+
+    clothes = [c for c in (profile.get("clothes") or []) if c]
+    if clothes:
+        names = []
+        for cid in clothes:
+            item = ff_catalog.get_item(cid)
+            names.append(item.get("name") if item else f"`{cid}`")
+        embed.add_field(
+            name=replace_emojis(f"{get_emoji('sword')} Экипировка"),
+            value="\n".join(f"• {n}" for n in names[:10]),
             inline=False,
         )
 
@@ -368,6 +388,59 @@ async def ff_stats(
     )
     embed.set_footer(text=FOOTER)
     await interaction.followup.send(embed=embed)
+
+
+# ----------------------------------------------------------------- /ff item
+async def _item_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    items = ff_catalog.search_items(current, limit=25)
+    return [
+        app_commands.Choice(
+            name=(f"{it.get('name', '?')} ({it.get('type', '?')})")[:100],
+            value=str(it.get("itemID")),
+        )
+        for it in items
+    ]
+
+
+@ff_group.command(name="item", description="Поиск предмета Free Fire в каталоге")
+@app_commands.describe(query="Название предмета или ID")
+@app_commands.autocomplete(query=_item_autocomplete)
+async def ff_item(
+    interaction: discord.Interaction, query: str
+) -> None:
+    query = query.strip()
+    item = None
+    if query.isdigit():
+        item = ff_catalog.get_item(query)
+    if item is None:
+        results = ff_catalog.search_items(query, limit=1)
+        item = results[0] if results else None
+    if item is None:
+        await interaction.response.send_message(
+            embed=_error_embed(
+                FreeFireError(f"Предмет «{query}» не найден в каталоге.", "NOT_FOUND")
+            ),
+            ephemeral=True,
+        )
+        return
+
+    name = item.get("name") or "Unknown"
+    desc = (item.get("description") or "").strip()
+    embed = discord.Embed(
+        title=name[:256],
+        description=desc[:400] if desc else None,
+        color=ff_catalog.rarity_color(item.get("rarity")),
+    )
+    embed.add_field(name="Тип", value=str(item.get("type") or "—"), inline=True)
+    embed.add_field(
+        name="Редкость", value=str(item.get("rarity") or "—"), inline=True
+    )
+    embed.add_field(name="ID", value=f"`{item.get('itemID')}`", inline=True)
+    embed.set_thumbnail(url=ff_catalog.icon_url(item.get("itemID")))
+    embed.set_footer(text=FOOTER)
+    await interaction.response.send_message(embed=embed)
 
 
 class FreeFireCog(commands.Cog):

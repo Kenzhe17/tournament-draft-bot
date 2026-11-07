@@ -38,6 +38,8 @@ COPY views/ views/
 
 COPY ultimatum/ ultimatum/
 
+COPY assets/ assets/
+
 
 
 CMD ["python", "bot.py"]
