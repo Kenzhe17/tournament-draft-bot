@@ -42,7 +42,7 @@ def _team_field(title: str, players: list[dict]) -> str:
 
 
 def _team_title(parsed: dict, side: str, is_winner: bool) -> str:
-    """'🏆 Команда <имя>' / '🔵 Команда <имя>' — имя = шапка панели (капитан)."""
+    """'🏆 Команда <название>' / '🔵 Команда <название>' — имя = шапка панели."""
     icon = "🏆" if is_winner else ("🔵" if side == "a" else "🔴")
     name = parsed.get(f"team_{side}_name") or side.upper()
     return f"{icon} Команда {name}"
