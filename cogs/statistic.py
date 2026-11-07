@@ -173,10 +173,11 @@ class StatisticCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
 
-    @app_commands.command(
-        name="statistic", description="Распознать статистику CS 4x4 по скриншоту"
-    )
-    @app_commands.describe(screenshot="Скриншот экрана результатов матча")
+    # Слэш-команда скрыта: декораторы закомментированы, код сохранён.
+    # @app_commands.command(
+    #     name="statistic", description="Распознать статистику CS 4x4 по скриншоту"
+    # )
+    # @app_commands.describe(screenshot="Скриншот экрана результатов матча")
     async def statistic(
         self, interaction: discord.Interaction, screenshot: discord.Attachment
     ) -> None:

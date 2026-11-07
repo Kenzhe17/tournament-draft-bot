@@ -404,9 +404,10 @@ async def _item_autocomplete(
     ]
 
 
-@ff_group.command(name="item", description="Поиск предмета Free Fire в каталоге")
-@app_commands.describe(query="Название предмета или ID")
-@app_commands.autocomplete(query=_item_autocomplete)
+# Слэш-команда скрыта: декораторы закомментированы, код сохранён.
+# @ff_group.command(name="item", description="Поиск предмета Free Fire в каталоге")
+# @app_commands.describe(query="Название предмета или ID")
+# @app_commands.autocomplete(query=_item_autocomplete)
 async def ff_item(
     interaction: discord.Interaction, query: str
 ) -> None:
@@ -443,10 +444,11 @@ async def ff_item(
 
 
 # ------------------------------------------------------------------ /ff ocr
-@ff_group.command(
-    name="ocr", description="Распознать статистику CS 4x4 по скриншоту"
-)
-@app_commands.describe(screenshot="Скриншот экрана результатов матча")
+# Слэш-команда скрыта: декораторы закомментированы, код сохранён.
+# @ff_group.command(
+#     name="ocr", description="Распознать статистику CS 4x4 по скриншоту"
+# )
+# @app_commands.describe(screenshot="Скриншот экрана результатов матча")
 async def ff_ocr(
     interaction: discord.Interaction, screenshot: discord.Attachment
 ) -> None:

@@ -549,7 +549,8 @@ class WardrobeCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(player_group, self, ["wardrobe"])
 
-    @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
+    # Слэш-команда скрыта: декоратор закомментирован, код сохранён.
+    # @player_group.command(name="wardrobe", description="Гардероб — коллекция вещей Free Fire")
     async def wardrobe(self, interaction: discord.Interaction) -> None:
         """Открыть свой гардероб."""
         view = WardrobeView(interaction.guild_id, interaction.user.id, mode="main")
