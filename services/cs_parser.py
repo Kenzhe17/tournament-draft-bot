@@ -29,6 +29,74 @@ def _is_kda_text(text: str) -> bool:
     return bool(KDA_RE.search(text))
 
 
+def _pick_nick_parts(
+    boxes: list[dict[str, Any]],
+    kda_box: dict[str, Any],
+    side: str,
+    boundary_x: float,
+    tol: float,
+    prefix: str,
+) -> list[tuple[float, str]]:
+    """Собирает части имени игрока из OCR-боксов строки K/D/A.
+
+    Ячейка игрока в результатах FF содержит две текстовые строки:
+    ник (крупный шрифт, сверху) и название гильдии (мельче, снизу).
+    Простое соседство по Y захватывает обе — поэтому кандидаты
+    кластеризуются в строки, а выбирается строка ника: с наибольшей
+    высотой бокса (крупный шрифт), при равенстве — верхняя.
+    """
+    name_tol = tol * 1.8  # шире обычного: нужно захватить и строку гильдии
+    cands: list[tuple[float, str, float, float]] = []  # cx, text, cy, height
+    for nb in boxes:
+        t = nb["text"]
+        if nb is kda_box or _is_kda_text(t) or NUM_RE.match(t):
+            continue
+        if not _has_name_chars(t):
+            continue
+        if t.lower() in SKIP_WORDS or len(t) < 2:
+            continue
+        if abs(nb["cy"] - kda_box["cy"]) > name_tol:
+            continue
+        if nb["cx"] >= kda_box["cx"] - 4:
+            continue
+        # Бокс должен быть на стороне своей панели
+        if side == "left" and nb["cx"] >= boundary_x:
+            continue
+        if side == "right" and nb["cx"] <= boundary_x:
+            continue
+        cands.append((nb["cx"], t, nb["cy"], nb["y1"] - nb["y0"]))
+
+    prefix_ok = (
+        bool(prefix)
+        and _has_name_chars(prefix)
+        and prefix.lower() not in SKIP_WORDS
+    )
+    if not cands:
+        return [(kda_box["x0"], prefix)] if prefix_ok else []
+
+    # Кластеризация по вертикали: cy ближе 15px — одна строка
+    cands.sort(key=lambda c: c[2])
+    lines: list[list[tuple[float, str, float, float]]] = []
+    for c in cands:
+        if lines and c[2] - lines[-1][-1][2] <= 15.0:
+            lines[-1].append(c)
+        else:
+            lines.append([c])
+
+    def _score(line: list[tuple[float, str, float, float]]):
+        max_h = max(h for _, _, _, h in line)
+        mean_cy = sum(cy for _, _, cy, _ in line) / len(line)
+        # крупный шрифт ника важнее; при равной высоте — верхняя строка
+        return (max_h, -mean_cy)
+
+    best = max(lines, key=_score)
+    best.sort(key=lambda c: c[0])
+    parts = [(cx, t) for cx, t, _, _ in best]
+    if prefix_ok:
+        parts.insert(0, (kda_box["x0"], prefix))
+    return parts
+
+
 def parse_cs_results(
     boxes: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -88,31 +156,15 @@ def parse_cs_results(
             b = row["box"]
             tol = max(14.0, (b["y1"] - b["y0"]) * 0.8)
 
-            # имя: текстовые боксы в той же строке левее K/D/A
-            name_parts = []
-            # + префикс того же бокса до K/D/A (OCR может склеить строку)
+            # имя: текстовые боксы в той же строке левее K/D/A.
+            # В FF-результатах ячейка игрока содержит ДВЕ строки:
+            # ник (крупный шрифт) и название гильдии (мельче, ниже).
+            # Собираем кандидатов в расширенном окне, кластеризуем по
+            # строкам и оставляем только строку ника.
             prefix = b["text"][: row["mstart"]].strip()
-            if prefix and _has_name_chars(prefix) and prefix.lower() not in SKIP_WORDS:
-                name_parts.append((b["x0"], prefix))
-            for nb in boxes:
-                t = nb["text"]
-                if nb is b or _is_kda_text(t) or NUM_RE.match(t):
-                    continue
-                if not _has_name_chars(t):
-                    continue
-                if t.lower() in SKIP_WORDS or len(t) < 2:
-                    continue
-                if abs(nb["cy"] - b["cy"]) > tol:
-                    continue
-                if nb["cx"] >= b["cx"] - 4:
-                    continue
-                # Бокс должен быть на стороне своей панели
-                if side == "left" and nb["cx"] >= boundary_x:
-                    continue
-                if side == "right" and nb["cx"] <= boundary_x:
-                    continue
-                name_parts.append((nb["cx"], t))
-            name_parts.sort()
+            name_parts = _pick_nick_parts(
+                boxes, b, side, boundary_x, tol, prefix
+            )
             # убираем дубли текста (OCR может дублировать)
             seen: set[str] = set()
             name = ""
