@@ -465,12 +465,16 @@ def swap_view(
             wrapped.add_item(child)
         layout = wrapped
 
-    # Удаляем старые ActionRow — и из Container'ов, и с верхнего уровня
-    for container in layout.children:
+    # Удаляем старые ActionRow — и из Container'ов, и с верхнего уровня.
+    # Контейнеры, опустевшие после удаления рядов (обёртки кнопок),
+    # убираем целиком — иначе остаются пустые карточки.
+    for container in list(layout.children):
         if isinstance(container, discord.ui.Container):
             for child in list(container.children):
                 if isinstance(child, discord.ui.ActionRow):
                     container.remove_item(child)
+            if not container.children:
+                layout.remove_item(container)
         elif isinstance(container, discord.ui.ActionRow):
             layout.remove_item(container)
 
