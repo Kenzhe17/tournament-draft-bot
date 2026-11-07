@@ -81,25 +81,42 @@ def calculate_player_performance(
 
 
 def calculate_performance_modifiers(scores: list[float]) -> list[int]:
-    """Поправки ELO по месту Performance Score среди всех игроков матча.
+    """Поправки ELO по индивидуальному вкладу относительно всех игроков матча.
 
-    Competition ranking: игроки с одинаковым score получают одинаковую
-    позицию и одинаковую поправку.
+    Сравнение каждого Performance Score со всеми остальными:
+      - максимум матча            → "best"           (+5)
+      - минимум матча             → "worst"          (-5)
+      - выше среднего по матчу    → "above_average"  (+3)
+      - ниже среднего по матчу    → "below_average"  (-3)
+      - ровно среднее / все равны  → "average"        (0)
+
+    Одинаковый score → одинаковая поправка.
     """
     cfg = ELO_CONFIG
-    bands = cfg["performance_bands"]
-    modifiers = cfg["performance_modifiers"]
+    mods = cfg["performance_modifiers"]
+    if not scores:
+        return []
+
+    hi = max(scores)
+    lo = min(scores)
+    if hi == lo:
+        # Все сыграли одинаково — средний вклад
+        return [mods["average"]] * len(scores)
+
+    mean = sum(scores) / len(scores)
 
     result: list[int] = []
     for score in scores:
-        # Позиция = 1 + количество игроков со строго большим score
-        position = 1 + sum(1 for other in scores if other > score)
-        band_name = "worst"
-        for low, high, name in bands:
-            if low <= position <= high:
-                band_name = name
-                break
-        result.append(modifiers[band_name])
+        if score == hi:
+            result.append(mods["best"])
+        elif score == lo:
+            result.append(mods["worst"])
+        elif score > mean:
+            result.append(mods["above_average"])
+        elif score < mean:
+            result.append(mods["below_average"])
+        else:
+            result.append(mods["average"])
     return result
 
 

@@ -163,7 +163,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         compute_match_elo_changes,
         update_player_stats_from_match,
         get_leaderboard_rank,
-        clamp_elo_change,
     )
 
     match_type = match_info.get('match_type')
@@ -241,7 +240,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     # ---- Расчёт ELO по новой системе ----
     elo_results = compute_match_elo_changes(match_players, team_sr_values)
 
-    # ---- Применение: питомец → статистика → баланс ----
+    # ---- Применение: статистика → баланс ----
     for p in match_players:
         name = p["name"]
         user_id = user_id_by_name.get(name, 0)
@@ -249,38 +248,6 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         won = p["won"]
         result = elo_results[name]
         elo_change = result["elo_change"]
-
-        # Apply pet ability bonus to ELO change (Arena Wolf), затем clamp
-        pet_elo_bonus = 0
-        try:
-            from storage.pet_store import pet_store
-            pet = await pet_store.get_user_pet(guild_id, user_id)
-
-            if pet and pet.fullness > 0:
-                # Списать энергию за использование способности
-                energy_consumed = await pet_store.consume_energy_for_ability(guild_id, user_id, "elo_match")
-
-                if energy_consumed:
-                    from storage.pet_store import pet_catalog
-                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
-
-                    if pet_def:  # Способности открыты с 1 возраста
-                        ability = pet_def["abilities"][1] if won else pet_def["abilities"][2]
-                        ability_name = ability["name"]
-
-                        if (won and ability_name == "Жажда победы") or (not won and ability_name == "Несломленный дух"):
-                            bonus_percent = ability.get("max_val", 0)
-
-                            if won:
-                                adjusted = int(round(elo_change * (1 + bonus_percent / 100)))
-                            else:
-                                loss_reduction = bonus_percent / 100
-                                adjusted = int(round(elo_change * (1 - loss_reduction)))
-                            adjusted = int(round(clamp_elo_change(adjusted, won)))
-                            pet_elo_bonus = adjusted - elo_change
-                            elo_change = adjusted
-        except Exception as e:
-            logger.error(f"Error applying pet ELO bonus: {e}")
 
         # Update stats
         updated_stats = update_player_stats_from_match(
@@ -291,8 +258,8 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             team_won=won
         )
 
-        # Save pet ELO bonus for profile display
-        updated_stats.last_pet_elo_bonus = pet_elo_bonus
+        # Pet ELO bonus removed — pet ability no longer affects ELO
+        updated_stats.last_pet_elo_bonus = 0
 
         # Increment games count for this match
         updated_stats.games += 1

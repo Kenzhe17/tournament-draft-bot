@@ -17,18 +17,9 @@ ELO_CONFIG = {
     "death_weight": 0.75,
     "damage_divisor": 2000,
 
-    # Поправки за место в рейтинге Performance Score внутри матча.
-    # Ключ — название полосы, значение — изменение ELO.
-    # Полосы задаются диапазонами позиций (1-based, competition ranking —
-    # игроки с одинаковым Performance Score делят позицию и получают
-    # одинаковую поправку).
-    "performance_bands": [
-        (1, 1, "best"),
-        (2, 3, "above_average"),
-        (4, 5, "average"),
-        (6, 7, "below_average"),
-        (8, 99, "worst"),
-    ],
+    # Поправки за индивидуальный вклад (Performance Score) относительно
+    # всех игроков матча: лучший / выше среднего / средний / ниже среднего /
+    # худший. Одинаковый score → одинаковая поправка.
     "performance_modifiers": {
         "best": 5,
         "above_average": 3,

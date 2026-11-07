@@ -92,11 +92,11 @@ def test_performance_score_example():
     assert abs(score - 5.5895) < 0.01
 
 
-def test_performance_modifiers_bands():
-    # 8 разных score → позиции 1..8
+def test_performance_modifiers_relative():
+    # 8 разных score, mean=4.5: max→+5, min→-5, >mean→+3, <mean→-3
     scores = [8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]
     mods = calculate_performance_modifiers(scores)
-    assert mods == [5, 3, 3, 0, 0, -3, -3, -5]
+    assert mods == [5, 3, 3, 3, -3, -3, -3, -5]
 
 
 def test_performance_ties_same_modifier():
@@ -104,13 +104,31 @@ def test_performance_ties_same_modifier():
     scores = [9.0, 9.0, 5.0, 4.0, 3.0, 2.0, 1.0, 0.0]
     mods = calculate_performance_modifiers(scores)
     assert mods[0] == mods[1] == 5
-    # позиция второго = 1 (competition ranking) → тоже "best"
+    assert mods[-1] == -5  # минимум тоже делят позицию
 
 
 def test_all_identical_scores():
     scores = [5.0] * 8
     mods = calculate_performance_modifiers(scores)
-    assert len(set(mods)) == 1  # все получают одинаковую поправку
+    assert mods == [0] * 8  # все средние → 0
+
+
+def test_performance_above_below_mean():
+    # mean=3.0: max=10→+5, min=-4→-5, >mean→+3, <mean→-3
+    scores = [10.0, 8.0, 6.0, 4.0, 2.0, 0.0, -2.0, -4.0]
+    mods = calculate_performance_modifiers(scores)
+    assert mods == [5, 3, 3, 3, -3, -3, -3, -5]
+
+
+def test_performance_exact_mean_zero():
+    # scores=[10,4,0,0,0,0,0,2] → sum=16, mean=2.0
+    # score==2 → "average" → 0; max=10→+5; min=0→-5; 4>2→+3
+    scores = [10.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0]
+    mods = calculate_performance_modifiers(scores)
+    assert mods[0] == 5      # max
+    assert mods[1] == 3      # выше среднего
+    assert mods[2:7] == [-5] * 5  # все минимумы
+    assert mods[7] == 0      # ровно среднее
 
 
 # ---------------------------------------------------------------- rank bonus
