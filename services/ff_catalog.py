@@ -88,6 +88,29 @@ def search_items(query: str, limit: int = 25) -> list[dict[str, Any]]:
     return (exact + partial)[:limit]
 
 
+@lru_cache(maxsize=1)
+def _items_by_type() -> dict[str, list[dict[str, Any]]]:
+    _, items = load_items()
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for it in items:
+        t = str(it.get("type") or "")
+        if t:
+            by_type.setdefault(t, []).append(it)
+    for lst in by_type.values():
+        lst.sort(key=lambda x: str(x.get("name") or "").lower())
+    return by_type
+
+
+def items_of_types(types: set[str] | frozenset[str] | tuple[str, ...]) -> list[dict[str, Any]]:
+    """Все предметы указанных типов, отсортированные по имени."""
+    by_type = _items_by_type()
+    result: list[dict[str, Any]] = []
+    for t in types:
+        result.extend(by_type.get(t, []))
+    result.sort(key=lambda x: str(x.get("name") or "").lower())
+    return result
+
+
 def icon_url(item_id: int | str) -> str:
     return f"{ICON_BASE}/{item_id}.webp"
 

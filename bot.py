@@ -118,6 +118,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.statistic")
         await self.load_extension("cogs.ocr_upload")
+        await self.load_extension("cogs.wardrobe")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
