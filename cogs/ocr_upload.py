@@ -1,14 +1,17 @@
 """Cog: приём скриншотов результатов матчей для OCR-сопоставления.
 
 Капитан нажимает «📸 Скриншот» на матче (views/ocr_match_view.py),
-затем отправляет изображение сообщением в канал турнира — этот cog
-ловит аттачмент, прогоняет OCR и публикует сообщение с кнопками
-сопоставления игроков.
+затем отправляет изображение в канал результатов OCR_STATS_CHANNEL_ID —
+этот cog ловит аттачмент, прогоняет OCR и публикует в том же канале
+сообщение с embed'ом (скриншот внутри), пингом обоих капитанов и
+кнопками сопоставления. Кнопка «Неправильный скриншот» позволяет
+прислать новый скриншот — embed обновляется.
 """
 
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 from datetime import datetime
 from typing import Any
@@ -19,11 +22,14 @@ from discord.ext import commands
 from config import replace_emojis
 from storage.json_store import store
 from views.ocr_match_view import (
+    OCR_STATS_CHANNEL_ID,
     OCRPublicView,
+    _captain_mentions,
     _match_tuple,
     _session_key,
     _team_display_name,
     pop_pending_upload,
+    pop_pending_upload_any,
     register_pending_upload,
 )
 
@@ -31,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 MAX_ATTACH = 10 * 1024 * 1024
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+SHOT_FILENAME = "match_result.png"
 
 
 def _match_label(match_type: str, match_index: int) -> str:
@@ -60,6 +67,85 @@ def _ocr_and_parse(data: bytes) -> tuple[dict[str, Any], list] | None:
     return parsed, boxes
 
 
+def _results_embed(
+    parsed: dict[str, Any],
+    match_type: str,
+    match_index: int,
+    tournament,
+    t1: int,
+    t2: int,
+) -> discord.Embed:
+    """Embed с распознанной таблицей + инструкцией по сопоставлению."""
+    from cogs.statistic import _build_embed
+
+    embed = _build_embed(parsed)
+    embed.set_image(url=f"attachment://{SHOT_FILENAME}")
+    embed.add_field(
+        name="🧩 Следующий шаг",
+        value=(
+            f"Матч: **{_match_label(match_type, match_index)}** "
+            f"({_team_display_name(tournament, t1)} vs "
+            f"{_team_display_name(tournament, t2)})\n"
+            "Капитаны нажимают **свои** кнопки ниже и сопоставляют "
+            "игроков своей команды. После сопоставления обеих команд "
+            "результат зафиксируется автоматически."
+        ),
+        inline=False,
+    )
+    return embed
+
+
+async def _stats_channel(message: discord.Message):
+    """Канал результатов: заданный ID, иначе канал сообщения."""
+    channel = message.guild.get_channel(OCR_STATS_CHANNEL_ID)
+    if channel is None:
+        try:
+            channel = await message.guild.fetch_channel(OCR_STATS_CHANNEL_ID)
+        except Exception:
+            channel = None
+    return channel or message.channel
+
+
+async def _send_results_message(
+    channel: discord.TextChannel,
+    data: bytes,
+    embed: discord.Embed,
+    view: OCRPublicView,
+    mentions: str,
+) -> discord.Message:
+    """Новое сообщение с результатами: embed + скриншот + пинг капитанов."""
+    file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
+    return await channel.send(
+        content=f"{mentions}\n📊 Результаты матча — сопоставьте игроков.",
+        embed=embed,
+        view=view,
+        file=file,
+    )
+
+
+async def _update_results_message(
+    channel: discord.TextChannel,
+    message_id: int,
+    data: bytes,
+    embed: discord.Embed,
+    view: OCRPublicView,
+) -> discord.Message:
+    """Обновить существующее сообщение (повторный скриншот).
+
+    При любой ошибке редактирования кидает исключение — вызывающий
+    код отправит новое сообщение.
+    """
+    msg = await channel.fetch_message(message_id)
+    await msg.edit(
+        embed=embed,
+        view=view,
+        attachments=[
+            discord.AttachmentInput(io.BytesIO(data), filename=SHOT_FILENAME)
+        ],
+    )
+    return msg
+
+
 class OCRUploadCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -69,9 +155,13 @@ class OCRUploadCog(commands.Cog):
         if message.author.bot or not message.guild:
             return
 
+        # Сначала точное совпадение канала, затем любой канал сервера —
+        # скриншот можно прислать и в канал турнира, и в канал результатов
         meta = pop_pending_upload(
             message.guild.id, message.channel.id, message.author.id
         )
+        if not meta:
+            meta = pop_pending_upload_any(message.guild.id, message.author.id)
         if not meta:
             return
 
@@ -86,16 +176,20 @@ class OCRUploadCog(commands.Cog):
             None,
         )
         if attachment is None:
-            await message.reply(
-                replace_emojis(
-                    "❌ Нужен скриншот — прикрепите изображение "
-                    "следующим сообщением."
+            # Не спамим на обычные сообщения — отвечаем только если
+            # в сообщении вообще есть вложения (но не картинка)
+            if message.attachments:
+                await message.reply(
+                    replace_emojis(
+                        "❌ Нужен скриншот — прикрепите изображение."
+                    )
                 )
-            )
             # Возвращаем pending, чтобы пользователь мог дослать картинку
             register_pending_upload(
                 message.guild.id, message.channel.id, message.author.id,
                 meta["match_type"], meta["match_index"],
+                tchannel_id=meta.get("tchannel", message.channel.id),
+                reupload=meta.get("reupload", False),
             )
             return
 
@@ -105,7 +199,10 @@ class OCRUploadCog(commands.Cog):
             )
             return
 
-        tournament = store.get(message.guild.id, message.channel.id)
+        # Турнир ищем по каналу, откуда нажали кнопку (tchannel),
+        # а не по каналу, куда прислали скриншот
+        tchannel_id = meta.get("tchannel") or message.channel.id
+        tournament = store.get(message.guild.id, tchannel_id)
         if not tournament:
             await message.reply(replace_emojis("❌ Турнир не найден."))
             return
@@ -118,18 +215,26 @@ class OCRUploadCog(commands.Cog):
             await message.reply(replace_emojis("❌ Матч не найден."))
             return
 
-        # Не перезаписываем активную OCR-сессию этого матча
         key = _session_key(match_type, match_index)
         existing = tournament.ocr_sessions.get(key)
-        if existing and existing.get("status") not in ("completed", "cancelled"):
+        session_active = bool(
+            existing and existing.get("status") not in ("completed", "cancelled")
+        )
+        is_reupload = bool(meta.get("reupload")) and session_active
+
+        # Новый скриншот не должен перезаписывать активную сессию —
+        # только явная кнопка «Неправильный скриншот» (reupload=True)
+        if session_active and not is_reupload:
             await message.reply(
                 replace_emojis(
                     "⚠️ Для этого матча уже загружен скриншот — "
-                    "завершите сопоставление или попросите организатора "
-                    "его отменить."
+                    "завершите сопоставление, нажмите «Неправильный "
+                    "скриншот» или вызовите организатора."
                 )
             )
             return
+
+        stats_channel = await _stats_channel(message)
 
         try:
             data = await attachment.read()
@@ -152,7 +257,6 @@ class OCRUploadCog(commands.Cog):
                 None, detect_winner_side, data, boxes
             )
 
-            key = _session_key(match_type, match_index)
             panels = {
                 side_name: {
                     "name": parsed.get(name_key),
@@ -173,9 +277,59 @@ class OCRUploadCog(commands.Cog):
                 )
             }
 
-            tournament = (
-                store.get(message.guild.id, message.channel.id) or tournament
+            parsed["winner"] = {"left": "a", "right": "b"}.get(side)
+            embed = _results_embed(
+                parsed, match_type, match_index, tournament, t1, t2
             )
+            mentions = _captain_mentions(tournament, [t1, t2])
+
+            tournament = (
+                store.get(message.guild.id, tchannel_id) or tournament
+            )
+            view = OCRPublicView(
+                message.guild.id, tournament.channel_id, tournament,
+                match_type, match_index,
+            )
+
+            if is_reupload and existing.get("message_id"):
+                # Обновляем то же сообщение: новый скриншот + сброс маппинга
+                existing.update(
+                    {
+                        "status": "awaiting_mapping",
+                        "panels": panels,
+                        "winner_side": side,
+                        "banner": parsed.get("banner"),
+                        "top5": parsed.get("top5", False),
+                        "uploaded_by": message.author.id,
+                        "uploaded_by_name": message.author.display_name,
+                        "results_channel_id": stats_channel.id,
+                        "maps": {},
+                        "reuploaded_at": datetime.now().isoformat(),
+                    }
+                )
+                store.set(tournament)
+
+                # View строим ПОСЛЕ сброса maps — кнопки снова активны
+                view = OCRPublicView(
+                    message.guild.id, tournament.channel_id, tournament,
+                    match_type, match_index,
+                )
+                try:
+                    await _update_results_message(
+                        stats_channel, existing["message_id"],
+                        data, embed, view,
+                    )
+                    await message.add_reaction("✅")
+                except Exception as e:
+                    logger.warning("OCR reupload edit failed: %s", e)
+                    bot_msg = await _send_results_message(
+                        stats_channel, data, embed, view, mentions
+                    )
+                    existing["message_id"] = bot_msg.id
+                    store.set(tournament)
+                return
+
+            # Новая сессия
             tournament.ocr_sessions[key] = {
                 "match_type": match_type,
                 "match_index": match_index,
@@ -188,31 +342,14 @@ class OCRUploadCog(commands.Cog):
                 "uploaded_by": message.author.id,
                 "uploaded_by_name": message.author.display_name,
                 "created_at": datetime.now().isoformat(),
+                "results_channel_id": stats_channel.id,
                 "maps": {},
             }
             store.set(tournament)
 
-            # Публичное сообщение с результатами и кнопками маппинга
-            from cogs.statistic import _build_embed
-
-            parsed["winner"] = {"left": "a", "right": "b"}.get(side)
-            embed = _build_embed(parsed)
-            embed.add_field(
-                name="🧩 Следующий шаг",
-                value=(
-                    f"Матч: **{_match_label(match_type, match_index)}** "
-                    f"({_team_display_name(tournament, t1)} vs "
-                    f"{_team_display_name(tournament, t2)})\n"
-                    "Капитаны команд нажимают свои кнопки ниже и "
-                    "сопоставляют игроков."
-                ),
-                inline=False,
+            bot_msg = await _send_results_message(
+                stats_channel, data, embed, view, mentions
             )
-            view = OCRPublicView(
-                message.guild.id, message.channel.id, tournament,
-                match_type, match_index,
-            )
-            bot_msg = await message.channel.send(embed=embed, view=view)
 
             session = tournament.ocr_sessions.get(key)
             if session is not None:
