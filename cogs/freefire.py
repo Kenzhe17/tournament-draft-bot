@@ -117,10 +117,10 @@ async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
 async def ff_info(
     interaction: discord.Interaction,
     uid: str,
-    region: app_commands.Choice[str] = app_commands.Choice(
-        name="RU / CIS", value="ru"),
+    region: app_commands.Choice[str] = None,
 ) -> None:
     uid = uid.strip()
+    region = region or app_commands.Choice(name="RU / CIS", value="ru")
     if not await _check_and_key(interaction, uid):
         return
 
@@ -201,10 +201,10 @@ async def ff_stats(
     interaction: discord.Interaction,
     uid: str,
     mode: app_commands.Choice[str],
-    region: app_commands.Choice[str] = app_commands.Choice(
-        name="RU / CIS", value="ru"),
+    region: app_commands.Choice[str] = None,
 ) -> None:
     uid = uid.strip()
+    region = region or app_commands.Choice(name="RU / CIS", value="ru")
     if not await _check_and_key(interaction, uid):
         return
 
