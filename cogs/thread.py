@@ -16,11 +16,17 @@ if TYPE_CHECKING:
     from bot import TournamentBot
 
 
+from cogs.groups import admin_group, bind_commands
+
+
 class ThreadCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="delete", description="Удалить текущий игровой тред")
+    async def cog_load(self) -> None:
+        bind_commands(admin_group, self, ["delete_thread"])
+
+    @admin_group.command(name="delete_thread", description="Удалить текущий игровой тред")
     async def thread_delete(self, interaction: discord.Interaction):
         """Delete the current game thread."""
         user_id = interaction.user.id

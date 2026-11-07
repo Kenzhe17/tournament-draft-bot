@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from config import BOT_OWNER_ID, replace_emojis
 from storage.json_store import store
+from cogs.groups import server_group, bind_commands
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,10 @@ class BotSettingsCog(commands.Cog):
         self.bot = bot
         logger.info("BotSettingsCog initialized")
 
-    off = app_commands.Group(name="off", description="Управление функциями бота")
+    async def cog_load(self) -> None:
+        bind_commands(server_group, self, ["off"])
 
-    @off.command(name="toggle", description="Включить/выключить функции бота")
+    @server_group.command(name="off", description="Включить/выключить функции бота")
     @app_commands.describe(welcome="Welcome message для новых участников", coin_drop="Спонтанные ивенты с монетами")
     async def toggle(
         self,

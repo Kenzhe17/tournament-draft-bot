@@ -18,6 +18,10 @@ from views.ultimatum_setup_view import build_ultimatum_setup_view
 
 logger = logging.getLogger(__name__)
 
+ultimatum_group = app_commands.Group(
+    name="ultimatum", description="Ultimatum Solo Tournament"
+)
+
 
 class UltimatumCog(commands.Cog):
     """Cog for Ultimatum Solo Tournament commands."""
@@ -26,7 +30,17 @@ class UltimatumCog(commands.Cog):
         self.bot = bot
         self.tournament_logic = UltimatumTournament(ultimatum_store)
 
-    ultimatum_group = app_commands.Group(name="ultimatum", description="Ultimatum Solo Tournament")
+    async def cog_load(self) -> None:
+        """Вложить /tournament ultimatum в живую группу tournament + биндинг."""
+        from cogs.groups import bind_commands
+
+        tourney = self.bot.tree.get_command("tournament")
+        if isinstance(tourney, app_commands.Group) and ultimatum_group.parent is None:
+            try:
+                tourney.add_command(ultimatum_group)
+            except Exception as e:
+                logger.warning("Не удалось добавить ultimatum_group: %s", e)
+        bind_commands(ultimatum_group, self, ["create", "delete", "test_fill"])
 
     @ultimatum_group.command(name="create", description="Create new Ultimatum tournament")
     @app_commands.checks.has_permissions(administrator=True)

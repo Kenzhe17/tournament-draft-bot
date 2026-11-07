@@ -290,13 +290,19 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=game_view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class GuessNumberCog(commands.Cog):
     """Guess Number game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="guess_number", description="Угадай число от 1 до 100 (1.25x множитель)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["guess_number"])
+
+    @games_group.command(name="guess_number", description="Угадай число от 1 до 100 (1.25x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def guess_number(
         self,

@@ -696,13 +696,19 @@ class RPSPlayAgainButton(discord.ui.Button):
         await interaction.response.send_message("❌ Эта функция отключена.", ephemeral=True)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class RPSCog(commands.Cog):
     """Rock-Paper-Scissors game cog."""
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
     
-    @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["rps"])
+
+    @games_group.command(name="rps", description="Камень-Ножницы-Бумага")
     @app_commands.describe(bet="Ставка в монетах")
     async def rps(self, interaction: discord.Interaction, bet: int):
         """Start RPS game against AI."""

@@ -459,13 +459,19 @@ async def create_coin_flip_game(
     await interaction.response.send_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class CoinFlipCog(commands.Cog):
     """Coin Flip game cog."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="coin_flip", description="Монетка - Орёл или Решка")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["coin_flip"])
+
+    @games_group.command(name="coin_flip", description="Монетка - Орёл или Решка")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def coin_flip(
         self,

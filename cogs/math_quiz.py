@@ -239,11 +239,17 @@ class QuizLobbyView(discord.ui.View):
 # Основной Cog Модуль
 # ==========================================
 
+from cogs.groups import games_group, bind_commands
+
+
 class MathQuizCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="mathquiz", description="Математическая дуэль на скорость (2-6 игроков)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["mathquiz"])
+
+    @games_group.command(name="mathquiz", description="Математическая дуэль на скорость (2-6 игроков)")
     @app_commands.describe(bet="Размер ставки (от 20 до 1 000 монет)")
     async def math_quiz(self, interaction: discord.Interaction, bet: int):
         user_id = interaction.user.id

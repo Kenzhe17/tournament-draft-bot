@@ -224,13 +224,19 @@ class SnapPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class SnapCog(commands.Cog):
     """Snap game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="snap", description="Карточная игра на удвоение или фолд (2x)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["snap"])
+
+    @games_group.command(name="snap", description="Карточная игра на удвоение или фолд (2x)")
     @app_commands.describe(bet="Ставка в монетах (50-2,000)")
     async def snap(
         self,

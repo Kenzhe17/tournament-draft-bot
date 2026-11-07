@@ -39,13 +39,19 @@ def get_next_bank_limit(level: int) -> int:
     return get_bank_limit(next_level)
 
 
+from cogs.groups import economy_group, bind_commands
+
+
 class BankCog(commands.Cog):
     """Ког с командами банка."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="bank", description="Управление банковским сейфом")
+    async def cog_load(self) -> None:
+        bind_commands(economy_group, self, ["bank"])
+
+    @economy_group.command(name="bank", description="Управление банковским сейфом")
     @app_commands.describe(action="Действие: status, deposit, withdraw")
     @app_commands.describe(amount="Сумма (или 'all' для всех средств)")
     async def bank(

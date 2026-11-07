@@ -29,6 +29,14 @@ from utils.embeds import build_setup_embed
 from utils.permissions import is_admin, is_org, is_bot_owner, is_channel_organizer_decorator
 from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
 from views.org_role_view import setup_org_role_message
+from cogs.groups import (
+    player_group,
+    economy_group,
+    admin_group,
+    server_group,
+    games_group,
+    bind_commands,
+)
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -261,9 +269,84 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
-    @app_commands.command(name="test", description="Тестовый запуск (заполнить турнир фиктивными именами)")
+    @tournament_group.command(name="test", description="Тестовые операции турниров")
     @is_bot_owner()
-    @app_commands.describe(keep_players="Сохранить реальных игроков и добавить ботов только для заполнения", no_bots="Не добавлять ботов, запустить только с реальными игроками")
+    @app_commands.describe(
+        category="Тип турнира",
+        operation="Тестовая операция",
+        keep_players="(normal/fill) Сохранить реальных игроков",
+        no_bots="(normal/fill) Только реальные игроки, без ботов",
+    )
+    @app_commands.choices(
+        category=[
+            app_commands.Choice(name="Обычный", value="normal"),
+            app_commands.Choice(name="Battle Royale", value="br"),
+            app_commands.Choice(name="Ultimatum", value="ultimatum"),
+        ],
+        operation=[
+            app_commands.Choice(name="Заполнить ботами", value="fill"),
+            app_commands.Choice(name="Заполнить ботами-командами", value="fill_teams"),
+            app_commands.Choice(name="Заполнить статистику", value="fill_stats"),
+            app_commands.Choice(name="Запуск только с реальными", value="start_real"),
+        ],
+    )
+    async def tournament_test(
+        self,
+        interaction: discord.Interaction,
+        category: app_commands.Choice[str],
+        operation: app_commands.Choice[str],
+        keep_players: bool = False,
+        no_bots: bool = False,
+    ) -> None:
+        """Единая команда тестовых операций: /tournament test."""
+        cat, op = category.value, operation.value
+
+        # Валидация допустимых комбинаций
+        valid = {
+            ("normal", "fill"),
+            ("normal", "fill_stats"),
+            ("normal", "start_real"),
+            ("br", "fill"),
+            ("br", "fill_teams"),
+            ("br", "fill_stats"),
+            ("ultimatum", "fill"),
+        }
+        if (cat, op) not in valid:
+            await interaction.response.send_message(
+                f"❌ Операция `{op}` недоступна для `{cat}`.",
+                ephemeral=True,
+            )
+            return
+
+        if cat == "normal":
+            if op == "fill":
+                await self.test_start(interaction, keep_players, no_bots)
+            elif op == "fill_stats":
+                await self.trstattest(interaction)
+            else:
+                await self.start_real_only(interaction)
+            return
+
+        # br / ultimatum — делегируем в соответствующие cog'и
+        if cat == "br":
+            cog = self.bot.get_cog("BRCog")
+            group = __import__("cogs.br", fromlist=["br_group"]).br_group
+            names = {"fill": "test_fill", "fill_teams": "test_teams",
+                     "fill_stats": "test_stats"}
+        else:
+            cog = self.bot.get_cog("UltimatumCog")
+            group = __import__("cogs.ultimatum", fromlist=["ultimatum_group"]).ultimatum_group
+            names = {"fill": "test_fill"}
+
+        cmd = group.get_command(names[op])
+        if cog is None or cmd is None:
+            await interaction.response.send_message(
+                "❌ Целевой ког не загружен.", ephemeral=True
+            )
+            return
+        await cmd.callback(cog, interaction)
+
+    @is_bot_owner()
     async def test_start(self, interaction: discord.Interaction, keep_players: bool = False, no_bots: bool = False) -> None:
         """Заполнить турнир тестовыми данными и запустить драфт."""
         tournament = store.get(interaction.guild_id, interaction.channel_id)
@@ -393,7 +476,6 @@ class TournamentCog(commands.Cog):
 
         await self.bot.update_tournament_message(interaction.guild, tournament)
 
-    @app_commands.command(name="start_real", description="Запустить турнир только с реальными игроками (без ботов)")
     @is_bot_owner()
     async def start_real_only(self, interaction: discord.Interaction) -> None:
         """Запустить турнир только с реальными игроками."""
@@ -465,7 +547,7 @@ class TournamentCog(commands.Cog):
         view = HelpGuideView(current=None)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
 
-    @app_commands.command(name="balance", description="Показать ваш баланс")
+    @economy_group.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
         """Показать баланс пользователя."""
         from storage.user_balance_store import user_balance_store
@@ -488,7 +570,7 @@ class TournamentCog(commands.Cog):
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
-    @app_commands.command(name="check2fa", description="Найти роли и каналы, из-за которых просит 2FA")
+    @server_group.command(name="check2fa", description="Найти роли и каналы, из-за которых просит 2FA")
     @app_commands.checks.has_permissions(administrator=True)
     async def check2fa(self, interaction: discord.Interaction):
         """Проверить права ролей и каналов на предмет требований 2FA."""
@@ -766,7 +848,7 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(DiceBetModal())
 
-    @app_commands.command(name="games", description="Показать доступные мини-игры")
+    @games_group.command(name="list", description="Показать доступные мини-игры")
     async def games(self, interaction: discord.Interaction) -> None:
         """Показать список мини-игр."""
         from views.games_view import GamesMainView
@@ -1048,7 +1130,7 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.response.send_modal(MinigameTournamentModal(interaction.guild_id, interaction.user.id))
 
-    @app_commands.command(name="profile", description="Показать ваш профиль")
+    @player_group.command(name="profile", description="Показать ваш профиль")
     @app_commands.describe(user="Пользователь (пусто = ваш профиль)", limit="Количество матчей для графика ELO (макс 30)")
     async def profile(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
         """Показать детальный профиль игрока."""
@@ -1211,7 +1293,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view)
 
-    @app_commands.command(name="history", description="Показать историю матчей")
+    @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
     async def history(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
         """Показать историю матчей игрока."""
@@ -1243,7 +1325,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, view=view)
 
-    @app_commands.command(name="rank", description="Показать ваш ранг и прогресс")
+    @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
         """Показать текущий ранг и прогресс до следующего уровня."""
         from storage.player_stats_store import player_stats_store
@@ -1294,7 +1376,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="bet", description="Показать вашу статистику ставок")
+    @economy_group.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
         """Показать статистику ставок пользователя."""
         from storage.betting_stats_store import betting_stats_store
@@ -1601,7 +1683,7 @@ class TournamentCog(commands.Cog):
 
         await ctx.send(replace_emojis(f"✅ ELO игрока {player.display_name} изменен на {elo}."), delete_after=10)
 
-    @app_commands.command(name="edit", description=f"Изменить ELO или {get_emoji('money')} игрока")
+    @admin_group.command(name="edit", description=f"Изменить ELO или {get_emoji('money')} игрока")
     @app_commands.describe(
         player="Игрок",
         type="Тип изменения: elo или money",
@@ -1678,7 +1760,7 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
-    @tournament_group.command(name="fix_userid", description="Исправить user_id игрока")
+    @admin_group.command(name="fix_userid", description="Исправить user_id игрока")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(player="Игрок")
     @is_bot_owner()
@@ -1701,7 +1783,7 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message(replace_emojis(f"✅ Обновлено {result} записей для {player.display_name}."), ephemeral=True)
 
-    @app_commands.command(name="fix", description="Сбросить статистику ботов (cap1, cap2 и т.д.)")
+    @admin_group.command(name="fix", description="Сбросить статистику ботов (cap1, cap2 и т.д.)")
     @app_commands.default_permissions(administrator=True)
     @is_bot_owner()
     async def fix_bot_stats(self, interaction: discord.Interaction) -> None:
@@ -1945,7 +2027,7 @@ class TournamentCog(commands.Cog):
 
     #     await self.bot.update_tournament_message(interaction.guild, tournament)
 
-    @app_commands.command(name="pay", description="Передать монеты другому игроку")
+    @economy_group.command(name="pay", description="Передать монеты другому игроку")
     @app_commands.describe(user="Игрок", amount="Сумма")
     async def pay(self, interaction: discord.Interaction, user: discord.User, amount: int) -> None:
         """Передать монеты с комиссией 10%."""
@@ -2033,7 +2115,7 @@ class TournamentCog(commands.Cog):
             except (discord.NotFound, discord.DiscordServerError):
                 pass
 
-    @app_commands.command(name="gift", description="Передать предмет другому игроку")
+    @economy_group.command(name="gift", description="Передать предмет другому игроку")
     @app_commands.describe(user="Игрок", item_id="ID предмета")
     async def gift(self, interaction: discord.Interaction, user: discord.User, item_id: str) -> None:
         """Передать предмет с комиссией 10% от стоимости."""
@@ -2190,7 +2272,7 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
+    @admin_group.command(name="debug_emoji", description="Проверить конфигурацию эмодзи")
     @is_bot_owner()
     async def debug_emoji(self, interaction: discord.Interaction) -> None:
         """Проверить какие эмодзи загружены."""
@@ -2241,7 +2323,7 @@ class TournamentCog(commands.Cog):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="ктоя", description="Узнать кто ты на самом деле")
+    @app_commands.command(name="whoami", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
         """Узнать кто ты на самом деле."""
         from storage.db import get_pool
@@ -2385,7 +2467,7 @@ class TournamentCog(commands.Cog):
 
             await interaction.response.send_message(embed=embed, ephemeral=False)
 
-    @app_commands.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
+    @server_group.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
     async def role(self, interaction: discord.Interaction) -> None:
         """Создать сообщение для управления ролью организатора."""
         # Check permissions manually
@@ -2410,7 +2492,7 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="welcome", description="Показать информацию о сервере и боте (только для владельца)")
+    @server_group.command(name="welcome", description="Показать информацию о сервере и боте (только для владельца)")
     @is_bot_owner()
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
@@ -2434,7 +2516,7 @@ class TournamentCog(commands.Cog):
             ephemeral=True
         )
 
-    @app_commands.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
+    @admin_group.command(name="reset", description="Сбросить статистику игрока (только для владельца бота)")
     @app_commands.describe(user="Пользователь для сброса статистики")
     @is_bot_owner()
     async def reset(self, interaction: discord.Interaction, user: discord.Member) -> None:
@@ -2466,7 +2548,6 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="trstattest", description="Рандомно заполнить статистику всем игрокам (только для тестов)")
     @is_bot_owner()
     async def trstattest(self, interaction: discord.Interaction) -> None:
         """Рандомно заполнить статистику для всех игроков в текущем турнире."""
@@ -2539,6 +2620,16 @@ class TournamentCog(commands.Cog):
             replace_emojis(f"✅ Статистика рандомно заполнена для {total_filled} матчей."),
             ephemeral=True
         )
+
+    async def cog_load(self) -> None:
+        """Привязка подкоманд общих групп к этому cog'у."""
+        bind_commands(player_group, self, ["profile", "history", "rank"])
+        bind_commands(economy_group, self, ["balance", "pay", "gift", "bet"])
+        bind_commands(admin_group, self, [
+            "edit", "fix", "fix_userid", "reset", "debug_emoji",
+        ])
+        bind_commands(server_group, self, ["role", "welcome", "check2fa"])
+        bind_commands(games_group, self, ["list"])
 
     async def cog_app_command_error(
         self,

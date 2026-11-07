@@ -223,13 +223,19 @@ class DiceRollPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=game_view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class DiceRollCog(commands.Cog):
     """Dice Roll game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="dice_roll", description="Бросок кубика 1-6 (6x множитель)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["dice_roll"])
+
+    @games_group.command(name="dice_roll", description="Бросок кубика 1-6 (6x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def dice_roll(
         self,

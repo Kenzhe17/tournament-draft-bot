@@ -223,13 +223,19 @@ class TripleChancePlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class TripleChanceCog(commands.Cog):
     """Triple Chance game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="triple_chance", description="Угадайте число от 1 до 3 (3x множитель)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["triple_chance"])
+
+    @games_group.command(name="triple_chance", description="Угадайте число от 1 до 3 (3x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-1,000)")
     async def triple_chance(
         self,

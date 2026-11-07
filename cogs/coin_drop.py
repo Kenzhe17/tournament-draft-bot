@@ -130,6 +130,9 @@ class RaffleDropView(discord.ui.View):
 # Cog Модуль Автоматического Спавна
 # ==========================================
 
+from cogs.groups import admin_group, bind_commands
+
+
 class CoinDropCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
@@ -251,7 +254,10 @@ class CoinDropCog(commands.Cog):
                         pass
 
     # Админ-команда для принудительного вызова ивента
-    @app_commands.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
+    async def cog_load(self) -> None:
+        bind_commands(admin_group, self, ["forcedrop"])
+
+    @admin_group.command(name="forcedrop", description="Принудительно запустить ивент 'Счастливые монеты' (Только владелец бота)")
     @is_bot_owner()
     async def force_drop(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

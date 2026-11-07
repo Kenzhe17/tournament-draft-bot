@@ -44,11 +44,17 @@ async def remove_user_item(guild_id: int, user_id: int, item_id: str) -> None:
 # Cog модуль продажи предмета
 # ==========================================
 
+from cogs.groups import economy_group, bind_commands
+
+
 class SellCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="sell", description="Продать значок или тег за 50% от стоимости")
+    async def cog_load(self) -> None:
+        bind_commands(economy_group, self, ["sell"])
+
+    @economy_group.command(name="sell", description="Продать значок или тег за 50% от стоимости")
     @app_commands.describe(
         item_id="ID или название продаваемого предмета (значка/тега)"
     )

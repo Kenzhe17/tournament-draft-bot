@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+br_group = app_commands.Group(name="br", description="Battle Royale турниры")
+
 
 class BRCog(commands.Cog):
     """Battle Royale tournament commands."""
@@ -26,7 +28,23 @@ class BRCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="br", description="Создать Battle Royale турнир")
+    async def cog_load(self) -> None:
+        """Вложить /tournament br в живую группу tournament + биндинг."""
+        from cogs.groups import bind_commands
+
+        tourney = self.bot.tree.get_command("tournament")
+        if isinstance(tourney, app_commands.Group) and br_group.parent is None:
+            try:
+                tourney.add_command(br_group)
+            except Exception as e:
+                logger.warning("Не удалось добавить br_group в tournament: %s", e)
+        bind_commands(
+            br_group,
+            self,
+            ["create", "delete", "test_fill", "test_teams", "test_stats"],
+        )
+
+    @br_group.command(name="create", description="Создать Battle Royale турнир")
     @app_commands.describe(formation="Формат турнира", maps="Количество карт (1-10)")
     @app_commands.choices(formation=[
         app_commands.Choice(name="random", value="random"),
@@ -175,7 +193,7 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир создан в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
-    @app_commands.command(name="br_delete", description="Удалить BR турнир")
+    @br_group.command(name="delete", description="Удалить BR турнир")
     async def br_delete(self, interaction: discord.Interaction) -> None:
         """Удалить BR турнир."""
         # Проверка на владельца бота
@@ -235,7 +253,7 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир удален в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
-    @app_commands.command(name="brtest", description="Заполнить BR турнир ботами для тестирования")
+    @br_group.command(name="test_fill", description="Заполнить BR турнир ботами для тестирования")
     async def br_test(self, interaction: discord.Interaction) -> None:
         """Заполнить BR турнир ботами для тестирования."""
         # Проверка на владельца бота
@@ -352,7 +370,7 @@ class BRCog(commands.Cog):
 
         logger.info("BR турнир заполнен 48 ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
-    @app_commands.command(name="brtestteam", description="Заполнить BR турнир ботами-командами для тестирования")
+    @br_group.command(name="test_teams", description="Заполнить BR турнир ботами-командами для тестирования")
     async def br_test_team(self, interaction: discord.Interaction) -> None:
         """Заполнить BR турнир ботами-командами для тестирования."""
         # Проверка на владельца бота
@@ -424,7 +442,7 @@ class BRCog(commands.Cog):
         )
         logger.info("BR турнир заполнен 12 командами с ботами в канале %s сервера %s", interaction.channel_id, interaction.guild_id)
 
-    @app_commands.command(name="brstattest", description="Заполнить случайную статистику для всех команд BR турнира")
+    @br_group.command(name="test_stats", description="Заполнить случайную статистику для всех команд BR турнира")
     async def br_stats_test(self, interaction: discord.Interaction) -> None:
         """Заполнить случайную статистику для всех команд BR турнира."""
         # Проверка на владельца бота

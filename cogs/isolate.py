@@ -17,13 +17,19 @@ logger = logging.getLogger(__name__)
 ISOLATION_STATE_FILE = DATA_DIR / "isolation_state.json"
 
 
+from cogs.groups import admin_group, bind_commands
+
+
 class Isolate(commands.Cog):
     """Команда для экстренной изоляции сервера."""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="isolate", description="Экстренная изоляция сервера")
+    async def cog_load(self) -> None:
+        bind_commands(admin_group, self, ["isolate"])
+
+    @admin_group.command(name="isolate", description="Экстренная изоляция сервера")
     @app_commands.describe(status="on для включения, off для отключения")
     @app_commands.choices(status=[
         app_commands.Choice(name="on", value="on"),

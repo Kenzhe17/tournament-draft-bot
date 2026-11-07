@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from ultimatum.elo_store import elo_store
+from cogs.groups import player_group, bind_commands
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,10 @@ class EloCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="ulti", description="Show your Ultimatum Elo rating")
+    async def cog_load(self) -> None:
+        bind_commands(player_group, self, ["ulti", "ulti_history"])
+
+    @player_group.command(name="ulti", description="Show your Ultimatum Elo rating")
     async def show_elo(self, interaction: discord.Interaction) -> None:
         """Show personal Elo rating."""
         player = await elo_store.get_player(interaction.user.id)
@@ -75,52 +79,7 @@ class EloCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="elo_leaderboard", description="Show global Elo leaderboard")
-    @app_commands.describe(page="Page number (default 1)")
-    async def show_leaderboard(
-        self,
-        interaction: discord.Interaction,
-        page: int = 1
-    ) -> None:
-        """Show global Elo leaderboard."""
-        limit = 10
-        offset = (page - 1) * limit
-
-        players = await elo_store.get_leaderboard(limit, offset)
-        total = await elo_store.get_leaderboard_count()
-        max_page = (total + limit - 1) // limit
-
-        if page > max_page:
-            await interaction.response.send_message(
-                f"❌ Page {page} doesn't exist. Max page: {max_page}",
-                ephemeral=True
-            )
-            return
-
-        embed = discord.Embed(
-            title="🏆 Global Elo Leaderboard",
-            description=f"Page {page}/{max_page} ({total} total players)",
-            color=discord.Color.gold()
-        )
-
-        for idx, player in enumerate(players, start=offset + 1):
-            medal = ""
-            if idx == 1:
-                medal = "🥇 "
-            elif idx == 2:
-                medal = "🥈 "
-            elif idx == 3:
-                medal = "🥉 "
-
-            embed.add_field(
-                name=f"{medal}#{idx} {player['username']}",
-                value=f"{player['elo']} ELO",
-                inline=False
-            )
-
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="ulti_history", description="Show your Ultimatum Elo match history")
+    @player_group.command(name="ulti_history", description="Show your Ultimatum Elo match history")
     async def show_history(self, interaction: discord.Interaction) -> None:
         """Show last 10 rated matches."""
         history = await elo_store.get_player_history(interaction.user.id, 10)

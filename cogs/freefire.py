@@ -443,6 +443,19 @@ async def ff_item(
     await interaction.response.send_message(embed=embed)
 
 
+# ------------------------------------------------------------------ /ff ocr
+@ff_group.command(
+    name="ocr", description="Распознать статистику CS 4x4 по скриншоту"
+)
+@app_commands.describe(screenshot="Скриншот экрана результатов матча")
+async def ff_ocr(
+    interaction: discord.Interaction, screenshot: discord.Attachment
+) -> None:
+    from cogs.statistic import run_statistic
+
+    await run_statistic(interaction, screenshot)
+
+
 class FreeFireCog(commands.Cog):
     """Cog-носитель группы /ff (команды — app_commands.Group)."""
 

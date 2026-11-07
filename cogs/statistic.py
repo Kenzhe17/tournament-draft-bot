@@ -65,6 +65,65 @@ def _build_embed(parsed: dict) -> discord.Embed:
     return embed
 
 
+async def run_statistic(
+    interaction: discord.Interaction, screenshot: discord.Attachment
+) -> None:
+    """Общая логика OCR-статистики (используется /statistic и /ff ocr)."""
+    ctype = (screenshot.content_type or "").lower()
+    if not ctype.startswith("image/"):
+        await interaction.response.send_message(
+            embed=_error_embed("Файл не является изображением."), ephemeral=True
+        )
+        return
+    if screenshot.size and screenshot.size > MAX_ATTACH:
+        await interaction.response.send_message(
+            embed=_error_embed("Файл слишком большой (макс. 10 МБ)."),
+            ephemeral=True,
+        )
+        return
+
+    await interaction.response.defer()
+
+    try:
+        data = await screenshot.read()
+        boxes = await extract_text_boxes(data)
+    except Exception:
+        logger.exception("OCR failed for /statistic")
+        await interaction.followup.send(
+            embed=_error_embed("Ошибка OCR — не удалось обработать изображение."),
+            ephemeral=True,
+        )
+        return
+
+    if not boxes:
+        await interaction.followup.send(
+            embed=_error_embed(
+                "На скриншоте не найдено текста. "
+                "Нужен экран результатов «Битва отрядов»."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    parsed = cs_parser.parse_cs_results(boxes)
+    if parsed is None or (not parsed["team_a"] and not parsed["team_b"]):
+        logger.warning(
+            "/statistic parse failed: %d boxes | %s",
+            len(boxes),
+            " | ".join(b["text"] for b in boxes[:60]),
+        )
+        await interaction.followup.send(
+            embed=_error_embed(
+                "Не удалось распознать таблицу игроков. "
+                "Убедитесь, что это экран результатов CS 4x4."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    await interaction.followup.send(embed=_build_embed(parsed))
+
+
 class StatisticCog(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -76,60 +135,7 @@ class StatisticCog(commands.Cog):
     async def statistic(
         self, interaction: discord.Interaction, screenshot: discord.Attachment
     ) -> None:
-        ctype = (screenshot.content_type or "").lower()
-        if not ctype.startswith("image/"):
-            await interaction.response.send_message(
-                embed=_error_embed("Файл не является изображением."), ephemeral=True
-            )
-            return
-        if screenshot.size and screenshot.size > MAX_ATTACH:
-            await interaction.response.send_message(
-                embed=_error_embed("Файл слишком большой (макс. 10 МБ)."),
-                ephemeral=True,
-            )
-            return
-
-        await interaction.response.defer()
-
-        try:
-            data = await screenshot.read()
-            boxes = await extract_text_boxes(data)
-        except Exception:
-            logger.exception("OCR failed for /statistic")
-            await interaction.followup.send(
-                embed=_error_embed("Ошибка OCR — не удалось обработать изображение."),
-                ephemeral=True,
-            )
-            return
-
-        if not boxes:
-            await interaction.followup.send(
-                embed=_error_embed(
-                    "На скриншоте не найдено текста. "
-                    "Нужен экран результатов «Битва отрядов»."
-                ),
-                ephemeral=True,
-            )
-            return
-
-        parsed = cs_parser.parse_cs_results(boxes)
-        if parsed is None or (not parsed["team_a"] and not parsed["team_b"]):
-            logger.warning(
-                "/statistic parse failed: %d boxes | %s",
-                len(boxes),
-                " | ".join(b["text"] for b in boxes[:60]),
-            )
-        if parsed is None or (not parsed["team_a"] and not parsed["team_b"]):
-            await interaction.followup.send(
-                embed=_error_embed(
-                    "Не удалось распознать таблицу игроков. "
-                    "Убедитесь, что это экран результатов CS 4x4."
-                ),
-                ephemeral=True,
-            )
-            return
-
-        await interaction.followup.send(embed=_build_embed(parsed))
+        await run_statistic(interaction, screenshot)
 
 
 async def setup(bot) -> None:

@@ -79,58 +79,6 @@ class MMCog(commands.Cog):
             ephemeral=True
         )
 
-    @mm_group.command(name="test", description="Заполнить поиск до 7/8 игроков для теста")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def mm_test(self, interaction: discord.Interaction) -> None:
-        """Заполнить поиск до 7/8 игроков."""
-        search = mm_search_store.get(interaction.guild_id, interaction.channel_id)
-        if not search:
-            await interaction.response.send_message(
-                "❌ В этом канале нет активного поиска. Сначала создайте поиск с /mm squad.",
-                ephemeral=True
-            )
-            return
-
-        required = search.required_players
-        current = len(search.players)
-        
-        if current >= required:
-            await interaction.response.send_message(
-                "❌ Поиск уже заполнен.",
-                ephemeral=True
-            )
-            return
-
-        # Добавить ботов до 7/8
-        target = required - 1  # 7 из 8
-        bot_names = [
-            "Bot_1", "Bot_2", "Bot_3", "Bot_4", 
-            "Bot_5", "Bot_6", "Bot_7", "Bot_8"
-        ]
-        
-        added = 0
-        for i in range(target - current):
-            if added < len(bot_names):
-                bot_name = bot_names[added]
-                search.add_player(bot_name, 0)  # user_id = 0 для ботов
-                added += 1
-        
-        mm_search_store.set(search)
-        
-        # Обновить embed
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
-        try:
-            message = await interaction.channel.fetch_message(search.message_id)
-            await message.edit(embed=embed, view=view)
-        except Exception as e:
-            logger.error(f"Error updating search embed: {e}")
-        
-        await interaction.response.send_message(
-            f"✅ Добавлено {added} ботов. Теперь {len(search.players)}/{required} игроков.",
-            ephemeral=True
-        )
-
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
         # Проверить если уже есть поиск в канале

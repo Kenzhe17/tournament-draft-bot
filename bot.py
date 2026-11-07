@@ -118,6 +118,14 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.statistic")
 
+        # Регистрация общих групп команд (/player, /economy, /games, ...)
+        from cogs.groups import ROOT_GROUPS
+        for _group in ROOT_GROUPS:
+            try:
+                self.tree.add_command(_group)
+            except Exception as e:
+                logger.warning("Не удалось зарегистрировать %s: %s", _group.name, e)
+
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
         await team_store.load_from_postgres()

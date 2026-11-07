@@ -308,13 +308,19 @@ class CrapsPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class CrapsCog(commands.Cog):
     """Craps game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="craps", description="Игра в кости на линии Pass / Don't Pass (2x)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["craps"])
+
+    @games_group.command(name="craps", description="Игра в кости на линии Pass / Don't Pass (2x)")
     @app_commands.describe(bet="Ставка в монетах (50-2,000)")
     async def craps(
         self,

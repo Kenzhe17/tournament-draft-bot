@@ -225,13 +225,19 @@ class DiceBetPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class DiceBetCog(commands.Cog):
     """Dice Bet game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="dice_bet", description="Ставка на сумму двух кубиков (2-12, 6x множитель)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["dice_bet"])
+
+    @games_group.command(name="dice_bet", description="Ставка на сумму двух кубиков (2-12, 6x множитель)")
     @app_commands.describe(bet="Ставка в монетах (20-1,000)")
     async def dice_bet(
         self,

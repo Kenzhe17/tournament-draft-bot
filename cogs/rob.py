@@ -586,13 +586,19 @@ class RobStartButton(discord.ui.Button):
             _rob_cooldowns[self.guild_id][self.robber_id] = now + timedelta(hours=2)
 
 
+from cogs.groups import crime_group, bind_commands
+
+
 class RobCog(commands.Cog):
     """Ког с командой ограбления."""
 
     def __init__(self, bot: TournamentBot):
         self.bot = bot
 
-    @app_commands.command(name="rob", description="Ограбить другого пользователя")
+    async def cog_load(self) -> None:
+        bind_commands(crime_group, self, ["rob", "robgroup"])
+
+    @crime_group.command(name="rob", description="Ограбить другого пользователя")
     @app_commands.describe(user="Пользователь, которого хотите ограбить")
     @app_commands.default_permissions()
     async def rob(self, interaction: discord.Interaction, user: discord.User) -> None:
@@ -666,7 +672,7 @@ class RobCog(commands.Cog):
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
-    @app_commands.command(name="robgroup", description="Ограбить другого пользователя группой")
+    @crime_group.command(name="robgroup", description="Ограбить другого пользователя группой")
     @app_commands.describe(user="Пользователь, которого хотите ограбить")
     @app_commands.default_permissions()
     async def robgroup(self, interaction: discord.Interaction, user: discord.User) -> None:

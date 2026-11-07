@@ -402,13 +402,19 @@ class RoulettePlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class RouletteCog(commands.Cog):
     """Roulette game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="roulette", description="Классическая рулетка (2x-35x множитель)")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["roulette"])
+
+    @games_group.command(name="roulette", description="Классическая рулетка (2x-35x множитель)")
     @app_commands.describe(bet="Ставка в монетах (50-5,000)")
     async def roulette(
         self,

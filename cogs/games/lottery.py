@@ -271,13 +271,19 @@ class LotteryPlayAgainButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=lottery_view)
 
 
+from cogs.groups import games_group, bind_commands
+
+
 class LotteryCog(commands.Cog):
     """Lottery game cog."""
 
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
 
-    @app_commands.command(name="lottery", description="Лотерея - покупайте билеты и выигрывайте!")
+    async def cog_load(self) -> None:
+        bind_commands(games_group, self, ["lottery"])
+
+    @games_group.command(name="lottery", description="Лотерея - покупайте билеты и выигрывайте!")
     @app_commands.describe(ticket_price="Цена билета в монетах (10-1000)")
     @app_commands.describe(max_tickets="Максимальное количество билетов (10-100)")
     async def lottery(
