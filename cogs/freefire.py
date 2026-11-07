@@ -65,6 +65,104 @@ def _scalar_items(data: dict[str, Any], limit: int = 15) -> list[tuple[str, Any]
     return items
 
 
+_BR_MODES = {"solostats": "Соло", "duostats": "Дуо", "quadstats": "Сквад"}
+
+
+def _kd(kills: Any, deaths: Any) -> str:
+    try:
+        k, d = float(kills or 0), float(deaths or 0)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{k / d:,.2f}" if d else "—"
+
+
+def _fmt_hours(seconds: Any) -> str:
+    try:
+        return f"{int(seconds) / 3600:,.1f} ч"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _fmt_km(meters: Any) -> str:
+    try:
+        return f"{int(meters) / 1000:,.0f} км"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _get(d: dict[str, Any], *keys: str) -> Any:
+    cur: Any = d
+    for key in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+def _stat_lines(block: dict[str, Any], br: bool) -> list[str]:
+    """Строки статистики для одного блока (solo/duo/quad/cs)."""
+    det = block.get("detailedstats") or {}
+    kills = _get(block, "kills") or 0
+    deaths = _get(det, "deaths") or _get(det, "knockdowns")
+    games = _get(block, "gamesplayed")
+    wins = _get(block, "wins")
+
+    lines = [
+        f"• Игр: **{_fmt_value(games)}** • Побед: **{_fmt_value(wins)}**",
+        f"• Убийств: **{_fmt_value(kills)}** • Смертей: **{_fmt_value(deaths)}** • K/D: **{_kd(kills, deaths)}**",
+    ]
+    if br:
+        lines += [
+            f"• Топ: **{_fmt_value(_get(det, 'topntimes'))}** • Выживание: **{_fmt_hours(_get(det, 'survivaltime'))}**",
+            f"• Урон: **{_fmt_value(_get(det, 'damage'))}** • Хедшоты: **{_fmt_value(_get(det, 'headshotkills'))}**",
+            f"• Макс. киллов за матч: **{_fmt_value(_get(det, 'highestkills'))}** • Дистанция: **{_fmt_km(_get(det, 'distancetravelled'))}**",
+        ]
+        extra = []
+        if _get(det, "revives"):
+            extra.append(f"Ревайвы: {_fmt_value(_get(det, 'revives'))}")
+        if _get(det, "knockdown"):
+            extra.append(f"Нокдауны: {_fmt_value(_get(det, 'knockdown'))}")
+        if _get(det, "roadkills"):
+            extra.append(f"Убийства с транспорта: {_fmt_value(_get(det, 'roadkills'))}")
+        if extra:
+            lines.append("• " + " • ".join(extra))
+    else:
+        lines += [
+            f"• Урон: **{_fmt_value(_get(det, 'damage'))}** • Хедшоты: **{_fmt_value(_get(det, 'headshotkills'))}**",
+            f"• Ассисты: **{_fmt_value(_get(det, 'assists'))}** • MVP: **{_fmt_value(_get(det, 'mvpcount'))}**",
+        ]
+        multi = []
+        for key, label in (("doublekills", "дабл"), ("triplekills", "трипл"), ("fourkills", "квадра")):
+            val = _get(det, key)
+            if val:
+                multi.append(f"{label}: {_fmt_value(val)}")
+        if multi:
+            lines.append("• " + " • ".join(multi))
+    return lines
+
+
+def _stats_embed_text(stats: dict[str, Any]) -> str:
+    """Форматирует stats из /freefireinfo/stats в текст для embed."""
+    sections: list[str] = []
+    is_cs = "csstats" in stats
+
+    if is_cs:
+        cs = stats.get("csstats") or {}
+        sections.append("**Clash Squad**\n" + "\n".join(_stat_lines(cs, br=False)))
+    else:
+        for key, label in _BR_MODES.items():
+            block = stats.get(key)
+            if isinstance(block, dict) and block:
+                sections.append(f"**{label}**\n" + "\n".join(_stat_lines(block, br=True)))
+
+    if not sections:
+        # Fallback: скалярные поля верхнего уровня
+        lines = [f"• **{k}** — {_fmt_value(v)}" for k, v in _scalar_items(stats, limit=20)]
+        return "\n".join(lines) if lines else "Данные отсутствуют."
+
+    return "\n\n".join(sections)[:3900]
+
+
 def _error_embed(exc: FreeFireError) -> discord.Embed:
     return discord.Embed(
         title=replace_emojis(f"{get_emoji('error')} FREE FIRE | Ошибка"),
@@ -220,13 +318,11 @@ async def ff_stats(
         return
 
     stats = result.get("stats") or result
-    lines = [f"• **{k}** — {_fmt_value(v)}" for k, v in _scalar_items(stats)]
 
     embed = discord.Embed(
         title=replace_emojis(f"{get_emoji('stats')} FREE FIRE | Статистика"),
         description=(
-            f"ID `{uid}` • режим: **{mode.name}**\n\n"
-            + ("\n".join(lines) if lines else "Данные отсутствуют.")
+            f"ID `{uid}` • режим: **{mode.name}**\n\n{_stats_embed_text(stats)}"
         ),
         color=COLOR_MAIN,
     )
