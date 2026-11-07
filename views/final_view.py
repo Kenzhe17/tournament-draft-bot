@@ -113,31 +113,20 @@ class FinalView(discord.ui.View):
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Add captain fill buttons for final (always available during final phase)
-        from views.match_stats_view import CaptainFillButton
-        if tournament.phase == TournamentPhase.FINAL:
-            match_id = f"{tournament.id}_final_0"
-            
-            # Check if team 0 has filled stats
-            if tournament.formation_mode == "random-auto":
-                team0_players = tournament.teams[final_teams[0]].get("players", [])
-                team0_filled = any(player in tournament.temp_match_stats.get(match_id, {}) for player in team0_players)
-            else:
-                team0_filled = any(
-                    tournament.teams[final_teams[0]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
-                    for c in range(1, 5)
+        # Кнопка «Отправить скриншот» для финала (пока матч не завершён)
+        from views.ocr_match_view import (
+            MatchScreenshotButton,
+            _stats_complete,
+            match_is_finished,
+        )
+        if (
+            tournament.phase == TournamentPhase.FINAL
+            and not match_is_finished(tournament, "final", 0)
+            and not _stats_complete(tournament, "final", 0)
+        ):
+            self.add_item(
+                MatchScreenshotButton(
+                    guild_id, channel_id, tournament,
+                    "final", 0, "📸 Финал",
                 )
-            if not team0_filled:
-                self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[0]))
-            
-            # Check if team 1 has filled stats
-            if tournament.formation_mode == "random-auto":
-                team1_players = tournament.teams[final_teams[1]].get("players", [])
-                team1_filled = any(player in tournament.temp_match_stats.get(match_id, {}) for player in team1_players)
-            else:
-                team1_filled = any(
-                    tournament.teams[final_teams[1]].get(f"circle{c}") in tournament.temp_match_stats.get(match_id, {})
-                    for c in range(1, 5)
-                )
-            if not team1_filled:
-                self.add_item(CaptainFillButton(guild_id, channel_id, tournament, "final", 0, final_teams[1]))
+            )

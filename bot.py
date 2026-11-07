@@ -117,6 +117,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.moderation")
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.statistic")
+        await self.load_extension("cogs.ocr_upload")
 
         # Регистрация общих групп команд (/player, /economy, /games, ...)
         from cogs.groups import ROOT_GROUPS
@@ -179,6 +180,31 @@ class TournamentBot(commands.Bot):
         for tournament in store.all():
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
+
+            # Восстанавливаем кнопки публичных OCR-сообщений матчей
+            for session in (tournament.ocr_sessions or {}).values():
+                if (
+                    session.get("status") in ("awaiting_mapping", "mapping", "ready")
+                    and session.get("message_id")
+                ):
+                    try:
+                        from views.ocr_match_view import OCRPublicView
+
+                        ocr_view = OCRPublicView(
+                            tournament.guild_id,
+                            tournament.channel_id,
+                            tournament,
+                            session["match_type"],
+                            session["match_index"],
+                        )
+                        self.add_view(
+                            ocr_view, message_id=session["message_id"]
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "OCR view restore failed for %s: %s",
+                            session.get("match_type"), e,
+                        )
 
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error

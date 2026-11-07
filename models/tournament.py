@@ -228,6 +228,10 @@ class Tournament:
     # Match IDs whose ELO was already awarded (idempotency guard)
     processed_elo_matches: set[str] = field(default_factory=set)
 
+    # OCR-сессии результатов матчей (скриншот → ручное сопоставление игроков)
+    # key: "{match_type}_{match_index}"
+    ocr_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
     betting_phase: str | None = None  # "qualifiers", "semifinal", "final"
