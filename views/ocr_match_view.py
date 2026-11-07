@@ -26,6 +26,12 @@ from typing import Any
 import discord
 from discord.ui import Button, Modal, Select, TextInput, View
 
+try:
+    # FileUpload в модалках — discord.py >= 2.5
+    from discord.ui import FileUpload
+except ImportError:  # pragma: no cover
+    FileUpload = None
+
 from config import replace_emojis
 from models.tournament import Tournament
 from storage.json_store import store
@@ -40,12 +46,6 @@ NONE_VALUE = "__none__"
 # Канал, куда приходят скриншоты и публикуются результаты OCR
 OCR_STATS_CHANNEL_ID = 1568608461250367569
 
-# Доп. статистика детального экрана отряда ( squad-режим )
-EXTRA_STAT_KEYS = (
-    "fact_dmg", "knockdowns", "healing", "revives", "revive_x",
-    "headshots",
-)
-
 # Ожидающие загрузки скриншотов: (guild_id, channel_id, user_id) -> meta
 PENDING_UPLOADS: dict[tuple[int, int, int], dict[str, Any]] = {}
 
@@ -58,16 +58,12 @@ def register_pending_upload(
     match_index: int,
     tchannel_id: int = 0,
     reupload: bool = False,
-    squad_team: int | None = None,
-    squad_uid: str | None = None,
 ) -> None:
     PENDING_UPLOADS[(guild_id, channel_id, user_id)] = {
         "match_type": match_type,
         "match_index": match_index,
         "tchannel": tchannel_id or channel_id,
         "reupload": reupload,
-        "squad_team": squad_team,
-        "squad_uid": squad_uid,
         "expires": time.time() + PENDING_UPLOAD_TTL,
     }
 
@@ -165,15 +161,7 @@ def _captain_mentions(tournament: Tournament, team_indexes: list[int]) -> str:
 
 
 def _ocr_winning_team_index(session: dict[str, Any]) -> int | None:
-    """Команда-победитель: по подсветке панели (2-панельный экран)
-    или по баннеру отряда (детальный экран одного отряда)."""
-    if session.get("mode") == "squad":
-        winners = [
-            int(t)
-            for t, s in session.get("squads", {}).items()
-            if s.get("banner") == "win"
-        ]
-        return winners[0] if len(winners) == 1 else None
+    """Команда-победитель по OCR-подсветке панели (после маппинга)."""
     side = session.get("winner_side")
     if side not in ("left", "right"):
         return None
@@ -213,11 +201,7 @@ def match_is_finished(tournament: Tournament, match_type: str, match_index: int)
 # ---------------------------------------------------------------------------
 
 class MatchScreenshotButton(Button):
-    """Кнопка загрузки скриншота результата матча (капитан/организатор).
-
-    Если задан team_index — это кнопка конкретного капитана: скриншот
-    детального экрана отряда автоматически назначается этой команде.
-    """
+    """Кнопка загрузки скриншота результата матча (капитан/организатор)."""
 
     def __init__(
         self,
@@ -227,22 +211,16 @@ class MatchScreenshotButton(Button):
         match_type: str,
         match_index: int,
         label: str,
-        team_index: int | None = None,
     ):
-        suffix = f":{team_index}" if team_index is not None else ""
         super().__init__(
             label=label,
             style=discord.ButtonStyle.secondary,
-            custom_id=(
-                f"ocr_shot:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}{suffix}"
-            ),
+            custom_id=f"ocr_shot:{guild_id}:{channel_id}:{match_type}:{match_index}",
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.match_type = match_type
         self.match_index = match_index
-        self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id, self.channel_id)
@@ -273,17 +251,7 @@ class MatchScreenshotButton(Button):
             return
 
         t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        if self.team_index is not None:
-            # Кнопка конкретного капитана — только он или организатор
-            allowed = is_org_check(interaction.user, interaction.guild) or (
-                self.team_index in (t1, t2)
-                and _is_match_captain(
-                    interaction.user, tournament, self.team_index
-                )
-            )
-        else:
-            allowed = _can_use_ocr(interaction.user, tournament, [t1, t2])
-        if not allowed:
+        if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Скриншот может отправить капитан команды "
@@ -294,21 +262,10 @@ class MatchScreenshotButton(Button):
             return
 
         # Уже есть активная OCR-сессия?
-        # В squad-режиме (скриншот одного отряда) второй капитан тоже
-        # должен иметь возможность загрузить свой отряд — пропускаем.
         session = tournament.ocr_sessions.get(
             _session_key(self.match_type, self.match_index)
         )
-        squad_active = bool(
-            session
-            and session.get("mode") == "squad"
-            and session.get("status") not in ("completed", "cancelled")
-        )
-        if (
-            session
-            and session.get("status") not in ("completed", "cancelled")
-            and not squad_active
-        ):
+        if session and session.get("status") not in ("completed", "cancelled"):
             await interaction.response.send_message(
                 replace_emojis(
                     "⚠️ Для этого матча уже загружен скриншот — "
@@ -332,25 +289,28 @@ class MatchScreenshotButton(Button):
             stats_channel.id if stats_channel else self.channel_id
         )
 
+        if FileUpload is not None:
+            # Основной путь: модалка с загрузкой файла
+            modal = ScreenshotUploadModal(
+                self.guild_id, self.channel_id,
+                self.match_type, self.match_index, reupload=False,
+            )
+            await interaction.response.send_modal(modal)
+            return
+
+        # Fallback (старая discord.py): pending-загрузка сообщением
         register_pending_upload(
             self.guild_id, upload_channel_id, interaction.user.id,
             self.match_type, self.match_index,
             tchannel_id=self.channel_id,
-            squad_team=self.team_index,
         )
         where = (
             f"<#{upload_channel_id}>" if stats_channel else "этот канал"
         )
-        hint = (
-            "Скриншот экрана статистики вашего отряда "
-            "(K/D/A, урон, нокдауны, поднятия)"
-            if self.team_index is not None
-            else "скриншот экрана результатов"
-        )
         await interaction.response.send_message(
             replace_emojis(
                 f"📸 **{_match_label(self.match_type, self.match_index)}**\n"
-                f"Отправьте **{hint}** в {where} "
+                f"Отправьте **скриншот экрана результатов** в {where} "
                 f"(в течение {PENDING_UPLOAD_TTL // 60} мин).\n"
                 "Там появятся результаты — капитаны сопоставят игроков кнопками."
             ),
@@ -359,82 +319,79 @@ class MatchScreenshotButton(Button):
 
 
 # ---------------------------------------------------------------------------
-# Публичное сообщение с результатами OCR + кнопки сопоставления
+# Модалка загрузки скриншота (FileUpload)
 # ---------------------------------------------------------------------------
 
-async def _send_org_ping(
-    interaction: discord.Interaction,
-    tournament: Tournament,
-    match_type: str,
-    match_index: int,
-) -> None:
-    """Пинг организатора (или ролей org) в канал результатов."""
-    mentions: list[str] = []
-    if tournament.organizer_id:
-        mentions.append(f"<@{tournament.organizer_id}>")
-    else:
-        from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
-        for rid in (ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
-            if rid:
-                mentions.append(f"<@&{rid}>")
-    ping = " ".join(mentions) if mentions else "организатор"
+class ScreenshotUploadModal(Modal):
+    """Окно загрузки скриншота результата матча."""
 
-    label = _match_label(match_type, match_index)
-    content = (
-        f"{ping}\n"
-        f"📢 {interaction.user.mention} вызывает организатора по "
-        f"матчу **{label}** — возможно, статистика распознана неверно."
-    )
-    channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-    if channel is None:
-        try:
-            channel = await interaction.guild.fetch_channel(
-                OCR_STATS_CHANNEL_ID
-            )
-        except Exception:
-            channel = interaction.channel
-    try:
-        await channel.send(content=content)
-    except Exception as e:
-        logger.warning("OCR call-org ping failed: %s", e)
-
-
-async def _register_reupload(
-    interaction: discord.Interaction,
-    match_type: str,
-    match_index: int,
-    channel_id: int,
-    squad_team: int | None = None,
-    squad_uid: str | None = None,
-) -> str:
-    """Зарегистрировать повторную загрузку скриншота.
-
-    Возвращает строку «куда слать скриншот» для ответа пользователю.
-    """
-    stats_channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-    if stats_channel is None:
-        try:
-            stats_channel = await interaction.guild.fetch_channel(
-                OCR_STATS_CHANNEL_ID
-            )
-        except Exception:
-            stats_channel = None
-    if stats_channel is not None:
-        register_pending_upload(
-            interaction.guild.id, stats_channel.id, interaction.user.id,
-            match_type, match_index,
-            tchannel_id=channel_id, reupload=True,
-            squad_team=squad_team, squad_uid=squad_uid,
+    def __init__(
+        self,
+        guild_id: int,
+        channel_id: int,
+        match_type: str,
+        match_index: int,
+        reupload: bool = False,
+    ):
+        title = (
+            "Неправильный скриншот" if reupload else "Скриншот результатов"
         )
-        return f"<#{stats_channel.id}>"
-    register_pending_upload(
-        interaction.guild.id, channel_id, interaction.user.id,
-        match_type, match_index,
-        tchannel_id=channel_id, reupload=True,
-        squad_team=squad_team, squad_uid=squad_uid,
-    )
-    return "этот канал"
+        super().__init__(title=title[:45])
+        self.guild_id = guild_id
+        self.channel_id = channel_id  # канал турнира (не канал результатов)
+        self.match_type = match_type
+        self.match_index = match_index
+        self.reupload = reupload
 
+        self.file_upload = FileUpload(
+            label="Скриншот экрана результатов (PNG/JPG)",
+            required=True,
+        )
+        self.add_item(self.file_upload)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        value = getattr(self.file_upload, "value", None)
+        attachment = (
+            value[0]
+            if isinstance(value, (list, tuple)) and value
+            else value
+        )
+        if attachment is None:
+            await interaction.followup.send(
+                replace_emojis("❌ Прикрепите скриншот."), ephemeral=True
+            )
+            return
+
+        from cogs.ocr_upload import process_match_screenshot
+
+        async def reply(text: str) -> None:
+            await interaction.followup.send(text, ephemeral=True)
+
+        try:
+            await process_match_screenshot(
+                interaction.client,
+                interaction.guild,
+                interaction.user,
+                attachment,
+                self.match_type,
+                self.match_index,
+                self.channel_id,
+                self.reupload,
+                reply,
+            )
+        except Exception:
+            logger.exception("OCR modal upload failed")
+            await interaction.followup.send(
+                replace_emojis("❌ Ошибка при обработке скриншота."),
+                ephemeral=True,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Публичное сообщение с результатами OCR + кнопки сопоставления
+# ---------------------------------------------------------------------------
 
 class OCRPublicView(View):
     """Кнопки на публичном сообщении с распознанными результатами."""
@@ -580,10 +537,40 @@ class OCRPublicView(View):
                 )
                 return
 
-            where = await _register_reupload(
-                interaction, self.match_type, self.match_index,
-                self.channel_id,
+            if FileUpload is not None:
+                modal = ScreenshotUploadModal(
+                    self.guild_id, self.channel_id,
+                    self.match_type, self.match_index, reupload=True,
+                )
+                await interaction.response.send_modal(modal)
+                return
+
+            # Fallback: pending-загрузка сообщением в канал результатов
+            stats_channel = interaction.guild.get_channel(
+                OCR_STATS_CHANNEL_ID
             )
+            if stats_channel is None:
+                try:
+                    stats_channel = await interaction.guild.fetch_channel(
+                        OCR_STATS_CHANNEL_ID
+                    )
+                except Exception:
+                    stats_channel = None
+            if stats_channel is not None:
+                register_pending_upload(
+                    self.guild_id, stats_channel.id, interaction.user.id,
+                    self.match_type, self.match_index,
+                    tchannel_id=self.channel_id, reupload=True,
+                )
+                where = f"<#{stats_channel.id}>"
+            else:
+                register_pending_upload(
+                    self.guild_id, self.channel_id, interaction.user.id,
+                    self.match_type, self.match_index,
+                    tchannel_id=self.channel_id, reupload=True,
+                )
+                where = "этот канал"
+
             await interaction.response.send_message(
                 replace_emojis(
                     f"📸 Пришлите **правильный скриншот** в {where} "
@@ -613,437 +600,35 @@ class OCRPublicView(View):
                 )
                 return
 
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
+            # Кого пинговать: организатора турнира, иначе роли org
+            mentions: list[str] = []
+            if tournament.organizer_id:
+                mentions.append(f"<@{tournament.organizer_id}>")
+            else:
+                from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
+                for rid in (ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
+                    if rid:
+                        mentions.append(f"<@&{rid}>")
+            ping = " ".join(mentions) if mentions else "организатор"
+
+            label = _match_label(self.match_type, self.match_index)
+            content = (
+                f"{ping}\n"
+                f"📢 {interaction.user.mention} вызывает организатора по "
+                f"матчу **{label}** — возможно, статистика распознана неверно."
             )
-            await interaction.response.send_message(
-                replace_emojis("📢 Организатор вызван."), ephemeral=True
-            )
-        return callback
-
-
-# ---------------------------------------------------------------------------
-# Squad-режим: скриншот детального экрана ОДНОГО отряда
-# (K/D/A, DMG, фактический урон, нокдауны, исцеление, поднятия, хэдшоты)
-# ---------------------------------------------------------------------------
-
-
-def _squad_panel_key(team_index: int) -> str:
-    return f"squad_{team_index}"
-
-
-class SquadClaimView(View):
-    """Кнопки на сообщении с OCR одного отряда до назначения команде.
-
-    Две кнопки — по одной на команду матча: капитан соответствующей
-    команды (или организатор) подтверждает, что этот отряд — его.
-    """
-
-    def __init__(
-        self,
-        guild_id: int,
-        channel_id: int,
-        tournament: Tournament,
-        match_type: str,
-        match_index: int,
-        uid: str,
-    ):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        self.match_type = match_type
-        self.match_index = match_index
-        self.uid = uid
-
-        session = tournament.ocr_sessions.get(
-            _session_key(match_type, match_index), {}
-        )
-        claimed = {int(k) for k in session.get("squads", {})}
-        try:
-            t1, t2 = _match_tuple(tournament, match_type, match_index)
-        except Exception:
-            t1, t2 = session.get("teams", [0, 1])[:2]
-
-        for team_index in (t1, t2):
-            name = _team_display_name(tournament, team_index)
-            btn = Button(
-                label=f"🧩 Это {name}"[:80],
-                style=discord.ButtonStyle.primary,
-                custom_id=(
-                    f"ocr_squad_claim:{guild_id}:{channel_id}:{match_type}:"
-                    f"{match_index}:{team_index}:{uid}"
-                ),
-                disabled=team_index in claimed,
-            )
-            btn.callback = self._claim_callback(team_index)
-            self.add_item(btn)
-
-        t1v, t2v = t1, t2
-
-        wrong = Button(
-            label="❌ Неправильный скриншот",
-            style=discord.ButtonStyle.danger,
-            custom_id=(
-                f"ocr_squad_wrong:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{uid}"
-            ),
-        )
-        wrong.callback = self._wrong_callback(uid, t1v, t2v)
-        self.add_item(wrong)
-
-        call_org = Button(
-            label="📢 Вызвать организатора",
-            style=discord.ButtonStyle.secondary,
-            custom_id=(
-                f"ocr_squad_org:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{uid}"
-            ),
-        )
-        call_org.callback = self._org_callback(t1v, t2v)
-        self.add_item(call_org)
-
-    def _claim_callback(self, team_index: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            if not (
-                is_org_check(interaction.user, interaction.guild)
-                or _is_match_captain(interaction.user, tournament, team_index)
-            ):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Назначить отряд может только капитан "
-                        "этой команды или организатор."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            session = tournament.ocr_sessions.get(
-                _session_key(self.match_type, self.match_index)
-            )
-            if not session or session.get("status") == "completed":
-                await interaction.response.send_message(
-                    replace_emojis("❌ OCR-сессия не найдена или завершена."),
-                    ephemeral=True,
-                )
-                return
-            session.setdefault("squads", {})
-            session.setdefault("squad_pool", [])
-            session.setdefault("panels", {})
-            pool = session.get("squad_pool", [])
-            entry = next((e for e in pool if e.get("uid") == self.uid), None)
-            if entry is None:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Этот скриншот уже назначен команде."),
-                    ephemeral=True,
-                )
-                return
-            if str(team_index) in session.get("squads", {}):
-                await interaction.response.send_message(
-                    replace_emojis("❌ У этой команды уже есть свой отряд."),
-                    ephemeral=True,
-                )
-                return
-
-            session["squads"][str(team_index)] = {
-                k: v for k, v in entry.items() if k != "uid"
-            }
-            session["squad_pool"] = [
-                e for e in pool if e.get("uid") != self.uid
-            ]
-            session.setdefault("panels", {})[
-                _squad_panel_key(team_index)
-            ] = {
-                "name": _team_display_name(tournament, team_index),
-                "rows": entry.get("rows", []),
-            }
-            if len(session["squads"]) >= 2:
-                session["status"] = "mapping"
-            store.set(tournament)
-
-            name = _team_display_name(tournament, team_index)
-            try:
-                await interaction.message.edit(
-                    view=SquadAssignedView(
-                        self.guild_id, self.channel_id, tournament,
-                        self.match_type, self.match_index, team_index,
+            channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
+            if channel is None:
+                try:
+                    channel = await interaction.guild.fetch_channel(
+                        OCR_STATS_CHANNEL_ID
                     )
-                )
+                except Exception:
+                    channel = interaction.channel
+            try:
+                await channel.send(content=content)
             except Exception as e:
-                logger.warning("Squad claim view swap failed: %s", e)
-            await interaction.response.send_message(
-                replace_emojis(
-                    f"✅ Отряд назначен команде **{name}**.\n"
-                    "Нажмите **🧩 Сопоставить** ниже, чтобы привязать "
-                    "игровые ники к участникам Discord."
-                ),
-                ephemeral=True,
-            )
-        return callback
-
-    def _wrong_callback(self, uid: str, t1: int, t2: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            where = await _register_reupload(
-                interaction, self.match_type, self.match_index,
-                self.channel_id, squad_uid=uid,
-            )
-            await interaction.response.send_message(
-                replace_emojis(
-                    f"📸 Пришлите **правильный скриншот отряда** в {where} "
-                    f"(в течение {PENDING_UPLOAD_TTL // 60} мин) — "
-                    "это сообщение обновится."
-                ),
-                ephemeral=True,
-            )
-        return callback
-
-    def _org_callback(self, t1: int, t2: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
-            )
-            await interaction.response.send_message(
-                replace_emojis("📢 Организатор вызван."), ephemeral=True
-            )
-        return callback
-
-
-class SquadAssignedView(View):
-    """Кнопки на сообщении с OCR отряда ПОСЛЕ назначения команде."""
-
-    def __init__(
-        self,
-        guild_id: int,
-        channel_id: int,
-        tournament: Tournament,
-        match_type: str,
-        match_index: int,
-        team_index: int,
-    ):
-        super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        self.match_type = match_type
-        self.match_index = match_index
-        self.team_index = team_index
-
-        session = tournament.ocr_sessions.get(
-            _session_key(match_type, match_index), {}
-        )
-        active = session.get("status") not in ("completed", "cancelled")
-        mapped = str(team_index) in session.get("maps", {})
-        name = _team_display_name(tournament, team_index)
-
-        map_btn = Button(
-            label=f"🧩 Сопоставить {name}"[:80],
-            style=discord.ButtonStyle.primary,
-            custom_id=(
-                f"ocr_squad_map:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{team_index}"
-            ),
-            disabled=not active or mapped,
-        )
-        map_btn.callback = self._map_callback()
-        self.add_item(map_btn)
-
-        if active:
-            wrong = Button(
-                label="❌ Неправильный скриншот",
-                style=discord.ButtonStyle.danger,
-                custom_id=(
-                    f"ocr_squad_wrong2:{guild_id}:{channel_id}:{match_type}:"
-                    f"{match_index}:{team_index}"
-                ),
-            )
-            wrong.callback = self._wrong_callback()
-            self.add_item(wrong)
-
-            call_org = Button(
-                label="📢 Вызвать организатора",
-                style=discord.ButtonStyle.secondary,
-                custom_id=(
-                    f"ocr_squad_org2:{guild_id}:{channel_id}:{match_type}:"
-                    f"{match_index}:{team_index}"
-                ),
-            )
-            call_org.callback = self._org_callback()
-            self.add_item(call_org)
-
-    def _map_callback(self):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            if not (
-                is_org_check(interaction.user, interaction.guild)
-                or _is_match_captain(
-                    interaction.user, tournament, self.team_index
-                )
-            ):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Сопоставить свою команду может только её "
-                        "капитан или организатор."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            session = tournament.ocr_sessions.get(
-                _session_key(self.match_type, self.match_index)
-            )
-            if not session or session.get("status") == "completed":
-                await interaction.response.send_message(
-                    replace_emojis("❌ OCR-сессия не найдена или завершена."),
-                    ephemeral=True,
-                )
-                return
-            if str(self.team_index) in session.get("maps", {}):
-                await interaction.response.send_message(
-                    replace_emojis("✅ Эта команда уже сопоставлена."),
-                    ephemeral=True,
-                )
-                return
-
-            name = _team_display_name(tournament, self.team_index)
-            panel = _squad_panel_key(self.team_index)
-            rows = (
-                session.get("panels", {}).get(panel, {}).get("rows", [])
-            )
-            embed = discord.Embed(
-                title=f"🧩 {name} — сопоставление игроков",
-                description=(
-                    "Для каждого игрового ника выберите Discord-игрока "
-                    "из вашего состава.\n"
-                    "Кнопки ✏️ — ник и K/D/A/DMG, кнопки 📊 — "
-                    "фактический урон, нокдауны, исцеление, поднятия, "
-                    "хэдшоты."
-                ),
-                color=discord.Color.blurple(),
-            )
-            for i, row in enumerate(rows):
-                embed.add_field(
-                    name=f"{i + 1}. {row.get('name', '?')}",
-                    value=(
-                        f"K/D/A: {row.get('kills', 0)}/"
-                        f"{row.get('deaths', 0)}/{row.get('assists', 0)}"
-                        f" • DMG {row.get('dmg')}"
-                    ),
-                    inline=False,
-                )
-            view = PanelMappingView(
-                self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index, self.team_index, panel,
-            )
-            await interaction.response.send_message(
-                embed=embed, view=view, ephemeral=True
-            )
-        return callback
-
-    def _wrong_callback(self):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            try:
-                t1, t2 = _match_tuple(
-                    tournament, self.match_type, self.match_index
-                )
-            except Exception:
-                t1, t2 = self.team_index, self.team_index
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            session = tournament.ocr_sessions.get(
-                _session_key(self.match_type, self.match_index)
-            )
-            if not session or session.get("status") == "completed":
-                await interaction.response.send_message(
-                    replace_emojis("❌ OCR-сессия не найдена или завершена."),
-                    ephemeral=True,
-                )
-                return
-            where = await _register_reupload(
-                interaction, self.match_type, self.match_index,
-                self.channel_id, squad_team=self.team_index,
-            )
-            await interaction.response.send_message(
-                replace_emojis(
-                    f"📸 Пришлите **новый скриншот отряда** в {where} "
-                    f"(в течение {PENDING_UPLOAD_TTL // 60} мин) — "
-                    "это сообщение обновится, сопоставление сбросится."
-                ),
-                ephemeral=True,
-            )
-        return callback
-
-    def _org_callback(self):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            try:
-                t1, t2 = _match_tuple(
-                    tournament, self.match_type, self.match_index
-                )
-            except Exception:
-                t1, t2 = self.team_index, self.team_index
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
-            )
+                logger.warning("OCR call-org ping failed: %s", e)
             await interaction.response.send_message(
                 replace_emojis("📢 Организатор вызван."), ephemeral=True
             )
@@ -1260,20 +845,6 @@ class PanelMappingView(View):
             btn.callback = self._make_edit_callback(i)
             self.add_item(btn)
 
-        # Для squad-строк — вторая кнопка правки доп. статистики
-        if panel.startswith("squad_"):
-            for i in range(min(len(rows), 4)):
-                btn = Button(
-                    label=f"📊 {i + 1}",
-                    style=discord.ButtonStyle.secondary,
-                    custom_id=(
-                        f"ocr_editx:{guild_id}:{channel_id}:{match_type}:"
-                        f"{match_index}:{panel}:{i}"
-                    ),
-                )
-                btn.callback = self._make_extra_edit_callback(i)
-                self.add_item(btn)
-
         save = Button(
             label="💾 Сохранить сопоставление",
             style=discord.ButtonStyle.success,
@@ -1315,33 +886,6 @@ class PanelMappingView(View):
                 )
                 return
             modal = OcrRowEditModal(
-                self.guild_id, self.channel_id, self.match_type,
-                self.match_index, self.panel, row_idx,
-            )
-            await interaction.response.send_modal(modal)
-        return callback
-
-    def _make_extra_edit_callback(self, row_idx: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            session = tournament.ocr_sessions.get(
-                _session_key(self.match_type, self.match_index)
-            )
-            row = (
-                (session or {}).get("panels", {})
-                .get(self.panel, {}).get("rows", [])
-            )
-            if row_idx >= len(row):
-                await interaction.response.send_message(
-                    replace_emojis("❌ Строка не найдена."), ephemeral=True
-                )
-                return
-            modal = OcrSquadExtraModal(
                 self.guild_id, self.channel_id, self.match_type,
                 self.match_index, self.panel, row_idx,
             )
@@ -1406,18 +950,16 @@ class PanelMappingView(View):
         # Запись маппинга (статистика — актуальная из сессии, после правок)
         mapped_rows = []
         for i, row in enumerate(rows):
-            mapped = {
-                "discord_name": chosen[i],
-                "ocr_name": row.get("name", "?"),
-                "kills": int(row.get("kills", 0)),
-                "deaths": int(row.get("deaths", 0)),
-                "assists": int(row.get("assists", 0)),
-                "dmg": int(row.get("dmg", 0) or 0),
-            }
-            for k in EXTRA_STAT_KEYS:
-                if row.get(k) is not None:
-                    mapped[k] = row[k]
-            mapped_rows.append(mapped)
+            mapped_rows.append(
+                {
+                    "discord_name": chosen[i],
+                    "ocr_name": row.get("name", "?"),
+                    "kills": int(row.get("kills", 0)),
+                    "deaths": int(row.get("deaths", 0)),
+                    "assists": int(row.get("assists", 0)),
+                    "dmg": int(row.get("dmg", 0) or 0),
+                }
+            )
         session.setdefault("maps", {})[str(self.team_index)] = {
             "panel": self.panel,
             "rows": mapped_rows,
@@ -1537,54 +1079,10 @@ async def _refresh_public_message(
 ) -> None:
     """Перерисовать view публичного OCR-сообщения после сохранения маппинга."""
     session = tournament.ocr_sessions.get(_session_key(match_type, match_index))
-    if not session:
+    if not session or not session.get("message_id"):
         return
     channel = await _results_channel(interaction, session)
     if channel is None:
-        return
-
-    # Squad-режим: у каждого отряда своё сообщение в канале результатов
-    if session.get("mode") == "squad":
-        try:
-            t1, t2 = _match_tuple(tournament, match_type, match_index)
-        except Exception:
-            t1, t2 = session.get("teams", [0, 1])[:2]
-        for entry in session.get("squad_pool", []):
-            mid = entry.get("message_id")
-            if not mid:
-                continue
-            try:
-                msg = await channel.fetch_message(mid)
-                await msg.edit(
-                    view=SquadClaimView(
-                        tournament.guild_id, tournament.channel_id,
-                        tournament, match_type, match_index,
-                        entry["uid"],
-                    )
-                )
-            except Exception as e:
-                logger.warning("Squad pool view refresh failed: %s", e)
-        for tkey, sentry in session.get("squads", {}).items():
-            mid = sentry.get("message_id")
-            if not mid:
-                continue
-            try:
-                tidx = int(tkey)
-            except (TypeError, ValueError):
-                continue
-            try:
-                msg = await channel.fetch_message(mid)
-                await msg.edit(
-                    view=SquadAssignedView(
-                        tournament.guild_id, tournament.channel_id,
-                        tournament, match_type, match_index, tidx,
-                    )
-                )
-            except Exception as e:
-                logger.warning("Squad assigned view refresh failed: %s", e)
-        return
-
-    if not session.get("message_id"):
         return
     try:
         msg = await channel.fetch_message(session["message_id"])
@@ -1711,110 +1209,6 @@ class OcrRowEditModal(Modal, title="Исправить строку OCR"):
         )
 
 
-class OcrSquadExtraModal(Modal, title="Доп. статистика отряда"):
-    """Правка расширенной статистики squad-строки (5 полей)."""
-
-    FIELDS = (
-        ("fact_dmg", "Фактический урон", 8),
-        ("knockdowns", "Нокдауны", 4),
-        ("healing", "Исцеление", 8),
-        ("revives", "Поднятия", 4),
-        ("headshots", "Хэдшоты %", 6),
-    )
-
-    def __init__(
-        self,
-        guild_id: int,
-        channel_id: int,
-        match_type: str,
-        match_index: int,
-        panel: str,
-        row_idx: int,
-    ):
-        super().__init__()
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        self.match_type = match_type
-        self.match_index = match_index
-        self.panel = panel
-        self.row_idx = row_idx
-
-        tournament = store.get(guild_id, channel_id)
-        session = (
-            tournament.ocr_sessions.get(_session_key(match_type, match_index))
-            if tournament else {}
-        ) or {}
-        panel_rows = session.get("panels", {}).get(panel, {}).get("rows") or []
-        row = panel_rows[row_idx] if row_idx < len(panel_rows) else {}
-
-        self.inputs: dict[str, TextInput] = {}
-        for key, label, max_len in self.FIELDS:
-            val = row.get(key)
-            ti = TextInput(
-                label=label,
-                required=False,
-                max_length=max_len,
-                default=(
-                    str(val)[:max_len] if val is not None else None
-                ),
-            )
-            self.add_item(ti)
-            self.inputs[key] = ti
-
-    @staticmethod
-    def _to_num(value: str | None):
-        v = (value or "").strip().replace(",", ".").rstrip("%")
-        if not v:
-            return None
-        try:
-            f = float(v)
-        except ValueError:
-            return "ERR"
-        return int(f) if f == int(f) else round(f, 1)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        tournament = store.get(self.guild_id, self.channel_id)
-        if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
-            )
-            return
-        session = tournament.ocr_sessions.get(
-            _session_key(self.match_type, self.match_index)
-        )
-        rows = (session or {}).get("panels", {}).get(self.panel, {}).get(
-            "rows", []
-        )
-        if self.row_idx >= len(rows):
-            await interaction.response.send_message(
-                replace_emojis("❌ Строка не найдена."), ephemeral=True
-            )
-            return
-
-        row = rows[self.row_idx]
-        for key, _label, _ml in self.FIELDS:
-            num = self._to_num(self.inputs[key].value)
-            if num == "ERR":
-                await interaction.response.send_message(
-                    replace_emojis("❌ Значения должны быть числами."),
-                    ephemeral=True,
-                )
-                return
-            if num is None:
-                row.pop(key, None)
-            else:
-                row[key] = num
-        store.set(tournament)
-
-        await interaction.response.send_message(
-            replace_emojis(
-                "✅ Доп. статистика обновлена. Не забудьте нажать "
-                "«Сохранить»."
-            ),
-            ephemeral=True,
-        )
-
-
 # ---------------------------------------------------------------------------
 # Выбор победителя + финализация
 # ---------------------------------------------------------------------------
@@ -1838,8 +1232,16 @@ class OCRWinnerPickView(View):
             _session_key(match_type, match_index), {}
         )
         t1, t2 = _match_tuple(tournament, match_type, match_index)
-        # Помечаем OCR-победителя (работает и для squad-режима)
-        ocr_winner = _ocr_winning_team_index(session)
+        # Победитель по OCR: панель → команда
+        ocr_winner = None
+        side = session.get("winner_side")
+        if side:
+            for m in session.get("maps", {}).values():
+                if m.get("panel") == side:
+                    ocr_winner = int(
+                        [k for k, v in session["maps"].items() if v is m][0]
+                    )
+                    break
 
         for team_index in (t1, t2):
             name = _team_display_name(tournament, team_index)
@@ -1917,11 +1319,11 @@ async def finalize_ocr_match(
     match_id = f"{tournament.id}_{key}"
     t1, t2 = _match_tuple(tournament, match_type, match_index)
 
-    # Статистика: discord_name -> {kills,deaths,assists,damage,ocr_name[,extra]}
+    # Статистика: discord_name -> {kills,deaths,assists,damage,ocr_name}
     temp_stats: dict[str, dict[str, Any]] = {}
     for mapping in session["maps"].values():
         for i, row in enumerate(mapping["rows"]):
-            entry = {
+            temp_stats[row["discord_name"]] = {
                 "kills": row["kills"],
                 "deaths": row["deaths"],
                 "assists": row["assists"],
@@ -1929,10 +1331,6 @@ async def finalize_ocr_match(
                 "circle": i + 1,
                 "ocr_name": row["ocr_name"],
             }
-            for k in EXTRA_STAT_KEYS:
-                if row.get(k) is not None:
-                    entry[k] = row[k]
-            temp_stats[row["discord_name"]] = entry
 
     already_processed = match_id in tournament.processed_elo_matches
 
@@ -1997,40 +1395,18 @@ async def finalize_ocr_match(
     session["winning_team_index"] = winning_team_index
     store.set(tournament)
 
-    final_text = (
-        f"✅ Результат зафиксирован. Победитель: "
-        f"**{_team_display_name(tournament, winning_team_index)}**"
-    )
-    try:
-        channel = await _results_channel(interaction, session)
-    except Exception:
-        channel = None
-
-    if session.get("mode") == "squad":
-        # У каждого отряда своё сообщение — гасим кнопки на всех
-        mids = [
-            s.get("message_id") for s in session.get("squads", {}).values()
-        ] + [
-            e.get("message_id") for e in session.get("squad_pool", [])
-        ]
-        if channel is not None:
-            for mid in mids:
-                if not mid:
-                    continue
-                try:
-                    msg = await channel.fetch_message(mid)
-                    await msg.edit(
-                        content=replace_emojis(final_text), view=None
-                    )
-                except Exception as e:
-                    logger.warning("Squad message finalize failed: %s", e)
-    elif session.get("message_id") and channel is not None:
+    if session.get("message_id"):
         try:
-            msg = await channel.fetch_message(session["message_id"])
-            await msg.edit(
-                content=replace_emojis(final_text),
-                view=None,
-            )
+            channel = await _results_channel(interaction, session)
+            if channel is not None:
+                msg = await channel.fetch_message(session["message_id"])
+                await msg.edit(
+                    content=replace_emojis(
+                        f"✅ Результат зафиксирован. Победитель: "
+                        f"**{_team_display_name(tournament, winning_team_index)}**"
+                    ),
+                    view=None,
+                )
         except Exception as e:
             logger.warning("OCR message finalize edit failed: %s", e)
 
