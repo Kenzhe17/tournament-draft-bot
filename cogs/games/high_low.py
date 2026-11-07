@@ -149,7 +149,7 @@ class HighLowView(discord.ui.View):
         else:
             # Продолжить игру
             updated_embed = self.create_embed("playing")
-            await interaction.edit_original_response( view=compose(updated_embed))
+            await interaction.edit_original_response( view=compose(updated_embed, self))
 
 
 class HighLowHigherButton(discord.ui.Button):
@@ -220,7 +220,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
     def __init__(self, bet: int, user_id: int):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
         self.user_id = user_id
 

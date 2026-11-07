@@ -685,17 +685,192 @@ class PvPChoiceView(RPSView):
 
 
 class RPSPlayAgainButton(discord.ui.Button):
-    """Кнопка сыграть снова (УДАЛЕНО)."""
+    """Кнопка сыграть снова."""
 
     def __init__(self, bet: int, initiator_id: Optional[int] = None, opponent_id: Optional[int] = None):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
         self.initiator_id = initiator_id
         self.opponent_id = opponent_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Кнопка отключена."""
-        await interaction.response.send_message("❌ Эта функция отключена.", ephemeral=True)
+        user_id = interaction.user.id
+        guild_id = interaction.guild_id
+
+        if self.initiator_id and user_id != self.initiator_id:
+            await interaction.response.send_message(replace_emojis("❌ Это не ваша игра."), ephemeral=True)
+            return
+
+        if self.bet <= 0:
+            await interaction.response.send_message(replace_emojis("❌ Недопустимая ставка."), ephemeral=True)
+            return
+
+        if self.opponent_id:
+            await self._rematch_pvp(interaction, user_id, guild_id)
+        else:
+            await self._rematch_pve(interaction, user_id, guild_id)
+
+    async def _rematch_pve(self, interaction: discord.Interaction, user_id: int, guild_id: int) -> None:
+        """Реванш PvE — повторяет флоу команды /rps."""
+        bet = self.bet
+
+        if user_id in active_users:
+            await interaction.response.send_message(replace_emojis("❌ Вы уже участвуете в игре."), ephemeral=True)
+            return
+        if not await check_balance(user_id, guild_id, bet):
+            await interaction.response.send_message(replace_emojis("❌ Недостаточно баланса."), ephemeral=True)
+            return
+        if not await hold_escrow(user_id, guild_id, bet):
+            await interaction.response.send_message(replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True)
+            return
+
+        game_id = f"rps_{user_id}_{guild_id}_{asyncio.get_event_loop().time()}"
+        game = GameSession(
+            game_id=game_id,
+            mode=GameMode.PVE,
+            state=GameState.WAITING_PVE,
+            initiator_id=user_id,
+            guild_id=guild_id,
+            bet=bet,
+            opponent_id=None,
+            channel_id=interaction.channel_id,
+            message_id=interaction.message.id,
+        )
+        active_games[game_id] = game
+        active_users.add(user_id)
+
+        try:
+            view = PvEChoiceView(game_id, bet)
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_sparkle')} **RPS | реванш**",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                value=f"• Режим: **PvE**\n"
+                      f"• Игрок: <@{user_id}>\n"
+                      f"• Ставка: **{bet}** {get_emoji('money')}\n"
+                      f"• Множитель: **2.0x**",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
+                inline=False
+            )
+            await interaction.response.edit_message(view=compose(embed, view))
+        except Exception as e:
+            logger.error(f"RPS rematch PvE error: {e}", exc_info=True)
+            await release_escrow(user_id, guild_id, bet)
+            active_users.discard(user_id)
+            active_games.pop(game_id, None)
+            try:
+                await interaction.followup.send(replace_emojis("❌ Произошла ошибка при запуске игры."), ephemeral=True)
+            except Exception:
+                pass
+
+    async def _rematch_pvp(self, interaction: discord.Interaction, user_id: int, guild_id: int) -> None:
+        """Реванш PvP — оба игрока должны нажать «Сыграть снова»."""
+        bet = self.bet
+        initiator_id = self.initiator_id
+        opponent_id = self.opponent_id
+
+        if user_id != initiator_id and user_id != opponent_id:
+            await interaction.response.send_message(replace_emojis("❌ Это не ваша игра."), ephemeral=True)
+            return
+
+        key = f"rematch_{min(initiator_id, opponent_id)}_{max(initiator_id, opponent_id)}_{bet}"
+        requests = play_again_requests.setdefault(key, set())
+
+        if user_id in requests:
+            await interaction.response.send_message(replace_emojis("⏳ Вы уже подтвердили реванш."), ephemeral=True)
+            return
+        requests.add(user_id)
+
+        if len(requests) < 2:
+            await interaction.response.send_message(
+                replace_emojis("⏳ Ожидание соперника для реванша..."), ephemeral=True
+            )
+            return
+
+        play_again_requests.pop(key, None)
+
+        # Проверки: оба свободны и имеют баланс
+        for pid in (initiator_id, opponent_id):
+            if pid in active_users:
+                await interaction.response.send_message(
+                    replace_emojis(f"❌ <@{pid}> уже участвует в другой игре."), ephemeral=True
+                )
+                return
+            if not await check_balance(pid, guild_id, bet):
+                await interaction.response.send_message(
+                    replace_emojis(f"❌ Недостаточно баланса у <@{pid}>."), ephemeral=True
+                )
+                return
+
+        # Эскроу обоих
+        held = []
+        for pid in (initiator_id, opponent_id):
+            if await hold_escrow(pid, guild_id, bet):
+                held.append(pid)
+            else:
+                for h in held:
+                    await release_escrow(h, guild_id, bet)
+                await interaction.response.send_message(
+                    replace_emojis("❌ Не удалось удержать ставку."), ephemeral=True
+                )
+                return
+
+        game_id = f"rps_{initiator_id}_{opponent_id}_{guild_id}_{asyncio.get_event_loop().time()}"
+        game = GameSession(
+            game_id=game_id,
+            mode=GameMode.PVP,
+            state=GameState.PVP_CHOICE,
+            initiator_id=initiator_id,
+            guild_id=guild_id,
+            bet=bet,
+            opponent_id=opponent_id,
+            channel_id=interaction.channel_id,
+            message_id=interaction.message.id,
+        )
+        active_games[game_id] = game
+        active_users.add(initiator_id)
+        active_users.add(opponent_id)
+
+        try:
+            view = PvPChoiceView(
+                game_id, initiator_id, opponent_id, bet,
+                is_initiator=None, is_main=True, bot=interaction.client,
+            )
+            embed = discord.Embed(
+                title=f"{replace_emojis('a_sparkle')} **RPS | реванш**",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                value=f"• Режим: **PvP**\n"
+                      f"• Игрок 1: <@{initiator_id}>\n"
+                      f"• Игрок 2: <@{opponent_id}>\n"
+                      f"• Ставка: **{bet}** {get_emoji('money')}\n"
+                      f"• Множитель: **2.0x**",
+                inline=False
+            )
+            embed.add_field(
+                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                value="Каждый выбирает свой ход (Камень, Бумага или Ножницы). У вас есть 40 секунд!",
+                inline=False
+            )
+            await interaction.response.edit_message(view=compose(embed, view))
+        except Exception as e:
+            logger.error(f"RPS rematch PvP error: {e}", exc_info=True)
+            for pid in (initiator_id, opponent_id):
+                await release_escrow(pid, guild_id, bet)
+                active_users.discard(pid)
+            active_games.pop(game_id, None)
+            try:
+                await interaction.followup.send(replace_emojis("❌ Произошла ошибка при запуске игры."), ephemeral=True)
+            except Exception:
+                pass
 
 
 from cogs.groups import games_group, bind_commands

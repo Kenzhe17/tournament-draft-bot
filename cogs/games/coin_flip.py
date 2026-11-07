@@ -264,20 +264,19 @@ class CoinFlipDeclineButton(discord.ui.Button):
 
 
 class CoinFlipPlayAgainButton(discord.ui.Button):
-    """Кнопка сыграть снова (УДАЛЕНО)."""
+    """Кнопка сыграть снова."""
 
     def __init__(self, bet: int, opponent_id: Optional[int] = None, user_id: int = None):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
         self.opponent_id = opponent_id
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Кнопка отключена."""
-        await interaction.response.send_message("❌ Эта функция отключена.", ephemeral=True)
+        if self.user_id and interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
 
-        # For play again, we need to edit the existing message
-        # First create the game
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
@@ -317,13 +316,13 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             channel_id=interaction.channel_id,
             initiator_id=user_id,
             bet=self.bet,
-            opponent_id=opponent.id if opponent else None
+            opponent_id=self.opponent_id
         )
 
         # Create view
         view = CoinFlipView(game)
 
-        if opponent:
+        if self.opponent_id:
             # PvP mode
             view.add_item(CoinFlipAcceptButton(game, game_view=view))
             view.add_item(CoinFlipDeclineButton(game))
@@ -334,7 +333,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
 
         # Edit the message
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.response.edit_message( view=compose(embed, view))
+        await interaction.response.edit_message(view=compose(embed, view))
 
 
 async def start_game(

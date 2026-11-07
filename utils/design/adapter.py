@@ -384,10 +384,6 @@ def compose(
         container.add_item(discord.ui.TextDisplay(content=text))
         container.add_item(separator())
 
-    if view is not None:
-        for row in _view_rows(view):
-            container.add_item(row)
-
     delegate = view if isinstance(view, discord.ui.View) else None
     layout = _ComposedLayoutView(
         delegate=delegate,
@@ -395,6 +391,12 @@ def compose(
     )
     for part in _split_container(container):
         layout.add_item(part)
+    if view is not None:
+        # ActionRow'ы кладём на верхний уровень LayoutView, а не внутрь
+        # Container: Discord CV2 надёжно рендерит только один ActionRow
+        # внутри Container — при двух рядах кнопок первый пропадал.
+        for row in _view_rows(view):
+            layout.add_item(row)
     return layout
 
 
@@ -457,28 +459,26 @@ def swap_view(
             wrapped.add_item(child)
         layout = wrapped
 
-    # Удаляем старые ActionRow из всех Container'ов верхнего уровня
+    # Удаляем старые ActionRow — и из Container'ов, и с верхнего уровня
     for container in layout.children:
-        if not isinstance(container, discord.ui.Container):
-            continue
-        for child in list(container.children):
-            if isinstance(child, discord.ui.ActionRow):
-                container.remove_item(child)
+        if isinstance(container, discord.ui.Container):
+            for child in list(container.children):
+                if isinstance(child, discord.ui.ActionRow):
+                    container.remove_item(child)
+        elif isinstance(container, discord.ui.ActionRow):
+            layout.remove_item(container)
 
     if view is not None:
         rows = _interactive_rows(view)
-        target = next(
-            (c for c in layout.children if isinstance(c, discord.ui.Container)),
-            None,
-        )
-        accent = getattr(target, "accent_color", None) if target else None
+        accent = None
+        for child in layout.children:
+            if isinstance(child, discord.ui.Container):
+                accent = getattr(child, "accent_color", None)
+                break
+        # Ряды кнопок — на верхний уровень LayoutView (см. compose):
+        # внутри Container Discord показывает только один ActionRow.
         for row in rows:
-            # Container вмещает максимум 10 children — при переполнении
-            # начинаем новый Container, иначе Discord отклонит правку.
-            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
-                target = discord.ui.Container(accent_color=accent)
-                layout.add_item(target)
-            target.add_item(row)
+            layout.add_item(row)
 
     return layout
 

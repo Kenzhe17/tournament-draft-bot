@@ -178,7 +178,7 @@ class LotteryBuyButton(discord.ui.Button):
 
         # Обновить embed (редактируем основное сообщение)
         updated_embed = self.lottery_view.create_embed("active")
-        await interaction.edit_original_response( view=compose(updated_embed))
+        await interaction.edit_original_response( view=compose(updated_embed, self.lottery_view))
 
         # Отправить подтверждение в ephemeral
         await interaction.followup.send(

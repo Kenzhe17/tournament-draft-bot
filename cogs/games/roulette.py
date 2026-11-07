@@ -351,7 +351,7 @@ class RoulettePlayAgainButton(discord.ui.Button):
     """Кнопка сыграть снова."""
 
     def __init__(self, bet: int, user_id: int):
-        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова", disabled=True)
+        super().__init__(style=discord.ButtonStyle.primary, label="Сыграть снова")
         self.bet = bet
         self.user_id = user_id
 

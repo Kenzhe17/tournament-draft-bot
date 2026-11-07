@@ -271,6 +271,40 @@ class TournamentCog(commands.Cog):
         )
         asyncio.create_task(_delete_ephemeral_later(interaction))
 
+    @tournament_group.command(name="deleteall", description="Удалить все активные турниры (только владелец бота)")
+    async def tournament_deleteall(self, interaction: discord.Interaction):
+        if interaction.user.id != BOT_OWNER_ID:
+            await interaction.response.send_message("❌ Только владелец бота.", ephemeral=True)
+            return
+
+        tournaments = store.get_by_guild(interaction.guild_id)
+        if not tournaments:
+            await interaction.response.send_message("✅ Активных турниров нет.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        deleted = 0
+        for t in tournaments:
+            try:
+                if t.message_id:
+                    msg = await self.bot.fetch_message(t.message_id)
+                    await msg.delete()
+            except Exception:
+                pass
+            try:
+                store.delete(t.guild_id, t.channel_id)
+                deleted += 1
+            except Exception as e:
+                logger.error(f"deleteall: store.delete failed for {t.guild_id}:{t.channel_id}: {e}")
+
+        if getattr(self.bot, "mm_cog", None):
+            try:
+                self.bot.mm_cog.reset_search_limit(interaction.guild_id)
+            except Exception:
+                pass
+
+        await interaction.followup.send(f"🗑️ Удалено турниров: **{deleted}**", ephemeral=True)
+
     @tournament_group.command(name="test", description="Тестовые операции турниров")
     @is_bot_owner()
     @app_commands.describe(
