@@ -26,6 +26,8 @@ COPY bot.py config.py ./
 
 COPY cogs/ cogs/
 
+COPY services/ services/
+
 COPY models/ models/
 
 COPY storage/ storage/
