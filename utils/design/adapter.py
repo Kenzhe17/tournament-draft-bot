@@ -394,14 +394,15 @@ def compose(
     for part in parts:
         layout.add_item(part)
     if view is not None:
-        # Каждый ActionRow — в собственном Container: Discord CV2
-        # надёжно рендерит только один ActionRow внутри Container
-        # (при двух рядах в одном контейнере первый пропадал), а голый
-        # ActionRow на верхнем уровне выглядит как кнопки «снаружи».
+        # Ряды кнопок — внутрь последнего Container'а (кнопки внутри карточки).
+        # Если container переполнен (>10 children) — кладём ряды в новый
+        # Container с тем же акцентом.
+        target = parts[-1] if parts else None
         for row in _view_rows(view):
-            btn_box = discord.ui.Container(accent_color=accent_color)
-            btn_box.add_item(row)
-            layout.add_item(btn_box)
+            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
+                target = discord.ui.Container(accent_color=accent_color)
+                layout.add_item(target)
+            target.add_item(row)
     return layout
 
 
@@ -464,35 +465,30 @@ def swap_view(
             wrapped.add_item(child)
         layout = wrapped
 
-    # Удаляем старые ActionRow — и из Container'ов, и с верхнего уровня.
-    # Пустые Container'ы, в которых был только ActionRow (ряды кнопок),
-    # удаляем целиком, иначе останутся пустые карточки.
-    for container in list(layout.children):
+    # Удаляем старые ActionRow — и из Container'ов, и с верхнего уровня
+    for container in layout.children:
         if isinstance(container, discord.ui.Container):
-            had_only_rows = bool(container.children) and all(
-                isinstance(c, discord.ui.ActionRow) for c in container.children
-            )
             for child in list(container.children):
                 if isinstance(child, discord.ui.ActionRow):
                     container.remove_item(child)
-            if had_only_rows or not container.children:
-                layout.remove_item(container)
         elif isinstance(container, discord.ui.ActionRow):
             layout.remove_item(container)
 
     if view is not None:
         rows = _interactive_rows(view)
         accent = None
+        target = None
         for child in layout.children:
             if isinstance(child, discord.ui.Container):
                 accent = getattr(child, "accent_color", None)
-                break
-        # Каждый ActionRow — в собственном Container (см. compose):
-        # внутри одного Container Discord показывает только один ряд.
+                target = child  # последний Container — ряды в конец карточки
         for row in rows:
-            btn_box = discord.ui.Container(accent_color=accent)
-            btn_box.add_item(row)
-            layout.add_item(btn_box)
+            # Внутрь последнего контентного Container'а; при переполнении
+            # (>10 children) — новый Container с тем же акцентом.
+            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
+                target = discord.ui.Container(accent_color=accent)
+                layout.add_item(target)
+            target.add_item(row)
 
     return layout
 
