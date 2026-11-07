@@ -135,19 +135,20 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                 if player:
                     self.players.append((player, circle))
 
-        # Create input fields for each player (format: kills/deaths)
+        # Create input fields for each player (format: kills/deaths[/assists/damage])
         for i, (player_name, circle) in enumerate(self.players):
             kd_input = TextInput(
                 label=player_name,
-                placeholder="Убийства/Смерти (например: 8/2)",
+                placeholder="K/D/A/DMG (например: 8/2/1/1500)",
                 required=False,
-                max_length=7
+                max_length=20
             )
             setattr(self, f"kd_{i}", kd_input)
             self.add_item(kd_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from storage.json_store import store
+        from utils.kd_parse import parse_kd_stat_value
 
         await interaction.response.defer(ephemeral=True)
 
@@ -159,25 +160,19 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             for i, (player_name, circle) in enumerate(self.players):
                 kd_field = getattr(self, f"kd_{i}")
 
-                if not kd_field.value:
-                    kills = 0
-                    deaths = 0
-                else:
-                    try:
-                        # Parse format: "kills/deaths"
-                        kd_parts = kd_field.value.split('/')
-                        kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
-                        deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
-                    except (ValueError, IndexError):
-                        await interaction.followup.send(
-                            replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
-                            ephemeral=True
-                        )
-                        return
+                parsed = parse_kd_stat_value(kd_field.value or "")
+                if parsed is None:
+                    await interaction.followup.send(
+                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D или K/D/A/DMG (например: 8/2 или 8/2/1/1500)"),
+                        ephemeral=True
+                    )
+                    return
 
                 stats[player_name] = {
-                    "kills": kills,
-                    "deaths": deaths,
+                    "kills": parsed["kills"],
+                    "deaths": parsed["deaths"],
+                    "assists": parsed["assists"],
+                    "damage": parsed["damage"],
                     "circle": circle
                 }
 
@@ -626,20 +621,23 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
             if player:
                 self.players.append((player, circle))
 
-        # Create input fields for each player (format: Name: kills/deaths)
+        # Create input fields for each player (format: K/D/A/DMG)
         for i, (player_name, circle) in enumerate(self.players):
             # Pre-fill with captain-submitted stats if available
             existing_stat = temp_stats.get(player_name, {})
             if existing_stat:
-                default_value = f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
+                default_value = (
+                    f"{existing_stat.get('kills', 0)}/{existing_stat.get('deaths', 0)}"
+                    f"/{existing_stat.get('assists', 0)}/{existing_stat.get('damage', 0)}"
+                )
             else:
                 default_value = ""
 
             kd_input = TextInput(
                 label=player_name,
-                placeholder="Убийства/Смерти (например: 8/2)",
+                placeholder="K/D/A/DMG (например: 8/2/1/1500)",
                 required=False,
-                max_length=7,
+                max_length=20,
                 default=default_value
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -648,6 +646,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
     async def on_submit(self, interaction: discord.Interaction) -> None:
         import logging
         from storage.json_store import store
+        from utils.kd_parse import parse_kd_stat_value
 
         await interaction.response.defer(ephemeral=True)
 
@@ -660,25 +659,19 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         for i, (player_name, circle) in enumerate(self.players):
             kd_field = getattr(self, f"kd_{i}")
 
-            if not kd_field.value:
-                kills = 0
-                deaths = 0
-            else:
-                try:
-                    # Parse format: "kills/deaths"
-                    kd_parts = kd_field.value.split('/')
-                    kills = int(kd_parts[0].strip()) if kd_parts[0].strip() else 0
-                    deaths = int(kd_parts[1].strip()) if len(kd_parts) > 1 and kd_parts[1].strip() else 0
-                except (ValueError, IndexError):
-                    await interaction.followup.send(
-                        replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте формат: убийства/смерти (например: 8/2)"),
-                        ephemeral=True
-                    )
-                    return
+            parsed = parse_kd_stat_value(kd_field.value or "")
+            if parsed is None:
+                await interaction.followup.send(
+                    replace_emojis(f"❌ Некорректный формат для {player_name}. Используйте: K/D или K/D/A/DMG (например: 8/2 или 8/2/1/1500)"),
+                    ephemeral=True
+                )
+                return
 
             stats[player_name] = {
-                "kills": kills,
-                "deaths": deaths,
+                "kills": parsed["kills"],
+                "deaths": parsed["deaths"],
+                "assists": parsed["assists"],
+                "damage": parsed["damage"],
                 "circle": circle
             }
 

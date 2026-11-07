@@ -225,6 +225,9 @@ class Tournament:
     # Format: match_id -> {player_name: {"kills": int, "deaths": int, "circle": int}}
     temp_match_stats: dict[str, dict[str, dict[str, int]]] = field(default_factory=dict)
 
+    # Match IDs whose ELO was already awarded (idempotency guard)
+    processed_elo_matches: set[str] = field(default_factory=set)
+
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
     betting_phase: str | None = None  # "qualifiers", "semifinal", "final"
@@ -1514,6 +1517,7 @@ class Tournament:
             "organizer_id": self.organizer_id,
             "eliminated_teams": list(self.eliminated_teams),
             "mm_search_channel_id": self.mm_search_channel_id,
+            "processed_elo_matches": list(self.processed_elo_matches),
         }
 
     @classmethod
@@ -1561,6 +1565,7 @@ class Tournament:
             organizer_id=data.get("organizer_id", 0),
             eliminated_teams=set(data.get("eliminated_teams", [])),
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
+            processed_elo_matches=set(data.get("processed_elo_matches", [])),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())

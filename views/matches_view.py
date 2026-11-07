@@ -640,13 +640,16 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
             existing_kd = ""
             if player_name in existing_stats:
                 stats = existing_stats[player_name]
-                existing_kd = f"{stats.get('kills', 0)}/{stats.get('deaths', 0)}"
+                existing_kd = (
+                    f"{stats.get('kills', 0)}/{stats.get('deaths', 0)}"
+                    f"/{stats.get('assists', 0)}/{stats.get('damage', 0)}"
+                )
 
             kd_input = discord.ui.TextInput(
-                label=f"K/D {player_name}",
-                placeholder="7/5",
+                label=f"K/D/A/DMG {player_name}",
+                placeholder="8/2/1/1500",
                 required=True,
-                max_length=7,
+                max_length=20,
                 default=existing_kd if existing_kd else None
             )
             setattr(self, f"kd_{i}", kd_input)
@@ -662,40 +665,45 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
         match_id = f"{self.tournament.id}_{self.match_type}_{self.match_index}"
         stats = {}
 
+        from utils.kd_parse import parse_kd_stat_value
+
         for i, player_name in enumerate(self.players):
             kd_field = getattr(self, f"kd_{i}")
 
             try:
-                # Parse format: "kills/deaths"
-                kd_parts = kd_field.value.split('/')
-                if len(kd_parts) != 2:
+                parsed = parse_kd_stat_value(kd_field.value)
+                if parsed is None:
                     raise ValueError("Invalid format")
 
-                kills = int(kd_parts[0].strip())
-                deaths = int(kd_parts[1].strip())
+                kills = parsed["kills"]
+                deaths = parsed["deaths"]
+                assists = parsed["assists"]
+                damage = parsed["damage"]
 
                 # Validate ranges
                 if kills < 0 or kills > 35:
                     await interaction.followup.send(
-                        replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                        replace_emojis(f"⚠️ Некорректный формат у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10/2/1500"),
                         ephemeral=True
                     )
                     return
 
                 if deaths < 0 or deaths > 15:
                     await interaction.followup.send(
-                        replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                        replace_emojis(f"⚠️ Некорректный формат у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10/2/1500"),
                         ephemeral=True
                     )
                     return
 
                 stats[player_name] = {
                     "kills": kills,
-                    "deaths": deaths
+                    "deaths": deaths,
+                    "assists": assists,
+                    "damage": damage
                 }
             except (ValueError, IndexError):
                 await interaction.followup.send(
-                    replace_emojis(f"⚠️ Некорректный формат K/D у {player_name}! Убийства должны быть от 0 до 35, смерти от 0 до 15. Пример: 24/10"),
+                    replace_emojis(f"⚠️ Некорректный формат у {player_name}! Используйте K/D или K/D/A/DMG. Пример: 24/10 или 24/10/2/1500"),
                     ephemeral=True
                 )
                 return

@@ -152,13 +152,18 @@ class ProcessMatchButton(discord.ui.Button):
 
 
 async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict, interaction: discord.Interaction = None) -> None:
-    """Process match result with balanced rating system (only stats, no winner setting)."""
+    """Process match result — новая ELO-система (FACEIT-style).
+
+    Начисляет ELO один раз на матч (processed_elo_matches), XP и монеты.
+    """
     from storage.player_stats_store import player_stats_store
+    from storage.json_store import store
+    from models.player_stats import PlayerStats
     from utils.rating_calculator import (
-        calculate_team_position,
-        calculate_balanced_elo_change,
+        compute_match_elo_changes,
         update_player_stats_from_match,
-        get_server_average_elo,
+        get_leaderboard_rank,
+        clamp_elo_change,
     )
 
     match_type = match_info.get('match_type')
@@ -167,196 +172,154 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     team1_index = match_info.get('team1_index')
     team2_index = match_info.get('team2_index')
 
+    match_id = f"{tournament.id}_{match_type}_{match_index}"
+
+    # Idempotency: один подтверждённый матч начисляет ELO только один раз
+    if match_id in tournament.processed_elo_matches:
+        logger.warning("ELO already processed for match %s — skipping", match_id)
+        return
+    tournament.processed_elo_matches.add(match_id)
+
     # Get K/D data
     temp_kd_data = match_info.get('temp_kd_data', {})
 
-    # Get server average ELO for catch-up mechanic
-    avg_server_elo = await get_server_average_elo(guild_id)
+    # ---- Сбор данных ВСЕХ игроков матча до любых записей ----
+    # team_key -> won; stats_by_name; SR команды по всему составу (roster)
+    stats_by_name: dict[str, PlayerStats] = {}
+    user_id_by_name: dict[str, int] = {}
+    team_sr_values: dict[str, float] = {}
+    match_players: list[dict] = []
 
-    # Calculate lobby average ELO for deviation multiplier
-    lobby_elo_sum = 0
-    lobby_player_count = 0
-    for team_index in [team1_index, team2_index]:
-        team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
-        
-        # Check if this is random-auto mode (uses players list instead of circles)
-        if tournament.formation_mode == "random-auto":
-            players_list = team_data.get("players", [])
-            for player_name in players_list:
-                if player_name in tournament.player_user_ids:
-                    stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
-                    if stats:
-                        lobby_elo_sum += stats.elo
-                        lobby_player_count += 1
-        else:
-            # Circle-based mode
-            for circle in range(1, 5):
-                player_name = team_data.get(f"circle{circle}", "")
-                if player_name and player_name in tournament.player_user_ids:
-                    stats = await player_stats_store.get(guild_id, tournament.player_user_ids[player_name])
-                    if stats:
-                        lobby_elo_sum += stats.elo
-                        lobby_player_count += 1
-
-    lobby_avg_elo = lobby_elo_sum / lobby_player_count if lobby_player_count > 0 else 0.0
-
-    # Process each team
-    for team_index in [team1_index, team2_index]:
-        team_won = (team_index == winning_team_index)
+    for team_index, team_key in ((team1_index, "a"), (team2_index, "b")):
+        won = team_index == winning_team_index
         team_data = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
 
-        # Collect player data for position calculation
-        players_for_position = []
-
-        # Check if this is random-auto mode
         if tournament.formation_mode == "random-auto":
-            players_list = team_data.get("players", [])
-            for player_name in players_list:
-                if player_name in temp_kd_data:
-                    kd = temp_kd_data[player_name]
-                    kills = kd.get('kills', 0)
-                    deaths = kd.get('deaths', 0)
-
-                    # Get current ELO and stats
-                    user_id = tournament.player_user_ids.get(player_name, 0)
-                    stats = await player_stats_store.get(guild_id, user_id)
-                    current_elo = stats.elo if stats else 1000
-
-                    players_for_position.append((player_name, kills, deaths, current_elo))
+            member_names = [n for n in team_data.get("players", []) if n]
         else:
-            # Circle-based mode
-            for circle in range(1, 5):
-                player = team_data.get(f"circle{circle}")
-                if player and player in temp_kd_data:
-                    kd = temp_kd_data[player]
-                    kills = kd.get('kills', 0)
-                    deaths = kd.get('deaths', 0)
+            member_names = [
+                team_data.get(f"circle{c}") for c in range(1, 5)
+            ]
+            member_names = [n for n in member_names if n]
 
-                    # Get current ELO and stats
-                    user_id = tournament.player_user_ids.get(player, 0)
-                    stats = await player_stats_store.get(guild_id, user_id)
-                    current_elo = stats.elo if stats else 1000
-
-                    players_for_position.append((player, kills, deaths, current_elo))
-
-        # Calculate positions within team
-        positions = calculate_team_position(players_for_position)
-        position_map = {name: pos for name, pos in positions}
-
-        # Update each player's stats
-        for player_name, kills, deaths, current_elo in players_for_position:
-            position = position_map.get(player_name, 1)
-            circle = temp_kd_data[player_name].get('circle', 1)
-
-            # Get current stats for average calculations
-            user_id = tournament.player_user_ids.get(player_name, 0)
+        sr_values = []
+        for name in member_names:
+            user_id = tournament.player_user_ids.get(name, 0)
+            user_id_by_name[name] = user_id
             stats = await player_stats_store.get(guild_id, user_id)
-            if not stats:
-                from models.player_stats import PlayerStats
+            if stats is None:
                 stats = PlayerStats(
-                    guild_id=guild_id,
-                    user_id=user_id,
-                    name=player_name,
-                    elo=1000
+                    guild_id=guild_id, user_id=user_id, name=name, elo=1000
                 )
+            stats_by_name[name] = stats
+            sr_values.append(stats.skill_rating)
 
-            # Calculate player averages
-            avg_kills = stats.avg_kills if stats.games > 0 else 0.0
-            avg_deaths = stats.avg_deaths if stats.games > 0 else 0.0
+            kd = temp_kd_data.get(name)
+            if kd is None:
+                continue  # Нет введённой статистики — ELO не начисляем
 
-            # Calculate leaderboard rank
-            from utils.rating_calculator import get_leaderboard_rank
-            leaderboard_rank = await get_leaderboard_rank(guild_id, user_id)
+            match_players.append({
+                "name": name,
+                "team": team_key,
+                "won": won,
+                "kills": kd.get('kills', 0),
+                "deaths": kd.get('deaths', 0),
+                "assists": kd.get('assists', 0),
+                "damage": kd.get('damage', 0),
+                "skill_rating": stats.skill_rating,
+            })
 
-            # Calculate ELO change with balanced system
-            elo_change = calculate_balanced_elo_change(
-                position=position,
-                team_won=team_won,
-                kills=kills,
-                deaths=deaths,
-                current_elo=current_elo,
-                avg_kills=avg_kills,
-                avg_deaths=avg_deaths,
-                avg_server_elo=avg_server_elo,
-                lobby_avg_elo=lobby_avg_elo,
-                leaderboard_rank=leaderboard_rank
-            )
+        if sr_values:
+            team_sr_values[team_key] = sum(sr_values) / len(sr_values)
 
-            # Apply pet ability bonus to ELO change (Arena Wolf)
-            pet_elo_bonus = 0
-            try:
-                from storage.pet_store import pet_store
-                pet = await pet_store.get_user_pet(guild_id, user_id)
+    # Ранги ELO-лидерборда — строго ДО начисления за этот матч
+    for p in match_players:
+        p["elo_rank"] = await get_leaderboard_rank(
+            guild_id, user_id_by_name.get(p["name"], 0)
+        )
 
-                if pet and pet.fullness > 0:
-                    # Списать энергию за использование способности
-                    energy_consumed = await pet_store.consume_energy_for_ability(guild_id, user_id, "elo_match")
+    # ---- Расчёт ELO по новой системе ----
+    elo_results = compute_match_elo_changes(match_players, team_sr_values)
 
-                    if energy_consumed:
-                        from storage.pet_store import pet_catalog
-                        pet_def = pet_catalog.get_pet(pet.pet_type.value)
+    # ---- Применение: питомец → статистика → баланс ----
+    for p in match_players:
+        name = p["name"]
+        user_id = user_id_by_name.get(name, 0)
+        stats = stats_by_name[name]
+        won = p["won"]
+        result = elo_results[name]
+        elo_change = result["elo_change"]
 
-                        if pet_def:  # Способности открыты с 1 возраста
-                            ability = pet_def["abilities"][1] if team_won else pet_def["abilities"][2]
-                            ability_name = ability["name"]
+        # Apply pet ability bonus to ELO change (Arena Wolf), затем clamp
+        pet_elo_bonus = 0
+        try:
+            from storage.pet_store import pet_store
+            pet = await pet_store.get_user_pet(guild_id, user_id)
 
-                            if (team_won and ability_name == "Жажда победы") or (not team_won and ability_name == "Несломленный дух"):
-                                bonus_percent = ability.get("max_val", 0)
+            if pet and pet.fullness > 0:
+                # Списать энергию за использование способности
+                energy_consumed = await pet_store.consume_energy_for_ability(guild_id, user_id, "elo_match")
 
-                                if team_won:
-                                    original_elo = elo_change
-                                    elo_change = int(elo_change * (1 + bonus_percent / 100))
-                                    pet_elo_bonus = elo_change - original_elo
-                                else:
-                                    original_elo = elo_change
-                                    loss_reduction = bonus_percent / 100
-                                    elo_change = int(elo_change * (1 - loss_reduction))
-                                    pet_elo_bonus = elo_change - original_elo
-            except Exception as e:
-                logger.error(f"Error applying pet ELO bonus: {e}")
+                if energy_consumed:
+                    from storage.pet_store import pet_catalog
+                    pet_def = pet_catalog.get_pet(pet.pet_type.value)
 
-            # Update stats
-            updated_stats = update_player_stats_from_match(
-                stats=stats,
-                kills=kills,
-                deaths=deaths,
-                elo_change=elo_change,
-                team_won=team_won
-            )
+                    if pet_def:  # Способности открыты с 1 возраста
+                        ability = pet_def["abilities"][1] if won else pet_def["abilities"][2]
+                        ability_name = ability["name"]
 
-            # Save pet ELO bonus for profile display
-            updated_stats.last_pet_elo_bonus = pet_elo_bonus
+                        if (won and ability_name == "Жажда победы") or (not won and ability_name == "Несломленный дух"):
+                            bonus_percent = ability.get("max_val", 0)
 
-            # Increment games count for this match
-            updated_stats.games += 1
+                            if won:
+                                adjusted = int(round(elo_change * (1 + bonus_percent / 100)))
+                            else:
+                                loss_reduction = bonus_percent / 100
+                                adjusted = int(round(elo_change * (1 - loss_reduction)))
+                            adjusted = int(round(clamp_elo_change(adjusted, won)))
+                            pet_elo_bonus = adjusted - elo_change
+                            elo_change = adjusted
+        except Exception as e:
+            logger.error(f"Error applying pet ELO bonus: {e}")
 
-            # Add XP rewards
-            xp_reward = 30  # Base XP for participation
-            if team_won:
-                xp_reward += 30  # Bonus XP for winning
-            new_level, old_level = updated_stats.add_xp(xp_reward)
+        # Update stats
+        updated_stats = update_player_stats_from_match(
+            stats=stats,
+            kills=p["kills"],
+            deaths=p["deaths"],
+            elo_change=elo_change,
+            team_won=won
+        )
 
-            # Add coin rewards (50-100 per match)
-            import random
-            coin_reward = random.randint(50, 100)
-            if team_won:
-                coin_reward += 50  # Bonus coins for winning
-            updated_stats.total_earnings += coin_reward
-            
-            # Add coins to user balance
-            from storage.user_balance_store import user_balance_store
-            await user_balance_store.add_balance(guild_id, user_id, coin_reward)
+        # Save pet ELO bonus for profile display
+        updated_stats.last_pet_elo_bonus = pet_elo_bonus
 
-            import logging
-            logging.info(f"Saving stats for {player_name}: elo={updated_stats.elo}, elo_change={elo_change}, games={updated_stats.games}, coins={coin_reward}")
+        # Increment games count for this match
+        updated_stats.games += 1
 
-            await player_stats_store.set(updated_stats)
+        # Add XP rewards
+        xp_reward = 30  # Base XP for participation
+        if won:
+            xp_reward += 30  # Bonus XP for winning
+        new_level, old_level = updated_stats.add_xp(xp_reward)
 
-            # Level up notifications disabled
-            # if new_level > old_level and interaction:
-            #     from utils.embeds import build_level_up_embed
-            #     embed = build_level_up_embed(updated_stats, old_level, new_level)
-            #     await interaction.followup.send(embed=embed, ephemeral=True)
+        # Add coin rewards (50-100 per match)
+        import random
+        coin_reward = random.randint(50, 100)
+        if won:
+            coin_reward += 50  # Bonus coins for winning
+        updated_stats.total_earnings += coin_reward
+
+        # Add coins to user balance
+        from storage.user_balance_store import user_balance_store
+        await user_balance_store.add_balance(guild_id, user_id, coin_reward)
+
+        logger.info(
+            f"Saving stats for {name}: elo={updated_stats.elo}, elo_change={elo_change}, "
+            f"games={updated_stats.games}, coins={coin_reward}"
+        )
+
+        await player_stats_store.set(updated_stats)
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):
@@ -364,18 +327,15 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     if hasattr(tournament, 'pending_match_result'):
         del tournament.pending_match_result
 
-    # Store tournament
-    from storage.json_store import store
-    store.set(tournament)
-
     # Copy stats to temp_match_stats for winner embed display
-    match_id = f"{tournament.id}_{match_type}_{match_index}"
     if match_id not in tournament.temp_match_stats:
         tournament.temp_match_stats[match_id] = {}
     # Remove circle from stats for cleaner storage
     for player, kd in temp_kd_data.items():
         tournament.temp_match_stats[match_id][player] = {
             "kills": kd.get("kills", 0),
-            "deaths": kd.get("deaths", 0)
+            "deaths": kd.get("deaths", 0),
+            "assists": kd.get("assists", 0),
+            "damage": kd.get("damage", 0),
         }
     store.set(tournament)

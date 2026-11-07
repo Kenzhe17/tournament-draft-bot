@@ -1,0 +1,46 @@
+"""Конфигурация системы ELO турниров (FACEIT-style, ТЗ r!z3).
+
+Все балансировочные значения новой системы ELO — только здесь.
+"""
+
+ELO_CONFIG = {
+    # Масштаб разницы Skill Rating для вероятности победы
+    "skill_rating_scale": 2.0,
+
+    # Жёсткие границы изменения ELO за матч
+    "min_match_elo": 20,
+    "max_match_elo": 30,
+
+    # Веса индивидуальной статистики (Performance Score)
+    "kill_weight": 1.0,
+    "assist_weight": 0.5,
+    "death_weight": 0.75,
+    "damage_divisor": 2000,
+
+    # Поправки за место в рейтинге Performance Score внутри матча.
+    # Ключ — название полосы, значение — изменение ELO.
+    # Полосы задаются диапазонами позиций (1-based, competition ranking —
+    # игроки с одинаковым Performance Score делят позицию и получают
+    # одинаковую поправку).
+    "performance_bands": [
+        (1, 1, "best"),
+        (2, 3, "above_average"),
+        (4, 5, "average"),
+        (6, 7, "below_average"),
+        (8, 99, "worst"),
+    ],
+    "performance_modifiers": {
+        "best": 5,
+        "above_average": 3,
+        "average": 0,
+        "below_average": -3,
+        "worst": -5,
+    },
+
+    # Защита игроков вне TOP-N ELO-лидерборда
+    "rank_protection": {
+        "enabled": True,
+        "top_limit": 10,
+        "bonus": 3,
+    },
+}
