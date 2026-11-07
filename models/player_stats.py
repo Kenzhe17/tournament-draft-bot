@@ -25,6 +25,8 @@ class PlayerStats:
     # New fields for detailed rating system
     total_kills: int = 0
     total_deaths: int = 0
+    total_assists: int = 0
+    total_damage: int = 0
     best_match_kills: int = 0
     total_elo_change: int = 0
     last_elo_change: int = 0  # Sum of all ELO changes
@@ -66,6 +68,8 @@ class PlayerStats:
             "streak_bonus_coins": self.streak_bonus_coins,
             "total_kills": self.total_kills,
             "total_deaths": self.total_deaths,
+            "total_assists": self.total_assists,
+            "total_damage": self.total_damage,
             "best_match_kills": self.best_match_kills,
             "total_elo_change": self.total_elo_change,
             "last_elo_change": self.last_elo_change,
@@ -104,6 +108,8 @@ class PlayerStats:
             streak_bonus_coins=data.get("streak_bonus_coins", 0),
             total_kills=data.get("total_kills", 0),
             total_deaths=data.get("total_deaths", 0),
+            total_assists=data.get("total_assists", 0),
+            total_damage=data.get("total_damage", 0),
             best_match_kills=data.get("best_match_kills", 0),
             total_elo_change=data.get("total_elo_change", 0),
             last_elo_change=data.get("last_elo_change", 0),
@@ -149,26 +155,37 @@ class PlayerStats:
 
     @property
     def skill_rating(self) -> float:
-        """Рейтинг скилла на основе K/D и AVG Kills (шкала 1.0-10.0)."""
+        """Рейтинг скилла по ВСЕМ статистикам: K/D/A/DMG (шкала 1.0-10.0).
+
+        Считается как средний Performance Score за игру (те же веса,
+        что и в ELO) и нормализуется в диапазон 1.0-10.0.
+        """
+        from utils.elo_config import ELO_CONFIG
+
         if self.games < 3:
             # Штраф за мало игр (менее 3 каток)
             games_multiplier = self.games / 3
         else:
             games_multiplier = 1.0
 
-        # Безопасная обработка deaths = 0
-        deaths = self.total_deaths if self.total_deaths > 0 else 1
-        kd_ratio = self.total_kills / deaths
+        g = self.games if self.games > 0 else 1
+        avg_kills = self.total_kills / g
+        avg_deaths = self.total_deaths / g
+        avg_assists = self.total_assists / g
+        avg_damage = self.total_damage / g
 
-        # Безопасная обработка total_games = 0
-        avg_kills = self.avg_kills if self.games > 0 else 0.0
-
-        # Расчёт сырого индекса (только K/D и AVG Kills)
-        raw_index = (kd_ratio * 60) + (avg_kills * 8)
+        # Средний Performance Score за игру по всем статистикам
+        score = (
+            avg_kills * ELO_CONFIG["kill_weight"]
+            + avg_assists * ELO_CONFIG["assist_weight"]
+            - avg_deaths * ELO_CONFIG["death_weight"]
+            + avg_damage / ELO_CONFIG["damage_divisor"]
+        )
 
         # Нормализация в диапазон 1.0-10.0
-        # Raw Index = 30 -> 1.0, Raw Index = 220 -> 10.0
-        rating = 1.0 + ((raw_index - 30) / (220 - 30)) * 9.0
+        lo = ELO_CONFIG["skill_rating_min_score"]
+        hi = ELO_CONFIG["skill_rating_max_score"]
+        rating = 1.0 + (score - lo) / (hi - lo) * 9.0
 
         # Применяем штраф за мало игр
         rating *= games_multiplier

@@ -255,7 +255,9 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             kills=p["kills"],
             deaths=p["deaths"],
             elo_change=elo_change,
-            team_won=won
+            team_won=won,
+            assists=p.get("assists", 0),
+            damage=p.get("damage", 0),
         )
 
         # Pet ELO bonus removed — pet ability no longer affects ELO
