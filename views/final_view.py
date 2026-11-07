@@ -112,7 +112,7 @@ class FinalView(discord.ui.View):
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Кнопка «Отправить скриншот» для финала (пока матч не завершён)
+        # Кнопки «скриншот» — по одной на капитана каждой команды финала
         from views.ocr_match_view import (
             MatchScreenshotButton,
             _stats_complete,
@@ -123,9 +123,15 @@ class FinalView(discord.ui.View):
             and not match_is_finished(tournament, "final", 0)
             and not _stats_complete(tournament, "final", 0)
         ):
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, channel_id, tournament,
-                    "final", 0, "📸 Финал",
+            for tidx in final_teams:
+                team = (
+                    tournament.teams[tidx]
+                    if tidx < len(tournament.teams) else {}
                 )
-            )
+                captain = team.get("captain", f"П{tidx + 1}")
+                self.add_item(
+                    MatchScreenshotButton(
+                        guild_id, channel_id, tournament,
+                        "final", 0, f"📸 {captain}"[:80], tidx,
+                    )
+                )

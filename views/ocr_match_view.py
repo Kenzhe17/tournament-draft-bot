@@ -213,7 +213,11 @@ def match_is_finished(tournament: Tournament, match_type: str, match_index: int)
 # ---------------------------------------------------------------------------
 
 class MatchScreenshotButton(Button):
-    """Кнопка загрузки скриншота результата матча (капитан/организатор)."""
+    """Кнопка загрузки скриншота результата матча (капитан/организатор).
+
+    Если задан team_index — это кнопка конкретного капитана: скриншот
+    детального экрана отряда автоматически назначается этой команде.
+    """
 
     def __init__(
         self,
@@ -223,16 +227,22 @@ class MatchScreenshotButton(Button):
         match_type: str,
         match_index: int,
         label: str,
+        team_index: int | None = None,
     ):
+        suffix = f":{team_index}" if team_index is not None else ""
         super().__init__(
             label=label,
             style=discord.ButtonStyle.secondary,
-            custom_id=f"ocr_shot:{guild_id}:{channel_id}:{match_type}:{match_index}",
+            custom_id=(
+                f"ocr_shot:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}{suffix}"
+            ),
         )
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.match_type = match_type
         self.match_index = match_index
+        self.team_index = team_index
 
     async def callback(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id, self.channel_id)
@@ -263,7 +273,17 @@ class MatchScreenshotButton(Button):
             return
 
         t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+        if self.team_index is not None:
+            # Кнопка конкретного капитана — только он или организатор
+            allowed = is_org_check(interaction.user, interaction.guild) or (
+                self.team_index in (t1, t2)
+                and _is_match_captain(
+                    interaction.user, tournament, self.team_index
+                )
+            )
+        else:
+            allowed = _can_use_ocr(interaction.user, tournament, [t1, t2])
+        if not allowed:
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Скриншот может отправить капитан команды "
@@ -316,14 +336,21 @@ class MatchScreenshotButton(Button):
             self.guild_id, upload_channel_id, interaction.user.id,
             self.match_type, self.match_index,
             tchannel_id=self.channel_id,
+            squad_team=self.team_index,
         )
         where = (
             f"<#{upload_channel_id}>" if stats_channel else "этот канал"
         )
+        hint = (
+            "Скриншот экрана статистики вашего отряда "
+            "(K/D/A, урон, нокдауны, поднятия)"
+            if self.team_index is not None
+            else "скриншот экрана результатов"
+        )
         await interaction.response.send_message(
             replace_emojis(
                 f"📸 **{_match_label(self.match_type, self.match_index)}**\n"
-                f"Отправьте **скриншот экрана результатов** в {where} "
+                f"Отправьте **{hint}** в {where} "
                 f"(в течение {PENDING_UPLOAD_TTL // 60} мин).\n"
                 "Там появятся результаты — капитаны сопоставят игроков кнопками."
             ),

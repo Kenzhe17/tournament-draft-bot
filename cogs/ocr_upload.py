@@ -662,7 +662,50 @@ class OCRUploadCog(commands.Cog):
             )
             return
 
-        # --- Новая загрузка отряда ---
+        # --- Автоназначение: скриншот прислан по кнопке капитана ---
+        if not is_reupload and squad_team is not None:
+            if squad_team not in (t1, t2):
+                await message.reply(
+                    replace_emojis("❌ Эта команда не играет в матче.")
+                )
+                return
+            tkey = str(squad_team)
+            if tkey in session.get("squads", {}):
+                await message.reply(
+                    replace_emojis(
+                        "⚠️ У этой команды уже загружен отряд — "
+                        "замените его кнопкой «Неправильный скриншот»."
+                    )
+                )
+                return
+            entry = {
+                "rows": squad["players"],
+                "banner": squad.get("banner"),
+                "uploaded_by": message.author.id,
+                "uploaded_by_name": message.author.display_name,
+                "created_at": datetime.now().isoformat(),
+                "message_id": None,
+            }
+            session["squads"][tkey] = entry
+            session["panels"][f"squad_{squad_team}"] = {
+                "name": _team_display_name(tournament, squad_team),
+                "rows": squad["players"],
+            }
+            if len(session.get("squads", {})) >= 2:
+                session["status"] = "mapping"
+            store.set(tournament)
+
+            view = SquadAssignedView(
+                guild_id, tournament.channel_id, tournament,
+                match_type, match_index, squad_team,
+            )
+            await self._publish_squad_message(
+                stats_channel, tournament, message, data, embed,
+                view, mentions, entry,
+            )
+            return
+
+        # --- Новая загрузка отряда (без привязки — выбор команды кнопкой) ---
         loaded = len(session.get("squads", {})) + len(
             session.get("squad_pool", [])
         )

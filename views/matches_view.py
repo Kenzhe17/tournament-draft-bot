@@ -1348,7 +1348,7 @@ class QualifiersView(discord.ui.View):
 
                 self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Кнопка «Отправить скриншот» для каждого незавершённого матча
+        # Кнопки «скриншот» — по одной на капитана каждой команды матча
         from views.ocr_match_view import (
             MatchScreenshotButton,
             _stats_complete,
@@ -1359,12 +1359,18 @@ class QualifiersView(discord.ui.View):
                 continue
             if _stats_complete(tournament, "qualifier", i):
                 continue
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, self.channel_id, tournament,
-                    "qualifier", i, f"📸 Игра #{i + 1}",
+            for tidx in matches[i]:
+                team = (
+                    tournament.teams[tidx]
+                    if tidx < len(tournament.teams) else {}
                 )
-            )
+                captain = team.get("captain", f"П{tidx + 1}")
+                self.add_item(
+                    MatchScreenshotButton(
+                        guild_id, self.channel_id, tournament,
+                        "qualifier", i, f"📸 {captain}"[:80], tidx,
+                    )
+                )
 
 
 class SemifinalsView(discord.ui.View):
@@ -1403,7 +1409,7 @@ class SemifinalsView(discord.ui.View):
 
                 self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Кнопка «Отправить скриншот» для каждого незавершённого матча
+        # Кнопки «скриншот» — по одной на капитана каждой команды матча
         from views.ocr_match_view import (
             MatchScreenshotButton,
             _stats_complete,
@@ -1414,9 +1420,15 @@ class SemifinalsView(discord.ui.View):
                 continue
             if _stats_complete(tournament, "semifinal", i):
                 continue
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, self.channel_id, tournament,
-                    "semifinal", i, f"📸 Игра #{i + 1}",
+            for tidx in matches[i]:
+                team = (
+                    tournament.teams[tidx]
+                    if tidx < len(tournament.teams) else {}
                 )
-            )
+                captain = team.get("captain", f"П{tidx + 1}")
+                self.add_item(
+                    MatchScreenshotButton(
+                        guild_id, self.channel_id, tournament,
+                        "semifinal", i, f"📸 {captain}"[:80], tidx,
+                    )
+                )
