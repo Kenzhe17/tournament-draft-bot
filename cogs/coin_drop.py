@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Set
 
 import discord
+from utils.design import compose, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -83,8 +85,8 @@ class SpeedDropView(discord.ui.View):
             ),
             color=0x2ECC71
         )
-        await interaction.edit_original_response(view=None)
-        await interaction.followup.send(embed=result_embed)
+        await interaction.edit_original_response(view=smart_view(await interaction.original_response(), None))
+        await interaction.followup.send( view=compose(result_embed))
 
 
 # 2. Режим «Розыгрыш / 60 секунд» (Raffle Drop)
@@ -123,7 +125,7 @@ class RaffleDropView(discord.ui.View):
             return
 
         self.participants.add(interaction.user.id)
-        await interaction.edit_original_response(embed=self.build_embed(), view=self)
+        await interaction.edit_original_response( view=compose(self.build_embed(), self))
 
 
 # ==========================================
@@ -198,7 +200,7 @@ class CoinDropCog(commands.Cog):
                 ),
                 color=0xF1C40F
             )
-            await channel.send(embed=embed, view=view)
+            await channel.send( view=compose(embed, view))
 
         else:
             # === РЕЖИМ 2: РОЗЫГРЫШ (60 СЕКУНД) ===
@@ -208,7 +210,7 @@ class CoinDropCog(commands.Cog):
                 item.custom_id = f"raffle_coin_drop_{event_id}"
 
             embed = view.build_embed()
-            msg = await channel.send(embed=embed, view=view)
+            msg = await channel.send( view=compose(embed, view))
 
             # Ожидание 60 секунд для сбора участников
             await asyncio.sleep(60.0)
@@ -220,8 +222,8 @@ class CoinDropCog(commands.Cog):
                     color=0xED4245
                 )
                 try:
-                    await msg.edit(view=None)
-                    await msg.reply(embed=no_p_embed)
+                    await msg.edit(view=smart_view(msg, None))
+                    await msg.reply( view=compose(no_p_embed))
                 except discord.HTTPException:
                     pass
             else:
@@ -248,8 +250,8 @@ class CoinDropCog(commands.Cog):
                         color=0x2ECC71
                     )
                     try:
-                        await msg.edit(view=None)
-                        await msg.reply(embed=result_embed)
+                        await msg.edit(view=smart_view(msg, None))
+                        await msg.reply( view=compose(result_embed))
                     except discord.HTTPException:
                         pass
 

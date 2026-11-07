@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Виселицы."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -112,14 +113,14 @@ class LetterButton(discord.ui.Button):
 
                 await minigame_store.update_player_stats(view.guild_id, view.user_id, game_id, stats)
 
-                await interaction.response.edit_message(embed=embed, view=None)
+                await interaction.response.edit_message( view=compose(embed, None))
             else:
                 # Продолжить игру
                 embed = view.update_embed()
                 # Отключить эту кнопку
                 self.disabled = True
                 self.style = discord.ButtonStyle.success
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
         else:
             # Буквы нет в слове - ошибка
             view.mistakes += 1
@@ -155,11 +156,11 @@ class LetterButton(discord.ui.Button):
 
                 await minigame_store.update_player_stats(view.guild_id, view.user_id, game_id, stats)
 
-                await interaction.response.edit_message(embed=embed, view=None)
+                await interaction.response.edit_message( view=compose(embed, None))
             else:
                 # Продолжить игру
                 embed = view.update_embed()
                 # Отключить эту кнопку
                 self.disabled = True
                 self.style = discord.ButtonStyle.danger
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))

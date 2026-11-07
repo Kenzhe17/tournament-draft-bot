@@ -2,6 +2,7 @@ from config import replace_emojis, get_emoji
 """Views for betting system."""
 
 import discord
+from utils.design import compose, text_card
 from discord.ui import View, Button, button
 from typing import TYPE_CHECKING
 
@@ -51,9 +52,7 @@ class MatchSelectView(View):
                 name_b,
                 self.match_type
             )
-            await interaction.response.send_message(
-                content="Выберите команду:",
-                view=team_view,
+            await interaction.response.send_message( view=compose(text="Выберите команду:", view=team_view),
                 ephemeral=True
             )
         return callback
@@ -200,8 +199,7 @@ class ViewBetsButton(Button):
             
             bets_text.append(match_text)
         
-        await interaction.response.send_message(
-            content="\n".join(bets_text),
+        await interaction.response.send_message( view=text_card("\n").join(bets_text),
             ephemeral=True
         )
 
@@ -308,8 +306,6 @@ class BetButton(Button):
             self.matches,
             self.match_type
         )
-        await interaction.response.send_message(
-            content="Выберите матч:",
-            view=match_view,
+        await interaction.response.send_message( view=compose(text="Выберите матч:", view=match_view),
             ephemeral=True
         )

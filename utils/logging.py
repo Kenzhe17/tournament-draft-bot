@@ -2,6 +2,7 @@
 
 import os
 import discord
+from utils.design import compose
 from datetime import datetime
 
 from config import get_emoji
@@ -29,7 +30,7 @@ async def send_log(bot: discord.Client, title: str, description: str, color: int
         if guild:
             embed.set_footer(text=f"Сервер: {guild.name} (ID: {guild.id})")
 
-        await channel.send(embed=embed)
+        await channel.send( view=compose(embed))
     except Exception as e:
         print(f"Failed to send log: {e}")
 

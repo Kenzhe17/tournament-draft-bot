@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -186,7 +187,7 @@ class JoinSearchButton(discord.ui.Button):
         # Обновить embed
         embed = await build_search_embed(search, interaction.guild)
         view = build_search_view(self.bot, search)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class LeaveSearchButton(discord.ui.Button):
@@ -225,7 +226,7 @@ class LeaveSearchButton(discord.ui.Button):
         # Обновить embed
         embed = await build_search_embed(search, interaction.guild)
         view = build_search_view(self.bot, search)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 def build_search_view(bot: TournamentBot, search: MMSearch) -> discord.ui.View:

@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для игры в угадай эмодзи."""
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button, button
 from games.guess_emoji import GuessEmojiGame
@@ -72,11 +73,11 @@ class EmojiBetModal(Modal, title="🎭 Угадай эмодзи"):
             else:
                 embed.add_field(name="Потеряно", value=f"{bet} 🪙", inline=False)
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
         else:
             # Продолжить игру
             view = GuessEmojiGameView(self.guild_id, self.user_id, bet, game)
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class GuessEmojiGameView(View):
@@ -106,7 +107,7 @@ class GuessEmojiGameView(View):
         )
         embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
         self.stop()
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
 
 class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попытку"):
@@ -152,8 +153,8 @@ class EmojiGuessModal(Modal, title=replace_emojis("🎯 Сделать попы�
             else:
                 embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Продолжить игру
             view = GuessEmojiGameView(self.guild_id, self.user_id, self.bet, self.game)
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))

@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card, smart_view
+
 from discord.ui import Modal, TextInput, View, Button, button, Select
 
 from config import BOT_OWNER_ID, replace_emojis, get_emoji
@@ -82,7 +84,7 @@ class BROrganizerMenuButton(Button):
                 ephemeral=True
             )
         else:
-            await interaction.response.send_message("Организаторское меню:", view=view, ephemeral=True)
+            await interaction.response.send_message(view=compose(text="Организаторское меню:", view=view), ephemeral=True)
 
 
 class BRManagementMenuView(View):
@@ -170,7 +172,7 @@ class BRCloseMenuButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         try:
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=smart_view(interaction.message, None))
         except discord.NotFound:
             pass
 
@@ -315,7 +317,7 @@ class StartBRButton(Button):
 
         view = BRTeamsView(tournament.guild_id, tournament.channel_id, tournament)
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
         logger.info("BR турнир запущен в канале %s сервера %s", self.channel_id, self.guild_id)
 
 
@@ -377,7 +379,7 @@ class JoinBRButton(Button):
         )
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class LeaveBRButton(Button):
@@ -436,7 +438,7 @@ class LeaveBRButton(Button):
         )
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class LeaveTournamentButton(Button):
@@ -531,7 +533,7 @@ class LeaveTournamentButton(Button):
         )
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
         await interaction.followup.send(
             f"✅ Команда '{user_team.team_name}' вышла из турнира.",
@@ -674,7 +676,7 @@ class RegisterTeamButton(Button):
         )
 
         view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
         await interaction.followup.send(
             f"✅ Команда '{team.team_name}' зарегистрирована как {team_emoji}!",
@@ -740,7 +742,7 @@ class RemoveTeamButton(Button):
             return
 
         view = RemoveTeamSelectView(self.guild_id, self.channel_id, options)
-        await interaction.response.send_message("Выберите команду для удаления:", view=view, ephemeral=True)
+        await interaction.response.send_message(view=compose(text="Выберите команду для удаления:", view=view), ephemeral=True)
 
 
 class RemoveTeamSelectView(View):
@@ -861,7 +863,7 @@ class RemoveTeamSelectView(View):
                     print(f"New embed description (first 300 chars): {new_embed.description[:300]}")
 
                     view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-                    await msg_to_update.edit(embed=new_embed, view=view)
+                    await msg_to_update.edit( view=compose(new_embed, view))
                     tournament.message_id = msg_to_update.id
                     br_store.set(tournament)
                     print(f"Updated tournament message: {msg_to_update.id} (proper: {proper_msg is not None})")
@@ -918,8 +920,7 @@ class DeleteBRPlayerButton(Button):
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, tournament.players, 1)
 
         await interaction.response.send_message(
-            "Выберите игрока для удаления:",
-            view=view,
+            view=compose(text="Выберите игрока для удаления:", view=view),
             ephemeral=True
         )
 
@@ -1007,7 +1008,7 @@ class RemoveBRPlayerSelect(Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
-            await message.edit(embed=embed)
+            await message.edit( view=compose(embed))
             await interaction.response.send_message(
                 "✅ Игрок удален.",
                 ephemeral=True
@@ -1060,7 +1061,7 @@ class RemoveBRPlayerPrevButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         new_page = self.page - 1
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class RemoveBRPlayerNextButton(Button):
@@ -1080,7 +1081,7 @@ class RemoveBRPlayerNextButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         new_page = self.page + 1
         view = RemoveBRPlayerPaginationView(self.guild_id, self.channel_id, self.players, new_page)
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class DeleteBRButton(Button):
@@ -1235,7 +1236,7 @@ class BRDataButton(Button):
             return
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Данные отправлены", view=None)
+        await interaction.response.edit_message( view=compose(text="✅ Данные отправлены", view=None))
 
         # Send room data to channel
         try:
@@ -1261,26 +1262,23 @@ class BRDataButton(Button):
             role_mention = f"<@&{tournament.role_id}>" if role else ""
 
             # Send message 1: Header
-            await channel.send(
-                content=f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**"
+            await channel.send( view=text_card(f)"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**"
             )
 
             # Send message 2: Room ID
-            await channel.send(content=tournament.room_data.get("id", ""))
+            await channel.send( view=text_card(tournament.room_data.get("id", "")))
 
             # Send message 3: Password
-            await channel.send(content=tournament.room_data.get("password", ""))
+            await channel.send( view=text_card(tournament.room_data.get("password", "")))
 
             # Send message 4: GIF
-            await channel.send(
-                content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"
+            await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
             )
 
             # Send to general channel
             general_channel = interaction.guild.get_channel(1200125075156910181)
             if general_channel:
-                await general_channel.send(
-                    content=f"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>"
+                await general_channel.send( view=text_card(f)"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>"
                 )
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")
@@ -1483,7 +1481,7 @@ class StartBRButton(Button):
 
             try:
                 message = await channel.fetch_message(tournament.message_id)
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
                 await interaction.response.send_message(
                     "✅ Турнир запущен!",
                     ephemeral=True
@@ -1592,7 +1590,7 @@ class StartBRButton(Button):
 
         try:
             message = await channel.fetch_message(tournament.message_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
                 "✅ Турнир запущен!",
                 ephemeral=True
@@ -1725,7 +1723,7 @@ class StartBermudaButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BRBermudaView(View):
@@ -1761,11 +1759,11 @@ class BRStatsButton(Button):
             return
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Открыт ввод статистики", view=None)
+        await interaction.response.edit_message( view=compose(text="✅ Открыт ввод статистики", view=None))
 
         # Show team group selection view
         view = BRTeamGroupSelectView(self.guild_id, self.channel_id, tournament)
-        await interaction.followup.send("Выберите группу команд:", view=view, ephemeral=True)
+        await interaction.followup.send(view=compose(text="Выберите группу команд:", view=view), ephemeral=True)
 
 
 class BRTeamGroupSelectView(View):
@@ -1819,11 +1817,11 @@ class BRTeamGroupButton(Button):
         if all_have_stats:
             # Show stats review view
             view = BRStatsReviewView(self.guild_id, self.channel_id, self.tournament, self.start_index, self.end_index)
-            await interaction.response.edit_message(view=view)
+            await interaction.response.edit_message(view=smart_view(interaction.message, view))
         else:
             # Show stats input modal for each team
             view = BRStatsInputView(self.guild_id, self.channel_id, self.tournament, self.start_index, self.end_index)
-            await interaction.response.edit_message(view=view)
+            await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class BRStatsInputView(View):
@@ -2000,7 +1998,7 @@ class BRSingleTeamStatsModal(Modal):
                     )
 
                     view = BRBermudaView(self.guild_id, self.channel_id)
-                    await message.edit(embed=embed, view=view)
+                    await message.edit( view=compose(embed, view))
                 except Exception as e:
                     logger.error(f"Error updating BR message after stats save: {e}")
 
@@ -2030,7 +2028,7 @@ class BRBackToGroupSelectButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         view = BRTeamGroupSelectView(self.guild_id, self.channel_id, self.tournament)
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class BRStatsReviewView(View):
@@ -2108,7 +2106,7 @@ class BRConfirmPurgatoryButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+            await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
 
             # Update main message with results embed
             channel = interaction.guild.get_channel(self.channel_id)
@@ -2175,7 +2173,7 @@ class BRConfirmPurgatoryButton(Button):
                 )
 
                 view = BRBermudaView(self.guild_id, self.channel_id)
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
             except Exception as e:
                 logger.error(f"Error updating BR message for results: {e}")
             return
@@ -2195,7 +2193,7 @@ class BRConfirmPurgatoryButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message(content=f"✅ Переход к {map_display}", view=None)
+            await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
 
         # Update main message with Purgatory embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2276,7 +2274,7 @@ class BRConfirmPurgatoryButton(Button):
             )
 
             view = BRBermudaView(self.guild_id, self.channel_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for Purgatory: {e}")
 
@@ -2311,7 +2309,7 @@ class BRConfirmKalahariButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+            await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
 
             # Update main message with results embed
             channel = interaction.guild.get_channel(self.channel_id)
@@ -2378,7 +2376,7 @@ class BRConfirmKalahariButton(Button):
                 )
 
                 view = BRBermudaView(self.guild_id, self.channel_id)
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
             except Exception as e:
                 logger.error(f"Error updating BR message for results: {e}")
             return
@@ -2398,7 +2396,7 @@ class BRConfirmKalahariButton(Button):
             br_store.set(self.tournament)
 
             # Close the ephemeral menu
-            await interaction.response.edit_message(content=f"✅ Переход к {map_display}", view=None)
+            await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
 
         # Update main message with Kalahari embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2479,7 +2477,7 @@ class BRConfirmKalahariButton(Button):
             )
 
             view = BRBermudaView(self.guild_id, self.channel_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for Kalahari: {e}")
 
@@ -2515,7 +2513,7 @@ class BRConfirmNextMapButton(Button):
         br_store.set(self.tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content=f"✅ Переход к {map_display}", view=None)
+        await interaction.response.edit_message( view=compose(text=f"✅ Переход к {map_display}", view=None))
 
         # Update main message with next map embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2588,7 +2586,7 @@ class BRConfirmNextMapButton(Button):
             )
 
             view = BRBermudaView(self.guild_id, self.channel_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for next map: {e}")
 
@@ -2622,7 +2620,7 @@ class BRShowResultsButton(Button):
         br_store.set(tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+        await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
 
         # Update main message with final results embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2688,7 +2686,7 @@ class BRShowResultsButton(Button):
             )
 
             view = BRBermudaView(self.guild_id, self.channel_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for results: {e}")
 
@@ -2733,7 +2731,7 @@ class BRNextMapButton(Button):
         br_store.set(tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content=f"✅ Переход к {self.next_map.capitalize()}", view=None)
+        await interaction.response.edit_message( view=compose(text=f"✅ Переход к {self.next_map.capitalize()}", view=None))
 
         # Update main message with next map embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2806,7 +2804,7 @@ class BRNextMapButton(Button):
             )
 
             view = BRBermudaView(self.guild_id, self.channel_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for next map: {e}")
 
@@ -2833,7 +2831,7 @@ class BRConfirmResultsButton(Button):
         br_store.set(self.tournament)
 
         # Close the ephemeral menu
-        await interaction.response.edit_message(content="✅ Показать итоги", view=None)
+        await interaction.response.edit_message( view=compose(text="✅ Показать итоги", view=None))
 
         # Update main message with final results embed
         channel = interaction.guild.get_channel(self.channel_id)
@@ -2923,7 +2921,7 @@ class BRConfirmResultsButton(Button):
             )
 
             view = None
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating BR message for results: {e}")
 
@@ -3051,7 +3049,7 @@ class BRPurgatoryButton(Button):
 
         try:
             message = await channel.fetch_message(tournament.message_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
                 "✅ Переход к Чистилище.",
                 ephemeral=True
@@ -3191,7 +3189,7 @@ class BRKalahariButton(Button):
 
         try:
             message = await channel.fetch_message(tournament.message_id)
-            await message.edit(embed=embed, view=view)
+            await message.edit( view=compose(embed, view))
             await interaction.response.send_message(
                 "✅ Переход к Калахари.",
                 ephemeral=True
@@ -3336,7 +3334,7 @@ class TeamNameModal(Modal):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BRMapSelectView(View):
@@ -3516,7 +3514,7 @@ class MapSelectMenu(Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BRTeamGroupView(View):
@@ -3565,7 +3563,7 @@ class TeamGroupButton(Button):
         # Создать view с кнопками команд
         view = BRTeamSelectView(self.guild_id, self.channel_id, tournament, self.start_idx, self.end_idx)
 
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class BRTeamSelectView(View):
@@ -3695,7 +3693,7 @@ class BackToMapButton(Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BRStatsModal(Modal):
@@ -3886,7 +3884,7 @@ class BRStatsModal(Modal):
                 )
 
                 view = BRResultsView(self.guild_id, self.channel_id)
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
             else:
                 # Вернуться к select menu следующей карты
                 view = BRMapSelectView(self.guild_id, self.channel_id, tournament)
@@ -3957,7 +3955,7 @@ class BRStatsModal(Modal):
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
 
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
         else:
             # Not all teams done yet - return to team group view with updated embed
             view = BRTeamGroupView(self.guild_id, self.channel_id, tournament)
@@ -4024,7 +4022,7 @@ class BRStatsModal(Modal):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BRResultsView(View):

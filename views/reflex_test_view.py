@@ -4,6 +4,7 @@ from config import replace_emojis
 import asyncio
 import random
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button, button
 from games.reflex_test import ReflexTestGame
@@ -56,7 +57,7 @@ class ReflexTestBetModal(Modal, title="⚡ Быстрый тест"):
 
         # Создать view
         view = ReflexTestGameView(self.guild_id, self.user_id, bet)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class ReflexTestGameView(View):
@@ -87,7 +88,7 @@ class ReflexTestGameView(View):
         )
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
         # Задержка 1-3 секунды
         delay = random.uniform(1.0, 3.0)
@@ -108,7 +109,7 @@ class ReflexTestGameView(View):
 
         # Получить original message (нужно из interaction)
         original_message = await interaction.original_response()
-        await original_message.edit(embed=embed, view=view)
+        await original_message.edit( view=compose(embed, view))
 
 
 class ReflexTestReactionView(View):
@@ -145,13 +146,11 @@ class ReflexTestReactionView(View):
             title = "😢 Медленно!"
         else:
             color = discord.Color.orange()
-            title = replace_emojis("❌ Ошибка!"),
-
-        embed = discord.Embed(
+            title = replace_emojis("❌ Ошибка!"), view=compose(discord.Embed(
             title=title,
             description=message,
             color=color
-        )
+        ))
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)
 
         # Если игра окончена
@@ -165,6 +164,6 @@ class ReflexTestReactionView(View):
                 embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
 
             self.stop()
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))

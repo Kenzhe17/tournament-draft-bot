@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Вспомни последовательность."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -32,7 +33,7 @@ class SequenceMemoryView(discord.ui.View):
             inline=False
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
         # Подождать 5 секунд и показать варианты
         import asyncio
@@ -54,7 +55,7 @@ class SequenceMemoryView(discord.ui.View):
 
         view = SequenceChoiceView(self.guild_id, self.user_id, self.bet, self.sequence, shuffled)
 
-        await interaction.edit_original_response(embed=embed, view=view)
+        await interaction.edit_original_response( view=compose(embed, view))
 
 
 class SequenceChoiceView(discord.ui.View):
@@ -126,7 +127,7 @@ class SequenceChoiceView(discord.ui.View):
 
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
 
 class EmojiButton(discord.ui.Button):

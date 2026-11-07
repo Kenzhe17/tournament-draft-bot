@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Угадай песню."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -39,9 +40,9 @@ class SongQuizView(discord.ui.View):
         view = SongChoiceView(self.guild_id, self.user_id, self.bet, self.song_data, options)
 
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response( view=compose(embed, view))
         else:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class SongChoiceView(discord.ui.View):
@@ -108,7 +109,7 @@ class SongChoiceView(discord.ui.View):
 
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
 
 class SongButton(discord.ui.Button):

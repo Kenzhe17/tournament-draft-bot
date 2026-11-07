@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -96,7 +98,7 @@ class BRCog(commands.Cog):
                     channel = interaction.guild.get_channel(existing.channel_id)
                     if channel:
                         message = await channel.fetch_message(existing.message_id)
-                        await message.edit(view=None)
+                        await message.edit(view=smart_view(message, None))
                 except Exception:
                     pass
             # Удалить из store независимо от фазы
@@ -187,7 +189,7 @@ class BRCog(commands.Cog):
         )
 
         # Send main tournament message through channel.send to unbind it
-        message = await interaction.channel.send(embed=embed, view=view)
+        message = await interaction.channel.send( view=compose(embed, view))
         tournament.message_id = message.id
         br_store.set(tournament)
 
@@ -364,7 +366,7 @@ class BRCog(commands.Cog):
                 )
 
                 view = BRRegistrationView(tournament.guild_id, tournament.channel_id, tournament)
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error("Ошибка при обновлении сообщения: %s", e)
 

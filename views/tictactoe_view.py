@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для игры крестики-нолики."""
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ui import Modal, TextInput, View, Button, button
 from games.tictactoe import TicTacToeGame
@@ -57,7 +58,7 @@ class TicTacToeBetModal(Modal, title="❌⭕ Крестики-Нолики"):
 
         # Создать view
         view = TicTacToeGameView(self.guild_id, self.user_id, bet, game)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class TicTacToeGameView(View):
@@ -87,7 +88,7 @@ class TicTacToeGameView(View):
         )
         embed.add_field(name="Потеряно", value=f"{self.bet} 🪙", inline=False)
         self.stop()
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
 
 class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите клетку"):
@@ -146,8 +147,8 @@ class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите кл
                 await user_balance_store.add_balance(self.guild_id, self.user_id, self.bet)
                 embed.add_field(name="Возврат", value=f"{self.bet} 🪙", inline=False)
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Продолжить игру
             view = TicTacToeGameView(self.guild_id, self.user_id, self.bet, self.game)
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))

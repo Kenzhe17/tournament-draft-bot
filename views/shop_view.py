@@ -2,6 +2,8 @@
 from config import replace_emojis, get_emoji
 
 import discord
+from utils.design import compose, smart_view
+
 import os
 from storage.shop_store import shop_store
 from storage.user_balance_store import user_balance_store
@@ -207,7 +209,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
 
     view = ShopBackView()
     view.add_item(CaseSelect(cases))
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_roles_list(interaction: discord.Interaction) -> None:
@@ -273,7 +275,7 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
 
     view = ShopBackView()
     view.add_item(RoleSelect(roles))
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_rarity_selection(interaction: discord.Interaction, category: str) -> None:
@@ -307,7 +309,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     view = discord.ui.View()
     view.add_item(ShopBackButton())
     view.add_item(RaritySelect(category))
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 class RaritySelect(discord.ui.Select):
@@ -465,7 +467,7 @@ class RaritySelect(discord.ui.Select):
 
         view = ShopBackView()
         view.add_item(CosmeticSelect(items))
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 def get_item_emoji(category: str) -> str:
@@ -637,7 +639,7 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "icon")
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_tag_card(interaction: discord.Interaction, item) -> None:
@@ -686,7 +688,7 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "tag")
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_role_card(interaction: discord.Interaction, item) -> None:
@@ -715,7 +717,7 @@ async def show_role_card(interaction: discord.Interaction, item) -> None:
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = ItemCardView(item.id, item.price, "role")
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_case_card(interaction: discord.Interaction, case) -> None:
@@ -772,7 +774,7 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
     view = CaseCardView(case.id, case.price)
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 class ItemCardView(discord.ui.View):
@@ -867,7 +869,7 @@ class BuyButton(discord.ui.Button):
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
-                await interaction.response.send_message(embed=embed)
+                await interaction.response.send_message( view=compose(embed))
             else:
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
                 await interaction.response.send_message(
@@ -919,7 +921,7 @@ class BuyButton(discord.ui.Button):
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message( view=compose(embed))
 
 
 class BuyCaseButton(discord.ui.Button):
@@ -1022,7 +1024,7 @@ class BuyCaseButton(discord.ui.Button):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message( view=compose(embed))
         else:
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
             await interaction.response.send_message(
@@ -1081,7 +1083,7 @@ class ShopBackButton(discord.ui.Button):
         # Создать View с выпадающим меню категорий
         view = ShopMainView()
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class ShopBackToListButton(discord.ui.Button):
@@ -1121,7 +1123,7 @@ class ShopBackToListButton(discord.ui.Button):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = ShopMainView()
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 # Старые классы для совместимости
@@ -1155,7 +1157,7 @@ class ShopCategoryButton(discord.ui.Button):
             color=embed_color
         )
 
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
 
 class ItemSelect(discord.ui.Select):
@@ -1255,7 +1257,7 @@ class RarityBackButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class ShopBuyButton(discord.ui.Button):
@@ -1317,7 +1319,7 @@ class ShopBuyButton(discord.ui.Button):
             f"Используйте `/inventory` для экипировки.",
             color=discord.Color.green()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class InventoryEquipSelect(discord.ui.Select):
@@ -1421,7 +1423,7 @@ class InventoryEquipButton(discord.ui.Button):
                 description=f"**{item_name}** экипирован!",
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
         else:
             await interaction.response.send_message(
                 replace_emojis("❌ Не удалось экипировать предмет."),
@@ -1452,7 +1454,7 @@ class InventoryUnequipButton(discord.ui.Button):
                 description=f"**{item_name}** снят.",
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
         else:
             await interaction.response.send_message(
                 replace_emojis("❌ Не удалось снять предмет."),
@@ -1512,7 +1514,7 @@ class RolesButton(discord.ui.Button):
             button = RoleBuyButton(role.id, label, can_buy)
             view.add_item(button)
 
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
 
 class RoleBuyButton(discord.ui.Button):
@@ -1552,7 +1554,7 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
     view.add_item(PetRaritySelect())
     view.add_item(ShopBackButton())
 
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 class PetRaritySelect(discord.ui.Select):
@@ -1672,7 +1674,7 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
     view.add_item(PetSelect(pets))
     view.add_item(ShopBackButton())
 
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 class PetSelect(discord.ui.Select):
@@ -1749,7 +1751,7 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     view.add_item(BuyPetButton(pet_def["id"], pet_def["price"]))
     view.add_item(ShopBackButton())
 
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def show_mystery_egg(interaction: discord.Interaction) -> None:
@@ -1782,7 +1784,7 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
     view.add_item(OpenEggButton())
     view.add_item(ShopBackButton())
 
-    await interaction.response.edit_message(embed=embed, view=view)
+    await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BuyPetButton(discord.ui.Button):
@@ -1844,13 +1846,13 @@ class BuyPetButton(discord.ui.Button):
             embed, file = build_won_pet_embed(pet.pet_type.value, interaction.user, is_egg_drop=False)
 
             # Убираем кнопки из исходного сообщения
-            await interaction.response.edit_message(view=None)
+            await interaction.response.edit_message(view=smart_view(interaction.message, None))
 
             # Отправляем новое сообщение с результатом (видно всем)
             if file:
-                await interaction.followup.send(embed=embed, file=file)
+                await interaction.followup.send( view=compose(embed), file=file)
             else:
-                await interaction.followup.send(embed=embed)
+                await interaction.followup.send( view=compose(embed))
         except Exception as e:
             # Вернуть деньги при ошибке
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)
@@ -1918,7 +1920,7 @@ class OpenEggButton(discord.ui.Button):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1560907251412238396/1560935450800029756/output-removebg-preview.png?ex=6ad485ec&is=6ad3346c&hm=6ecda6ff1780bf054b2727904fa9115ee51a889dffbb049b36139be1b7772153&")
-            await interaction.response.send_message(embed=embed)
+            await interaction.response.send_message( view=compose(embed))
         else:
             pet_def = result["pet"]
             # Создать питомца
@@ -1939,9 +1941,9 @@ class OpenEggButton(discord.ui.Button):
                 embed, file = build_won_pet_embed(pet_def["id"], interaction.user, is_egg_drop=True)
                 
                 if file:
-                    await interaction.response.send_message(embed=embed, file=file)
+                    await interaction.response.send_message( view=compose(embed), file=file)
                 else:
-                    await interaction.response.send_message(embed=embed)
+                    await interaction.response.send_message( view=compose(embed))
             except Exception as e:
                 # Вернуть деньги при ошибке
                 await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.price)

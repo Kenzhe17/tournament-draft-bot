@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any
 
 import discord
+from utils.design import compose, text_card
 from discord.ext import commands
 
 from config import replace_emojis
@@ -199,9 +200,10 @@ async def _send_results_message(
     """Новое сообщение с результатами: embed + скриншот + пинг капитанов."""
     file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
     return await channel.send(
-        content=f"{mentions}\n📊 Результаты матча — сопоставьте игроков.",
-        embed=embed,
-        view=view,
+        view=compose(
+            embed, view,
+            text=f"{mentions}\n📊 Результаты матча — сопоставьте игроков.",
+        ),
         file=file,
     )
 
@@ -219,9 +221,7 @@ async def _update_results_message(
     код отправит новое сообщение.
     """
     msg = await channel.fetch_message(message_id)
-    await msg.edit(
-        embed=embed,
-        view=view,
+    await msg.edit( view=compose(embed, view),
         attachments=[
             discord.AttachmentInput(io.BytesIO(data), filename=SHOT_FILENAME)
         ],
@@ -514,9 +514,7 @@ class OCRUploadCog(commands.Cog):
                 msg = await stats_channel.fetch_message(
                     entry["message_id"]
                 )
-                await msg.edit(
-                    embed=embed,
-                    view=view,
+                await msg.edit( view=compose(embed, view),
                     attachments=[
                         discord.AttachmentInput(
                             io.BytesIO(data), filename=SHOT_FILENAME
@@ -533,9 +531,7 @@ class OCRUploadCog(commands.Cog):
             content=(
                 f"{mentions}\n📊 Статистика отряда — "
                 "выберите команду и сопоставьте игроков."
-            ),
-            embed=embed,
-            view=view,
+            ), view=compose(embed, view),
             file=file,
         )
         entry["message_id"] = bot_msg.id

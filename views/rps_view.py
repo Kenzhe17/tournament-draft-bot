@@ -2,6 +2,7 @@ from config import replace_emojis
 """Rock-Paper-Scissors game view."""
 
 import discord
+from utils.design import compose
 from discord.ui import Button, Modal, TextInput, View
 
 from games.rps_game import RPSChoice, determine_winner, get_bot_choice
@@ -44,7 +45,7 @@ class BetModal(Modal, title="Введите ставку"):
                 description=f"Ставка: {bet} 🪙\nВыберите ваш ход!",
                 color=discord.Color.dark_blue(),
             )
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         except ValueError:
             await interaction.response.send_message(
@@ -113,7 +114,7 @@ class RPSGameView(View):
             )
 
             self.clear_items()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message( view=compose(embed, self))
         else:
             # PvP mode - wait for second player
             self.session.player2_id = interaction.user.id

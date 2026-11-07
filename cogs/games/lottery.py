@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -94,10 +95,7 @@ class LotteryView(discord.ui.View):
     async def draw_winner(self, interaction: discord.Interaction) -> None:
         """Выбрать победителя."""
         if not self.lottery.participants:
-            await interaction.edit_original_response(
-                content="❌ Нет участников. Деньги возвращены.",
-                embed=None,
-                view=None
+            await interaction.edit_original_response( view=text_card("❌ Нет участников. Деньги возвращены.")
             )
             self.lottery.active = False
             del lotteries[self.lottery.guild_id]
@@ -123,7 +121,7 @@ class LotteryView(discord.ui.View):
         result_embed = self.create_embed("won", winner)
 
         # Показать результат как reply и виден всем
-        await interaction.edit_original_response(embed=result_embed, view=None)
+        await interaction.edit_original_response( view=compose(result_embed, None))
 
         del lotteries[self.lottery.guild_id]
 
@@ -180,7 +178,7 @@ class LotteryBuyButton(discord.ui.Button):
 
         # Обновить embed (редактируем основное сообщение)
         updated_embed = self.lottery_view.create_embed("active")
-        await interaction.edit_original_response(embed=updated_embed)
+        await interaction.edit_original_response( view=compose(updated_embed))
 
         # Отправить подтверждение в ephemeral
         await interaction.followup.send(
@@ -216,10 +214,7 @@ class LotteryCancelButton(discord.ui.Button):
         lottery.active = False
         del lotteries[lottery.guild_id]
 
-        await interaction.response.edit_message(
-            content="❌ Лотерея отменена. Все деньги возвращены участникам.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Лотерея отменена. Все деньги возвращены участникам.")
         )
 
         # Удалить основное сообщение после отмены
@@ -268,7 +263,7 @@ class LotteryPlayAgainButton(discord.ui.Button):
         lottery_view.add_item(LotteryCancelButton(lottery_view))
 
         embed = lottery_view.create_embed("active")
-        await interaction.response.edit_message(embed=embed, view=lottery_view)
+        await interaction.response.edit_message( view=compose(embed, lottery_view))
 
 
 from cogs.groups import games_group, bind_commands
@@ -336,7 +331,7 @@ class LotteryCog(commands.Cog):
         lottery_view.add_item(LotteryCancelButton(lottery_view))
 
         embed = lottery_view.create_embed("active")
-        await interaction.response.send_message(embed=embed, view=lottery_view)
+        await interaction.response.send_message( view=compose(embed, lottery_view))
 
 
 async def setup(bot: "TournamentBot"):

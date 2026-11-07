@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Память."""
 
 import discord
+from utils.design import compose
 import asyncio
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
@@ -114,4 +115,4 @@ class MemoryAnswerModal(discord.ui.Modal, title="Ваша последовате
         # Сохранить статистику
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))

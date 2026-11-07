@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Any
 
 import discord
+from utils.design import compose, smart_view, text_card
 from discord.ui import Button, Modal, Select, TextInput, View
 
 try:
@@ -410,7 +411,7 @@ async def _send_org_ping(
         except Exception:
             channel = interaction.channel
     try:
-        await channel.send(content=content)
+        await channel.send( view=text_card(content))
     except Exception as e:
         logger.warning("OCR call-org ping failed: %s", e)
 
@@ -658,8 +659,7 @@ class OCRPublicView(View):
                 self.guild_id, self.channel_id, tournament,
                 self.match_type, self.match_index, team_index,
             )
-            await interaction.response.send_message(
-                embed=embed, view=view, ephemeral=True
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True
             )
         return callback
 
@@ -888,10 +888,10 @@ class SquadClaimView(View):
             name = _team_display_name(tournament, team_index)
             try:
                 await interaction.message.edit(
-                    view=SquadAssignedView(
+                    view=smart_view(interaction.message, SquadAssignedView(
                         self.guild_id, self.channel_id, tournament,
                         self.match_type, self.match_index, team_index,
-                    )
+                    ))
                 )
             except Exception as e:
                 logger.warning("Squad claim view swap failed: %s", e)
@@ -1097,8 +1097,7 @@ class SquadAssignedView(View):
                 self.guild_id, self.channel_id, tournament,
                 self.match_type, self.match_index, self.team_index, panel,
             )
-            await interaction.response.send_message(
-                embed=embed, view=view, ephemeral=True
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True
             )
         return callback
 
@@ -1325,8 +1324,7 @@ class PanelPickView(View):
             self.guild_id, self.channel_id, tournament,
             self.match_type, self.match_index, self.team_index, panel,
         )
-        await interaction.response.send_message(
-            embed=embed, view=view, ephemeral=True
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True
         )
 
 
@@ -1632,12 +1630,10 @@ class PanelMappingView(View):
             channel = None
         if channel is not None:
             try:
-                await channel.send(
-                    embed=embed,
-                    view=OCRWinnerPickView(
+                await channel.send( view=compose(embed, OCRWinnerPickView(
                         self.guild_id, self.channel_id, tournament,
                         self.match_type, self.match_index,
-                    ),
+                    )),
                 )
             except Exception as e:
                 logger.warning("OCR winner-pick send failed: %s", e)
@@ -1692,11 +1688,11 @@ async def _refresh_public_message(
             try:
                 msg = await channel.fetch_message(mid)
                 await msg.edit(
-                    view=SquadClaimView(
+                    view=smart_view(msg, SquadClaimView(
                         tournament.guild_id, tournament.channel_id,
                         tournament, match_type, match_index,
                         entry["uid"],
-                    )
+                    ))
                 )
             except Exception as e:
                 logger.warning("Squad pool view refresh failed: %s", e)
@@ -1711,10 +1707,10 @@ async def _refresh_public_message(
             try:
                 msg = await channel.fetch_message(mid)
                 await msg.edit(
-                    view=SquadAssignedView(
+                    view=smart_view(msg, SquadAssignedView(
                         tournament.guild_id, tournament.channel_id,
                         tournament, match_type, match_index, tidx,
-                    )
+                    ))
                 )
             except Exception as e:
                 logger.warning("Squad assigned view refresh failed: %s", e)
@@ -1725,10 +1721,10 @@ async def _refresh_public_message(
     try:
         msg = await channel.fetch_message(session["message_id"])
         await msg.edit(
-            view=OCRPublicView(
+            view=smart_view(msg, OCRPublicView(
                 tournament.guild_id, tournament.channel_id, tournament,
                 match_type, match_index,
-            )
+            ))
         )
     except Exception as e:
         logger.warning("OCR public message refresh failed: %s", e)
@@ -2155,17 +2151,14 @@ async def finalize_ocr_match(
                     continue
                 try:
                     msg = await channel.fetch_message(mid)
-                    await msg.edit(
-                        content=replace_emojis(final_text), view=None
+                    await msg.edit( view=compose(text=replace_emojis(final_text), view=None)
                     )
                 except Exception as e:
                     logger.warning("Squad message finalize failed: %s", e)
     elif session.get("message_id") and channel is not None:
         try:
             msg = await channel.fetch_message(session["message_id"])
-            await msg.edit(
-                content=replace_emojis(final_text),
-                view=None,
+            await msg.edit( view=compose(text=replace_emojis(final_text), view=None),
             )
         except Exception as e:
             logger.warning("OCR message finalize edit failed: %s", e)

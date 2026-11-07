@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -125,7 +126,7 @@ class BankCog(commands.Cog):
                 inline=False
             )
 
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
     async def deposit(self, interaction: discord.Interaction, amount: str) -> None:
         """Пополнить сейф."""

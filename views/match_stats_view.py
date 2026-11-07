@@ -8,6 +8,7 @@ from config import replace_emojis, get_emoji
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 from discord.ui import Modal, TextInput, View, Button, button
 
 if TYPE_CHECKING:
@@ -446,8 +447,7 @@ class AdminFillButton(Button):
         # Show match selection view
         view = AdminMatchSelectView(self.guild_id, self.tournament)
         await interaction.response.send_message(
-            "Выберите матч для заполнения статистики:",
-            view=view,
+            view=compose(text="Выберите матч для заполнения статистики:", view=view),
             ephemeral=True
         )
 
@@ -528,8 +528,7 @@ class AdminMatchSelectView(View):
             # Show team selection for admin
             view = AdminTeamSelectView(self.guild_id, self.tournament, match_type, match_index)
             await interaction.response.send_message(
-                "Выберите команду для заполнения статистики:",
-                view=view,
+                view=compose(text="Выберите команду для заполнения статистики:", view=view),
                 ephemeral=True
             )
         return callback
@@ -751,9 +750,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         # Create view with edit button only
         view = AdminStatsConfirmView(self.guild_id, tournament, self.match_type, self.match_index, match)
 
-        await interaction.followup.send(
-            embed=embed,
-            view=view,
+        await interaction.followup.send( view=compose(embed, view),
             ephemeral=True
         )
     
@@ -905,9 +902,7 @@ class AdminConfirmView(View):
 
         # Show stats for confirmation
         await interaction.response.send_message(
-            "Проверьте статистику перед подтверждением:",
-            embed=self.embed,
-            view=self._create_confirm_view(),
+            view=compose(text="Проверьте статистику перед подтверждением:", view=compose)(self.embed, self._create_confirm_view()),
             ephemeral=True
         )
 
@@ -963,7 +958,7 @@ class AdminConfirmView(View):
             color=discord.Color.gold()
         )
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
     async def confirm_callback(self, interaction: discord.Interaction, winning_team_index: int) -> None:
         import logging
@@ -1267,8 +1262,7 @@ class AdminConfirmView(View):
         # Show team selection again for editing
         view = AdminTeamSelectView(self.guild_id, self.tournament, self.match_type, self.match_index)
         await interaction.response.send_message(
-            "Выберите команду для редактирования статистики:",
-            view=view,
+            view=compose(text="Выберите команду для редактирования статистики:", view=view),
             ephemeral=True
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 import discord
+from utils.design import compose
 
 from bot.embeds import build_tournament_embed
 from bot.models import Tournament, TournamentPhase
@@ -67,7 +68,7 @@ async def update_tournament_message(
     embed = await build_tournament_embed(guild, tournament)
     view = get_view_for_tournament(tournament)
     try:
-        await message.edit(embed=embed, view=view)
+        await message.edit( view=compose(embed, view))
     except discord.HTTPException as exc:
         logger.error("Ошибка редактирования сообщения: %s", exc)
 

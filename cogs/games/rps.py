@@ -10,6 +10,8 @@ from enum import Enum
 from typing import Optional
 
 import discord
+from utils.design import compose, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -148,7 +150,7 @@ class PvEChoiceView(RPSView):
         # Disable all buttons
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.response.edit_message(view=smart_view(interaction.message, self))
         
         # Generate bot move (truly random with time-based seed)
         # Use secrets for cryptographically secure random choice
@@ -204,7 +206,7 @@ class PvEChoiceView(RPSView):
         result_view.add_item(RPSPlayAgainButton(bet, interaction.user.id, None))
 
         # Send public result message (not ephemeral)
-        await interaction.edit_original_response(embed=embed, view=result_view)
+        await interaction.edit_original_response( view=compose(embed, result_view))
 
         # Cleanup
         active_users.discard(user_id)
@@ -248,7 +250,7 @@ class PvPChallengeView(RPSView):
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 try:
-                    await msg.edit(embed=embed, view=None)
+                    await msg.edit( view=compose(embed, None))
                 except discord.errors.NotFound:
                     # Message was already deleted
                     pass
@@ -350,7 +352,7 @@ class PvPChallengeView(RPSView):
         for item in self.children:
             item.disabled = True
         try:
-            await interaction.response.edit_message(view=self)
+            await interaction.response.edit_message(view=smart_view(interaction.message, self))
         except discord.errors.InteractionResponded:
             pass
         
@@ -375,7 +377,7 @@ class PvPChallengeView(RPSView):
         # Disable buttons
         for item in self.children:
             item.disabled = True
-        await interaction.response.edit_message(view=self)
+        await interaction.response.edit_message(view=smart_view(interaction.message, self))
         
         # Send choice views to both players
         await self.send_choice_views(interaction, game)
@@ -423,7 +425,7 @@ class PvPChallengeView(RPSView):
         for item in self.children:
             item.disabled = True
         try:
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message( view=compose(embed, self))
         except discord.errors.InteractionResponded:
             pass
 
@@ -466,7 +468,7 @@ class PvPChallengeView(RPSView):
         for item in self.children:
             item.disabled = True
         try:
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message( view=compose(embed, self))
         except discord.errors.InteractionResponded:
             pass
         
@@ -494,7 +496,7 @@ class PvPChallengeView(RPSView):
             channel = self.bot_instance.get_channel(self.channel_id)
             if channel and self.message_id:
                 msg = await channel.fetch_message(self.message_id)
-                await msg.edit(embed=embed, view=view)
+                await msg.edit( view=compose(embed, view))
         except Exception as e:
             logger.error(f"Error updating main message: {e}")
 
@@ -586,12 +588,12 @@ class PvPChoiceView(RPSView):
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 try:
-                    await interaction.response.edit_message(embed=embed, view=self)
+                    await interaction.response.edit_message( view=compose(embed, self))
                 except discord.errors.InteractionResponded:
                     pass
         else:
             # Individual message mode (deprecated but kept for compatibility)
-            await interaction.response.edit_message(view=self)
+            await interaction.response.edit_message(view=smart_view(interaction.message, self))
             
             if self.is_initiator:
                 game.initiator_move = move
@@ -671,7 +673,7 @@ class PvPChoiceView(RPSView):
                 channel = interaction.client.get_channel(game.channel_id)
                 if channel:
                     msg = await channel.fetch_message(game.message_id)
-                    await msg.edit(embed=embed, view=result_view)
+                    await msg.edit( view=compose(embed, result_view))
             except Exception as e:
                 logger.error(f"Error editing main message with result: {e}")
 
@@ -777,7 +779,7 @@ class RPSCog(commands.Cog):
                 value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
                 inline=False
             )
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message( view=compose(embed, view))
 
         except Exception as e:
             logger.error(f"Error starting RPS game: {e}", exc_info=True)

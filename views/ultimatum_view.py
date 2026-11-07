@@ -4,6 +4,7 @@ import logging
 import asyncio
 
 import discord
+from utils.design import compose
 from discord.ext import commands
 
 from config import replace_emojis, get_emoji
@@ -37,7 +38,7 @@ async def update_round_embed(guild: discord.Guild, tournament_id: str, round_num
         message = await channel.fetch_message(message_id)
         new_embed = await build_ultimatum_round_embed(tournament_id, round_number, guild)
         new_view = await build_ultimatum_round_view(bot, tournament_id, round_number)
-        await message.edit(embed=new_embed, view=new_view)
+        await message.edit( view=compose(new_embed, new_view))
         logger.info(f"Updated round embed for tournament {tournament_id}, round {round_number}")
     except Exception as e:
         logger.error(f"Error updating round embed: {e}", exc_info=True)
@@ -179,7 +180,7 @@ class UltimatumRoomsButton(discord.ui.Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class UltimatumWinnerButton(discord.ui.Button):
@@ -247,7 +248,7 @@ class UltimatumWinnerButton(discord.ui.Button):
             color=discord.Color.from_rgb(69, 69, 69)
         )
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class UltimatumSelectMatch(discord.ui.Select):
@@ -317,7 +318,7 @@ class UltimatumSelectWinnerMatch(discord.ui.Select):
             color=discord.Color.from_rgb(69, 69, 69)
         )
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class UltimatumWinnerSelectionView(discord.ui.View):

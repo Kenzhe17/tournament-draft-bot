@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -221,7 +222,7 @@ async def _roll(self, interaction: discord.Interaction, choice: str):
     result_view = discord.ui.View(timeout=None)
     result_view.add_item(CrapsPlayAgainButton(game_view.bet, game_view.user_id))
 
-    await interaction.edit_original_response(embed=result_embed, view=result_view)
+    await interaction.edit_original_response( view=compose(result_embed, result_view))
 
 
 # Присоединить метод к классам
@@ -251,10 +252,7 @@ class CrapsCancelButton(discord.ui.Button):
             )
 
         self.game_view.rolled = True
-        await interaction.response.edit_message(
-            content="❌ Игра отменена. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
 
@@ -305,7 +303,7 @@ class CrapsPlayAgainButton(discord.ui.Button):
         view.add_item(CrapsCancelButton(view))
 
         embed = view.create_embed("menu")
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 from cogs.groups import games_group, bind_commands
@@ -370,7 +368,7 @@ class CrapsCog(commands.Cog):
         game_view.add_item(CrapsCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
-        await interaction.response.send_message(embed=embed, view=game_view)
+        await interaction.response.send_message( view=compose(embed, game_view))
 
 
 async def setup(bot: "TournamentBot"):

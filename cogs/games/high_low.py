@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -127,7 +128,7 @@ class HighLowView(discord.ui.View):
             result_embed = self.create_embed("lost")
             result_view = discord.ui.View(timeout=None)
             result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
+            await interaction.edit_original_response( view=compose(result_embed, result_view))
         elif self.round > self.max_rounds:
             # Победа
             self.game_over = True
@@ -144,11 +145,11 @@ class HighLowView(discord.ui.View):
             result_embed = self.create_embed("won")
             result_view = discord.ui.View(timeout=None)
             result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
+            await interaction.edit_original_response( view=compose(result_embed, result_view))
         else:
             # Продолжить игру
             updated_embed = self.create_embed("playing")
-            await interaction.edit_original_response(embed=updated_embed)
+            await interaction.edit_original_response( view=compose(updated_embed))
 
 
 class HighLowHigherButton(discord.ui.Button):
@@ -211,10 +212,7 @@ class HighLowCancelButton(discord.ui.Button):
             )
 
         self.game_view.game_over = True
-        await interaction.response.edit_message(
-            content="❌ Игра отменена. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
 
@@ -265,7 +263,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
         game_view.add_item(HighLowCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.edit_message(embed=embed, view=game_view)
+        await interaction.response.edit_message( view=compose(embed, game_view))
 
 
 from cogs.groups import games_group, bind_commands
@@ -330,7 +328,7 @@ class HighLowCog(commands.Cog):
         game_view.add_item(HighLowCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.send_message(embed=embed, view=game_view)
+        await interaction.response.send_message( view=compose(embed, game_view))
 
 
 async def setup(bot: "TournamentBot"):

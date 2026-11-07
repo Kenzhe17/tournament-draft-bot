@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, smart_view
+
 from discord.ext import commands
 
 from config import replace_emojis, WELCOME_BANNER_URL, ORG_ROLE_MAP, TOURNAMENT_CHANNELS
@@ -161,7 +163,7 @@ class TakeRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            await interaction.response.edit_message( view=compose(new_embed, view))
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -237,7 +239,7 @@ class ReleaseRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            await interaction.response.edit_message( view=compose(new_embed, view))
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -265,7 +267,7 @@ class BackButton(discord.ui.Button):
         state = load_state()
         view = OrgRoleView(state)
         new_embed = build_org_role_embed(interaction.guild, state)
-        await interaction.response.edit_message(embed=new_embed, view=view)
+        await interaction.response.edit_message( view=compose(new_embed, view))
 
 
 class ResetButton(discord.ui.Button):
@@ -309,7 +311,7 @@ class ResetButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(embed=new_embed, view=view)
+            await interaction.response.edit_message( view=compose(new_embed, view))
 
             await interaction.followup.send(
                 "✅ Все роли организаторов сброшены для всех пользователей",
@@ -353,7 +355,7 @@ class RoleSelectionButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
         view = RoleSelectionView(state, interaction.guild, interaction.user.id)
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class RoleSelectionView(discord.ui.View):
@@ -456,7 +458,7 @@ async def setup_org_role_message(
     view = OrgRoleView(state)
 
     # Send message
-    message = await channel.send(embed=main_embed, view=view)
+    message = await channel.send( view=compose(main_embed, view))
 
     # Save message info
     state.message_id = message.id

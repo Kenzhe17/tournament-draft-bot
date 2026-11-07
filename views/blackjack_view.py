@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Блэкджек."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -56,9 +57,9 @@ class BlackjackView(discord.ui.View):
             view = None
 
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response( view=compose(embed, view))
         else:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     async def hit(self, interaction: discord.Interaction) -> None:
         """Взять карту."""
@@ -86,7 +87,7 @@ class BlackjackView(discord.ui.View):
                 )
 
             await self.update_stats(interaction, False)
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
             await self.show_hand(interaction, self.player_hand, self.dealer_hand)
 
@@ -133,7 +134,7 @@ class BlackjackView(discord.ui.View):
             )
 
         await self.update_stats(interaction, won)
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
     async def update_stats(self, interaction: discord.Interaction, won: bool) -> None:
         """Обновить статистику."""

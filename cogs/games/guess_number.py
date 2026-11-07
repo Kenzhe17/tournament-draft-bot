@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -160,7 +161,7 @@ class GuessNumberInput(discord.ui.Modal):
             result_view = discord.ui.View(timeout=None)
             result_view.add_item(GuessNumberPlayAgainButton(self.game_view.bet, self.game_view.user_id))
 
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
+            await interaction.edit_original_response( view=compose(result_embed, result_view))
 
         elif self.game_view.attempts >= self.game_view.max_attempts:
             # Проигрыш
@@ -170,7 +171,7 @@ class GuessNumberInput(discord.ui.Modal):
             result_view = discord.ui.View(timeout=None)
             result_view.add_item(GuessNumberPlayAgainButton(self.game_view.bet, self.game_view.user_id))
 
-            await interaction.edit_original_response(embed=result_embed, view=result_view)
+            await interaction.edit_original_response( view=compose(result_embed, result_view))
 
         else:
             # Подсказка
@@ -185,7 +186,7 @@ class GuessNumberInput(discord.ui.Modal):
 
             # Обновить embed
             updated_embed = self.game_view.create_embed("playing")
-            await interaction.edit_original_response(embed=updated_embed)
+            await interaction.edit_original_response( view=compose(updated_embed))
 
 
 class GuessNumberGuessButton(discord.ui.Button):
@@ -231,10 +232,7 @@ class GuessNumberCancelButton(discord.ui.Button):
             )
 
         self.game_view.game_over = True
-        await interaction.response.edit_message(
-            content="❌ Игра отменена. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
 
@@ -287,7 +285,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
         game_view.add_item(GuessNumberCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.edit_message(embed=embed, view=game_view)
+        await interaction.response.edit_message( view=compose(embed, game_view))
 
 
 from cogs.groups import games_group, bind_commands
@@ -354,7 +352,7 @@ class GuessNumberCog(commands.Cog):
         game_view.add_item(GuessNumberCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.send_message(embed=embed, view=game_view)
+        await interaction.response.send_message( view=compose(embed, game_view))
 
 
 async def setup(bot: "TournamentBot"):

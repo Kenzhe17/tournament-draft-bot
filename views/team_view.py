@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 from discord import ui
 
 from config import replace_emojis
@@ -85,7 +86,7 @@ class TeamStatusView(discord.ui.View):
         )
 
         try:
-            await self.message.edit(embed=embed, view=self)
+            await self.message.edit( view=compose(embed, self))
         except (discord.NotFound, discord.Forbidden, AttributeError):
             # If message is not available or None, ignore
             pass
@@ -118,7 +119,7 @@ class TeamMenuButton(discord.ui.Button):
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class TeamLeaveButton(discord.ui.Button):
@@ -181,7 +182,7 @@ class TeamLeaveButton(discord.ui.Button):
             color=discord.Color.from_rgb(235, 100, 100)
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class TeamJoinButton(discord.ui.Button):
@@ -279,7 +280,7 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class TeamMenuView(discord.ui.View):
@@ -372,7 +373,7 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
             description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class ChangePasswordButton(discord.ui.Button):
@@ -440,7 +441,7 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class KickMemberButton(discord.ui.Button):
@@ -485,7 +486,7 @@ class KickMemberButton(discord.ui.Button):
             return
 
         view = KickMemberSelectView(self.team, options, self.status_view)
-        await interaction.response.send_message("Выберите участника для кика:", view=view, ephemeral=True)
+        await interaction.response.send_message(view=compose(text="Выберите участника для кика:", view=view), ephemeral=True)
 
 
 class KickMemberSelectView(discord.ui.View):

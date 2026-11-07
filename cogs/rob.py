@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -96,8 +97,7 @@ class RobStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
                         ephemeral=True
                     )
                     await interaction.message.delete()
@@ -112,8 +112,7 @@ class RobStartButton(discord.ui.Button):
         victim_cash = victim_balance  # user_balance это наличные на руках
 
         if robber_balance <= 100:
-            await interaction.response.send_message(
-                content=f"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
+            await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
                 ephemeral=True
             )
             await interaction.message.delete()
@@ -334,7 +333,7 @@ class RobStartButton(discord.ui.Button):
                         ),
                         color=0x2ECC71
                     )
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
 
                 if item_protected:
                     # Цепкие когти - предмет остаётся у жертвы, грабитель ничего не получает (15% шанс)
@@ -351,7 +350,7 @@ class RobStartButton(discord.ui.Button):
                         ),
                         color=0x2ECC71  # Green for success
                     )
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
                 else:
                     # Кража предмета
                     stolen_item = random.choice(stealable_items)
@@ -404,7 +403,7 @@ class RobStartButton(discord.ui.Button):
                         color=0x2ECC71  # Green for success
                     )
 
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
             else:
                 # Кража монет
                 if victim_balance == 0:
@@ -419,7 +418,7 @@ class RobStartButton(discord.ui.Button):
                         color=0xE74C3C  # Red for failure
                     )
 
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
                     # Не ставим кулдаун при неуспешном ограблении из-за отсутствия монет
                     return
                 else:
@@ -500,7 +499,7 @@ class RobStartButton(discord.ui.Button):
                         color=0x2ECC71  # Green for success
                     )
 
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Провал - штраф
             percent = random.uniform(0.1, 0.5)  # 10% - 50%
@@ -579,7 +578,7 @@ class RobStartButton(discord.ui.Button):
                 color=0xE74C3C  # Red for failure
             )
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
 
         # Установить cooldown только если поймали (провал)
         if not success and self.robber_id != BOT_OWNER_ID:
@@ -615,8 +614,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
                         ephemeral=True
                     )
                     return
@@ -668,7 +666,7 @@ class RobCog(commands.Cog):
         embed = view.build_embed(success_chance=base_success_chance)
 
         try:
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message( view=compose(embed, view))
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
@@ -689,8 +687,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
                         ephemeral=True
                     )
                     return
@@ -718,7 +715,7 @@ class RobCog(commands.Cog):
         view.add_item(RobGroupCancelButton(interaction.guild_id, view))
 
         embed = await view.build_embed_async()
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message( view=compose(embed, view))
 
         # Сохранить message_id и original_message для лобби
         original_response = await interaction.original_response()
@@ -753,10 +750,7 @@ class RobGroupView(discord.ui.View):
         
         if self.original_message:
             try:
-                await self.original_message.edit(
-                    content=f"{replace_emojis('❌')} Время на сбор истекло! Лобби отменено.",
-                    embed=None,
-                    view=None
+                await self.original_message.edit( view=text_card(f"{replace_emojis('❌')} Время на сбор истекло! Лобби отменено.")
                 )
             except:
                 pass
@@ -835,8 +829,7 @@ class RobGroupJoinButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message(
-                            content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                        await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
                             ephemeral=True
                         )
                         return
@@ -882,7 +875,7 @@ class RobGroupJoinButton(discord.ui.Button):
 
             # Обновить embed
             embed = await self.game_view.build_embed_async()
-            await interaction.response.edit_message(embed=embed)
+            await interaction.response.edit_message( view=compose(embed))
 
 
 class RobGroupStartButton(discord.ui.Button):
@@ -919,8 +912,7 @@ class RobGroupStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message(
-                        content=f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
+                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
                         ephemeral=True
                     )
                     return
@@ -956,8 +948,7 @@ class RobGroupStartButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message(
-                            content=f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин.",
+                        await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин.",
                             ephemeral=True
                         )
                         await interaction.message.delete()
@@ -971,8 +962,7 @@ class RobGroupStartButton(discord.ui.Button):
         for member_id in members:
             member_balance = await user_balance_store.get_balance(guild_id, member_id)
             if member_balance <= 100:
-                await interaction.response.send_message(
-                    content=f"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
+                await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
                     ephemeral=True
                 )
                 await interaction.message.delete()
@@ -1100,7 +1090,7 @@ class RobGroupStartButton(discord.ui.Button):
                         ),
                         color=0x2ECC71
                     )
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
                     return
                 
                 # Кража предмета
@@ -1130,7 +1120,7 @@ class RobGroupStartButton(discord.ui.Button):
                         color=0xE74C3C  # Red for failure
                     )
                     
-                    await interaction.response.edit_message(embed=embed, view=None)
+                    await interaction.response.edit_message( view=compose(embed, None))
                     # Не ставим кулдаун при неуспешном ограблении из-за отсутствия монет
                     return
                 else:
@@ -1218,7 +1208,7 @@ class RobGroupStartButton(discord.ui.Button):
                 color=0x2ECC71  # Green for success
             )
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Failure embed
             party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
@@ -1272,7 +1262,7 @@ class RobGroupStartButton(discord.ui.Button):
                 color=0xE74C3C  # Red for failure
             )
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
             
             # Установить cooldown для всех участников только если поймали (провал)
             for member_id in members:
@@ -1306,10 +1296,7 @@ class RobGroupCancelButton(discord.ui.Button):
         if self.game_view.message_id in _robgroup_lobbies:
             del _robgroup_lobbies[self.game_view.message_id]
 
-        await interaction.response.edit_message(
-            content=f"{replace_emojis('❌')} Лобби отменено.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card(f"{replace_emojis('❌')} Лобби отменено.")
         )
 
 

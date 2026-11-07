@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Словесные цепочки."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -81,7 +82,7 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
 
             await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
             return
 
         # Проверить последний символ слова для следующего раунда
@@ -123,7 +124,7 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
 
             await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Следующий раунд
             self.round += 1
@@ -146,4 +147,4 @@ class WordChainAnswerModal(discord.ui.Modal, title="Ваше слово"):
             view.round = self.round
             view.max_rounds = self.max_rounds
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))

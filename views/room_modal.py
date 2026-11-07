@@ -3,6 +3,7 @@ from config import replace_emojis
 
 import time
 import discord
+from utils.design import compose, text_card
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -178,16 +179,16 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
 
     # Send messages separately
     # Message 1: Header
-    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n**Данные:**")
+    await channel.send( view=text_card(f)"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n**Данные:**")
 
     # Message 2: Room ID
-    await channel.send(content=room_id)
+    await channel.send( view=text_card(room_id))
 
     # Message 3: Password
-    await channel.send(content=room_password)
+    await channel.send( view=text_card(room_password))
 
     # Message 4: GIF
-    await channel.send(content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
+    await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"))
 
     # Send to general channel (1200125075156910181)
     general_channel = bot.get_channel(1200125075156910181)
@@ -224,4 +225,4 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
         else:
             players_text = ""
         
-        await general_channel.send(content=f"{pings}\n\n:white_arrow: Игроки: {players_text}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>")
+        await general_channel.send( view=text_card(f)"{pings}\n\n:white_arrow: Игроки: {players_text}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1561683314480255057>")

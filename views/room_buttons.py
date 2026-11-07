@@ -2,6 +2,7 @@ from config import replace_emojis
 """Buttons for tournament room management."""
 
 import discord
+from utils.design import compose
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -150,4 +151,4 @@ class AdminRoomsButton(discord.ui.Button):
             color=discord.Color.blue()
         )
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)

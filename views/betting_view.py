@@ -9,6 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 
 from models.tournament import TournamentPhase
 from storage.user_balance_store import user_balance_store
@@ -96,7 +97,7 @@ class MatchButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, team_view), ephemeral=True)
 
 
 class TeamSelectView(discord.ui.View):
@@ -330,4 +331,4 @@ class BettingButton(discord.ui.Button):
             color=discord.Color.gold()
         )
 
-        await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, match_view), ephemeral=True)

@@ -2,6 +2,7 @@
 
 import time
 import discord
+from utils.design import compose, text_card
 from config import replace_emojis
 
 # Cooldown для отправки комнаты (1 секунда)
@@ -170,12 +171,12 @@ async def send_ultimatum_room_notifications(
     pings = f"<@{player1_id}> <@{player2_id}>"
 
     # Send messages
-    await channel.send(content=f"**КОМНАТА ОТКРЫТА**\nМатч: {p1_name} vs {p2_name}\n\n{pings}\n\n**Данные:**")
-    await channel.send(content=room_id)
-    await channel.send(content=room_password)
-    await channel.send(content="https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d4a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
+    await channel.send( view=text_card(f)"**КОМНАТА ОТКРЫТА**\nМатч: {p1_name} vs {p2_name}\n\n{pings}\n\n**Данные:**")
+    await channel.send( view=text_card(room_id))
+    await channel.send( view=text_card(room_password))
+    await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d4a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"))
 
     # Send to general channel
     general_channel = bot.get_channel(1200125075156910181)
     if general_channel:
-        await general_channel.send(content=f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1567585136957063229>")
+        await general_channel.send( view=text_card(f)"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1567585136957063229>")

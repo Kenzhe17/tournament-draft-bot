@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Слово дня."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -31,9 +32,9 @@ class WordleView(discord.ui.View):
         view = WordleAnswerView(self.guild_id, self.user_id, self.bet, self.word, self.attempts)
 
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response( view=compose(embed, view))
         else:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class WordleAnswerView(discord.ui.View):
@@ -78,7 +79,7 @@ class WordleAnswerView(discord.ui.View):
 
                 # Продолжить игру
                 view = WordleAnswerView(self.guild_id, self.user_id, self.bet, self.word, self.attempts)
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
                 return
             else:
                 # Попытки закончились
@@ -114,7 +115,7 @@ class WordleAnswerView(discord.ui.View):
 
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))
 
 
 class WordleModal(discord.ui.Modal, title="Ваше слово"):

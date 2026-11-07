@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -199,15 +200,14 @@ async def _safe_call(coro):
 async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
     """Валидация UID + API ключ. True — можно продолжать."""
     if not _check_uid(uid):
-        await interaction.response.send_message(
-            embed=_error_embed(
+        await interaction.response.send_message( view=compose(_error_embed(
                 FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
-            ),
+            )),
             ephemeral=True,
         )
         return False
     if not freefire_service.configured:
-        await interaction.response.send_message(embed=_no_key_embed(), ephemeral=True)
+        await interaction.response.send_message( view=compose(_no_key_embed()), ephemeral=True)
         return False
     return True
 
@@ -229,7 +229,7 @@ async def ff_info(
     await interaction.response.defer()
     result = await _safe_call(freefire_service.get_info(region.value, uid))
     if isinstance(result, FreeFireError):
-        await interaction.followup.send(embed=_error_embed(result))
+        await interaction.followup.send( view=compose(_error_embed(result)))
         return
 
     basic = result.get("basicInfo") or {}
@@ -337,7 +337,7 @@ async def ff_info(
             inline=False,
         )
 
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send( view=compose(embed))
 
 
 # ----------------------------------------------------------------- /ff stats
@@ -374,7 +374,7 @@ async def ff_stats(
         )
     )
     if isinstance(result, FreeFireError):
-        await interaction.followup.send(embed=_error_embed(result))
+        await interaction.followup.send( view=compose(_error_embed(result)))
         return
 
     stats = result.get("stats") or result
@@ -387,7 +387,7 @@ async def ff_stats(
         color=COLOR_MAIN,
     )
     embed.set_footer(text=FOOTER)
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send( view=compose(embed))
 
 
 # ----------------------------------------------------------------- /ff item
@@ -418,10 +418,9 @@ async def ff_item(
         results = ff_catalog.search_items(query, limit=1)
         item = results[0] if results else None
     if item is None:
-        await interaction.response.send_message(
-            embed=_error_embed(
+        await interaction.response.send_message( view=compose(_error_embed(
                 FreeFireError(f"Предмет «{query}» не найден в каталоге.", "NOT_FOUND")
-            ),
+            )),
             ephemeral=True,
         )
         return
@@ -440,7 +439,7 @@ async def ff_item(
     embed.add_field(name="ID", value=f"`{item.get('itemID')}`", inline=True)
     embed.set_thumbnail(url=ff_catalog.icon_url(item.get("itemID")))
     embed.set_footer(text=FOOTER)
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message( view=compose(embed))
 
 
 # ------------------------------------------------------------------ /ff ocr

@@ -2,6 +2,7 @@ from config import replace_emojis, get_emoji
 """View для Кто хочет стать миллионером."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -47,9 +48,9 @@ class MillionaireView(discord.ui.View):
         view = MillionaireQuestionView(self.guild_id, self.user_id, self.bet, self.questions, self.current_question, self.current_prize, self.multiplier)
 
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response( view=compose(embed, view))
         else:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     async def finish_game(self, interaction: discord.Interaction, is_win: bool) -> None:
         """Завершить игру."""
@@ -96,9 +97,9 @@ class MillionaireView(discord.ui.View):
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=None)
+            await interaction.edit_original_response( view=compose(embed, None))
         else:
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class MillionaireQuestionView(discord.ui.View):
@@ -144,7 +145,7 @@ class MillionaireQuestionView(discord.ui.View):
             view.current_prize = self.current_prize
             view.multiplier = self.multiplier
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
 
             # Показать следующий вопрос через 2 секунды
             import asyncio

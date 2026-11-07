@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -110,13 +111,11 @@ async def run_statistic(
     """Общая логика OCR-статистики (используется /statistic и /ff ocr)."""
     ctype = (screenshot.content_type or "").lower()
     if not ctype.startswith("image/"):
-        await interaction.response.send_message(
-            embed=_error_embed("Файл не является изображением."), ephemeral=True
+        await interaction.response.send_message( view=compose(_error_embed("Файл не является изображением.")), ephemeral=True
         )
         return
     if screenshot.size and screenshot.size > MAX_ATTACH:
-        await interaction.response.send_message(
-            embed=_error_embed("Файл слишком большой (макс. 10 МБ)."),
+        await interaction.response.send_message( view=compose(_error_embed("Файл слишком большой (макс. 10 МБ).")),
             ephemeral=True,
         )
         return
@@ -128,18 +127,16 @@ async def run_statistic(
         boxes = await extract_text_boxes(data)
     except Exception:
         logger.exception("OCR failed for /statistic")
-        await interaction.followup.send(
-            embed=_error_embed("Ошибка OCR — не удалось обработать изображение."),
+        await interaction.followup.send( view=compose(_error_embed("Ошибка OCR — не удалось обработать изображение.")),
             ephemeral=True,
         )
         return
 
     if not boxes:
-        await interaction.followup.send(
-            embed=_error_embed(
+        await interaction.followup.send( view=compose(_error_embed(
                 "На скриншоте не найдено текста. "
                 "Нужен экран результатов «Битва отрядов»."
-            ),
+            )),
             ephemeral=True,
         )
         return
@@ -151,11 +148,10 @@ async def run_statistic(
             len(boxes),
             " | ".join(b["text"] for b in boxes[:60]),
         )
-        await interaction.followup.send(
-            embed=_error_embed(
+        await interaction.followup.send( view=compose(_error_embed(
                 "Не удалось распознать таблицу игроков. "
                 "Убедитесь, что это экран результатов CS 4x4."
-            ),
+            )),
             ephemeral=True,
         )
         return
@@ -170,7 +166,7 @@ async def run_statistic(
         side = None
     parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
-    await interaction.followup.send(embed=_build_embed(parsed))
+    await interaction.followup.send( view=compose(_build_embed(parsed)))
 
 
 class StatisticCog(commands.Cog):

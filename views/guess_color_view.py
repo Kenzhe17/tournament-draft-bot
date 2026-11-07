@@ -2,6 +2,7 @@ from config import replace_emojis
 """Guess color game view."""
 
 import discord
+from utils.design import compose
 from discord.ui import Button, Modal, TextInput, View
 
 from games.guess_color import Color, random_color
@@ -42,7 +43,7 @@ class ColorBetModal(Modal, title="Введите ставку"):
                 description=f"Ставка: {bet} 🪙\nУгадайте цвет!",
                 color=discord.Color.orange(),
             )
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         except ValueError:
             await interaction.response.send_message(
@@ -99,4 +100,4 @@ class GuessColorGameView(View):
         )
 
         self.clear_items()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message( view=compose(embed, self))

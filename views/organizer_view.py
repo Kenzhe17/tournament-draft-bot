@@ -3,6 +3,8 @@
 import logging
 
 import discord
+from utils.design import compose, smart_view
+
 from discord.ui import Modal, TextInput, View, Button, button, Select
 
 from config import BOT_OWNER_ID, MANAGER_ROLE_ID, replace_emojis, get_emoji, TOURNAMENT_CHANNELS, ORG_ROLE_MAP
@@ -115,7 +117,7 @@ class ChannelSelect(Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         channel_id = int(self.values[0])
         view = OrganizerMenuView(self.guild_id, channel_id)
-        await interaction.response.edit_message(view=view)
+        await interaction.response.edit_message(view=smart_view(interaction.message, view))
 
 
 class ChannelSelectView(View):
@@ -186,13 +188,13 @@ class OrganizerManagementButton(Button):
             view = OrganizerMenuView(self.guild_id, user_channel_id)
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
-            await interaction.followup.send(view=view, ephemeral=True)
+            await interaction.followup.send(view=compose(view=compose(view=view)), ephemeral=True)
         else:
             # Open channel selection view for MANAGER_ROLE or admin
             view = ChannelSelectView(self.guild_id, self.guild)
             await interaction.response.defer(ephemeral=True)
             await interaction.followup.send("✅ Сообщение для управления ролью организатора создано", ephemeral=True)
-            await interaction.followup.send(view=view, ephemeral=True)
+            await interaction.followup.send(view=compose(view=compose(view=view)), ephemeral=True)
 
 
 class OrganizerMenuView(View):
@@ -234,7 +236,7 @@ class NotificationButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         view = NotificationMenuView(self.guild_id, self.channel_id)
-        await interaction.response.send_message(view=view, ephemeral=True)
+        await interaction.response.send_message(view=compose(view=compose(view=view)), ephemeral=True)
 
 
 class NotificationMenuView(View):
@@ -435,8 +437,7 @@ class AddOrganizerButton(Button):
         view.add_item(select)
 
         await interaction.response.send_message(
-            "Выберите пользователя для добавления:",
-            view=view,
+            view=compose(text="Выберите пользователя для добавления:", view=compose(view=view)),
             ephemeral=True
         )
 
@@ -537,7 +538,7 @@ class AddOrganizerSelect(Select):
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)
 
@@ -648,7 +649,7 @@ class RemoveOrganizerButton(Button):
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)
 
@@ -721,8 +722,7 @@ class TransferOrganizerButton(Button):
         view.add_item(select)
 
         await interaction.response.send_message(
-            "Выберите нового основного организатора:",
-            view=view,
+            view=compose(text="Выберите нового основного организатора:", view=compose(view=view)),
             ephemeral=True
         )
 
@@ -823,6 +823,6 @@ class TransferOrganizerSelect(Select):
                 # Rebuild view
                 view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)

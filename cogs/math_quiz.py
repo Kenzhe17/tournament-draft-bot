@@ -6,6 +6,7 @@ import logging
 from typing import TYPE_CHECKING, Dict, List
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -69,7 +70,7 @@ class QuizLobbyView(discord.ui.View):
         await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, self.bet)
         self.players.append(interaction.user)
 
-        await interaction.edit_original_response(embed=self.build_embed(), view=self)
+        await interaction.edit_original_response( view=compose(self.build_embed(), self))
 
     @discord.ui.button(label="Выйти", style=discord.ButtonStyle.red, custom_id="math_quiz_leave")
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -86,7 +87,7 @@ class QuizLobbyView(discord.ui.View):
         await user_balance_store.add_balance(self.guild_id, interaction.user.id, self.bet)
         self.players.remove(interaction.user)
 
-        await interaction.edit_original_response(embed=self.build_embed(), view=self)
+        await interaction.edit_original_response( view=compose(self.build_embed(), self))
 
     @discord.ui.button(label="Старт", style=discord.ButtonStyle.blurple, custom_id="math_quiz_start")
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -147,7 +148,7 @@ class QuizLobbyView(discord.ui.View):
                 color=0xF1C40F
             )
             round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-            await original_message.edit(embed=round_embed, view=None)
+            await original_message.edit( view=compose(round_embed, None))
 
             round_solved = False
 
@@ -213,7 +214,7 @@ class QuizLobbyView(discord.ui.View):
             ),
             color=0xF1C40F
         )
-        await original_message.edit(embed=final_embed)
+        await original_message.edit( view=compose(final_embed))
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, custom_id="math_quiz_cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -232,7 +233,7 @@ class QuizLobbyView(discord.ui.View):
             description="Создатель распустил лобби. Все ставки возвращены на счета.",
             color=0xED4245
         )
-        await interaction.edit_original_response(embed=cancel_embed, view=None)
+        await interaction.edit_original_response( view=compose(cancel_embed, None))
 
 
 # ==========================================
@@ -276,7 +277,7 @@ class MathQuizCog(commands.Cog):
 
         # Create lobby view directly in the thread
         lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-        await interaction.response.send_message(embed=lobby_view.build_embed(), view=lobby_view)
+        await interaction.response.send_message( view=compose(lobby_view.build_embed(), lobby_view))
 
         if not lobby_view.started:
             return
@@ -313,7 +314,7 @@ class MathQuizCog(commands.Cog):
                 color=0xF1C40F
             )
             round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-            await message.edit(embed=round_embed, view=None)
+            await message.edit( view=compose(round_embed, None))
 
             round_solved = False
             messages_to_clean: List[discord.Message] = []
@@ -385,7 +386,7 @@ class MathQuizCog(commands.Cog):
             color=0x2ECC71
         )
 
-        await message.edit(embed=final_embed, view=None)
+        await message.edit( view=compose(final_embed, None))
 
 
 async def setup(bot: "TournamentBot"):

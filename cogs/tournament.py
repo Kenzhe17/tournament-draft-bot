@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -118,7 +120,7 @@ class TournamentCog(commands.Cog):
                     channel = interaction.guild.get_channel(existing.channel_id)
                     if channel:
                         message = await channel.fetch_message(existing.message_id)
-                        await message.edit(view=None)
+                        await message.edit(view=smart_view(message, None))
                 except Exception:
                     pass
             store.delete(interaction.guild_id, interaction.channel_id)
@@ -163,7 +165,7 @@ class TournamentCog(commands.Cog):
         )
 
         # Send main tournament message through channel.send to unbind it
-        message = await interaction.channel.send(embed=embed, view=view)
+        message = await interaction.channel.send( view=compose(embed, view))
 
         tournament.message_id = message.id
         store.set(tournament)
@@ -194,7 +196,7 @@ class TournamentCog(commands.Cog):
                         new_embed = build_multi_channel_embed(interaction.guild)
                         new_view = View()
                         new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
-                        await update_message.edit(embed=new_embed, view=new_view)
+                        await update_message.edit( view=compose(new_embed, new_view))
                 except Exception:
                     pass
 
@@ -255,7 +257,7 @@ class TournamentCog(commands.Cog):
                         new_embed = build_multi_channel_embed(interaction.guild)
                         new_view = View()
                         new_view.add_item(OrganizerManagementButton(interaction.guild_id, channel_id, interaction.guild))
-                        await update_message.edit(embed=new_embed, view=new_view)
+                        await update_message.edit( view=compose(new_embed, new_view))
                 except Exception:
                     pass
 
@@ -531,10 +533,10 @@ class TournamentCog(commands.Cog):
         embed = await build_leaderboard_embed(interaction.guild_id, page=1, leaderboard_type="elo", user_id=interaction.user.id)
 
         try:
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message( view=compose(embed, view))
         except discord.NotFound:
             # Interaction expired, use followup
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send( view=compose(embed, view))
 
     @app_commands.command(name="help", description="Показать справку по командам")
     async def help_command(self, interaction: discord.Interaction) -> None:
@@ -545,7 +547,7 @@ class TournamentCog(commands.Cog):
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=False)
 
     @economy_group.command(name="balance", description="Показать ваш баланс")
     async def balance(self, interaction: discord.Interaction) -> None:
@@ -566,7 +568,7 @@ class TournamentCog(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         try:
-            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await interaction.response.send_message( view=compose(embed), ephemeral=False)
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
@@ -694,7 +696,7 @@ class TournamentCog(commands.Cog):
         view = ShopMainView()
 
         try:
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
@@ -815,7 +817,7 @@ class TournamentCog(commands.Cog):
         if equipped_items:
             view.add_item(InventoryUnequipSelect(equipped_items))
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     # @app_commands.command(name="rps", description="Камень-Ножницы-Бумага")
     # async def rps(self, interaction: discord.Interaction) -> None:
@@ -871,7 +873,7 @@ class TournamentCog(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesMainView(interaction.user.id, interaction.guild_id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 
@@ -1291,7 +1293,7 @@ class TournamentCog(commands.Cog):
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message( view=compose(embed, view))
 
     @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
@@ -1323,7 +1325,7 @@ class TournamentCog(commands.Cog):
         view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
         embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
 
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message( view=compose(embed, view))
 
     @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
@@ -1374,7 +1376,7 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message( view=compose(embed))
 
     @economy_group.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
@@ -1400,7 +1402,7 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message( view=compose(embed))
 
     # @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
     # @app_commands.describe(
@@ -1557,7 +1559,7 @@ class TournamentCog(commands.Cog):
     #     embed.add_field(name=replace_emojis("🔥 Max Kills", value=str(stats.best_match_kills), inline=True)
     #     embed.add_field(name=replace_emojis("📊 Last ELO Change", value=f"{stats.last_elo_change:+.0f}", inline=True)
 
-    #     await interaction.followup.send(embed=embed)
+    #     await interaction.followup.send( view=compose(embed))
 
     @app_commands.command(name="booyah", description="Рекорды турнира")
     async def booyah(self, interaction: discord.Interaction) -> None:
@@ -1569,8 +1571,7 @@ class TournamentCog(commands.Cog):
         all_players = await player_stats_store.get_all(interaction.guild_id)
 
         if not all_players:
-            await interaction.edit_original_response(
-                content=replace_emojis("❌ Пока нет данных для рекордов."),
+            await interaction.edit_original_response( view=text_card(replace_emojis("❌ Пока нет данных для рекордов.")),
             )
             return
 
@@ -1665,7 +1666,7 @@ class TournamentCog(commands.Cog):
 
         embed.description = desc
 
-        await interaction.edit_original_response(embed=embed)
+        await interaction.edit_original_response( view=compose(embed))
 
     @commands.command(name="elo")
     @is_org()
@@ -2106,7 +2107,7 @@ class TournamentCog(commands.Cog):
             embed.add_field(name="Пользователь", value=f"{replace_emojis('white_arrow')} {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
             try:
-                await interaction.response.send_message(embed=embed)
+                await interaction.response.send_message( view=compose(embed))
             except (discord.NotFound, discord.DiscordServerError):
                 pass
         except ValueError as e:
@@ -2250,7 +2251,7 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await interaction.response.send_message( view=compose(embed), ephemeral=False)
         elif result['compensated']:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
@@ -2262,7 +2263,7 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await interaction.response.send_message( view=compose(embed), ephemeral=False)
         else:
             # Return fee since transfer failed
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
@@ -2321,7 +2322,7 @@ class TournamentCog(commands.Cog):
         test_emoji = get_rank_emoji(100)
         embed.add_field(name=replace_emojis("🧪 Тест (Radiant)"), value=f"`{test_emoji}`", inline=False)
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
     @app_commands.command(name="whoami", description="Узнать кто ты на самом деле")
     async def whoami(self, interaction: discord.Interaction) -> None:
@@ -2379,7 +2380,7 @@ class TournamentCog(commands.Cog):
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message( view=compose(embed))
 
     @app_commands.command(name="daily", description="Получить ежедневный бонус (лимит 500 монет)")
     async def daily(self, interaction: discord.Interaction) -> None:
@@ -2465,7 +2466,7 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message(embed=embed, ephemeral=False)
+            await interaction.response.send_message( view=compose(embed), ephemeral=False)
 
     @server_group.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
     async def role(self, interaction: discord.Interaction) -> None:
@@ -2508,7 +2509,7 @@ class TournamentCog(commands.Cog):
         view = GuideView()
 
         # Send the main welcome message directly to channel (not as followup)
-        await interaction.channel.send(embed=embed, view=view)
+        await interaction.channel.send( view=compose(embed, view))
 
         # Send confirmation to bot owner only
         await interaction.response.send_message(
@@ -2742,7 +2743,7 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
             color=discord.Color.blue()
         )
 
-        await channel.send(content=role_mention, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+        await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
         logger.info(f"Tournament notification sent: {action} in guild {guild.id}")
     except Exception as e:
         logger.error(f"Failed to send tournament notification: {e}")
@@ -2853,7 +2854,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="tournaments")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -2862,7 +2863,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="profile")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -2871,7 +2872,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="economy")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -2880,7 +2881,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="shop")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "pets":
             embed = discord.Embed(
@@ -2889,7 +2890,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="pets")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -2898,7 +2899,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="games")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -2907,7 +2908,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="ranks")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -2916,7 +2917,7 @@ class GuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = GuideView(current="organizers")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "rules":
             embed = discord.Embed(
@@ -2939,7 +2940,7 @@ class GuideSelectMenu(discord.ui.Select):
                 inline=False
             )
             view = GuideView(current="rules")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class GuideView(discord.ui.View):
@@ -3055,7 +3056,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="tournaments")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "profile":
             embed = discord.Embed(
@@ -3064,7 +3065,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="profile")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "economy":
             embed = discord.Embed(
@@ -3073,7 +3074,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="economy")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "shop":
             embed = discord.Embed(
@@ -3082,7 +3083,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="shop")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "pets":
             embed = discord.Embed(
@@ -3091,7 +3092,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="pets")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "games":
             embed = discord.Embed(
@@ -3100,7 +3101,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="games")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "ranks":
             embed = discord.Embed(
@@ -3109,7 +3110,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="ranks")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "organizers":
             embed = discord.Embed(
@@ -3118,7 +3119,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 color=discord.Color.from_rgb(100, 38, 56)
             )
             view = HelpGuideView(current="organizers")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         elif self.values[0] == "rules":
             embed = discord.Embed(
@@ -3141,7 +3142,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
                 inline=False
             )
             view = HelpGuideView(current="rules")
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class HelpGuideView(discord.ui.View):

@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -77,7 +78,7 @@ class EloCog(commands.Cog):
             inline=True
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
     @player_group.command(name="ulti_history", description="Show your Ultimatum Elo match history")
     async def show_history(self, interaction: discord.Interaction) -> None:
@@ -109,7 +110,7 @@ class EloCog(commands.Cog):
                 inline=False
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

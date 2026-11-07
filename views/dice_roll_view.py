@@ -2,6 +2,7 @@ from config import replace_emojis
 """Dice roll game view."""
 
 import discord
+from utils.design import compose
 from discord.ui import Button, Modal, TextInput, View
 
 from games.dice_roll import roll_dice
@@ -42,7 +43,7 @@ class DiceBetModal(Modal, title="Введите ставку"):
                 description=f"Ставка: {bet} 🪙\nНажмите чтобы бросить кубик!",
                 color=discord.Color.blue(),
             )
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
         except ValueError:
             await interaction.response.send_message(
@@ -89,4 +90,4 @@ class DiceRollGameView(View):
         )
 
         self.clear_items()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message( view=compose(embed, self))

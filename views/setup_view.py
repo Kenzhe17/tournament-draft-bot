@@ -9,6 +9,8 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -125,14 +127,14 @@ class PlayerSelectView(discord.ui.View):
         if self.page > 1:
             self.page -= 1
             self.refresh_view()
-            await interaction.response.edit_message(view=self)
+            await interaction.response.edit_message(view=smart_view(interaction.message, self))
 
     async def next_callback(self, interaction: discord.Interaction) -> None:
         """Обработка кнопки следующей страницы."""
         if self.page < self.total_pages:
             self.page += 1
             self.refresh_view()
-            await interaction.response.edit_message(view=self)
+            await interaction.response.edit_message(view=smart_view(interaction.message, self))
 
 
 class CircleSelectButton(discord.ui.Button):
@@ -661,8 +663,7 @@ class DeletePlayerButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                "Выберите игрока для удаления:",
-                view=view,
+                view=compose(text="Выберите игрока для удаления:", view=view),
                 ephemeral=True
             )
         except discord.InteractionResponded:
@@ -795,8 +796,7 @@ class SwapPlayersButton(discord.ui.Button):
 
             try:
                 await interaction.response.send_message(
-                    f"Выберите игрока для обмена с `{first_player}`:",
-                    view=view2,
+                    view=compose(text=f"Выберите игрока для обмена с `{first_player}`:", view=view2),
                     ephemeral=True
                 )
             except discord.InteractionResponded:
@@ -806,8 +806,7 @@ class SwapPlayersButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                "Выберите первого игрока для обмена:",
-                view=view,
+                view=compose(text="Выберите первого игрока для обмена:", view=view),
                 ephemeral=True
             )
         except discord.InteractionResponded:
@@ -934,8 +933,7 @@ class MovePlayerButton(discord.ui.Button):
 
             try:
                 await interaction.response.send_message(
-                    f"Выберите круг для перемещения игрока `{selected_player}`:",
-                    view=view2,
+                    view=compose(text=f"Выберите круг для перемещения игрока `{selected_player}`:", view=view2),
                     ephemeral=True
                 )
             except discord.InteractionResponded:
@@ -945,8 +943,7 @@ class MovePlayerButton(discord.ui.Button):
 
         try:
             await interaction.response.send_message(
-                "Выберите игрока для перемещения:",
-                view=view,
+                view=compose(text="Выберите игрока для перемещения:", view=view),
                 ephemeral=True
             )
         except discord.InteractionResponded:
@@ -1349,9 +1346,7 @@ class ToggleRegistrationButton(discord.ui.Button):
         new_view = OrgMenuView(tournament)
         action = "закрыта" if new_state == RegistrationState.CLOSED else "открыта"
         try:
-            await interaction.response.edit_message(
-                content="Организаторское меню:",
-                view=new_view
+            await interaction.response.edit_message( view=compose(text="Организаторское меню:", view=new_view)
             )
         except discord.NotFound:
             pass
@@ -1412,9 +1407,7 @@ class ToggleIsolationButton(discord.ui.Button):
         new_view = OrgMenuView(tournament)
         action = "отключена" if new_state == RegistrationState.OPEN else "включена"
         try:
-            await interaction.response.edit_message(
-                content="Организаторское меню:",
-                view=new_view
+            await interaction.response.edit_message( view=compose(text="Организаторское меню:", view=new_view)
             )
         except discord.NotFound:
             pass
@@ -1499,8 +1492,7 @@ class OrgMenuButton(discord.ui.Button):
         
         try:
             await interaction.response.send_message(
-                "Организаторское меню:",
-                view=view,
+                view=compose(text="Организаторское меню:", view=view),
                 ephemeral=True
             )
         except discord.InteractionResponded:
@@ -1687,7 +1679,7 @@ class NotifyButton(discord.ui.Button):
         )
 
         try:
-            await channel.send(content=role_mention, embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+            await channel.send( view=compose(embed, text=role_mention), allowed_mentions=discord.AllowedMentions(roles=True))
             await interaction.response.send_message(
                 "✅ Уведомление отправлено.",
                 ephemeral=True
@@ -1737,8 +1729,7 @@ class LimitButton(discord.ui.Button):
         # Create limit settings view
         view = LimitSettingsView(tournament)
         await interaction.response.send_message(
-            "Настройка лимитов кругов:",
-            view=view,
+            view=compose(text="Настройка лимитов кругов:", view=view),
             ephemeral=True
         )
 
@@ -1793,9 +1784,7 @@ class LimitToggleButton(discord.ui.Button):
         # Update view with new button state
         new_view = LimitSettingsView(tournament)
         try:
-            await interaction.response.edit_message(
-                content="Настройка лимитов кругов:",
-                view=new_view
+            await interaction.response.edit_message( view=compose(text="Настройка лимитов кругов:", view=new_view)
             )
         except discord.NotFound:
             pass

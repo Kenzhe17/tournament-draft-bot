@@ -2,6 +2,7 @@ import math
 from typing import TYPE_CHECKING, Optional
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -152,7 +153,7 @@ class SellCog(commands.Cog):
             color=0x2ECC71
         )
 
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send( view=compose(embed))
 
 
 async def setup(bot: "TournamentBot"):

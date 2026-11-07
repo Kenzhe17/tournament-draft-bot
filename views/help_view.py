@@ -2,6 +2,7 @@ from config import replace_emojis, get_emoji
 """View для интерактивной справки по командам."""
 
 import discord
+from utils.design import compose
 
 
 class HelpCategoryButton(discord.ui.Button):
@@ -32,7 +33,7 @@ class HelpCategoryButton(discord.ui.Button):
         embed = build_help_category_embed(self.category)
         view = HelpView(self.category)
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class HelpBackButton(discord.ui.Button):
@@ -54,7 +55,7 @@ class HelpBackButton(discord.ui.Button):
         )
 
         view = HelpMainView()
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class HelpView(discord.ui.View):

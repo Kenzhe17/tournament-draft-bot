@@ -1,6 +1,7 @@
 """Монетка - PvP/PvE игра."""
 
 import discord
+from utils.design import compose, text_card
 import secrets
 import asyncio
 from typing import Optional
@@ -188,10 +189,7 @@ class CoinFlipCancelButton(discord.ui.Button):
             )
 
         self.game.is_active = False
-        await interaction.response.edit_message(
-            content="❌ Игра отменена. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
 
@@ -250,10 +248,7 @@ class CoinFlipDeclineButton(discord.ui.Button):
             )
 
         self.game.is_active = False
-        await interaction.response.edit_message(
-            content="❌ Вызов отклонён. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Вызов отклонён. Ставка возвращена.")
         )
 
 
@@ -332,7 +327,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
 
         # Edit the existing message instead of sending new one
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 async def start_game(
@@ -347,7 +342,7 @@ async def start_game(
         item.disabled = True
 
     anim_embed = view.create_game_embed("animating")
-    await interaction.response.edit_message(embed=anim_embed, view=view)
+    await interaction.response.edit_message( view=compose(anim_embed, view))
 
     # Wait for animation
     await asyncio.sleep(2)
@@ -392,7 +387,7 @@ async def start_game(
     result_view = discord.ui.View(timeout=None)
     result_view.add_item(CoinFlipPlayAgainButton(game.bet, game.opponent_id))
 
-    await interaction.edit_original_response(embed=result_embed, view=result_view)
+    await interaction.edit_original_response( view=compose(result_embed, result_view))
 
 
 async def create_coin_flip_game(
@@ -458,4 +453,4 @@ async def create_coin_flip_game(
     view.add_item(CoinFlipCancelButton(game))
 
     embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.response.send_message( view=compose(embed, view))

@@ -3,6 +3,8 @@
 import logging
 
 import discord
+from utils.design import compose, smart_view
+
 from discord.ext import commands
 
 from config import replace_emojis, get_emoji, GUILD_ID
@@ -101,7 +103,7 @@ class UltimatumJoinButton(discord.ui.Button):
                 if cog:
                     new_embed = await cog._build_tournament_embed(tournament)
                     new_view = await build_ultimatum_setup_view(interaction.guild_id, interaction.channel_id, tournament)
-                    await interaction.message.edit(embed=new_embed, view=new_view)
+                    await interaction.message.edit( view=compose(new_embed, new_view))
             except Exception as e:
                 logger.error(f"Error updating tournament message after join: {e}", exc_info=True)
 
@@ -168,7 +170,7 @@ class UltimatumLeaveButton(discord.ui.Button):
                 if cog:
                     new_embed = await cog._build_tournament_embed(tournament)
                     new_view = await build_ultimatum_setup_view(interaction.guild_id, interaction.channel_id, tournament)
-                    await interaction.message.edit(embed=new_embed, view=new_view)
+                    await interaction.message.edit( view=compose(new_embed, new_view))
             except Exception as e:
                 logger.error(f"Error updating tournament message after leave: {e}", exc_info=True)
         except Exception as e:
@@ -217,7 +219,7 @@ class UltimatumOrgMenuButton(discord.ui.Button):
             color=discord.Color.red()
         )
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
 
 class UltimatumOrgMenuView(discord.ui.View):
@@ -317,7 +319,7 @@ class UltimatumOrgMenuView(discord.ui.View):
             color=discord.Color.red()
         )
         
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
     async def start_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
@@ -377,7 +379,7 @@ class UltimatumOrgMenuView(discord.ui.View):
                 if channel:
                     async for msg in channel.history(limit=10):
                         if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            await msg.edit(embed=new_embed)
+                            await msg.edit( view=compose(new_embed))
                             break
         except Exception as e:
             logger.error(f"Error updating tournament message after toggle: {e}", exc_info=True)
@@ -412,7 +414,7 @@ class UltimatumOrgMenuView(discord.ui.View):
             color=discord.Color.red()
         )
         
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send( view=compose(embed, view), ephemeral=True)
 
 
 class UltimatumRemovePlayerSelect(discord.ui.Select):
@@ -449,7 +451,7 @@ class UltimatumRemovePlayerSelect(discord.ui.Select):
                 if channel:
                     async for msg in channel.history(limit=10):
                         if msg.embeds and msg.embeds[0].title and "УЛЬТИМАТУМ" in msg.embeds[0].title:
-                            await msg.edit(embed=new_embed, view=new_view)
+                            await msg.edit( view=compose(new_embed, new_view))
                             break
         except Exception as e:
             logger.error(f"Error updating tournament message after player removal: {e}", exc_info=True)
@@ -522,7 +524,7 @@ class UltimatumStartButton(discord.ui.Button):
                     logger.info(f"Built round embed: {new_embed}, view: {new_view}")
                     
                     # Send new message with round embed and view instead of editing
-                    round_message = await interaction.channel.send(embed=new_embed, view=new_view)
+                    round_message = await interaction.channel.send( view=compose(new_embed, new_view))
                     logger.info(f"Sent round message: {round_message.id}")
                     
                     # Track the round message for future updates
@@ -535,7 +537,7 @@ class UltimatumStartButton(discord.ui.Button):
                 else:
                     # Fallback: just clear items
                     self.view.clear_items()
-                    await interaction.message.edit(view=self.view)
+                    await interaction.message.edit(view=smart_view(interaction.message, self.view))
             except discord.NotFound:
                 pass
             except Exception as e:

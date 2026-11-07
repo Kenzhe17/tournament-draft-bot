@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -103,7 +104,7 @@ class MMCog(commands.Cog):
         view = build_search_view(self.bot, search)
 
         # Отправить вечный embed
-        message = await interaction.channel.send(embed=embed, view=view)
+        message = await interaction.channel.send( view=compose(embed, view))
 
         search.message_id = message.id
         mm_search_store.set(search)
@@ -148,9 +149,7 @@ class MMCog(commands.Cog):
                         )
                         embed.add_field(name="Игроки", value=f"{current}/{required}", inline=True)
                         
-                        await notification_channel.send(
-                            content=role_mention,
-                            embed=embed,
+                        await notification_channel.send( view=compose(embed, text=role_mention),
                             allowed_mentions=discord.AllowedMentions(roles=True)
                         )
                 except Exception as e:
@@ -185,7 +184,7 @@ class MMCog(commands.Cog):
                             message = await channel.fetch_message(search.message_id)
                             embed = await build_search_embed(search, channel.guild)
                             view = build_search_view(self.bot, search)
-                            await message.edit(embed=embed, view=view)
+                            await message.edit( view=compose(embed, view))
                             await channel.send(
                                 f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
                             )
@@ -308,7 +307,7 @@ class MMCog(commands.Cog):
         self.bot._register_view(view)
 
         # Отправить в канал турниров
-        message = await tournament_channel.send(embed=embed, view=view)
+        message = await tournament_channel.send( view=compose(embed, view))
         tournament.message_id = message.id
         store.set(tournament)
 
@@ -327,7 +326,7 @@ class MMCog(commands.Cog):
         search_view = build_search_view(self.bot, search)
         try:
             search_message = await interaction_channel.fetch_message(search.message_id)
-            await search_message.edit(embed=search_embed, view=search_view)
+            await search_message.edit( view=compose(search_embed, search_view))
         except Exception as e:
             logger.error(f"Error updating search embed: {e}")
 
@@ -354,7 +353,7 @@ class MMCog(commands.Cog):
                                 message = await channel.fetch_message(search.message_id)
                                 embed = await build_search_embed(search, channel.guild)
                                 view = build_search_view(self.bot, search)
-                                await message.edit(embed=embed, view=view)
+                                await message.edit( view=compose(embed, view))
                         except Exception as e:
                             logger.error(f"Error resetting search channel: {e}")
 

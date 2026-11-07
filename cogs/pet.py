@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
 import discord
+from utils.design import compose, text_card, smart_view
+
 from discord import app_commands
 from discord.ext import commands
 
@@ -140,7 +142,7 @@ class PetCog(commands.Cog):
         )
 
         view = PetDeleteConfirmView(owner_id=interaction.user.id, pet_row=pet_dict)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
 
     @pet.command(name="coowner", description="Предложить игроку стать со-опекуном питомца")
     @app_commands.describe(target="Игрок, которому предлагаете со-опекунство")
@@ -209,7 +211,7 @@ class PetCog(commands.Cog):
             pet_row=pet_dict
         )
 
-        await interaction.followup.send(content=target.mention, embed=embed, view=view)
+        await interaction.followup.send( view=compose(embed, view, text=target.mention))
 
     @pet.command(name="coowner_remove", description="Убрать текущего со-опекуна питомца")
     async def coowner_remove(self, interaction: discord.Interaction) -> None:
@@ -279,7 +281,7 @@ class PetCog(commands.Cog):
                 color=discord.Color.orange()
             )
 
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send( view=compose(embed))
 
     @pet.command(name="catalog", description="Показать каталог всех питомцев и их способностей")
     async def catalog(self, interaction: discord.Interaction) -> None:
@@ -304,9 +306,9 @@ class PetCog(commands.Cog):
         embed = await view.build_embed()
 
         try:
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message( view=compose(embed, view))
         except discord.NotFound:
-            await interaction.followup.send(embed=embed, view=view)
+            await interaction.followup.send( view=compose(embed, view))
 
 
 class PetTopView(discord.ui.View):
@@ -458,7 +460,7 @@ class PetTopPageButton(discord.ui.Button):
         view.refresh_buttons()
 
         embed = await view.build_embed()
-        await interaction.edit_original_response(embed=embed, view=view)
+        await interaction.edit_original_response( view=compose(embed, view))
 
 
 class PetCatalogView(discord.ui.View):
@@ -550,9 +552,9 @@ class PetCatalogView(discord.ui.View):
         
         # Всегда редактируем сообщение (для кнопок навигации)
         if interaction.response.is_done():
-            await interaction.edit_original_response(embed=embed, view=self)
+            await interaction.edit_original_response( view=compose(embed, self))
         else:
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message( view=compose(embed, self))
 
     async def prev_callback(self, interaction: discord.Interaction):
         """Предыдущий питомец."""
@@ -585,7 +587,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
         return
 
     pet_dict = dict(pet_row)
@@ -601,7 +603,7 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
             ),
             color=discord.Color.red()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
         return
 
     # Получить определение питомца
@@ -618,9 +620,9 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
     # Создать View с кнопками
     view = PetProfileView(pet, pet_dict, interaction)
     if file:
-        await interaction.response.send_message(embed=embed, view=view, file=file)
+        await interaction.response.send_message( view=compose(embed, view), file=file)
     else:
-        await interaction.response.send_message(embed=embed, view=view)
+        await interaction.response.send_message( view=compose(embed, view))
 
     # Получаем исходное сообщение для редактирования
     msg = await interaction.original_response()
@@ -661,7 +663,7 @@ class PetProfileView(discord.ui.View):
     async def on_timeout(self) -> None:
         """Remove buttons on timeout."""
         if self.message:
-            await self.message.edit(view=None)
+            await self.message.edit(view=smart_view(self.message, None))
 
 
 class FeedPetButton(discord.ui.Button):
@@ -757,7 +759,7 @@ class FeedPetButton(discord.ui.Button):
 
                     attachments = [new_file] if new_file else []
 
-                    await self.message.edit(embed=new_embed, view=new_view, attachments=attachments)
+                    await self.message.edit( view=compose(new_embed, new_view), attachments=attachments)
                 except Exception as e:
                     logger.error(f"Failed to edit pet profile message after feeding: {e}")
                     logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
@@ -771,7 +773,7 @@ class FeedPetButton(discord.ui.Button):
                 ),
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed), ephemeral=True)
         else:
             # Вернуть деньги
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, self.feed_cost)
@@ -880,9 +882,9 @@ class SafeModal(discord.ui.Modal):
                         item.pet_dict = self.pet_dict
                 
                 if new_file:
-                    await message.edit(embed=new_embed, view=new_view, attachments=[new_file])
+                    await message.edit( view=compose(new_embed, new_view), attachments=[new_file])
                 else:
-                    await message.edit(embed=new_embed, view=new_view)
+                    await message.edit( view=compose(new_embed, new_view))
             except Exception as e:
                 logger.error(f"Error updating pet profile after safe change: {e}")
 
@@ -976,7 +978,7 @@ class RenamePetModal(discord.ui.Modal):
 
                 attachments = [new_file] if new_file else []
 
-                await self.message.edit(embed=new_embed, view=new_view, attachments=attachments)
+                await self.message.edit( view=compose(new_embed, new_view), attachments=attachments)
             except Exception as e:
                 logger.error(f"Failed to edit pet profile message: {e}")
                 logger.error(f"Exception details: {type(e).__name__}: {str(e)}")
@@ -1050,8 +1052,7 @@ class ProtectItemButton(discord.ui.Button):
 
         view = ProtectItemSelectView(self.pet_id, options, self.interaction)
         await interaction.response.send_message(
-            "Выберите предмет для защиты:",
-            view=view,
+            view=compose(text="Выберите предмет для защиты:", view=view),
             ephemeral=True
         )
 
@@ -1087,14 +1088,10 @@ class ProtectItemSelectView(discord.ui.View):
             from storage.shop_store import shop_store
             item = shop_store.get_item(selected_item_id)
 
-            await interaction.response.edit_message(
-                content=replace_emojis(f"✅ Предмет **{item.name}** теперь защищён питомцем!"),
-                view=None
+            await interaction.response.edit_message( view=compose(text=replace_emojis(f"✅ Предмет **{item.name}** теперь защищён питомцем!"), view=None)
             )
         else:
-            await interaction.response.edit_message(
-                content=replace_emojis("❌ Не удалось защитить предмет."),
-                view=None
+            await interaction.response.edit_message( view=compose(text=replace_emojis("❌ Не удалось защитить предмет."), view=None)
             )
 
 
@@ -1118,10 +1115,7 @@ class PetDeleteConfirmView(discord.ui.View):
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM pets WHERE pet_id = $1", self.pet_row["pet_id"])
 
-        await interaction.response.edit_message(
-            content=replace_emojis("❌ Действие выполнено. Питомец удален."),
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card(replace_emojis("❌ Действие выполнено. Питомец удален."))
         )
 
         pet_name = self.pet_row["pet_name"]
@@ -1154,9 +1148,9 @@ class PetDeleteConfirmView(discord.ui.View):
             public_embed.set_thumbnail(url=image_url)
 
         if file:
-            await interaction.followup.send(embed=public_embed, file=file)
+            await interaction.followup.send( view=compose(public_embed), file=file)
         else:
-            await interaction.followup.send(embed=public_embed)
+            await interaction.followup.send( view=compose(public_embed))
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary, custom_id="pet_delete:cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1167,10 +1161,7 @@ class PetDeleteConfirmView(discord.ui.View):
             )
             return
 
-        await interaction.response.edit_message(
-            content=replace_emojis("❌ Процесс отменен. Ваш питомец остался с вами! 🐾"),
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card(replace_emojis("❌ Процесс отменен. Ваш питомец остался с вами! 🐾"))
         )
 
 
@@ -1233,7 +1224,7 @@ class CoOwnerInviteView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-        await interaction.response.edit_message(embed=success_embed, view=self)
+        await interaction.response.edit_message( view=compose(success_embed, self))
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.secondary, custom_id="pet_coowner:decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1258,7 +1249,7 @@ class CoOwnerInviteView(discord.ui.View):
         for child in self.children:
             child.disabled = True
 
-        await interaction.response.edit_message(embed=decline_embed, view=self)
+        await interaction.response.edit_message( view=compose(decline_embed, self))
 
 
 async def setup(bot: commands.Bot) -> None:

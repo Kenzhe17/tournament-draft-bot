@@ -2,6 +2,7 @@
 from config import replace_emojis, get_emoji
 
 import discord
+from utils.design import compose
 from storage.player_stats_store import player_stats_store
 
 
@@ -243,11 +244,11 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)
         try:
-            await interaction.edit_original_response(embed=embed, view=view)
+            await interaction.edit_original_response( view=compose(embed, view))
         except discord.NotFound:
             # If original response is not available, try followup
             try:
-                await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+                await interaction.followup.send( view=compose(embed, view), ephemeral=True)
             except discord.NotFound:
                 # If followup also fails, just log and ignore
                 pass

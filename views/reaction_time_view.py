@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Время реакции."""
 
 import discord
+from utils.design import compose
 import random
 import time
 from storage.user_balance_store import user_balance_store
@@ -29,7 +30,7 @@ class ReactionTimeView(discord.ui.View):
             color=discord.Color.orange()
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
         # Случайная задержка 2-5 секунд
         delay = random.uniform(2, 5)
@@ -48,7 +49,7 @@ class ReactionTimeView(discord.ui.View):
 
         view = ReactionButtonView(self.guild_id, self.user_id, self.bet, self)
 
-        await interaction.edit_original_response(embed=embed, view=view)
+        await interaction.edit_original_response( view=compose(embed, view))
 
 
 class ReactionButtonView(discord.ui.View):
@@ -113,4 +114,4 @@ class ReactionButtonView(discord.ui.View):
 
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))

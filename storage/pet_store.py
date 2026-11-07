@@ -4,6 +4,7 @@ import logging
 import random
 import asyncpg
 import discord
+from utils.design import compose
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -273,12 +274,12 @@ class PetStore:
                                 filename = os.path.basename(local_image_path)
                                 file = discord.File(local_image_path, filename=filename)
                                 embed.set_thumbnail(url=f"attachment://{filename}")
-                                await hunger_channel.send(mentions, embed=embed, file=file)
+                                await hunger_channel.send(mentions, view=compose(embed), file=file)
                             elif image_url:
                                 embed.set_thumbnail(url=image_url)
-                                await hunger_channel.send(mentions, embed=embed)
+                                await hunger_channel.send(mentions, view=compose(embed))
                             else:
-                                await hunger_channel.send(mentions, embed=embed)
+                                await hunger_channel.send(mentions, view=compose(embed))
                             logger.info(f"Sent runaway alert for pet {pet.pet_name}")
                     except Exception as e:
                         logger.error(f"Failed to send runaway notification: {e}", exc_info=True)
@@ -319,12 +320,12 @@ class PetStore:
                             filename = os.path.basename(local_image_path)
                             file = discord.File(local_image_path, filename=filename)
                             embed.set_thumbnail(url=f"attachment://{filename}")
-                            await hunger_channel.send(mentions, embed=embed, file=file)
+                            await hunger_channel.send(mentions, view=compose(embed), file=file)
                         elif image_url:
                             embed.set_thumbnail(url=image_url)
-                            await hunger_channel.send(mentions, embed=embed)
+                            await hunger_channel.send(mentions, view=compose(embed))
                         else:
-                            await hunger_channel.send(mentions, embed=embed)
+                            await hunger_channel.send(mentions, view=compose(embed))
                         logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
                         pet.hunger_warning_sent = True
                     else:

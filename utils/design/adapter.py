@@ -56,13 +56,19 @@ _DEFAULT_ACCENT = colors.NEUTRAL
 
 
 def _accent_from_embed(embed: discord.Embed) -> int:
-    """Цвет Embed -> accent_color Container."""
+    """Цвет Embed -> accent_color Container.
+
+    Используется фактический цвет Embed — он становится акцентной
+    полосой Container (нативный аналог цветной полосы Embed).
+    """
     color = getattr(embed, "color", None)
     if color is None:
         return _DEFAULT_ACCENT
     value = color.value if hasattr(color, "value") else int(color)
-    # discord.Color.value — int; берём как есть для точного совпадения
-    return _COLOR_MAP.get(value, _DEFAULT_ACCENT)
+    # discord.Color.default() = 0 — нейтральный акцент
+    if value == 0:
+        return _DEFAULT_ACCENT
+    return value
 
 
 def _add_text(container: discord.ui.Container, content: str) -> None:
@@ -147,12 +153,22 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
 
 
 def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
-    """Извлечь ActionRow из items обычного View (по row-атрибуту)."""
+    """Извлечь ActionRow из items обычного View (по row-атрибуту).
+
+    Select Menu всегда получает отдельный ряд — Discord не позволяет
+    смешивать select с кнопками в одном ActionRow.
+    """
     rows_map: dict[int, discord.ui.ActionRow] = {}
+    select_rows: list[discord.ui.ActionRow] = []
     for item in view.children:
         if not hasattr(item, "custom_id") and not isinstance(
             item, (discord.ui.Button, discord.ui.Select)
         ):
+            continue
+        if isinstance(item, discord.ui.Select):
+            row = discord.ui.ActionRow()
+            row.add_item(item)
+            select_rows.append(row)
             continue
         row_idx = getattr(item, "row", None)
         if row_idx is None:
@@ -160,7 +176,7 @@ def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
         if row_idx not in rows_map:
             rows_map[row_idx] = discord.ui.ActionRow()
         rows_map[row_idx].add_item(item)
-    return [rows_map[k] for k in sorted(rows_map)]
+    return [rows_map[k] for k in sorted(rows_map)] + select_rows
 
 
 def compose(
@@ -168,6 +184,7 @@ def compose(
     view: discord.ui.View | discord.ui.LayoutView | None = None,
     *,
     accent: int | None = None,
+    text: str | None = None,
 ) -> discord.ui.LayoutView:
     """Собрать LayoutView из Embed и/или View.
 
@@ -188,6 +205,11 @@ def compose(
         else discord.ui.Container(accent_color=accent or colors.NEUTRAL)
     )
 
+    if text:
+        # Текст (бывший content=) идёт первым блоком карточки
+        container.add_item(discord.ui.TextDisplay(content=text))
+        container.add_item(separator())
+
     if view is not None:
         for row in _view_rows(view):
             container.add_item(row)
@@ -197,3 +219,98 @@ def compose(
     )
     layout.add_item(container)
     return layout
+
+
+def text_card(
+    content: str,
+    *,
+    accent: int | None = None,
+    title: str | None = None,
+    timeout: float | None = None,
+) -> discord.ui.LayoutView:
+    """V2-карточка из простого текста (замена content= для V2-сообщений)."""
+    from utils.design.layouts import DesignView
+
+    view = DesignView(
+        title=title,
+        accent=accent if accent is not None else _DEFAULT_ACCENT,
+        timeout=timeout if timeout is not None else 180.0,
+    )
+    view.text(content)
+    return view
+
+
+def _interactive_rows(view) -> list[discord.ui.ActionRow]:
+    """ActionRow'ы из обычного View или DesignView/LayoutView."""
+    rows: list[discord.ui.ActionRow] = []
+    if isinstance(view, discord.ui.LayoutView):
+        # В LayoutView ищем ActionRow внутри Container'ов
+        for child in view.walk_children():
+            if isinstance(child, discord.ui.ActionRow):
+                rows.append(child)
+        return rows
+    return _view_rows(view)
+
+
+def swap_view(
+    message: discord.Message,
+    view: discord.ui.View | discord.ui.LayoutView | None,
+) -> discord.ui.LayoutView:
+    """Построить LayoutView на основе СУЩЕСТВУЮЩЕГО V2-сообщения,
+    заменив только интерактивные ряды (кнопки/select).
+
+    Используется для правок вида 'edit_message(view=...)' без embed —
+    текст карточки сохраняется, кнопки обновляются.
+    view=None — убрать все кнопки.
+    """
+    layout = discord.ui.LayoutView.from_message(message)
+
+    # Удаляем старые ActionRow из всех Container'ов верхнего уровня
+    for container in layout.children:
+        if not isinstance(container, discord.ui.Container):
+            continue
+        for child in list(container.children):
+            if isinstance(child, discord.ui.ActionRow):
+                container.remove_item(child)
+
+    if view is not None:
+        for row in _interactive_rows(view):
+            # Добавляем в первый Container (или создаём новый)
+            target = next(
+                (c for c in layout.children if isinstance(c, discord.ui.Container)),
+                None,
+            )
+            if target is None:
+                target = discord.ui.Container()
+                layout.add_item(target)
+            target.add_item(row)
+
+    return layout
+
+
+def _is_v2_message(message: discord.Message) -> bool:
+    """Проверить, что сообщение отправлено с флагом IS_COMPONENTS_V2."""
+    flags = getattr(message, "flags", None)
+    if flags is None:
+        return False
+    value = getattr(flags, "value", flags)
+    try:
+        return bool(int(value) & (1 << 15))
+    except (TypeError, ValueError):
+        return False
+
+
+def smart_view(
+    message: discord.Message,
+    view: discord.ui.View | discord.ui.LayoutView | None,
+):
+    """Подобрать объект для edit(view=...) под тип существующего сообщения.
+
+    - V2-сообщение -> LayoutView с сохранённым текстом и новыми кнопками
+      (swap_view); view=None -> кнопки убираются, карточка остаётся.
+    - классическое сообщение -> view возвращается как есть
+      (None -> очистка компонентов).
+    """
+    if not _is_v2_message(message):
+        return view
+    return swap_view(message, view)

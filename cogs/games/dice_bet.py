@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
@@ -143,7 +144,7 @@ class DiceBetButton(discord.ui.Button):
         result_view = discord.ui.View(timeout=None)
         result_view.add_item(DiceBetPlayAgainButton(self.game_view.bet, self.game_view.user_id))
 
-        await interaction.edit_original_response(embed=result_embed, view=result_view)
+        await interaction.edit_original_response( view=compose(result_embed, result_view))
 
 
 class DiceBetCancelButton(discord.ui.Button):
@@ -168,10 +169,7 @@ class DiceBetCancelButton(discord.ui.Button):
             )
 
         self.game_view.rolled = True
-        await interaction.response.edit_message(
-            content="❌ Игра отменена. Ставка возвращена.",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
 
@@ -222,7 +220,7 @@ class DiceBetPlayAgainButton(discord.ui.Button):
         view.add_item(DiceBetCancelButton(view))
 
         embed = view.create_embed("menu")
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 from cogs.groups import games_group, bind_commands
@@ -287,7 +285,7 @@ class DiceBetCog(commands.Cog):
         game_view.add_item(DiceBetCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
-        await interaction.response.send_message(embed=embed, view=game_view)
+        await interaction.response.send_message( view=compose(embed, game_view))
 
 
 async def setup(bot: "TournamentBot"):

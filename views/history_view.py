@@ -1,6 +1,7 @@
 """View для навигации по истории матчей."""
 from config import replace_emojis, get_emoji
 import discord
+from utils.design import compose
 from typing import List, Optional
 from datetime import datetime
 
@@ -74,7 +75,7 @@ class PrevButton(discord.ui.Button):
                 parent_view.current_page -= 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                await interaction.response.edit_message(embed=embed, view=parent_view)
+                await interaction.response.edit_message( view=compose(embed, parent_view))
             else:
                 await interaction.response.defer()
 
@@ -97,7 +98,7 @@ class NextButton(discord.ui.Button):
                 parent_view.current_page += 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                await interaction.response.edit_message(embed=embed, view=parent_view)
+                await interaction.response.edit_message( view=compose(embed, parent_view))
             else:
                 await interaction.response.defer()
 

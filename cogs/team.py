@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -65,7 +66,7 @@ class TeamCog(commands.Cog):
             color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
     @team.command(name="delete", description="Удалить команду")
     async def delete(self, interaction: discord.Interaction):
@@ -100,7 +101,7 @@ class TeamCog(commands.Cog):
             color=discord.Color.from_rgb(235, 100, 100)  # Pastel red
         )
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send( view=compose(embed), ephemeral=True)
 
     @team.command(name="status", description="Статус команды")
     @app_commands.describe(team_name="Название команды (опционально)")
@@ -171,14 +172,14 @@ class TeamCog(commands.Cog):
                 # Store message in view for dynamic updates
                 view.message = message
                 # Update existing message
-                await message.edit(embed=embed, view=view)
+                await message.edit( view=compose(embed, view))
             except (discord.NotFound, discord.Forbidden):
                 # Message doesn't exist or can't access, create new
                 message = None
 
         if not message:
             # Create new message
-            message = await interaction.channel.send(embed=embed, view=view)
+            message = await interaction.channel.send( view=compose(embed, view))
             # Save message_id to team
             team.status_message_id = message.id
             await team_store.update_team(team)

@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Анаграммы."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -76,7 +77,7 @@ class AnagramAnswerModal(discord.ui.Modal, title="Ваш ответ"):
                 # Продолжить игру
                 view = AnagramsView(self.guild_id, self.user_id, self.bet, self.word, self.anagram)
                 view.attempts = self.attempts
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
                 return
             else:
                 # Попытки закончились
@@ -114,4 +115,4 @@ class AnagramAnswerModal(discord.ui.Modal, title="Ваш ответ"):
         # Сохранить статистику
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))

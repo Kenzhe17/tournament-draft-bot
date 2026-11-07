@@ -8,6 +8,7 @@ from config import replace_emojis, get_emoji
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose
 
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_leaderboard_embed
@@ -72,7 +73,7 @@ class TopCategorySelect(discord.ui.Select):
         embed = await build_leaderboard_embed(view.guild_id, view.page, view.leaderboard_type, view.user_id)
         view.refresh_buttons()
 
-        await interaction.edit_original_response(embed=embed, view=view)
+        await interaction.edit_original_response( view=compose(embed, view))
 
 
 class UniversalLeaderboardView(discord.ui.View):
@@ -166,7 +167,7 @@ class LeaderboardPageButton(discord.ui.Button):
 
         embed = await build_leaderboard_embed(self.guild_id, self.page, self.leaderboard_type, self.user_id)
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class LeaderboardView(discord.ui.View):

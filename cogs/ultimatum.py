@@ -4,6 +4,7 @@ import logging
 from typing import Optional
 
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -84,7 +85,7 @@ class UltimatumCog(commands.Cog):
         # Send setup embed with Join button
         embed = await self._build_tournament_embed(tournament)
         view = await build_ultimatum_setup_view(interaction.guild_id, interaction.channel_id, tournament)
-        message = await interaction.channel.send(embed=embed, view=view)
+        message = await interaction.channel.send( view=compose(embed, view))
 
         logger.info(f"Tournament created: {tournament.id} by {interaction.user.id}")
 
@@ -161,7 +162,7 @@ class UltimatumCog(commands.Cog):
                 if msg.author == interaction.client.user and msg.embeds:
                     # Check if this is the tournament embed
                     if tournament.name in msg.embeds[0].title or "УЛЬТИМАТУМ СОЛО" in msg.embeds[0].title:
-                        await msg.edit(embed=embed)
+                        await msg.edit( view=compose(embed))
                         break
         except Exception as e:
             logger.error(f"Error updating tournament message after test fill: {e}")

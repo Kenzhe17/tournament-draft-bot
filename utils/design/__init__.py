@@ -19,7 +19,13 @@
 """
 
 from utils.design import colors, constants, emojis, formatters  # noqa: F401
-from utils.design.adapter import compose, embed_to_container  # noqa: F401
+from utils.design.adapter import (  # noqa: F401
+    compose,
+    embed_to_container,
+    smart_view,
+    swap_view,
+    text_card,
+)
 from utils.design.components import (  # noqa: F401
     STYLE_DANGER,
     STYLE_LINK,

@@ -9,6 +9,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import discord
+from utils.design import compose, text_card
 
 from models.tournament import TournamentPhase, TournamentSize, FormationMode
 from storage.json_store import store
@@ -108,7 +109,7 @@ class AdminStatsMatchButton(discord.ui.Button):
                 view = AdminStatsConfirmView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, self.match)
                 embed = self._build_stats_embed()
                 logging.info("AdminConfirmView created, sending message")
-                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+                await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
                 logging.info("Message sent successfully")
             except Exception as e:
                 import logging
@@ -126,7 +127,7 @@ class AdminStatsMatchButton(discord.ui.Button):
                 description="Выберите команду для заполнения статистики:",
                 color=discord.Color.gold()
             )
-            await interaction.response.send_message(embed=embed, view=team_view, ephemeral=True)
+            await interaction.response.send_message( view=compose(embed, team_view), ephemeral=True)
 
     def _build_stats_embed(self) -> discord.Embed:
         """Build embed showing stats for both teams."""
@@ -440,10 +441,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         try:
-            await interaction.response.edit_message(
-                content=f"✅ Победитель {self.team_name} подтверждён!",
-                embed=None,
-                view=None
+            await interaction.response.edit_message( view=text_card(f"✅ Победитель {self.team_name} подтверждён!")
             )
         except (discord.NotFound, discord.InteractionResponded):
             # Interaction expired or already responded, use followup instead
@@ -523,7 +521,7 @@ class CancelWinnerButton(discord.ui.Button):
         teams = [(team_a_index, team_a_name), (team_b_index, team_b_name)]
         team_view = TeamWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams, self.match)
 
-        await interaction.response.edit_message(embed=embed, view=team_view)
+        await interaction.response.edit_message( view=compose(embed, team_view))
 
 
 class AdminEditStatsButton(discord.ui.Button):
@@ -549,7 +547,7 @@ class AdminEditStatsButton(discord.ui.Button):
             title=replace_emojis("📊 Выберите команду для редактирования"),
             color=discord.Color.gold()
         )
-        await interaction.response.edit_message(embed=embed, view=team_view)
+        await interaction.response.edit_message( view=compose(embed, team_view))
 
 
 class AdminStatsTeamSelectView(discord.ui.View):
@@ -876,10 +874,7 @@ class ConfirmWinnerButton(discord.ui.Button):
             import logging
             logging.error(f"Error updating tournament message after winner selection: {e}", exc_info=True)
 
-        await interaction.response.edit_message(
-            content=f"Победитель Игра #{self.match_index + 1} ({self.team_name}) успешно зафиксирован!",
-            embed=None,
-            view=None
+        await interaction.response.edit_message( view=text_card(f"Победитель Игра #{self.match_index + 1} ({self.team_name}) успешно зафиксирован!")
         )
 
 
@@ -910,8 +905,7 @@ class GenerateMatchesButton(discord.ui.Button):
         try:
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
-                await interaction.edit_original_response(
-                    content=replace_emojis("❌ Турнир не найден."),
+                await interaction.edit_original_response( view=text_card(replace_emojis("❌ Турнир не найден.")),
                 )
                 return
 
@@ -927,8 +921,7 @@ class GenerateMatchesButton(discord.ui.Button):
                 store.set(tournament)
 
             if tournament.phase != TournamentPhase.TEAMS:
-                await interaction.edit_original_response(
-                    content=replace_emojis(f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}"),
+                await interaction.edit_original_response( view=text_card(replace_emojis(f"❌ Турнир не в фазе команд. Текущая фаза: {tournament.phase.value}")),
                 )
                 return
 
@@ -998,8 +991,7 @@ class GenerateMatchesButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
         except Exception as e:
             logger.error(f"Error generating matches: {e}", exc_info=True)
-            await interaction.edit_original_response(
-                content=replace_emojis(f"❌ Ошибка при генерации матчей: {str(e)}")
+            await interaction.edit_original_response( view=text_card(replace_emojis(f"❌ Ошибка при генерации матчей: {str(e)}"))
             )
 
 
@@ -1168,7 +1160,7 @@ class MatchButton(discord.ui.Button):
                 ),
                 color=discord.Color.orange()
             )
-            await interaction.response.edit_message(embed=embed, view=None)
+            await interaction.response.edit_message( view=compose(embed, None))
             return
 
         # Stats are filled - show stats with winner selection buttons
@@ -1241,7 +1233,7 @@ class MatchButton(discord.ui.Button):
         # Create view with winner selection buttons
         team_view = TeamWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type, self.match_index, teams, match)
 
-        await interaction.response.edit_message(embed=embed, view=team_view)
+        await interaction.response.edit_message( view=compose(embed, team_view))
 
 
 class TeamWinnerSelectView(discord.ui.View):
@@ -1309,7 +1301,7 @@ class TeamWinnerButton(discord.ui.Button):
             color=discord.Color.orange()
         )
 
-        await interaction.response.edit_message(embed=embed, view=confirmation_view)
+        await interaction.response.edit_message( view=compose(embed, confirmation_view))
 
 
 class QualifiersView(discord.ui.View):

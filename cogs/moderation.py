@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import discord
+from utils.design import compose
 from discord.ext import commands
 
 from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_URL
@@ -45,7 +46,7 @@ class ModerationCog(commands.Cog):
         """Send log to webhook."""
         try:
             webhook = discord.Webhook.from_url(MOD_LOG_WEBHOOK_URL, client=self.bot)
-            await webhook.send(embed=embed, username="Модератор")
+            await webhook.send( view=compose(embed), username="Модератор")
         except Exception as e:
             logger.error(f"Failed to send mod log: {e}", exc_info=True)
 
@@ -115,7 +116,7 @@ class ModerationCog(commands.Cog):
                     color=discord.Color(0xFFAA00)
                 )
 
-                msg = await channel.send(embed=embed)
+                msg = await channel.send( view=compose(embed))
 
                 # Delete after 10 seconds
                 await asyncio.sleep(10)
@@ -161,7 +162,7 @@ class ModerationCog(commands.Cog):
                     color=discord.Color(0xFFAA00)
                 )
 
-                msg = await channel.send(embed=embed)
+                msg = await channel.send( view=compose(embed))
 
                 # Delete after 10 seconds
                 await asyncio.sleep(10)

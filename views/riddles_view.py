@@ -2,6 +2,7 @@ from config import replace_emojis
 """View для Загадки."""
 
 import discord
+from utils.design import compose
 from storage.user_balance_store import user_balance_store
 from storage.minigame_store import minigame_store
 
@@ -53,7 +54,7 @@ class RiddlesView(discord.ui.View):
             view.attempts = self.attempts
             view.hint_index = self.hint_index
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
         else:
             await interaction.response.send_message(
                 replace_emojis("❌ Все подсказки использованы!"),
@@ -125,7 +126,7 @@ class RiddleAnswerModal(discord.ui.Modal, title="Ваш ответ"):
                 view = RiddlesView(self.guild_id, self.user_id, self.bet, self.question, self.answer, self.hints)
                 view.attempts = self.attempts
                 view.hint_index = self.hint_index
-                await interaction.response.edit_message(embed=embed, view=view)
+                await interaction.response.edit_message( view=compose(embed, view))
                 return
             else:
                 # Попытки закончились
@@ -163,4 +164,4 @@ class RiddleAnswerModal(discord.ui.Modal, title="Ваш ответ"):
         # Сохранить статистику
         await minigame_store.update_player_stats(self.guild_id, self.user_id, game_id, stats)
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message( view=compose(embed, None))

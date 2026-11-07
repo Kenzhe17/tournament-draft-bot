@@ -3,6 +3,7 @@ from config import replace_emojis, get_emoji
 
 import asyncio
 import discord
+from utils.design import compose, text_card
 from storage.case_store import case_store
 from storage.user_balance_store import user_balance_store
 
@@ -55,8 +56,7 @@ class CaseOpenButton(discord.ui.Button):
             pass
 
         # Этап 2
-        await interaction.edit_original_response(
-            content=replace_emojis("dice Выбираем редкость..."),
+        await interaction.edit_original_response( view=text_card(replace_emojis("dice Выбираем редкость...")),
         )
 
         try:
@@ -123,9 +123,7 @@ class CaseOpenButton(discord.ui.Button):
             color=color
         )
 
-        await interaction.edit_original_response(
-            content="🎉",
-            embed=embed
+        await interaction.edit_original_response( view=compose(embed, text="🎉")
         )
 
         # Добавить reaction результата
@@ -205,8 +203,7 @@ class CaseSelect(discord.ui.Select):
             pass
 
         # Этап 2
-        await interaction.edit_original_response(
-            content=replace_emojis("dice Выбираем редкость..."),
+        await interaction.edit_original_response( view=text_card(replace_emojis("dice Выбираем редкость...")),
         )
 
         try:
@@ -273,9 +270,7 @@ class CaseSelect(discord.ui.Select):
             color=color
         )
 
-        await interaction.edit_original_response(
-            content="🎉",
-            embed=embed
+        await interaction.edit_original_response( view=compose(embed, text="🎉")
         )
 
         # Добавить reaction результата

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import discord
+from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
@@ -64,7 +65,7 @@ class TournamentCog(commands.Cog):
         )
 
         embed = await build_setup_embed(interaction.guild, tournament)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message( view=compose(embed))
         message = await interaction.original_response()
 
         tournament.message_id = message.id

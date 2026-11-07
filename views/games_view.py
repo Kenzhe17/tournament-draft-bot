@@ -2,6 +2,7 @@
 from config import replace_emojis, get_emoji
 
 import discord
+from utils.design import compose
 from discord.ui import Button, View, Select
 from typing import Optional
 
@@ -106,7 +107,7 @@ class GameCategorySelect(Select):
         view.add_item(BackButton(self.user_id, self.guild_id, category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, category, page, total_pages))
 
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class GamesCategoryView(View):
@@ -185,7 +186,7 @@ class GameSelect(Select):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GameCardView(self.user_id, self.guild_id, game, game.category, self.page)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class GameCardView(View):
@@ -259,7 +260,7 @@ class PlayButton(Button):
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
 
 class BackToCategoryButton(Button):
@@ -316,7 +317,7 @@ class BackToCategoryButton(Button):
         view.add_item(BackButton(self.user_id, self.guild_id, self.category, page, total_pages))
         view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, page, total_pages))
         
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BackToMainMenuButton(Button):
@@ -350,7 +351,7 @@ class BackToMainMenuButton(Button):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         view = GamesMainView(self.user_id, self.guild_id)
-        await interaction.response.edit_message(embed=embed, view=view)
+        await interaction.response.edit_message( view=compose(embed, view))
 
 
 class BackButton(Button):
@@ -406,7 +407,7 @@ class BackButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
 
 
 class ForwardButton(Button):
@@ -462,4 +463,4 @@ class ForwardButton(Button):
             view.add_item(BackButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
             view.add_item(ForwardButton(self.user_id, self.guild_id, self.category, new_page, self.total_pages))
 
-            await interaction.response.edit_message(embed=embed, view=view)
+            await interaction.response.edit_message( view=compose(embed, view))
