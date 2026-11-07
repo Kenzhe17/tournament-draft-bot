@@ -83,9 +83,8 @@ class FinalView(discord.ui.View):
     def __init__(self, guild_id: int, channel_id: int, final_teams: list[int], tournament):
         super().__init__(timeout=None)
 
-        # Add admin panel select menu
-        from views.matches_view import AdminPanelSelect
-        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "final"))
+        # Admin-панель (победитель/статистика/комнаты) убрана —
+        # результаты идут через OCR-скриншот, комнаты — через RoomButton
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))

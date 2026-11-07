@@ -742,80 +742,6 @@ class AdminStatsModal(discord.ui.Modal, title="Статистика команд
             logging.error(f"Error updating tournament message after stats: {e}", exc_info=True)
 
 
-class AdminPanelSelect(discord.ui.Select):
-    """Select menu for admin functions."""
-
-    def __init__(self, guild_id: int, channel_id: int, tournament, match_type: str):
-        options = [
-            discord.SelectOption(
-                label="Выбрать победителя",
-                value="select_winner",
-                description="Отметить победителя матча"
-            ),
-            discord.SelectOption(
-                label="Заполнить статистику",
-                value="fill_stats",
-                description="Внести данные турнира"
-            ),
-            discord.SelectOption(
-                label="Управление комнатами",
-                value="manage_rooms",
-                description="Настройка турнирных комнат"
-            ),
-        ]
-        super().__init__(
-            placeholder="Панель организатора...",
-            options=options,
-            custom_id=f"admin_panel:{guild_id}:{channel_id}:{match_type}",
-            min_values=1,
-            max_values=1
-        )
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        self.tournament = tournament
-        self.match_type = match_type
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        # Check permissions
-        if not is_org_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                replace_emojis("❌ У вас нет прав для использования админ-панели!"),
-                ephemeral=True
-            )
-            return
-
-        selected = self.values[0]
-
-        if selected == "select_winner":
-            # Create match selection view with stats display
-            match_view = MatchWinnerSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type)
-
-            embed = discord.Embed(
-                description=replace_emojis("🏆 **Выберите матч для фиксации результата:**"),
-                color=discord.Color.green()
-            )
-
-            await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
-
-        elif selected == "fill_stats":
-            # Show match selection view for admin stats filling
-            match_view = AdminStatsMatchSelectView(self.guild_id, self.channel_id, self.tournament, self.match_type)
-
-            embed = discord.Embed(
-                description=replace_emojis("🏆 **Выберите матч для внесения статистики:**"),
-                color=discord.Color.green()
-            )
-
-            await interaction.response.send_message(embed=embed, view=match_view, ephemeral=True)
-
-        elif selected == "manage_rooms":
-            # Trigger AdminRoomsButton callback
-            admin_rooms_btn = AdminRoomsButton(self.guild_id, self.channel_id)
-            admin_rooms_btn.tournament = self.tournament
-            admin_rooms_btn.match_type = self.match_type
-            await admin_rooms_btn.callback(interaction)
-
-
 class WinnerConfirmationView(discord.ui.View):
     """View for confirming winner selection with stats display."""
 
@@ -1393,8 +1319,8 @@ class QualifiersView(discord.ui.View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Add admin panel select menu
-        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "qualifier"))
+        # Admin-панель (победитель/статистика/комнаты) убрана —
+        # результаты идут через OCR-скриншот, комнаты — через RoomButton
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
@@ -1448,8 +1374,8 @@ class SemifinalsView(discord.ui.View):
         self.channel_id = channel_id
         self.tournament = tournament
 
-        # Add admin panel select menu
-        self.add_item(AdminPanelSelect(guild_id, channel_id, tournament, "semifinal"))
+        # Admin-панель (победитель/статистика/комнаты) убрана —
+        # результаты идут через OCR-скриншот, комнаты — через RoomButton
 
         # Team name button disabled - no team name changes allowed
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
