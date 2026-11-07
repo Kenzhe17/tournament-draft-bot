@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -9,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from services import cs_parser
-from services.ocr_service import extract_text_boxes
+from services.ocr_service import detect_winner_side, extract_text_boxes
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,20 @@ def _team_field(title: str, players: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _result_line(parsed: dict) -> str | None:
+    """Строка результата матча: победитель + баннер победы/поражения."""
+    parts = []
+    winner = parsed.get("winner")
+    if winner in ("a", "b"):
+        parts.append(f"🏆 Победитель: **Команда {'A' if winner == 'a' else 'B'}**")
+    banner = parsed.get("banner")
+    if banner == "win":
+        parts.append("✅ Ваш результат: **ПОБЕДА**")
+    elif banner == "lose":
+        parts.append("❌ Ваш результат: **ПОРАЖЕНИЕ**")
+    return "\n".join(parts) if parts else None
+
+
 def _build_embed(parsed: dict) -> discord.Embed:
     team_a, team_b = parsed["team_a"], parsed["team_b"]
 
@@ -54,10 +69,20 @@ def _build_embed(parsed: dict) -> discord.Embed:
         title="⚔️ FREE FIRE | CS 4x4 — Результаты",
         color=COLOR_TOP5 if parsed.get("top5") else COLOR_MAIN,
     )
+    desc_parts = []
     if parsed.get("top5"):
-        embed.description = "🏆 **Вы попали в пятёрку лучших!**"
-    embed.add_field(name="🔵 Команда A", value=_team_field("A", team_a), inline=True)
-    embed.add_field(name="🔴 Команда B", value=_team_field("B", team_b), inline=False)
+        desc_parts.append("🏆 **Вы попали в пятёрку лучших!**")
+    result_line = _result_line(parsed)
+    if result_line:
+        desc_parts.append(result_line)
+    if desc_parts:
+        embed.description = "\n".join(desc_parts)
+    # Подсветка победившей команды в заголовке поля
+    winner = parsed.get("winner")
+    name_a = "🏆 Команда A" if winner == "a" else "🔵 Команда A"
+    name_b = "🏆 Команда B" if winner == "b" else "🔴 Команда B"
+    embed.add_field(name=name_a, value=_team_field("A", team_a), inline=True)
+    embed.add_field(name=name_b, value=_team_field("B", team_b), inline=False)
     if mvp_name:
         embed.set_footer(text=f"MVP по урону: {mvp_name} • {FOOTER}")
     else:
@@ -120,6 +145,16 @@ async def run_statistic(
             ephemeral=True,
         )
         return
+
+    # Определяем победителя по цветовой подсветке панели
+    try:
+        side = await asyncio.get_running_loop().run_in_executor(
+            None, detect_winner_side, data, boxes
+        )
+    except Exception:
+        logger.exception("winner detection failed")
+        side = None
+    parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
     await interaction.followup.send(embed=_build_embed(parsed))
 

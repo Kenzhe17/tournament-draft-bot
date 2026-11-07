@@ -133,7 +133,26 @@ def parse_cs_results(
         "ПЯТЕРКУ" in b["text"].upper() or "ЛУЧШИХ" in b["text"].upper()
         for b in boxes
     )
-    return {"team_a": team_a, "team_b": team_b, "top5": top5}
+
+    # Баннер результата матча для команды игрока
+    banner = None
+    all_text = " ".join(b["text"].upper() for b in boxes)
+    if "ПОРАЖЕНИЕ" in all_text or "DEFEAT" in all_text or "LOST" in all_text:
+        banner = "lose"
+    elif (
+        "ПОБЕДА" in all_text
+        or "BOOYAH" in all_text
+        or "BYAH" in all_text
+        or "VICTORY" in all_text
+    ):
+        banner = "win"
+
+    return {
+        "team_a": team_a,
+        "team_b": team_b,
+        "top5": top5,
+        "banner": banner,
+    }
 
 
 def _inline_dmg(text: str, end_pos: int) -> int | None:
