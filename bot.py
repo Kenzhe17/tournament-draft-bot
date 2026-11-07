@@ -16,6 +16,7 @@ from storage.player_stats_store import player_stats_store
 from storage.user_balance_store import user_balance_store
 from storage.bet_store import bet_store
 from storage.betting_stats_store import betting_stats_store
+from utils.design import compose
 from utils.embeds import build_embed_for_phase
 from views.draft_view import build_draft_view
 from views.final_view import FinalView
@@ -358,7 +359,7 @@ class TournamentBot(commands.Bot):
         self._register_view(view)
 
         try:
-            await message.edit(embed=embed, view=view)
+            await message.edit(view=compose(embed, view))
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
 

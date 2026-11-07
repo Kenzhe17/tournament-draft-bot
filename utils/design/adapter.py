@@ -56,6 +56,37 @@ _COLOR_MAP = {
 
 _DEFAULT_ACCENT = colors.NEUTRAL
 
+# Discord CV2: Container вмещает максимум 10 дочерних компонентов.
+_CONTAINER_MAX_CHILDREN = 10
+
+
+def _split_container(
+    container: discord.ui.Container,
+) -> list[discord.ui.Container]:
+    """Разбить Container на части по <=10 children (лимит Discord CV2).
+
+    Разбивка сохраняет порядок children и акцентную полосу
+    на всех частях — визуально это одна логическая карточка.
+    """
+    children = list(container.children)
+    if len(children) <= _CONTAINER_MAX_CHILDREN:
+        return [container]
+
+    accent = container.accent_color
+    spoiler = getattr(container, "spoiler", False)
+    parts: list[discord.ui.Container] = []
+    for i in range(0, len(children), _CONTAINER_MAX_CHILDREN):
+        chunk = children[i : i + _CONTAINER_MAX_CHILDREN]
+        part = discord.ui.Container(
+            accent_color=accent,
+            spoiler=spoiler,
+        )
+        for child in chunk:
+            container.remove_item(child)
+            part.add_item(child)
+        parts.append(part)
+    return parts
+
 
 class _ComposedLayoutView(discord.ui.LayoutView):
     """LayoutView-обёртка с делегированием к исходному View.
@@ -362,7 +393,8 @@ def compose(
         delegate=delegate,
         timeout=getattr(view, "timeout", 180.0),
     )
-    layout.add_item(container)
+    for part in _split_container(container):
+        layout.add_item(part)
     return layout
 
 
@@ -434,14 +466,17 @@ def swap_view(
                 container.remove_item(child)
 
     if view is not None:
-        for row in _interactive_rows(view):
-            # Добавляем в первый Container (или создаём новый)
-            target = next(
-                (c for c in layout.children if isinstance(c, discord.ui.Container)),
-                None,
-            )
-            if target is None:
-                target = discord.ui.Container()
+        rows = _interactive_rows(view)
+        target = next(
+            (c for c in layout.children if isinstance(c, discord.ui.Container)),
+            None,
+        )
+        accent = getattr(target, "accent_color", None) if target else None
+        for row in rows:
+            # Container вмещает максимум 10 children — при переполнении
+            # начинаем новый Container, иначе Discord отклонит правку.
+            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
+                target = discord.ui.Container(accent_color=accent)
                 layout.add_item(target)
             target.add_item(row)
 

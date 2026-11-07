@@ -1291,7 +1291,8 @@ class Tournament:
                                     new_embed = build_multi_channel_embed(guild)
                                     new_view = View()
                                     new_view.add_item(OrganizerManagementButton(self.guild_id, channel_id, guild))
-                                    await update_message.edit(embed=new_embed, view=new_view)
+                                    from utils.design import compose
+                                    await update_message.edit(view=compose(new_embed, new_view))
                             except Exception:
                                 pass
         except Exception:
