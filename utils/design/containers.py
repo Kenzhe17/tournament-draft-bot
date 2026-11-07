@@ -166,7 +166,7 @@ def card(
     """
     builder = CardBuilder(title=title, accent=accent, spoiler=spoiler)
     if thumbnail and body is None:
-        builder.component(discord.ui.MediaGallery(discord.ui.MediaGalleryItem(media=thumbnail)))
+        builder.component(discord.ui.MediaGallery(discord.MediaGalleryItem(media=thumbnail)))
     if body is not None:
         if isinstance(body, list):
             builder.lines(*body)

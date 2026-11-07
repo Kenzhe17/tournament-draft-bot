@@ -206,7 +206,7 @@ def profile_view(
     container.text("\n".join(lines))
     if thumbnail:
         container.component(
-            discord.ui.MediaGallery(discord.ui.MediaGalleryItem(media=thumbnail))
+            discord.ui.MediaGallery(discord.MediaGalleryItem(media=thumbnail))
         )
     if rows:
         container.rows(*rows)

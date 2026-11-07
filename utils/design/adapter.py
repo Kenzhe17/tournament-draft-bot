@@ -144,7 +144,7 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
     if embed.thumbnail and embed.thumbnail.url:
         container.add_item(
             discord.ui.MediaGallery(
-                discord.ui.MediaGalleryItem(media=embed.thumbnail.url)
+                discord.MediaGalleryItem(media=embed.thumbnail.url)
             )
         )
 
@@ -179,7 +179,7 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
         container.add_item(separator())
         container.add_item(
             discord.ui.MediaGallery(
-                discord.ui.MediaGalleryItem(media=embed.image.url)
+                discord.MediaGalleryItem(media=embed.image.url)
             )
         )
 
