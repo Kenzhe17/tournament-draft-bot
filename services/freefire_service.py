@@ -68,15 +68,26 @@ class FreeFireService:
                 if resp.status == 429:
                     raise FreeFireError(
                         "Rate limit API. Попробуйте позже.", "RATE_LIMIT")
-                if resp.status == 401:
-                    raise FreeFireError(
-                        "Неверный API-ключ Free Fire.", "BAD_KEY")
-                if resp.status == 404:
-                    raise FreeFireError(
-                        "Данные не найдены (UID/регион?).", "NOT_FOUND")
                 if resp.status >= 400:
+                    # API возвращает {"error": "..."} — показываем текст
+                    detail = ""
+                    try:
+                        body = await resp.json(content_type=None)
+                        if isinstance(body, dict):
+                            detail = str(body.get("error") or "")
+                    except Exception:
+                        pass
+                    if resp.status == 401 or "Invalid API key" in detail:
+                        raise FreeFireError(
+                            "Неверный API-ключ Free Fire.", "BAD_KEY")
+                    if "no access" in detail.lower():
+                        raise FreeFireError(
+                            f"{detail} — этот эндпоинт требует Premium-ключ "
+                            "(бесплатный ключ работает только для /ff info и /ff stats).",
+                            "NO_ACCESS")
                     raise FreeFireError(
-                        f"API вернул ошибку {resp.status}.", "HTTP_ERROR")
+                        detail or f"API вернул ошибку {resp.status}.",
+                        "HTTP_ERROR")
 
                 if binary:
                     data = await resp.read()
