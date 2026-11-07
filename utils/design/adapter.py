@@ -140,13 +140,41 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
     """
     container = discord.ui.Container(accent_color=_accent_from_embed(embed))
 
-    # Thumbnail — в начало как MediaGallery
-    if embed.thumbnail and embed.thumbnail.url:
+    # Thumbnail — маленькая картинка справа от первого текстового блока
+    # (Section accessory), как в классическом Embed. MediaGallery не
+    # используем: он рендерит картинку во всю ширину карточки.
+    thumb_url = (
+        embed.thumbnail.url
+        if embed.thumbnail and embed.thumbnail.url
+        else None
+    )
+    thumb_used = False
+
+    # attachment:// (локальные файлы, например картинки питомцев) не
+    # резолвится в Section-аксессуаре — оставляем MediaGallery.
+    if thumb_url and thumb_url.startswith("attachment://"):
         container.add_item(
             discord.ui.MediaGallery(
-                discord.MediaGalleryItem(media=embed.thumbnail.url)
+                discord.MediaGalleryItem(media=thumb_url)
             )
         )
+        thumb_url = None
+
+    def _add_text_maybe_thumb(content: str) -> None:
+        nonlocal thumb_used
+        chunks = chunk_text(content)
+        if thumb_url and not thumb_used and chunks:
+            container.add_item(
+                discord.ui.Section(
+                    discord.ui.TextDisplay(content=chunks[0]),
+                    accessory=discord.ui.Thumbnail(media=thumb_url),
+                )
+            )
+            thumb_used = True
+            for chunk in chunks[1:]:
+                container.add_item(discord.ui.TextDisplay(content=chunk))
+            return
+        _add_text(container, content)
 
     # Author
     if embed.author and embed.author.name:
@@ -154,16 +182,26 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
         if embed.author.icon_url:
             # icon_url в TextDisplay не поддерживается — пропускаем
             pass
-        container.add_item(discord.ui.TextDisplay(content=author_text))
+        _add_text_maybe_thumb(author_text)
 
     # Title
     if embed.title:
-        _add_text(container, f"# {embed.title}")
+        title_text = f"# {embed.title}"
+        if thumb_url and not thumb_used:
+            container.add_item(
+                discord.ui.Section(
+                    discord.ui.TextDisplay(content=title_text),
+                    accessory=discord.ui.Thumbnail(media=thumb_url),
+                )
+            )
+            thumb_used = True
+        else:
+            _add_text(container, title_text)
         container.add_item(separator())
 
     # Description
     if embed.description:
-        _add_text(container, embed.description)
+        _add_text_maybe_thumb(embed.description)
 
     # Fields
     for i, field in enumerate(embed.fields):
@@ -172,7 +210,7 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
         name = field.name or ""
         value = field.value or ""
         block = f"**{name}**\n{value}" if name else value
-        _add_text(container, block)
+        _add_text_maybe_thumb(block)
 
     # Image
     if embed.image and embed.image.url:
@@ -189,7 +227,7 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
         footer_text = embed.footer.text
         if embed.timestamp:
             footer_text = f"{footer_text} • <t:{int(embed.timestamp.timestamp())}:R>"
-        container.add_item(discord.ui.TextDisplay(content=f"-# {footer_text}"))
+        _add_text_maybe_thumb(f"-# {footer_text}")
     elif embed.timestamp:
         container.add_item(separator())
         container.add_item(

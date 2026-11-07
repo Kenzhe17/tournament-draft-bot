@@ -202,12 +202,23 @@ def profile_view(
     timeout: float | None = 180.0,
 ) -> DesignView:
     """Profile Container — заголовок + avatar-секция + строки."""
+    from utils.design.containers import chunk_text
+
     container = CardBuilder(title=title, accent=colors.PROFILE)
-    container.text("\n".join(lines))
-    if thumbnail:
+    text = "\n".join(lines)
+    chunks = chunk_text(text) if text else []
+    if thumbnail and chunks:
+        # Аватар — маленький thumbnail-аксессуар Section, не MediaGallery
         container.component(
-            discord.ui.MediaGallery(discord.MediaGalleryItem(media=thumbnail))
+            discord.ui.Section(
+                discord.ui.TextDisplay(content=chunks[0]),
+                accessory=discord.ui.Thumbnail(media=thumbnail),
+            )
         )
+        for chunk in chunks[1:]:
+            container.component(discord.ui.TextDisplay(content=chunk))
+    elif text:
+        container.text(text)
     if rows:
         container.rows(*rows)
     return DesignView.from_card(container.build(), timeout=timeout)
