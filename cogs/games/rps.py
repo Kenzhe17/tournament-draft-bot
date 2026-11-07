@@ -697,18 +697,28 @@ class RPSPlayAgainButton(discord.ui.Button):
         user_id = interaction.user.id
         guild_id = interaction.guild_id
 
-        if self.initiator_id and user_id != self.initiator_id:
+        # PvP: реванш подтверждают оба игрока; PvE: только инициатор
+        allowed = {self.initiator_id, self.opponent_id} - {None}
+        if self.initiator_id and user_id not in allowed:
             await interaction.response.send_message(replace_emojis("❌ Это не ваша игра."), ephemeral=True)
             return
 
-        if self.bet <= 0:
-            await interaction.response.send_message(replace_emojis("❌ Недопустимая ставка."), ephemeral=True)
+        if getattr(self, "_activated", False):
+            await interaction.response.send_message(replace_emojis("⏳ Реванш уже запускается."), ephemeral=True)
             return
+        self._activated = True
 
-        if self.opponent_id:
-            await self._rematch_pvp(interaction, user_id, guild_id)
-        else:
-            await self._rematch_pve(interaction, user_id, guild_id)
+        try:
+            if self.bet <= 0:
+                await interaction.response.send_message(replace_emojis("❌ Недопустимая ставка."), ephemeral=True)
+                return
+
+            if self.opponent_id:
+                await self._rematch_pvp(interaction, user_id, guild_id)
+            else:
+                await self._rematch_pve(interaction, user_id, guild_id)
+        finally:
+            self._activated = False
 
     async def _rematch_pve(self, interaction: discord.Interaction, user_id: int, guild_id: int) -> None:
         """Реванш PvE — повторяет флоу команды /rps."""

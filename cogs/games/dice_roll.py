@@ -40,6 +40,18 @@ class DiceRollView(discord.ui.View):
         self.bet = bet
         self.rolled = False
 
+    async def on_timeout(self) -> None:
+        """Вернуть ставку, если игра не завершена."""
+        if self.rolled:
+            return
+        try:
+            lock = get_user_lock(self.guild_id, self.user_id)
+            async with lock:
+                await user_balance_store.add_balance(self.guild_id, self.user_id, self.bet)
+            logger.info(f"DiceRoll timeout: refunded {self.bet} to {self.user_id}")
+        except Exception as e:
+            logger.error(f"DiceRoll on_timeout refund failed: {e}")
+
     def create_embed(self, state: str = "menu", result: int = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
@@ -184,12 +196,19 @@ class DiceRollPlayAgainButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        # Защита от повторного нажатия (двойное списание ставки)
+        if getattr(self, "_activated", False):
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            return
+        self._activated = True
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
         # Проверить баланс
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < self.bet:
+            self._activated = False
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
                 ephemeral=True
@@ -201,6 +220,7 @@ class DiceRollPlayAgainButton(discord.ui.Button):
         async with lock:
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < self.bet:
+                self._activated = False
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
                     ephemeral=True

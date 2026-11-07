@@ -44,6 +44,18 @@ class HighLowView(discord.ui.View):
         self.wins = 0
         self.game_over = False
 
+    async def on_timeout(self) -> None:
+        """Вернуть ставку, если игра не завершена."""
+        if self.game_over:
+            return
+        try:
+            lock = get_user_lock(self.guild_id, self.user_id)
+            async with lock:
+                await user_balance_store.add_balance(self.guild_id, self.user_id, self.bet)
+            logger.info(f"HighLow timeout: refunded {self.bet} to {self.user_id}")
+        except Exception as e:
+            logger.error(f"HighLow on_timeout refund failed: {e}")
+
     def create_embed(self, state: str = "playing", result: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
@@ -229,6 +241,12 @@ class HighLowPlayAgainButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        # Защита от повторного нажатия (двойное списание ставки)
+        if getattr(self, "_activated", False):
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            return
+        self._activated = True
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
@@ -239,6 +257,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
                 f"❌ Недостаточно монет. У вас: {balance}",
                 ephemeral=True
             )
+            self._activated = False
             return
 
         # Списать ставку
@@ -250,6 +269,7 @@ class HighLowPlayAgainButton(discord.ui.Button):
                     f"❌ Недостаточно монет. У вас: {balance}",
                     ephemeral=True
                 )
+                self._activated = False
                 return
 
             await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
@@ -304,6 +324,7 @@ class HighLowCog(commands.Cog):
                 f"❌ Недостаточно монет. У вас: {balance}",
                 ephemeral=True
             )
+            self._activated = False
             return
 
         # Списать ставку
@@ -315,6 +336,7 @@ class HighLowCog(commands.Cog):
                     f"❌ Недостаточно монет. У вас: {balance}",
                     ephemeral=True
                 )
+                self._activated = False
                 return
 
             await user_balance_store.subtract_balance(guild_id, user_id, bet)

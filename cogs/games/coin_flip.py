@@ -69,6 +69,19 @@ class CoinFlipView(discord.ui.View):
         super().__init__(timeout=60)
         self.game = game
 
+    async def on_timeout(self) -> None:
+        """Вернуть ставку инициатору, если игра не завершена."""
+        game = self.game
+        if game.result is not None or not game.is_active:
+            return
+        try:
+            lock = get_user_lock(game.guild_id, game.initiator_id)
+            async with lock:
+                await user_balance_store.add_balance(game.guild_id, game.initiator_id, game.bet)
+            logger.info(f"CoinFlip timeout: refunded {game.bet} to {game.initiator_id}")
+        except Exception as e:
+            logger.error(f"CoinFlip on_timeout refund failed: {e}")
+
     def create_game_embed(self, state: str = "menu", initiator_avatar: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
@@ -277,11 +290,18 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        # Защита от повторного нажатия (двойное списание ставки)
+        if getattr(self, "_activated", False):
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            return
+        self._activated = True
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
         # Validate bet
         if self.bet < 10 or self.bet > 10000:
+            self._activated = False
             await interaction.response.send_message(
                 "❌ Ставка должна быть от 10 до 10,000 монет.",
                 ephemeral=True
@@ -291,6 +311,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
         # Check balance
         balance = await user_balance_store.get_balance(guild_id, user_id)
         if balance < self.bet:
+            self._activated = False
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
                 ephemeral=True
@@ -302,6 +323,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
         async with lock:
             balance = await user_balance_store.get_balance(guild_id, user_id)
             if balance < self.bet:
+                self._activated = False
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
                     ephemeral=True

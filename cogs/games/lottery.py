@@ -235,11 +235,17 @@ class LotteryPlayAgainButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        if getattr(self, "_activated", False):
+            await interaction.response.send_message("⏳ Лотерея уже создаётся.", ephemeral=True)
+            return
+        self._activated = True
+
         guild_id = interaction.guild_id
         user_id = interaction.user.id
 
         # Проверить параметры
         if self.ticket_price < 10 or self.ticket_price > 1000:
+            self._activated = False
             await interaction.response.send_message(
                 "❌ Цена билета должна быть от 10 до 1,000 монет.",
                 ephemeral=True
@@ -247,6 +253,7 @@ class LotteryPlayAgainButton(discord.ui.Button):
             return
 
         if self.max_tickets < 10 or self.max_tickets > 100:
+            self._activated = False
             await interaction.response.send_message(
                 "❌ Количество билетов должно быть от 10 до 100.",
                 ephemeral=True
