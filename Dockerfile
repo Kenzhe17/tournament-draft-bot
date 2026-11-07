@@ -40,6 +40,9 @@ COPY ultimatum/ ultimatum/
 
 COPY assets/ assets/
 
+# Pre-download PaddleOCR models (ru) into the image
+RUN python -c "from paddleocr import PaddleOCR; from PIL import Image; import numpy as np; o=PaddleOCR(lang='ru',use_doc_orientation_classify=False,use_doc_unwarping=False,use_textline_orientation=False,device='cpu'); o.predict(np.zeros((64,64,3),dtype='uint8'))"
+
 
 
 CMD ["python", "bot.py"]
