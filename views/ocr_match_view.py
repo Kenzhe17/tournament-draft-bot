@@ -27,7 +27,7 @@ import discord
 from discord.ui import Button, Modal, Select, TextInput, View
 
 try:
-    # FileUpload в модалках — discord.py >= 2.5
+    # FileUpload в модалках — discord.py >= 2.7 (новый UI Kit)
     from discord.ui import FileUpload
 except ImportError:  # pragma: no cover
     FileUpload = None
@@ -487,21 +487,19 @@ class ScreenshotUploadModal(Modal):
         self.squad_team = squad_team
         self.squad_uid = squad_uid
 
-        self.file_upload = FileUpload(
-            label="Скриншот экрана результатов (PNG/JPG)",
-            required=True,
+        # FileUpload — компонент нового UI Kit (discord.py >= 2.7),
+        # label задаётся через ui.Label-обёртку
+        self.file_label = discord.ui.Label(
+            text="Скриншот экрана результатов (PNG/JPG)",
+            component=FileUpload(required=True, max_values=1),
         )
-        self.add_item(self.file_upload)
+        self.add_item(self.file_label)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
 
-        value = getattr(self.file_upload, "value", None)
-        attachment = (
-            value[0]
-            if isinstance(value, (list, tuple)) and value
-            else value
-        )
+        values = getattr(self.file_label.component, "values", None) or []
+        attachment = values[0] if values else None
         if attachment is None:
             await interaction.followup.send(
                 replace_emojis("❌ Прикрепите скриншот."), ephemeral=True
