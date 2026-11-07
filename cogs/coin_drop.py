@@ -104,7 +104,7 @@ class RaffleDropView(discord.ui.View):
                 f"{get_emoji('a_sparkle')} В чате разыгрывается мешок с монетами!\n"
                 f"{get_emoji('white_arrow')} Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
                 f"{get_emoji('white_arrow')} Участников: **`{len(self.participants)}`**\n\n"
-                f"{get_emoji('white_dot')} *Победитель решится случайно через 60 секунд!*"
+                f"{get_emoji('white_dot')} *Победитель решится случайно <t:{int(datetime.now().timestamp()) + 60}:R>*"
             ),
             color=0xF1C40F
         )

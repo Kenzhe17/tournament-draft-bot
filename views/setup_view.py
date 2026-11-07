@@ -1592,10 +1592,10 @@ class NotifyButton(discord.ui.Button):
         time_since_creation = now - created_at
 
         if time_since_creation < timedelta(minutes=1):
-            remaining = 60 - int(time_since_creation.total_seconds())
+            next_allowed = int((created_at + timedelta(minutes=1)).timestamp())
             try:
                 await interaction.response.send_message(
-                    f"⏱️ Подождите {remaining} секунд после создания турнира перед отправкой уведомления.",
+                    f"⏱️ Подождите <t:{next_allowed}:R> после создания турнира перед отправкой уведомления.",
                     ephemeral=True
                 )
             except discord.NotFound:
@@ -1605,10 +1605,10 @@ class NotifyButton(discord.ui.Button):
         # Check user-specific cooldown (1 minute between notifications)
         last_use = self.cooldowns.get(interaction.user.id)
         if last_use and (now - last_use) < timedelta(minutes=1):
-            remaining = 60 - int((now - last_use).total_seconds())
+            next_allowed = int((last_use + timedelta(minutes=1)).timestamp())
             try:
                 await interaction.response.send_message(
-                    f"⏱️ Подождите {remaining} секунд перед повторным уведомлением.",
+                    f"⏱️ Подождите <t:{next_allowed}:R> перед повторным уведомлением.",
                     ephemeral=True
                 )
             except discord.NotFound:

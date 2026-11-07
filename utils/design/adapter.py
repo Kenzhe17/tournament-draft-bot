@@ -11,6 +11,8 @@ Separator/MediaGallery, а кнопки исходного View перемеща
 
 from __future__ import annotations
 
+import re
+
 import discord
 
 from utils.design import colors
@@ -120,10 +122,43 @@ def _accent_from_embed(embed: discord.Embed) -> int:
     return value
 
 
+# Строки-разделители внутри embed-текста (───, ===, --- и т.п.)
+# превращаем в нативный discord.ui.Separator, а не текст.
+_DIVIDER_RE = re.compile(r"^[\s─━═\-_=~•·]{3,}$")
+
+
+def _text_segments(content: str) -> list[str | None]:
+    """Разбить текст на сегменты; None = разделитель."""
+    segments: list[str | None] = []
+    block: list[str] = []
+    for line in content.split("\n"):
+        if _DIVIDER_RE.match(line):
+            text = "\n".join(block).strip("\n")
+            if text.strip():
+                segments.append(text)
+            block = []
+            segments.append(None)
+        else:
+            block.append(line)
+    text = "\n".join(block).strip("\n")
+    if text.strip():
+        segments.append(text)
+    # Убрать ведущие/хвостовые разделители и дубли
+    while segments and segments[0] is None:
+        segments.pop(0)
+    while segments and segments[-1] is None:
+        segments.pop()
+    return segments
+
+
 def _add_text(container: discord.ui.Container, content: str) -> None:
-    """Добавить текст с разбивкой на TextDisplay."""
-    for chunk in chunk_text(content):
-        container.add_item(discord.ui.TextDisplay(content=chunk))
+    """Добавить текст с разбивкой на TextDisplay и Separator."""
+    for segment in _text_segments(content):
+        if segment is None:
+            container.add_item(separator())
+            continue
+        for chunk in chunk_text(segment):
+            container.add_item(discord.ui.TextDisplay(content=chunk))
 
 
 def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
@@ -162,31 +197,42 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
 
     def _add_text_maybe_thumb(content: str) -> None:
         nonlocal thumb_used
-        chunks = chunk_text(content)
-        if thumb_url and not thumb_used and chunks:
-            container.add_item(
-                discord.ui.Section(
-                    discord.ui.TextDisplay(content=chunks[0]),
-                    accessory=discord.ui.Thumbnail(media=thumb_url),
+        segments = _text_segments(content)
+        for i, segment in enumerate(segments):
+            if segment is None:
+                container.add_item(separator())
+                continue
+            chunks = chunk_text(segment)
+            if thumb_url and not thumb_used and chunks:
+                container.add_item(
+                    discord.ui.Section(
+                        discord.ui.TextDisplay(content=chunks[0]),
+                        accessory=discord.ui.Thumbnail(media=thumb_url),
+                    )
                 )
-            )
-            thumb_used = True
-            for chunk in chunks[1:]:
-                container.add_item(discord.ui.TextDisplay(content=chunk))
-            return
-        _add_text(container, content)
+                thumb_used = True
+                for chunk in chunks[1:]:
+                    container.add_item(discord.ui.TextDisplay(content=chunk))
+            else:
+                for chunk in chunks:
+                    container.add_item(discord.ui.TextDisplay(content=chunk))
 
-    # Author
+    # Author — с иконкой (иконка бота/контекста) как Section-аксессуар
     if embed.author and embed.author.name:
         author_text = f"-# {embed.author.name}"
         if embed.author.icon_url:
-            # icon_url в TextDisplay не поддерживается — пропускаем
-            pass
-        _add_text_maybe_thumb(author_text)
+            container.add_item(
+                discord.ui.Section(
+                    discord.ui.TextDisplay(content=author_text),
+                    accessory=discord.ui.Thumbnail(media=embed.author.icon_url),
+                )
+            )
+        else:
+            _add_text_maybe_thumb(author_text)
 
     # Title
     if embed.title:
-        title_text = f"# {embed.title}"
+        title_text = f"## {embed.title}"
         if thumb_url and not thumb_used:
             container.add_item(
                 discord.ui.Section(
@@ -240,30 +286,40 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
 
 
 def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
-    """Извлечь ActionRow из items обычного View (по row-атрибуту).
+    """Извлечь ActionRow из items обычного View.
 
-    Select Menu всегда получает отдельный ряд — Discord не позволяет
-    смешивать select с кнопками в одном ActionRow.
+    Кнопки без явного row упаковываются в общие ряды по 5 штук
+    (как в классическом View), Select Menu всегда получает
+    отдельный ряд в своей позиции — Discord не позволяет смешивать
+    select с кнопками в одном ActionRow.
     """
-    rows_map: dict[int, discord.ui.ActionRow] = {}
-    select_rows: list[discord.ui.ActionRow] = []
+    rows: list[discord.ui.ActionRow] = []
+    auto_row: discord.ui.ActionRow | None = None
+    auto_count = 0
+
+    def _flush() -> None:
+        nonlocal auto_row, auto_count
+        if auto_row is not None:
+            rows.append(auto_row)
+        auto_row = None
+        auto_count = 0
+
     for item in view.children:
-        if not hasattr(item, "custom_id") and not isinstance(
-            item, (discord.ui.Button, discord.ui.Select)
-        ):
-            continue
         if isinstance(item, discord.ui.Select):
+            _flush()
             row = discord.ui.ActionRow()
             row.add_item(item)
-            select_rows.append(row)
+            rows.append(row)
             continue
-        row_idx = getattr(item, "row", None)
-        if row_idx is None:
-            row_idx = len(rows_map)
-        if row_idx not in rows_map:
-            rows_map[row_idx] = discord.ui.ActionRow()
-        rows_map[row_idx].add_item(item)
-    return [rows_map[k] for k in sorted(rows_map)] + select_rows
+        if not isinstance(item, discord.ui.Button):
+            continue
+        if auto_row is None or auto_count >= 5:
+            auto_row = discord.ui.ActionRow()
+            auto_count = 0
+        auto_row.add_item(item)
+        auto_count += 1
+    _flush()
+    return rows
 
 
 def compose(

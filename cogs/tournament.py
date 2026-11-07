@@ -1237,7 +1237,7 @@ class TournamentCog(commands.Cog):
             logger.info(f"Ultimatum stats for {target_user.id}: {ultimatum_elo}")
             if ultimatum_elo:
                 description_parts.append("")
-                description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
+                description_parts.append(f"{replace_emojis('white_dot')} **Ультиматум:**")
                 description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: {ultimatum_elo.get('rated_matches', 0)} игр")
                 description_parts.append(f"{replace_emojis('sub_middle')} Побед: {ultimatum_elo.get('wins', 0)}")
                 description_parts.append(f"{replace_emojis('sub_directory')} ELO: {ultimatum_elo.get('elo', 1000)}")
@@ -1245,7 +1245,7 @@ class TournamentCog(commands.Cog):
                 logger.info(f"No Ultimatum stats found for {target_user.id}")
                 # Show default values even if no record
                 description_parts.append("")
-                description_parts.append(f"{replace_emojis('white_dot')} **Ultimatum:**")
+                description_parts.append(f"{replace_emojis('white_dot')} **Ультиматум:**")
                 description_parts.append(f"{replace_emojis('sub_middle')} Сыграно: 0 игр")
                 description_parts.append(f"{replace_emojis('sub_middle')} Побед: 0")
                 description_parts.append(f"{replace_emojis('sub_directory')} ELO: 1000")
@@ -1284,7 +1284,7 @@ class TournamentCog(commands.Cog):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
+            title=f"{replace_emojis('a_star')} {stats.name}",
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -2356,7 +2356,7 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
 
                     await interaction.response.send_message(
-                        replace_emojis(f"⚪ Вы уже узнали кто ты!\nСледующий вопрос через: {hours}ч {minutes}мин"),
+                        replace_emojis(f"⚪ Вы уже узнали кто ты!\nСледующий вопрос: <t:{int((last_use + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
                         ephemeral=True
                     )
                     return
@@ -2414,7 +2414,7 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
 
                     await interaction.response.send_message(
-                        replace_emojis(f"⚪ Вы уже получили бонус!\nСледующий бонус через: {hours}ч {minutes}мин"),
+                        replace_emojis(f"⚪ Вы уже получили бонус!\nСледующий бонус: <t:{int((last_claim + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
                         ephemeral=True
                     )
                     return

@@ -127,6 +127,14 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.warning("Не удалось зарегистрировать %s: %s", _group.name, e)
 
+        # Components V2: author/аватар в командах + обёртки send/edit
+        try:
+            from utils.design import meta as _design_meta
+            _design_meta.install()
+            _design_meta.wrap_all_commands(self.tree)
+        except Exception as e:
+            logger.warning("Не удалось установить design-meta: %s", e)
+
         # Load teams from PostgreSQL after extensions are loaded
         from storage.team_store import team_store
         await team_store.load_from_postgres()

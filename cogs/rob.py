@@ -97,7 +97,7 @@ class RobStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     await interaction.message.delete()
                     return
@@ -612,7 +612,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
@@ -684,7 +684,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
@@ -825,7 +825,7 @@ class RobGroupJoinButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
                         )
                         return
 
@@ -907,7 +907,7 @@ class RobGroupStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                        ephemeral=True
                     )
                     return
 
@@ -942,7 +942,7 @@ class RobGroupStartButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин."),                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте <t:{int((last_rob + timedelta(hours=2)).timestamp())}:R>."),                            ephemeral=True
                         )
                         await interaction.message.delete()
                         return

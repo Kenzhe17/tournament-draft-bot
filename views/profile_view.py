@@ -235,7 +235,7 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         # Create new embed (new style)
         import discord
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} ПРОФИЛЬ - {stats.name}",
+            title=f"{replace_emojis('a_star')} {stats.name}",
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
