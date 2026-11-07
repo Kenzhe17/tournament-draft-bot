@@ -183,6 +183,51 @@ class TournamentBot(commands.Bot):
 
             # Восстанавливаем кнопки публичных OCR-сообщений матчей
             for session in (tournament.ocr_sessions or {}).values():
+                # Squad-режим: отдельные сообщения на каждый отряд
+                if session.get("mode") == "squad":
+                    try:
+                        from views.ocr_match_view import (
+                            SquadAssignedView,
+                            SquadClaimView,
+                        )
+
+                        mt, mi = session["match_type"], session["match_index"]
+                        for entry in session.get("squad_pool", []):
+                            mid, uid = (
+                                entry.get("message_id"), entry.get("uid")
+                            )
+                            if mid and uid:
+                                self.add_view(
+                                    SquadClaimView(
+                                        tournament.guild_id,
+                                        tournament.channel_id,
+                                        tournament, mt, mi, uid,
+                                    ),
+                                    message_id=mid,
+                                )
+                        for tkey, sentry in session.get("squads", {}).items():
+                            mid = sentry.get("message_id")
+                            if not mid:
+                                continue
+                            try:
+                                tidx = int(tkey)
+                            except (TypeError, ValueError):
+                                continue
+                            self.add_view(
+                                SquadAssignedView(
+                                    tournament.guild_id,
+                                    tournament.channel_id,
+                                    tournament, mt, mi, tidx,
+                                ),
+                                message_id=mid,
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "Squad OCR view restore failed for %s: %s",
+                            session.get("match_type"), e,
+                        )
+                    continue
+
                 if (
                     session.get("status") in ("awaiting_mapping", "mapping", "ready")
                     and session.get("message_id")
