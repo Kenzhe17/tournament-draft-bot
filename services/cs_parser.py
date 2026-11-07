@@ -10,6 +10,9 @@ import re
 from typing import Any
 
 KDA_RE = re.compile(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{1,2})")
+# K/D/A + DMG склеены без пробела: "12/2/1457" → k=12 d=2 a=1 dmg=457
+# (ассист всегда 1 цифра, урон 3+ цифр)
+KDA_DMG_GLUED_RE = re.compile(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d)\s*(\d{3,7})")
 NUM_RE = re.compile(r"^\d{1,7}$")
 NAME_CHAR_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 SKIP_WORDS = {
@@ -30,9 +33,22 @@ def parse_cs_results(
     boxes: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     """Возвращает {"team_a": [...], "team_b": [...], "top5": bool} или None."""
-    # 1. Находим все K/D/A
+    # 1. Находим все K/D/A (включая склеенные с уроном "12/2/1457")
     kda_matches = []
     for b in boxes:
+        gm = KDA_DMG_GLUED_RE.search(b["text"])
+        if gm:
+            kda_matches.append(
+                {
+                    "k": int(gm.group(1)),
+                    "d": int(gm.group(2)),
+                    "a": int(gm.group(3)),
+                    "box": b,
+                    "mstart": gm.start(),
+                    "dmg_inline": int(gm.group(4)),
+                }
+            )
+            continue
         m = KDA_RE.search(b["text"])
         if m:
             kda_matches.append(
@@ -59,7 +75,14 @@ def parse_cs_results(
     left = kda_matches[: split_idx + 1]
     right = kda_matches[split_idx + 1 :]
 
-    def _panel_players(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    # Граница между панелями — чтобы имена одной команды не подтягивались
+    # в строки другой (у правой панели K/D/A правее, поэтому без границы
+    # она захватывала имена левой команды)
+    boundary_x = (cxs[split_idx] + cxs[split_idx + 1]) / 2
+
+    def _panel_players(
+        rows: list[dict[str, Any]], side: str
+    ) -> list[dict[str, Any]]:
         players = []
         for row in sorted(rows, key=lambda r: r["box"]["cy"]):
             b = row["box"]
@@ -82,6 +105,11 @@ def parse_cs_results(
                 if abs(nb["cy"] - b["cy"]) > tol:
                     continue
                 if nb["cx"] >= b["cx"] - 4:
+                    continue
+                # Бокс должен быть на стороне своей панели
+                if side == "left" and nb["cx"] >= boundary_x:
+                    continue
+                if side == "right" and nb["cx"] <= boundary_x:
                     continue
                 name_parts.append((nb["cx"], t))
             name_parts.sort()
@@ -126,8 +154,8 @@ def parse_cs_results(
             )
         return players
 
-    team_a = _panel_players(left)
-    team_b = _panel_players(right)
+    team_a = _panel_players(left, "left")
+    team_b = _panel_players(right, "right")
 
     top5 = any(
         "ПЯТЕРКУ" in b["text"].upper() or "ЛУЧШИХ" in b["text"].upper()
