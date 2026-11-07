@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import re
 from typing import Any
@@ -118,7 +117,8 @@ async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
 async def ff_info(
     interaction: discord.Interaction,
     uid: str,
-    region: app_commands.Choice[str],
+    region: app_commands.Choice[str] = app_commands.Choice(
+        name="RU / CIS", value="ru"),
 ) -> None:
     uid = uid.strip()
     if not await _check_and_key(interaction, uid):
@@ -200,8 +200,9 @@ async def ff_info(
 async def ff_stats(
     interaction: discord.Interaction,
     uid: str,
-    region: app_commands.Choice[str],
     mode: app_commands.Choice[str],
+    region: app_commands.Choice[str] = app_commands.Choice(
+        name="RU / CIS", value="ru"),
 ) -> None:
     uid = uid.strip()
     if not await _check_and_key(interaction, uid):
@@ -226,135 +227,6 @@ async def ff_stats(
         description=(
             f"ID `{uid}` • режим: **{mode.name}**\n\n"
             + ("\n".join(lines) if lines else "Данные отсутствуют.")
-        ),
-        color=COLOR_MAIN,
-    )
-    embed.set_footer(text=FOOTER)
-    await interaction.followup.send(embed=embed)
-
-
-# ------------------------------------------------------------------- /ff ban
-@ff_group.command(name="ban", description="Проверить бан аккаунта Free Fire")
-@app_commands.describe(uid="ID игрока (5-15 цифр)")
-async def ff_ban(interaction: discord.Interaction, uid: str) -> None:
-    uid = uid.strip()
-    if not await _check_and_key(interaction, uid):
-        return
-
-    await interaction.response.defer()
-    result = await _safe_call(freefire_service.get_ban(uid))
-    if isinstance(result, FreeFireError):
-        await interaction.followup.send(embed=_error_embed(result))
-        return
-
-    ban_status = str(result.get("ban_status", "")).lower()
-    period = result.get("ban_period")
-    nickname = result.get("nickname", "")
-
-    if "not banned" in ban_status or "no ban" in ban_status:
-        embed = discord.Embed(
-            title=replace_emojis(f"{get_emoji('check')} FREE FIRE | Бан"),
-            description=f"Аккаунт `{uid}` **не забанен**."
-                        + (f"\nИгрок: **{nickname}**" if nickname else ""),
-            color=discord.Color.green(),
-        )
-    else:
-        desc = f"Аккаунт `{uid}` — статус: **{result.get('ban_status', 'banned')}**"
-        if period:
-            desc += f"\n{get_emoji('timer')} Период: **{period}**"
-        embed = discord.Embed(
-            title=replace_emojis(f"{get_emoji('ban')} FREE FIRE | Бан"),
-            description=desc,
-            color=discord.Color.red(),
-        )
-    embed.set_footer(text=FOOTER)
-    await interaction.followup.send(embed=embed)
-
-
-# ---------------------------------------------------------------- /ff banner
-@ff_group.command(name="banner", description="Баннер профиля Free Fire (PNG)")
-@app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
-@app_commands.choices(region=REGION_CHOICES)
-async def ff_banner(
-    interaction: discord.Interaction,
-    uid: str,
-    region: app_commands.Choice[str],
-) -> None:
-    uid = uid.strip()
-    if not await _check_and_key(interaction, uid):
-        return
-
-    await interaction.response.defer()
-    try:
-        data, content_type = await freefire_service.get_banner(region.value, uid)
-    except FreeFireError as e:
-        await interaction.followup.send(embed=_error_embed(e))
-        return
-    except Exception:
-        logger.exception("ff banner failed")
-        await interaction.followup.send(
-            embed=_error_embed(
-                FreeFireError("Не удалось получить баннер.", "INTERNAL"))
-        )
-        return
-
-    if not data or len(data) < 100:
-        await interaction.followup.send(
-            embed=_error_embed(
-                FreeFireError("Баннер не найден или недоступен.", "NOT_FOUND"))
-        )
-        return
-
-    ext = "png" if "png" in content_type else "jpg"
-    file = discord.File(io.BytesIO(data), filename=f"ff_banner_{uid}.{ext}")
-    embed = discord.Embed(
-        title=replace_emojis(f"{get_emoji('profile')} FREE FIRE | Баннер"),
-        description=f"ID `{uid}`",
-        color=COLOR_MAIN,
-    )
-    embed.set_footer(text=FOOTER)
-    await interaction.followup.send(embed=embed, file=file)
-
-
-# --------------------------------------------------------------- /ff wishlist
-@ff_group.command(name="wishlist", description="Вишлист игрока Free Fire")
-@app_commands.describe(uid="ID игрока (5-15 цифр)", region="Регион аккаунта")
-@app_commands.choices(region=REGION_CHOICES)
-async def ff_wishlist(
-    interaction: discord.Interaction,
-    uid: str,
-    region: app_commands.Choice[str],
-) -> None:
-    uid = uid.strip()
-    if not await _check_and_key(interaction, uid):
-        return
-
-    await interaction.response.defer()
-    result = await _safe_call(freefire_service.get_wishlist(region.value, uid))
-    if isinstance(result, FreeFireError):
-        await interaction.followup.send(embed=_error_embed(result))
-        return
-
-    items = result.get("wishlist") or result.get("items") or []
-    if isinstance(items, dict):
-        items = list(items.values())
-    lines = []
-    for item in items[:15]:
-        if isinstance(item, dict):
-            name = (
-                item.get("name") or item.get("itemName")
-                or item.get("title") or item.get("itemId")
-                or str(item.get("id", "?"))
-            )
-        else:
-            name = str(item)
-        lines.append(f"• {name}")
-
-    embed = discord.Embed(
-        title=replace_emojis(f"{get_emoji('star')} FREE FIRE | Вишлист"),
-        description=(
-            f"ID `{uid}` — предметов: **{len(items)}**\n\n"
-            + ("\n".join(lines) if lines else "Вишлист пуст.")
         ),
         color=COLOR_MAIN,
     )
