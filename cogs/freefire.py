@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -47,6 +48,8 @@ def _prettify_key(key: str) -> str:
 
 
 def _fmt_value(value: Any) -> str:
+    if value is None:
+        return "—"
     if isinstance(value, float):
         return f"{value:,.1f}"
     if isinstance(value, int):
@@ -232,9 +235,24 @@ async def ff_info(
     clan = result.get("clanBasicInfo") or result.get("clanInfo") or {}
     guild_info = result.get("guildBasicInfo") or result.get("guildInfo") or {}
     social = result.get("socialInfo") or {}
+    pet = result.get("petInfo") or {}
+    credit = result.get("creditScoreInfo") or {}
+    diamond = result.get("diamondCostRes") or {}
+    prime = basic.get("primeInfo") or {}
 
     nickname = basic.get("nickname", "Unknown")
     signature = social.get("signature") or ""
+
+    def _date(ts: Any) -> str:
+        try:
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime(
+                "%d.%m.%Y %H:%M UTC")
+        except (TypeError, ValueError, OSError):
+            return "—"
+
+    def _mode_prefer() -> str:
+        mp = social.get("modePrefer") or ""
+        return {"ModePrefer_BR": "Battle Royale", "ModePrefer_CS": "Clash Squad"}.get(mp, mp or "—")
 
     embed = discord.Embed(
         title=replace_emojis(f"{get_emoji('game')} FREE FIRE | Профиль"),
@@ -254,13 +272,35 @@ async def ff_info(
         name=replace_emojis(f"{get_emoji('stats')} Основное"),
         value="\n".join(
             [
-                f"• Уровень: **{basic.get('level', '—')}**",
-                f"• Ранг: **{basic.get('rank', '—')}** (макс: {basic.get('maxRank', '—')})",
-                f"• Очки рейтинга: **{_num('rankingPoints')}**",
-                f"• Лайки: **{_num('liked')}**",
-                f"• Регион: {str(basic.get('region', region.value)).upper()}",
+                f"• Уровень: **{basic.get('level', '—')}** • EXP: **{_num('exp')}**",
+                f"• Ранг BR: **{basic.get('rank', '—')}** (макс: {basic.get('maxRank', '—')}) • Очки: **{_num('rankingPoints')}**",
+                f"• Ранг CS: **{basic.get('csRank', '—')}** (макс: {basic.get('csMaxRank', '—')}) • Очки: **{_fmt_value(basic.get('csRankingPoints'))}**",
+                f"• Лайки: **{_num('liked')}** • Бейджи: **{basic.get('badgeCnt', '—')}**",
+                f"• Регион: {str(basic.get('region', region.value)).upper()} • Версия: {basic.get('releaseVersion', '—')} • Сезон: {basic.get('seasonId', '—')}",
             ]
         ),
+        inline=False,
+    )
+
+    account_lines = [
+        f"• Создан: {_date(basic.get('createAt'))}",
+        f"• Последний вход: {_date(basic.get('lastLoginAt'))}",
+        f"• Язык: {str(social.get('language', '—')).replace('Language_', '')}",
+        f"• Любимый режим: {_mode_prefer()}",
+        f"• Кредитный счёт: **{_fmt_value(credit.get('creditScore'))}**",
+    ]
+    if diamond.get("diamondCost") is not None:
+        account_lines.append(f"• Diamond cost: **{_fmt_value(diamond.get('diamondCost'))}**")
+    if prime.get("primeLevel"):
+        account_lines.append(f"• Prime уровень: **{prime.get('primeLevel')}**")
+    if pet.get("id"):
+        account_lines.append(
+            f"• Питомец: ID `{pet.get('id')}` ур. **{pet.get('level', '—')}**"
+            + (f" • EXP: {_fmt_value(pet.get('exp'))}" if pet.get("exp") else "")
+        )
+    embed.add_field(
+        name=replace_emojis(f"{get_emoji('profile')} Аккаунт"),
+        value="\n".join(account_lines),
         inline=False,
     )
 
