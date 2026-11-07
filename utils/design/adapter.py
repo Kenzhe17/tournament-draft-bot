@@ -389,20 +389,13 @@ def compose(
         delegate=delegate,
         timeout=getattr(view, "timeout", 180.0),
     )
-    parts = _split_container(container)
-    accent_color = getattr(parts[0], "accent_color", None) if parts else None
-    for part in parts:
-        layout.add_item(part)
+    # Один Container на всё: Discord убрал лимит children у Container
+    # (api-docs PR #7534) — разбивка создавала лишнюю «вторую карточку».
+    accent_color = container.accent_color
+    layout.add_item(container)
     if view is not None:
-        # Ряды кнопок — внутрь последнего Container'а (кнопки внутри карточки).
-        # Если container переполнен (>10 children) — кладём ряды в новый
-        # Container с тем же акцентом.
-        target = parts[-1] if parts else None
         for row in _view_rows(view):
-            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
-                target = discord.ui.Container(accent_color=accent_color)
-                layout.add_item(target)
-            target.add_item(row)
+            container.add_item(row)
     return layout
 
 
@@ -486,12 +479,10 @@ def swap_view(
             if isinstance(child, discord.ui.Container):
                 accent = getattr(child, "accent_color", None)
                 target = child  # последний Container — ряды в конец карточки
+        if target is None:
+            target = discord.ui.Container(accent_color=accent)
+            layout.add_item(target)
         for row in rows:
-            # Внутрь последнего контентного Container'а; при переполнении
-            # (>10 children) — новый Container с тем же акцентом.
-            if target is None or len(target.children) >= _CONTAINER_MAX_CHILDREN:
-                target = discord.ui.Container(accent_color=accent)
-                layout.add_item(target)
             target.add_item(row)
 
     return layout
