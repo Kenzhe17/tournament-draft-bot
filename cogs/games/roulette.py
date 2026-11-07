@@ -269,11 +269,11 @@ async def _spin(self, interaction: discord.Interaction, choice: str):
     """Общий метод для вращения рулетки."""
     game_view = self.game_view
 
+    # Отметить что вращение сделано (до defer — защита от гонки с отменой)
+    game_view.spun = True
+
     # Defer interaction
     await interaction.response.defer()
-
-    # Отметить что вращение сделано
-    game_view.spun = True
 
     # Сгенерировать результат
     result = random.randint(0, 36)
@@ -343,6 +343,10 @@ class RouletteCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.spun:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку

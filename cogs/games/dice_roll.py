@@ -119,12 +119,12 @@ class DiceRollButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
-        # Defer interaction
-        await interaction.response.defer()
-
-        # Отметить что бросок сделан
+        # Отметить что бросок сделан (до defer — защита от гонки с отменой)
         self.game_view.rolled = True
         self.game_view.user_choice = self.number
+
+        # Defer interaction
+        await interaction.response.defer()
 
         # Сгенерировать результат
         result = random.randint(1, 6)
@@ -167,6 +167,10 @@ class DiceRollCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.rolled:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку

@@ -203,6 +203,10 @@ class CoinFlipCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        if not self.game.is_active or self.game.result is not None:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            return
+
         # Return bet to initiator
         lock = get_user_lock(self.game.guild_id, self.game.initiator_id)
         async with lock:
@@ -260,6 +264,10 @@ class CoinFlipDeclineButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.opponent_id:
             await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
+            return
+
+        if not self.game.is_active or self.game.result is not None:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Return bet to initiator

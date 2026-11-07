@@ -121,11 +121,11 @@ class SnapPlayButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        # Отметить что игра сделана (до defer — защита от гонки с отменой)
+        self.game_view.played = True
+
         # Defer interaction
         await interaction.response.defer()
-
-        # Отметить что игра сделана
-        self.game_view.played = True
 
         # Сгенерировать карты (2-14, где 11=J, 12=Q, 13=K, 14=A)
         player_card = random.randint(2, 14)
@@ -169,6 +169,10 @@ class SnapCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.played:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку

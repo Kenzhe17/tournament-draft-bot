@@ -107,61 +107,68 @@ class HighLowView(discord.ui.View):
 
     async def handle_guess(self, interaction: discord.Interaction, guess: str) -> None:
         """Обработать догадку."""
-        # Defer interaction
-        await interaction.response.defer()
+        if getattr(self, "_resolving", False):
+            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True)
+            return
+        self._resolving = True
+        try:
+            # Defer interaction
+            await interaction.response.defer()
 
-        # Сгенерировать следующее число
-        next_number = random.randint(1, 100)
+            # Сгенерировать следующее число
+            next_number = random.randint(1, 100)
 
-        # Проверить результат
-        correct = False
-        if guess == "higher" and next_number > self.current_number:
-            correct = True
-        elif guess == "lower" and next_number < self.current_number:
-            correct = True
-        elif next_number == self.current_number:
-            # Равные числа = автоматическая победа
-            correct = True
+            # Проверить результат
+            correct = False
+            if guess == "higher" and next_number > self.current_number:
+                correct = True
+            elif guess == "lower" and next_number < self.current_number:
+                correct = True
+            elif next_number == self.current_number:
+                # Равные числа = автоматическая победа
+                correct = True
 
-        if correct:
-            self.wins += 1
-            await interaction.followup.send(f"✅ Правильно! Следующее число: {next_number}", ephemeral=True)
-        else:
-            self.game_over = True
-            await interaction.followup.send(f"❌ Неправильно! Следующее число: {next_number}", ephemeral=True)
+            if correct:
+                self.wins += 1
+                await interaction.followup.send(f"✅ Правильно! Следующее число: {next_number}", ephemeral=True)
+            else:
+                self.game_over = True
+                await interaction.followup.send(f"❌ Неправильно! Следующее число: {next_number}", ephemeral=True)
 
-        # Обновить текущее число
-        self.current_number = next_number
-        self.round += 1
+            # Обновить текущее число
+            self.current_number = next_number
+            self.round += 1
 
-        # Проверить конец игры
-        if self.game_over:
-            # Проигрыш
-            result_embed = self.create_embed("lost")
-            result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
-            await interaction.edit_original_response( view=compose(result_embed, result_view))
-        elif self.round > self.max_rounds:
-            # Победа
-            self.game_over = True
-            final_prize = int(self.bet * (1.3 ** self.wins))
+            # Проверить конец игры
+            if self.game_over:
+                # Проигрыш
+                result_embed = self.create_embed("lost")
+                result_view = discord.ui.View(timeout=None)
+                result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
+                await interaction.edit_original_response( view=compose(result_embed, result_view))
+            elif self.round > self.max_rounds:
+                # Победа
+                self.game_over = True
+                final_prize = int(self.bet * (1.3 ** self.wins))
 
-            lock = get_user_lock(self.guild_id, self.user_id)
-            async with lock:
-                await user_balance_store.add_balance(
-                    self.guild_id,
-                    self.user_id,
-                    final_prize
-                )
+                lock = get_user_lock(self.guild_id, self.user_id)
+                async with lock:
+                    await user_balance_store.add_balance(
+                        self.guild_id,
+                        self.user_id,
+                        final_prize
+                    )
 
-            result_embed = self.create_embed("won")
-            result_view = discord.ui.View(timeout=None)
-            result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
-            await interaction.edit_original_response( view=compose(result_embed, result_view))
-        else:
-            # Продолжить игру
-            updated_embed = self.create_embed("playing")
-            await interaction.edit_original_response( view=compose(updated_embed, self))
+                result_embed = self.create_embed("won")
+                result_view = discord.ui.View(timeout=None)
+                result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
+                await interaction.edit_original_response( view=compose(result_embed, result_view))
+            else:
+                # Продолжить игру
+                updated_embed = self.create_embed("playing")
+                await interaction.edit_original_response( view=compose(updated_embed, self))
+        finally:
+            self._resolving = False
 
 
 class HighLowHigherButton(discord.ui.Button):
@@ -212,6 +219,10 @@ class HighLowCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.game_over or getattr(self.game_view, "_resolving", False):
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку

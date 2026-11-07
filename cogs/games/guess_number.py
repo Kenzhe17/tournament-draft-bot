@@ -134,6 +134,11 @@ class GuessNumberInput(discord.ui.Modal):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        if getattr(self.game_view, "_resolving", False):
+            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True)
+            return
+        self.game_view._resolving = True
+
         # Defer interaction
         await interaction.response.defer()
 
@@ -141,11 +146,13 @@ class GuessNumberInput(discord.ui.Modal):
         try:
             guess = int(self.number_input.value)
         except ValueError:
+            self.game_view._resolving = False
             await interaction.followup.send("❌ Введите корректное число.", ephemeral=True)
             return
 
         # Проверить диапазон
         if guess < self.game_view.min_range or guess > self.game_view.max_range:
+            self.game_view._resolving = False
             await interaction.followup.send(
                 f"❌ Число должно быть от {self.game_view.min_range} до {self.game_view.max_range}.",
                 ephemeral=True
@@ -200,6 +207,8 @@ class GuessNumberInput(discord.ui.Modal):
             updated_embed = self.game_view.create_embed("playing")
             await interaction.edit_original_response( view=compose(updated_embed, self.game_view))
 
+        self.game_view._resolving = False
+
 
 class GuessNumberGuessButton(discord.ui.Button):
     """Кнопка для ввода числа."""
@@ -232,6 +241,10 @@ class GuessNumberCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.game_over or getattr(self.game_view, "_resolving", False):
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку

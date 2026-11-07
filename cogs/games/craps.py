@@ -176,12 +176,12 @@ async def _roll(self, interaction: discord.Interaction, choice: str):
     """Общий метод для броска костей."""
     game_view = self.game_view
 
-    # Defer interaction
-    await interaction.response.defer()
-
-    # Отметить что бросок сделан
+    # Отметить что бросок сделан (до defer — защита от гонки с отменой)
     game_view.rolled = True
     game_view.choice = choice
+
+    # Defer interaction
+    await interaction.response.defer()
 
     # Сгенерировать результат (2 кубика)
     dice1 = random.randint(1, 6)
@@ -252,6 +252,10 @@ class CrapsCancelButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if self.game_view.rolled:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         # Вернуть ставку
