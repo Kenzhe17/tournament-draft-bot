@@ -902,7 +902,7 @@ class AdminConfirmView(View):
 
         # Show stats for confirmation
         await interaction.response.send_message(
-            view=compose(text="Проверьте статистику перед подтверждением:", view=compose)(self.embed, self._create_confirm_view()),
+            view=compose(self.embed, self._create_confirm_view(), text="Проверьте статистику перед подтверждением:"),
             ephemeral=True
         )
 

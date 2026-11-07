@@ -1262,8 +1262,7 @@ class BRDataButton(Button):
             role_mention = f"<@&{tournament.role_id}>" if role else ""
 
             # Send message 1: Header
-            await channel.send( view=text_card(f)"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**"
-            )
+            await channel.send( view=text_card(f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**")            )
 
             # Send message 2: Room ID
             await channel.send( view=text_card(tournament.room_data.get("id", "")))
@@ -1278,8 +1277,7 @@ class BRDataButton(Button):
             # Send to general channel
             general_channel = interaction.guild.get_channel(1200125075156910181)
             if general_channel:
-                await general_channel.send( view=text_card(f)"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>"
-                )
+                await general_channel.send( view=text_card(f"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>")                )
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")
             await interaction.followup.send(

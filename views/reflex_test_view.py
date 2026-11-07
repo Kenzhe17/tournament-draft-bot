@@ -146,11 +146,13 @@ class ReflexTestReactionView(View):
             title = "😢 Медленно!"
         else:
             color = discord.Color.orange()
-            title = replace_emojis("❌ Ошибка!"), view=compose(discord.Embed(
+            title = replace_emojis("❌ Ошибка!"),
+
+        embed = discord.Embed(
             title=title,
             description=message,
             color=color
-        ))
+        )
         embed.add_field(name="Ставка", value=f"{self.bet} 🪙", inline=True)
 
         # Если игра окончена

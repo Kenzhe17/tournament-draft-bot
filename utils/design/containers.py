@@ -33,12 +33,15 @@ def section(
     accessory_button: discord.ui.Button | None = None,
 ) -> discord.ui.Section:
     """Section с текстом и опциональным thumbnail/кнопкой-аксессуаром."""
-    display = discord.ui.TextDisplay(content=text)
     accessory = None
     if thumbnail:
         accessory = discord.ui.Thumbnail(media=thumbnail)
     elif accessory_button is not None:
         accessory = accessory_button
+    display = discord.ui.TextDisplay(content=text)
+    if accessory is None:
+        # Section требует accessory — без него используем обычный TextDisplay
+        return display
     return discord.ui.Section(display, accessory=accessory)
 
 

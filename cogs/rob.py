@@ -97,8 +97,7 @@ class RobStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
                     )
                     await interaction.message.delete()
                     return
@@ -112,8 +111,7 @@ class RobStartButton(discord.ui.Button):
         victim_cash = victim_balance  # user_balance это наличные на руках
 
         if robber_balance <= 100:
-            await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
-                ephemeral=True
+            await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} У вас недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                ephemeral=True
             )
             await interaction.message.delete()
             return
@@ -614,8 +612,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
                     )
                     return
 
@@ -687,8 +684,7 @@ class RobCog(commands.Cog):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
                     )
                     return
 
@@ -829,8 +825,7 @@ class RobGroupJoinButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                            ephemeral=True
                         )
                         return
 
@@ -912,8 +907,7 @@ class RobGroupStartButton(discord.ui.Button):
                     remaining = timedelta(hours=2) - (now - last_rob)
                     hours, remainder = divmod(remaining.seconds, 3600)
                     minutes, _ = divmod(remainder, 60)
-                    await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин.",
-                        ephemeral=True
+                    await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун! Попробуйте через {hours}ч {minutes}мин."),                        ephemeral=True
                     )
                     return
 
@@ -948,8 +942,7 @@ class RobGroupStartButton(discord.ui.Button):
                         remaining = timedelta(hours=2) - (now - last_rob)
                         hours, remainder = divmod(remaining.seconds, 3600)
                         minutes, _ = divmod(remainder, 60)
-                        await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин.",
-                            ephemeral=True
+                        await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} Кулдаун для участника <@{member_id}>! Попробуйте через {hours}ч {minutes}мин."),                            ephemeral=True
                         )
                         await interaction.message.delete()
                         return
@@ -962,8 +955,7 @@ class RobGroupStartButton(discord.ui.Button):
         for member_id in members:
             member_balance = await user_balance_store.get_balance(guild_id, member_id)
             if member_balance <= 100:
-                await interaction.response.send_message( view=text_card(f)"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100.",
-                    ephemeral=True
+                await interaction.response.send_message( view=text_card(f"{replace_emojis('❌')} У участника <@{member_id}> недостаточно {get_emoji('money')} для ограбления! Нужно минимум 100."),                    ephemeral=True
                 )
                 await interaction.message.delete()
                 return
