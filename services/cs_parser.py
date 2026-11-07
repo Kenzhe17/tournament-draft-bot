@@ -19,6 +19,14 @@ SKIP_WORDS = {
     "имя", "k/d/a", "dmg", "uma", "a", "b", "битва", "отрядов",
     "бермуда", "бермуды", "лобби", "conquest",
 }
+# Слова, которые не могут быть названием команды (шапка результата)
+TEAMNAME_SKIP = SKIP_WORDS | {
+    "победа", "поражение", "booyah", "byah", "victory", "defeat",
+    "lost", "win", "lose", "пятерку", "лучших", "назад", "vs", "vs.",
+    "топ", "mp", "вобин", "воях", "буя",
+}
+# Заголовки колонок таблицы — не название команды
+HEADER_WORDS = {"имя", "name", "k/d/a", "dmg", "dm6", "dmg:", "dmg6", "dmg."}
 
 
 def _has_name_chars(text: str) -> bool:
@@ -27,74 +35,6 @@ def _has_name_chars(text: str) -> bool:
 
 def _is_kda_text(text: str) -> bool:
     return bool(KDA_RE.search(text))
-
-
-def _pick_nick_parts(
-    boxes: list[dict[str, Any]],
-    kda_box: dict[str, Any],
-    side: str,
-    boundary_x: float,
-    tol: float,
-    prefix: str,
-) -> list[tuple[float, str]]:
-    """Собирает части имени игрока из OCR-боксов строки K/D/A.
-
-    Ячейка игрока в результатах FF содержит две текстовые строки:
-    ник (крупный шрифт, сверху) и название гильдии (мельче, снизу).
-    Простое соседство по Y захватывает обе — поэтому кандидаты
-    кластеризуются в строки, а выбирается строка ника: с наибольшей
-    высотой бокса (крупный шрифт), при равенстве — верхняя.
-    """
-    name_tol = tol * 1.8  # шире обычного: нужно захватить и строку гильдии
-    cands: list[tuple[float, str, float, float]] = []  # cx, text, cy, height
-    for nb in boxes:
-        t = nb["text"]
-        if nb is kda_box or _is_kda_text(t) or NUM_RE.match(t):
-            continue
-        if not _has_name_chars(t):
-            continue
-        if t.lower() in SKIP_WORDS or len(t) < 2:
-            continue
-        if abs(nb["cy"] - kda_box["cy"]) > name_tol:
-            continue
-        if nb["cx"] >= kda_box["cx"] - 4:
-            continue
-        # Бокс должен быть на стороне своей панели
-        if side == "left" and nb["cx"] >= boundary_x:
-            continue
-        if side == "right" and nb["cx"] <= boundary_x:
-            continue
-        cands.append((nb["cx"], t, nb["cy"], nb["y1"] - nb["y0"]))
-
-    prefix_ok = (
-        bool(prefix)
-        and _has_name_chars(prefix)
-        and prefix.lower() not in SKIP_WORDS
-    )
-    if not cands:
-        return [(kda_box["x0"], prefix)] if prefix_ok else []
-
-    # Кластеризация по вертикали: cy ближе 15px — одна строка
-    cands.sort(key=lambda c: c[2])
-    lines: list[list[tuple[float, str, float, float]]] = []
-    for c in cands:
-        if lines and c[2] - lines[-1][-1][2] <= 15.0:
-            lines[-1].append(c)
-        else:
-            lines.append([c])
-
-    def _score(line: list[tuple[float, str, float, float]]):
-        max_h = max(h for _, _, _, h in line)
-        mean_cy = sum(cy for _, _, cy, _ in line) / len(line)
-        # крупный шрифт ника важнее; при равной высоте — верхняя строка
-        return (max_h, -mean_cy)
-
-    best = max(lines, key=_score)
-    best.sort(key=lambda c: c[0])
-    parts = [(cx, t) for cx, t, _, _ in best]
-    if prefix_ok:
-        parts.insert(0, (kda_box["x0"], prefix))
-    return parts
 
 
 def parse_cs_results(
@@ -156,15 +96,31 @@ def parse_cs_results(
             b = row["box"]
             tol = max(14.0, (b["y1"] - b["y0"]) * 0.8)
 
-            # имя: текстовые боксы в той же строке левее K/D/A.
-            # В FF-результатах ячейка игрока содержит ДВЕ строки:
-            # ник (крупный шрифт) и название гильдии (мельче, ниже).
-            # Собираем кандидатов в расширенном окне, кластеризуем по
-            # строкам и оставляем только строку ника.
+            # имя: текстовые боксы в той же строке левее K/D/A
+            name_parts = []
+            # + префикс того же бокса до K/D/A (OCR может склеить строку)
             prefix = b["text"][: row["mstart"]].strip()
-            name_parts = _pick_nick_parts(
-                boxes, b, side, boundary_x, tol, prefix
-            )
+            if prefix and _has_name_chars(prefix) and prefix.lower() not in SKIP_WORDS:
+                name_parts.append((b["x0"], prefix))
+            for nb in boxes:
+                t = nb["text"]
+                if nb is b or _is_kda_text(t) or NUM_RE.match(t):
+                    continue
+                if not _has_name_chars(t):
+                    continue
+                if t.lower() in SKIP_WORDS or len(t) < 2:
+                    continue
+                if abs(nb["cy"] - b["cy"]) > tol:
+                    continue
+                if nb["cx"] >= b["cx"] - 4:
+                    continue
+                # Бокс должен быть на стороне своей панели
+                if side == "left" and nb["cx"] >= boundary_x:
+                    continue
+                if side == "right" and nb["cx"] <= boundary_x:
+                    continue
+                name_parts.append((nb["cx"], t))
+            name_parts.sort()
             # убираем дубли текста (OCR может дублировать)
             seen: set[str] = set()
             name = ""
@@ -206,8 +162,75 @@ def parse_cs_results(
             )
         return players
 
+    max_x = max(b["x1"] for b in boxes)
+
+    def _panel_name(
+        rows: list[dict[str, Any]], side: str
+    ) -> str | None:
+        """Название команды из шапки панели (обычно = ник капитана).
+
+        Ищем текст над строкой заголовков колонок ("имя"/"K/D/A"/"DMG"),
+        внутри x-диапазона своей панели.
+        """
+        if not rows:
+            return None
+        cy_sorted = sorted(r["box"]["cy"] for r in rows)
+        diffs = [cy_sorted[i + 1] - cy_sorted[i] for i in range(len(cy_sorted) - 1)]
+        pitch = max(sorted(diffs)[len(diffs) // 2] if diffs else 90.0, 30.0)
+        margin = max_x * 0.02
+        if side == "left":
+            x_lo, x_hi = 0.0, boundary_x - margin
+        else:
+            x_lo, x_hi = boundary_x + margin, max_x
+
+        def _in_panel(b: dict[str, Any]) -> bool:
+            return x_lo <= b["cx"] <= x_hi
+
+        # Y-окно: строка с названием команды — прямо над заголовками колонок
+        header_cy = min(
+            (
+                b["cy"]
+                for b in boxes
+                if _in_panel(b)
+                and b["text"].strip().lower().rstrip(":.") in HEADER_WORDS
+            ),
+            default=None,
+        )
+        if header_cy is not None:
+            y_lo, y_hi = header_cy - 3.0 * pitch, header_cy - 10
+        else:
+            top_cy = cy_sorted[0]
+            y_lo, y_hi = top_cy - 2.6 * pitch, top_cy - 0.55 * pitch
+
+        cands = []
+        for b in boxes:
+            t = b["text"].strip()
+            if not _in_panel(b) or not (y_lo < b["cy"] < y_hi):
+                continue
+            if not _has_name_chars(t) or len(t) < 2:
+                continue
+            if t.lower() in TEAMNAME_SKIP or _is_kda_text(t) or NUM_RE.match(t):
+                continue
+            cands.append(b)
+        if not cands:
+            return None
+        # Берём кластер строк ближе всего к заголовкам (название команды)
+        cands.sort(key=lambda b: b["cy"])
+        clusters: list[list[dict[str, Any]]] = [[cands[0]]]
+        for b in cands[1:]:
+            if b["cy"] - clusters[-1][-1]["cy"] <= 0.45 * pitch:
+                clusters[-1].append(b)
+            else:
+                clusters.append([b])
+        best = max(clusters, key=lambda cl: sum(b["cy"] for b in cl) / len(cl))
+        best.sort(key=lambda b: b["x0"])
+        name = " ".join(b["text"].strip() for b in best)
+        return name[:48] if name else None
+
     team_a = _panel_players(left, "left")
     team_b = _panel_players(right, "right")
+    name_a = _panel_name(left, "left")
+    name_b = _panel_name(right, "right")
 
     top5 = any(
         "ПЯТЕРКУ" in b["text"].upper() or "ЛУЧШИХ" in b["text"].upper()
@@ -230,6 +253,8 @@ def parse_cs_results(
     return {
         "team_a": team_a,
         "team_b": team_b,
+        "team_a_name": name_a,
+        "team_b_name": name_b,
         "top5": top5,
         "banner": banner,
     }

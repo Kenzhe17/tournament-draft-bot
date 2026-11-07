@@ -104,6 +104,7 @@ def detect_winner_side(
 
     boundary_x = (max(b["cx"] for b in left_boxes) + min(b["cx"] for b in right_boxes)) / 2
     min_kda_y = min(b["y0"] for b in kda_boxes)
+    max_kda_y1 = max(b["y1"] for b in kda_boxes)
 
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -112,9 +113,16 @@ def detect_winner_side(
     arr = np.asarray(img, dtype=np.int16)  # HxWx3
     h, w = arr.shape[:2]
 
-    # Полоса шапки команд: примерно от 55% до 98% высоты первой строки K/D/A
-    y0 = int(min_kda_y * 0.55)
-    y1 = int(min_kda_y * 0.98)
+    # Вертикальный шаг строк K/D/A — для нижней границы области панели
+    row_cys = sorted(b["cy"] for b in kda_boxes)
+    diffs = [row_cys[i + 1] - row_cys[i] for i in range(len(row_cys) - 1)]
+    pitch = max(sorted(diffs)[len(diffs) // 2] if diffs else 90.0, 30.0)
+
+    # Область панели: от шапки команд (~50% высоты первой строки K/D/A)
+    # до низа таблицы. Берём ВЕСЬ регион, а не только полосу шапки —
+    # подсветка победителя может быть рамкой/фоном по всей панели.
+    y0 = int(min_kda_y * 0.50)
+    y1 = int(max_kda_y1 + pitch * 1.1)
     y0 = max(0, min(y0, h - 2))
     y1 = max(y0 + 2, min(y1, h))
 
@@ -126,10 +134,14 @@ def detect_winner_side(
         g = region[:, :, 1].ravel()
         b = region[:, :, 2].ravel()
         lum = 0.299 * r + 0.587 * g + 0.114 * b
-        mask = lum > 100
+        maxc = np.maximum(np.maximum(r, g), b)
+        minc = np.minimum(np.minimum(r, g), b)
+        # Только насыщенные яркие пиксели (цветные элементы UI:
+        # оранжевая подсветка победителя, синяя у проигравшего).
+        # Белый/серый текст и тёмный фон исключаются — не размывают оценку.
+        mask = (lum > 90) & ((maxc - minc) > 45)
         if not mask.any():
             return 0.0
-        # Средний "теплый" перекос: оранжевый/золотой фон vs синий/серый
         return float(np.mean((r - b)[mask]))
 
     margin = int(w * 0.03)
@@ -137,7 +149,9 @@ def detect_winner_side(
     right_score = _warmth(int(boundary_x) + margin, w - margin)
 
     diff = abs(left_score - right_score)
-    if diff < 40:  # недостаточно уверенности
+    # Победитель должен иметь реально тёплую (оранжево-золотую) подсветку
+    winner_score = max(left_score, right_score)
+    if diff < 40 or winner_score < 20:
         logger.info(
             "winner detect ambiguous: left=%.1f right=%.1f", left_score, right_score
         )

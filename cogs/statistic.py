@@ -41,12 +41,20 @@ def _team_field(title: str, players: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _team_title(parsed: dict, side: str, is_winner: bool) -> str:
+    """'🏆 Команда <имя>' / '🔵 Команда <имя>' — имя = шапка панели (капитан)."""
+    icon = "🏆" if is_winner else ("🔵" if side == "a" else "🔴")
+    name = parsed.get(f"team_{side}_name") or side.upper()
+    return f"{icon} Команда {name}"
+
+
 def _result_line(parsed: dict) -> str | None:
     """Строка результата матча: победитель + баннер победы/поражения."""
     parts = []
     winner = parsed.get("winner")
     if winner in ("a", "b"):
-        parts.append(f"🏆 Победитель: **Команда {'A' if winner == 'a' else 'B'}**")
+        wname = parsed.get(f"team_{winner}_name") or winner.upper()
+        parts.append(f"🏆 Победитель: **Команда {wname}**")
     banner = parsed.get("banner")
     if banner == "win":
         parts.append("✅ Ваш результат: **ПОБЕДА**")
@@ -79,10 +87,16 @@ def _build_embed(parsed: dict) -> discord.Embed:
         embed.description = "\n".join(desc_parts)
     # Подсветка победившей команды в заголовке поля
     winner = parsed.get("winner")
-    name_a = "🏆 Команда A" if winner == "a" else "🔵 Команда A"
-    name_b = "🏆 Команда B" if winner == "b" else "🔴 Команда B"
-    embed.add_field(name=name_a, value=_team_field("A", team_a), inline=True)
-    embed.add_field(name=name_b, value=_team_field("B", team_b), inline=False)
+    embed.add_field(
+        name=_team_title(parsed, "a", winner == "a"),
+        value=_team_field("A", team_a),
+        inline=True,
+    )
+    embed.add_field(
+        name=_team_title(parsed, "b", winner == "b"),
+        value=_team_field("B", team_b),
+        inline=False,
+    )
     if mvp_name:
         embed.set_footer(text=f"MVP по урону: {mvp_name} • {FOOTER}")
     else:
