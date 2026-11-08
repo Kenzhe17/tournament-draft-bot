@@ -124,11 +124,11 @@ class MMCog(commands.Cog):
             ephemeral=True
         )
 
-    @mm_group.command(name="test", description="Тест «Найден матч» с ботами сервера")
-    @app_commands.describe(auto_ready="Автоматически подтверждать готовность ботов")
+    @mm_group.command(name="test", description="Тест «Найден матч» с искусственными игроками")
+    @app_commands.describe(auto_ready="Автоматически подтверждать готовность")
     @app_commands.checks.has_permissions(administrator=True)
     async def mm_test(self, interaction: discord.Interaction, auto_ready: bool = True) -> None:
-        """Запустить тест Ready Check: 8 ботов сервера с разной статистикой."""
+        """Запустить тест Ready Check: 8 искусственных игроков с разной статистикой."""
         guild = interaction.guild
         if guild is None:
             await interaction.response.send_message("❌ Команда только на сервере.", ephemeral=True)
@@ -144,21 +144,6 @@ class MMCog(commands.Cog):
                 "❌ В этом канале уже идёт проверка готовности.", ephemeral=True
             )
             return
-
-        # Боты сервера (минимум 8)
-        bots = [m for m in guild.members if m.bot]
-        if len(bots) < 8:
-            try:
-                await guild.chunk()
-                bots = [m for m in guild.members if m.bot]
-            except Exception:
-                pass
-        if len(bots) < 8:
-            await interaction.response.send_message(
-                f"❌ Нужно минимум 8 ботов на сервере, найдено {len(bots)}.", ephemeral=True
-            )
-            return
-        bots = sorted(bots, key=lambda m: m.id)[:8]
 
         # Свободный канал для турнира
         search = MMSearch(
@@ -183,13 +168,24 @@ class MMCog(commands.Cog):
             )
             return
 
-        # Заполнить поиск ботами и засеять им разную статистику
-        for member, profile in zip(bots, _MM_TEST_PROFILES):
+        # Заполнить поиск искусственными игроками (отрицательные user_id, как в /tournament test)
+        # Уникальная база на guild+channel+время, чтобы тесты не пересекались
+        base_user_id = -(
+            (guild.id % 100000) * 1_000_000
+            + (interaction.channel_id % 1000) * 100
+            + int(time.time()) % 100
+        )
+        test_names = [
+            "TestAce", "TestHunter", "TestRusher", "TestSniper",
+            "TestCamper", "TestRookie", "TestNoob", "TestGuest",
+        ]
+        for i, (name, profile) in enumerate(zip(test_names, _MM_TEST_PROFILES)):
             elo, games, wins, kills, deaths, assists, damage = profile
+            user_id = base_user_id - i
             stats = PlayerStats(
                 guild_id=guild.id,
-                user_id=member.id,
-                name=member.display_name,
+                user_id=user_id,
+                name=name,
                 elo=elo,
                 wins=wins,
                 games=games,
@@ -202,12 +198,7 @@ class MMCog(commands.Cog):
                 level=min(100, max(1, games // 2)),
             )
             await player_stats_store.set(stats)
-            search.add_player(member.display_name, member.id)
-        if len(search.players) < 8:
-            await interaction.response.send_message(
-                "❌ Не удалось добавить 8 уникальных ботов в поиск.", ephemeral=True
-            )
-            return
+            search.add_player(name, user_id)
         search.timer_started = True
 
         embed = await build_search_embed(search, guild)
@@ -229,13 +220,13 @@ class MMCog(commands.Cog):
             self._bg_tasks.add(task)
             task.add_done_callback(self._bg_tasks.discard)
             await interaction.followup.send(
-                f"🧪 Тест запущен: {len(bots)} ботов, авто-готовность включена.",
+                "🧪 Тест запущен: 8 тестовых игроков, авто-готовность включена.",
                 ephemeral=True,
             )
         else:
             await interaction.followup.send(
-                f"🧪 Тест запущен: {len(bots)} ботов. Подтверждайте готовность вручную "
-                "(боты не смогут нажать кнопки — проверка завершится по таймауту).",
+                "🧪 Тест запущен: 8 тестовых игроков. Готовность не будет "
+                "подтверждена — проверка завершится по таймауту.",
                 ephemeral=True,
             )
 
