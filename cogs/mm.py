@@ -6,6 +6,7 @@ import asyncio
 import io
 import logging
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
@@ -49,6 +50,9 @@ TOURNAMENT_CHANNEL_IDS = [1549809898643001484, 1563149967303118949, 156314995103
 
 # Заблокированные каналы для поиска
 LOCKED_CHANNELS: dict[int, str] = {}  # channel_id -> search_channel_id
+
+# Баннер панели очереди (MediaGallery attachment://)
+QUEUE_BANNER_PATH = Path(__file__).resolve().parent.parent / "assets" / "queue_banner.png"
 
 
 # Профили статистики для /mm test: (elo, games, wins, kills, deaths, assists, damage)
@@ -320,9 +324,16 @@ class MMCog(commands.Cog):
         # Сначала отправить ephemeral сообщение
         await interaction.response.send_message("Поиск создан!", ephemeral=True)
 
-        # Вечная V2-панель очереди
+        # Вечная V2-панель очереди с баннером
+        banner_file = (
+            discord.File(QUEUE_BANNER_PATH, filename="queue_banner.png")
+            if QUEUE_BANNER_PATH.exists()
+            else None
+        )
         message = await interaction.channel.send(
-            view=build_queue_panel(search)
+            view=build_queue_panel(search),
+            file=banner_file,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
         search.message_id = message.id
@@ -621,6 +632,14 @@ class MMCog(commands.Cog):
             message = await channel.fetch_message(rc.message_id)
             disabled = rc.status != ReadyCheckStatus.READY_CHECK
             await message.edit(view=ready_card(rc, self.bot, disabled=disabled))
+
+            # Обновить и панель очереди — живой счётчик готовности
+            try:
+                search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
+                if search is not None and search.is_locked:
+                    await self._update_queue_panel(search)
+            except Exception:
+                pass
         except discord.NotFound:
             logger.warning("Ready check message %s not found", rc.message_id)
         except Exception as exc:
@@ -1077,9 +1096,23 @@ class MMCog(commands.Cog):
                 channel = await self.bot.fetch_channel(search.channel_id)
             except Exception:
                 return
+        # Счётчик готовности для locked-состояния панели
+        ready_count = None
+        if search.is_locked:
+            try:
+                rc = await ready_check_store.get_active_by_search(
+                    search.guild_id, search.channel_id
+                )
+                if rc is not None:
+                    ready_count = rc.ready_count
+            except Exception:
+                pass
         try:
             message = await channel.fetch_message(search.message_id)
-            await message.edit(view=build_queue_panel(search))
+            await message.edit(
+                view=build_queue_panel(search, ready_count=ready_count),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except discord.NotFound:
             logger.warning("Queue panel message %s not found", search.message_id)
         except Exception as exc:
@@ -1197,7 +1230,10 @@ class MMCog(commands.Cog):
                         )
                 return
 
-            await interaction.response.edit_message(view=build_queue_panel(search))
+            await interaction.response.edit_message(
+                view=build_queue_panel(search),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
 
     async def handle_queue_leave(
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
@@ -1236,7 +1272,10 @@ class MMCog(commands.Cog):
                 search.timer_started = False
                 self._cancel_search_timer(guild_id, channel_id)
             mm_search_store.set(search)
-            await interaction.response.edit_message(view=build_queue_panel(search))
+            await interaction.response.edit_message(
+                view=build_queue_panel(search),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
 
     async def _begin_match(
         self, search: MMSearch, interaction: discord.Interaction

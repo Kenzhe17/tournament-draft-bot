@@ -3,25 +3,26 @@
 Сообщение-панель живёт в канале, где запущен /mm squad. Кнопки имеют
 constant custom_id и работают через persistent views: после рестарта
 бот регистрирует QueueControlsView на сохранённый message_id.
+
+Баннер queue_banner.png крепится к сообщению один раз при создании
+и отображается через MediaGallery (attachment://); последующие
+обновления — только edit view, вложение сохраняется.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import discord
 
-from models.mm_search import MMSearch, QUEUE_LOCKED_READY_CHECK
+from models.mm_search import MMSearch
 from utils.design.layouts import DesignView
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
 JOIN_CUSTOM_ID = "mmq_join:{gid}:{cid}"
 LEAVE_CUSTOM_ID = "mmq_leave:{gid}:{cid}"
+BANNER_FILENAME = "queue_banner.png"
 
 
 def _cog(interaction: discord.Interaction):
@@ -52,12 +53,12 @@ class QueueJoinButton(discord.ui.Button):
 
 
 class QueueLeaveButton(discord.ui.Button):
-    """Кнопка «Выйти из очереди»."""
+    """Кнопка «Покинуть очередь»."""
 
     def __init__(self, guild_id: int, channel_id: int):
         super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="Выйти из очереди",
+            style=discord.ButtonStyle.secondary,
+            label="Покинуть очередь",
             custom_id=LEAVE_CUSTOM_ID.format(gid=guild_id, cid=channel_id),
         )
         self.guild_id = guild_id
@@ -73,44 +74,69 @@ class QueueLeaveButton(discord.ui.Button):
         await cog.handle_queue_leave(interaction, self.guild_id, self.channel_id)
 
 
-def build_queue_panel(search: MMSearch) -> discord.ui.LayoutView:
+def _roster_lines(search: MMSearch) -> str:
+    """Все слоты очереди: 01..NN с игроками или 'Свободно'."""
+    required = search.required_players
+    lines: list[str] = []
+    for i in range(required):
+        num = f"{i + 1:02d}"
+        if i < len(search.players):
+            name = search.players[i]
+            uid = search.player_user_ids.get(name, 0)
+            entry = f"<@{uid}>" if uid else name
+        else:
+            entry = "Свободно"
+        lines.append(f"{num}. {entry}")
+    return "\n".join(lines)
+
+
+def build_queue_panel(
+    search: MMSearch, ready_count: int | None = None
+) -> discord.ui.LayoutView:
     """Построить V2-панель очереди (open/locked)."""
-    view = DesignView(title="RANKED MATCHMAKING", timeout=None)
-    view.text("FREE FIRE · CS 4×4")
-    view.text("Соревновательный подбор команд по Skill Rating")
+    view = DesignView(timeout=None)
+
+    # Баннер — MediaGallery поверх карточки (файл крепится к сообщению)
+    view.component(
+        discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=f"attachment://{BANNER_FILENAME}")
+        )
+    )
+    view.text("## RANKED MATCHMAKING")
+    view.text("-# FREE FIRE · CS 4×4 · SOLO QUEUE")
     view.sep()
 
     if search.is_locked:
-        view.text(
-            "## СТАТУС ОЧЕРЕДИ\n"
-            "Проверка готовности\n"
-            f"Матч #{search.match_num or '—'}\n"
-            "Набор временно закрыт"
+        view.text("## СТАТУС ОЧЕРЕДИ")
+        view.lines(
+            "Статус: Проверка готовности",
+            f"Матч #{search.match_num}" if search.match_num else "Матч —",
+            (
+                f"Подтвердили участие: {ready_count}/{search.required_players}"
+                if ready_count is not None
+                else "Подтвердили участие: —"
+            ),
+            "Набор временно закрыт.",
         )
         view.sep()
         view.text(
-            "-# Восемь участников подтверждают готовность к матчу.\n"
             "-# Очередь откроется после запуска или отмены матча."
         )
     else:
         required = search.required_players
         current = len(search.players)
-        lines = [
-            "## СТАТУС ОЧЕРЕДИ",
-            "Поиск игроков",
+        view.text("## ПОИСК ИГРОКОВ")
+        view.lines(
             f"Участников: {current}/{required}",
-            f"Необходимо ещё: {max(0, required - current)}",
-        ]
-        view.text("\n".join(lines))
-        if search.players:
-            view.sep()
-            roster = "\n".join(
-                f"{i}. {name}" for i, name in enumerate(search.players, 1)
-            )
-            view.text(f"## УЧАСТНИКИ\n{roster}")
+            f"Свободных мест: {max(0, required - current)}",
+        )
         view.sep()
-        view.text(
-            "-# После набора восьми участников матч будет сформирован автоматически."
+        view.text(f"## УЧАСТНИКИ ОЧЕРЕДИ\n{_roster_lines(search)}")
+        view.sep()
+        view.text("## АВТОМАТИЧЕСКИЙ ПОДБОР")
+        view.lines(
+            "Матч начнётся после набора 8 участников и подтверждения готовности.",
+            "Распределение команд выполняется по Skill Rating.",
         )
 
     view.row(
