@@ -128,7 +128,7 @@ def _accent_from_embed(embed: discord.Embed) -> int:
 # разрывают секции; строки вида «**Заголовок:**» тоже начинают
 # новую секцию (смысловые блоки внутри description).
 _DIVIDER_RE = re.compile(r"^[\s─━═\-_=~•·]{3,}$")
-_HEADER_RE = re.compile(r"^\s*\*\*[^*\n]{1,100}:\*\*\s*$")
+_HEADER_RE = re.compile(r"^\s*\*\*[^*\n]{1,100}\*\*:?\s*$")
 
 
 def _text_segments(
@@ -169,20 +169,31 @@ def _text_segments(
 
 
 def _quote_block(content: str) -> list[str]:
-    """Весь блок -> markdown blockquote ('>' перед каждой строкой).
+    """Первая строка блока -> blockquote ('> '), остальные — текст
+    со сдвигом на 1 пробел правее заголовка.
 
-    Discord склеивает соседние '>' строки в одну цитату: полоска
-    идёт по высоте всего блока, а заголовок и строки под ним имеют
-    одинаковый отступ от левой стены карточки.
+    Полоска ('>') есть только перед заголовком — короткий штрих
+    возле него, а не на всю высоту блока. Строки текста начинаются
+    на колонку правее текста заголовка (заголовок идёт после '> ',
+    тело — с отступом в 3 пробела).
     """
     head = content.split("\n", 1)[0]
     if not head.strip() or head.lstrip().startswith(">"):
         return [content]
-    quoted = "\n".join(
-        f"> {line}" if line.strip() else ">"
-        for line in content.split("\n")
-    )
-    return [quoted]
+    # Полоска — только перед заголовками (**...**). Обычный текст
+    # остаётся без неё, чтобы '>' не появлялся между строками.
+    if not _HEADER_RE.match(head):
+        return [content]
+    lines = content.split("\n")
+    out = ["> " + lines[0].lstrip()]
+    for line in lines[1:]:
+        if not line.strip():
+            out.append("")
+            continue
+        lead = len(line) - len(line.lstrip())
+        pad = max(0, 3 - lead)
+        out.append(" " * pad + line)
+    return ["\n".join(out)]
 
 
 # Хвост «| /command» в заголовках embed'ов — убираем: команду
