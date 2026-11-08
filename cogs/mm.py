@@ -15,6 +15,7 @@ from discord.ext import commands
 
 from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis
 from models.mm_search import MMFormat, MMSearch
+from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
 from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
 from storage.mm_search_store import mm_search_store
@@ -43,6 +44,19 @@ TOURNAMENT_CHANNEL_IDS = [1549809898643001484, 1563149967303118949, 156314995103
 LOCKED_CHANNELS: dict[int, str] = {}  # channel_id -> search_channel_id
 
 
+# Профили статистики для /mm test: (elo, games, wins, kills, deaths, assists, damage)
+_MM_TEST_PROFILES: list[tuple[int, int, int, int, int, int, int]] = [
+    (2280, 140, 95, 1680, 420, 350, 455_000),   # топ: SR ~9.5, WR 68%, K/D 4.0
+    (2050, 110, 66, 1180, 390, 300, 290_000),   # SR ~7.4, WR 60%, K/D 3.0
+    (1820, 90, 47, 810, 360, 260, 180_000),     # SR ~5.5, WR 52%, K/D 2.3
+    (1650, 75, 34, 560, 350, 220, 120_000),     # SR ~4.1, WR 45%, K/D 1.6
+    (1490, 60, 24, 400, 330, 180, 78_000),      # SR ~3.2, WR 40%, K/D 1.2
+    (1320, 45, 15, 270, 320, 140, 45_000),      # SR ~2.3, WR 33%, K/D 0.8
+    (1180, 30, 8, 140, 290, 90, 21_000),        # SR ~1.4, WR 27%, K/D 0.5
+    (1050, 15, 3, 55, 260, 50, 9_000),          # SR ~1.0, WR 20%, K/D 0.2
+]
+
+
 class MMCog(commands.Cog):
     """Cog с командами matchmaking."""
 
@@ -50,6 +64,7 @@ class MMCog(commands.Cog):
         self.bot = bot
         self._search_timers: dict[tuple[int, int], asyncio.Task] = {}
         self._rc_locks: dict[str, asyncio.Lock] = {}
+        self._bg_tasks: set[asyncio.Task] = set()
         self._rc_sweeper_task: asyncio.Task | None = None
         self._rc_recovery_task: asyncio.Task | None = None
         self.bot.mm_cog = self  # Регистрация для доступа из view
@@ -108,6 +123,139 @@ class MMCog(commands.Cog):
             f"✅ Удалено {deleted_count} поисков на сервере.",
             ephemeral=True
         )
+
+    @mm_group.command(name="test", description="Тест «Найден матч» с ботами сервера")
+    @app_commands.describe(auto_ready="Автоматически подтверждать готовность ботов")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def mm_test(self, interaction: discord.Interaction, auto_ready: bool = True) -> None:
+        """Запустить тест Ready Check: 8 ботов сервера с разной статистикой."""
+        guild = interaction.guild
+        if guild is None:
+            await interaction.response.send_message("❌ Команда только на сервере.", ephemeral=True)
+            return
+
+        if mm_search_store.get(guild.id, interaction.channel_id):
+            await interaction.response.send_message(
+                "❌ В этом канале уже есть активный поиск.", ephemeral=True
+            )
+            return
+        if await ready_check_store.get_active_by_search(guild.id, interaction.channel_id):
+            await interaction.response.send_message(
+                "❌ В этом канале уже идёт проверка готовности.", ephemeral=True
+            )
+            return
+
+        # Боты сервера (минимум 8)
+        bots = [m for m in guild.members if m.bot]
+        if len(bots) < 8:
+            try:
+                await guild.chunk()
+                bots = [m for m in guild.members if m.bot]
+            except Exception:
+                pass
+        if len(bots) < 8:
+            await interaction.response.send_message(
+                f"❌ Нужно минимум 8 ботов на сервере, найдено {len(bots)}.", ephemeral=True
+            )
+            return
+        bots = sorted(bots, key=lambda m: m.id)[:8]
+
+        # Свободный канал для турнира
+        search = MMSearch(
+            guild_id=guild.id,
+            channel_id=interaction.channel_id,
+            format=MMFormat.SQUAD,
+        )
+        for channel_id in TOURNAMENT_CHANNEL_IDS:
+            if channel_id in LOCKED_CHANNELS:
+                continue
+            tournament_channel = self.bot.get_channel(channel_id)
+            if tournament_channel is None:
+                continue
+            tournament = store.get(guild.id, tournament_channel.id)
+            if not tournament or tournament.phase == TournamentPhase.COMPLETE:
+                search.tournament_channel_id = channel_id
+                LOCKED_CHANNELS[channel_id] = interaction.channel_id
+                break
+        if not search.tournament_channel_id:
+            await interaction.response.send_message(
+                "❌ Все каналы для турниров заняты.", ephemeral=True
+            )
+            return
+
+        # Заполнить поиск ботами и засеять им разную статистику
+        for member, profile in zip(bots, _MM_TEST_PROFILES):
+            elo, games, wins, kills, deaths, assists, damage = profile
+            stats = PlayerStats(
+                guild_id=guild.id,
+                user_id=member.id,
+                name=member.display_name,
+                elo=elo,
+                wins=wins,
+                games=games,
+                finals=min(wins // 4, games),
+                tournament_participations=games,
+                total_kills=kills,
+                total_deaths=deaths,
+                total_assists=assists,
+                total_damage=damage,
+                level=min(100, max(1, games // 2)),
+            )
+            await player_stats_store.set(stats)
+            search.add_player(member.display_name, member.id)
+        if len(search.players) < 8:
+            await interaction.response.send_message(
+                "❌ Не удалось добавить 8 уникальных ботов в поиск.", ephemeral=True
+            )
+            return
+        search.timer_started = True
+
+        embed = await build_search_embed(search, guild)
+        view = build_search_view(self.bot, search)
+        message = await interaction.channel.send(view=compose(embed, view))
+        search.message_id = message.id
+        mm_search_store.set(search)
+
+        rc = await self._start_ready_check(search, interaction)
+        if rc is None:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Не удалось запустить проверку готовности.", ephemeral=True
+                )
+            return
+
+        if auto_ready:
+            task = asyncio.create_task(self._auto_ready_players(rc.match_id))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+            await interaction.followup.send(
+                f"🧪 Тест запущен: {len(bots)} ботов, авто-готовность включена.",
+                ephemeral=True,
+            )
+        else:
+            await interaction.followup.send(
+                f"🧪 Тест запущен: {len(bots)} ботов. Подтверждайте готовность вручную "
+                "(боты не смогут нажать кнопки — проверка завершится по таймауту).",
+                ephemeral=True,
+            )
+
+    async def _auto_ready_players(self, match_id: str, delay: float = 0.8) -> None:
+        """Тест: имитировать нажатие «Готов» за каждого участника матча."""
+        try:
+            rc = await ready_check_store.get(match_id)
+            if rc is None:
+                return
+            for player in list(rc.players):
+                rc = await ready_check_store.get(match_id)
+                if rc is None or rc.status != ReadyCheckStatus.READY_CHECK:
+                    return
+                async with self._rc_lock(match_id):
+                    await self._confirm_ready(match_id, player.user_id)
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.error("Auto-ready test failed for %s: %s", match_id, exc)
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
@@ -245,7 +393,7 @@ class MMCog(commands.Cog):
             self._rc_locks[match_id] = lock
         return lock
 
-    async def _start_ready_check(self, search: MMSearch, interaction: discord.Interaction) -> None:
+    async def _start_ready_check(self, search: MMSearch, interaction: discord.Interaction) -> ReadyCheck | None:
         """Запустить фазу Ready Check когда поиск заполнен (8 игроков)."""
         guild = interaction.guild
         if guild is None:
@@ -389,6 +537,7 @@ class MMCog(commands.Cog):
                 ephemeral=True,
             )
             logger.info("Ready check %s started (%d players)", match_id, len(rc_players))
+            return rc
 
         except Exception as exc:
             logger.error("Failed to start ready check: %s", exc, exc_info=True)
@@ -411,55 +560,54 @@ class MMCog(commands.Cog):
         except Exception as exc:
             logger.error("Failed to update ready check message: %s", exc)
 
-    async def handle_ready_click(self, interaction: discord.Interaction, match_id: str) -> None:
-        """Кнопка «Готов»."""
+    async def _confirm_ready(self, match_id: str, user_id: int) -> str:
+        """Отметить игрока готовым и при 8/8 запустить матч. Возвращает текст ответа.
+
+        Вызывать под self._rc_lock(match_id). Общий путь для кнопки и автотеста.
+        """
         rc = await ready_check_store.get(match_id)
         if rc is None:
-            await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
-            return
-        player = rc.player_by_id(interaction.user.id)
+            return "❌ Матч не найден."
+        player = rc.player_by_id(user_id)
         if player is None:
-            await interaction.response.send_message("❌ Вы не участвуете в этом матче.", ephemeral=True)
-            return
+            return "❌ Вы не участвуете в этом матче."
+        if rc.status != ReadyCheckStatus.READY_CHECK:
+            return "ℹ️ Этот матч уже завершён."
+        if time.time() > rc.deadline:
+            return "⏰ Время подтверждения истекло."
+        if player.is_ready:
+            return f"✅ Вы уже подтвердили готовность ({rc.ready_count}/8)."
 
+        player.is_ready = True
+        player.ready_at = time.time()
+        await ready_check_store.save(rc)
+        await self._update_ready_message(rc)
+
+        if rc.ready_count >= len(rc.players):
+            # Атомарный переход READY_CHECK -> ALL_READY -> LAUNCHING
+            if await ready_check_store.try_transition(
+                match_id, ReadyCheckStatus.READY_CHECK, ReadyCheckStatus.ALL_READY
+            ):
+                rc = await ready_check_store.get(match_id)
+                await self._update_ready_message(rc)
+                rc.status = ReadyCheckStatus.LAUNCHING
+                await ready_check_store.save(rc)
+                await self._launch_ready_check(rc)
+                return "✅ Все игроки готовы — матч запускается."
+        return f"✅ Готовность подтверждена. Ожидаем остальных игроков ({rc.ready_count}/8)."
+
+    async def handle_ready_click(self, interaction: discord.Interaction, match_id: str) -> None:
+        """Кнопка «Готов»."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         async with self._rc_lock(match_id):
-            rc = await ready_check_store.get(match_id)
-            if rc is None:
-                await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
-                return
-            player = rc.player_by_id(interaction.user.id)
-            if rc.status != ReadyCheckStatus.READY_CHECK:
-                await interaction.response.send_message("ℹ️ Этот матч уже завершён.", ephemeral=True)
-                return
-            if time.time() > rc.deadline:
-                await interaction.response.send_message("⏰ Время подтверждения истекло.", ephemeral=True)
-                return
-            if player.is_ready:
-                await interaction.response.send_message(
-                    f"✅ Вы уже подтвердили готовность ({rc.ready_count}/8).", ephemeral=True
-                )
-                return
-
-            player.is_ready = True
-            player.ready_at = time.time()
-            await ready_check_store.save(rc)
-
-            await interaction.response.send_message(
-                f"✅ Готовность подтверждена. Ожидаем остальных игроков ({rc.ready_count}/8).",
-                ephemeral=True,
-            )
-            await self._update_ready_message(rc)
-
-            if rc.ready_count >= len(rc.players):
-                # Атомарный переход READY_CHECK -> ALL_READY -> LAUNCHING
-                if await ready_check_store.try_transition(
-                    match_id, ReadyCheckStatus.READY_CHECK, ReadyCheckStatus.ALL_READY
-                ):
-                    rc = await ready_check_store.get(match_id)
-                    await self._update_ready_message(rc)
-                    rc.status = ReadyCheckStatus.LAUNCHING
-                    await ready_check_store.save(rc)
-                    await self._launch_ready_check(rc)
+            text = await self._confirm_ready(match_id, interaction.user.id)
+        try:
+            await interaction.followup.send(text, ephemeral=True)
+        except Exception:
+            pass
 
     async def handle_decline_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Отказаться»."""

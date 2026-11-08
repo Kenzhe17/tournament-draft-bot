@@ -318,7 +318,7 @@ async def test_full_ready_launches_once(tmp_path, monkeypatch):
 
     # посторонний не может
     outsider = await click(7777)
-    assert "не участвуете" in outsider.response.sent[0][0][0].lower()
+    assert "не участвуете" in outsider.followup.sent[0][0][0].lower()
 
     # 8 готовых параллельно
     await asyncio.gather(*[click(1000 + i) for i in range(8)])
@@ -346,7 +346,7 @@ async def test_ready_idempotent(tmp_path, monkeypatch):
 
     rc = await store.get(rc.match_id)
     assert rc.ready_count == 1  # не удвоилось
-    assert "уже подтвердили" in inter.response.sent[-1][0][0].lower()
+    assert "уже подтвердили" in inter.followup.sent[-1][0][0].lower()
 
 
 @pytest.mark.asyncio
