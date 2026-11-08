@@ -124,6 +124,23 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     _text(draw, (439, 442), (data.get("rank_name") or "BRONZE").upper(),
           20, C_VIOLET, anchor="ms")
 
+    # Прогрессия ранга — в шаблоне литерал «BRONZE→LEGEND», в example
+    # динамическое значение. Рисуем «CURRENT → NEXT» (для Legend — MAX)
+    from utils.ranks import RANKS
+    lvl = int(data.get("level") or 1)
+    cur_rank = (data.get("rank_name") or "Bronze").upper()
+    next_rank = None
+    for i, (rname, min_lvl, _) in enumerate(RANKS):
+        if lvl >= min_lvl:
+            if i + 1 < len(RANKS):
+                next_rank = RANKS[i + 1][0].upper()
+        else:
+            break
+    tier_str = f"{cur_rank} → {next_rank}" if next_rank else "MAX TIER"
+    _inpaint(img, (530, 418, 700, 452), radius=4)
+    tier_str, tier_size = _fit_text(draw, tier_str, 190, 17, min_size=11)
+    _text(draw, (540, 443), tier_str, tier_size, C_MUTED)
+
     # RANKED ELO — крупное число; под ним в шаблоне статичная подпись
     # «ПОСЛЕДНИХ МАТЧЕЙ», в example она затёрта — удаляем зону и рисуем ELO
     _inpaint(img, (960, 385, 1140, 428), radius=6)
