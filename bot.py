@@ -688,65 +688,8 @@ class TournamentBot(commands.Bot):
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Welcome-сообщение Components V2 для новых участников."""
-        if member.bot:
-            return
-
-        # Check if welcome is enabled in settings
-        from storage.json_store import store
-        settings = store.get_settings()
-        if not settings.get("welcome_enabled", True):
-            return
-
-        WELCOME_CHANNEL_ID = 1569098034325889144
-
-        # Get the welcome channel (сначала гильдия участника, затем все)
-        channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
-        if channel is None:
-            try:
-                channel = await member.guild.fetch_channel(WELCOME_CHANNEL_ID)
-            except discord.HTTPException:
-                channel = None
-        if channel is None:
-            for g in self.guilds:
-                if g.id == member.guild.id:
-                    continue
-                ch = g.get_channel(WELCOME_CHANNEL_ID)
-                if ch is None:
-                    try:
-                        ch = await g.fetch_channel(WELCOME_CHANNEL_ID)
-                    except discord.HTTPException:
-                        ch = None
-                if ch is not None:
-                    channel = ch
-                    break
-        if channel is None:
-            logger.error(f"Welcome channel {WELCOME_CHANNEL_ID} not found")
-            return
-
-        # Порядковый номер участника (PostgreSQL, сохраняется между рестартами)
-        try:
-            from storage.welcome_store import welcome_store
-            number = await welcome_store.member_number(
-                member.guild.id, member.id)
-        except Exception:
-            logger.exception("welcome number failed")
-            number = max(1, (member.guild.member_count or 1))
-
-        # ID канала с информацией/правилами для упоминания
-        try:
-            from config import INFO_CHANNEL_ID
-            info_channel_id = INFO_CHANNEL_ID or None
-        except Exception:
-            info_channel_id = None
-
-        try:
-            from services.welcome_card import (
-                build_welcome_view, welcome_file,
-            )
-            view = build_welcome_view(number, member, info_channel_id)
-            await channel.send(view=view, file=welcome_file())
-        except Exception:
-            logger.exception("Failed to send welcome message")
+        from services.welcome_card import send_welcome_message
+        await send_welcome_message(self, member)
 
 
 def main() -> None:

@@ -1542,6 +1542,25 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_message(
             view=build_congrats_view(user), file=congrats_file())
 
+    @app_commands.command(name="welcometest", description="Тест welcome-сообщения в настроенный канал")
+    @app_commands.default_permissions(administrator=True)
+    async def welcometest(self, interaction: discord.Interaction) -> None:
+        """Отправить welcome-карточку как для нового участника (диагностика)."""
+        from services.welcome_card import send_welcome_message
+
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "Только на сервере.", ephemeral=True)
+            return
+        member = interaction.user
+        if not isinstance(member, discord.Member):
+            member = await interaction.guild.fetch_member(member.id)
+        ok = await send_welcome_message(interaction.client, member)
+        await interaction.response.send_message(
+            "Welcome отправлен." if ok else
+            "Не удалось отправить — проверь логи бота.",
+            ephemeral=True)
+
     @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
         """Показать текущий ранг и прогресс до следующего уровня."""
