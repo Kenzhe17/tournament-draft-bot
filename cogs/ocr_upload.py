@@ -133,6 +133,26 @@ _SQUAD_MAP_CAPTION = (
 )
 
 
+def _mapping_layout(view, caption: str):
+    """V2-карточка сопоставления: скриншот игры (MediaGallery) внутри
+    карточки + подпись + кнопки view."""
+    from utils.design.layouts import DesignView
+
+    layout = DesignView(timeout=None)
+    layout.component(
+        discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=f"attachment://{SHOT_FILENAME}")
+        )
+    )
+    layout.sep(large=True)
+    layout.text(caption)
+    composed = compose(view=view, text=None)
+    for child in composed.walk_children():
+        if isinstance(child, discord.ui.ActionRow):
+            layout.container.add_item(child)
+    return layout
+
+
 async def _send_results_message(
     channel: discord.TextChannel,
     data: bytes,
@@ -145,7 +165,7 @@ async def _send_results_message(
     """
     file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
     return await channel.send(
-        view=compose(view=view, text=_OCR_MAP_CAPTION),
+        view=_mapping_layout(view, _OCR_MAP_CAPTION),
         file=file,
     )
 
@@ -163,7 +183,7 @@ async def _update_results_message(
     """
     msg = await channel.fetch_message(message_id)
     await msg.edit(
-        view=compose(view=view, text=_OCR_MAP_CAPTION),
+        view=_mapping_layout(view, _OCR_MAP_CAPTION),
         attachments=[
             discord.AttachmentInput(io.BytesIO(data), filename=SHOT_FILENAME)
         ],
@@ -655,6 +675,22 @@ class OCRUploadCog(commands.Cog):
                 )
             }
 
+            # Названия команд на экране кириллические («ХИЩНИКИ»), а
+            # основной rec-чарсет кириллицу не знает — перепознаём
+            # область названия отдельной cyrillic-моделью.
+            from services.ocr_service import ocr_cyrillic_region
+
+            for side_name, box_key in (
+                ("left", "team_a_name_box"),
+                ("right", "team_b_name_box"),
+            ):
+                region = parsed.get(box_key)
+                if not region:
+                    continue
+                cname = await ocr_cyrillic_region(data, region)
+                if cname:
+                    panels[side_name]["name"] = cname
+
             parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
             tournament = (
@@ -793,7 +829,7 @@ class OCRUploadCog(commands.Cog):
                     entry["message_id"]
                 )
                 await msg.edit(
-                    view=compose(view=view, text=_SQUAD_MAP_CAPTION),
+                    view=_mapping_layout(view, _SQUAD_MAP_CAPTION),
                     attachments=[
                         discord.AttachmentInput(
                             io.BytesIO(data), filename=SHOT_FILENAME
@@ -807,7 +843,7 @@ class OCRUploadCog(commands.Cog):
 
         file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
         bot_msg = await stats_channel.send(
-            view=compose(view=view, text=_SQUAD_MAP_CAPTION),
+            view=_mapping_layout(view, _SQUAD_MAP_CAPTION),
             file=file,
         )
         entry["message_id"] = bot_msg.id

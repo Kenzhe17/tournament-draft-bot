@@ -214,14 +214,18 @@ def parse_cs_results(
 
     def _panel_name(
         rows: list[dict[str, Any]], side: str
-    ) -> str | None:
+    ) -> tuple[str | None, tuple[float, float, float, float] | None]:
         """Название команды из шапки панели (РАЗРУШИТЕЛИ, ХИЩНИКИ и т.п.).
 
         Ищем текст над строкой заголовков колонок ("имя"/"K/D/A"/"DMG"),
         внутри x-диапазона своей панели.
+
+        Возвращает (имя, bbox области имени) — bbox нужен для повторного
+        OCR кириллической моделью (основной rec-чарсет не знает кириллицу
+        и выдаёт латиницу-кракозябры вместо «ХИЩНИКИ»).
         """
         if not rows:
-            return None
+            return None, None
         cy_sorted = sorted(r["box"]["cy"] for r in rows)
         diffs = [cy_sorted[i + 1] - cy_sorted[i] for i in range(len(cy_sorted) - 1)]
         pitch = max(sorted(diffs)[len(diffs) // 2] if diffs else 90.0, 30.0)
@@ -261,7 +265,7 @@ def parse_cs_results(
                 continue
             cands.append(b)
         if not cands:
-            return None
+            return None, None
         # Берём кластер строк ближе всего к заголовкам (название команды)
         cands.sort(key=lambda b: b["cy"])
         clusters: list[list[dict[str, Any]]] = [[cands[0]]]
@@ -273,12 +277,20 @@ def parse_cs_results(
         best = max(clusters, key=lambda cl: sum(b["cy"] for b in cl) / len(cl))
         best.sort(key=lambda b: b["x0"])
         name = " ".join(b["text"].strip() for b in best)
-        return name[:48] if name else None
+        if not name:
+            return None, None
+        bbox = (
+            min(b["x0"] for b in best),
+            min(b["y0"] for b in best),
+            max(b["x1"] for b in best),
+            max(b["y1"] for b in best),
+        )
+        return name[:48], bbox
 
     team_a = _panel_players(left, "left")
     team_b = _panel_players(right, "right")
-    name_a = _panel_name(left, "left")
-    name_b = _panel_name(right, "right")
+    name_a, box_a = _panel_name(left, "left")
+    name_b, box_b = _panel_name(right, "right")
 
     top5 = any(
         "ПЯТЕРКУ" in b["text"].upper() or "ЛУЧШИХ" in b["text"].upper()
@@ -303,6 +315,8 @@ def parse_cs_results(
         "team_b": team_b,
         "team_a_name": name_a,
         "team_b_name": name_b,
+        "team_a_name_box": box_a,
+        "team_b_name_box": box_b,
         "top5": top5,
         "banner": banner,
         "score": parse_match_score(boxes),

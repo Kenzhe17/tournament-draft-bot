@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 _ocr_instance = None
 _ocr_init_lock = threading.Lock()
 
+# Отдельный движок rapidocr v3 с кириллическим rec — нужен только для
+# названий команд на скриншоте («ХИЩНИКИ»/«РАЗРУШИТЕЛИ»): основной
+# ch_PP-OCRv4_rec не знает кириллицу и выдаёт латиницу-кракозябры.
+_cyr_instance = None
+_cyr_init_lock = threading.Lock()
+
 # Отдельный ограниченный пул для OCR: дефолтный executor даёт до ~32
 # потоков — пачка скриншотов подряд запускает параллельные ONNX-инференсы
 # и кладёт CPU/RAM. Два воркера = очередь вместо шторма.
@@ -87,6 +93,89 @@ async def extract_text_boxes(image_bytes: bytes) -> list[dict[str, Any]]:
     """OCR изображения → список боксов с координатами."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(OCR_EXECUTOR, _run_ocr, image_bytes)
+
+
+def _get_cyrillic_ocr():
+    global _cyr_instance
+    if _cyr_instance is None:
+        with _cyr_init_lock:
+            if _cyr_instance is None:
+                from rapidocr import (
+                    EngineType,
+                    LangRec,
+                    ModelType,
+                    OCRVersion,
+                    RapidOCR,
+                )
+
+                _cyr_instance = RapidOCR(
+                    params={
+                        "Det.engine_type": EngineType.ONNXRUNTIME,
+                        "Rec.engine_type": EngineType.ONNXRUNTIME,
+                        "Cls.engine_type": EngineType.ONNXRUNTIME,
+                        "Rec.lang_type": LangRec.CYRILLIC,
+                        "Rec.model_type": ModelType.MOBILE,
+                        "Rec.ocr_version": OCRVersion.PPOCRV5,
+                    }
+                )
+                logger.info("RapidOCR cyrillic initialized")
+    return _cyr_instance
+
+
+def _run_ocr_cyrillic_region(
+    image_bytes: bytes, region: tuple[float, float, float, float]
+) -> str:
+    """OCR области изображения кириллической моделью → текст или ''."""
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return ""
+    x0, y0, x1, y1 = region
+    pad = 14
+    crop = img.crop(
+        (
+            max(0, int(x0) - pad),
+            max(0, int(y0) - pad),
+            min(img.width, int(x1) + pad),
+            min(img.height, int(y1) + pad),
+        )
+    )
+    if crop.width < 8 or crop.height < 8:
+        return ""
+    # Мелкий шрифт имени — увеличиваем, rec-модель любит ~48px высоту
+    if crop.height < 64:
+        scale = 64 / crop.height
+        crop = crop.resize(
+            (max(8, int(crop.width * scale)), 64), Image.LANCZOS
+        )
+    buf = io.BytesIO()
+    crop.save(buf, format="PNG")
+    arr = np.asarray(Image.open(buf).convert("RGB"))
+    try:
+        result = _get_cyrillic_ocr()(arr)
+    except Exception:
+        logger.exception("Cyrillic OCR failed")
+        return ""
+    txts = getattr(result, "txts", None) or ()
+    text = " ".join(str(t).strip() for t in txts if str(t).strip())
+    # Регистр: «хищники» → «Хищники» (первая буква каждого слова)
+    words = []
+    for w in text.split():
+        c = w[0].lower() if w else ""
+        if c == "ё" or "а" <= c <= "я":
+            w = w[0].upper() + w[1:]
+        words.append(w)
+    return " ".join(words)[:48]
+
+
+async def ocr_cyrillic_region(
+    image_bytes: bytes, region: tuple[float, float, float, float]
+) -> str:
+    """Async-обёртка: кириллический OCR области названия команды."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        OCR_EXECUTOR, _run_ocr_cyrillic_region, image_bytes, region
+    )
 
 
 def ocr_score_fallback(

@@ -12,8 +12,8 @@
 - После сопоставления обеих команд результат подтверждается
   АВТОМАТИЧЕСКИ (победитель — по OCR-подсветке; если не определён,
   капитанам/организатору предлагается выбрать вручную).
-- «Вызвать организатора» — пинг организатора, если статистика неверна.
-- «Неправильный скриншот» — повторная загрузка: embed обновляется.
+- «Неправильный скриншот» и карандаши правки статистики — только
+  администратор сервера (или владелец бота).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ try:
 except ImportError:  # pragma: no cover
     FileUpload = None
 
-from config import replace_emojis
+from config import BOT_OWNER_ID, replace_emojis
 from models.tournament import Tournament
 from storage.json_store import store
 from utils.cosmetics import clean_nickname
@@ -149,6 +149,12 @@ def _can_use_ocr(user: discord.Member, tournament: Tournament, team_indexes: lis
     if is_org_check(user, user.guild):
         return True
     return any(_is_match_captain(user, tournament, i) for i in team_indexes)
+
+
+def _is_server_admin(user: discord.Member) -> bool:
+    """Discord-администратор сервера или владелец бота."""
+    perms = getattr(user, "guild_permissions", None)
+    return bool(perms and perms.administrator) or user.id == BOT_OWNER_ID
 
 
 def _match_label(match_type: str, match_index: int) -> str:
@@ -379,43 +385,6 @@ class MatchScreenshotButton(Button):
 # Публичное сообщение с результатами OCR + кнопки сопоставления
 # ---------------------------------------------------------------------------
 
-async def _send_org_ping(
-    interaction: discord.Interaction,
-    tournament: Tournament,
-    match_type: str,
-    match_index: int,
-) -> None:
-    """Пинг организатора (или ролей org) в канал результатов."""
-    mentions: list[str] = []
-    if tournament.organizer_id:
-        mentions.append(f"<@{tournament.organizer_id}>")
-    else:
-        from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
-        for rid in (ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
-            if rid:
-                mentions.append(f"<@&{rid}>")
-    ping = " ".join(mentions) if mentions else "организатор"
-
-    label = _match_label(match_type, match_index)
-    content = (
-        f"{ping}\n"
-        f"📢 {interaction.user.mention} вызывает организатора по "
-        f"матчу **{label}** — возможно, статистика распознана неверно."
-    )
-    channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-    if channel is None:
-        try:
-            channel = await interaction.guild.fetch_channel(
-                OCR_STATS_CHANNEL_ID
-            )
-        except Exception:
-            channel = interaction.channel
-    try:
-        await channel.send( view=text_card(content))
-    except Exception as e:
-        logger.warning("OCR call-org ping failed: %s", e)
-
-
 async def _register_reupload(
     interaction: discord.Interaction,
     match_type: str,
@@ -599,17 +568,6 @@ class OCRPublicView(View):
             wrong.callback = self._wrong_shot_callback()
             self.add_item(wrong)
 
-            call_org = Button(
-                label="📢 Вызвать организатора",
-                style=discord.ButtonStyle.secondary,
-                custom_id=(
-                    f"ocr_callorg:{guild_id}:{channel_id}:{match_type}:"
-                    f"{match_index}"
-                ),
-            )
-            call_org.callback = self._call_org_callback()
-            self.add_item(call_org)
-
     def _map_callback(self, team_index: int):
         async def callback(interaction: discord.Interaction) -> None:
             tournament = store.get(self.guild_id, self.channel_id)
@@ -673,10 +631,10 @@ class OCRPublicView(View):
                 )
                 return
             t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+            if not _is_server_admin(interaction.user):
                 await interaction.response.send_message(
                     replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
+                        "❌ Доступно только администратору сервера."
                     ),
                     ephemeral=True,
                 )
@@ -711,33 +669,6 @@ class OCRPublicView(View):
                     "это сообщение с результатами обновится."
                 ),
                 ephemeral=True,
-            )
-        return callback
-
-    def _call_org_callback(self):
-        """Кнопка «Вызвать организатора» — пинг организатора в канал результатов."""
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
-            )
-            await interaction.response.send_message(
-                replace_emojis("📢 Организатор вызван."), ephemeral=True
             )
         return callback
 
@@ -810,17 +741,6 @@ class SquadClaimView(View):
         )
         wrong.callback = self._wrong_callback(uid, t1v, t2v)
         self.add_item(wrong)
-
-        call_org = Button(
-            label="📢 Вызвать организатора",
-            style=discord.ButtonStyle.secondary,
-            custom_id=(
-                f"ocr_squad_org:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{uid}"
-            ),
-        )
-        call_org.callback = self._org_callback(t1v, t2v)
-        self.add_item(call_org)
 
     def _claim_callback(self, team_index: int):
         async def callback(interaction: discord.Interaction) -> None:
@@ -913,10 +833,10 @@ class SquadClaimView(View):
                     replace_emojis("❌ Турнир не найден."), ephemeral=True
                 )
                 return
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+            if not _is_server_admin(interaction.user):
                 await interaction.response.send_message(
                     replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
+                        "❌ Доступно только администратору сервера."
                     ),
                     ephemeral=True,
                 )
@@ -940,30 +860,6 @@ class SquadClaimView(View):
                     "это сообщение обновится."
                 ),
                 ephemeral=True,
-            )
-        return callback
-
-    def _org_callback(self, t1: int, t2: int):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
-            )
-            await interaction.response.send_message(
-                replace_emojis("📢 Организатор вызван."), ephemeral=True
             )
         return callback
 
@@ -1017,17 +913,6 @@ class SquadAssignedView(View):
             )
             wrong.callback = self._wrong_callback()
             self.add_item(wrong)
-
-            call_org = Button(
-                label="📢 Вызвать организатора",
-                style=discord.ButtonStyle.secondary,
-                custom_id=(
-                    f"ocr_squad_org2:{guild_id}:{channel_id}:{match_type}:"
-                    f"{match_index}:{team_index}"
-                ),
-            )
-            call_org.callback = self._org_callback()
-            self.add_item(call_org)
 
     def _map_callback(self):
         async def callback(interaction: discord.Interaction) -> None:
@@ -1115,10 +1000,10 @@ class SquadAssignedView(View):
                 )
             except Exception:
                 t1, t2 = self.team_index, self.team_index
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+            if not _is_server_admin(interaction.user):
                 await interaction.response.send_message(
                     replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
+                        "❌ Доступно только администратору сервера."
                     ),
                     ephemeral=True,
                 )
@@ -1151,36 +1036,6 @@ class SquadAssignedView(View):
                     "это сообщение обновится, сопоставление сбросится."
                 ),
                 ephemeral=True,
-            )
-        return callback
-
-    def _org_callback(self):
-        async def callback(interaction: discord.Interaction) -> None:
-            tournament = store.get(self.guild_id, self.channel_id)
-            if not tournament:
-                await interaction.response.send_message(
-                    replace_emojis("❌ Турнир не найден."), ephemeral=True
-                )
-                return
-            try:
-                t1, t2 = _match_tuple(
-                    tournament, self.match_type, self.match_index
-                )
-            except Exception:
-                t1, t2 = self.team_index, self.team_index
-            if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Доступно капитанам команд и организатору."
-                    ),
-                    ephemeral=True,
-                )
-                return
-            await _send_org_ping(
-                interaction, tournament, self.match_type, self.match_index
-            )
-            await interaction.response.send_message(
-                replace_emojis("📢 Организатор вызван."), ephemeral=True
             )
         return callback
 
@@ -1430,6 +1285,15 @@ class PanelMappingView(View):
 
     def _make_edit_callback(self, row_idx: int):
         async def callback(interaction: discord.Interaction) -> None:
+            if not _is_server_admin(interaction.user):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Исправлять статистику может только "
+                        "администратор сервера."
+                    ),
+                    ephemeral=True,
+                )
+                return
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
@@ -1457,6 +1321,15 @@ class PanelMappingView(View):
 
     def _make_extra_edit_callback(self, row_idx: int):
         async def callback(interaction: discord.Interaction) -> None:
+            if not _is_server_admin(interaction.user):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Исправлять статистику может только "
+                        "администратор сервера."
+                    ),
+                    ephemeral=True,
+                )
+                return
             tournament = store.get(self.guild_id, self.channel_id)
             if not tournament:
                 await interaction.response.send_message(
