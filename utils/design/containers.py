@@ -142,9 +142,10 @@ class CardBuilder:
 
     # --- Сборка ---
     def build(self) -> discord.ui.Container:
+        # accent_color намеренно не задаём: длинная цветная полоса
+        # слева не используется — акценты делаются '>' полосками.
         return discord.ui.Container(
             *self._children,
-            accent_color=self._accent,
             spoiler=self._spoiler,
         )
 

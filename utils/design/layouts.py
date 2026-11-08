@@ -44,13 +44,12 @@ class DesignView(discord.ui.LayoutView):
         if container is not None:
             self.container = container
         else:
-            self.container = discord.ui.Container(
-                accent_color=accent if accent is not None else colors.NEUTRAL,
-                spoiler=spoiler,
-            )
+            # Без accent_color: длинная цветная полоса слева не
+            # используется — акцентные элементы делаются '>' полосками.
+            self.container = discord.ui.Container(spoiler=spoiler)
             if title:
                 self.container.add_item(
-                    discord.ui.TextDisplay(content=f"## {title[:80]}")
+                    discord.ui.TextDisplay(content=f"> ## {title[:80]}")
                 )
                 self.container.add_item(separator())
         self.add_item(self.container)

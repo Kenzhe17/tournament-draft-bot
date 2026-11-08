@@ -165,19 +165,90 @@ def _text_segments(
     return segments
 
 
+def _quote_first_line(content: str) -> list[str]:
+    """'>' полоска только у первой строки текста."""
+    head, sep, rest = content.partition("\n")
+    if not head.strip() or head.lstrip().startswith(">"):
+        return [content]
+    parts = [f"> {head}"]
+    if sep and rest.strip():
+        parts.append(rest)
+    return parts
+
+
+def _is_small_text(content: str) -> bool:
+    """'-# ' мелкий текст (author/footer) — полоску не получает."""
+    return content.lstrip().startswith("-#")
+
+
+def _strip_section_head(sec: list[discord.ui.Item]) -> None:
+    """Добавить короткую '>' полоску к первому текстовому блоку секции.
+
+    Полоска по высоте равна одной строке заголовка — в отличие от
+    accent_color Container'а, не тянется на всю карточку.
+    Мелкий текст ('-# ') и секции-картинки пропускаются.
+    """
+    for idx, item in enumerate(sec):
+        if isinstance(item, discord.ui.TextDisplay):
+            if _is_small_text(item.content):
+                continue
+            parts = _quote_first_line(item.content)
+            new_items = [
+                discord.ui.TextDisplay(content=p) for p in parts
+            ]
+            sec[idx : idx + 1] = new_items
+            return
+        if isinstance(item, discord.ui.Section):
+            accessory = getattr(item,"accessory", None)
+            if accessory is None:
+                continue
+            children = list(
+                getattr(item,"children", None)
+                or getattr(item,"_children", [])
+            )
+            td_index = next(
+                (
+                    i
+                    for i, c in enumerate(children)
+                    if isinstance(c, discord.ui.TextDisplay)
+                ),
+                None,
+            )
+            if td_index is None:
+                continue
+            td = children[td_index]
+            if _is_small_text(td.content):
+                continue
+            parts = _quote_first_line(td.content)
+            new_children = list(children)
+            new_children[td_index : td_index + 1] = [
+                discord.ui.TextDisplay(content=p) for p in parts
+            ]
+            # Section вмещает максимум 3 TextDisplay
+            if sum(
+                isinstance(c, discord.ui.TextDisplay) for c in new_children
+            ) > 3:
+                continue
+            sec[idx] = discord.ui.Section(
+                *new_children, accessory=accessory
+            )
+            return
+        # MediaGallery/Separator и пр. — пропускаем, ищем текст дальше
+
+
 def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
     """Конвертировать discord.Embed в список Container-секций.
 
-    Каждая смысловая секция становится отдельным Container со своей
-    акцентной полосой:
+    Каждая смысловая секция становится отдельным Container:
       - author + title + description (до первого разделителя) -> секция 1
       - строка-разделитель (───, === и т.п.) внутри текста -> граница секции
+      - строка «**Заголовок:**» в description -> граница секции
       - каждое непустое поле -> своя секция; подряд идущие inline-поля
         группируются в одну секцию
       - image -> своя секция (вместе с footer, если он есть)
       - footer/timestamp -> в конец последней текстовой секции
+      - первая строка каждой секции получает короткую '>' полоску
     """
-    accent = _accent_from_embed(embed)
     sections: list[list[discord.ui.Item]] = []
     current: list[discord.ui.Item] = []
 
@@ -328,13 +399,24 @@ def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
         sections[-2].extend(sections[-1])
         sections.pop()
 
+    # Тонкий Separator в конце каждой секции, кроме последней —
+    # визуальное разделение смысловых блоков.
+    for sec in sections[:-1]:
+        if sec and not isinstance(sec[-1], discord.ui.Separator):
+            sec.append(separator())
+
+    # Короткая '>' полоска слева от первой строки каждой секции
+    # (аналог короткого accent-бара, но только у заголовка/блока).
+    for sec in sections:
+        _strip_section_head(sec)
+
     containers: list[discord.ui.Container] = []
     for sec in sections:
-        container = discord.ui.Container(accent_color=accent)
+        container = discord.ui.Container()
         for item in sec:
             container.add_item(item)
         containers.append(container)
-    return containers or [discord.ui.Container(accent_color=accent)]
+    return containers or [discord.ui.Container()]
 
 
 def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
@@ -400,14 +482,12 @@ def compose(
         # содержать embed; вызывающий код должен мигрировать view)
         return view
 
-    # Embed -> несколько Container-секций (каждая со своей
-    # акцентной полосой); кнопки идут в конец последней секции.
+    # Embed -> несколько Container-секций (у каждой своя рамка,
+    # короткие '>' полоски у заголовков); кнопки — в конец последней.
     if embed is not None:
         sections = embed_to_sections(embed)
     else:
-        sections = [
-            discord.ui.Container(accent_color=accent or colors.NEUTRAL)
-        ]
+        sections = [discord.ui.Container()]
 
     delegate = view if isinstance(view, discord.ui.View) else None
     layout = _ComposedLayoutView(
@@ -501,14 +581,12 @@ def swap_view(
 
     if view is not None:
         rows = _interactive_rows(view)
-        accent = None
         target = None
         for child in layout.children:
             if isinstance(child, discord.ui.Container):
-                accent = getattr(child,"accent_color", None)
                 target = child # последний Container — ряды в конец карточки
         if target is None:
-            target = discord.ui.Container(accent_color=accent)
+            target = discord.ui.Container()
             layout.add_item(target)
         for row in rows:
             target.add_item(row)
