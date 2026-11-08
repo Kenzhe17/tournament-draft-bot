@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import BOT_OWNER_ID
+from cogs.groups import games_group
 from services.game_stats import get_stats
 
 if False:  # TYPE_CHECKING
@@ -16,7 +17,7 @@ class GamesStatsCog(commands.Cog):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        from cogs.groups import games_group, bind_commands
+        from cogs.groups import bind_commands
         bind_commands(games_group, self, ["stats"])
 
     @games_group.command(name="stats", description="Статистика мини-игр (только для администраторов)")
