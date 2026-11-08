@@ -1,4 +1,7 @@
-"""View и embed для фазы Ready Check («НАЙДЕН МАТЧ»)."""
+"""View и embed для фазы Ready Check («НАЙДЕН МАТЧ»).
+
+Components V2 через compose(); эмодзи не используются.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ def _mention(player) -> str:
 def _roster_line(players) -> str:
     parts = []
     for p in players:
-        mark = " ✅" if p.is_ready else ""
+        mark = " ✓" if p.is_ready else ""
         parts.append(_mention(p) + mark)
     return " ".join(parts)
 
@@ -33,7 +36,7 @@ def _roster_line(players) -> str:
 def build_ready_embed(rc: ReadyCheck) -> discord.Embed:
     """Embed карточки Ready Check (изображение + статусы)."""
     embed = discord.Embed(
-        title="🏆 НАЙДЕН МАТЧ",
+        title="НАЙДЕН МАТЧ",
         color=discord.Color.from_rgb(88, 66, 180),
     )
     embed.set_image(url=f"attachment://{PNG_FILENAME}")
@@ -50,13 +53,13 @@ def build_ready_embed(rc: ReadyCheck) -> discord.Embed:
         desc = (
             f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
             f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
-            "✅ **Все игроки готовы — 8/8.**\nМатч запускается…"
+            "**Все игроки готовы — 8/8.**\nМатч запускается…"
         )
     elif status == ReadyCheckStatus.LAUNCHING:
         desc = (
             f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
             f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
-            "✅ **Все игроки готовы — 8/8.**\nЗапуск матча…"
+            "**Все игроки готовы — 8/8.**\nЗапуск матча…"
         )
     elif status == ReadyCheckStatus.DECLINED:
         decliner = next((p for p in rc.players if p.declined), None)
@@ -64,24 +67,31 @@ def build_ready_embed(rc: ReadyCheck) -> discord.Embed:
         desc = (
             f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
             f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
-            f"❌ **Матч отменён:** {who} отказался от участия.\n"
+            f"**Матч отменён:** {who} отказался от участия.\n"
             "Остальные игроки возвращены в очередь."
         )
     elif status == ReadyCheckStatus.TIMEOUT:
         desc = (
             f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
             f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
-            f"⏰ **Подтверждение не завершено — {rc.ready_count}/8.**\n"
+            f"**Подтверждение не завершено — {rc.ready_count}/8.**\n"
             "Матч отменён. Готовые игроки возвращены в очередь."
         )
     else:  # LAUNCHED / CANCELLED
-        desc = (
-            f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
-            f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
-            "🏁 **Матч запущен.**"
-            if status == ReadyCheckStatus.LAUNCHED
-            else f"❌ **Матч отменён.** {rc.cancel_reason}".strip()
-        )
+        if status == ReadyCheckStatus.LAUNCHED:
+            desc = (
+                f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
+                f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
+                "**Матч запущен.**"
+            )
+            if rc.match_channel_id:
+                desc += f"\nИгровой канал: <#{rc.match_channel_id}>"
+        else:
+            desc = (
+                f"**Команда A — фиолетовая**\n{_roster_line(rc.team_a)}\n\n"
+                f"**Команда B — синяя**\n{_roster_line(rc.team_b)}\n\n"
+                f"**Матч отменён.** {rc.cancel_reason}".strip()
+            )
     embed.description = desc
     return embed
 
@@ -101,7 +111,6 @@ class ReadyCheckView(discord.ui.View):
         self.ready_button = discord.ui.Button(
             style=discord.ButtonStyle.success,
             label="Готов",
-            emoji="✅",
             custom_id=f"rc_ready:{match_id}",
             disabled=disabled,
         )
@@ -111,7 +120,6 @@ class ReadyCheckView(discord.ui.View):
         self.decline_button = discord.ui.Button(
             style=discord.ButtonStyle.danger,
             label="Отказаться",
-            emoji="❌",
             custom_id=f"rc_decline:{match_id}",
             disabled=disabled,
         )
@@ -121,14 +129,14 @@ class ReadyCheckView(discord.ui.View):
     async def _on_ready(self, interaction: discord.Interaction) -> None:
         cog = getattr(self.bot, "mm_cog", None)
         if cog is None:
-            await interaction.response.send_message("❌ Система временно недоступна.", ephemeral=True)
+            await interaction.response.send_message("Система временно недоступна.", ephemeral=True)
             return
         await cog.handle_ready_click(interaction, self.match_id)
 
     async def _on_decline(self, interaction: discord.Interaction) -> None:
         cog = getattr(self.bot, "mm_cog", None)
         if cog is None:
-            await interaction.response.send_message("❌ Система временно недоступна.", ephemeral=True)
+            await interaction.response.send_message("Система временно недоступна.", ephemeral=True)
             return
         await cog.handle_decline_click(interaction, self.match_id)
 

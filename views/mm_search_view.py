@@ -1,259 +1,134 @@
-"""View для matchmaking поиска."""
+"""Персистентная панель Ranked Queue (Components V2, без эмодзи).
+
+Сообщение-панель живёт в канале, где запущен /mm squad. Кнопки имеют
+constant custom_id и работают через persistent views: после рестарта
+бот регистрирует QueueControlsView на сохранённый message_id.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 import discord
-from utils.design import compose
-from discord import app_commands
-from discord.ext import commands
 
-from config import replace_emojis, get_emoji
-from models.mm_search import MMFormat, MMSearch
-from models.tournament import TournamentPhase
-from storage.mm_search_store import mm_search_store
-from storage.json_store import store
-from storage.player_stats_store import player_stats_store
+from models.mm_search import MMSearch, QUEUE_LOCKED_READY_CHECK
+from utils.design.layouts import DesignView
 
 if TYPE_CHECKING:
-    from bot import TournamentBot
+    pass
 
 logger = logging.getLogger(__name__)
 
-
-async def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.Embed:
-    """Построить embed для поиска."""
-    format_name = "Duo (2x2)" if search.format == MMFormat.DUO else "БО (4x4)"
-    required = search.required_players
-    current = len(search.players)
-
-    embed = discord.Embed(
-        title=replace_emojis("winner " + format_name + " | ПОИСК"),
-        description=replace_emojis("Информация о поиске:\n"
-                                  "Формат: " + format_name + "\n"
-                                  "Игроки: " + str(current) + "/" + str(required) + "\n"
-                                  "Таймер: " + ('Запущен' if search.timer_started else 'Ожидание первого игрока') + "\n\n"
-                                  "Игроки в поиске:\n\n"
-                                  "Нажмите кнопку ниже чтобы войти в поиск"),
-        color=discord.Color.from_rgb(69, 69, 69)
-    )
-
-    # Добавить игроков с их SR
-    if search.players:
-        player_info = []
-        for player_name in search.players:
-            user_id = search.player_user_ids.get(player_name, 0)
-            if user_id > 0:
-                stats = await player_stats_store.get(guild.id, user_id)
-                sr = stats.skill_rating if stats else 1.0
-                player_info.append(replace_emojis(player_name + " (SR: " + f"{sr:.1f}" + ")"))
-            else:
-                player_info.append(replace_emojis(player_name))
-        embed.add_field(name="", value="\n".join(player_info), inline=False)
-
-    return embed
+JOIN_CUSTOM_ID = "mmq_join:{gid}:{cid}"
+LEAVE_CUSTOM_ID = "mmq_leave:{gid}:{cid}"
 
 
-class JoinSearchButton(discord.ui.Button):
-    """Кнопка для входа в поиск."""
+def _cog(interaction: discord.Interaction):
+    return getattr(interaction.client, "mm_cog", None)
 
-    def __init__(self, bot: TournamentBot, guild_id: int, channel_id: int):
+
+class QueueJoinButton(discord.ui.Button):
+    """Кнопка «Войти в очередь»."""
+
+    def __init__(self, guild_id: int, channel_id: int, disabled: bool = False):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Войти в поиск",
-            emoji="🔍",
-            custom_id=f"mm_join:{guild_id}:{channel_id}"
+            label="Войти в очередь",
+            custom_id=JOIN_CUSTOM_ID.format(gid=guild_id, cid=channel_id),
+            disabled=disabled,
         )
-        self.bot = bot
         self.guild_id = guild_id
         self.channel_id = channel_id
 
-    async def callback(self, interaction: discord.Interaction):
-        search = mm_search_store.get(self.guild_id, self.channel_id)
-        if not search:
-            await interaction.response.send_message("❌ Поиск не найден.", ephemeral=True)
-            return
-
-        if search.is_full:
-            await interaction.response.send_message("❌ Поиск уже заполнен.", ephemeral=True)
-            return
-
-        # Проверка на активный турнир
-        all_tournaments = store.get_by_guild(self.guild_id)
-        for tournament in all_tournaments:
-            if tournament.is_player_active(interaction.user.id):
-                await interaction.response.send_message(
-                    "❌ Вы уже участвуете в активном турнире. Завершите его чтобы войти в поиск.",
-                    ephemeral=True
-                )
-                return
-
-        # Проверка на активный поиск
-        all_searches = mm_search_store.get_by_guild(self.guild_id)
-        for other_search in all_searches:
-            if other_search.channel_id != self.channel_id:
-                if interaction.user.id in other_search.player_user_ids.values():
-                    await interaction.response.send_message(
-                        "❌ Вы уже в другом поиске. Выйдите из него сначала. Используйте /mm delete для удаления всех поисков.",
-                        ephemeral=True
-                    )
-                    return
-
-        # Если это первый игрок - выбрать канал для турнира
-        if not search.tournament_channel_id:
-            from cogs.mm import TOURNAMENT_CHANNEL_IDS, LOCKED_CHANNELS
-            
-            # Проверить каналы по очереди
-            for channel_id in TOURNAMENT_CHANNEL_IDS:
-                # Проверить если канал заблокирован другим поиском
-                if channel_id in LOCKED_CHANNELS:
-                    continue
-                    
-                # Проверить если канал занят активным турниром
-                tournament_channel = self.bot.get_channel(channel_id)
-                if tournament_channel:
-                    tournament = store.get(self.guild_id, tournament_channel.id)
-                    if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                        # Канал свободен - заблокировать его для этого поиска
-                        search.tournament_channel_id = channel_id
-                        LOCKED_CHANNELS[channel_id] = self.channel_id
-                        mm_search_store.set(search)
-                        break
-            else:
-                # Все каналы заняты или заблокированы
-                await interaction.response.send_message(
-                    "❌ Все каналы для турниров заняты. Ожидайте завершения одного из турниров.",
-                    ephemeral=True
-                )
-                return
-        else:
-            # Если канал уже выбран, проверить что он свободен
-            tournament_channel = self.bot.get_channel(search.tournament_channel_id)
-            if tournament_channel:
-                tournament = store.get(self.guild_id, tournament_channel.id)
-                if tournament and tournament.phase != TournamentPhase.COMPLETE:
-                    # Канал занят, сбросить выбор
-                    from cogs.mm import LOCKED_CHANNELS
-                    if search.tournament_channel_id in LOCKED_CHANNELS:
-                        del LOCKED_CHANNELS[search.tournament_channel_id]
-                    search.tournament_channel_id = 0
-                    mm_search_store.set(search)
-                    await interaction.response.send_message(
-                        "❌ Канал для турниров занят. Повторите попытку.",
-                        ephemeral=True
-                    )
-                    return
-
-        # Проверить тег пользователя (как в обычных турнирах)
-        from config import GUILD_ID
-        has_tag = interaction.user.primary_guild and interaction.user.primary_guild.id == GUILD_ID
-        
-        if not has_tag:
-            await interaction.response.send_message("❌ Для входа в поиск нужен тег r!z3.", ephemeral=True)
-            return
-
-        # Добавить игрока
-        player_name = interaction.user.display_name
-        if not search.add_player(player_name, interaction.user.id):
-            await interaction.response.send_message("❌ Не удалось добавить в поиск.", ephemeral=True)
-            return
-
-        # Запустить таймер если первый игрок
-        if not search.timer_started:
-            search.timer_started = True
-            mm_search_store.set(search)
-            # Запустить таймер в cog
-            if hasattr(self.bot, 'mm_cog'):
-                self.bot.mm_cog._start_search_timer(self.guild_id, self.channel_id)
-
-        mm_search_store.set(search)
-
-        # Проверить если поиск заполнен - запустить Ready Check («Найден матч»)
-        if search.is_full:
-            # Отменить таймер
-            if hasattr(self.bot, 'mm_cog'):
-                self.bot.mm_cog._cancel_search_timer(self.guild_id, self.channel_id)
-
-            if hasattr(self.bot, 'mm_cog'):
-                await self.bot.mm_cog._start_ready_check(search, interaction)
-                # Если проверка уже была активна — interaction не отвечен
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "⏳ Проверка готовности уже запущена.", ephemeral=True
-                    )
-                # interaction уже отложен внутри _start_ready_check —
-                # обновляем сообщение поиска напрямую
-                try:
-                    embed = await build_search_embed(search, interaction.guild)
-                    view = build_search_view(self.bot, search)
-                    await interaction.message.edit(view=compose(embed, view))
-                except Exception as e:
-                    logger.error(f"Error updating search embed after ready check start: {e}")
-            else:
-                await interaction.response.send_message("❌ Ошибка системы MM.", ephemeral=True)
-            return
-
-        # Обновить embed
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
-        await interaction.response.edit_message( view=compose(embed, view))
-
-
-class LeaveSearchButton(discord.ui.Button):
-    """Кнопка для выхода из поиска."""
-
-    def __init__(self, bot: TournamentBot, guild_id: int, channel_id: int):
-        super().__init__(
-            style=discord.ButtonStyle.danger,
-            label="Выйти",
-            emoji="❌",
-            custom_id=f"mm_leave:{guild_id}:{channel_id}"
-        )
-        self.bot = bot
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-
-    async def callback(self, interaction: discord.Interaction):
-        search = mm_search_store.get(self.guild_id, self.channel_id)
-        if not search:
-            await interaction.response.send_message("❌ Поиск не найден.", ephemeral=True)
-            return
-
-        # Нельзя выйти из поиска во время активной проверки готовности
-        from storage.ready_check_store import ready_check_store
-        rc = await ready_check_store.get_active_by_search(self.guild_id, self.channel_id)
-        if rc is not None:
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = _cog(interaction)
+        if cog is None:
             await interaction.response.send_message(
-                "⏳ Идёт проверка готовности матча — выход временно недоступен.",
-                ephemeral=True,
+                "Система временно недоступна.", ephemeral=True
             )
             return
+        await cog.handle_queue_join(interaction, self.guild_id, self.channel_id)
 
-        player_name = interaction.user.display_name
-        if not search.remove_player(player_name):
-            await interaction.response.send_message("❌ Вы не в поиске.", ephemeral=True)
+
+class QueueLeaveButton(discord.ui.Button):
+    """Кнопка «Выйти из очереди»."""
+
+    def __init__(self, guild_id: int, channel_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.danger,
+            label="Выйти из очереди",
+            custom_id=LEAVE_CUSTOM_ID.format(gid=guild_id, cid=channel_id),
+        )
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        cog = _cog(interaction)
+        if cog is None:
+            await interaction.response.send_message(
+                "Система временно недоступна.", ephemeral=True
+            )
             return
-
-        # Если не осталось игроков, сбросить таймер
-        if not search.players:
-            search.timer_started = False
-            if hasattr(self.bot, 'mm_cog'):
-                self.bot.mm_cog._cancel_search_timer(self.guild_id, self.channel_id)
-
-        mm_search_store.set(search)
-
-        # Обновить embed
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
-        await interaction.response.edit_message( view=compose(embed, view))
+        await cog.handle_queue_leave(interaction, self.guild_id, self.channel_id)
 
 
-def build_search_view(bot: TournamentBot, search: MMSearch) -> discord.ui.View:
-    """Построить view для поиска."""
+def build_queue_panel(search: MMSearch) -> discord.ui.LayoutView:
+    """Построить V2-панель очереди (open/locked)."""
+    view = DesignView(title="RANKED MATCHMAKING", timeout=None)
+    view.text("FREE FIRE · CS 4×4")
+    view.text("Соревновательный подбор команд по Skill Rating")
+    view.sep()
+
+    if search.is_locked:
+        view.text(
+            "## СТАТУС ОЧЕРЕДИ\n"
+            "Проверка готовности\n"
+            f"Матч #{search.match_num or '—'}\n"
+            "Набор временно закрыт"
+        )
+        view.sep()
+        view.text(
+            "-# Восемь участников подтверждают готовность к матчу.\n"
+            "-# Очередь откроется после запуска или отмены матча."
+        )
+    else:
+        required = search.required_players
+        current = len(search.players)
+        lines = [
+            "## СТАТУС ОЧЕРЕДИ",
+            "Поиск игроков",
+            f"Участников: {current}/{required}",
+            f"Необходимо ещё: {max(0, required - current)}",
+        ]
+        view.text("\n".join(lines))
+        if search.players:
+            view.sep()
+            roster = "\n".join(
+                f"{i}. {name}" for i, name in enumerate(search.players, 1)
+            )
+            view.text(f"## УЧАСТНИКИ\n{roster}")
+        view.sep()
+        view.text(
+            "-# После набора восьми участников матч будет сформирован автоматически."
+        )
+
+    view.row(
+        QueueJoinButton(search.guild_id, search.channel_id,
+                        disabled=search.is_locked),
+        QueueLeaveButton(search.guild_id, search.channel_id),
+    )
+    return view
+
+
+def build_queue_controls(guild_id: int, channel_id: int) -> discord.ui.View:
+    """Persistent view с кнопками панели — для bot.add_view после рестарта.
+
+    Содержит только интерактивные элементы (custom_id совпадают с
+    кнопками внутри LayoutView-панели); Discord сопоставляет их по
+    custom_id при нажатии.
+    """
     view = discord.ui.View(timeout=None)
-    view.add_item(JoinSearchButton(bot, search.guild_id, search.channel_id))
-    view.add_item(LeaveSearchButton(bot, search.guild_id, search.channel_id))
+    view.add_item(QueueJoinButton(guild_id, channel_id))
+    view.add_item(QueueLeaveButton(guild_id, channel_id))
     return view

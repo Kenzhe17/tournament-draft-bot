@@ -13,16 +13,17 @@ from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
-from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis
+from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
 
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
 MATCH_FOUND_CHANNEL_ID = 1568992622180311220
-from models.mm_search import MMFormat, MMSearch
+from models.mm_search import MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
 from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
 from storage.mm_search_store import mm_search_store
 from storage.ready_check_store import ready_check_store
+from storage.match_number_store import match_number_store
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
 from utils.embeds import build_setup_embed
@@ -32,7 +33,10 @@ from utils.match_found_renderer import (
     TeamAverages,
     render_match_found,
 )
-from views.mm_search_view import build_search_embed, build_search_view
+from views.mm_search_view import (
+    build_queue_controls,
+    build_queue_panel,
+)
 from views.ready_check_view import PNG_FILENAME, build_ready_embed, build_ready_view, ready_card
 
 if TYPE_CHECKING:
@@ -70,12 +74,18 @@ class MMCog(commands.Cog):
         self._bg_tasks: set[asyncio.Task] = set()
         self._rc_sweeper_task: asyncio.Task | None = None
         self._rc_recovery_task: asyncio.Task | None = None
+        self._queue_locks: dict[tuple[int, int], asyncio.Lock] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
     async def cog_load(self) -> None:
-        """Запустить sweeper Ready Check и восстановление после рестарта."""
+        """Загрузить очереди, запустить sweeper Ready Check и восстановление."""
+        try:
+            await mm_search_store.load()
+        except Exception as exc:
+            logger.error("MMSearchStore load failed: %s", exc)
         self._rc_sweeper_task = asyncio.create_task(self._ready_check_sweeper())
         self._rc_recovery_task = asyncio.create_task(self._recover_ready_checks())
+        self._queue_recovery_task = asyncio.create_task(self._recover_queues())
 
     mm_group = app_commands.Group(name="mm", description="Matchmaking поиск")
 
@@ -103,6 +113,7 @@ class MMCog(commands.Cog):
                     rc.cancel_reason = "поиск удалён администратором"
                     await ready_check_store.save(rc)
                     await self._update_ready_message(rc)
+                    await self._delete_match_channel(rc)
 
                 # Удалить сообщение если есть
                 channel = self.bot.get_channel(search.channel_id)
@@ -230,25 +241,20 @@ class MMCog(commands.Cog):
             self._start_search_timer(search.guild_id, search.channel_id)
         mm_search_store.set(search)
 
-        # Обновить сообщение поиска
+        # Обновить панель очереди
         try:
-            channel = self.bot.get_channel(search.channel_id)
-            if channel and search.message_id:
-                message = await channel.fetch_message(search.message_id)
-                embed = await build_search_embed(search, channel.guild)
-                view = build_search_view(self.bot, search)
-                await message.edit(view=compose(embed, view))
+            await self._update_queue_panel(search)
         except Exception as exc:
-            logger.error("mmtest: failed to refresh search embed: %s", exc)
+            logger.error("mmtest: failed to refresh queue panel: %s", exc)
 
-        # Поиск заполнен — запускаем Ready Check, как кнопка «Войти»
+        # Поиск заполнен — блокируем очередь, создаём канал и Ready Check
         if search.is_full:
             self._cancel_search_timer(search.guild_id, search.channel_id)
-            rc = await self._start_ready_check(search, interaction)
+            rc, err = await self._begin_match(search, interaction)
             if rc is None:
                 if not interaction.response.is_done():
                     await interaction.response.send_message(
-                        "❌ Не удалось запустить проверку готовности.",
+                        err or "❌ Не удалось запустить проверку готовности.",
                         ephemeral=True,
                     )
                 return
@@ -312,16 +318,24 @@ class MMCog(commands.Cog):
         )
 
         # Сначала отправить ephemeral сообщение
-        await interaction.response.send_message("✅ Поиск создан!", ephemeral=True)
+        await interaction.response.send_message("Поиск создан!", ephemeral=True)
 
-        embed = await build_search_embed(search, interaction.guild)
-        view = build_search_view(self.bot, search)
-
-        # Отправить вечный embed
-        message = await interaction.channel.send( view=compose(embed, view))
+        # Вечная V2-панель очереди
+        message = await interaction.channel.send(
+            view=build_queue_panel(search)
+        )
 
         search.message_id = message.id
         mm_search_store.set(search)
+
+        # Persistent view для кнопок панели (восстановление после рестарта)
+        try:
+            self.bot.add_view(
+                build_queue_controls(search.guild_id, search.channel_id),
+                message_id=message.id,
+            )
+        except Exception as e:
+            logger.warning("add_view for queue panel failed: %s", e)
 
         logger.info("Создан поиск %s в канале %s", format.value, interaction.channel_id)
         
@@ -391,16 +405,13 @@ class MMCog(commands.Cog):
                     search.tournament_channel_id = 0
                     mm_search_store.set(search)
 
-                    # Обновить сообщение
+                    # Обновить панель и уведомить в канале
                     try:
+                        await self._update_queue_panel(search)
                         channel = self.bot.get_channel(channel_id)
                         if channel:
-                            message = await channel.fetch_message(search.message_id)
-                            embed = await build_search_embed(search, channel.guild)
-                            view = build_search_view(self.bot, search)
-                            await message.edit( view=compose(embed, view))
                             await channel.send(
-                                f"⏰ Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
+                                f"Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
                             )
                     except Exception as e:
                         logger.error(f"Error updating search timer message: {e}")
@@ -430,7 +441,14 @@ class MMCog(commands.Cog):
             self._rc_locks[match_id] = lock
         return lock
 
-    async def _start_ready_check(self, search: MMSearch, interaction: discord.Interaction) -> ReadyCheck | None:
+    async def _start_ready_check(
+        self,
+        search: MMSearch,
+        interaction: discord.Interaction,
+        match_id: str | None = None,
+        match_num: int = 0,
+        match_channel_id: int = 0,
+    ) -> ReadyCheck | None:
         """Запустить фазу Ready Check когда поиск заполнен (8 игроков)."""
         guild = interaction.guild
         if guild is None:
@@ -525,7 +543,7 @@ class MMCog(commands.Cog):
             avg_b.win_chance = p_b * 100
 
             render_data = MatchFoundData(
-                match_num=int(time.time()) % 10000,
+                match_num=match_num or int(time.time()) % 10000,
                 team_a=cards_a,
                 team_b=cards_b,
                 avg_a=avg_a,
@@ -536,7 +554,8 @@ class MMCog(commands.Cog):
                 ReadyCheckPlayer(user_id=c.user_id, name=c.name, team=c.team)
                 for c in cards_a + cards_b
             ]
-            match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
+            if not match_id:
+                match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
             rc = ReadyCheck(
                 match_id=match_id,
                 guild_id=search.guild_id,
@@ -545,6 +564,7 @@ class MMCog(commands.Cog):
                 players=rc_players,
                 deadline=time.time() + RANKED_READY_TIMEOUT_SECONDS,
                 match_num=render_data.match_num,
+                match_channel_id=match_channel_id,
             )
             if not await ready_check_store.create(rc):
                 await interaction.followup.send("❌ Проверка готовности уже запущена.", ephemeral=True)
@@ -712,8 +732,9 @@ class MMCog(commands.Cog):
             await self._finish_cancelled(rc, keep_user_ids=keep)
 
     async def _finish_cancelled(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
-        """Вернуть игроков в очередь после отмены и обновить search-embed."""
+        """Вернуть игроков в очередь после отмены, удалить канал матча."""
         await self._requeue_players(rc, keep_user_ids)
+        await self._delete_match_channel(rc)
 
     async def _requeue_players(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
         """Вернуть подмножество игроков в MM-поиск, сохранив порядок очереди."""
@@ -729,6 +750,9 @@ class MMCog(commands.Cog):
         search.players = keep_names
         search.player_user_ids = {n: search.player_user_ids[n] for n in keep_names if n in search.player_user_ids}
         search.timer_started = bool(keep_names)
+        # Очередь снова открыта — готовые игроки ждут следующего матча
+        search.state = QUEUE_OPEN
+        search.match_num = 0
         mm_search_store.set(search)
 
         # Перезапустить таймер поиска, если игроки вернулись
@@ -739,16 +763,11 @@ class MMCog(commands.Cog):
         else:
             self._cancel_search_timer(search.guild_id, search.channel_id)
 
-        # Обновить embed поиска
+        # Обновить панель очереди
         try:
-            channel = self.bot.get_channel(search.channel_id)
-            if channel and search.message_id:
-                message = await channel.fetch_message(search.message_id)
-                embed = await build_search_embed(search, channel.guild)
-                view = build_search_view(self.bot, search)
-                await message.edit(view=compose(embed, view))
+            await self._update_queue_panel(search)
         except Exception as e:
-            logger.error("Error updating search embed after ready-check cancel: %s", e)
+            logger.error("Error updating queue panel after ready-check cancel: %s", e)
 
     async def _launch_ready_check(self, rc: ReadyCheck) -> None:
         """8/8 — запустить существующий турнирный флоу ровно один раз."""
@@ -764,6 +783,14 @@ class MMCog(commands.Cog):
                     rc.status = ReadyCheckStatus.LAUNCHED
                     await ready_check_store.save(rc)
                     await self._update_ready_message(rc)
+                    # Догнать анонс матчей, если он не успел выполниться
+                    try:
+                        guild = self.bot.get_guild(guild_id)
+                        if guild is not None:
+                            from services.match_announcer import announce_phase_matches
+                            await announce_phase_matches(t, guild)
+                    except Exception as exc:
+                        logger.warning("Announce catch-up failed: %s", exc)
                     return
 
             search = mm_search_store.get(guild_id, rc.search_channel_id)
@@ -773,7 +800,13 @@ class MMCog(commands.Cog):
                 rc.cancel_reason = "поиск был изменён до запуска"
                 await ready_check_store.save(rc)
                 await self._update_ready_message(rc)
+                await self._finish_cancelled(rc, {p.user_id for p in rc.players})
                 return
+
+            # Прокинуть в турнирный флоу номер/канал/PNG карточки матча
+            search.mm_match_num = rc.match_num
+            search.mm_match_channel_id = rc.match_channel_id
+            search.mm_card_png = await self._fetch_match_card_png(rc)
 
             channel = self.bot.get_channel(rc.search_channel_id)
             if channel is None:
@@ -798,7 +831,7 @@ class MMCog(commands.Cog):
             await ready_check_store.save(rc)
             await self._update_ready_message(rc)
             # Вернуть всех в очередь — матч не состоялся
-            await self._requeue_players(rc, {p.user_id for p in rc.players})
+            await self._finish_cancelled(rc, {p.user_id for p in rc.players})
 
     async def _ready_check_sweeper(self) -> None:
         """Фоновая задача: истёкшие deadline и застрявшие ALL_READY."""
@@ -969,6 +1002,27 @@ class MMCog(commands.Cog):
         tournament.message_id = message.id
         store.set(tournament)
 
+        # Привязать заранее созданный канал матча и PNG карточки
+        # (MM-флоу: канал cs-4x4-match-N создаётся на этапе ready-check)
+        mm_channel_id = int(getattr(search, "mm_match_channel_id", 0) or 0)
+        if mm_channel_id:
+            tournament.mm_preset_channel_id = mm_channel_id
+        mm_png = getattr(search, "mm_card_png", None)
+        if mm_png:
+            tournament.mm_card_png = mm_png
+
+        # Тот же номер матча, что на карточке «НАЙДЕН МАТЧ» и в имени канала
+        mm_num = int(getattr(search, "mm_match_num", 0) or 0)
+        if mm_num:
+            try:
+                from services.match_announcer import _match_key, _phase_matches
+                from storage.match_number_store import match_number_store as _mns
+
+                for mt, mi, _a, _b in _phase_matches(tournament):
+                    await _mns.assign(_match_key(tournament, mt, mi), mm_num)
+            except Exception as exc:
+                logger.warning("match number pre-assign failed: %s", exc)
+
         # Анонс старта матчей в канал результатов (MM-флоу не проходит
         # через update_tournament_message)
         try:
@@ -984,18 +1038,372 @@ class MMCog(commands.Cog):
         if tournament_channel_id in LOCKED_CHANNELS:
             del LOCKED_CHANNELS[tournament_channel_id]
 
-        # Сбросить поиск
+        # Сбросить поиск — очередь снова открыта для следующего матча
         search.clear()
+        search.state = QUEUE_OPEN
+        search.match_num = 0
+        for attr in ("mm_match_num", "mm_match_channel_id", "mm_card_png"):
+            try:
+                delattr(search, attr)
+            except AttributeError:
+                pass
         mm_search_store.set(search)
 
-        # Обновить embed поиска
-        search_embed = await build_search_embed(search, guild)
-        search_view = build_search_view(self.bot, search)
+        # Обновить панель очереди
         try:
-            search_message = await interaction_channel.fetch_message(search.message_id)
-            await search_message.edit( view=compose(search_embed, search_view))
+            await self._update_queue_panel(search)
         except Exception as e:
-            logger.error(f"Error updating search embed: {e}")
+            logger.error(f"Error updating queue panel: {e}")
+
+    # ------------------------------------------------------------------
+    # Очередь: join/leave, блокировка, канал матча
+    # ------------------------------------------------------------------
+
+    def _queue_lock(self, guild_id: int, channel_id: int) -> asyncio.Lock:
+        """Per-queue lock — сериализует join/leave/begin_match."""
+        key = (guild_id, channel_id)
+        lock = self._queue_locks.get(key)
+        if lock is None:
+            lock = self._queue_locks[key] = asyncio.Lock()
+        return lock
+
+    async def _update_queue_panel(self, search: MMSearch) -> None:
+        """Обновить V2-панель очереди на её сообщении."""
+        if not search.message_id:
+            return
+        channel = self.bot.get_channel(search.channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(search.channel_id)
+            except Exception:
+                return
+        try:
+            message = await channel.fetch_message(search.message_id)
+            await message.edit(view=build_queue_panel(search))
+        except discord.NotFound:
+            logger.warning("Queue panel message %s not found", search.message_id)
+        except Exception as exc:
+            logger.error("Failed to update queue panel: %s", exc)
+
+    async def _validate_join(
+        self, interaction: discord.Interaction, search: MMSearch
+    ) -> str | None:
+        """Проверки перед входом в очередь. Возвращает текст ошибки или None."""
+        guild_id = search.guild_id
+
+        # Активный турнир
+        for tournament in store.get_by_guild(guild_id):
+            if tournament.is_player_active(interaction.user.id):
+                return ("Вы уже участвуете в активном турнире. "
+                        "Завершите его чтобы войти в очередь.")
+
+        # Другой активный поиск
+        for other in mm_search_store.get_by_guild(guild_id):
+            if other.channel_id != search.channel_id:
+                if interaction.user.id in other.player_user_ids.values():
+                    return ("Вы уже в другой очереди. Выйдите из неё сначала. "
+                            "Используйте /mm delete для удаления всех поисков.")
+
+        # Выбор канала для турнира (один раз на поиск)
+        if not search.tournament_channel_id:
+            for channel_id in TOURNAMENT_CHANNEL_IDS:
+                if channel_id in LOCKED_CHANNELS:
+                    continue
+                tournament_channel = self.bot.get_channel(channel_id)
+                if tournament_channel:
+                    tournament = store.get(guild_id, tournament_channel.id)
+                    if not tournament or tournament.phase == TournamentPhase.COMPLETE:
+                        search.tournament_channel_id = channel_id
+                        LOCKED_CHANNELS[channel_id] = search.channel_id
+                        mm_search_store.set(search)
+                        break
+            else:
+                return "Все каналы для турниров заняты. Ожидайте завершения одного из турниров."
+        else:
+            tournament_channel = self.bot.get_channel(search.tournament_channel_id)
+            if tournament_channel:
+                tournament = store.get(guild_id, tournament_channel.id)
+                if tournament and tournament.phase != TournamentPhase.COMPLETE:
+                    if search.tournament_channel_id in LOCKED_CHANNELS:
+                        del LOCKED_CHANNELS[search.tournament_channel_id]
+                    search.tournament_channel_id = 0
+                    mm_search_store.set(search)
+                    return "Канал для турниров занят. Попробуйте ещё раз."
+
+        # Тег сервера
+        from config import GUILD_ID
+
+        has_tag = interaction.user.primary_guild and interaction.user.primary_guild.id == GUILD_ID
+        if not has_tag:
+            return "Для входа в очередь нужен тег r!z3."
+        return None
+
+    async def handle_queue_join(
+        self, interaction: discord.Interaction, guild_id: int, channel_id: int
+    ) -> None:
+        """Кнопка «Войти в очередь» на V2-панели."""
+        search = mm_search_store.get(guild_id, channel_id)
+        if search is None:
+            await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+            return
+
+        async with self._queue_lock(guild_id, channel_id):
+            search = mm_search_store.get(guild_id, channel_id)
+            if search is None:
+                await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+                return
+            if search.is_locked:
+                await interaction.response.send_message(
+                    "Идёт проверка готовности — набор закрыт. "
+                    "Дождитесь результата матча.",
+                    ephemeral=True,
+                )
+                return
+            if search.is_full:
+                await interaction.response.send_message("Очередь уже заполнена.", ephemeral=True)
+                return
+
+            error = await self._validate_join(interaction, search)
+            if error:
+                await interaction.response.send_message(error, ephemeral=True)
+                return
+
+            player_name = interaction.user.display_name
+            if not search.add_player(player_name, interaction.user.id):
+                await interaction.response.send_message(
+                    "Не удалось добавить в очередь.", ephemeral=True
+                )
+                return
+
+            if not search.timer_started:
+                search.timer_started = True
+                mm_search_store.set(search)
+                self._start_search_timer(guild_id, channel_id)
+            mm_search_store.set(search)
+
+            if search.is_full:
+                # Атомарно: lock → канал → ready-check (внутри _begin_match)
+                self._cancel_search_timer(guild_id, channel_id)
+                rc, err = await self._begin_match(search, interaction)
+                await self._update_queue_panel(search)
+                if rc is None:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            err or "Не удалось запустить матч.", ephemeral=True
+                        )
+                    else:
+                        await interaction.followup.send(
+                            err or "Не удалось запустить матч.", ephemeral=True
+                        )
+                return
+
+            await interaction.response.edit_message(view=build_queue_panel(search))
+
+    async def handle_queue_leave(
+        self, interaction: discord.Interaction, guild_id: int, channel_id: int
+    ) -> None:
+        """Кнопка «Выйти из очереди» на V2-панели."""
+        search = mm_search_store.get(guild_id, channel_id)
+        if search is None:
+            await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+            return
+
+        async with self._queue_lock(guild_id, channel_id):
+            search = mm_search_store.get(guild_id, channel_id)
+            if search is None:
+                await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+                return
+            if search.is_locked:
+                await interaction.response.send_message(
+                    "Идёт проверка готовности — выход недоступен.",
+                    ephemeral=True,
+                )
+                return
+
+            user_id = interaction.user.id
+            name = next(
+                (n for n, u in search.player_user_ids.items() if u == user_id),
+                interaction.user.display_name,
+            )
+            if name not in search.players:
+                await interaction.response.send_message(
+                    "Вы не в этой очереди.", ephemeral=True
+                )
+                return
+
+            search.remove_player(name)
+            if not search.players:
+                search.timer_started = False
+                self._cancel_search_timer(guild_id, channel_id)
+            mm_search_store.set(search)
+            await interaction.response.edit_message(view=build_queue_panel(search))
+
+    async def _begin_match(
+        self, search: MMSearch, interaction: discord.Interaction
+    ) -> tuple[ReadyCheck | None, str | None]:
+        """Перевести заполненную очередь в ready-check.
+
+        Порядок: lock state → match number → канал cs-4x4-match-N → RC.
+        При любой ошибке очередь возвращается в open.
+        """
+        guild = interaction.guild
+        match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
+        try:
+            match_num = await match_number_store.get_or_assign(match_id)
+        except Exception as exc:
+            logger.error("match number assign failed: %s", exc)
+            match_num = int(time.time()) % 100000
+
+        # 1. Блокируем очередь до создания канала/RC
+        search.state = QUEUE_LOCKED_READY_CHECK
+        search.match_num = match_num
+        mm_search_store.set(search)
+        await self._update_queue_panel(search)
+
+        # 2. Временный канал матча
+        channel = await self._create_match_channel(guild, search, match_num)
+        if channel is None:
+            search.state = QUEUE_OPEN
+            search.match_num = 0
+            mm_search_store.set(search)
+            await self._update_queue_panel(search)
+            return None, "Не удалось создать канал матча. Попробуйте ещё раз."
+
+        # 3. Ready Check
+        rc = await self._start_ready_check(
+            search, interaction,
+            match_id=match_id, match_num=match_num,
+            match_channel_id=channel.id,
+        )
+        if rc is None:
+            await self._delete_channel_by_id(channel.id)
+            search.state = QUEUE_OPEN
+            search.match_num = 0
+            mm_search_store.set(search)
+            await self._update_queue_panel(search)
+            return None, "Не удалось запустить проверку готовности."
+        return rc, None
+
+    async def _create_match_channel(
+        self, guild: discord.Guild, search: MMSearch, match_num: int
+    ) -> discord.TextChannel | None:
+        """Создать временный канал cs-4x4-match-N в категории панели."""
+        panel_channel = guild.get_channel(search.channel_id)
+        if panel_channel is None:
+            try:
+                panel_channel = await self.bot.fetch_channel(search.channel_id)
+            except Exception:
+                panel_channel = None
+        category = getattr(panel_channel, "category", None)
+
+        user_ids = {uid for uid in search.player_user_ids.values() if uid}
+        overwrites: list[discord.PermissionOverwrite] = [
+            discord.PermissionOverwrite(
+                guild.default_role,
+                view_channel=False,
+                send_messages=False,
+                read_message_history=False,
+            )
+        ]
+        for uid in user_ids:
+            member = guild.get_member(uid)
+            target = member or discord.Object(id=uid)
+            overwrites.append(discord.PermissionOverwrite(
+                target,
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+            ))
+        for role_id in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
+            if not role_id:
+                continue
+            role = guild.get_role(role_id)
+            if role is not None:
+                overwrites.append(discord.PermissionOverwrite(
+                    role,
+                    view_channel=True,
+                    send_messages=True,
+                    read_message_history=True,
+                ))
+
+        try:
+            return await guild.create_text_channel(
+                f"cs-4x4-match-{match_num}",
+                category=category,
+                overwrites=overwrites,
+                reason="Ranked match channel",
+            )
+        except Exception as exc:
+            logger.error("Failed to create match channel: %s", exc)
+            return None
+
+    async def _delete_channel_by_id(self, channel_id: int) -> None:
+        if not channel_id:
+            return
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception:
+                channel = None
+        if channel is not None:
+            try:
+                await channel.delete(reason="Ready check finished")
+            except Exception as exc:
+                logger.warning("Failed to delete match channel %s: %s", channel_id, exc)
+
+    async def _delete_match_channel(self, rc: ReadyCheck) -> None:
+        """Удалить временный канал матча по ReadyCheck."""
+        await self._delete_channel_by_id(getattr(rc, "match_channel_id", 0) or 0)
+
+    async def _fetch_match_card_png(self, rc: ReadyCheck) -> bytes | None:
+        """Скачать PNG карточки «Найден матч» с сообщения Ready Check."""
+        if not rc.channel_id or not rc.message_id:
+            return None
+        try:
+            channel = self.bot.get_channel(rc.channel_id)
+            if channel is None:
+                channel = await self.bot.fetch_channel(rc.channel_id)
+            message = await channel.fetch_message(rc.message_id)
+            if not message.attachments:
+                return None
+            attachment = message.attachments[0]
+            return await attachment.read()
+        except Exception as exc:
+            logger.warning("Failed to fetch match card png: %s", exc)
+            return None
+
+    async def _recover_queues(self) -> None:
+        """Восстановить панели очередей и снять зависшие блокировки."""
+        await asyncio.sleep(10)
+        try:
+            for search in mm_search_store.all():
+                try:
+                    if search.message_id:
+                        self.bot.add_view(
+                            build_queue_controls(search.guild_id, search.channel_id),
+                            message_id=search.message_id,
+                        )
+                except Exception as exc:
+                    logger.warning("add_view for queue panel failed: %s", exc)
+
+                if search.is_locked:
+                    rc = await ready_check_store.get_active_by_search(
+                        search.guild_id, search.channel_id
+                    )
+                    if rc is None:
+                        # Блокировка без живого Ready Check — снимаем
+                        search.state = QUEUE_OPEN
+                        search.match_num = 0
+                        mm_search_store.set(search)
+                try:
+                    await self._update_queue_panel(search)
+                except Exception:
+                    pass
+            logger.info("Queue recovery done")
+        except Exception as exc:
+            logger.error("Queue recovery failed: %s", exc)
 
     async def reset_search_limit(self, guild_id: int) -> None:
         """Сбросить выбранный канал поиска если освободился турнир."""
@@ -1013,14 +1421,9 @@ class MMCog(commands.Cog):
                         search.tournament_channel_id = 0
                         mm_search_store.set(search)
                         
-                        # Обновить embed если это необходимо
+                        # Обновить панель очереди
                         try:
-                            channel = self.bot.get_channel(search.channel_id)
-                            if channel:
-                                message = await channel.fetch_message(search.message_id)
-                                embed = await build_search_embed(search, channel.guild)
-                                view = build_search_view(self.bot, search)
-                                await message.edit( view=compose(embed, view))
+                            await self._update_queue_panel(search)
                         except Exception as e:
                             logger.error(f"Error resetting search channel: {e}")
 
@@ -1029,6 +1432,18 @@ class MMCog(commands.Cog):
         if channel_id in LOCKED_CHANNELS:
             del LOCKED_CHANNELS[channel_id]
             logger.info(f"Channel {channel_id} unlocked after tournament completion")
+
+    def cog_unload(self) -> None:
+        """Отменить фоновые задачи cog при выгрузке."""
+        for task in (
+            self._rc_sweeper_task,
+            self._rc_recovery_task,
+            getattr(self, "_queue_recovery_task", None),
+        ):
+            if task is not None:
+                task.cancel()
+        for task in self._bg_tasks:
+            task.cancel()
 
 
 async def setup(bot: TournamentBot) -> None:

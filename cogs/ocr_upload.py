@@ -255,32 +255,61 @@ def _roster_mentions(tournament, team_index: int) -> str:
 def _result_embed(
     tournament, match_type: str, match_index: int, t1: int, t2: int
 ) -> discord.Embed:
-    """Стилизованная карточка итога матча: команды, капитаны, игроки."""
+    """Стилизованная карточка итога матча: команды, капитаны, игроки.
+
+    Для MM-турниров (mm_search_channel_id > 0) — вариант без эмодзи.
+    """
     name_a = _captain_name(tournament, t1)
     name_b = _captain_name(tournament, t2)
-    embed = discord.Embed(
-        title=f" {replace_emojis('winner')} ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
-        description=(
-            f"**{name_a}** vs **{name_b}**\n\n"
-            f"{get_emoji('num_1')} **{name_a}**\n"
-            f"{_roster_mentions(tournament, t1)}\n\n"
-            f"{get_emoji('num_2')} **{name_b}**\n"
-            f"{_roster_mentions(tournament, t2)}"
-        ),
-        color=discord.Color.gold(),
-    )
+    is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
+    if is_mm:
+        embed = discord.Embed(
+            title=f"ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
+            description=(
+                f"**{name_a}** vs **{name_b}**\n\n"
+                f"**{name_a}**\n{_roster_mentions(tournament, t1)}\n\n"
+                f"**{name_b}**\n{_roster_mentions(tournament, t2)}"
+            ),
+            color=discord.Color.gold(),
+        )
+    else:
+        embed = discord.Embed(
+            title=f" {replace_emojis('winner')} ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
+            description=(
+                f"**{name_a}** vs **{name_b}**\n\n"
+                f"{get_emoji('num_1')} **{name_a}**\n"
+                f"{_roster_mentions(tournament, t1)}\n\n"
+                f"{get_emoji('num_2')} **{name_b}**\n"
+                f"{_roster_mentions(tournament, t2)}"
+            ),
+            color=discord.Color.gold(),
+        )
     embed.set_image(url=f"attachment://{SHOT_FILENAME}")
     return embed
 
 
 async def _result_channel(guild: discord.Guild, fallback):
-    """Канал итогов: RESULT_CHANNEL_ID, иначе fallback (канал статистики)."""
+    """Канал итогов: RESULT_CHANNEL_ID, иначе fallback (канал статистики).
+
+    Валидирует, что настроенный канал существует и является текстовым.
+    """
     channel = guild.get_channel(RESULT_CHANNEL_ID)
     if channel is None:
         try:
             channel = await guild.fetch_channel(RESULT_CHANNEL_ID)
         except Exception:
             channel = None
+    if channel is not None and not isinstance(channel, discord.TextChannel):
+        logger.warning(
+            "RESULT_CHANNEL_ID %s is not a text channel — using fallback",
+            RESULT_CHANNEL_ID,
+        )
+        channel = None
+    if channel is None and fallback is not None:
+        logger.warning(
+            "Results channel %s unavailable — using fallback channel %s",
+            RESULT_CHANNEL_ID, getattr(fallback, "id", fallback),
+        )
     return channel or fallback
 
 

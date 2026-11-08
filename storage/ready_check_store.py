@@ -54,8 +54,8 @@ class ReadyCheckStore:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT match_id, guild_id, search_channel_id, tournament_channel_id,"
-                " status, deadline, channel_id, message_id, cancel_reason,"
-                " created_at, match_num, players"
+                " status, deadline, channel_id, message_id, match_channel_id,"
+                " cancel_reason, created_at, match_num, players"
                 " FROM ready_checks"
             )
         for row in rows:
@@ -96,21 +96,22 @@ class ReadyCheckStore:
                 """
                 INSERT INTO ready_checks
                     (match_id, guild_id, search_channel_id, tournament_channel_id,
-                     status, deadline, channel_id, message_id, cancel_reason,
-                     created_at, match_num, players)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+                     status, deadline, channel_id, message_id, match_channel_id,
+                     cancel_reason, created_at, match_num, players)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
                 ON CONFLICT (match_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     deadline = EXCLUDED.deadline,
                     channel_id = EXCLUDED.channel_id,
                     message_id = EXCLUDED.message_id,
+                    match_channel_id = EXCLUDED.match_channel_id,
                     cancel_reason = EXCLUDED.cancel_reason,
                     players = EXCLUDED.players
                 """,
                 rc.match_id, rc.guild_id, rc.search_channel_id,
                 rc.tournament_channel_id, rc.status.value, rc.deadline,
-                rc.channel_id, rc.message_id, rc.cancel_reason,
-                rc.created_at, rc.match_num,
+                rc.channel_id, rc.message_id, rc.match_channel_id,
+                rc.cancel_reason, rc.created_at, rc.match_num,
                 json.dumps([p.to_dict() for p in rc.players], ensure_ascii=False),
             )
 

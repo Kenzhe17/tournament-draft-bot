@@ -147,6 +147,20 @@ class MatchNumberStore:
         await self._persist()
         return self._counter
 
+    async def assign(self, match_key: str, number: int) -> bool:
+        """Пред-привязать существующий номер к ключу матча (без нового номера).
+
+        Используется, когда номер уже выдан на этапе ready-check
+        (cs-4x4-match-N), а турнирный match_key появляется позже.
+        True если запись создана; False если ключ уже занят.
+        """
+        await self._ensure_loaded()
+        if match_key in self._numbers:
+            return False
+        self._numbers[match_key] = {"number": int(number), "announced": False}
+        await self._persist()
+        return True
+
     async def get(self, match_key: str) -> int | None:
         await self._ensure_loaded()
         entry = self._numbers.get(match_key)

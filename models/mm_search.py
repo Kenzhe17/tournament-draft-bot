@@ -11,6 +11,11 @@ class MMFormat(str, Enum):
     SQUAD = "squad"  # 4x4, 8 игроков
 
 
+# Состояния очереди Ranked Matchmaking
+QUEUE_OPEN = "open"                    # принимает игроков
+QUEUE_LOCKED_READY_CHECK = "locked"    # матч найден, идёт ready-check
+
+
 @dataclass
 class MMSearch:
     """Состояние поиска игроков."""
@@ -24,6 +29,8 @@ class MMSearch:
     created_at: str = field(default_factory=lambda: __import__('datetime').datetime.now().isoformat())
     timer_started: bool = False  # Таймер запущен?
     tournament_channel_id: int = 0  # Канал в котором будет создан турнир
+    state: str = QUEUE_OPEN        # open | locked
+    match_num: int = 0             # номер матча на время ready-check
 
     @property
     def required_players(self) -> int:
@@ -34,6 +41,11 @@ class MMSearch:
     def is_full(self) -> bool:
         """Заполнен ли поиск."""
         return len(self.players) >= self.required_players
+
+    @property
+    def is_locked(self) -> bool:
+        """Очередь закрыта на время ready-check."""
+        return self.state == QUEUE_LOCKED_READY_CHECK
 
     def add_player(self, name: str, user_id: int) -> bool:
         """Добавить игрока в поиск. Возвращает True если добавлен."""
@@ -55,11 +67,13 @@ class MMSearch:
         return True
 
     def clear(self) -> None:
-        """Очистить поиск."""
+        """Очистить поиск и вернуть очередь в открытое состояние."""
         self.players = []
         self.player_user_ids = {}
         self.timer_started = False
         self.tournament_channel_id = 0
+        self.state = QUEUE_OPEN
+        self.match_num = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Конвертировать в словарь для JSON."""
@@ -73,6 +87,8 @@ class MMSearch:
             "created_at": self.created_at,
             "timer_started": self.timer_started,
             "tournament_channel_id": self.tournament_channel_id,
+            "state": self.state,
+            "match_num": self.match_num,
         }
 
     @classmethod
@@ -88,4 +104,6 @@ class MMSearch:
             created_at=data.get("created_at", ""),
             timer_started=data.get("timer_started", False),
             tournament_channel_id=data.get("tournament_channel_id", 0),
+            state=data.get("state", QUEUE_OPEN),
+            match_num=int(data.get("match_num", 0) or 0),
         )

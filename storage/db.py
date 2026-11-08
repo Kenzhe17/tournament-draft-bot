@@ -718,6 +718,30 @@ async def init_db() -> None:
             ON ready_checks(guild_id, status)
         """)
 
+        # Канал матча, созданный на этапе ready-check (cs-4x4-match-N)
+        await conn.execute("""
+            ALTER TABLE ready_checks
+            ADD COLUMN IF NOT EXISTS match_channel_id BIGINT NOT NULL DEFAULT 0
+        """)
+
+        # Очередь Ranked Matchmaking (персистентная панель поиска)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS mm_queues (
+                guild_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL,
+                message_id BIGINT NOT NULL DEFAULT 0,
+                format TEXT NOT NULL DEFAULT 'squad',
+                state TEXT NOT NULL DEFAULT 'open',
+                players JSONB NOT NULL DEFAULT '[]'::jsonb,
+                player_user_ids JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TEXT NOT NULL DEFAULT '',
+                timer_started BOOLEAN NOT NULL DEFAULT FALSE,
+                tournament_channel_id BIGINT NOT NULL DEFAULT 0,
+                match_num INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (guild_id, channel_id)
+            )
+        """)
+
         # Глобальная нумерация матчей (карточка «РЕЗУЛЬТАТ МАТЧА» + embed запуска)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS match_counter (

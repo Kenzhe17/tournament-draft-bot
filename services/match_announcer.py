@@ -1,12 +1,13 @@
-"""Публикация embed'ов «Матч #N начался».
+"""Публикация карточек «Матч #N начался».
 
 Два режима:
-- MM-турниры (mm_search_channel_id > 0): для каждого матча создаётся
-  отдельный текстовый канал в категории канала /mm squad с именем
-  «матч-N»; embed запуска публикуется туда, канал регистрируется в
-  tournament.match_channels — скриншот, присланный в него, автоматически
-  привязывается к матчу (cogs/ocr_upload.py), после загрузки канал
-  удаляется.
+- MM-турниры (mm_search_channel_id > 0): канал создаётся заранее на
+  этапе ready-check с именем «cs-4x4-match-N» (tournament.mm_preset_channel_id);
+  если его нет — создаётся здесь. Карточка Components V2 с PNG
+  «НАЙДЕН МАТЧ» публикуется в канал; канал регистрируется в
+  tournament.match_channels — скриншот, присланный в него,
+  автоматически привязывается к матчу (cogs/ocr_upload.py), после
+  загрузки канал удаляется.
 - Обычные турниры: embed уходит в канал результатов (RESULT_CHANNEL_ID).
 
 Факт отправки/создания хранится в match_number_store (announced).
@@ -14,6 +15,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 
 import discord
@@ -108,7 +110,7 @@ async def _create_match_channel(
 
     try:
         channel = await guild.create_text_channel(
-            name=f"матч-{match_number}",
+            name=f"cs-4x4-match-{match_number}",
             category=category,
             overwrites=overwrites,
             reason=f"MM match #{match_number}",
@@ -117,6 +119,41 @@ async def _create_match_channel(
     except Exception as exc:
         logger.error("Failed to create match channel: %s", exc)
         return None
+
+
+def _match_started_view(
+    tournament: Tournament,
+    number: int,
+    label: str,
+    name_a: str,
+    name_b: str,
+    t1: int,
+    t2: int,
+    with_png: bool,
+) -> "discord.ui.LayoutView":
+    """V2-карточка «МАТЧ #N НАЧАЛСЯ» для MM-флоу (без эмодзи)."""
+    from utils.design.layouts import DesignView
+    from cogs.ocr_upload import _roster_mentions as _mentions_fn
+
+    view = DesignView(title=f"МАТЧ #{number} НАЧАЛСЯ", timeout=None)
+    mentions = _match_mentions(tournament, t1, t2)
+    if mentions:
+        view.text(mentions)
+        view.sep()
+    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
+    view.sep()
+    view.text(f"**{name_a}**\n{_mentions_fn(tournament, t1)}")
+    view.text(f"**{name_b}**\n{_mentions_fn(tournament, t2)}")
+    if with_png:
+        view.sep()
+        view.component(
+            discord.ui.MediaGallery(
+                discord.MediaGalleryItem(media="attachment://match_found.png")
+            )
+        )
+    view.sep()
+    view.text("-# Матч идёт — по окончании капитан загружает скриншот статистики.")
+    return view
 
 
 async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -> None:
@@ -136,6 +173,24 @@ async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -
 
     is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
     fallback_channel = await _result_channel(guild, None) if not is_mm else None
+
+    # Канал, созданный на этапе ready-check (cs-4x4-match-N)
+    preset_channel: discord.TextChannel | None = None
+    preset_id = int(getattr(tournament, "mm_preset_channel_id", 0) or 0)
+    if is_mm and preset_id:
+        preset_channel = guild.get_channel(preset_id)
+        if preset_channel is None:
+            try:
+                preset_channel = await guild.fetch_channel(preset_id)
+            except Exception:
+                preset_channel = None
+        if preset_channel is not None and not isinstance(
+            preset_channel, discord.TextChannel
+        ):
+            preset_channel = None
+
+    # PNG карточки «НАЙДЕН МАТЧ», если MM-флоу его прокинул
+    card_png: bytes | None = getattr(tournament, "mm_card_png", None)
 
     for match_type, match_index, t1, t2 in matches:
         key = _match_key(tournament, match_type, match_index)
@@ -158,19 +213,43 @@ async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -
             color=discord.Color.blurple(),
         )
 
-        channel = None
-        if is_mm:
+        channel = preset_channel
+        if channel is None and is_mm:
             channel = await _create_match_channel(guild, tournament, number, t1, t2)
 
         try:
-            if channel is not None:
+            if channel is not None and is_mm:
+                # V2-карточка «Матч начался» + PNG «Найден матч»
+                view = _match_started_view(
+                    tournament, number, label, name_a, name_b, t1, t2,
+                    with_png=card_png is not None,
+                )
+                await channel.send(
+                    view=view,
+                    file=(
+                        discord.File(io.BytesIO(card_png), filename="match_found.png")
+                        if card_png
+                        else None
+                    ),
+                    allowed_mentions=discord.AllowedMentions(users=True),
+                )
+                # Регистрируем канал: скриншот в нём = загрузка результата
+                tournament.match_channels[str(channel.id)] = {
+                    "match_type": match_type,
+                    "match_index": match_index,
+                }
+                store.set(tournament)
+                logger.info(
+                    "Match #%d channel %s announced (%s)",
+                    number, channel.id, label,
+                )
+            elif channel is not None:
                 mentions = _match_mentions(tournament, t1, t2)
                 await channel.send(
                     content=mentions or None,
                     embed=embed,
                     allowed_mentions=discord.AllowedMentions(users=True),
                 )
-                # Регистрируем канал: скриншот в нём = загрузка результата
                 tournament.match_channels[str(channel.id)] = {
                     "match_type": match_type,
                     "match_index": match_index,

@@ -74,6 +74,7 @@ class ReadyCheck:
     deadline: float = 0.0           # unix timestamp
     channel_id: int = 0             # канал сообщения «НАЙДЕН МАТЧ»
     message_id: int = 0
+    match_channel_id: int = 0       # временный канал матча cs-4x4-match-N
     cancel_reason: str = ""
     created_at: float = field(default_factory=time.time)
     match_num: int = 0              # номер для надписи MATCH #NNNNN
@@ -116,6 +117,7 @@ class ReadyCheck:
             "deadline": self.deadline,
             "channel_id": self.channel_id,
             "message_id": self.message_id,
+            "match_channel_id": self.match_channel_id,
             "cancel_reason": self.cancel_reason,
             "created_at": self.created_at,
             "match_num": self.match_num,
@@ -133,6 +135,7 @@ class ReadyCheck:
             deadline=float(data.get("deadline", 0.0)),
             channel_id=int(data.get("channel_id", 0)),
             message_id=int(data.get("message_id", 0)),
+            match_channel_id=int(data.get("match_channel_id", 0) or 0),
             cancel_reason=str(data.get("cancel_reason", "")),
             created_at=float(data.get("created_at", time.time())),
             match_num=int(data.get("match_num", 0)),
