@@ -1356,7 +1356,7 @@ class TournamentCog(commands.Cog):
 
         embed = build_birthday_embed(user)
         embed.title = " ДЕНЬ РОЖДЕНИЯ | /birthdaytest"
-        await interaction.response.send_message(view=compose(embed), ephemeral=True)
+        await interaction.response.send_message(view=compose(embed))
 
     @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:

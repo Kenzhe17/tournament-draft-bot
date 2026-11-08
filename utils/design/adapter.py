@@ -11,12 +11,15 @@ Separator/MediaGallery, а кнопки исходного View перемеща
 
 from __future__ import annotations
 
+import logging
 import re
 
 import discord
 
 from utils.design import colors
 from utils.design.containers import chunk_text, section, separator
+
+logger = logging.getLogger(__name__)
 
 # Маппинг discord.Color -> accent_color Container'а.
 # Популярные цвета Embed сопоставляются с палитрой дизайн-системы.
@@ -507,6 +510,35 @@ def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
     return rows
 
 
+def _layout_debug(layout: discord.ui.LayoutView) -> str:
+    """Компактное описание структуры LayoutView для диагностики."""
+    parts: list[str] = []
+    for child in layout.children:
+        if isinstance(child, discord.ui.Container):
+            rows = [
+                c for c in child.children if isinstance(c, discord.ui.ActionRow)
+            ]
+            btns = [
+                (getattr(b, "label", None) or getattr(b, "custom_id", "?"))
+                for r in rows
+                for b in getattr(r, "children", [])
+                if isinstance(b, discord.ui.Button)
+            ]
+            parts.append(
+                f"Container(children={len(child.children)},rows={len(rows)},btns={btns})"
+            )
+        elif isinstance(child, discord.ui.ActionRow):
+            btns = [
+                getattr(b, "label", None) or getattr(b, "custom_id", "?")
+                for b in getattr(child, "children", [])
+                if isinstance(b, discord.ui.Button)
+            ]
+            parts.append(f"ActionRow(btns={btns})")
+        else:
+            parts.append(type(child).__name__)
+    return " | ".join(parts)
+
+
 def compose(
     embed: discord.Embed | None = None,
     view: discord.ui.View | discord.ui.LayoutView | None = None,
@@ -550,8 +582,14 @@ def compose(
     if view is not None:
         # Кнопки — внутрь карточки (ActionRow внутри Container —
         # штатный паттерн Components V2).
-        for row in _view_rows(view):
+        rows = _view_rows(view)
+        for row in rows:
             target.add_item(row)
+        if len(rows) > 1:
+            logger.info(
+                "compose: %d action rows in one card -> %s",
+                len(rows), _layout_debug(layout),
+            )
     return layout
 
 
@@ -640,6 +678,11 @@ def swap_view(
             layout.add_item(target)
         for row in rows:
             target.add_item(row)
+        if len(rows) > 1:
+            logger.info(
+                "swap_view: %d action rows in one card -> %s",
+                len(rows), _layout_debug(layout),
+            )
 
     return layout
 

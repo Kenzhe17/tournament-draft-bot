@@ -592,7 +592,6 @@ async def build_setup_embed(
             f" Статус регистрации: {status_text}\n\n"
             f" **Пул игроков:**\n"
             f" {players_text}\n\n"
-            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
     else:
@@ -625,7 +624,6 @@ async def build_setup_embed(
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n\n"
             + "\n\n".join(circle_sections) + "\n\n"
-            f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
 
