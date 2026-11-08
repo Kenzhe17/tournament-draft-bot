@@ -1427,7 +1427,10 @@ class TournamentCog(commands.Cog):
     @app_commands.describe(user="Пользователь")
     async def marry(self, interaction: discord.Interaction, user: discord.Member) -> None:
         """Отправить предложение о браке."""
-        from views.marry_view import MarriageProposalView, _get_or_create_stats
+        from services.social.proposal import (
+            _get_or_create_stats, build_proposal_view,
+        )
+        from services.social.common import banner_file, BANNER_PROPOSAL
 
         if user.id == interaction.user.id:
             await interaction.response.send_message(
@@ -1456,16 +1459,9 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        embed = discord.Embed(
-            title=" ПРЕДЛОЖЕНИЕ | /player marry",
-            description=(
-                f" {interaction.user.mention} предлагает руку и сердце {user.mention}\n\n"
-                " Нажмите **Принять**, чтобы заключить брак."
-            ),
-            color=discord.Color.from_rgb(69, 69, 69),
-        )
-        view = MarriageProposalView(guild_id, interaction.user, user)
-        await interaction.response.send_message(view=compose(embed, view))
+        view = build_proposal_view(interaction.user, user, guild_id=guild_id)
+        await interaction.response.send_message(
+            view=view, file=banner_file(BANNER_PROPOSAL))
 
     @player_group.command(name="divorce", description="Разорвать брак")
     async def divorce(self, interaction: discord.Interaction) -> None:
@@ -1502,12 +1498,15 @@ class TournamentCog(commands.Cog):
             )
             return
 
-        from views.birthdays_view import BirthdaysView, collect_entries, create_birthdays_embed
+        from views.birthdays_view import collect_entries
+        from services.social.birthdays import (
+            build_birthdays_view, birthdays_file,
+        )
 
         entries = await collect_entries(interaction.guild)
-        view = BirthdaysView(interaction.guild, entries)
-        embed = create_birthdays_embed(interaction.guild, entries, 0)
-        await interaction.response.send_message(view=compose(embed, view))
+        view = build_birthdays_view(entries)
+        await interaction.response.send_message(
+            view=view, file=birthdays_file())
 
     @app_commands.command(name="birthdaytest", description="Тест поздравления с днём рождения")
     @app_commands.describe(user="Пользователь для тестового поздравления")

@@ -450,9 +450,51 @@ class PlayerStatsStore:
                 del self._stats[key]
                 self.save()
 
+    async def try_marry(self, guild_id: int, user_a: int, user_b: int) -> bool:
+        """Атомарно связать двух свободных игроков (spouse_id).
+
+        UPDATE с условием spouse_id=0 в одной транзакции — защита от
+        двойного принятия и гонок. True — брак записан, False —
+        кто-то уже занят или строка не найдена.
+        """
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                try:
+                    async with conn.transaction():
+                        r1 = await conn.execute(
+                            "UPDATE player_stats SET spouse_id=$3 "
+                            "WHERE guild_id=$1 AND user_id=$2 AND spouse_id=0",
+                            guild_id, user_a, user_b)
+                        r2 = await conn.execute(
+                            "UPDATE player_stats SET spouse_id=$3 "
+                            "WHERE guild_id=$1 AND user_id=$2 AND spouse_id=0",
+                            guild_id, user_b, user_a)
+                        if r1 != "UPDATE 1" or r2 != "UPDATE 1":
+                            raise _MarryRejected
+                except _MarryRejected:
+                    return False
+            return True
+        # JSON fallback
+        sa = self._stats.get(f"{guild_id}:{user_a}")
+        sb = self._stats.get(f"{guild_id}:{user_b}")
+        if sa is None or sb is None:
+            return False
+        if sa.spouse_id or sb.spouse_id:
+            return False
+        sa.spouse_id = user_b
+        sb.spouse_id = user_a
+        self.save()
+        return True
+
     def enable_db(self) -> None:
         """Enable database mode."""
         self._use_db = True
+
+
+class _MarryRejected(Exception):
+    pass
 
 
 # Глобальный экземпляр хранилища
