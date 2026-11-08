@@ -21,10 +21,12 @@ from config import (
     REP_INVITE_VERIFICATION_HOURS,
     REP_MANUAL_AMOUNT,
     REP_MANUAL_COOLDOWN_HOURS,
+    REP_SERVER_TAG_AMOUNT,
 )
 from storage.reputation_store import (
     SRC_BOOST,
     SRC_INVITE,
+    SRC_SERVER_TAG,
     ManualRepResult,
     ReputationStore,
     reputation_store,
@@ -355,6 +357,60 @@ async def process_due_boosts(
         else:
             await store.mark_boost_rewarded(guild_id, booster_id)
     return rewarded
+
+
+# ---------------------------------------------------------------------------
+# Награда за серверный тег (SERVER_TAG, +5 REP, один раз)
+# ---------------------------------------------------------------------------
+
+def primary_guild_info(user) -> tuple[int | None, bool, str]:
+    """(guild_id, identity_enabled, tag) из discord.PrimaryGuild.
+
+    guild_id — identity_guild_id (не текст тега!), enabled —
+    identity_enabled is True (None = тег не подтверждён после смены).
+    """
+    pg = getattr(user, "primary_guild", None)
+    if pg is None:
+        return None, False, ""
+    gid = getattr(pg, "id", None)
+    enabled = getattr(pg, "identity_enabled", None) is True
+    tag = getattr(pg, "tag", None) or ""
+    return gid, enabled, tag
+
+
+async def award_server_tag(
+    member: "discord.Member",
+    store: ReputationStore | None = None,
+) -> dict[str, Any] | str | None:
+    """Проверить тег сервера и начислить +5 REP (один раз на пользователя).
+
+    Возвращает:
+      {"status": "ok", "rep_after": int} — награда выдана;
+      {"status": "already"} — уже получал;
+      {"status": "no_tag"} — тег этого сервера не установлен/не подтверждён;
+      None — member.bot (молча пропускаем).
+    """
+    store = store or reputation_store
+    if getattr(member, "bot", False):
+        return None
+
+    gid, enabled, _tag = primary_guild_info(member)
+    if gid != member.guild.id or not enabled:
+        return {"status": "no_tag"}
+
+    result = await store.award_rep_logged(
+        guild_id=member.guild.id,
+        user_id=member.id,
+        source=SRC_SERVER_TAG,
+        amount=REP_SERVER_TAG_AMOUNT,
+        event_key=f"server_tag:{member.guild.id}:{member.id}",
+        actor_user_id=member.id,
+        subject_user_id=member.id,
+        user_name=member.display_name,
+    )
+    if result is None:
+        return {"status": "already"}
+    return {"status": "ok", "rep_after": result["rep_after"]}
 
 
 # ---------------------------------------------------------------------------

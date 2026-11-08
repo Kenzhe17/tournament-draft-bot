@@ -77,10 +77,11 @@ class FakeRepStore:
         return ManualRepResult(status="ok", rep_after=rep_after)
 
     # -- generic award ----------------------------------------------------
-    async def award_rep(self, guild_id, user_id, source, amount, event_key,
-                        actor_user_id=0, subject_user_id=0, user_name=""):
+    async def award_rep_logged(self, guild_id, user_id, source, amount,
+                               event_key, actor_user_id=0,
+                               subject_user_id=0, user_name=""):
         if event_key in self.event_keys:
-            return False
+            return None
         self.event_keys.add(event_key)
         self.transactions.append({
             "guild_id": guild_id, "user_id": user_id, "source": source,
@@ -88,8 +89,16 @@ class FakeRepStore:
             "subject_user_id": subject_user_id, "event_key": event_key,
             "created_at": datetime.now(timezone.utc),
         })
-        self._add_rep(guild_id, user_id, amount, user_name)
-        return True
+        rep_after = self._add_rep(guild_id, user_id, amount, user_name)
+        return {"transaction_id": len(self.transactions), "rep_after": rep_after}
+
+    async def award_rep(self, guild_id, user_id, source, amount, event_key,
+                        actor_user_id=0, subject_user_id=0, user_name=""):
+        return await self.award_rep_logged(
+            guild_id, user_id, source, amount, event_key,
+            actor_user_id=actor_user_id, subject_user_id=subject_user_id,
+            user_name=user_name,
+        ) is not None
 
     # -- invites ----------------------------------------------------------
     async def create_invite_candidate(self, guild_id, inviter_id, invitee_id,
@@ -425,6 +434,71 @@ async def test_boost_member_lost_boost_cancels():
     n = await rep_svc.process_due_boosts(bot, store=store)
     assert n == 0
     assert store.boosts[(1, 500)]["status"] == "cancelled"
+
+
+# ---------------------------------------------------------------- server tag
+
+def _tagged_member(uid=700, gid=1, enabled=True, tag_gid=1, bot=False):
+    guild = _FakeGuild(gid)
+    m = _member(uid, bot=bot, guild=guild, display_name="TagUser")
+    m.primary_guild = SimpleNamespace(
+        id=tag_gid, identity_enabled=enabled, tag="R!Z3"
+    )
+    return m
+
+
+@pytest.mark.asyncio
+async def test_server_tag_reward_once():
+    store = FakeRepStore()
+    m = _tagged_member()
+
+    r = await rep_svc.award_server_tag(m, store=store)
+    assert r["status"] == "ok" and r["rep_after"] == rep_svc.REP_SERVER_TAG_AMOUNT
+    assert store._rep(1, 700) == 5
+
+    # Повторная «установка» / перезапуск — уже получено
+    r = await rep_svc.award_server_tag(m, store=store)
+    assert r["status"] == "already"
+    assert store._rep(1, 700) == 5
+
+    tx = [t for t in store.transactions if t["source"] == "SERVER_TAG"]
+    assert len(tx) == 1
+    assert tx[0]["event_key"] == "server_tag:1:700"
+
+
+@pytest.mark.asyncio
+async def test_server_tag_wrong_guild_no_reward():
+    store = FakeRepStore()
+    m = _tagged_member(tag_gid=999)  # тег другого сервера
+    r = await rep_svc.award_server_tag(m, store=store)
+    assert r["status"] == "no_tag"
+    assert store._rep(1, 700) == 0
+
+
+@pytest.mark.asyncio
+async def test_server_tag_disabled_no_reward():
+    store = FakeRepStore()
+    for enabled in (False, None):
+        m = _tagged_member(enabled=enabled)
+        r = await rep_svc.award_server_tag(m, store=store)
+        assert r["status"] == "no_tag"
+    assert store._rep(1, 700) == 0
+
+
+@pytest.mark.asyncio
+async def test_server_tag_bot_skipped():
+    store = FakeRepStore()
+    m = _tagged_member(bot=True)
+    r = await rep_svc.award_server_tag(m, store=store)
+    assert r is None
+
+
+@pytest.mark.asyncio
+async def test_server_tag_no_primary_guild():
+    store = FakeRepStore()
+    m = _member(700, guild=_FakeGuild(1))  # primary_guild отсутствует
+    r = await rep_svc.award_server_tag(m, store=store)
+    assert r["status"] == "no_tag"
 
 
 # ---------------------------------------------------------------- analytics helpers

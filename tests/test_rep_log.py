@@ -263,6 +263,20 @@ def test_log_view_boost():
     assert "+10 REP" in text
 
 
+def test_log_view_server_tag():
+    view = rep_log.build_log_view(
+        _row(source="SERVER_TAG", amount=5, balance_after=35,
+             actor_user_id=700, subject_user_id=700, user_id=700),
+        guild_name="r!z3",
+    )
+    text = _view_texts(view)
+    assert "НАГРАДА ЗА ТЕГ СЕРВЕРА" in text
+    assert "Участник: <@700>" in text
+    assert "Причина: Установка тега r!z3" in text
+    assert "+5 REP" in text
+    assert "Текущая репутация: 35" in text
+
+
 def test_log_view_admin_negative():
     view = rep_log.build_log_view(
         _row(source=SRC_ADMIN, amount=-5, balance_after=34,

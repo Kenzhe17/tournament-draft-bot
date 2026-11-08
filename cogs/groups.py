@@ -36,6 +36,9 @@ server_group = app_commands.Group(
 reputation_group = app_commands.Group(
     name="reputation", description="Репутация: профиль, история, статистика"
 )
+tag_group = app_commands.Group(
+    name="tag", description="Награды за серверный тег"
+)
 
 # Группы, регистрируемые в корне дерева (bot.py)
 ROOT_GROUPS = (
@@ -46,6 +49,7 @@ ROOT_GROUPS = (
     admin_group,
     server_group,
     reputation_group,
+    tag_group,
 )
 
 

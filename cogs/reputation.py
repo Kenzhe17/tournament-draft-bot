@@ -21,7 +21,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import REP_INVITE_AMOUNT
-from cogs.groups import bind_commands, reputation_group
+from cogs.groups import bind_commands, reputation_group, tag_group
 from services import reputation as rep_svc
 from services import rep_log
 from storage.player_stats_store import player_stats_store
@@ -69,6 +69,7 @@ class ReputationCog(commands.Cog):
             reputation_group, self,
             ["profile", "history", "stats", "adjust"],
         )
+        bind_commands(tag_group, self, ["claim"])
         # Кэш инвайтов: guild_id -> {code: Invite}
         if not hasattr(self.bot, "_rep_invite_cache"):
             self.bot._rep_invite_cache = {}
@@ -133,6 +134,41 @@ class ReputationCog(commands.Cog):
             await rep_svc.record_member_join(self.bot, member, before)
         except Exception as exc:
             logger.error("Invite tracking failed for %s: %s", member.id, exc)
+        # Серверный тег: при входе с активным тегом r!z3
+        try:
+            await self._maybe_award_tag(member)
+        except Exception as exc:
+            logger.error("Tag reward check failed for %s: %s", member.id, exc)
+
+    @commands.Cog.listener()
+    async def on_user_update(
+        self, before: discord.User, after: discord.User
+    ) -> None:
+        """primary_guild приезжает в payload user update — ловим установку тега."""
+        try:
+            gid, enabled, _tag = rep_svc.primary_guild_info(after)
+            if not gid or not enabled:
+                return
+            guild = self.bot.get_guild(gid)
+            if guild is None:
+                return
+            member = guild.get_member(after.id)
+            if member is None:
+                try:
+                    member = await guild.fetch_member(after.id)
+                except Exception:
+                    return
+            await self._maybe_award_tag(member)
+        except Exception as exc:
+            logger.error("Tag reward on_user_update failed: %s", exc)
+
+    async def _maybe_award_tag(self, member: discord.Member) -> None:
+        result = await rep_svc.award_server_tag(member)
+        if result and result.get("status") == "ok":
+            logger.info(
+                "SERVER_TAG REP +%d to %s (guild %s)",
+                rep_svc.REP_SERVER_TAG_AMOUNT, member.id, member.guild.id,
+            )
 
     @commands.Cog.listener()
     async def on_member_update(
@@ -341,6 +377,65 @@ class ReputationCog(commands.Cog):
             interaction.user.id, user.id, amount,
             interaction.guild_id, reason or "-",
         )
+
+    @tag_group.command(name="claim", description="Получить +5 REP за тег сервера")
+    async def tag_claim(self, interaction: discord.Interaction) -> None:
+        """Проверить серверный тег по актуальным данным Discord и начислить награду."""
+        member = interaction.user
+        # Свежие данные: кэш interaction.user может быть устаревшим
+        try:
+            fresh = await interaction.guild.fetch_member(member.id)
+            if fresh is not None:
+                member = fresh
+        except Exception:
+            pass
+
+        result = await rep_svc.award_server_tag(member)
+
+        if result is None:
+            await interaction.response.send_message(
+                view=_card("ОШИБКА", ["Команда доступна только участникам сервера."]),
+                ephemeral=True,
+            )
+            return
+        status = result.get("status")
+        if status == "ok":
+            await interaction.response.send_message(
+                view=_card(
+                    "НАГРАДА ПОЛУЧЕНА",
+                    [
+                        "Установлен тег сервера.",
+                        f"Начислено: +{rep_svc.REP_SERVER_TAG_AMOUNT} REP",
+                        f"Текущая репутация: {result['rep_after']}",
+                        "Награда доступна только один раз.",
+                    ],
+                    colors.SUCCESS,
+                ),
+                ephemeral=True,
+            )
+        elif status == "already":
+            await interaction.response.send_message(
+                view=_card(
+                    "НАГРАДА УЖЕ ПОЛУЧЕНА",
+                    [
+                        f"Вы уже получали +{rep_svc.REP_SERVER_TAG_AMOUNT} REP "
+                        "за установку тега сервера.",
+                        "Эта награда доступна только один раз.",
+                    ],
+                ),
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                view=_card(
+                    "ТЕГ НЕ НАЙДЕН",
+                    [
+                        "Установите и подтвердите тег этого сервера "
+                        "в настройках Discord, затем повторите /tag claim.",
+                    ],
+                ),
+                ephemeral=True,
+            )
 
     @app_commands.command(name="invites", description="Статистика приглашений пользователя")
     @app_commands.describe(user="Участник сервера")

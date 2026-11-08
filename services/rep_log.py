@@ -22,6 +22,7 @@ from storage.reputation_store import (
     SRC_BOOST,
     SRC_INVITE,
     SRC_MANUAL,
+    SRC_SERVER_TAG,
     reputation_store,
 )
 from utils.design import colors
@@ -213,6 +214,12 @@ def build_log_view(row: dict[str, Any], guild_name: str = "") -> DesignView:
         people = [f"Участник: <@{user_id}>"]
         if guild_name:
             people.append(f"Сервер: {guild_name}")
+        accent = colors.SUCCESS
+    elif source == SRC_SERVER_TAG:
+        title = "НАГРАДА ЗА ТЕГ СЕРВЕРА"
+        src_line = "Источник: Установка серверного тега"
+        reason = f"Причина: Установка тега {guild_name}" if guild_name else "Причина: Установка серверного тега"
+        people = [f"Участник: <@{user_id}>", reason]
         accent = colors.SUCCESS
     elif source == SRC_ADMIN:
         title = "РЕПУТАЦИЯ ИЗМЕНЕНА"
