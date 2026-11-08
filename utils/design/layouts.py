@@ -56,16 +56,15 @@ class DesignView(discord.ui.LayoutView):
         self._normalize_rows()
 
     def _normalize_rows(self) -> None:
-        """ActionRow внутри Container в CV2 не рендерится — все ряды
-        кнопок держим на верхнем уровне LayoutView (под карточкой)."""
-        rows = [
+        """ActionRow на верхнем уровне LayoutView переносим внутрь
+        карточки — кнопки должны быть частью embed."""
+        for row in [
             c
-            for c in list(self.container.children)
+            for c in list(self.children)
             if isinstance(c, discord.ui.ActionRow)
-        ]
-        for row in rows:
-            self.container.remove_item(row)
-            self.add_item(row)
+        ]:
+            self.remove_item(row)
+            self.container.add_item(row)
 
     # --- Наполнение карточки ---
     def text(self, content: str) -> "DesignView":
@@ -84,9 +83,7 @@ class DesignView(discord.ui.LayoutView):
         r = discord.ui.ActionRow()
         for item in items:
             r.add_item(item)
-        # ActionRow внутри Container в CV2 не рендерится — ряды
-        # всегда кладём на верхний уровень LayoutView.
-        self.add_item(r)
+        self.container.add_item(r)
         return self
 
     def section_text(

@@ -548,11 +548,10 @@ def compose(
         target.add_item(discord.ui.TextDisplay(content=text))
         target.add_item(separator())
     if view is not None:
-        # ActionRow внутри Container в CV2-сообщениях не рендерится
-        # надёжно — все ряды кнопок кладём на верхний уровень
-        # LayoutView (под карточкой).
+        # Кнопки — внутрь карточки (ActionRow внутри Container —
+        # штатный паттерн Components V2).
         for row in _view_rows(view):
-            layout.add_item(row)
+            target.add_item(row)
     return layout
 
 
@@ -630,10 +629,17 @@ def swap_view(
 
     if view is not None:
         rows = _interactive_rows(view)
-        # Все ActionRow — на верхний уровень LayoutView: ряды внутри
-        # Container в CV2 не отображаются.
+        # Кнопки — внутрь последней карточки.
+        target = None
+        for container in reversed(list(layout.children)):
+            if isinstance(container, discord.ui.Container):
+                target = container
+                break
+        if target is None:
+            target = discord.ui.Container()
+            layout.add_item(target)
         for row in rows:
-            layout.add_item(row)
+            target.add_item(row)
 
     return layout
 
