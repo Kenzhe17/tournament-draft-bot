@@ -38,15 +38,16 @@ def test_birthdays_today_and_upcoming():
     texts = [c.get("content", "") for c in _components(view) if c["type"] == 10]
     joined = "\n".join(texts)
     assert "**СЕГОДНЯ**" in joined
-    assert "<@1> — 9 ноября" in joined
-    assert "<@2> — 12 ноября" in joined
-    assert "LeftUser — 24 декабря" in joined  # без mention для вышедшего
+    assert "<@1> — 9 ноября · сегодня" in joined
+    assert "<@2> — 12 ноября · 3 дн." in joined
+    assert "LeftUser — 24 декабря · 45 дн." in joined  # без mention для вышедшего
     assert "**БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ**" in joined
 
 
 def test_birthdays_label_no_year():
-    assert _birthday_label("09.11.2001") == "9 ноября"
-    assert _birthday_label("29.02.2000") == "29 февраля"
+    assert _birthday_label("09.11.2001", 5) == "9 ноября · 5 дн."
+    assert _birthday_label("29.02.2000", 0) == "29 февраля · сегодня"
+    assert _birthday_label("29.02.2000", 1) == "29 февраля · завтра"
 
 
 def test_proposal_pending_has_buttons():

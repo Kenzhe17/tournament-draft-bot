@@ -590,7 +590,7 @@ class TournamentCog(commands.Cog):
         """Показать интерактивную справку."""
         embed = discord.Embed(
             title=f"  СПРАВКА ПО КОМАНДАМ  ",
-            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\n{replace_emojis('a_dot_smaller')} Турниры — Сетка, топ ELO и статистика\n{replace_emojis('a_dot_smaller')} Профиль — Карточка игрока и текущий ранг\n{replace_emojis('a_dot_smaller')} Экономика — Баланс, переводы, продажи и ставки\n{replace_emojis('a_dot_smaller')} Магазин — Покупка ролей и инвентарь\n{replace_emojis('a_dot_smaller')} Мини-игры — Игровые треды и игры\n{replace_emojis('a_dot_smaller')} Система рангов — Информация о рангах и уровнях\n{replace_emojis('a_dot_smaller')} Организаторам — Создание турниров и управление\n{replace_emojis('a_dot_smaller')} Правила сервера — Свод правил и регламент",
+            description=f" **Добро пожаловать в справку!**\nЗдесь вы найдёте информацию о всех командах бота.\n\n **Выберите категорию в меню ниже:**\n{replace_emojis('a_dot_smaller')} Турниры — Топ, Battle Royale, Ультиматум и Ranked Matchmaking\n{replace_emojis('a_dot_smaller')} Профиль — Карточка игрока, ранг и история матчей\n{replace_emojis('a_dot_smaller')} Социальное — Репутация, брак и дни рождения\n{replace_emojis('a_dot_smaller')} Экономика — Баланс, сейф, переводы и криминал\n{replace_emojis('a_dot_smaller')} Магазин — Покупка предметов и инвентарь\n{replace_emojis('a_dot_smaller')} Питомцы — RPG-питомцы сами\n{replace_emojis('a_dot_smaller')} Мини-игры — Казино-игры на монеты\n{replace_emojis('a_dot_smaller')} Система рангов — Ранги, уровни и ELO\n{replace_emojis('a_dot_smaller')} Организаторам — Турниры, инфо-центр и баннер\n{replace_emojis('a_dot_smaller')} Правила сервера — Свод правил и регламент",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         view = HelpGuideView(current=None)
@@ -2917,65 +2917,247 @@ async def send_tournament_notification(tournament, guild, action: str) -> None:
         logger.error(f"Failed to send tournament notification: {e}")
 
 
+def _help_category_embed(value: str) -> discord.Embed | None:
+    """Embed раздела /help. Общий контент для Guide и HelpGuide меню."""
+    from utils.ranks import RANKS
+
+    dot = replace_emojis('a_dot_smaller')
+    money = get_emoji('money')
+    gray = discord.Color.from_rgb(69, 69, 69)
+    org_color = discord.Color.from_rgb(100, 38, 56)
+    footer = f"\n\n{dot}  Используйте выпадающее меню ниже для перехода в другие разделы "
+
+    rank_lines = "\n".join(
+        f"{dot} {get_emoji(name)} **{name}:** `{min_level}+ lvl`"
+        for name, min_level, _badge in reversed(RANKS)
+    )
+
+    if value == "tournaments":
+        return discord.Embed(
+            title="  РАЗДЕЛ: ТУРНИРЫ  ",
+            description=(
+                f" **Турниры, рейтинговые матчи и статистика**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/top` — Таблица лидеров `(уровень / монеты / ELO / репутация)`\n"
+                f"{dot}  `/booyah` — Зал славы, рекорды и история турниров\n"
+                f"{dot}  `/mm squad` — Поиск матча 4×4 (Ranked Matchmaking)\n"
+                f"{dot}  `/mm delete` — Удалить поиски на сервере (орг)\n"
+                f"{dot}  `/tournament create|delete` — Турнирная сетка (орг)\n"
+                f"{dot}  `/br create|delete` — Battle Royale (орг)\n"
+                f"{dot}  `/ultimatum create|delete` — Ультиматум (орг)\n"
+                f"{dot}  `/team create|status|delete` — Команды для BR\n"
+                f"{dot}  `/ff info|stats` — Статистика Free Fire\n"
+                f"{dot}  `/player ulti`, `/player ulti_history` — Статистика Ultimatum\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "profile":
+        return discord.Embed(
+            title="  РАЗДЕЛ: ПРОФИЛЬ  ",
+            description=(
+                f" **Персональный аккаунт и матчи**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/player profile` — PNG-карточка профиля со статой\n"
+                f"{dot}  `/player history` — История матчей\n"
+                f"{dot}  `/player rank` — Ранг и прогресс до следующего\n"
+                f"{dot}  `/player set bio|birthday` — Поля профиля `(кулдаун 7 дней)`\n"
+                f"{dot}  `/whoami` — Кто ты на самом деле\n"
+                f"{dot}  `/birthdaytest` — Тест поздравления `(админ)`\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "social":
+        return discord.Embed(
+            title="  РАЗДЕЛ: СОЦИАЛЬНОЕ  ",
+            description=(
+                f" **Репутация, брак и дни рождения**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/rep` — +1 репутация `(1 раз на человека, раз в 24ч)`\n"
+                f"{dot}  `/reputation profile|history|stats` — Репутация\n"
+                f"{dot}  `/reputation adjust` — Корректировка REP `(админ)`\n"
+                f"{dot}  `/tag claim` — +5 REP за серверный тег\n"
+                f"{dot}  `/invites` — Статистика приглашений\n"
+                f"{dot}  `/player marry @user` — Предложение руки и сердца\n"
+                f"{dot}  `/player divorce` — Расторгнуть брак\n"
+                f"{dot}  `/birthdays` — Дни рождения участников сервера\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "economy":
+        return discord.Embed(
+            title="  РАЗДЕЛ: ЭКОНОМИКА  ",
+            description=(
+                f" **Финансы, сейф и криминал**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/economy balance` — Баланс `(наличные + сейф)`\n"
+                f"{dot}  `/daily` — Ежедневный бонус\n"
+                f"{dot}  `/economy pay @user сумма` — Перевод монет\n"
+                f"{dot}  `/economy gift @user предмет` — Подарить предмет\n"
+                f"{dot}  `/economy sell предмет` — Продать за 50% стоимости\n"
+                f"{dot}  `/economy bet` — Статистика ставок\n"
+                f"{dot}  `/economy bank status|deposit|withdraw` — Сейф `(комиссия 5% на пополнение)`\n"
+                f"{dot}  `/crime rob @user` — Одиночное ограбление\n"
+                f"{dot}  `/crime robgroup @user` — Групповое ограбление\n\n"
+                f" **Защита средств:**\n"
+                f"{dot} Наличные уязвимы для ограблений, сейф — нет\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "shop":
+        return discord.Embed(
+            title="  РАЗДЕЛ: МАГАЗИН  ",
+            description=(
+                f" **Покупка товаров и инвентарь**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/shop` — Магазин: роли, питомцы и предметы\n"
+                f"{dot}  `/inventory` — Ваш инвентарь\n\n"
+                f" **Редкости предметов:**\n"
+                f"{dot} Basic → Special — от `700` до `5,950` {money}\n\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "pets":
+        return discord.Embed(
+            title="  РАЗДЕЛ: ПИТОМЦЫ  ",
+            description=(
+                f" **RPG-система питомцев с уникальными способностями**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/pet profile` — Профиль питомца, сытость, энергия\n"
+                f"{dot}  `/pet catalog` — Каталог всех питомцев\n"
+                f"{dot}  `/pet top` — Топ питомцев по уровню\n"
+                f"{dot}  `/pet release` — Отпустить питомца `(удалить навсегда)`\n"
+                f"{dot}  `/pet coowner @игрок` — Со-опекунство\n"
+                f"{dot}  `/pet coowner_remove` — Убрать со-опекуна / выйти\n\n"
+                f" **Покупка и уход:**\n"
+                f"{dot} Питомцы покупаются через `/shop` → Питомцы\n"
+                f"{dot} Кормление — 30 монет `(сытость, энергия, EXP)`\n"
+                f"{dot} Таинственное яйцо — 500 монет, шанс 20%\n\n"
+                f" **Цены по редкости:**\n"
+                f"{dot} Обычный `3,000` / Необычный `8,000` {money}\n"
+                f"{dot} Эпический `15,000` / Легендарный `30,000` {money}\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "games":
+        return discord.Embed(
+            title="  РАЗДЕЛ: МИНИ-ИГРЫ  ",
+            description=(
+                f" **Казино-игры на монеты**\n\n"
+                f" **Доступные команды:**\n"
+                f"{dot}  `/games list` — Меню всех игр\n"
+                f"{dot}  `/games coin_flip` — Монетка `(1.6x)`\n"
+                f"{dot}  `/games dice_roll` — Кубик 1-6 `(4.8x)`\n"
+                f"{dot}  `/games guess_number` — Число 1-100 `(2.5x)`\n"
+                f"{dot}  `/games high_low` — Выше или ниже `(до 3.7x)`\n"
+                f"{dot}  `/games roulette` — Рулетка `(1.6x-30x)`\n"
+                f"{dot}  `/games mathquiz` — Математическая дуэль\n"
+                f"{dot}  `/games stats` — Статистика казино `(админ)`\n\n"
+                f" Все игры с честными шансами и лимитом ставки.\n"
+                + footer
+            ),
+            color=gray,
+        )
+
+    if value == "ranks":
+        return discord.Embed(
+            title="  СИСТЕМА РАНГОВ  ",
+            description=(
+                f" **Система рангов по уровням:**\n{rank_lines}\n\n"
+                f"{dot} `/top` — ELO-таблица лидеров\n"
+                f"{dot} `/player rank` — Текущий ранг и прогресс\n"
+                f"{dot} `/player ulti` — Рейтинг Ultimatum"
+            ),
+            color=gray,
+        )
+
+    if value == "organizers":
+        return discord.Embed(
+            title="  РАЗДЕЛ: ОРГАНИЗАТОРАМ  ",
+            description=(
+                f" **Турниры, инфо-центр и баннер `(админы/орги)`**\n\n"
+                f" **Турниры:**\n"
+                f"{dot}  `/tournament create|delete|deleteall|test` — Сетка турнира\n"
+                f"{dot}  `/br create|delete|test_fill|test_teams|test_stats` — Battle Royale\n"
+                f"{dot}  `/ultimatum create|delete|test_fill` — Ультиматум\n"
+                f"{dot}  `/mm squad|delete|test` — Matchmaking 4×4\n"
+                f"{dot}  `/team create|delete|status` — Команды BR\n\n"
+                f" **Сервер и контент:**\n"
+                f"{dot}  `/server role|welcome|check2fa|off` — Настройки сервера\n"
+                f"{dot}  `/info publish|update|status|validate` — Информационный центр\n"
+                f"{dot}  `/banner preview|update|status|leaderboard|auto` — Дневной баннер\n"
+                f"{dot}  `/getemojiid` — ID всех эмодзи сервера\n\n"
+                f" **Админ-инструменты:**\n"
+                f"{dot}  `/admin edit|fix|fix_userid|reset|debug_emoji` — Игроки и отладка\n"
+                f"{dot}  `/admin forcedrop|isolate|delete_thread` — Экстренные действия\n"
+                + footer
+            ),
+            color=org_color,
+        )
+
+    if value == "rules":
+        embed = discord.Embed(
+            title=" СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
+            color=gray,
+        )
+        embed.add_field(
+            name="  1. Базовые правила сервера",
+            value="• **Уважение и адекватность:** Запрещены оскорбления, провокации, разжигание межнациональной или иной розни, токсичное поведение в текстовых и голосовых каналах.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** *(при повторе — бан)*.\n\n• **Реклама и спам:** Запрещена реклама сторонних Discord-серверов, сторонних ресурсов, реферальных ссылок и спам/сообщений не по теме каналов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за сторонние ссылки/серверы)*.\n\n• **Медиа-контент:** Запрещена публикация контента 18+ (NSFW), шок-контента, вредоносных ссылок и файлов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за вредоносные ссылки)*.",
+            inline=False
+        )
+        embed.add_field(
+            name="  2. Регламент турниров",
+            value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных предов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
+            inline=False
+        )
+        embed.add_field(
+            name="  3. Наказания за пред (предупреждение)",
+            value="**Пред** — капитан не заполнил статистику, ушёл AFK или вышел без причины по решению администратора.\n\nСистема наказаний за пред:\n\n• **1 пред:** 3ч мьюта\n• **2 пред:** 6ч мьюта\n• **3 пред:** 12ч мьюта\n• **4 пред:** 1д мьюта\n• **5 пред:** 3д мьюта\n\n> 📝 **Примечание:** Администрация самостоятельно определяет, является ли поведение предом на основе наблюдений и обстоятельств.",
+            inline=False
+        )
+        return embed
+
+    return None
+
+
+_HELP_OPTIONS = [
+    discord.SelectOption(label="Правила сервера", description="Свод правил и регламент турниров", value="rules"),
+    discord.SelectOption(label="Турниры", description="Топ, BR, Ультиматум и Ranked MM", value="tournaments"),
+    discord.SelectOption(label="Профиль", description="Карточка игрока, ранг и история матчей", value="profile"),
+    discord.SelectOption(label="Социальное", description="Репутация, брак и дни рождения", value="social"),
+    discord.SelectOption(label="Экономика", description="Баланс, сейф, переводы и криминал", value="economy"),
+    discord.SelectOption(label="Магазин", description="Покупка предметов и инвентарь", value="shop"),
+    discord.SelectOption(label="Питомцы", description="RPG-питомцы с способностями", value="pets"),
+    discord.SelectOption(label="Мини-игры", description="Казино-игры на монеты", value="games"),
+    discord.SelectOption(label="Система рангов", description="Ранги, уровни и ELO", value="ranks"),
+    discord.SelectOption(label="Организаторам", description="Турниры, инфо-центр и баннер", value="organizers"),
+]
+
+
 class GuideSelectMenu(discord.ui.Select):
     """Выпадающее меню для гайда."""
 
     def __init__(self, current=None):
-        self.current = current
         options = [
             discord.SelectOption(
-                label="Правила сервера",
-                description="Свод правил и регламент турниров",
-                value="rules"
-            ),
-            discord.SelectOption(
-                label="Турниры",
-                description="Сетка, топ ELO и статистика турниров",
-                value="tournaments"
-            ),
-            discord.SelectOption(
-                label="Профиль",
-                description="Карточка игрока и текущий ранг",
-                value="profile"
-            ),
-            discord.SelectOption(
-                label="Экономика",
-                description="Баланс, переводы, продажи и ставки",
-                value="economy"
-            ),
-            discord.SelectOption(
-                label="Магазин",
-                description="Покупка ролей и инвентарь",
-                value="shop"
-            ),
-            discord.SelectOption(
-                label="Питомцы",
-                description="RPG-питомцы с способностями",
-                value="pets"
-            ),
-            discord.SelectOption(
-                label="Мини-игры",
-                description="Игровые треды и игры",
-                value="games"
-            ),
-            discord.SelectOption(
-                label="Система рангов",
-                description="Информация о рангах и уровнях",
-                value="ranks"
-            ),
-            discord.SelectOption(
-                label="Организаторам",
-                description="Создание турниров и управление кругами",
-                value="organizers"
+                label=opt.label,
+                description=opt.description,
+                value=opt.value,
+                default=(opt.value == current),
             )
+            for opt in _HELP_OPTIONS
         ]
-        
-        # Set default option
-        for opt in options:
-            if opt.value == current:
-                opt.default = True
-                break
-        
         super().__init__(
             placeholder="Выберите категорию...",
             min_values=1,
@@ -2984,110 +3166,12 @@ class GuideSelectMenu(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Обработка выбора пункта меню."""
-        from utils.ranks import RANKS
-
-        # Строки таблицы рангов (Legend → Bronze)
-        rank_lines = "\n".join(
-            f"{replace_emojis('a_dot_smaller')} {get_emoji(name)} "
-            f"**{name}:** `{min_level}+ lvl`"
-            for name, min_level, _badge in reversed(RANKS)
-        )
-
-        if self.values[0] == "tournaments":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ТУРНИРЫ  ",
-                description=f" **Информация и статистика турнирной системы**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/top` — Таблица лучших игроков `(level / money / elo)`\n{replace_emojis('a_dot_smaller')}  `/booyah` — Зал славы, рекорды и история прошлых турниров\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="tournaments")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "profile":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ПРОФИЛЬ  ",
-                description=f" **Управление персональным аккаунтом**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')}  `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n{replace_emojis('a_dot_smaller')}  `/history [user]` — История матчей с навигацией\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="profile")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "economy":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ЭКОНОМИКА  ",
-                description=f" **Управление финансами, подарками и ставками**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')}  `/daily` — Получить бонус каждые 12 часов `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')}  `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')}  `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')}  `/bet` — Личная статистика и история активных ставок\n{replace_emojis('a_dot_smaller')}  `/sell` — Продать предмет из инвентаря за 50% стоимости\n{replace_emojis('a_dot_smaller')}  `/rob @пользователь` — Одиночное ограбление (50% шанс, кулдаун 3ч)\n{replace_emojis('a_dot_smaller')}  `/robgroup @пользователь` — Групповое ограбление (2-6 игроков, шанс 50-80%)\n{replace_emojis('a_dot_smaller')}  `/bank status` — Статус банковского сейфа\n{replace_emojis('a_dot_smaller')}  `/bank deposit [сумма/all]` — Пополнить сейф (комиссия 5%)\n{replace_emojis('a_dot_smaller')}  `/bank withdraw [сумма/all]` — Снять со сейфа (без комиссии)\n\n **Защита средств:**\n{replace_emojis('a_dot_smaller')} Наличные уязвимы для /rob и /robgroup\n{replace_emojis('a_dot_smaller')} Деньги в банковском сейфе 100% защищены\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="economy")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "shop":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: МАГАЗИН  ",
-                description=f" **Покупка товаров и инвентарь**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')}  `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic  `700` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Premium  `1,750` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Elite  `3,500` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Special  `5,950` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="shop")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "pets":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ПИТОМЦЫ  ",
-                description=f" **RPG-система питомцев с уникальными способностями**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/pet profile` — Профиль питомца, сытость, энергия и способности\n{replace_emojis('a_dot_smaller')}  `/pet release` — Отпустить питомца (удалить навсегда)\n{replace_emojis('a_dot_smaller')}  `/pet coowner @игрок` — Предложить со-опекунство\n{replace_emojis('a_dot_smaller')}  `/pet coowner_remove` — Убрать со-опекуна (главный опекун) или выйти из со-опекунства\n\n **Покупка и уход:**\n{replace_emojis('a_dot_smaller')} Питомцы покупаются через `/shop` → Питомцы\n{replace_emojis('a_dot_smaller')} Кормление стоит 30 монет (+20 сытость, +5 энергия, +5 EXP)\n{replace_emojis('a_dot_smaller')} Таинственное яйцо (500 монет) — шанс 20% на питомца\n\n **Цены по редкости:**\n{replace_emojis('a_dot_smaller')} Обычный  `3,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Необычный  `8,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Эпический  `15,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Легендарный  `30,000` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="pets")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "games":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: МИНИ-ИГРЫ  ",
-                description=f" **Развлечения и быстрые игры**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/games` — Единое интерактивное меню всех доступных игр\n\n **Категории игр в меню:**\n{replace_emojis('a_dot_smaller')} 🎰 Игры на удачу и слот-машины\n{replace_emojis('a_dot_smaller')} 🧠 Викторины, головоломки и виселица\n{replace_emojis('a_dot_smaller')} 🎲 Дуэли, камень-ножницы-бумага и казино\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="games")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "ranks":
-            embed = discord.Embed(
-                title=f"  СИСТЕМА РАНГОВ  ",
-                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{rank_lines}",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = GuideView(current="ranks")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "organizers":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ОРГАНИЗАТОРАМ  ",
-                description=f" **Инструменты проведения турниров (только для оргов)**\n\n **Команды управления:**\n{replace_emojis('a_dot_smaller')}  `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: elo/random`\n{replace_emojis('a_dot_smaller')}  `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(100, 38, 56)
-            )
-            view = GuideView(current="organizers")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "rules":
-            embed = discord.Embed(
-                title=f" СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            embed.add_field(
-                name=f"  1. Базовые правила сервера",
-                value="• **Уважение и адекватность:** Запрещены оскорбления, провокации, разжигание межнациональной или иной розни, токсичное поведение в текстовых и голосовых каналах.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** *(при повторе — бан)*.\n\n• **Реклама и спам:** Запрещена реклама сторонних Discord-серверов, сторонних ресурсов, реферальных ссылок и спам/сообщений не по теме каналов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за сторонние ссылки/серверы)*.\n\n• **Медиа-контент:** Запрещена публикация контента 18+ (NSFW), шок-контента, вредоносных ссылок и файлов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за вредоносные ссылки)*.",
-                inline=False
-            )
-            embed.add_field(
-                name=f"  2. Регламент турниров",
-                value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных предов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
-                inline=False
-            )
-            embed.add_field(
-                name=f"  3. Наказания за пред (предупреждение)",
-                value="**Пред** — капитан не заполнил статистику, ушёл AFK или вышел без причины по решению администратора.\n\nСистема наказаний за пред:\n\n• **1 пред:** 3ч мьюта\n• **2 пред:** 6ч мьюта\n• **3 пред:** 12ч мьюта\n• **4 пред:** 1д мьюта\n• **5 пред:** 3д мьюта\n\n> 📝 **Примечание:** Администрация самостоятельно определяет, является ли поведение предом на основе наблюдений и обстоятельств.",
-                inline=False
-            )
-            view = GuideView(current="rules")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
+        embed = _help_category_embed(self.values[0])
+        if embed is None:
+            await interaction.response.defer(ephemeral=True)
+            return
+        view = GuideView(current=self.values[0])
+        await interaction.response.send_message(view=compose(embed, view), ephemeral=True)
 
 
 class GuideView(discord.ui.View):
@@ -3100,63 +3184,16 @@ class GuideView(discord.ui.View):
 
 class HelpGuideSelectMenu(discord.ui.Select):
     """Выпадающее меню для справки (без главного экрана)."""
-
     def __init__(self, current=None):
-        self.current = current
         options = [
             discord.SelectOption(
-                label="Правила сервера",
-                description="Свод правил и регламент турниров",
-                value="rules"
-            ),
-            discord.SelectOption(
-                label="Турниры",
-                description="Сетка, топ ELO и статистика турниров",
-                value="tournaments"
-            ),
-            discord.SelectOption(
-                label="Профиль",
-                description="Карточка игрока и текущий ранг",
-                value="profile"
-            ),
-            discord.SelectOption(
-                label="Экономика",
-                description="Баланс, переводы, продажи и ставки",
-                value="economy"
-            ),
-            discord.SelectOption(
-                label="Магазин",
-                description="Покупка ролей и инвентарь",
-                value="shop"
-            ),
-            discord.SelectOption(
-                label="Питомцы",
-                description="RPG-питомцы с способностями",
-                value="pets"
-            ),
-            discord.SelectOption(
-                label="Мини-игры",
-                description="Игровые треды и игры",
-                value="games"
-            ),
-            discord.SelectOption(
-                label="Система рангов",
-                description="Информация о рангах и уровнях",
-                value="ranks"
-            ),
-            discord.SelectOption(
-                label="Организаторам",
-                description="Создание турниров и управление кругами",
-                value="organizers"
+                label=opt.label,
+                description=opt.description,
+                value=opt.value,
+                default=(opt.value == current),
             )
+            for opt in _HELP_OPTIONS
         ]
-
-        # Set default option
-        for opt in options:
-            if opt.value == current:
-                opt.default = True
-                break
-
         super().__init__(
             placeholder="Выберите категорию...",
             min_values=1,
@@ -3165,110 +3202,12 @@ class HelpGuideSelectMenu(discord.ui.Select):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Обработка выбора пункта меню."""
-        from utils.ranks import RANKS
-
-        # Строки таблицы рангов (Legend → Bronze)
-        rank_lines = "\n".join(
-            f"{replace_emojis('a_dot_smaller')} {get_emoji(name)} "
-            f"**{name}:** `{min_level}+ lvl`"
-            for name, min_level, _badge in reversed(RANKS)
-        )
-
-        if self.values[0] == "tournaments":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ТУРНИРЫ  ",
-                description=f" **Информация и статистика турнирной системы**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/top` — Таблица лучших игроков `(level / money / elo)`\n{replace_emojis('a_dot_smaller')}  `/booyah` — Зал славы, рекорды и история прошлых турниров\n{replace_emojis('a_dot_smaller')}  `/help` — Справка по всем командам бота\n{replace_emojis('a_dot_smaller')}  `/welcome` — Проводник по серверу (только для владельца)\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="tournaments")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "profile":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ПРОФИЛЬ  ",
-                description=f" **Управление персональным аккаунтом**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/profile` — Карточка игрока, общая статистика и достижения\n{replace_emojis('a_dot_smaller')}  `/rank` — Ваша карточка ранга и прогресс до следующего уровня\n{replace_emojis('a_dot_smaller')}  `/history [user]` — История матчей с навигацией\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="profile")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "economy":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ЭКОНОМИКА  ",
-                description=f" **Управление финансами, подарками и ставками**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/balance` — Проверить свой текущий баланс монет\n{replace_emojis('a_dot_smaller')}  `/daily` — Получить бонус каждые 12 часов `(серия до 10 дней)`\n{replace_emojis('a_dot_smaller')}  `/pay` — Перевести монеты другому пользователю\n{replace_emojis('a_dot_smaller')}  `/gift` — Подарить предмет из инвентаря другому игроку\n{replace_emojis('a_dot_smaller')}  `/bet` — Личная статистика и история активных ставок\n{replace_emojis('a_dot_smaller')}  `/sell` — Продать предмет из инвентаря за 50% стоимости\n{replace_emojis('a_dot_smaller')}  `/rob @пользователь` — Одиночное ограбление (50% шанс, кулдаун 3ч)\n{replace_emojis('a_dot_smaller')}  `/robgroup @пользователь` — Групповое ограбление (2-6 игроков, шанс 50-80%)\n{replace_emojis('a_dot_smaller')}  `/bank status` — Статус банковского сейфа\n{replace_emojis('a_dot_smaller')}  `/bank deposit [сумма/all]` — Пополнить сейф (комиссия 5%)\n{replace_emojis('a_dot_smaller')}  `/bank withdraw [сумма/all]` — Снять со сейфа (без комиссии)\n\n **Защита средств:**\n{replace_emojis('a_dot_smaller')} Наличные уязвимы для /rob и /robgroup\n{replace_emojis('a_dot_smaller')} Деньги в банковском сейфе 100% защищены\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="economy")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "shop":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: МАГАЗИН  ",
-                description=f" **Покупка товаров и инвентарь**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/shop` — Магазин кастомных ролей и косметических предметов\n{replace_emojis('a_dot_smaller')}  `/inventory` — Просмотр вашего инвентаря купленных предметов\n\n **Редкости предметов:**\n{replace_emojis('a_dot_smaller')} Basic  `700` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Premium  `1,750` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Elite  `3,500` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Special  `5,950` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="shop")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "pets":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ПИТОМЦЫ  ",
-                description=f" **RPG-система питомцев с уникальными способностями**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/pet profile` — Профиль питомца, сытость, энергия и способности\n{replace_emojis('a_dot_smaller')}  `/pet release` — Отпустить питомца (удалить навсегда)\n{replace_emojis('a_dot_smaller')}  `/pet coowner @игрок` — Предложить со-опекунство\n{replace_emojis('a_dot_smaller')}  `/pet coowner_remove` — Убрать со-опекуна (главный опекун) или выйти из со-опекунства\n\n **Покупка и уход:**\n{replace_emojis('a_dot_smaller')} Питомцы покупаются через `/shop` → Питомцы\n{replace_emojis('a_dot_smaller')} Кормление стоит 30 монет (+20 сытость, +5 энергия, +5 EXP)\n{replace_emojis('a_dot_smaller')} Таинственное яйцо (500 монет) — шанс 20% на питомца\n\n **Цены по редкости:**\n{replace_emojis('a_dot_smaller')} Обычный  `3,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Необычный  `8,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Эпический  `15,000` {get_emoji('money')}\n{replace_emojis('a_dot_smaller')} Легендарный  `30,000` {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="pets")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "games":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: МИНИ-ИГРЫ  ",
-                description=f" **Развлечения и быстрые игры**\n\n **Доступные команды:**\n{replace_emojis('a_dot_smaller')}  `/thread` — Создать игровой тред\n{replace_emojis('a_dot_smaller')}  `/delete` — Удалить текущий игровой тред (только для оргов)\n{replace_emojis('a_dot_smaller')}  `/games` — Единое интерактивное меню всех доступных игр\n\n **Игры в тредах:**\n{replace_emojis('a_dot_smaller')} 🎲 `/coin_flip` — Орёл или решка (PvE)\n{replace_emojis('a_dot_smaller')} ⚔️ `/rps` — Камень-ножницы-бумага (PvE)\n{replace_emojis('a_dot_smaller')} 🧮 `/mathquiz` — Математическая дуэль (2-6 игроков)\n{replace_emojis('a_dot_smaller')} 🎲 `/dice_roll` — Бросок кубика 1-6 (4.8x)\n{replace_emojis('a_dot_smaller')} 🔢 `/guess_number` — Угадай число 1-100 (2.5x)\n{replace_emojis('a_dot_smaller')} 🎡 `/wheel` — Колесо фортуны (до 10x)\n{replace_emojis('a_dot_smaller')} 🎟️ `/lottery` — Лотерея (случайный победитель)\n{replace_emojis('a_dot_smaller')} ⬆️⬇️ `/high_low` — Угадай выше или ниже (до 3.7x)\n{replace_emojis('a_dot_smaller')} 🍾 `/spin_bottle` — Бутылочка (PvP, 2x)\n{replace_emojis('a_dot_smaller')} ☘️ `/triple_chance` — Угадай число 1-3 (3x)\n{replace_emojis('a_dot_smaller')} 🎲 `/dice_bet` — Ставка на сумму кубиков 2-12 (6x)\n{replace_emojis('a_dot_smaller')} 🎰 `/roulette` — Рулетка (1.6x-30x)\n{replace_emojis('a_dot_smaller')} 🎲 `/craps` — Крэпс Pass/Don't Pass (2x)\n{replace_emojis('a_dot_smaller')} ⚡ `/snap` — Карточная игра (2x)\n\n **Важно:** Игры запускаются только в игровых тредах! Сначала создайте тред через `/thread`.\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="games")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "ranks":
-            embed = discord.Embed(
-                title=f"  СИСТЕМА РАНГОВ  ",
-                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{rank_lines}",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            view = HelpGuideView(current="ranks")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "organizers":
-            embed = discord.Embed(
-                title=f"  РАЗДЕЛ: ОРГАНИЗАТОРАМ  ",
-                description=f" **Инструменты проведения турниров (только для оргов)**\n\n **Команды управления:**\n{replace_emojis('a_dot_smaller')}  `/tournament create` — Создать новый турнир `(8 / 16 / 32 слота)` | `formation: elo/random`\n{replace_emojis('a_dot_smaller')}  `/limit` — Настройка лимитов кругов `(circle 2/3/4)` | `status: on/off`\n\n{replace_emojis('a_dot_smaller')}  Используйте выпадающее меню ниже для перехода в другие разделы ",
-                color=discord.Color.from_rgb(100, 38, 56)
-            )
-            view = HelpGuideView(current="organizers")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
-
-        elif self.values[0] == "rules":
-            embed = discord.Embed(
-                title=f" СВОД ПРАВИЛ И РЕГЛАМЕНТ R1Z3",
-                color=discord.Color.from_rgb(69, 69, 69)
-            )
-            embed.add_field(
-                name=f"  1. Базовые правила сервера",
-                value="• **Уважение и адекватность:** Запрещены оскорбления, провокации, разжигание межнациональной или иной розни, токсичное поведение в текстовых и голосовых каналах.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** *(при повторе — бан)*.\n\n• **Реклама и спам:** Запрещена реклама сторонних Discord-серверов, сторонних ресурсов, реферальных ссылок и спам/сообщений не по теме каналов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за сторонние ссылки/серверы)*.\n\n• **Медиа-контент:** Запрещена публикация контента 18+ (NSFW), шок-контента, вредоносных ссылок и файлов.\n> 🛑 **Наказание:** **Пред (3ч мьюта)** или **Пермабан** *(за вредоносные ссылки)*.",
-                inline=False
-            )
-            embed.add_field(
-                name=f"  2. Регламент турниров",
-                value="Запись на турнир является обязательством участвовать. За нарушения предусмотрена система автоматических и административных предов:\n\n• **Неявка на матч:** Зарегистрировались на турнир, но не зашли в комнату/игровое лобби до старта.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Уход с матча:** Вышли из комнаты/игры без уважительной причины до официального завершения.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Игнорирование тимейтов:** Не зашли в голосовой канал команды в Discord по просьбе сокомандников.\n> 🛑 **Наказание:** **Пред (3ч мьюта)**.\n\n• **Нечестная игра:** Использование читов, стороннего ПО, багоюз или оскорбление организаторов (`org`).\n> 🛑 **Наказание:** **Дисквалификация и Пермабан**.",
-                inline=False
-            )
-            embed.add_field(
-                name=f"  3. Наказания за пред (предупреждение)",
-                value="**Пред** — капитан не заполнил статистику, ушёл AFK или вышел без причины по решению администратора.\n\nСистема наказаний за пред:\n\n• **1 пред:** 3ч мьюта\n• **2 пред:** 6ч мьюта\n• **3 пред:** 12ч мьюта\n• **4 пред:** 1д мьюта\n• **5 пред:** 3д мьюта\n\n> 📝 **Примечание:** Администрация самостоятельно определяет, является ли поведение предом на основе наблюдений и обстоятельств.",
-                inline=False
-            )
-            view = HelpGuideView(current="rules")
-            await interaction.response.send_message( view=compose(embed, view), ephemeral=True)
+        embed = _help_category_embed(self.values[0])
+        if embed is None:
+            await interaction.response.defer(ephemeral=True)
+            return
+        view = HelpGuideView(current=self.values[0])
+        await interaction.response.send_message(view=compose(embed, view), ephemeral=True)
 
 
 class HelpGuideView(discord.ui.View):
