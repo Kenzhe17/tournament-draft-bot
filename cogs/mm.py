@@ -17,7 +17,7 @@ from discord.ext import commands
 from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
 
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
-MATCH_FOUND_CHANNEL_ID = 1568992622180311220
+MATCH_FOUND_CHANNEL_ID = 1549809898643001484
 from models.mm_search import MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus

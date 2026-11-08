@@ -44,7 +44,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SHOT_FILENAME = "match_result.png"
 
 # Канал итоговых результатов матчей (команды + игроки + скриншот)
-RESULT_CHANNEL_ID = 1568992672662819007
+RESULT_CHANNEL_ID = 1563149967303118949
 
 
 def _match_label(match_type: str, match_index: int) -> str:
