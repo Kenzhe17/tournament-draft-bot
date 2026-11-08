@@ -542,10 +542,10 @@ class PetCatalogView(discord.ui.View):
             color=pet_data.get("color", discord.Color.from_rgb(69, 69, 69))
         )
         
-        # Добавить изображение
+        # Добавить изображение — thumbnail справа сверху карточки
         image_url = pet_data.get("image_url")
         if image_url:
-            embed.set_image(url=image_url)
+            embed.set_thumbnail(url=image_url)
         
         # Обновить кнопки
         self.refresh_buttons()

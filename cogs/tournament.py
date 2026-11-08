@@ -160,23 +160,23 @@ class TournamentCog(commands.Cog):
 
         # Диагностика кнопок: что реально уходит в сообщение
         _composed = None
+        _debug = "n/a"
         try:
             from utils.design.adapter import _layout_debug, _view_rows
             _rows = _view_rows(view) if view is not None else []
             _composed = compose(embed, view)
-            logger.info(
-                "TOURNAMENT-CREATE view=%s children=%s rows=%s layout=%s",
-                type(view).__name__ if view else None,
-                len(view.children) if view is not None else 0,
-                len(_rows),
-                _layout_debug(_composed),
+            _debug = (
+                f"view={type(view).__name__ if view else None} "
+                f"children={len(view.children) if view is not None else 0} "
+                f"rows={len(_rows)} | {_layout_debug(_composed)}"
             )
+            logger.info("TOURNAMENT-CREATE %s", _debug)
         except Exception:
             logger.exception("TOURNAMENT-CREATE diagnostics failed")
 
         # Send ephemeral confirmation first
         await interaction.response.send_message(
-            replace_emojis("✅ Турнир создан"),
+            replace_emojis(f"✅ Турнир создан\n-# {_debug}"),
             ephemeral=True
         )
 
