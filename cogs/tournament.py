@@ -165,9 +165,13 @@ class TournamentCog(commands.Cog):
             from utils.design.adapter import _layout_debug, _view_rows
             _rows = _view_rows(view) if view is not None else []
             _composed = compose(embed, view)
+            _child_types = [
+                f"{type(c).__name__}({len(getattr(c, 'children', []) or [])})"
+                for c in (view.children if view is not None else [])
+            ]
             _debug = (
                 f"view={type(view).__name__ if view else None} "
-                f"children={len(view.children) if view is not None else 0} "
+                f"children={_child_types} "
                 f"rows={len(_rows)} | {_layout_debug(_composed)}"
             )
             logger.info("TOURNAMENT-CREATE %s", _debug)
