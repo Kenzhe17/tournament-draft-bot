@@ -302,7 +302,7 @@ def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
                 children = container._children
                 idx = children.index(child)
                 children[idx] = section
-                child._detach_view()
+                child._update_view(None)
                 section._update_view(layout)
                 section._parent = container
                 break

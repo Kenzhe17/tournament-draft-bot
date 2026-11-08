@@ -99,9 +99,39 @@ class _SettingsFieldButton(discord.ui.Button):
         await interaction.response.send_modal(self.modal_cls(self.guild_id, self.user_id))
 
 
-class BirthdayButton(_SettingsFieldButton):
+class _CooldownFieldButton(_SettingsFieldButton):
+    """Кнопка поля с кулдауном (раз в 7 дней) — предупреждает до открытия модалки."""
+
+    field = ""
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы можете настраивать только свой профиль."),
+                ephemeral=True
+            )
+            return
+
+        from storage.profile_cooldowns import format_remaining, profile_cooldowns
+
+        left = profile_cooldowns.seconds_left(self.guild_id, self.user_id, self.field)
+        if left > 0:
+            await interaction.response.send_message(
+                replace_emojis(
+                    f"⏳ Это поле можно менять **раз в 7 дней**.\n"
+                    f"Осталось: **{format_remaining(left)}**"
+                ),
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.send_modal(self.modal_cls(self.guild_id, self.user_id))
+
+
+class BirthdayButton(_CooldownFieldButton):
     modal_cls = None  # задаётся после объявления BirthdayModal
     label_text = "День рождения"
+    field = "birthday"
 
 
 class NicknameButton(_SettingsFieldButton):
@@ -109,9 +139,10 @@ class NicknameButton(_SettingsFieldButton):
     label_text = "Никнейм"
 
 
-class DescriptionButton(_SettingsFieldButton):
+class DescriptionButton(_CooldownFieldButton):
     modal_cls = None
     label_text = "Описание"
+    field = "description"
 
 
 class BackToProfileButton(discord.ui.Button):
@@ -166,6 +197,37 @@ def _default_stats(guild_id: int, user_id: int, display_name: str):
         tournament_participations=0,
         description=""
     )
+
+
+async def _check_change_cooldown(
+    interaction: discord.Interaction,
+    guild_id: int,
+    user_id: int,
+    field: str,
+    new_value: str,
+) -> bool:
+    """Проверить кулдаун поля (раз в 7 дней). True — изменение разрешено."""
+    stats = await player_stats_store.get(guild_id, user_id)
+    current = getattr(stats, field, "") if stats else ""
+    if str(new_value) == str(current):
+        return True
+
+    from storage.profile_cooldowns import format_remaining, profile_cooldowns
+
+    left = profile_cooldowns.seconds_left(guild_id, user_id, field)
+    if left > 0:
+        label = {"birthday": "День рождения", "description": "Описание"}.get(field, field)
+        await interaction.response.send_message(
+            replace_emojis(
+                f"⏳ {label} можно менять **раз в 7 дней**.\n"
+                f"Осталось: **{format_remaining(left)}**"
+            ),
+            ephemeral=True
+        )
+        return False
+
+    profile_cooldowns.mark_changed(guild_id, user_id, field)
+    return True
 
 
 async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, user_id: int, **fields) -> None:
@@ -269,9 +331,14 @@ class DescriptionModal(_ProfileFieldModal, title="Описание"):
         self.add_item(self.description)
 
     async def _handle_submit(self, interaction: discord.Interaction) -> None:
+        new_value = self.description.value
+        if not await _check_change_cooldown(
+            interaction, self.guild_id, self.user_id, "description", new_value
+        ):
+            return
         await _save_and_refresh(
             interaction, self.guild_id, self.user_id,
-            description=self.description.value
+            description=new_value
         )
 
 
@@ -290,22 +357,25 @@ class BirthdayModal(_ProfileFieldModal, title="День рождения"):
 
     async def _handle_submit(self, interaction: discord.Interaction) -> None:
         raw = self.birthday.value.strip()
-        if not raw:
-            await _save_and_refresh(
-                interaction, self.guild_id, self.user_id, birthday=""
-            )
-            return
+        if raw:
+            normalized = self._parse_date(raw)
+            if not normalized:
+                await interaction.response.send_message(
+                    "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 25.12.2004).",
+                    ephemeral=True
+                )
+                return
+            new_value = normalized
+        else:
+            new_value = ""
 
-        normalized = self._parse_date(raw)
-        if not normalized:
-            await interaction.response.send_message(
-                "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 25.12.2004).",
-                ephemeral=True
-            )
+        if not await _check_change_cooldown(
+            interaction, self.guild_id, self.user_id, "birthday", new_value
+        ):
             return
 
         await _save_and_refresh(
-            interaction, self.guild_id, self.user_id, birthday=normalized
+            interaction, self.guild_id, self.user_id, birthday=new_value
         )
 
     @staticmethod
