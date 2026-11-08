@@ -73,9 +73,9 @@ _MARKER_REGIONS = (
     (1692, 418, 1776, 460),   # [TIER]
     (1332, 592, 1492, 638),   # [BALANCE]
     (1626, 592, 1738, 638),   # [ITEMS]
-    (1264, 752, 1338, 794),   # [REP]
-    (1450, 750, 1578, 794),   # [PARTNER]
-    (1646, 750, 1778, 794),   # [BIRTHDAY]
+    (1264, 764, 1338, 792),   # [REP] (ниже статичной подписи y748-756)
+    (1450, 764, 1578, 792),   # [PARTNER]
+    (1646, 764, 1778, 792),   # [BIRTHDAY]
     (102, 860, 300, 906),     # «ПОСЛЕДНИЕ N МАТЧЕЙ» заголовок W/L
     (103, 922, 298, 986),     # [W] / [L]
     (1030, 836, 1148, 886),   # [△ ELO] у графика
@@ -86,6 +86,14 @@ _MARKER_REGIONS = (
     (1608, 926, 1702, 980),   # [ELO] ult
     (1262, 994, 1464, 1038),  # [ULTIMATUM_STATUS]
 )
+
+# Область графика ELO: в template там запечена серая линия-пример
+# (lum ~90, низкая насыщенность) — маскируем порогом ниже,
+# чтобы не задеть тёмный фон (p99 lum ~39). Ось y~1009 не трогаем.
+_LOW_LUM_REGIONS = (
+    (375, 918, 1175, 1006),
+)
+_LOW_LUM_THRESHOLD = 55
 
 # Маркеры — светлый текст (~lum 140-245) на тёмном фоне (~lum 30).
 _MARKER_LUM = 100
@@ -112,6 +120,9 @@ def _build_clean_base() -> Image.Image:
     for (x1, y1, x2, y2) in _MARKER_REGIONS:
         region = lum[y1:y2, x1:x2]
         mask[y1:y2, x1:x2][region > _MARKER_LUM] = 255
+    for (x1, y1, x2, y2) in _LOW_LUM_REGIONS:
+        region = lum[y1:y2, x1:x2]
+        mask[y1:y2, x1:x2][region > _LOW_LUM_THRESHOLD] = 255
     if mask.any():
         kernel = np.ones((_MASK_DILATE * 2 + 1,) * 2, np.uint8)
         mask = cv2.dilate(mask, kernel)
@@ -207,7 +218,9 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
 
     level = int(data.get("level") or 1)
     lstr, lsize = _fit_text(draw, str(level), 110, 22, min_size=14)
-    _text(draw, (1304, 425), lstr, lsize, C_SOFT)
+    # x=1328 — сразу после статичного «LEVEL » (закончивается ~x1318);
+    # x=1304 наезжал на букву L.
+    _text(draw, (1328, 425), lstr, lsize, C_SOFT)
 
     # ================= РАНГ =================
     rank_name = (data.get("rank_name") or "Bronze").upper()
@@ -228,9 +241,14 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     tstr, tsize = _fit_text(draw, tier_str, 165, 14, min_size=10)
     _text(draw, (548, 441), tstr, tsize, C_MUTED)
 
-    nx = next_rank or "—"
-    nxstr, nxsize = _fit_text(draw, nx, 90, 16, min_size=11)
-    _text(draw, (1737, 406), nxstr, nxsize, C_MUTED, anchor="ms")
+    # Верхняя строка карточки бейджа — «ДО {следующий ранг}»
+    # (в example: «ДО DIAMOND»), отделено от текущего ранга ниже.
+    if next_rank:
+        nx_str = f"ДО {next_rank}"
+    else:
+        nx_str = "MAX TIER"
+    nxstr, nxsize = _fit_text(draw, nx_str, 110, 16, min_size=11)
+    _text(draw, (1737, 404), nxstr, nxsize, C_MUTED, anchor="ms")
 
     bstr2, bsize2 = _fit_text(draw, rank_name, 115, 19, bold=True, min_size=13)
     _text(draw, (1732, 443), bstr2, bsize2, C_VIOLET, anchor="ms",
@@ -238,9 +256,9 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     if badge_png:
         try:
             badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
-            badge.thumbnail((80, 80), Image.LANCZOS)
-            img.paste(badge, (1592 + (80 - badge.width) // 2,
-                              394 + (80 - badge.height) // 2), badge)
+            badge.thumbnail((88, 88), Image.LANCZOS)
+            img.paste(badge, (1588 + (88 - badge.width) // 2,
+                              390 + (88 - badge.height) // 2), badge)
         except Exception:
             logger.warning("Rank badge paste failed")
 
