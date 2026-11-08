@@ -50,16 +50,19 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
     exp = pet_row["exp"]
     max_exp = age * 50 - 1  # Возраст 1: 0-49, Возраст 2: 50-99, Возраст 3: 100-149
 
-    # Сборка пассивных способностей (только названия) - только если не в блоке
+    # Сборка пассивных способностей: название + что делает
+    # (только если энергия > 0)
     abilities_list = []
     if catalog_data:
         for ab_key in (1, 2):
             ab = catalog_data["abilities"][ab_key]
-            # Показываем только если энергия > 0
             if energy > 0:
-                abilities_list.append(f"**{ab['name']}**")
+                desc = ab.get("desc_template", "").replace(
+                    "{val}", str(ab.get("max_val", 0))
+                )
+                abilities_list.append(f" {ab['name']} — {desc}")
 
-    abilities_formatted = "\n".join(f" {item}" for item in abilities_list) if abilities_list else f" Нет активных способностей"
+    abilities_formatted = "\n".join(abilities_list) if abilities_list else " Нет активных способностей"
 
     # Статус сытости
     status_text = f"\n\n *Питомец сыт и восстанавливает энергию!*"

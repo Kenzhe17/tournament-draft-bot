@@ -493,6 +493,12 @@ def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
         auto_count = 0
 
     for item in view.children:
+        if isinstance(item, discord.ui.ActionRow):
+            # В некоторых версиях discord.py View._children уже
+            # содержит ActionRow-обёртки — переносим как есть.
+            _flush()
+            rows.append(item)
+            continue
         if isinstance(item, discord.ui.Select):
             _flush()
             row = discord.ui.ActionRow()
