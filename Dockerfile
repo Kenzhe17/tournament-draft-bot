@@ -23,6 +23,9 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Chromium для рендера PNG-профиля (Playwright)
+RUN playwright install --with-deps chromium
+
 
 
 COPY bot.py config.py ./

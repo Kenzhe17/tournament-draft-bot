@@ -1,441 +1,566 @@
-"""Рендерер графической карточки профиля 1920x1080 (Player Profile).
+"""Рендерер графической карточки профиля 1920x1080 — Player Profile V2.
 
-Использует чистый template PNG как подложку. Плейсхолдеры в template
-помечены метками вида [USERNAME], [BIO], [ELO], [REP] и т.п.
+Новая реализация: SVG-сцена собирается в Python из реальных данных,
+затем рендерится в PNG через Playwright/Chromium (viewport 1920x1080).
 
-Первопричина прошлых артефактов (размытые «вторые версии» текста,
-перечёркнутые цифры, остатки глифов): маркеры затирались
-ПРЯМОУГОЛЬНЫМ cv2.inpaint — TELEA размазывал весь прямоугольник,
-включая градиенты фона и соседние элементы, а неточные рамки
-оставляли «хвосты» букв под новым текстом.
-
-Исправление: для каждого маркера строится ТОЧНАЯ маска — только
-светлые пиксели букв (фон template имеет lum ~30, текст ~140-245),
-маска дилатируется на антиалиасинг и один раз прогоняется через
-cv2.inpaint. Фон, линии и декор не затрагиваются. Результат
-кэшируется — чистая подложка строится один раз на процесс.
+Вся типографика — Inter (variable font, в assets_ds_server/fonts).
+Вёрстка повторяет шаблон riz3_profile_v2: CSS/SVG Grid-зоны,
+без ручного «попиксельного» позиционирования текста поверх растровой
+подложки. График ELO и ранги строятся из данных игрока.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
+import html
 import io
 import logging
 from pathlib import Path
 
-import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 logger = logging.getLogger(__name__)
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets_ds_server"
-TEMPLATE_PATH = ASSETS_DIR / "player_profile" / "riz3_player_profile_template.png"
 FONTS_DIR = ASSETS_DIR / "fonts"
+PROFILE_V2_DIR = ASSETS_DIR / "profile_v2"
+INTER_FONT_PATH = FONTS_DIR / "Inter-Variable.ttf"
+LOGO_PATH = PROFILE_V2_DIR / "logo.png"
 
 CARD_RENDER_SEM = asyncio.Semaphore(2)
+RENDER_TIMEOUT = 20.0
 
-# Цвета из example.svg
-C_TEXT = (242, 244, 251)        # #F2F4FB
-C_MUTED = (126, 136, 157)      # #7E889D
-C_SOFT = (184, 193, 211)       # #B8C1D3
-C_VIOLET = (170, 102, 255)     # #AA66FF
-C_DELTA_NEG = (250, 136, 153)  # #FA8899
-C_GREEN = (74, 222, 128)
+# ---------------------------------------------------------------------------
+# SVG helpers (портировано из riz3_profile_v2_pack/create_riz3_v2.py)
+# ---------------------------------------------------------------------------
 
-_font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
+_E: list[str] = []
 
 
-def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    key = ("bold" if bold else "reg", size)
+def _add(s: str) -> None:
+    _E.append(s)
+
+
+def _esc(v) -> str:
+    return html.escape(str(v), quote=True)
+
+
+def _rect(x, y, w, h, fill, rad=0, stroke=None, sw=1, opacity=None, extra=""):
+    st = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
+    op = f' opacity="{opacity}"' if opacity is not None else ""
+    _add(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rad}" fill="{fill}"{st}{op} {extra}/>')
+
+
+def _line(x1, y1, x2, y2, color="#293047", width=1, opacity=1, extra=""):
+    _add(f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color}" stroke-width="{width}" opacity="{opacity}" {extra}/>')
+
+
+def _txt(x, y, s, size=20, color="#E9ECF6", weight=400, anchor="start",
+         spacing=None, extra="", eid=None):
+    sp = f' letter-spacing="{spacing}"' if spacing is not None else ""
+    name = f' id="{eid}"' if eid else ""
+    _add(
+        f'<text{name} x="{x}" y="{y}" fill="{color}" font-size="{size}" '
+        f'font-weight="{weight}" text-anchor="{anchor}"{sp} {extra}>'
+        f"{_esc(s)}</text>"
+    )
+
+
+def _circle(cx, cy, r, fill, stroke=None, sw=1, opacity=None, extra=""):
+    st = f' stroke="{stroke}" stroke-width="{sw}"' if stroke else ""
+    op = f' opacity="{opacity}"' if opacity is not None else ""
+    _add(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{fill}"{st}{op} {extra}/>')
+
+
+def _img(x, y, w, h, href, extra="", preserve="xMidYMid meet"):
+    _add(
+        f'<image x="{x}" y="{y}" width="{w}" height="{h}" '
+        f'preserveAspectRatio="{preserve}" href="{href}" {extra}/>'
+    )
+
+
+def _panel(x, y, w, h, title=None, sub=None, accent="#A66AFF"):
+    _rect(x, y, w, h, "#121725", 18, "#28314A", 1.5)
+    _rect(x, y, 5, h, accent, 3)
+    if title:
+        _txt(x + 27, y + 41, title, 21, "#E9ECF6", 750)
+    if sub:
+        _txt(x + w - 23, y + 40, sub, 15, "#8590AA", 500, anchor="end")
+
+
+def _mini(x, y, w, label, value, color="#F5F4FC"):
+    _rect(x, y, w, 70, "#171D2D", 12, "#303B55", 1)
+    _txt(x + 20, y + 24, label, 13, "#909BB1", 600, spacing=".8")
+    _txt(x + 20, y + 57, value, 29, color, 700)
+
+
+# ---------------------------------------------------------------------------
+# Текст: измерение ширины через Inter (PIL, variable font)
+# ---------------------------------------------------------------------------
+
+_font_cache: dict[tuple[int, int], object] = {}
+
+
+def _pil_font(size: int, weight: int = 700):
+    key = (size, weight)
     if key not in _font_cache:
-        name = "RussoOne-Regular.ttf" if bold else "DejaVuSans.ttf"
-        path = FONTS_DIR / name
-        if not path.exists():
-            path = FONTS_DIR / "DejaVuSans.ttf"
-        _font_cache[key] = ImageFont.truetype(str(path), size)
+        from PIL import ImageFont
+
+        f = ImageFont.truetype(str(INTER_FONT_PATH), size)
+        try:
+            f.set_variation_by_axes([float(weight)])
+        except Exception:
+            pass
+        _font_cache[key] = f
     return _font_cache[key]
 
 
-# Плотные рамки маркеров [XXX] в template (x1,y1,x2,y2), измерены
-# по OCR-боксам template↔example. Внутри рамки маска берёт ТОЛЬКО
-# светлые пиксели букв — статичные подписи рядом не страдают.
-_MARKER_REGIONS = (
-    (1490, 88, 1660, 132),    # TEMPLATE -> статус игрока
-    (340, 296, 668, 362),     # [USERNAME]
-    (404, 356, 455, 395),     # [BIO] после статичного «SVO: »
-    (826, 290, 1014, 370),    # [ELO]
-    (844, 380, 952, 420),     # [△ ELO] под ELO
-    (1242, 300, 1342, 360),   # [SR]
-    (1322, 398, 1418, 438),   # [LEVEL] после статичного «LEVEL »
-    (393, 412, 488, 458),     # [RANK]
-    (538, 418, 698, 455),     # BRONZE→LEGEND
-    (1692, 418, 1776, 460),   # [TIER]
-    (1332, 592, 1492, 638),   # [BALANCE]
-    (1626, 592, 1738, 638),   # [ITEMS]
-    (1264, 764, 1338, 792),   # [REP] (ниже статичной подписи y748-756)
-    (1450, 764, 1578, 792),   # [PARTNER]
-    (1646, 764, 1778, 792),   # [BIRTHDAY]
-    (102, 860, 300, 906),     # «ПОСЛЕДНИЕ N МАТЧЕЙ» заголовок W/L
-    (103, 922, 298, 986),     # [W] / [L]
-    (1030, 836, 1148, 886),   # [△ ELO] у графика
-    (368, 996, 512, 1038),    # [HISTORY_START]
-    (1056, 996, 1192, 1038),  # [CURRENT_ELO]
-    (1264, 930, 1424, 978),   # [MATCHES]
-    (1434, 928, 1542, 978),   # [WINS]
-    (1608, 926, 1702, 980),   # [ELO] ult
-    (1262, 994, 1464, 1038),  # [ULTIMATUM_STATUS]
-)
-
-# Область графика ELO: в template там запечена серая линия-пример
-# (lum ~90, низкая насыщенность) — маскируем порогом ниже,
-# чтобы не задеть тёмный фон (p99 lum ~39). Ось y~1009 не трогаем.
-_LOW_LUM_REGIONS = (
-    (375, 918, 1175, 1006),
-)
-_LOW_LUM_THRESHOLD = 55
-
-# Маркеры — светлый текст (~lum 140-245) на тёмном фоне (~lum 30).
-_MARKER_LUM = 100
-_MASK_DILATE = 4
-_clean_base_cache: Image.Image | None = None
-
-
-def _build_clean_base() -> Image.Image:
-    """Template без маркеров: единая пиксельная маска + один inpaint.
-
-    Для каждой рамки маркера берутся только пиксели с яркостью выше
-    _MARKER_LUM (буквы), маска дилатируется на толщину антиалиасинга
-    и один раз прогоняется через cv2.inpaint по всей картинке.
-    Фон, градиенты и декоративные линии не затрагиваются.
-    """
-    global _clean_base_cache
-    if _clean_base_cache is not None:
-        return _clean_base_cache.copy()
-
-    img = Image.open(TEMPLATE_PATH).convert("RGBA")
-    arr = np.array(img)
-    lum = arr[..., :3].mean(axis=2)
-    mask = np.zeros(lum.shape, np.uint8)
-    for (x1, y1, x2, y2) in _MARKER_REGIONS:
-        region = lum[y1:y2, x1:x2]
-        mask[y1:y2, x1:x2][region > _MARKER_LUM] = 255
-    for (x1, y1, x2, y2) in _LOW_LUM_REGIONS:
-        region = lum[y1:y2, x1:x2]
-        mask[y1:y2, x1:x2][region > _LOW_LUM_THRESHOLD] = 255
-    if mask.any():
-        kernel = np.ones((_MASK_DILATE * 2 + 1,) * 2, np.uint8)
-        mask = cv2.dilate(mask, kernel)
-        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-        fixed = cv2.inpaint(bgr, mask, 3, cv2.INPAINT_TELEA)
-        arr = cv2.cvtColor(fixed, cv2.COLOR_BGR2RGBA)
-        img = Image.fromarray(arr, "RGBA")
-    _clean_base_cache = img
-    return img.copy()
-
-
-def _base() -> Image.Image:
-    return _build_clean_base()
-
-
-def _text(draw: ImageDraw.ImageDraw, xy, s: str, size: int,
-          color=C_TEXT, anchor="ls", bold=False) -> None:
-    """anchor — PIL-якорь; 's' = baseline (как y в SVG)."""
-    font = _font(size, bold)
-    draw.text(xy, s, font=font, fill=color, anchor=anchor)
+def _fit_text(s: str, max_w: int, size: int, weight: int = 700,
+              min_size: int = 12) -> tuple[str, int]:
+    """Уменьшить кегль/обрезать строку, чтобы влезть в max_w пикселей."""
+    s = str(s or "")
+    while size > min_size:
+        f = _pil_font(size, weight)
+        if f.getlength(s) <= max_w:
+            return s, size
+        size -= 2
+    f = _pil_font(min_size, weight)
+    while s and f.getlength(s + "…") > max_w:
+        s = s[:-1]
+    return (s + "…") if s else "—", min_size
 
 
 def _fmt(n) -> str:
-    """Целое число без разделителей (как в example: 53746, 1641)."""
     try:
-        return str(int(round(float(n))))
+        return f"{int(round(float(n))):,}".replace(",", " ")
     except (TypeError, ValueError):
         return "0"
 
 
-def _fit_text(draw, s: str, max_w: int, size: int, bold=False,
-              min_size: int = 14) -> tuple[str, int]:
-    font = _font(size, bold)
-    while size > min_size and draw.textlength(s, font=font) > max_w:
-        size -= 2
-        font = _font(size, bold)
-    if draw.textlength(s, font=font) > max_w:
-        while s and draw.textlength(s + "…", font=font) > max_w:
-            s = s[:-1]
-        s += "…"
-    return s, size
-
-
-def _delta_style(delta: int) -> tuple[str, tuple]:
-    """(строка, цвет) для изменения ELO: + зелёный, − красный, 0 — muted."""
+def _delta_parts(delta: int) -> tuple[str, str]:
     if delta > 0:
-        return f"+{delta}", C_GREEN
+        return f"+{delta}", "#4ADE80"
     if delta < 0:
-        return f"−{abs(delta)}", C_DELTA_NEG
-    return "+0", C_MUTED
+        return f"−{abs(delta)}", "#FA8899"
+    return "+0", "#7E889D"
 
 
-def render_profile_png(data: dict, avatar_png: bytes | None = None,
-                       badge_png: bytes | None = None) -> bytes:
-    """Синхронный рендер. data — словарь со всеми значениями.
+def _data_uri(raw: bytes | None, default_mime: str = "image/png") -> str:
+    if not raw:
+        return ""
+    mime = default_mime
+    try:
+        from PIL import Image
 
-    Все координаты/размеры откалиброваны по паре template↔example
-    (rapidocr bbox + ink-bbox подгонка шрифта). Якорь 'ls' = (x, baseline).
-    """
+        im = Image.open(io.BytesIO(raw))
+        mime = Image.MIME.get(im.format or "", default_mime) or default_mime
+    except Exception:
+        pass
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+# ---------------------------------------------------------------------------
+# Ранг: прогресс по порогам уровней из utils.ranks
+# ---------------------------------------------------------------------------
+
+
+def _rank_info(level: int) -> dict:
     from utils.ranks import RANKS
 
-    # Подложка уже очищена от маркеров (_build_clean_base, один раз).
-    img = _base()
-    draw = ImageDraw.Draw(img)
-
-    # ================= ШАПКА =================
-    _text(draw, (1501, 119), "ACTIVE PLAYER", 28, C_SOFT)
-
-    # ================= ВЕРХ: ИГРОК =================
-    name = data.get("name") or "Игрок"
-    nstr, nsize = _fit_text(draw, name, 460, 58, bold=True, min_size=22)
-    _text(draw, (346, 343), nstr, nsize, C_TEXT, bold=True)
-
-    bio = str(data.get("status") or data.get("bio") or "ок")
-    bstr, bsize = _fit_text(draw, bio, 390, 14, min_size=11)
-    _text(draw, (405, 383), bstr, bsize, C_SOFT)
-
-    elo_str = _fmt(data.get("elo", 1000))
-    estr, esize = _fit_text(draw, elo_str, 185, 72, bold=True, min_size=34)
-    _text(draw, (835, 357), estr, esize, C_TEXT, bold=True)
-
-    d_str, d_color = _delta_style(int(data.get("last_elo_change") or 0))
-    # центрируем под [△ ELO] (~x897), ширина динамическая
-    dsize = 25
-    while dsize > 14 and draw.textlength(
-            d_str, font=_font(dsize)) > 95:
-        dsize -= 2
-    _text(draw, (897, 409), d_str, dsize, d_color, anchor="ms")
-
-    sr = float(data.get("skill_rating", 0.0) or 0.0)
-    sstr, ssize = _fit_text(draw, f"{sr:.1f} / 10.0", 175, 35, min_size=18)
-    _text(draw, (1250, 341), sstr, ssize, C_TEXT)
-
-    level = int(data.get("level") or 1)
-    lstr, lsize = _fit_text(draw, str(level), 110, 22, min_size=14)
-    # x=1328 — сразу после статичного «LEVEL » (закончивается ~x1318);
-    # x=1304 наезжал на букву L.
-    _text(draw, (1328, 425), lstr, lsize, C_SOFT)
-
-    # ================= РАНГ =================
-    rank_name = (data.get("rank_name") or "Bronze").upper()
-    cur_rank, next_rank = None, None
-    for i, (rname, min_lvl, _) in enumerate(RANKS):
+    level = max(1, int(level or 1))
+    cur_i = 0
+    for i, (_, min_lvl, _) in enumerate(RANKS):
         if level >= min_lvl:
-            cur_rank = rname.upper()
-            if i + 1 < len(RANKS):
-                next_rank = RANKS[i + 1][0].upper()
+            cur_i = i
         else:
             break
-    cur_rank = cur_rank or rank_name
-
-    rstr, rsize = _fit_text(draw, rank_name, 110, 19, bold=True, min_size=13)
-    _text(draw, (439, 439), rstr, rsize, C_VIOLET, anchor="ms", bold=True)
-
-    tier_str = f"{cur_rank} → {next_rank}" if next_rank else "MAX TIER"
-    tstr, tsize = _fit_text(draw, tier_str, 165, 14, min_size=10)
-    _text(draw, (548, 441), tstr, tsize, C_MUTED)
-
-    # Верхняя строка карточки бейджа — «ДО {следующий ранг}»
-    # (в example: «ДО DIAMOND»), отделено от текущего ранга ниже.
-    if next_rank:
-        nx_str = f"ДО {next_rank}"
+    cur_name, cur_min, _ = RANKS[cur_i]
+    nxt = RANKS[cur_i + 1] if cur_i + 1 < len(RANKS) else None
+    if nxt:
+        nxt_name, nxt_min, _ = nxt
+        prog = (level - cur_min) / max(1, (nxt_min - cur_min))
+        remaining = max(0, nxt_min - level)
     else:
-        nx_str = "MAX TIER"
-    nxstr, nxsize = _fit_text(draw, nx_str, 110, 16, min_size=11)
-    _text(draw, (1737, 404), nxstr, nxsize, C_MUTED, anchor="ms")
+        nxt_name, nxt_min, prog, remaining = "", 0, 1.0, 0
+    return {
+        "cur_name": cur_name.upper(),
+        "next_name": nxt_name.upper(),
+        "progress": max(0.0, min(1.0, prog)),
+        "remaining": remaining,
+        "max_tier": nxt is None,
+    }
 
-    bstr2, bsize2 = _fit_text(draw, rank_name, 115, 19, bold=True, min_size=13)
-    _text(draw, (1732, 443), bstr2, bsize2, C_VIOLET, anchor="ms",
-          bold=True)
-    if badge_png:
-        try:
-            badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
-            badge.thumbnail((76, 76), Image.LANCZOS)
-            # Медальон-подложка: арт рангов — тонкий line-art, на тёмном
-            # фоне карточки эмблема почти не видна (выглядит как пустой
-            # щит). Рисуем круг с фиолетовой окантовкой и кладём эмблему
-            # поверх.
-            bx, by = 1632, 434
-            medal = Image.new("RGBA", img.size, (0, 0, 0, 0))
-            mdraw = ImageDraw.Draw(medal)
-            mdraw.ellipse((bx - 52, by - 52, bx + 52, by + 52),
-                          fill=(44, 34, 60, 235),
-                          outline=C_VIOLET, width=3)
-            img.alpha_composite(medal)
-            img.paste(badge, (bx - badge.width // 2,
-                              by - badge.height // 2), badge)
-        except Exception:
-            logger.warning("Rank badge paste failed")
 
-    # ================= БИТВА ОТРЯДОВ =================
-    _text(draw, (109, 663), _fmt(data.get("matches", 0)), 31, C_TEXT,
-          bold=True)
-    _text(draw, (390, 663), _fmt(data.get("wins", 0)), 31, C_TEXT,
-          bold=True)
-    wr_str, wr_size = _fit_text(
-        draw, f"{data.get('winrate', 0.0):.1f}%", 105, 31, bold=True,
-        min_size=18)
-    _text(draw, (671, 662), wr_str, wr_size, C_TEXT, bold=True)
-    kda_str, kda_size = _fit_text(
-        draw, f"{data.get('kda', 0.0):.2f}", 105, 31, bold=True,
-        min_size=18)
-    _text(draw, (952, 663), kda_str, kda_size, C_VIOLET, bold=True)
+# ---------------------------------------------------------------------------
+# Построение SVG
+# ---------------------------------------------------------------------------
 
-    _text(draw, (1350, 624), _fmt(data.get("balance", 0)), 22, C_TEXT,
-          bold=True)
-    items_str, isize = _fit_text(
-        draw, f"{_fmt(data.get('items', 0))} шт.", 100, 20, min_size=13)
-    _text(draw, (1634, 622), items_str, isize, C_TEXT)
 
-    _text(draw, (109, 756), f"{data.get('avg_kills', 0.0):.2f}", 31,
-          C_TEXT, bold=True)
-    _text(draw, (390, 756), _fmt(data.get("avg_damage", 0)), 32, C_TEXT,
-          bold=True)
-    _text(draw, (671, 756), _fmt(data.get("max_kills", 0)), 32, C_TEXT,
-          bold=True)
-    _text(draw, (951, 759), f"{sr:.1f}/10", 37, C_VIOLET, bold=True)
+def build_profile_svg(data: dict, avatar_png: bytes | None = None,
+                      badge_png: bytes | None = None) -> str:
+    """Собрать SVG-сцену 1920x1080 из словаря данных профиля."""
+    global _E
+    _E = []
 
-    # ================= О СЕБЕ =================
-    _text(draw, (1272, 779), str(data.get("reputation", 0)), 18, C_TEXT)
-    pstr, psize = _fit_text(
-        draw, str(data.get("partner") or "—"), 180, 19, min_size=12)
-    _text(draw, (1460, 776), pstr, psize, C_SOFT)
-    bd_str, bd_size = _fit_text(
-        draw, str(data.get("birthday") or "—"), 110, 18, min_size=12)
-    _text(draw, (1654, 779), bd_str, bd_size, C_TEXT)
+    _add(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" '
+        'viewBox="0 0 1920 1080"><defs>'
+        '<radialGradient id="ambient" cx="0%" cy="0%" r="120%">'
+        '<stop offset="0%" stop-color="#23123F"/>'
+        '<stop offset="42%" stop-color="#0B0E19"/>'
+        '<stop offset="100%" stop-color="#080B14"/></radialGradient>'
+        '<linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">'
+        '<stop offset="0%" stop-color="#8D48F9"/>'
+        '<stop offset="100%" stop-color="#C68EFF"/></linearGradient>'
+        '<linearGradient id="chartfill" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0%" stop-color="#9B5CFF" stop-opacity=".32"/>'
+        '<stop offset="100%" stop-color="#9B5CFF" stop-opacity=".01"/>'
+        '</linearGradient>'
+        '<filter id="blur"><feGaussianBlur stdDeviation="35"/></filter>'
+        '<clipPath id="avatarClip"><circle cx="170" cy="304" r="64"/></clipPath>'
+        "</defs>"
+    )
+    _rect(0, 0, 1920, 1080, "url(#ambient)")
+    _add('<ellipse cx="225" cy="140" rx="400" ry="260" fill="#5A23A8" opacity=".11" filter="url(#blur)"/>')
+    _add('<ellipse cx="1750" cy="1020" rx="420" ry="290" fill="#2C3B9C" opacity=".09" filter="url(#blur)"/>')
+    for gx in range(110, 1920, 140):
+        _line(gx, 20, gx, 1080, "#313552", 0.8, 0.13)
+    for gy in range(140, 1080, 140):
+        _line(0, gy, 1920, gy, "#313552", 0.8, 0.10)
 
-    # ================= ДИНАМИКА ELO =================
-    _text(draw, (118, 887), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
+    name = str(data.get("name") or "Игрок")
+    bio = str(data.get("status") or data.get("bio") or "ок")
+    level = int(data.get("level") or 1)
+    elo = int(data.get("elo") or 1000)
+    delta = int(data.get("last_elo_change") or 0)
+    sr = float(data.get("skill_rating") or 0.0)
+    rank = _rank_info(level)
 
-    hist_w = int(data.get("hist_wins", 0) or 0)
-    hist_l = int(data.get("hist_losses", 0) or 0)
-    wl_str, wl_size = _fit_text(
-        draw, f"{hist_w}/{hist_l}", 140, 41, bold=True, min_size=20)
-    # центр под серединой слота (~x172)
-    wl_w = draw.textlength(wl_str, font=_font(wl_size, True))
-    _text(draw, (172 - wl_w / 2, 949), wl_str, wl_size, C_TEXT,
-          bold=True)
-
-    _text(draw, (101, 1006),
-          f"ПОСЛЕДНИЕ {data.get('hist_count', 0)} МАТЧЕЙ", 13, C_MUTED)
-
-    total_delta = int(data.get("chart_delta", 0) or 0)
-    if total_delta > 0:
-        td_str, td_color = f"+{total_delta} ELO", C_GREEN
-    elif total_delta < 0:
-        td_str, td_color = f"−{abs(total_delta)} ELO", C_DELTA_NEG
+    # --- header ---
+    _rect(60, 42, 4, 89, "#A66AFF", 2)
+    logo_uri = _data_uri(LOGO_PATH.read_bytes() if LOGO_PATH.exists() else None)
+    if logo_uri:
+        _img(85, 49, 77, 77, logo_uri)
     else:
-        td_str, td_color = "+0 ELO", C_MUTED
-    _text(draw, (1041, 869), td_str, 24, td_color)
+        _rect(84, 48, 79, 79, "#131020", 16, "#57338B", 1.2)
+    _txt(188, 69, "r!z3  /  COMPETITIVE", 16, "#AE7FFE", 700, spacing="1.7")
+    _txt(187, 114, "ПРОФИЛЬ ИГРОКА", 39, "#F7F4FF", 800, spacing=".3")
+    _rect(1517, 60, 340, 57, "#151A2A", 14, "#303B54", 1)
+    _circle(1545, 89, 5, "#A66AFF")
+    _txt(1562, 95, "FREE FIRE  ·  CS 4×4", 17, "#C2C7DD", 650)
+    _line(60, 148, 1860, 148, "#333951", 2)
+    _line(60, 148, 323, 148, "#AB6CFF", 4)
 
-    # График: область x 385–1170, низ ~y1005 (ось y≈1009)
-    hist = data.get("elo_history") or []
-    px0, px1, py0, py1 = 385, 1170, 895, 1003
+    # --- hero: player ---
+    _panel(60, 175, 567, 257)
+    _circle(170, 304, 75, "#271B3E", "#8446D2", 2)
+    _circle(170, 304, 66, "#35214F", "#745399", 1)
+    avatar_uri = _data_uri(avatar_png)
+    if avatar_uri:
+        _img(
+            105, 239, 130, 130, avatar_uri,
+            extra='clip-path="url(#avatarClip)" preserveAspectRatio="xMidYMid slice"',
+            preserve="xMidYMid slice",
+        )
+    else:
+        initial = (name[:1] or "?").upper()
+        _txt(170, 324, initial, 91, "#EAE1F9", 750, anchor="middle")
+    _txt(273, 235, "УЧАСТНИК", 14, "#8792A8", 700, spacing="1.4")
+    nstr, nsize = _fit_text(name, 340, 58, 800, min_size=22)
+    _txt(269, 295, nstr, nsize, "#F5F2FC", 800)
+    bstr, bsize = _fit_text(bio, 340, 19, 450, min_size=12)
+    _txt(272, 330, bstr, bsize, "#A2A8BD", 450)
+    rname = rank["cur_name"]
+    _rect(269, 356, 132, 42, "#2C2148", 10, "#7450AA", 1)
+    _txt(335, 384, rname, 19, "#B17BFF", 700, anchor="middle")
+    _txt(418, 384, f"УРОВЕНЬ {level}", 16, "#97A1B8", 650)
+
+    # --- hero: ELO ---
+    _panel(649, 175, 382, 257)
+    _txt(676, 217, "RANKED ELO", 16, "#99A3B8", 700, spacing="1.2")
+    estr, esize = _fit_text(_fmt(elo), 330, 88, 800, min_size=40)
+    _txt(674, 331, estr, esize, "#F7F5FD", 800)
+    d_str, d_color = _delta_parts(delta)
+    _rect(677, 356, 103, 38, "#3A2133", 10)
+    _txt(729, 381, d_str, 21, d_color, 720, anchor="middle")
+    _txt(795, 381, "ЗА МАТЧ", 13, "#99A2BA", 700, spacing=".8")
+
+    # --- hero: rank ---
+    _panel(1053, 175, 807, 257)
+    _txt(1086, 215, "ТЕКУЩИЙ РАНГ", 16, "#99A3B8", 700, spacing="1")
+    _circle(1176, 316, 72, "#23173B", "#A768FF", 2)
+    _circle(1176, 316, 60, "#2E2049", "#8A5BD0", 1)
+    badge_uri = _data_uri(badge_png)
+    if badge_uri:
+        # Арт рангов — тонкий тёмный line-art: осветляем через CSS-фильтр,
+        # иначе на тёмной подложке эмблема не читается.
+        _img(
+            1116, 256, 120, 120, badge_uri,
+            extra='style="filter:brightness(1.9) saturate(1.25)"',
+            preserve="xMidYMid meet",
+        )
+    else:
+        _txt(1176, 330, rname[:1], 44, "#DDBDFF", 780, anchor="middle")
+    _txt(1281, 279, rank["cur_name"], 35, "#DDBDFF", 780)
+    _txt(1282, 312, f"Текущий ранг  ·  Ур. {level}", 17, "#AFB9D1", 450)
+    _line(1281, 343, 1827, 343, "#303951", 1)
+    if rank["max_tier"]:
+        _txt(1281, 380, "MAX TIER", 15, "#9DA7BC", 750, spacing="1")
+        _rect(1413, 364, 308, 12, "#2D344A", 6)
+        _rect(1413, 364, 308, 12, "url(#bar)", 6)
+        _txt(1827, 380, "MAX", 16, "#D0D3E2", 600, anchor="end")
+    else:
+        _txt(1281, 380, f"ДО {rank['next_name']}", 15, "#9DA7BC", 750, spacing="1")
+        _rect(1413, 364, 308, 12, "#2D344A", 6)
+        fill_w = max(8, int(308 * rank["progress"]))
+        _rect(1413, 364, fill_w, 12, "url(#bar)", 6)
+        _txt(1827, 380, f"{rank['remaining']} ур.", 16, "#D0D3E2", 600, anchor="end")
+
+    # --- stats grid 4x2 ---
+    _panel(60, 456, 1800, 248, "СТАТИСТИКА CLASH SQUAD",
+           "ПОСЛЕДНИЕ ПОДТВЕРЖДЁННЫЕ МАТЧИ")
+    stats = [
+        ("МАТЧЕЙ", _fmt(data.get("matches", 0))),
+        ("ПОБЕД", _fmt(data.get("wins", 0))),
+        ("WINRATE", f"{float(data.get('winrate') or 0):.1f}%"),
+        ("KDA", f"{float(data.get('kda') or 0):.2f}"),
+        ("СР. УБИЙСТВ", f"{float(data.get('avg_kills') or 0):.2f}"),
+        ("СР. УРОН", _fmt(data.get("avg_damage", 0))),
+        ("МАКС. УБИЙСТВ", _fmt(data.get("max_kills", 0))),
+        ("SKILL RATING", f"{sr:.1f} / 10"),
+    ]
+    cw, gap = 422, 14
+    for i, (lab, val) in enumerate(stats):
+        x = 84 + (i % 4) * (cw + gap)
+        y = 513 + (i // 4) * 83
+        color = "#BA83FF" if i in (3, 7) else "#F4F4FC"
+        _mini(x, y, cw, lab, val, color)
+
+    # --- chart ---
+    _panel(60, 725, 1100, 291, "ДИНАМИКА ELO")
+    chart_delta = int(data.get("chart_delta") or 0)
+    if chart_delta > 0:
+        cd_str, cd_color = f"+{chart_delta} ELO", "#4ADE80"
+    elif chart_delta < 0:
+        cd_str, cd_color = f"−{abs(chart_delta)} ELO", "#FA8899"
+    else:
+        cd_str, cd_color = "+0 ELO", "#7E889D"
+    _rect(897, 745, 234, 34, "#2B203D", 10)
+    _txt(1014, 768, cd_str, 20, cd_color, 720, anchor="middle")
+
+    plot_x0, plot_x1, plot_top, plot_bottom = 304, 1115, 801, 953
+    for gy in (816, 869, 922):
+        _line(plot_x0, gy, plot_x1, gy, "#343A50", 1, 0.75)
+
+    hist = [int(d) for d in (data.get("elo_history") or [])]
+    start_elo = int(data.get("hist_start_elo") or elo)
     if hist:
-        cum = []
-        s = 0
+        # Абсолютные значения ELO по матчам: start + кумулятивная сумма дельт
+        values = []
+        acc = start_elo
         for d in hist:
-            s += d
-            cum.append(s)
-        if len(cum) == 1:
-            cum.append(cum[0])
-        lo, hi = min(cum), max(cum)
+            acc += d
+            values.append(acc)
+        if len(values) == 1:
+            values = [values[0], values[0]]
+        lo, hi = min(values), max(values)
         span = (hi - lo) or 1
-        n = len(cum)
-        pts = [
-            (px0 + (px1 - px0) * i / (n - 1),
-             py1 - (py1 - py0) * (v - lo) / span)
-            for i, v in enumerate(cum)
-        ]
-        if len(pts) >= 2:
-            overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-            od = ImageDraw.Draw(overlay)
-            area = pts + [(pts[-1][0], py1), (pts[0][0], py1)]
-            od.polygon(area, fill=(*C_VIOLET, 45))
-            # Прямая полилиния — joint="curve" давал петли («фигуру»)
-            od.line(pts, fill=(*C_VIOLET, 255), width=4)
-            for x, y in pts:
-                od.ellipse([x - 4, y - 4, x + 4, y + 4],
-                           fill=(*C_VIOLET, 255))
-            img.alpha_composite(overlay)
-            draw = ImageDraw.Draw(img)
-        else:
-            draw.line(pts * 2, fill=C_VIOLET, width=4)
+        pad = max(15, span * 0.15)
+        lo -= pad
+        hi += pad
+        n = len(values)
+        xs = [plot_x0 + (plot_x1 - plot_x0) * i / (n - 1) for i in range(n)]
+        ys = [plot_bottom - (plot_bottom - plot_top) * (v - lo) / (hi - lo)
+              for v in values]
+        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in zip(xs, ys))
+        poly = f"{plot_x0},{plot_bottom} {pts} {plot_x1},{plot_bottom}"
+        _add(f'<polygon points="{poly}" fill="url(#chartfill)"/>')
+        _add(f'<polyline points="{pts}" fill="none" stroke="#AC6EFF" stroke-width="4" '
+             f'stroke-linecap="round" stroke-linejoin="round"/>')
+        for x, y in zip(xs, ys):
+            _circle(round(x, 1), round(y, 1), 6, "#D1A6FF", "#8746D6", 1)
+        _txt(85, 856, _fmt(values[0]), 44, "#F7F6FB", 760)
     else:
-        _text(draw, ((px0 + px1) / 2, (py0 + py1) / 2), "НЕТ ДАННЫХ",
-              20, C_MUTED, anchor="ms")
+        _txt((plot_x0 + plot_x1) / 2, (plot_top + plot_bottom) / 2,
+             "Пока нет данных о матчах", 20, "#909BB0", 500, anchor="middle")
+    _txt(84, 884, "СТАРТОВОЕ ELO", 13, "#909BB0", 650)
+    _txt(304, 986, f"НАЧАЛО: {_fmt(start_elo)}", 14, "#8D98AE", 500)
+    _txt(1117, 986, f"СЕЙЧАС: {_fmt(elo)}", 14, "#8D98AE", 500, anchor="end")
 
-    _text(draw, (379, 1018),
-          f"НАЧАЛО:{_fmt(data.get('hist_start_elo', data.get('elo', 1000)))}",
-          14, C_MUTED)
-    _text(draw, (1175, 1018),
-          f"СЕЙЧАС:{_fmt(data.get('elo', 1000))}", 13, C_MUTED,
-          anchor="rs")
+    # --- right column ---
+    _panel(1184, 725, 676, 88)
+    _txt(1208, 754, "ЭКОНОМИКА", 19, "#E8EAF4", 750)
+    _txt(1208, 788, "Баланс", 15, "#92A0B8", 450)
+    _txt(1316, 788, _fmt(data.get("balance", 0)), 22, "#F8F7FE", 750)
+    _line(1482, 764, 1482, 797, "#30384F", 1)
+    _txt(1508, 788, "Предметов", 15, "#92A0B8", 450)
+    _txt(1659, 788, _fmt(data.get("items", 0)), 22, "#F8F7FE", 750)
 
-    # ================= ULTIMATUM =================
-    _text(draw, (1273, 962), _fmt(data.get("ult_matches", 0)), 37,
-          C_TEXT, bold=True)
-    _text(draw, (1444, 962), _fmt(data.get("ult_wins", 0)), 37,
-          C_TEXT, bold=True)
-    _text(draw, (1622, 962), _fmt(data.get("ult_elo", 1000)), 38,
-          C_TEXT, bold=True)
+    _panel(1184, 825, 676, 88)
+    _txt(1208, 854, "СОЦИАЛЬНОЕ", 19, "#E8EAF4", 750)
+    _txt(1208, 887, "REP", 15, "#92A0B8", 550)
+    _txt(1260, 887, _fmt(data.get("reputation", 0)), 22, "#F8F7FE", 750)
+    _line(1391, 862, 1391, 898, "#30384F")
+    partner = str(data.get("partner") or "—")
+    pstr, _ = _fit_text(partner, 190, 18, 650, min_size=12)
+    _txt(1417, 887, "Брак", 15, "#92A0B8")
+    _txt(1477, 887, pstr, 18, "#F8F7FE", 650)
+    _line(1626, 862, 1626, 898, "#30384F")
+    bday = str(data.get("birthday") or "—")
+    bstr2, _ = _fit_text(bday, 200, 16, 650, min_size=12)
+    _txt(1646, 887, "Дата рождения", 14, "#92A0B8")
+    _txt(1775, 887, bstr2, 16, "#F8F7FE", 650)
 
-    ust, usize = _fit_text(
-        draw, data.get("ult_status") or "Пока нет сыгранных матчей",
-        240, 15, min_size=11)
-    _text(draw, (1274, 1019), ust, usize, C_MUTED)
+    _panel(1184, 925, 676, 91)
+    _txt(1208, 955, "УЛЬТИМАТУМ", 19, "#E8EAF4", 750)
+    _txt(1208, 992, f"Матчей: {_fmt(data.get('ult_matches', 0))}", 17, "#BAC4D9", 550)
+    _line(1391, 971, 1391, 1005, "#30384F")
+    _txt(1417, 992, f"Побед: {_fmt(data.get('ult_wins', 0))}", 17, "#BAC4D9", 550)
+    _line(1585, 971, 1585, 1005, "#30384F")
+    _txt(1615, 992, f"ELO: {_fmt(data.get('ult_elo', 1000))}", 19, "#F3F1FC", 750)
+    ustr, usize = _fit_text(
+        str(data.get("ult_status") or "Пока нет сыгранных матчей"),
+        620, 15, 500, min_size=11,
+    )
+    _txt(1208, 1012, ustr, usize, "#8D98AE", 500)
 
-    # ================= АВАТАР =================
-    # Круг (95,240) 228px — измерено по diff template↔example
-    if avatar_png:
+    # --- footer ---
+    _line(60, 1033, 1860, 1033, "#29324B", 1)
+    _txt(60, 1057, "r!z3  /  PLAYER PROFILE V2", 14, "#6F7991", 550, spacing=".6")
+    _txt(1860, 1057, "1920×1080", 14, "#6F7991", 550, anchor="end")
+
+    _add("</svg>")
+    return "\n".join(_E)
+
+
+# ---------------------------------------------------------------------------
+# HTML + Playwright
+# ---------------------------------------------------------------------------
+
+_inter_css_cache: str | None = None
+
+
+def _inter_css() -> str:
+    """@font-face для Inter Variable (base64, кэшируется на процесс)."""
+    global _inter_css_cache
+    if _inter_css_cache is None:
+        raw = INTER_FONT_PATH.read_bytes()
+        b64 = base64.b64encode(raw).decode("ascii")
+        _inter_css_cache = (
+            "@font-face{font-family:'Inter';src:url(data:font/ttf;base64,"
+            + b64
+            + ");font-weight:100 900;font-style:normal;}"
+        )
+    return _inter_css_cache
+
+
+def build_profile_html(svg: str) -> str:
+    return (
+        "<!doctype html><html lang=\"ru\"><head><meta charset=\"UTF-8\">"
+        "<style>html,body{margin:0;background:#080B14;width:100%;height:100%;}"
+        "svg{display:block;width:1920px;height:1080px;}"
+        "svg text{font-family:'Inter',Arial,sans-serif;}"
+        + _inter_css()
+        + "</style></head><body>"
+        + svg
+        + "</body></html>"
+    )
+
+
+_browser = None
+_playwright = None
+_browser_lock = asyncio.Lock()
+
+
+async def _get_browser():
+    """Переиспользуемый Chromium-инстанс на процесс."""
+    global _browser, _playwright
+    if _browser is not None and _browser.is_connected():
+        return _browser
+    async with _browser_lock:
+        if _browser is not None and _browser.is_connected():
+            return _browser
         try:
-            av = Image.open(io.BytesIO(avatar_png)).convert("RGBA")
-            w, h = av.size
-            side = min(w, h)
-            av = av.crop(((w - side) // 2, (h - side) // 2,
-                          (w + side) // 2, (h + side) // 2))
-            av = av.resize((228, 228), Image.LANCZOS)
-            mask = Image.new("L", (228, 228), 0)
-            ImageDraw.Draw(mask).ellipse([0, 0, 227, 227], fill=255)
-            img.paste(av, (95, 240), mask)
-        except Exception:
-            logger.warning("Avatar paste failed")
-
-    out = io.BytesIO()
-    img.convert("RGB").save(out, format="PNG", optimize=True)
-    return out.getvalue()
+            from playwright.async_api import async_playwright
+        except ImportError as exc:
+            raise RuntimeError(
+                "playwright is not installed — pip install playwright"
+            ) from exc
+        _playwright = await async_playwright().start()
+        _browser = await _playwright.chromium.launch(
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        )
+        logger.info("Profile renderer: Chromium launched")
+        return _browser
 
 
-RENDERER_VERSION = "pixelmask-v3"
+async def shutdown_profile_renderer() -> None:
+    """Закрыть браузер при остановке бота (best-effort)."""
+    global _browser, _playwright
+    try:
+        if _browser is not None:
+            await _browser.close()
+    except Exception:
+        pass
+    try:
+        if _playwright is not None:
+            await _playwright.stop()
+    except Exception:
+        pass
+    _browser = _playwright = None
 
 
 async def render_profile_png_async(data: dict,
                                    avatar_png: bytes | None = None,
                                    badge_png: bytes | None = None) -> bytes:
-    """Асинхронная обёртка: рендер в executor с ограничением Semaphore."""
+    """Собрать SVG → HTML → скриншот Chromium 1920x1080 → PNG bytes.
+
+    Сигнатура сохранена совместимой с прежним рендерером:
+    data — словарь collect_profile_data, avatar/badge — PNG bytes.
+    """
+    import time
+
     async with CARD_RENDER_SEM:
-        loop = asyncio.get_event_loop()
-        t0 = loop.time()
+        t0 = time.monotonic()
+        svg = build_profile_svg(data, avatar_png, badge_png)
+        html_doc = build_profile_html(svg)
+
+        browser = await _get_browser()
+        page = await browser.new_page(
+            viewport={"width": 1920, "height": 1080},
+            device_scale_factor=1,
+        )
         try:
-            result = await loop.run_in_executor(
-                None, render_profile_png, data, avatar_png, badge_png
+            await asyncio.wait_for(
+                page.set_content(html_doc, wait_until="load"),
+                timeout=RENDER_TIMEOUT,
             )
-            import hashlib
-            logger.info(
-                "Profile PNG rendered in %.0fms | renderer=%s v%s "
-                "module=%s sha256=%s",
-                (loop.time() - t0) * 1000,
-                Path(__file__).name, RENDERER_VERSION,
-                str(Path(__file__).resolve()),
-                hashlib.sha256(result).hexdigest()[:16],
+            # Дожидаемся шрифтов и декодирования data-URI изображений
+            try:
+                await page.evaluate(
+                    "() => Promise.all(["
+                    "document.fonts.ready,"
+                    "...Array.from(document.images).map(i => i.decode().catch(() => {}))"
+                    "]).then(() => true)"
+                )
+            except Exception:
+                await page.wait_for_timeout(150)
+            png = await asyncio.wait_for(
+                page.screenshot(type="png"), timeout=RENDER_TIMEOUT
             )
-            return result
-        except Exception:
-            logger.exception("Profile PNG render failed")
-            raise
+        finally:
+            try:
+                await page.close()
+            except Exception:
+                pass
+
+        logger.info(
+            "Profile PNG rendered in %.0fms | renderer=%s v%s module=%s",
+            (time.monotonic() - t0) * 1000,
+            Path(__file__).name, "svg-v2", Path(__file__).resolve(),
+        )
+        return png
+
+
+# Синхронная точка входа для executor-вызовов/тестов не нужна:
+# весь пайплайн асинхронный (SVG-сборка синхронная и быстрая).
+RENDERER_VERSION = "svg-v2"
