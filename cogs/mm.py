@@ -1257,7 +1257,14 @@ class MMCog(commands.Cog):
         async def _revert() -> None:
             search.state = QUEUE_OPEN
             search.match_num = 0
+            search.timer_started = bool(search.players)
             mm_search_store.set(search)
+            # Перезапустить таймер, чтобы заполненная очередь не «зависла»
+            if search.players:
+                key = (search.guild_id, search.channel_id)
+                task = self._search_timers.get(key)
+                if task is None or task.done():
+                    self._start_search_timer(search.guild_id, search.channel_id)
             await self._update_queue_panel(search)
 
         # 1. Блокируем очередь до создания канала/RC
@@ -1400,7 +1407,16 @@ class MMCog(commands.Cog):
                         # Блокировка без живого Ready Check — снимаем
                         search.state = QUEUE_OPEN
                         search.match_num = 0
+                        search.timer_started = bool(search.players)
                         mm_search_store.set(search)
+                        # Заполненная очередь без таймера — перезапустить
+                        if search.is_full and search.players:
+                            key = (search.guild_id, search.channel_id)
+                            task = self._search_timers.get(key)
+                            if task is None or task.done():
+                                self._start_search_timer(
+                                    search.guild_id, search.channel_id
+                                )
                 try:
                     await self._update_queue_panel(search)
                 except Exception:
