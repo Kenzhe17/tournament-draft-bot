@@ -120,7 +120,9 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
 
     # Статус — в шаблоне «СТАТУС: [STATUS]», затираем строку целиком
     _inpaint(img, (335, 358, 820, 396), radius=4)
-    _text(draw, (350, 385), f"СТАТУС: {data.get('status') or 'ок'}", 20, C_SOFT)
+    status = f"СТАТУС: {data.get('status') or 'ок'}"
+    sstr, ssize = _fit_text(draw, status, 460, 20, min_size=12)
+    _text(draw, (350, 385), sstr, ssize, C_SOFT)
 
     # Ранг — пустой слот
     _text(draw, (439, 442), (data.get("rank_name") or "BRONZE").upper(),

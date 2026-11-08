@@ -111,7 +111,7 @@ async def collect_profile_data(guild: discord.Guild,
 
     return {
         "name": user.display_name,
-        "status": "ок",
+        "status": stats.description or "ок",
         "reputation": stats.reputation or 0,
         "partner": partner if stats.spouse_id else "—",
         "birthday": stats.birthday or "—",
