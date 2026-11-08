@@ -1318,7 +1318,7 @@ class MMCog(commands.Cog):
             channel = await self._create_match_channel(guild, search, match_num)
             if channel is None:
                 await _revert()
-                return None, "Не удалось создать канал матча. Попробуйте ещё раз."
+                return None, "Не удалось создать канал матча. Проверьте права бота (Manage Channels) и повторите."
 
             # 3. Ready Check
             rc = await self._start_ready_check(
@@ -1385,7 +1385,7 @@ class MMCog(commands.Cog):
                 reason="Ranked match channel",
             )
         except Exception as exc:
-            logger.error("Failed to create match channel: %s", exc)
+            logger.error("Failed to create match channel: %s", exc, exc_info=True)
             return None
 
     async def _delete_channel_by_id(self, channel_id: int) -> None:
