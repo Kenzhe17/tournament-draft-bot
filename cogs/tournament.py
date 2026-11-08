@@ -1190,12 +1190,14 @@ class TournamentCog(commands.Cog):
 
         from services.profile_card import build_profile_png
 
+        # Рендер PNG ~3с — сначала defer, иначе interaction протухает (404)
+        await interaction.response.defer()
         png = await build_profile_png(interaction.guild, target_user)
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             file=discord.File(__import__("io").BytesIO(png), filename="profile.png"),
             view=view,
         )

@@ -169,11 +169,13 @@ class BackToProfileButton(discord.ui.Button):
 
         from services.profile_card import build_profile_png
 
+        # Рендер ~3с — defer, чтобы interaction не протух
+        await interaction.response.defer()
         png = await build_profile_png(
             interaction.guild, interaction.user
         )
         view = ProfileView(self.guild_id, self.user_id, True)
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             view=view,
             attachments=[discord.File(io.BytesIO(png), filename="profile.png")],
         )
@@ -257,6 +259,10 @@ async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, use
 
     from services.profile_card import build_profile_png
 
+    # Рендер ~3с — defer модалки сразу, карточку правим отдельным edit
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+
     png = await build_profile_png(interaction.guild, interaction.user)
     view = ProfileView(guild_id, user_id, True)
     file = discord.File(io.BytesIO(png), filename="profile.png")
@@ -266,16 +272,15 @@ async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, use
     try:
         if interaction.message is not None:
             await interaction.message.edit(view=cv2_view, attachments=attachments)
-            await interaction.response.send_message("✅ Профиль обновлён.", ephemeral=True)
+            await interaction.followup.send("✅ Профиль обновлён.", ephemeral=True)
         else:
-            await interaction.response.send_message(view=cv2_view, attachments=attachments, ephemeral=True)
+            await interaction.followup.send(view=cv2_view, attachments=attachments, ephemeral=True)
     except Exception:
         logger.exception("Profile modal: failed to update profile message")
-        if not interaction.response.is_done():
-            try:
-                await interaction.response.send_message(view=cv2_view, attachments=attachments, ephemeral=True)
-            except Exception:
-                pass
+        try:
+            await interaction.followup.send(view=cv2_view, attachments=attachments, ephemeral=True)
+        except Exception:
+            pass
 
 
 class _ProfileFieldModal(discord.ui.Modal):
