@@ -1260,8 +1260,8 @@ async def build_embed_for_phase(
     return discord.Embed(title="Ошибка", color=discord.Color.red())
 
 
-def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed:
-    """Embed для уведомления о повышении уровня."""
+def build_level_up_embed(stats, old_level: int, new_level: int) -> tuple[discord.Embed, discord.File | None]:
+    """Embed для уведомления о повышении уровня (+ файл бейджа ранга)."""
     rank_title = stats.get_rank_title()
     current_xp, xp_needed = stats.get_level_progress()
     progress_bar = create_progress_bar(current_xp, xp_needed)
@@ -1277,7 +1277,15 @@ def build_level_up_embed(stats, old_level: int, new_level: int) -> discord.Embed
     )
     embed.set_footer(text=f"Поздравляем с новым уровнем!")
 
-    return embed
+    rank_file = None
+    from utils.ranks import rank_badge_path
+
+    badge_path = rank_badge_path(new_level)
+    if badge_path is not None:
+        embed.set_image(url=f"attachment://{badge_path.name}")
+        rank_file = discord.File(str(badge_path), filename=badge_path.name)
+
+    return embed, rank_file
 
 
 async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type: str = "elo", user_id: int = None) -> discord.Embed:

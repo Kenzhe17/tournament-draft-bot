@@ -176,6 +176,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     user_id_by_name: dict[str, int] = {}
     team_sr_values: dict[str, float] = {}
     match_players: list[dict] = []
+    level_up_notifications: list[tuple] = []
 
     for team_index, team_key in ((team1_index, "a"), (team2_index, "b")):
         won = team_index == winning_team_index
@@ -259,6 +260,8 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         if won:
             xp_reward += 30  # Bonus XP for winning
         new_level, old_level = updated_stats.add_xp(xp_reward)
+        if new_level > old_level:
+            level_up_notifications.append((name, user_id, updated_stats, old_level, new_level))
 
         # Add coin rewards (50-100 per match)
         import random
@@ -277,6 +280,31 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
         )
 
         await player_stats_store.set(updated_stats)
+
+    # Уведомления о повышении уровня — в канал турнира
+    if level_up_notifications and interaction is not None:
+        try:
+            from utils.embeds import build_level_up_embed
+            from utils.design import compose as _compose
+
+            guild = interaction.guild
+            channel = guild.get_channel(tournament.channel_id) if guild else None
+            if channel is None and guild is not None:
+                try:
+                    channel = await guild.fetch_channel(tournament.channel_id)
+                except Exception:
+                    channel = None
+            if channel is not None:
+                for _name, uid, st, old_lv, new_lv in level_up_notifications:
+                    embed, badge_file = build_level_up_embed(st, old_lv, new_lv)
+                    mention = f"<@{uid}> " if uid else ""
+                    await channel.send(
+                        content=f"{mention}**{_name}**",
+                        view=_compose(embed),
+                        file=badge_file,
+                    )
+        except Exception as exc:
+            logger.warning("Level-up notification failed: %s", exc)
 
     # Clear temporary data
     if hasattr(tournament, 'temp_kd_data'):

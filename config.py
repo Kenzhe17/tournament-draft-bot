@@ -94,14 +94,14 @@ CIRCLES = (2, 3, 4)
 # Custom emoji IDs for ranks (get these from Discord server settings)
 # Leave empty to use standard emojis: 👑 🔱 🎯 💎 🌪️ 🥇 🥈 🥉
 RANK_EMOJIS = {
-    "Radiant": os.getenv("EMOJI_RADIANT", ""),
-    "Immortal": os.getenv("EMOJI_IMMORTAL", ""),
-    "Ascendant": os.getenv("EMOJI_ASCENDANT", ""),
-    "Diamond": os.getenv("EMOJI_DIAMOND", ""),
-    "Platinum": os.getenv("EMOJI_PLATINUM", ""),
-    "Gold": os.getenv("EMOJI_GOLD", ""),
-    "Silver": os.getenv("EMOJI_SILVER", ""),
     "Bronze": os.getenv("EMOJI_BRONZE", ""),
+    "Silver": os.getenv("EMOJI_SILVER", ""),
+    "Gold": os.getenv("EMOJI_GOLD", ""),
+    "Platinum": os.getenv("EMOJI_PLATINUM", ""),
+    "Diamond": os.getenv("EMOJI_DIAMOND", ""),
+    "Elite": os.getenv("EMOJI_ELITE", ""),
+    "Master": os.getenv("EMOJI_MASTER", ""),
+    "Legend": os.getenv("EMOJI_LEGEND", ""),
 }
 
 # Custom emoji IDs for other game elements
@@ -288,14 +288,14 @@ ICON_EMOJIS = {
 # Standard emojis as fallback when custom emojis are not set
 STANDARD_EMOJIS = {
     # Ranks
-    "Radiant": "👑",
-    "Immortal": "",
-    "Ascendant": "",
-    "Diamond": "",
-    "Platinum": "",
-    "Gold": "",
-    "Silver": "",
-    "Bronze": "",
+    "Bronze": "🥉",
+    "Silver": "🥈",
+    "Gold": "🥇",
+    "Platinum": "💠",
+    "Diamond": "🔷",
+    "Elite": "⚡",
+    "Master": "🎖️",
+    "Legend": "👑",
     
     # Games
     "game": "🎮",

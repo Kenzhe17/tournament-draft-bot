@@ -167,9 +167,12 @@ class BackToProfileButton(discord.ui.Button):
 
         from utils.profile_card import build_profile_embed
 
-        embed = await build_profile_embed(self.guild_id, interaction.user)
+        embed, rank_file = await build_profile_embed(self.guild_id, interaction.user)
         view = ProfileView(self.guild_id, self.user_id, True)
-        await interaction.response.edit_message(view=compose(embed, view))
+        await interaction.response.edit_message(
+            view=compose(embed, view),
+            attachments=[rank_file] if rank_file else [],
+        )
 
 
 def _default_stats(guild_id: int, user_id: int, display_name: str):
@@ -248,21 +251,22 @@ async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, use
 
     from utils.profile_card import build_profile_embed
 
-    embed = await build_profile_embed(guild_id, interaction.user)
+    embed, rank_file = await build_profile_embed(guild_id, interaction.user)
     view = ProfileView(guild_id, user_id, True)
     cv2_view = compose(embed, view)
+    attachments = [rank_file] if rank_file else []
 
     try:
         if interaction.message is not None:
-            await interaction.message.edit(view=cv2_view)
+            await interaction.message.edit(view=cv2_view, attachments=attachments)
             await interaction.response.send_message("✅ Профиль обновлён.", ephemeral=True)
         else:
-            await interaction.response.send_message(view=cv2_view, ephemeral=True)
+            await interaction.response.send_message(view=cv2_view, attachments=attachments, ephemeral=True)
     except Exception:
         logger.exception("Profile modal: failed to update profile message")
         if not interaction.response.is_done():
             try:
-                await interaction.response.send_message(view=cv2_view, ephemeral=True)
+                await interaction.response.send_message(view=cv2_view, attachments=attachments, ephemeral=True)
             except Exception:
                 pass
 

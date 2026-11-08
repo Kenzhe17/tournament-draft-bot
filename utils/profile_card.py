@@ -13,8 +13,12 @@ from config import get_emoji
 logger = logging.getLogger(__name__)
 
 
-async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) -> discord.Embed:
-    """Build the profile embed for ``target_user`` (Member/User)."""
+async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) -> tuple[discord.Embed, discord.File | None]:
+    """Build the profile embed for ``target_user`` (Member/User).
+
+    Возвращает (embed, file) — file это PNG-бейдж ранга,
+    подключаемый через attachment://rank_badge.png.
+    """
     from cogs.tournament import get_rank_emoji
     from storage.player_stats_store import player_stats_store
     from storage.user_balance_store import user_balance_store
@@ -177,4 +181,13 @@ async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) ->
     embed.set_footer(text="Основная информация и статистика игрока")
     embed.set_thumbnail(url=target_user.display_avatar.url)
 
-    return embed
+    # Бейдж ранга — изображением внизу карточки
+    rank_file = None
+    from utils.ranks import rank_badge_path
+
+    badge_path = rank_badge_path(stats.level)
+    if badge_path is not None:
+        embed.set_image(url=f"attachment://{badge_path.name}")
+        rank_file = discord.File(str(badge_path), filename=badge_path.name)
+
+    return embed, rank_file

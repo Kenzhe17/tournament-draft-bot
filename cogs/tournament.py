@@ -1190,12 +1190,12 @@ class TournamentCog(commands.Cog):
 
         from utils.profile_card import build_profile_embed
 
-        embed = await build_profile_embed(interaction.guild_id, target_user, limit=limit)
+        embed, rank_file = await build_profile_embed(interaction.guild_id, target_user, limit=limit)
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message( view=compose(embed, view))
+        await interaction.response.send_message( view=compose(embed, view), file=rank_file)
 
     @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
@@ -2371,7 +2371,7 @@ class TournamentCog(commands.Cog):
         
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
-        embed.add_field(name=replace_emojis("🧪 Тест (Radiant)"), value=f"`{test_emoji}`", inline=False)
+        embed.add_field(name=replace_emojis("🧪 Тест (Legend)"), value=f"`{test_emoji}`", inline=False)
         
         await interaction.response.send_message( view=compose(embed), ephemeral=True)
 
@@ -2716,62 +2716,13 @@ class TournamentCog(commands.Cog):
 
 
 def get_rank_emoji(level: int) -> str:
-    """Получить эмодзи и название ранга по уровню."""
+    """Получить эмодзи и название ранга по уровню (utils.ranks)."""
     from config import get_emoji
-    
-    # Get rank name based on level
-    if level >= 100:
-        rank_name = "Radiant"
-    elif level >= 93:
-        rank_name = "Immortal I"
-    elif level >= 86:
-        rank_name = "Immortal II"
-    elif level >= 80:
-        rank_name = "Immortal III"
-    elif level >= 73:
-        rank_name = "Ascendant I"
-    elif level >= 66:
-        rank_name = "Ascendant II"
-    elif level >= 60:
-        rank_name = "Ascendant III"
-    elif level >= 54:
-        rank_name = "Diamond I"
-    elif level >= 48:
-        rank_name = "Diamond II"
-    elif level >= 42:
-        rank_name = "Diamond III"
-    elif level >= 37:
-        rank_name = "Platinum I"
-    elif level >= 32:
-        rank_name = "Platinum II"
-    elif level >= 27:
-        rank_name = "Platinum III"
-    elif level >= 23:
-        rank_name = "Gold I"
-    elif level >= 19:
-        rank_name = "Gold II"
-    elif level >= 15:
-        rank_name = "Gold III"
-    elif level >= 12:
-        rank_name = "Silver I"
-    elif level >= 9:
-        rank_name = "Silver II"
-    elif level >= 6:
-        rank_name = "Silver III"
-    elif level >= 4:
-        rank_name = "Bronze I"
-    elif level >= 2:
-        rank_name = "Bronze II"
-    else:
-        rank_name = "Bronze III"
-    
-    # Get the base rank name (without tier) for emoji lookup
-    base_rank = rank_name.split()[0] if " " in rank_name else rank_name
-    
-    # Get custom or standard emoji
-    emoji = get_emoji(base_rank)
-    
-    return f"{emoji} {rank_name}"
+    from utils.ranks import rank_name
+
+    name = rank_name(level)
+    emoji = get_emoji(name)
+    return f"{emoji} {name}"
 
 
 async def send_tournament_notification(tournament, guild, action: str) -> None:
@@ -2868,35 +2819,14 @@ class GuideSelectMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора пункта меню."""
-        from config import RANK_EMOJIS
+        from utils.ranks import RANKS
 
-        # Standard emojis as fallback
-        standard_emojis = {
-            "Radiant": "👑",
-            "Immortal": "🔱",
-            "Ascendant": "🎯",
-            "Diamond": "💎",
-            "Platinum": "🌪️",
-            "Gold": "🥇",
-            "Silver": "🥈",
-            "Bronze": "🥉",
-        }
-
-        def format_emoji(name, value):
-            if value and value.isdigit():
-                return f"<:{name}:{value}>"
-            elif value and value.startswith("<:") and value.endswith(">"):
-                return value  # Already formatted
-            return value  # Use as-is (standard emoji)
-
-        radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
-        immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
-        ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
-        diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
-        platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
-        gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
-        silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
-        bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
+        # Строки таблицы рангов (Legend → Bronze)
+        rank_lines = "\n".join(
+            f"{replace_emojis('a_dot_smaller')} {get_emoji(name)} "
+            f"**{name}:** `{min_level}+ lvl`"
+            for name, min_level, _badge in reversed(RANKS)
+        )
 
         if self.values[0] == "tournaments":
             embed = discord.Embed(
@@ -2955,7 +2885,7 @@ class GuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "ranks":
             embed = discord.Embed(
                 title=f"  СИСТЕМА РАНГОВ  ",
-                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_dot_smaller')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_dot_smaller')} {immortal} **Immortal:** `80+ lvl`  I `(93+)` | II `(86+)` | III `(80+)`\n{replace_emojis('a_dot_smaller')} {ascendant} **Ascendant:** `60+ lvl`  I `(73+)` | II `(66+)` | III `(60+)`\n{replace_emojis('a_dot_smaller')} {diamond} **Diamond:** `42+ lvl`  I `(54+)` | II `(48+)` | III `(42+)`\n{replace_emojis('a_dot_smaller')} {platinum} **Platinum:** `27+ lvl`  I `(37+)` | II `(32+)` | III `(27+)`\n{replace_emojis('a_dot_smaller')} {gold} **Gold:** `15+ lvl`  I `(23+)` | II `(19+)` | III `(15+)`\n{replace_emojis('a_dot_smaller')} {silver} **Silver:** `6+ lvl`  I `(12+)` | II `(9+)` | III `(6+)`\n{replace_emojis('a_dot_smaller')} {bronze} **Bronze:** `0+ lvl`  I `(4+)` | II `(2+)` | III `(0+)`",
+                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{rank_lines}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = GuideView(current="ranks")
@@ -3070,35 +3000,14 @@ class HelpGuideSelectMenu(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         """Обработка выбора пункта меню."""
-        from config import RANK_EMOJIS
+        from utils.ranks import RANKS
 
-        # Standard emojis as fallback
-        standard_emojis = {
-            "Radiant": "👑",
-            "Immortal": "🔱",
-            "Ascendant": "🎯",
-            "Diamond": "💎",
-            "Platinum": "🌪️",
-            "Gold": "🥇",
-            "Silver": "🥈",
-            "Bronze": "🥉",
-        }
-
-        def format_emoji(name, value):
-            if value and value.isdigit():
-                return f"<:{name}:{value}>"
-            elif value and value.startswith("<:") and value.endswith(">"):
-                return value  # Already formatted
-            return value  # Use as-is (standard emoji)
-
-        radiant = format_emoji('Radiant', RANK_EMOJIS.get("Radiant", "") or standard_emojis["Radiant"])
-        immortal = format_emoji('Immortal', RANK_EMOJIS.get("Immortal", "") or standard_emojis["Immortal"])
-        ascendant = format_emoji('Ascendant', RANK_EMOJIS.get("Ascendant", "") or standard_emojis["Ascendant"])
-        diamond = format_emoji('Diamond', RANK_EMOJIS.get("Diamond", "") or standard_emojis["Diamond"])
-        platinum = format_emoji('Platinum', RANK_EMOJIS.get("Platinum", "") or standard_emojis["Platinum"])
-        gold = format_emoji('Gold', RANK_EMOJIS.get("Gold", "") or standard_emojis["Gold"])
-        silver = format_emoji('Silver', RANK_EMOJIS.get("Silver", "") or standard_emojis["Silver"])
-        bronze = format_emoji('Bronze', RANK_EMOJIS.get("Bronze", "") or standard_emojis["Bronze"])
+        # Строки таблицы рангов (Legend → Bronze)
+        rank_lines = "\n".join(
+            f"{replace_emojis('a_dot_smaller')} {get_emoji(name)} "
+            f"**{name}:** `{min_level}+ lvl`"
+            for name, min_level, _badge in reversed(RANKS)
+        )
 
         if self.values[0] == "tournaments":
             embed = discord.Embed(
@@ -3157,7 +3066,7 @@ class HelpGuideSelectMenu(discord.ui.Select):
         elif self.values[0] == "ranks":
             embed = discord.Embed(
                 title=f"  СИСТЕМА РАНГОВ  ",
-                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{replace_emojis('a_dot_smaller')} {radiant} **Radiant:** `100+ lvl`\n{replace_emojis('a_dot_smaller')} {immortal} **Immortal:** `80+ lvl`  I `(93+)` | II `(86+)` | III `(80+)`\n{replace_emojis('a_dot_smaller')} {ascendant} **Ascendant:** `60+ lvl`  I `(73+)` | II `(66+)` | III `(60+)`\n{replace_emojis('a_dot_smaller')} {diamond} **Diamond:** `42+ lvl`  I `(54+)` | II `(48+)` | III `(42+)`\n{replace_emojis('a_dot_smaller')} {platinum} **Platinum:** `27+ lvl`  I `(37+)` | II `(32+)` | III `(27+)`\n{replace_emojis('a_dot_smaller')} {gold} **Gold:** `15+ lvl`  I `(23+)` | II `(19+)` | III `(15+)`\n{replace_emojis('a_dot_smaller')} {silver} **Silver:** `6+ lvl`  I `(12+)` | II `(9+)` | III `(6+)`\n{replace_emojis('a_dot_smaller')} {bronze} **Bronze:** `0+ lvl`  I `(4+)` | II `(2+)` | III `(0+)`",
+                description=f" **⭐ СИСТЕМА РАНГОВ ПО УРОВНЯМ:**\n{rank_lines}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             view = HelpGuideView(current="ranks")
