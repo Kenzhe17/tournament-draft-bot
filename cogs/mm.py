@@ -180,25 +180,6 @@ class MMCog(commands.Cog):
             )
             return
 
-        # Свободный канал для турнира (если ещё не назначен)
-        if not search.tournament_channel_id:
-            for channel_id in TOURNAMENT_CHANNEL_IDS:
-                if channel_id in LOCKED_CHANNELS:
-                    continue
-                tournament_channel = self.bot.get_channel(channel_id)
-                if tournament_channel is None:
-                    continue
-                tournament = store.get(guild.id, tournament_channel.id)
-                if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                    search.tournament_channel_id = channel_id
-                    LOCKED_CHANNELS[channel_id] = search.channel_id
-                    break
-            if not search.tournament_channel_id:
-                await interaction.response.send_message(
-                    "❌ Все каналы для турниров заняты.", ephemeral=True
-                )
-                return
-
         # Уникальная база на guild+channel+время, чтобы тесты не пересекались
         base_user_id = -(
             (guild.id % 100000) * 1_000_000
@@ -916,17 +897,19 @@ class MMCog(commands.Cog):
         """Создать обычный турнир из поиска."""
         guild = interaction_channel.guild or self.bot.get_guild(search.guild_id)
         
-        # Использовать запомненный канал
-        tournament_channel_id = search.tournament_channel_id
-        if not tournament_channel_id:
-            logger.error("Tournament channel not set for search")
-            return
-
-        tournament_channel = self.bot.get_channel(tournament_channel_id)
-
-        if not tournament_channel:
-            logger.error("Канал для турниров не найден: %s", tournament_channel_id)
-            return
+        # Канал турнира — созданный ботом канал матча cs-4x4-match-N;
+        # фиксированные каналы турниров больше не резервируются
+        tournament_channel_id = int(getattr(search, "mm_match_channel_id", 0) or 0)
+        tournament_channel = None
+        if tournament_channel_id:
+            tournament_channel = self.bot.get_channel(tournament_channel_id)
+            if tournament_channel is None:
+                try:
+                    tournament_channel = await self.bot.fetch_channel(tournament_channel_id)
+                except Exception:
+                    tournament_channel = None
+        if tournament_channel is None:
+            tournament_channel = interaction_channel
 
         # Определить размер и формат
         tournament_size = TournamentSize.EIGHT if search.format == MMFormat.SQUAD else TournamentSize.EIGHT
@@ -1133,32 +1116,6 @@ class MMCog(commands.Cog):
                 if interaction.user.id in other.player_user_ids.values():
                     return ("Вы уже в другой очереди. Выйдите из неё сначала. "
                             "Используйте /mm delete для удаления всех поисков.")
-
-        # Выбор канала для турнира (один раз на поиск)
-        if not search.tournament_channel_id:
-            for channel_id in TOURNAMENT_CHANNEL_IDS:
-                if channel_id in LOCKED_CHANNELS:
-                    continue
-                tournament_channel = self.bot.get_channel(channel_id)
-                if tournament_channel:
-                    tournament = store.get(guild_id, tournament_channel.id)
-                    if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                        search.tournament_channel_id = channel_id
-                        LOCKED_CHANNELS[channel_id] = search.channel_id
-                        mm_search_store.set(search)
-                        break
-            else:
-                return "Все каналы для турниров заняты. Ожидайте завершения одного из турниров."
-        else:
-            tournament_channel = self.bot.get_channel(search.tournament_channel_id)
-            if tournament_channel:
-                tournament = store.get(guild_id, tournament_channel.id)
-                if tournament and tournament.phase != TournamentPhase.COMPLETE:
-                    if search.tournament_channel_id in LOCKED_CHANNELS:
-                        del LOCKED_CHANNELS[search.tournament_channel_id]
-                    search.tournament_channel_id = 0
-                    mm_search_store.set(search)
-                    return "Канал для турниров занят. Попробуйте ещё раз."
 
         # Тег сервера
         from config import GUILD_ID
