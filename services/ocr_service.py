@@ -9,9 +9,11 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import io
 import logging
 import re
+import threading
 from typing import Any
 
 import numpy as np
@@ -20,6 +22,14 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 _ocr_instance = None
+_ocr_init_lock = threading.Lock()
+
+# Отдельный ограниченный пул для OCR: дефолтный executor даёт до ~32
+# потоков — пачка скриншотов подряд запускает параллельные ONNX-инференсы
+# и кладёт CPU/RAM. Два воркера = очередь вместо шторма.
+OCR_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2, thread_name_prefix="ocr"
+)
 
 _KDA_RE = re.compile(r"\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{1,2}")
 
@@ -27,10 +37,12 @@ _KDA_RE = re.compile(r"\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{1,2}")
 def _get_ocr():
     global _ocr_instance
     if _ocr_instance is None:
-        from rapidocr_onnxruntime import RapidOCR
+        with _ocr_init_lock:
+            if _ocr_instance is None:
+                from rapidocr_onnxruntime import RapidOCR
 
-        _ocr_instance = RapidOCR()
-        logger.info("RapidOCR initialized")
+                _ocr_instance = RapidOCR()
+                logger.info("RapidOCR initialized")
     return _ocr_instance
 
 
@@ -74,7 +86,7 @@ def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
 async def extract_text_boxes(image_bytes: bytes) -> list[dict[str, Any]]:
     """OCR изображения → список боксов с координатами."""
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _run_ocr, image_bytes)
+    return await loop.run_in_executor(OCR_EXECUTOR, _run_ocr, image_bytes)
 
 
 def detect_winner_side(

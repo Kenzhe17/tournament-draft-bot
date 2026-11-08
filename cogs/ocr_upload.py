@@ -337,10 +337,13 @@ class OCRUploadCog(commands.Cog):
 
         try:
             data = await attachment.read()
-            from services.ocr_service import detect_winner_side
+            from services.ocr_service import (
+                OCR_EXECUTOR,
+                detect_winner_side,
+            )
 
             loop = asyncio.get_running_loop()
-            boxes = await loop.run_in_executor(None, _ocr_boxes, data)
+            boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
             if not boxes:
                 await message.reply(
                     replace_emojis(
@@ -351,7 +354,7 @@ class OCRUploadCog(commands.Cog):
                 return
 
             # Сначала пробуем детальный экран одного отряда
-            squad = await loop.run_in_executor(None, _parse_squad, boxes)
+            squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
             if squad is not None:
                 await self._handle_squad_upload(
                     message, tournament, t1, t2, meta,
@@ -373,7 +376,7 @@ class OCRUploadCog(commands.Cog):
                 )
                 return
 
-            parsed = await loop.run_in_executor(None, _parse_classic, boxes)
+            parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
             if parsed is None:
                 await message.reply(
                     replace_emojis(
@@ -385,7 +388,7 @@ class OCRUploadCog(commands.Cog):
 
             # Победитель по цветовой подсветке панели (CPU-bound)
             side = await loop.run_in_executor(
-                None, detect_winner_side, data, boxes
+                OCR_EXECUTOR, detect_winner_side, data, boxes
             )
 
             panels = {

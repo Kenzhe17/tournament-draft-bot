@@ -11,7 +11,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from services import cs_parser
-from services.ocr_service import detect_winner_side, extract_text_boxes
+from services.ocr_service import (
+    OCR_EXECUTOR,
+    detect_winner_side,
+    extract_text_boxes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +163,7 @@ async def run_statistic(
     # Определяем победителя по цветовой подсветке панели
     try:
         side = await asyncio.get_running_loop().run_in_executor(
-            None, detect_winner_side, data, boxes
+            OCR_EXECUTOR, detect_winner_side, data, boxes
         )
     except Exception:
         logger.exception("winner detection failed")
