@@ -45,7 +45,12 @@ class PlayerStats:
     total_earnings: int = 0  # Total coins earned
     tournament_participations: int = 0
     description: str = ""  # User profile description
-    
+
+    # Социальные поля профиля
+    reputation: int = 0  # Репутация за активность в турнирах
+    birthday: str = ""  # День рождения (ДД.ММ.ГГГГ)
+    spouse_id: int = 0  # Discord ID супруга/и (0 = не в браке)
+
     # Daily tournament coin limit
     daily_tournament_coins: int = 0  # Coins earned from tournaments today
     daily_coins_date: str = ""  # Date string for daily tracking (YYYY-MM-DD)
@@ -86,6 +91,9 @@ class PlayerStats:
             "description": self.description,
             "daily_tournament_coins": self.daily_tournament_coins,
             "daily_coins_date": self.daily_coins_date,
+            "reputation": self.reputation,
+            "birthday": self.birthday,
+            "spouse_id": self.spouse_id,
         }
 
     @classmethod
@@ -126,6 +134,9 @@ class PlayerStats:
             description=data.get("description", ""),
             daily_tournament_coins=data.get("daily_tournament_coins", 0),
             daily_coins_date=data.get("daily_coins_date", ""),
+            reputation=data.get("reputation", 0),
+            birthday=data.get("birthday", ""),
+            spouse_id=data.get("spouse_id", 0),
         )
 
     @property

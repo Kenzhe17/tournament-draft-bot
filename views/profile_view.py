@@ -1,10 +1,11 @@
 """View для редактирования профиля."""
 import logging
+from datetime import datetime
 
 from config import replace_emojis
 
 import discord
-from utils.design import compose
+from utils.design import compose, swap_view
 from storage.player_stats_store import player_stats_store
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class ProfileView(discord.ui.View):
 
 
 class SettingsButton(discord.ui.Button):
-    """Кнопка настроек."""
+    """Кнопка настроек — открывает меню редактирования."""
 
     def __init__(self, guild_id: int, user_id: int):
         super().__init__(
@@ -37,7 +38,7 @@ class SettingsButton(discord.ui.Button):
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Открыть настройки профиля."""
+        """Открыть меню настроек профиля."""
         # Проверить, что это владелец
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
@@ -46,8 +47,278 @@ class SettingsButton(discord.ui.Button):
             )
             return
 
-        # Показать модал редактирования
-        await interaction.response.send_modal(ProfileEditModal(self.guild_id, self.user_id))
+        view = ProfileSettingsView(self.guild_id, self.user_id)
+        try:
+            # Меню живёт на том же сообщении профиля — модалки потом
+            # смогут отредактировать именно его через interaction.message
+            await interaction.response.edit_message(
+                view=swap_view(interaction.message, view)
+            )
+        except Exception:
+            logger.exception("SettingsButton: failed to open settings menu")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Не удалось открыть настройки. Попробуйте ещё раз.",
+                    ephemeral=True
+                )
+
+
+class ProfileSettingsView(discord.ui.View):
+    """Меню настроек профиля: День рождения / Никнейм / Описание."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(timeout=180)
+        self.add_item(BirthdayButton(guild_id, user_id))
+        self.add_item(NicknameButton(guild_id, user_id))
+        self.add_item(DescriptionButton(guild_id, user_id))
+        self.add_item(BackToProfileButton(guild_id, user_id))
+
+
+class _SettingsFieldButton(discord.ui.Button):
+    """Базовая кнопка поля настроек."""
+
+    modal_cls = None
+
+    def __init__(self, guild_id: int, user_id: int, label: str):
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label=label,
+            custom_id=f"profile_field:{type(self).__name__}:{guild_id}:{user_id}"
+        )
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы можете настраивать только свой профиль."),
+                ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(self.modal_cls(self.guild_id, self.user_id))
+
+
+class BirthdayButton(_SettingsFieldButton):
+    modal_cls = None  # задаётся после объявления BirthdayModal
+
+
+class NicknameButton(_SettingsFieldButton):
+    modal_cls = None
+
+
+class DescriptionButton(_SettingsFieldButton):
+    modal_cls = None
+
+
+class BackToProfileButton(discord.ui.Button):
+    """Вернуться к обычному виду профиля."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label="Назад",
+            custom_id=f"profile_back:{guild_id}:{user_id}"
+        )
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Это не ваш профиль."),
+                ephemeral=True
+            )
+            return
+
+        from utils.profile_card import build_profile_embed
+
+        embed = await build_profile_embed(self.guild_id, interaction.user)
+        view = ProfileView(self.guild_id, self.user_id, True)
+        await interaction.response.edit_message(view=compose(embed, view))
+
+
+def _default_stats(guild_id: int, user_id: int, display_name: str):
+    from models.player_stats import PlayerStats
+    return PlayerStats(
+        guild_id=guild_id,
+        user_id=user_id,
+        name=display_name,
+        elo=1000,
+        wins=0,
+        finals=0,
+        games=0,
+        current_streak=0,
+        best_win_streak=0,
+        best_loss_streak=0,
+        total_kills=0,
+        total_deaths=0,
+        best_match_kills=0,
+        total_elo_change=0,
+        last_elo_change=0,
+        xp=0,
+        level=1,
+        xp_to_next_level=250,
+        total_earnings=0,
+        tournament_participations=0,
+        description=""
+    )
+
+
+async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, user_id: int, **fields) -> None:
+    """Сохранить поля профиля и перерисовать карточку на месте."""
+    stats = await player_stats_store.get(guild_id, user_id)
+    was_new_profile = stats is None
+
+    if not stats:
+        stats = _default_stats(guild_id, user_id, interaction.user.display_name)
+
+    for key, value in fields.items():
+        setattr(stats, key, value)
+
+    if was_new_profile:
+        await player_stats_store.set(stats)
+    else:
+        await player_stats_store.update(guild_id, user_id, stats)
+
+    from utils.profile_card import build_profile_embed
+
+    embed = await build_profile_embed(guild_id, interaction.user)
+    view = ProfileView(guild_id, user_id, True)
+    cv2_view = compose(embed, view)
+
+    try:
+        if interaction.message is not None:
+            await interaction.message.edit(view=cv2_view)
+            await interaction.response.send_message("✅ Профиль обновлён.", ephemeral=True)
+        else:
+            await interaction.response.send_message(view=cv2_view, ephemeral=True)
+    except Exception:
+        logger.exception("Profile modal: failed to update profile message")
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message(view=cv2_view, ephemeral=True)
+            except Exception:
+                pass
+
+
+class _ProfileFieldModal(discord.ui.Modal):
+    """Базовая модалка одного поля профиля."""
+
+    def __init__(self, guild_id: int, user_id: int, **kwargs):
+        super().__init__(**kwargs)
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        try:
+            await self._handle_submit(interaction)
+        except Exception:
+            logger.exception(f"{type(self).__name__}.on_submit failed")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Не удалось сохранить профиль. Попробуйте ещё раз.",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass
+
+    async def _handle_submit(self, interaction: discord.Interaction) -> None:
+        raise NotImplementedError
+
+
+class NicknameModal(_ProfileFieldModal, title="Никнейм"):
+    """Модалка смены никнейма."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(guild_id, user_id)
+        self.nickname = discord.ui.TextInput(
+            label="Никнейм",
+            placeholder="Введите ваш никнейм",
+            max_length=32,
+            required=False
+        )
+        self.add_item(self.nickname)
+
+    async def _handle_submit(self, interaction: discord.Interaction) -> None:
+        nickname = self.nickname.value.strip()
+        if nickname:
+            await _save_and_refresh(interaction, self.guild_id, self.user_id, name=nickname)
+        else:
+            await interaction.response.send_message(
+                "❌ Никнейм не может быть пустым.", ephemeral=True
+            )
+
+
+class DescriptionModal(_ProfileFieldModal, title="Описание"):
+    """Модалка смены описания."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(guild_id, user_id)
+        self.description = discord.ui.TextInput(
+            label="Описание",
+            placeholder="Введите описание профиля",
+            max_length=256,
+            style=discord.TextStyle.paragraph,
+            required=False
+        )
+        self.add_item(self.description)
+
+    async def _handle_submit(self, interaction: discord.Interaction) -> None:
+        await _save_and_refresh(
+            interaction, self.guild_id, self.user_id,
+            description=self.description.value
+        )
+
+
+class BirthdayModal(_ProfileFieldModal, title="День рождения"):
+    """Модалка установки дня рождения."""
+
+    def __init__(self, guild_id: int, user_id: int):
+        super().__init__(guild_id, user_id)
+        self.birthday = discord.ui.TextInput(
+            label="Дата (ДД.ММ.ГГГГ)",
+            placeholder="Например: 25.12.2004",
+            max_length=10,
+            required=False
+        )
+        self.add_item(self.birthday)
+
+    async def _handle_submit(self, interaction: discord.Interaction) -> None:
+        raw = self.birthday.value.strip()
+        if not raw:
+            await _save_and_refresh(
+                interaction, self.guild_id, self.user_id, birthday=""
+            )
+            return
+
+        normalized = self._parse_date(raw)
+        if not normalized:
+            await interaction.response.send_message(
+                "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например, 25.12.2004).",
+                ephemeral=True
+            )
+            return
+
+        await _save_and_refresh(
+            interaction, self.guild_id, self.user_id, birthday=normalized
+        )
+
+    @staticmethod
+    def _parse_date(raw: str) -> str | None:
+        for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(raw, fmt)
+                return dt.strftime("%d.%m.%Y")
+            except ValueError:
+                continue
+        return None
+
+
+# Привязка модалок к кнопкам меню (модалки объявлены ниже кнопок)
+BirthdayButton.modal_cls = BirthdayModal
+NicknameButton.modal_cls = NicknameModal
+DescriptionButton.modal_cls = DescriptionModal
 
 
 class ProfileEditButton(discord.ui.Button):
@@ -63,8 +334,7 @@ class ProfileEditButton(discord.ui.Button):
         self.user_id = user_id
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Показать модал для редактирования профиля."""
-        # Проверить, что это владелец профиля
+        """Открыть меню настроек профиля."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
                 replace_emojis("❌ Вы можете редактировать только свой профиль."),
@@ -72,117 +342,15 @@ class ProfileEditButton(discord.ui.Button):
             )
             return
 
-        await interaction.response.send_modal(ProfileEditModal(self.guild_id, self.user_id))
-
-
-class ProfileEditModal(discord.ui.Modal, title="Редактирование профиля"):
-    """Модал для редактирования ника и описания."""
-
-    def __init__(self, guild_id: int, user_id: int):
-        super().__init__()
-        self.guild_id = guild_id
-        self.user_id = user_id
-
-        self.nickname = discord.ui.TextInput(
-            label="Никнейм",
-            placeholder="Введите ваш никнейм",
-            max_length=32,
-            required=False
-        )
-
-        self.description = discord.ui.TextInput(
-            label="Описание",
-            placeholder="Введите описание профиля",
-            max_length=256,
-            style=discord.TextStyle.paragraph,
-            required=False
-        )
-
-        # Add items to modal
-        self.add_item(self.nickname)
-        self.add_item(self.description)
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        """Сохранить изменения профиля."""
+        view = ProfileSettingsView(self.guild_id, self.user_id)
         try:
-            await self._handle_submit(interaction)
-        except Exception:
-            logger.exception("ProfileEditModal.on_submit failed")
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ Не удалось сохранить профиль. Попробуйте ещё раз.",
-                        ephemeral=True
-                    )
-            except Exception:
-                pass
-
-    async def _handle_submit(self, interaction: discord.Interaction) -> None:
-        nickname = self.nickname.value
-        description = self.description.value
-
-        # Get current stats
-        stats = await player_stats_store.get(self.guild_id, self.user_id)
-        was_new_profile = stats is None
-
-        # Создать профиль если его нет
-        if not stats:
-            from models.player_stats import PlayerStats
-            stats = PlayerStats(
-                guild_id=self.guild_id,
-                user_id=self.user_id,
-                name=interaction.user.display_name,
-                elo=1000,
-                wins=0,
-                finals=0,
-                games=0,
-                current_streak=0,
-                best_win_streak=0,
-                best_loss_streak=0,
-                total_kills=0,
-                total_deaths=0,
-                best_match_kills=0,
-                total_elo_change=0,
-                last_elo_change=0,
-                xp=0,
-                level=1,
-                xp_to_next_level=250,
-                total_earnings=0,
-                tournament_participations=0,
-                description=""
+            await interaction.response.edit_message(
+                view=swap_view(interaction.message, view)
             )
-
-        # Update stats - always save the values
-        if nickname:
-            stats.name = nickname
-        stats.description = description  # Always save description (even if empty)
-        # Don't reset avatar_url - keep existing avatar
-
-        # Save stats (set for new profiles, update for existing)
-        if was_new_profile:
-            await player_stats_store.set(stats)
-        else:
-            await player_stats_store.update(self.guild_id, self.user_id, stats)
-
-        # Regenerate profile embed with updated data (same card as /player profile)
-        from utils.profile_card import build_profile_embed
-
-        embed = await build_profile_embed(self.guild_id, interaction.user)
-
-        # Update the original message with new embed and view
-        view = ProfileView(self.guild_id, self.user_id, True)
-        cv2_view = compose(embed, view)
-        try:
-            # Modal submit has no "original response" — edit the message the modal was opened from
-            if interaction.message is not None:
-                await interaction.message.edit(view=cv2_view)
-                await interaction.response.send_message("✅ Профиль обновлён.", ephemeral=True)
-            else:
-                await interaction.response.send_message(view=cv2_view, ephemeral=True)
         except Exception:
-            logger.exception("ProfileEditModal: failed to update profile message")
+            logger.exception("ProfileEditButton: failed to open settings menu")
             if not interaction.response.is_done():
-                try:
-                    await interaction.response.send_message(view=cv2_view, ephemeral=True)
-                except Exception:
-                    pass
+                await interaction.response.send_message(
+                    "❌ Не удалось открыть настройки. Попробуйте ещё раз.",
+                    ephemeral=True
+                )

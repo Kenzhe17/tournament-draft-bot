@@ -78,6 +78,17 @@ async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) ->
     # Build description
     description_parts = []
 
+    # Профиль (под заголовком)
+    spouse_id = getattr(stats, "spouse_id", 0) or 0
+    spouse_text = f"<@{spouse_id}>" if spouse_id else "—"
+    birthday = getattr(stats, "birthday", "") or "—"
+    reputation = getattr(stats, "reputation", 0) or 0
+    description_parts.append("**Профиль:**")
+    description_parts.append(f" Репутация: {reputation:,}")
+    description_parts.append(f" В браке с: {spouse_text}")
+    description_parts.append(f" День рождение: {birthday}")
+    description_parts.append("")
+
     # Прогресс
     description_parts.append("**Прогресс:**")
     description_parts.append(f" Ранг: {rank_title}")

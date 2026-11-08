@@ -103,107 +103,119 @@ class NextButton(discord.ui.Button):
                 await interaction.response.defer()
 
 
+_MATCH_TYPE_MAP = {
+    "qualifier": "Отборочный",
+    "semifinal": "Полуфинал",
+    "final": "Финал"
+}
+
+
+def _format_date(date) -> str:
+    """Discord-таймстамп — локализованная дата."""
+    if isinstance(date, str):
+        try:
+            date = datetime.fromisoformat(date)
+        except ValueError:
+            return date
+    if isinstance(date, datetime):
+        return f"<t:{int(date.timestamp())}:f>"
+    return str(date)
+
+
+def _match_type_text(match) -> str:
+    return _MATCH_TYPE_MAP.get(match.match_type, match.match_type)
+
+
+def _format_players(players: List[dict], user_id: int = None, user_name: str = None) -> str:
+    """Список игроков вида name `K/D`, свой игрок выделен жирным."""
+    if not players:
+        return "Нет данных"
+    formatted = []
+    for p in players:
+        name = p.get('name', 'Unknown')
+        kills = p.get('kills', 0)
+        deaths = p.get('deaths', 0)
+        is_viewer = False
+        if user_id and 'user_id' in p and p.get('user_id') == user_id:
+            is_viewer = True
+        elif user_name and name.lower() == user_name.lower():
+            is_viewer = True
+
+        if is_viewer:
+            formatted.append(f"**{name}** `({kills}/{deaths})`")
+        else:
+            formatted.append(f"{name} `({kills}/{deaths})`")
+    return ", ".join(formatted)
+
+
 def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory], stats: dict, page: int = 0, user_name: str = "", limit: int = 10) -> discord.Embed:
     """Создать embed для истории матчей."""
 
-    # Форматирование даты
-    def format_date(date: datetime) -> str:
-        if isinstance(date, str):
-            date = datetime.fromisoformat(date)
-        return date.strftime("%d.%m.%Y %H:%M")
+    def _result_line(match: MatchHistory) -> str:
+        icon = "✅" if match.result == "win" else "❌"
+        return f"{icon} {_match_type_text(match)} — {match.team_name} vs {match.opponent_team_name} • {match.kills}/{match.deaths} K/D • ELO {match.elo_change:+d} • {_format_date(match.date)}"
 
-    # Форматирование списка игроков с Kill/Death
-    def format_players(players: List[dict], user_id: int = None, user_name: str = None) -> str:
-        if not players:
-            return "Нет данных"
-        formatted = []
-        for p in players:
-            name = p.get('name', 'Unknown')
-            kills = p.get('kills', 0)
-            deaths = p.get('deaths', 0)
-            # Если это просматриваемый игрок, выделяем его стату
-            # Сначала проверяем по user_id, если есть и совпадает
-            # Затем проверяем по имени (для старых записей)
-            is_viewer = False
-            if user_id and 'user_id' in p and p.get('user_id') == user_id:
-                is_viewer = True
-            elif user_name and name.lower() == user_name.lower():
-                is_viewer = True
-
-            if is_viewer:
-                formatted.append(f"**{name}** `({kills}/{deaths})`")
-            else:
-                formatted.append(f"{name} `({kills}/{deaths})`")
-        return ", ".join(formatted)
-
-    # Если это первая страница (index 0), показываем статистику
+    # Первая страница — сводка + последние результаты
     if page == 0:
-        description_parts = [f"Статистика за последние {limit} матчей:\n"]
+        total = stats.get('total_matches', 0)
+        wins = stats.get('wins', 0)
+        losses = stats.get('losses', 0)
+        win_rate = stats.get('win_rate', 0.0)
 
-        # Общая статистика
-        description_parts.append(f"{replace_emojis('•')} **Общая статистика:**")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Матчей: {stats['total_matches']}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Побед: {stats['wins']} | Поражений: {stats['losses']}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} Винрейт: {stats['win_rate']:.1f}%")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} K/D/A: {stats['total_kills']}/{stats['total_deaths']}/{stats.get('total_assists', 0)}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} K+A/D: {stats.get('kda_ratio', stats['kd_ratio']):.2f}")
-        description_parts.append(f"{replace_emojis('a_dot_smaller')} AVG DMG: {stats.get('avg_damage', 0):,.0f}")
-        description_parts.append("")
+        parts = ["**Сводка**"]
+        parts.append(f" Матчей: {total} • Побед: {wins} `({win_rate:.1f}%)` • Поражений: {losses}")
+        parts.append(f" K/D/A: {stats.get('total_kills', 0)}/{stats.get('total_deaths', 0)}/{stats.get('total_assists', 0)}")
+        parts.append(f" K+A/D: {stats.get('kda_ratio', stats.get('kd_ratio', 0)):.2f} • Средний урон: {stats.get('avg_damage', 0):,.0f}")
+        parts.append(f" Всего урона: {stats.get('total_damage', 0):,.0f}")
 
-        if not matches:
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
+        if matches:
+            parts.append("")
+            parts.append("**Последние результаты**")
+            for m in matches[:5]:
+                parts.append(f" {_result_line(m)}")
+        else:
+            parts.append("")
+            parts.append(" Ещё не играл в турниры")
 
         title = f" ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
         embed = discord.Embed(
             title=title,
-            description="\n".join(description_parts),
+            description="\n".join(parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
     else:
-        # Показываем конкретный матч (page - 1 = индекс в списке, так как page 0 это статистика)
+        # Конкретный матч (page - 1 = индекс, page 0 — статистика)
         match_index = page - 1
         if match_index < len(matches):
             match = matches[match_index]
+            won = match.result == "win"
+            result_text = "Победа" if won else "Поражение"
 
-            description_parts = []
+            parts = [
+                f"**{_match_type_text(match)}**",
+                f" {_format_date(match.date)}",
+                "",
+                f"**{match.team_name} vs {match.opponent_team_name}**",
+                f" {('✅' if won else '❌')} {result_text} • ELO {match.elo_change:+d}",
+                "",
+                "**Ваша статистика**",
+                f" K/D/A: {match.kills}/{match.deaths}/{match.assists}",
+                f" Урон: {match.damage:,.0f}",
+                "",
+                f"**Союзники ({match.team_name})**",
+                f" {_format_players(match.teammates, user_id, user_name)}",
+                "",
+                f"**Противники ({match.opponent_team_name})**",
+                f" {_format_players(match.opponents, user_id, user_name)}",
+            ]
 
-            # Тип матча
-            match_type_map = {
-                "qualifier": "Отбор",
-                "semifinal": "Полуфинал",
-                "final": "Финал"
-            }
-            match_type_text = match_type_map.get(match.match_type, match.match_type)
-
-            description_parts.append(f"{replace_emojis('•')} **Тип матча:** {match_type_text}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Время: {format_date(match.date)}")
-            description_parts.append("")
-
-            # Команда игрока
-            description_parts.append(f"{replace_emojis('•')} **Ваша команда ({match.team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.teammates, user_id, user_name)}")
-            description_parts.append("")
-
-            # Противники
-            description_parts.append(f"{replace_emojis('•')} **Противники ({match.opponent_team_name}):**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} {format_players(match.opponents, user_id, user_name)}")
-            description_parts.append("")
-
-            # Статистика игрока
-            result_text = "Победа" if match.result == "win" else "Поражение"
-
-            description_parts.append(f"{replace_emojis('•')} **Ваша статистика:**")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Kill/Death: {match.kills}/{match.deaths}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} Результат: {result_text}")
-            description_parts.append(f"{replace_emojis('a_dot_smaller')} ELO: {match.elo_change:+d}")
-
-            # Ставки если есть
             if match.bet_amount > 0:
-                description_parts.append(f"{replace_emojis('a_dot_smaller')} Ставка: {match.bet_amount} → {match.bet_win} {get_emoji('money')}")
+                parts.append("")
+                parts.append(f" **Ставка:** {match.bet_amount} {get_emoji('money')} → {match.bet_win} {get_emoji('money')}")
 
             embed = discord.Embed(
                 title=f" ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
-                description="\n".join(description_parts),
+                description="\n".join(parts),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
         else:

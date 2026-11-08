@@ -54,11 +54,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id FROM player_stats WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", ""))
+                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", ""), reputation=row.get("reputation", 0), birthday=row.get("birthday", "") or "", spouse_id=row.get("spouse_id", 0) or 0)
                 return None
         else:
             key = f"{guild_id}:{user_id}"
@@ -71,10 +71,10 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date FROM player_stats WHERE guild_id = $1",
+                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id FROM player_stats WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", "")) for row in rows]
+                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", ""), reputation=row.get("reputation", 0), birthday=row.get("birthday", "") or "", spouse_id=row.get("spouse_id", 0) or 0) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 
@@ -86,12 +86,12 @@ class PlayerStatsStore:
             async with pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+                    INSERT INTO player_stats (guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, total_assists = $13, total_damage = $14, best_match_kills = $15, total_elo_change = $16, last_elo_change = $17, xp = $18, level = $19, xp_to_next_level = $20, total_earnings = $21, tournament_participations = $22, description = $23, daily_tournament_coins = $24, daily_coins_date = $25
+                    DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, total_assists = $13, total_damage = $14, best_match_kills = $15, total_elo_change = $16, last_elo_change = $17, xp = $18, level = $19, xp_to_next_level = $20, total_earnings = $21, tournament_participations = $22, description = $23, daily_tournament_coins = $24, daily_coins_date = $25, reputation = $26, birthday = $27, spouse_id = $28
                     """,
-                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.total_assists, stats.total_damage, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date
+                    stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.total_assists, stats.total_damage, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
                 )
         else:
             key = f"{stats.guild_id}:{stats.user_id}"
@@ -108,11 +108,15 @@ class PlayerStatsStore:
                     """UPDATE player_stats SET
                     name = $1,
                     description = $2,
-                    avatar_url = $3
-                    WHERE guild_id = $4 AND user_id = $5""",
+                    avatar_url = $3,
+                    birthday = $4,
+                    spouse_id = $5
+                    WHERE guild_id = $6 AND user_id = $7""",
                     stats.name,
                     stats.description,
                     stats.avatar_url,
+                    stats.birthday,
+                    stats.spouse_id,
                     guild_id,
                     user_id
                 )
