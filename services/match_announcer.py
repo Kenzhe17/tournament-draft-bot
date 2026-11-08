@@ -429,12 +429,12 @@ async def announce_phase_matches(
                     number, channel.id, label,
                 )
             elif fallback_channel is not None:
-                await fallback_channel.send(embed)
+                await fallback_channel.send(embed=embed)
             else:
                 # MM без канала (нет прав/категории) — fallback в результаты
                 result_ch = await _result_channel(guild, None)
                 if result_ch is not None:
-                    await result_ch.send(embed)
+                    await result_ch.send(embed=embed)
 
             await match_number_store.mark_announced(key)
             logger.info(

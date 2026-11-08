@@ -97,6 +97,10 @@ REP_ONE_MANUAL_REP_PER_PAIR = os.getenv("REP_ONE_MANUAL_REP_PER_PAIR", "true").l
 REP_LOG_CHANNEL_ID = int(os.getenv("REP_LOG_CHANNEL_ID", "1569034686691414172"))
 REP_LOG_CHANNEL_NAME = os.getenv("REP_LOG_CHANNEL_NAME", "репутация-логи")
 
+# Информационный центр: канал по умолчанию для /info publish
+# (если 0 — ищется канал с именем info/информация или задаётся параметром)
+INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "0"))
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка
