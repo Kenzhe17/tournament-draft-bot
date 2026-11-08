@@ -1,13 +1,12 @@
-"""Мета-информация команд: author (/cmd + эмодзи), аватар игрока, footer.
+"""Мета-информация команд: аватар игрока, footer.
 
 ContextVar заполняется обёрткой вокруг callback'ов slash-команд
 (см. install_command_meta в bot.py). Все send/edit-вызовы внутри
 команды автоматически получают:
 
-- author-строку «/command» с эмодзи команды в начало V2-карточки
 - аватар игрока как thumbnail, если у карточки его ещё нет
 - footer «powered by <бот> • <время>»
-- author + thumbnail + footer на классических Embed
+- thumbnail + footer на классических Embed
 - убирает хвост «| /command» из title embed'а
 
 Component-callback'и (кнопки/select) выполняются вне контекста
@@ -240,11 +239,6 @@ def _iter_texts(item) -> list[str]:
     return []
 
 
-def _author_item(meta: dict) -> discord.ui.Item:
-    return discord.ui.TextDisplay(
-        content=f"-# {meta.get('emoji') or ''} {meta['name']}".replace("  "," ").strip()
-    )
-
 
 def _footer_item(meta: dict) -> discord.ui.Item:
     text = f"-# powered by {meta['bot_name']}"
@@ -263,17 +257,6 @@ def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
 
     # 1) Author-строка «/command» в самое начало контейнера
     children = container._children
-    already_author = any(
-        _is_author_text(t, meta)
-        for child in list(children)
-        for t in _iter_texts(child)
-    )
-    if not already_author:
-        author = _author_item(meta)
-        container.add_item(author)
-        children = container._children
-        children.remove(author)
-        children.insert(0, author)
 
     # 2) Аватар игрока — на первый текстовый блок без своей картинки
     avatar = meta.get("user_avatar")
@@ -321,11 +304,7 @@ def _inject_embed(embed: discord.Embed, meta: dict) -> None:
         from utils.design.adapter import strip_title_command
         embed.title = strip_title_command(embed.title)
 
-    # Author: команда + её эмодзи (без иконки — аватар только у игрока)
-    author_name = f"{meta.get('emoji') or ''} {meta['name']}".replace("  "," ").strip()
-    embed.set_author(name=author_name)
-
-    # Footer: powered by <бот> • <время>, иконка — аватар бота
+    # Footer: powered by <бот> • <время>
     footer_text = f"powered by {meta['bot_name']}"
     if meta.get("timestamp"):
         footer_text += f" • <t:{meta['timestamp']}:f>"
