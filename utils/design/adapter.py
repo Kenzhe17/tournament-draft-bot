@@ -507,7 +507,12 @@ def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
             continue
         if not isinstance(item, discord.ui.Button):
             continue
-        if auto_row is None or auto_count >= 5:
+        if auto_row is None:
+            auto_row = discord.ui.ActionRow()
+            auto_count = 0
+        elif auto_count >= 5:
+            # Предыдущий ряд заполнен — сохраняем его, иначе теряется
+            rows.append(auto_row)
             auto_row = discord.ui.ActionRow()
             auto_count = 0
         auto_row.add_item(item)
