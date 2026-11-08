@@ -1,10 +1,10 @@
 """Рендерер графической карточки профиля 1920x1080 (Player Profile).
 
-Использует чистый template PNG как подложку. Новый template не содержит
-плейсхолдеров значений — текст рисуется напрямую; зоны с оставшимися
-плейсхолдерами ([STATUS], [LEVEL], «?», [HISTORY_START] и т.п.)
-восстанавливаются через cv2.inpaint.
-Координаты измерены по riz3_player_profile_template 1.png (OCR + анализ).
+Использует чистый template PNG как подложку. Плейсхолдеры в template
+помечены метками вида [USERNAME], [BIO], [ELO], [REP] и т.п. —
+каждая метка затирается через cv2.inpaint, значение рисуется по
+координатам, измеренным по riz3_player_profile_template 1.png
+(OCR + pixel-diff против example).
 """
 
 from __future__ import annotations
@@ -99,144 +99,168 @@ def _fit_text(draw, s: str, max_w: int, size: int, bold=False,
     return s, size
 
 
+def _delta_style(delta: int) -> tuple[str, tuple]:
+    """(строка, цвет) для изменения ELO: + зелёный, − красный, 0 — muted."""
+    if delta > 0:
+        return f"+{delta}", C_GREEN
+    if delta < 0:
+        return f"−{abs(delta)}", C_DELTA_NEG
+    return "+0", C_MUTED
+
+
 def render_profile_png(data: dict, avatar_png: bytes | None = None,
                        badge_png: bytes | None = None) -> bytes:
     """Синхронный рендер. data — словарь со всеми значениями."""
+    from utils.ranks import RANKS
+
     img = _base()
     draw = ImageDraw.Draw(img)
 
-    # Шапка справа («PROFILE STATUS» / «ACTIVE PLAYER») — статичный текст
-    # нового template, не трогаем
+    # ============ ШАПКА ============
+    # «PROFILE STATUS» — слот статуса справа вверху (в template «TEMPLATE»)
+    _inpaint(img, (1490, 90, 1730, 128), radius=4)
+    _text(draw, (1500, 121), "ACTIVE PLAYER", 24, C_SOFT)
 
     # ============ ВЕРХНЯЯ ПАНЕЛЬ ============
-    # Никнейм (пустой слот — рисуем напрямую)
+    # [USERNAME] — крупный ник
+    _inpaint(img, (338, 293, 710, 362), radius=6)
     name = data.get("name") or "Игрок"
-    nstr, nsize = _fit_text(draw, name, 720, 60, min_size=26)
-    _text(draw, (346, 348), nstr, nsize, C_TEXT)
+    nstr, nsize = _fit_text(draw, name, 480, 58, min_size=24)
+    _text(draw, (346, 352), nstr, nsize, C_TEXT)
 
-    # Статус — в шаблоне «СТАТУС: » + пустой слот
-    _inpaint(img, (335, 358, 820, 396), radius=4)
-    status = f"СТАТУС: {data.get('status') or 'ок'}"
-    sstr, ssize = _fit_text(draw, status, 460, 20, min_size=12)
-    _text(draw, (350, 384), sstr, ssize, C_SOFT)
+    # «SVO: [BIO]» — статичный префикс в template, слот — только значение
+    _inpaint(img, (396, 355, 900, 398), radius=4)
+    bio = str(data.get("status") or data.get("bio") or "ок")
+    bstr, bsize = _fit_text(draw, bio, 430, 22, min_size=13)
+    _text(draw, (410, 386), bstr, bsize, C_SOFT)
 
-    # Ранг — пустой слот
-    _text(draw, (439, 442), (data.get("rank_name") or "BRONZE").upper(),
-          20, C_VIOLET, anchor="ms")
+    # [ELO] — крупное число по центру ~(916, 358)
+    _inpaint(img, (825, 288, 1010, 372), radius=6)
+    elo_str = _fmt(data.get("elo", 1000))
+    elo_size = 84
+    while (elo_size > 40
+           and draw.textlength(elo_str, font=_font(elo_size)) > 178):
+        elo_size -= 4
+    _text(draw, (916, 360), elo_str, elo_size, C_TEXT, anchor="ms")
 
-    # Прогрессия ранга — в шаблоне литерал «BRONZE→LEGEND», в example
-    # динамическое значение. Рисуем «CURRENT → NEXT» (для Legend — MAX)
-    from utils.ranks import RANKS
-    lvl = int(data.get("level") or 1)
-    cur_rank = (data.get("rank_name") or "Bronze").upper()
+    # [Δ ELO] — изменение под основным ELO (зелёный/красный)
+    _inpaint(img, (845, 380, 955, 420), radius=4)
+    d_str, d_color = _delta_style(int(data.get("last_elo_change") or 0))
+    _text(draw, (868, 413), d_str, 26, d_color)
+
+    # [SR] — Skill Rating
+    _inpaint(img, (1240, 300, 1420, 356), radius=4)
+    sr = float(data.get("skill_rating", 0.0) or 0.0)
+    _text(draw, (1250, 348), f"{sr:.1f} / 10.0", 36, C_TEXT)
+
+    # LEVEL [LEVEL]
+    _inpaint(img, (1240, 398, 1420, 438), radius=4)
+    level = int(data.get("level") or 1)
+    _text(draw, (1250, 430), f"LEVEL {level}", 22, C_SOFT)
+
+    # [RANK] — название ранга
+    _inpaint(img, (378, 412, 510, 458), radius=4)
+    rank_name = (data.get("rank_name") or "Bronze").upper()
+    rstr, rsize = _fit_text(draw, rank_name, 115, 22, min_size=14)
+    _text(draw, (390, 447), rstr, rsize, C_VIOLET)
+
+    # «BRONZE→LEGEND» — слот прогрессии: текущий → следующий ранг
+    cur_rank = None
     next_rank = None
     for i, (rname, min_lvl, _) in enumerate(RANKS):
-        if lvl >= min_lvl:
+        if level >= min_lvl:
+            cur_rank = rname.upper()
             if i + 1 < len(RANKS):
                 next_rank = RANKS[i + 1][0].upper()
         else:
             break
+    cur_rank = cur_rank or rank_name
     tier_str = f"{cur_rank} → {next_rank}" if next_rank else "MAX TIER"
-    _inpaint(img, (530, 418, 700, 452), radius=4)
-    tier_str, tier_size = _fit_text(draw, tier_str, 190, 17, min_size=11)
-    _text(draw, (540, 443), tier_str, tier_size, C_MUTED)
+    _inpaint(img, (535, 418, 720, 458), radius=4)
+    tstr, tsize = _fit_text(draw, tier_str, 175, 16, min_size=11)
+    _text(draw, (547, 443), tstr, tsize, C_MUTED)
 
-    # RANKED ELO — крупное число; под ним в шаблоне статичная подпись
-    # «ПОСЛЕДНИХ МАТЧЕЙ», в example она затёрта — удаляем зону и рисуем ELO
-    _inpaint(img, (960, 385, 1140, 428), radius=6)
-    elo_str = _fmt(data.get("elo", 1000))
-    _text(draw, (993, 406), elo_str, 100, C_TEXT, anchor="ms")
-
-    # Последнее изменение ELO сразу справа от текущего значения:
-    # плюс — зелёный, минус — красный, ноль — приглушённый
-    last_d = int(data.get("last_elo_change") or 0)
-    if last_d > 0:
-        d_str, d_color = f"+{last_d}", C_GREEN
-    elif last_d < 0:
-        d_str, d_color = f"−{abs(last_d)}", C_DELTA_NEG
-    else:
-        d_str, d_color = "+0", C_MUTED
-    elo_w = draw.textlength(elo_str, font=_font(100))
-    delta_x = min(993 + elo_w / 2 + 14, 1240)
-    _text(draw, (delta_x, 410), d_str, 34, d_color, anchor="lm")
-
-    # Skill Rating — пустой слот
-    sr = data.get("skill_rating", 0.0)
-    _text(draw, (1250, 344), f"{sr:.1f}/ 10.0", 37, C_TEXT)
-
-    # LEVEL — «LEVEL [LEVEL]»
-    _inpaint(img, (1235, 400, 1480, 438), radius=4)
-    _text(draw, (1252, 425), f"LEVEL {data.get('level', 1)}", 22, C_SOFT)
-
-    # Бейдж ранга — плейсхолдер «?»
-    _inpaint(img, (1690, 295, 1790, 350), radius=6)
+    # Бейдж ранга: «?» + следующий ранг над лейблом + [TIER] под ним
+    _inpaint(img, (1700, 288, 1760, 330), radius=6)
+    _inpaint(img, (1660, 388, 1800, 414), radius=4)
+    _text(draw, (1732, 406), next_rank or "MAX", 13, C_MUTED, anchor="ms")
+    _inpaint(img, (1670, 420, 1800, 460), radius=4)
+    _text(draw, (1732, 448), rank_name, 19, C_VIOLET, anchor="ms")
     if badge_png:
         try:
             badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
-            badge.thumbnail((190, 190), Image.LANCZOS)
+            badge.thumbnail((88, 124), Image.LANCZOS)
             img.paste(badge, (1734 - badge.width // 2,
-                              325 - badge.height // 2), badge)
+                              332 - badge.height // 2), badge)
         except Exception:
             logger.warning("Rank badge paste failed")
-    # «RANK BADGE» — статичный лейбл шаблона, оставляем
-    _text(draw, (1732, 447), (data.get("rank_name") or "").upper(),
-          20, C_VIOLET, anchor="ms")
 
     # ============ БИТВА ОТРЯДОВ ============
-    # Колонка «ПОБЕД» убрана: W/L выводится единым блоком внизу карточки
-    _inpaint(img, (368, 600, 580, 635), radius=4)
-    # Значения — left-aligned по x лейблов, пустые слоты
-    squad_cols = [
-        (109, _fmt(data.get("matches", 0))),
-        (670, f"{data.get('winrate', 0.0):.1f}%"),
-        (950.5, f"{data.get('kda', 0.0):.2f}"),
-    ]
-    squad_cols2 = [
-        (109, f"{data.get('avg_kills', 0.0):.2f}"),
-        (389.5, _fmt(data.get("avg_damage", 0))),
-        (670, _fmt(data.get("max_kills", 0))),
-        (950.5, f"{sr:.1f}/10"),
-    ]
-    for cx, val in squad_cols:
-        color = C_VIOLET if cx == 950.5 else C_TEXT
-        _text(draw, (cx, 663), val, 30, color)
-    for cx, val in squad_cols2:
-        color = C_VIOLET if cx == 950.5 else C_TEXT
-        _text(draw, (cx, 756), val, 30, color)
+    # Ряд 1: МАТЧИ / ПОБЕДЫ / WINRATE / KDA — пустые слоты
+    _text(draw, (105, 668), _fmt(data.get("matches", 0)), 32, C_TEXT)
+    _text(draw, (386, 668), _fmt(data.get("wins", 0)), 32, C_TEXT)
+    _text(draw, (668, 668), f"{data.get('winrate', 0.0):.1f}%",
+          32, C_TEXT)
+    _text(draw, (947, 668), f"{data.get('kda', 0.0):.2f}", 32, C_VIOLET)
 
-    # ============ ЭКОНОМИКА ============
-    _text(draw, (1377, 624), _fmt(data.get("balance", 0)), 31, C_TEXT)
-    _text(draw, (1666, 633), f"{_fmt(data.get('items', 0))} шт.", 22, C_TEXT)
+    # БАЛАНС / ПРЕДМЕТОВ — значения в одной строке с лейблами
+    _inpaint(img, (1330, 596, 1490, 634), radius=4)
+    _text(draw, (1345, 627), _fmt(data.get("balance", 0)), 26, C_TEXT)
+    _inpaint(img, (1625, 596, 1740, 634), radius=4)
+    items_str, isize = _fit_text(
+        draw, f"{_fmt(data.get('items', 0))} шт.", 100, 22, min_size=14)
+    _text(draw, (1638, 627), items_str, isize, C_TEXT)
+
+    # Ряд 2: AVG KILLS / AVG DAMAGE / MAX KILLS / SKILL RATING
+    _text(draw, (104, 762), f"{data.get('avg_kills', 0.0):.2f}",
+          30, C_TEXT)
+    _text(draw, (387, 762), _fmt(data.get("avg_damage", 0)), 30, C_TEXT)
+    _text(draw, (667, 762), _fmt(data.get("max_kills", 0)), 30, C_TEXT)
+    _text(draw, (949, 762), f"{sr:.1f}/10", 30, C_VIOLET)
 
     # ============ О СЕБЕ ============
-    about = [
-        (1273, str(data.get("reputation", 0)), C_TEXT, 1445),
-        (1460, str(data.get("partner") or "—"), C_SOFT, 1620),
-        (1655, str(data.get("birthday") or "—"), C_TEXT, 1880),
-    ]
-    for x, val, color, x2 in about:
-        vstr, vsize = _fit_text(draw, val, x2 - x - 10, 19, min_size=12)
-        _text(draw, (x, 779), vstr, vsize, color)
+    _inpaint(img, (1265, 755, 1340, 792), radius=4)
+    _text(draw, (1274, 783), str(data.get("reputation", 0)), 20, C_TEXT)
+    _inpaint(img, (1450, 755, 1580, 792), radius=4)
+    pstr, psize = _fit_text(
+        draw, str(data.get("partner") or "—"), 280, 20, min_size=12)
+    _text(draw, (1461, 783), pstr, psize, C_SOFT)
+    _inpaint(img, (1645, 755, 1785, 792), radius=4)
+    bstr2, bsize2 = _fit_text(
+        draw, str(data.get("birthday") or "—"), 290, 20, min_size=12)
+    _text(draw, (1655, 783), bstr2, bsize2, C_TEXT)
 
     # ============ ДИНАМИКА ELO ============
-    # «ПОСЛЕДНИЕ N МАТЧЕЙ» — в шаблоне с литеральной N, перерисовываем
-    _inpaint(img, (105, 875, 300, 900), radius=4)
-    _text(draw, (114, 890),
+    # Левая колонка: W/L блок («ПОСЛЕДНИЕ N МАТЧЕЙ» в template — слот)
+    _inpaint(img, (105, 866, 560, 902), radius=4)
+    _text(draw, (112, 893), "ПОБЕДЫ / ПОРАЖЕНИЯ", 15, C_MUTED)
+
+    _inpaint(img, (105, 905, 270, 985), radius=4)
+    hist_w = int(data.get("hist_wins", 0) or 0)
+    hist_l = int(data.get("hist_losses", 0) or 0)
+    _text(draw, (120, 952), f"{hist_w} / {hist_l}", 40, C_TEXT)
+
+    _inpaint(img, (95, 985, 280, 1022), radius=4)
+    _text(draw, (105, 1011),
           f"ПОСЛЕДНИЕ {data.get('hist_count', 0)} МАТЧЕЙ", 13, C_MUTED)
 
-    # Область графика: убираем декоративную диагональ и возможные
-    # плейсхолдеры, затем рисуем свой график
-    _inpaint(img, (350, 905, 1200, 1002), radius=8)
+    # [Δ ELO] — суммарная дельта графика (справа от графика)
+    total_delta = int(data.get("chart_delta", 0) or 0)
+    if total_delta > 0:
+        td_str, td_color = f"+{total_delta} ELO", C_GREEN
+    elif total_delta < 0:
+        td_str, td_color = f"−{abs(total_delta)} ELO", C_DELTA_NEG
+    else:
+        td_str, td_color = "+0 ELO", C_MUTED
+    _inpaint(img, (1030, 838, 1150, 884), radius=4)
+    _text(draw, (1040, 876), td_str, 22, td_color)
+
+    # Область графика
+    _inpaint(img, (355, 895, 1225, 1000), radius=8)
     draw = ImageDraw.Draw(img)
 
-    total_delta = data.get("chart_delta", 0)
-    td_color = C_GREEN if total_delta >= 0 else C_DELTA_NEG
-    tdsign = "+" if total_delta >= 0 else "−"
-    _text(draw, (1135, 868), f"{tdsign}{abs(total_delta)} ELO", 20,
-          td_color, anchor="rs")
-
     hist = data.get("elo_history") or []  # хронологический список дельт
-    px0, px1, py0, py1 = 400, 1140, 935, 985
+    px0, px1, py0, py1 = 385, 1170, 918, 984
     if hist:
         cum = []
         s = 0
@@ -271,43 +295,34 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         _text(draw, ((px0 + px1) / 2, (py0 + py1) / 2), "НЕТ ДАННЫХ",
               20, C_MUTED, anchor="ms")
 
-    # W/L блок — единственное отображение побед/поражений, поднято выше;
-    # шаблонный текст «ПОБЕДЫ ПОРАЖЕНИЯ» и [HISTORY_START] затираем inpaint
-    _inpaint(img, (105, 988, 620, 1032), radius=4)
+    # Подписи оси — [HISTORY_START] / [CURRENT_ELO]
+    _inpaint(img, (370, 998, 620, 1032), radius=4)
+    _inpaint(img, (1050, 998, 1200, 1032), radius=4)
     draw = ImageDraw.Draw(img)
-    _text(draw, (114, 916), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
-    _text(draw, (114, 943),
-          f"{data.get('hist_wins', 0)} / {data.get('hist_losses', 0)}",
-          33, C_TEXT)
-    _text(draw, (114, 982),
-          f"{data.get('hist_count', 0)} записей в истории", 13, C_MUTED)
-
-    # Подписи оси — плейсхолдеры [HISTORY_START] / [CURRENT_ELO]
-    _inpaint(img, (370, 1000, 620, 1030), radius=4)
-    _inpaint(img, (1050, 1000, 1200, 1030), radius=4)
-    draw = ImageDraw.Draw(img)
-    _text(draw, (378, 1018),
+    _text(draw, (380, 1022),
           f"НАЧАЛО: {_fmt(data.get('hist_start_elo', data.get('elo', 1000)))}",
-          13, C_MUTED)
-    _text(draw, (1171, 1018), f"СЕЙЧАС: {_fmt(data.get('elo', 1000))}",
-          13, C_MUTED, anchor="rs")
+          14, C_MUTED)
+    _text(draw, (1175, 1022), f"СЕЙЧАС: {_fmt(data.get('elo', 1000))}",
+          14, C_MUTED, anchor="rs")
 
-    # ============ УЛЬТИМАТУМ ============
-    # Значения — пустые слоты
-    ult = [
-        (1273, _fmt(data.get("ult_matches", 0))),
-        (1444, _fmt(data.get("ult_wins", 0))),
-        (1621, _fmt(data.get("ult_elo", 1000))),
-    ]
-    for x, val in ult:
-        _text(draw, (x, 961), val, 33, C_TEXT)
+    # ============ ULTIMATUM ============
+    _inpaint(img, (1268, 930, 1440, 972), radius=4)
+    _text(draw, (1278, 966), _fmt(data.get("ult_matches", 0)), 30, C_TEXT)
+    _inpaint(img, (1438, 930, 1545, 972), radius=4)
+    _text(draw, (1448, 966), _fmt(data.get("ult_wins", 0)), 30, C_TEXT)
+    _inpaint(img, (1610, 930, 1730, 972), radius=4)
+    _text(draw, (1626, 966), _fmt(data.get("ult_elo", 1000)), 30, C_TEXT)
+
     # [ULTIMATUM_STATUS]
-    _inpaint(img, (1260, 998, 1470, 1030), radius=4)
+    _inpaint(img, (1265, 996, 1520, 1032), radius=4)
     draw = ImageDraw.Draw(img)
-    _text(draw, (1274, 1020),
-          data.get("ult_status") or "Пока нет сыгранных матчей", 16, C_MUTED)
+    ust, usize = _fit_text(
+        draw, data.get("ult_status") or "Пока нет сыгранных матчей",
+        500, 17, min_size=12)
+    _text(draw, (1276, 1024), ust, usize, C_MUTED)
 
     # ============ АВАТАР ============
+    # Слот — круг ~(209, 354) диаметром ~228 (в example помечен AVATAR SLOT)
     if avatar_png:
         try:
             av = Image.open(io.BytesIO(avatar_png)).convert("RGBA")
@@ -315,10 +330,10 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
             side = min(w, h)
             av = av.crop(((w - side) // 2, (h - side) // 2,
                           (w + side) // 2, (h + side) // 2))
-            av = av.resize((214, 214), Image.LANCZOS)
-            mask = Image.new("L", (214, 214), 0)
-            ImageDraw.Draw(mask).ellipse([0, 0, 213, 213], fill=255)
-            img.paste(av, (102, 247), mask)
+            av = av.resize((228, 228), Image.LANCZOS)
+            mask = Image.new("L", (228, 228), 0)
+            ImageDraw.Draw(mask).ellipse([0, 0, 227, 227], fill=255)
+            img.paste(av, (95, 240), mask)
         except Exception:
             logger.warning("Avatar paste failed")
 
