@@ -42,6 +42,9 @@ tag_group = app_commands.Group(
 info_group = app_commands.Group(
     name="info", description="Информационный центр сервера (только для админов)"
 )
+banner_group = app_commands.Group(
+    name="banner", description="Дневной баннер сервера (только для админов)"
+)
 
 # Группы, регистрируемые в корне дерева (bot.py)
 ROOT_GROUPS = (
@@ -54,6 +57,7 @@ ROOT_GROUPS = (
     reputation_group,
     tag_group,
     info_group,
+    banner_group,
 )
 
 
