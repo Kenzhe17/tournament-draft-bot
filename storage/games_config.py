@@ -29,42 +29,25 @@ CATEGORIES = {
     "luck": {
         "emoji": "🎲",
         "name": "Игры на удачу",
-        "description": "Быстрые игры на риск: подбрасывайте монеты, бросайте кубики, играйте в бутылочку, КНБ и испытывайте фортуну.",
+        "description": "Быстрые игры на риск: подбрасывайте монеты, бросайте кубики и угадывайте числа.",
         "color": 0x00008B  # dark_blue
     },
     "quiz": {
         "emoji": "🧠",
         "name": "Викторины и головоломки",
-        "description": "Проверьте эрудицию и скорость мысли: решайте математические примеры и стройте словесные цепочки.",
+        "description": "Проверьте эрудицию и скорость мысли: решайте математические примеры.",
         "color": 0x4B0082  # dark_purple
     },
     "casino": {
         "emoji": "🎰",
         "name": "Казино и ставки",
-        "description": "Азартные игры с коэффициентами: крутите рулетку, слоты, играйте в баккару, лотерею, High-Low и Тройной шанс.",
+        "description": "Азартные игры с коэффициентами: рулетка и High-Low.",
         "color": 0x006400  # dark_green
     },
 }
 
-# Игры на удачу (8 игр)
+# Игры на удачу (3 игры)
 LUCK_GAMES = [
-    GameConfig(
-        id="rps",
-        name="Камень-Ножницы-Бумага",
-        emoji="✂️",
-        command="rps",
-        status="ready",
-        short_description="Классическая дуэль против бота или игрока.",
-        description="Классическая игра на выбывание против бота или другого игрока.",
-        how_to_play="Камень бьёт ножницы, ножницы бьют бумагу, бумага кроет камень. Победитель забирает банк (2x).",
-        min_bet=10,
-        max_bet=1000,
-        category="luck",
-        difficulty="easy",
-        multiplier=2.0,
-        is_pvp=True,
-        is_pve=True
-    ),
     GameConfig(
         id="guess_number",
         name="Угадай число",
@@ -116,43 +99,9 @@ LUCK_GAMES = [
         is_pvp=False,
         is_pve=True
     ),
-    GameConfig(
-        id="guess_emoji",
-        name="Угадай эмодзи",
-        emoji="🎯",
-        command="guess_emoji",
-        status="dev",
-        short_description="Найдите загаданный эмодзи по подсказкам.",
-        description="Найдите загаданный эмодзи по 3 подсказкам категорий.",
-        how_to_play="Используйте подсказки (животное, еда, предмет) и угадайте эмодзи. Выигрыш 3x.",
-        min_bet=20,
-        max_bet=500,
-        category="luck",
-        difficulty="medium",
-        multiplier=3.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="tictactoe",
-        name="Крестики-нолики",
-        emoji="❌",
-        command="tictactoe",
-        status="dev",
-        short_description="Классическая игра 3x3 на поле.",
-        description="Классическая игра 3x3 на поле против бота или игрока.",
-        how_to_play="Соберите 3 символа в ряд (по горизонтали, вертикали или диагонали). Победитель получает банк.",
-        min_bet=20,
-        max_bet=1000,
-        category="luck",
-        difficulty="medium",
-        multiplier=2.0,
-        is_pvp=True,
-        is_pve=True
-    ),
 ]
 
-# Викторины и головоломки (2 игры)
+# Викторины и головоломки (1 игра)
 QUIZ_GAMES = [
     GameConfig(
         id="math_quiz",
@@ -171,26 +120,9 @@ QUIZ_GAMES = [
         is_pvp=True,
         is_pve=True
     ),
-    GameConfig(
-        id="word_chain",
-        name="Словесные цепочки",
-        emoji="🔤",
-        command="word_chain",
-        status="dev",
-        short_description="Слова на последнюю букву за 7 секунд.",
-        description="Называйте слова на последнюю букву предыдущего слова за 7 секунд.",
-        how_to_play="Кто не успевает назвать слово за отведённое время — проигрывает ставку.",
-        min_bet=30,
-        max_bet=500,
-        category="quiz",
-        difficulty="medium",
-        multiplier=2.0,
-        is_pvp=True,
-        is_pve=False
-    ),
 ]
 
-# Казино и ставки (9 игр)
+# Казино и ставки (2 игры)
 CASINO_GAMES = [
     GameConfig(
         id="roulette",
@@ -210,108 +142,6 @@ CASINO_GAMES = [
         is_pve=True
     ),
     GameConfig(
-        id="slots",
-        name="Слоты",
-        emoji="🎰",
-        command="slots",
-        status="dev",
-        short_description="Однорукий бандит с 3 барабанами и выигрышем до 10x.",
-        description="Однорукий бандит с 3 барабанами и выигрышем до 10x.",
-        how_to_play="3 одинаковых символа = 10x, 2 одинаковых = 3x, все разные = потеря ставки.",
-        min_bet=10,
-        max_bet=1000,
-        category="casino",
-        difficulty="easy",
-        multiplier=10.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="craps",
-        name="Крэпс",
-        emoji="🎲",
-        command="craps",
-        status="ready",
-        short_description="Игра в кости на линии Pass / Don't Pass.",
-        description="Игра в кости на линии Pass / Don't Pass.",
-        how_to_play="Бросайте 2 кубика. Ставьте на сумму 7/11 (победа) или 2/3/12. Выигрыш 1x–2x.",
-        min_bet=50,
-        max_bet=2000,
-        category="casino",
-        difficulty="hard",
-        multiplier=2.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="baccarat",
-        name="Баккара",
-        emoji="🃏",
-        command="baccarat",
-        status="dev",
-        short_description="Ставьте на Игрока или Банкира и наберите ближе к 9 очкам.",
-        description="Ставьте на Игрока или Банкира и наберите ближе к 9 очкам.",
-        how_to_play="Простая карточная игра. При правильном прогнозе выигрыш 2x от ставки.",
-        min_bet=100,
-        max_bet=5000,
-        category="casino",
-        difficulty="medium",
-        multiplier=2.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="lottery",
-        name="Лотерея",
-        emoji="🎟",
-        command="lottery",
-        status="ready",
-        short_description="Покупайте билеты и выигрывайте джекпот.",
-        description="Покупайте билеты и выигрывайте джекпот. Больше билетов = больше шанс победить.",
-        how_to_play="Купите билет(ы). Когда все билеты проданы, выбирается случайный победитель. Взешенный розыгрыш.",
-        min_bet=10,
-        max_bet=1000,
-        category="casino",
-        difficulty="easy",
-        multiplier=10.0,
-        is_pvp=True,
-        is_pve=False
-    ),
-    GameConfig(
-        id="snap",
-        name="Снэп",
-        emoji="⚡",
-        command="snap",
-        status="ready",
-        short_description="Карточная игра на удвоение или фолд против дилера.",
-        description="Карточная игра на удвоение или фолд против дилера.",
-        how_to_play="Сравнивайте очки с дилером. Если ваши очки выше — выигрыш 2x.",
-        min_bet=50,
-        max_bet=2000,
-        category="casino",
-        difficulty="medium",
-        multiplier=2.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="dice_bet",
-        name="Дайс",
-        emoji="🎲",
-        command="dice_bet",
-        status="ready",
-        short_description="Ставка на точную сумму двух кубиков (2–12).",
-        description="Ставка на точную сумму двух кубиков (2–12).",
-        how_to_play="Если выпадающая сумма кубиков совпадает со ставкой — выигрыш 6x.",
-        min_bet=20,
-        max_bet=1000,
-        category="casino",
-        difficulty="medium",
-        multiplier=6.0,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
         id="high_low",
         name="High-Low",
         emoji="⬆️⬇️",
@@ -325,23 +155,6 @@ CASINO_GAMES = [
         category="casino",
         difficulty="medium",
         multiplier=7.6,
-        is_pvp=False,
-        is_pve=True
-    ),
-    GameConfig(
-        id="triple_chance",
-        name="Тройной шанс",
-        emoji="☘️",
-        command="triple_chance",
-        status="ready",
-        short_description="Угадайте загаданное ботом число от 1 до 3 (шанс 33.3%).",
-        description="Угадайте загаданное ботом число от 1 до 3 (шанс 33.3%).",
-        how_to_play="Если число угадано с первой попытки — выигрыш 3x от ставки.",
-        min_bet=10,
-        max_bet=1000,
-        category="casino",
-        difficulty="easy",
-        multiplier=3.0,
         is_pvp=False,
         is_pve=True
     ),

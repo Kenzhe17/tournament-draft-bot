@@ -39,6 +39,9 @@ class RouletteView(discord.ui.View):
         self.user_id = user_id
         self.bet = bet
         self.spun = False
+        # Уникальный суффикс custom_id — иначе параллельные игры
+        # roulette перехватывают кнопки друг друга при dispatch
+        self._cid = f"{guild_id}_{user_id}_{id(self)}"
 
     async def on_timeout(self) -> None:
         """Вернуть ставку, если игра не завершена."""
@@ -130,7 +133,7 @@ class RouletteRedButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label="Красный (2x)",
-            custom_id="roulette_red"
+            custom_id=f"roulette_red_{game_view._cid}"
         )
         self.game_view = game_view
 
@@ -153,7 +156,7 @@ class RouletteBlackButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.secondary,
             label="Чёрный (2x)",
-            custom_id="roulette_black"
+            custom_id=f"roulette_black_{game_view._cid}"
         )
         self.game_view = game_view
 
@@ -176,7 +179,7 @@ class RouletteEvenButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Чёт (2x)",
-            custom_id="roulette_even"
+            custom_id=f"roulette_even_{game_view._cid}"
         )
         self.game_view = game_view
 
@@ -199,7 +202,7 @@ class RouletteOddButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.primary,
             label="Нечёт (2x)",
-            custom_id="roulette_odd"
+            custom_id=f"roulette_odd_{game_view._cid}"
         )
         self.game_view = game_view
 
@@ -222,7 +225,7 @@ class RouletteSpinButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.success,
             label="Точное число (35x)",
-            custom_id="roulette_number"
+            custom_id=f"roulette_number_{game_view._cid}"
         )
         self.game_view = game_view
 
