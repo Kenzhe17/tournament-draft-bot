@@ -131,19 +131,14 @@ def build_queue_panel(
             f"Свободных мест: {max(0, required - current)}",
         )
         view.sep()
-        view.text(f"## УЧАСТНИКИ ОЧЕРЕДИ\n{_roster_lines(search)}")
-        view.sep()
-        view.text("## АВТОМАТИЧЕСКИЙ ПОДБОР")
-        view.lines(
-            "Матч начнётся после набора 8 участников и подтверждения готовности.",
-            "Распределение команд выполняется по Skill Rating.",
-        )
+        view.text(f"## УЧАСТНИКИ В ОЧЕРЕДИ\n{_roster_lines(search)}")
 
     view.row(
         QueueJoinButton(search.guild_id, search.channel_id,
                         disabled=search.is_locked),
         QueueLeaveButton(search.guild_id, search.channel_id),
     )
+    view.text("-# powered by Nota")
     return view
 
 

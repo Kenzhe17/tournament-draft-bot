@@ -1315,10 +1315,11 @@ class MMCog(commands.Cog):
         channel = None
         try:
             # 2. Временный канал матча
-            channel = await self._create_match_channel(guild, search, match_num)
+            channel, ch_err = await self._create_match_channel(guild, search, match_num)
             if channel is None:
                 await _revert()
-                return None, "Не удалось создать канал матча. Проверьте права бота (Manage Channels) и повторите."
+                detail = f" ({ch_err})" if ch_err else ""
+                return None, f"Не удалось создать канал матча{detail}. Попробуйте ещё раз."
 
             # 3. Ready Check
             rc = await self._start_ready_check(
@@ -1343,7 +1344,7 @@ class MMCog(commands.Cog):
 
     async def _create_match_channel(
         self, guild: discord.Guild, search: MMSearch, match_num: int
-    ) -> discord.TextChannel | None:
+    ) -> tuple[discord.TextChannel | None, str | None]:
         """Создать временный канал cs-4x4-match-N в категории панели."""
         panel_channel = guild.get_channel(search.channel_id)
         if panel_channel is None:
@@ -1352,6 +1353,8 @@ class MMCog(commands.Cog):
             except Exception:
                 panel_channel = None
         category = getattr(panel_channel, "category", None)
+        if panel_channel is None:
+            return None, "канал панели не найден"
 
         user_ids = {uid for uid in search.player_user_ids.values() if uid}
         overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
@@ -1378,15 +1381,16 @@ class MMCog(commands.Cog):
                 )
 
         try:
-            return await guild.create_text_channel(
+            channel = await guild.create_text_channel(
                 f"cs-4x4-match-{match_num}",
                 category=category,
                 overwrites=overwrites,
                 reason="Ranked match channel",
             )
+            return channel, None
         except Exception as exc:
             logger.error("Failed to create match channel: %s", exc, exc_info=True)
-            return None
+            return None, str(exc)[:120]
 
     async def _delete_channel_by_id(self, channel_id: int) -> None:
         if not channel_id:

@@ -181,7 +181,9 @@ async def test_begin_match_channel_failure_reverts_to_open(monkeypatch):
     s = _search()
     cog = _cog(monkeypatch, s)
     monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
-    monkeypatch.setattr(cog, "_create_match_channel", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        cog, "_create_match_channel", AsyncMock(return_value=(None, "err"))
+    )
     start_rc = AsyncMock()
     monkeypatch.setattr(cog, "_start_ready_check", start_rc)
 
@@ -205,7 +207,7 @@ async def test_begin_match_success_locks_and_passes_channel(monkeypatch):
     monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
     fake_channel = SimpleNamespace(id=555)
     monkeypatch.setattr(
-        cog, "_create_match_channel", AsyncMock(return_value=fake_channel)
+        cog, "_create_match_channel", AsyncMock(return_value=(fake_channel, None))
     )
     fake_rc = SimpleNamespace(match_id="rc_x")
     start_rc = AsyncMock(return_value=fake_rc)
