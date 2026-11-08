@@ -236,10 +236,12 @@ def _strip_section_head(sec: list[discord.ui.Item]) -> None:
         # MediaGallery/Separator и пр. — пропускаем, ищем текст дальше
 
 
-def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
-    """Конвертировать discord.Embed в список Container-секций.
+def embed_to_section_items(
+    embed: discord.Embed,
+) -> list[list[discord.ui.Item]]:
+    """Embed -> список секций, каждая = список компонентов.
 
-    Каждая смысловая секция становится отдельным Container:
+    Секции — смысловые блоки внутри ЕДИНОЙ карточки:
       - author + title + description (до первого разделителя) -> секция 1
       - строка-разделитель (───, === и т.п.) внутри текста -> граница секции
       - строка «**Заголовок:**» в description -> граница секции
@@ -247,7 +249,8 @@ def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
         группируются в одну секцию
       - image -> своя секция (вместе с footer, если он есть)
       - footer/timestamp -> в конец последней текстовой секции
-      - первая строка каждой секции получает короткую '>' полоску
+      - между секциями — тонкий Separator; первая строка каждой
+        секции получает короткую '>' полоску
     """
     sections: list[list[discord.ui.Item]] = []
     current: list[discord.ui.Item] = []
@@ -392,8 +395,8 @@ def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
 
     _flush()
 
-    # Лимит компонентов CV2-сообщения (~40): не больше 10 карточек.
-    # При переполнении хвостовые секции сливаются в предыдущую.
+    # Сливаем хвост при большом числе секций — ограничивает количество
+    # Separator/'>' полосок и общий счёт компонентов (~40 на сообщение).
     while len(sections) > 10:
         sections[-2].append(separator())
         sections[-2].extend(sections[-1])
@@ -410,19 +413,30 @@ def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
     for sec in sections:
         _strip_section_head(sec)
 
+    return sections or [[]]
+
+
+def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
+    """Embed -> ОДИН Container: все секции внутри единой карточки."""
+    container = discord.ui.Container()
+    for sec in embed_to_section_items(embed):
+        for item in sec:
+            container.add_item(item)
+    return container
+
+
+def embed_to_sections(
+    embed: discord.Embed,
+) -> list[discord.ui.Container]:
+    """Embed -> Container на каждую секцию (совместимость, не используется
+    в compose — там всё собирается в одну карточку)."""
     containers: list[discord.ui.Container] = []
-    for sec in sections:
+    for sec in embed_to_section_items(embed):
         container = discord.ui.Container()
         for item in sec:
             container.add_item(item)
         containers.append(container)
     return containers or [discord.ui.Container()]
-
-
-def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
-    """Первая секция Embed как Container (совместимость)."""
-    sections = embed_to_sections(embed)
-    return sections[0]
 
 
 def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
@@ -482,10 +496,11 @@ def compose(
         # содержать embed; вызывающий код должен мигрировать view)
         return view
 
-    # Embed -> несколько Container-секций (у каждой своя рамка,
-    # короткие '>' полоски у заголовков); кнопки — в конец последней.
+    # Embed -> ОДНА карточка: все смысловые секции внутри единого
+    # Container (сепараторы и '>' полоски — внутри); кнопки — в конец.
     if embed is not None:
-        sections = embed_to_sections(embed)
+        container = embed_to_container(embed)
+        sections = [container]
     else:
         sections = [discord.ui.Container()]
 
