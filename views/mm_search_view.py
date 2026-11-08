@@ -102,8 +102,6 @@ def build_queue_panel(
             discord.MediaGalleryItem(media=f"attachment://{BANNER_FILENAME}")
         )
     )
-    view.text("## RANKED MATCHMAKING")
-    view.text("-# FREE FIRE · CS 4×4 · SOLO QUEUE")
     view.sep()
 
     if search.is_locked:

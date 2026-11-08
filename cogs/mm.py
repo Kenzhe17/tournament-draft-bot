@@ -375,20 +375,17 @@ class MMCog(commands.Cog):
                     search_channel = self.bot.get_channel(channel_id)
                     
                     if notification_channel and search_channel:
-                        current = len(search.players)
-                        required = search.required_players
-                        
                         role = self.bot.get_guild(guild_id).get_role(NOTIFICATION_ROLE_ID)
                         role_mention = role.mention if role else ""
-                        
+
                         embed = discord.Embed(
                             title="🔍 Поиск игроков",
-                            description=f"{search_channel.mention}",
+                            description=f"{role_mention} - {search_channel.mention}",
                             color=discord.Color.from_rgb(69, 69, 69)
                         )
-                        embed.add_field(name="Игроки", value=f"{current}/{required}", inline=True)
-                        
-                        await notification_channel.send( view=compose(embed, text=role_mention),
+
+                        await notification_channel.send(
+                            embed,
                             allowed_mentions=discord.AllowedMentions(roles=True)
                         )
                 except Exception as e:
@@ -1356,7 +1353,10 @@ class MMCog(commands.Cog):
         if panel_channel is None:
             return None, "канал панели не найден"
 
-        user_ids = {uid for uid in search.player_user_ids.values() if uid}
+        user_ids = {
+            uid for uid in search.player_user_ids.values()
+            if isinstance(uid, int) and uid > 0
+        }
         overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(
                 view_channel=False,
