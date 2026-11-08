@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
     """Построить embed с информацией о всех каналах турниров."""
-    description = f"{replace_emojis('a_sparkle')} **УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ ТУРНИРОВ**\n\n"
+    description = f" **УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ ТУРНИРОВ**\n\n"
 
     for i, channel_id in enumerate(TOURNAMENT_CHANNELS, 1):
         channel = guild.get_channel(channel_id)
         if not channel:
-            description += f"{replace_emojis('a_star')} **Канал {i}:** *Канал не найден*\n\n"
+            description += f" **Канал {i}:** *Канал не найден*\n\n"
             continue
 
         # Получить турнир в канале
@@ -30,9 +30,9 @@ def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
         # Информация о турнире
         if tournament:
             tournament_info = (
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир ID:** `{tournament.id}`\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Фаза:** {tournament.phase.value}\n"
+                f"  **Канал:** {channel.mention}\n"
+                f"  **Турнир ID:** `{tournament.id}`\n"
+                f"  **Фаза:** {tournament.phase.value}\n"
             )
 
             # Получить организаторов канала только если есть турнир
@@ -45,12 +45,12 @@ def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
                 if channel_orgs.organizer_id:
                     main_member = guild.get_member(channel_orgs.organizer_id)
                     main_name = main_member.display_name if main_member else f"<@{channel_orgs.organizer_id}>"
-                    organizers_list.append(f"{replace_emojis('a_star')} {main_name} (основной)")
+                    organizers_list.append(f" {main_name} (основной)")
 
                 for org_id in channel_orgs.additional_organizers:
                     member = guild.get_member(org_id)
                     name = member.display_name if member else f"<@{org_id}>"
-                    organizers_list.append(f"{replace_emojis('white_dot')} {name}")
+                    organizers_list.append(f" {name}")
 
             if not organizers_list:
                 organizers_text = "*Нет организаторов*"
@@ -58,21 +58,21 @@ def build_multi_channel_embed(guild: discord.Guild) -> discord.Embed:
                 organizers_text = "\n".join(organizers_list)
 
             description += (
-                f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
+                f" **КАНАЛ {i}:**\n"
                 f"{tournament_info}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Организаторы:**\n"
+                f"  **Организаторы:**\n"
                 f"{organizers_text}\n\n"
             )
         else:
             # Нет турнира - не показываем организаторов
             description += (
-                f"{replace_emojis('a_star')} **КАНАЛ {i}:**\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Канал:** {channel.mention}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Турнир:** *Нет активного турнира*\n\n"
+                f" **КАНАЛ {i}:**\n"
+                f"  **Канал:** {channel.mention}\n"
+                f"  **Турнир:** *Нет активного турнира*\n\n"
             )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
+        title=f" r1z3 | УПРАВЛЕНИЕ ОРГАНИЗАТОРАМИ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -282,11 +282,11 @@ class NotifyOpenButton(Button):
 
         try:
             await channel.send(
-                f"@everyone {replace_emojis('a_sparkle')} **ТУРНИР ОТКРЫТ!** {replace_emojis('a_sparkle')}\n\n"
-                f"{replace_emojis('white_arrow')} **Регистрация на турнир началась!**\n"
-                f"{replace_emojis('white_dot')} Переходите в канал: {channel.mention}\n"
-                f"{replace_emojis('white_dot')} Используйте `/tournament join` для участия\n\n"
-                f"{replace_emojis('a_star')} Удачи всем участникам! {replace_emojis('a_star')}"
+                f"@everyone  **ТУРНИР ОТКРЫТ!** \n\n"
+                f" **Регистрация на турнир началась!**\n"
+                f" Переходите в канал: {channel.mention}\n"
+                f" Используйте `/tournament join` для участия\n\n"
+                f" Удачи всем участникам! "
             )
             await interaction.response.send_message(
                 "✅ Уведомление об открытии отправлено!",
@@ -350,7 +350,7 @@ class CustomNotificationModal(Modal, title="Свой шаблон уведомл
 
         try:
             await channel.send(
-                f"@everyone {replace_emojis('a_sparkle')} **УВЕДОМЛЕНИЕ ОТ ОРГАНИЗАТОРА** {replace_emojis('a_sparkle')}\n\n"
+                f"@everyone  **УВЕДОМЛЕНИЕ ОТ ОРГАНИЗАТОРА** \n\n"
                 f"{text}"
             )
             await interaction.response.send_message(

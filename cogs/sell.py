@@ -68,7 +68,7 @@ class SellCog(commands.Cog):
         item = await get_shop_item(item_id.lower())
         if not item:
             await interaction.followup.send(
-                f"{get_emoji('white_dot')} Указанный предмет не найден в базе данных!",
+                f" Указанный предмет не найден в базе данных!",
                 ephemeral=True
             )
             return
@@ -76,7 +76,7 @@ class SellCog(commands.Cog):
         # Check if item is sellable
         if not item.is_sellable:
             await interaction.followup.send(
-                f"{get_emoji('white_dot')} Этот предмет нельзя продать!",
+                f" Этот предмет нельзя продать!",
                 ephemeral=True
             )
             return
@@ -84,7 +84,7 @@ class SellCog(commands.Cog):
         # 2. Проверяем наличие предмета в инвентаре у игрока
         if not await has_user_item(guild_id, interaction.user.id, item.id):
             await interaction.followup.send(
-                f"{get_emoji('white_dot')} У вас нет этого предмета в инвентаре!",
+                f" У вас нет этого предмета в инвентаре!",
                 ephemeral=True
             )
             return
@@ -142,13 +142,13 @@ class SellCog(commands.Cog):
 
         # 6. Красивый Embed ответа
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ПРОДАЖА ПРЕДМЕТА**",
+            title=f" **ПРОДАЖА ПРЕДМЕТА**",
             description=(
-                f"{get_emoji('a_sparkle')} **Пользователь:** {interaction.user.mention}\n\n"
-                f"{get_emoji('white_arrow')} **Продан предмет:** `{item.name}`\n"
-                f"{get_emoji('white_arrow')} **Цена в магазине:** `{base_price:,}` {get_emoji('money')}\n"
-                f"{get_emoji('white_arrow')} **Выручка (50%):** **`{sell_price:,}`** {get_emoji('money')}\n\n"
-                f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс.*{pet_bonus_text}"
+                f" **Пользователь:** {interaction.user.mention}\n\n"
+                f" **Продан предмет:** `{item.name}`\n"
+                f" **Цена в магазине:** `{base_price:,}` {get_emoji('money')}\n"
+                f" **Выручка (50%):** **`{sell_price:,}`** {get_emoji('money')}\n\n"
+                f" *Монеты зачислены на ваш баланс.*{pet_bonus_text}"
             ),
             color=0x2ECC71
         )

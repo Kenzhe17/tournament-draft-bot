@@ -22,6 +22,7 @@ from utils.design import colors, constants, emojis, formatters  # noqa: F401
 from utils.design.adapter import (  # noqa: F401
     compose,
     embed_to_container,
+    embed_to_sections,
     smart_view,
     swap_view,
     text_card,

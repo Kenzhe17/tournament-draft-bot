@@ -57,7 +57,7 @@ class LotteryView(discord.ui.View):
     def create_embed(self, state: str = "active", winner: int = None) -> discord.Embed:
         """Создать embed для разных состояний лотереи."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **ЛОТЕРЕЯ | /lottery**",
+            title=f" **ЛОТЕРЕЯ | /lottery**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -66,7 +66,7 @@ class LotteryView(discord.ui.View):
             remaining = self.lottery.max_tickets - self.lottery.tickets_sold
 
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                name=f"  Информация",
                 value=f"• Цена билета: **{self.lottery.ticket_price}** {get_emoji('money')}\n"
                       f"• Продано билетов: **{self.lottery.tickets_sold}/{self.lottery.max_tickets}**\n"
                       f"• Призовой фонд: **{prize_pool}** {get_emoji('money')}\n"
@@ -74,7 +74,7 @@ class LotteryView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Купите билет(ы) для участия. Когда все билеты будут проданы, будет выбран случайный победитель!",
                 inline=False
             )
@@ -83,7 +83,7 @@ class LotteryView(discord.ui.View):
             prize_pool = self.lottery.tickets_sold * self.lottery.ticket_price
             embed.color = discord.Color.green()
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                name=f"  Результат",
                 value=f"• Победитель: <@{winner}>\n"
                       f"• Выигрыш: **{prize_pool}** {get_emoji('money')}\n"
                       f"• Продано билетов: **{self.lottery.tickets_sold}**",

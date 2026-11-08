@@ -416,24 +416,24 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         if count > 0:
             holder_mentions = [f"<@{holder_id}>" for holder_id in holders]
             status_section += (
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_mentions)}\n"
+                f"  **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_mentions)}\n"
             )
         else:
             status_section += (
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{role_name}:** **Свободен** (0/{MAX_ORG_ROLE_HOLDERS})\n"
+                f"  **{role_name}:** **Свободен** (0/{MAX_ORG_ROLE_HOLDERS})\n"
             )
 
     description = (
-        f"{replace_emojis('a_sparkle')} **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
-        f"{replace_emojis('white_dot')} Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
-        f"{replace_emojis('white_dot')} После завершения нажмите **«Сдать»** на соответствующей роли.\n\n"
-        f"{replace_emojis('a_sparkle')} **ТЕКУЩИЙ СТАТУС:**\n"
+        f" **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
+        f" Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
+        f" После завершения нажмите **«Сдать»** на соответствующей роли.\n\n"
+        f" **ТЕКУЩИЙ СТАТУС:**\n"
         f"{status_section}\n\n"
-        f"{replace_emojis('a_sparkle')} *Администрация оставляет за собой право сбросить роли в любой момент.*"
+        f" *Администрация оставляет за собой право сбросить роли в любой момент.*"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} Панель Организатора {replace_emojis('a_star')}",
+        title=f" Панель Организатора ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )

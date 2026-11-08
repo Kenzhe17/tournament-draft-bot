@@ -76,11 +76,11 @@ class TeamStatusView(discord.ui.View):
                 status_text = f"(Недостаёт {missing} игроков)"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {self.team.team_name}",
+            title=f" {self.team.team_name}",
             description=(
-                f"{replace_emojis('white_dot')} **Состав:** {count}/4\n"
-                f"{replace_emojis('white_arrow')} {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
-                f"{replace_emojis('white_dot')} **Статус:** {status_emoji} {status_text}"
+                f" **Состав:** {count}/4\n"
+                f" {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
+                f" **Статус:** {status_emoji} {status_text}"
             ),
             color=discord.Color.from_rgb(114, 137, 218)
         )
@@ -114,8 +114,8 @@ class TeamMenuButton(discord.ui.Button):
 
         view = TeamMenuView(self.team, self.status_view)
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Меню капитана",
-            description=f"{replace_emojis('white_arrow')} Управление командой **{self.team.team_name}**",
+            title=f" Меню капитана",
+            description=f" Управление командой **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
@@ -177,8 +177,8 @@ class TeamLeaveButton(discord.ui.Button):
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Вы покинули команду",
-            description=f"{replace_emojis('white_arrow')} Вы вышли из команды **{self.team.team_name}**",
+            title=f" Вы покинули команду",
+            description=f" Вы вышли из команды **{self.team.team_name}**",
             color=discord.Color.from_rgb(235, 100, 100)
         )
 
@@ -275,8 +275,8 @@ class TeamJoinModal(discord.ui.Modal, title="Войти в команду"):
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Вы вступили в команду",
-            description=f"{replace_emojis('white_arrow')} Вы вступили в команду **{self.team.team_name}**",
+            title=f" Вы вступили в команду",
+            description=f" Вы вступили в команду **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 
@@ -369,8 +369,8 @@ class ChangeNameModal(discord.ui.Modal, title="Сменить название �
 
         # Respond with success message (modal response)
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Название изменено",
-            description=f"{replace_emojis('white_arrow')} Новое название: **{self.team.team_name}**",
+            title=f" Название изменено",
+            description=f" Новое название: **{self.team.team_name}**",
             color=discord.Color.from_rgb(114, 137, 218)
         )
         await interaction.response.send_message( view=compose(embed), ephemeral=True)
@@ -436,8 +436,8 @@ class ChangePasswordModal(discord.ui.Modal, title="Сменить пароль �
                 self.team = updated_team
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Пароль изменен",
-            description=f"{replace_emojis('white_arrow')} Новый пароль: ||{self.team.password}||",
+            title=f" Пароль изменен",
+            description=f" Новый пароль: ||{self.team.password}||",
             color=discord.Color.from_rgb(114, 137, 218)
         )
 

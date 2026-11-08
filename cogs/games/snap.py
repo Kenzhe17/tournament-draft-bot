@@ -55,20 +55,20 @@ class SnapView(discord.ui.View):
     def create_embed(self, state: str = "menu", player_card: int = None, dealer_card: int = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **СНЭП | /snap**",
+            title=f" **СНЭП | /snap**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
         if state == "menu":
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                name=f"  Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
                       f"• Множитель: **2.0x**\n"
                       f"• PvE игра",
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Сравните вашу карту с картой дилера. Если ваша карта выше, вы выиграете 2x ставку!",
                 inline=False
             )
@@ -82,7 +82,7 @@ class SnapView(discord.ui.View):
                 winnings = self.bet * 2
                 embed.color = discord.Color.green()
                 embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                    name=f"  Результат",
                     value=f"🃏 Ваша карта: **{player_card_name}**\n"
                           f"🃏 Карта дилера: **{dealer_card_name}**\n"
                           f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
@@ -91,7 +91,7 @@ class SnapView(discord.ui.View):
             else:
                 embed.color = discord.Color.red()
                 embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                    name=f"  Результат",
                     value=f"🃏 Ваша карта: **{player_card_name}**\n"
                           f"🃏 Карта дилера: **{dealer_card_name}**\n"
                           f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",

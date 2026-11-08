@@ -59,25 +59,25 @@ async def build_pet_profile_embed(pet_row: dict, guild: discord.Guild) -> Tuple[
             if energy > 0:
                 abilities_list.append(f"**{ab['name']}**")
 
-    abilities_formatted = "\n".join(f"{get_emoji('white_dot')} {item}" for item in abilities_list) if abilities_list else f"{get_emoji('white_dot')} Нет активных способностей"
+    abilities_formatted = "\n".join(f" {item}" for item in abilities_list) if abilities_list else f" Нет активных способностей"
 
     # Статус сытости
-    status_text = f"\n\n{get_emoji('a_sparkle')} *Питомец сыт и восстанавливает энергию!*"
+    status_text = f"\n\n *Питомец сыт и восстанавливает энергию!*"
     if fullness <= 0:
-        status_text = f"\n\n{get_emoji('white_dot')} **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умирает от голода!"
+        status_text = f"\n\n **КРИТИЧЕСКОЕ СОСТОЯНИЕ!** Питомец умирает от голода!"
     elif fullness <= 30:
-        status_text = f"\n\n{get_emoji('white_dot')} **ПЛОХОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
+        status_text = f"\n\n **ПЛОХОЕ СОСТОЯНИЕ!** Питомец может уйти из-за голода!"
 
     embed = discord.Embed(
-        title=f"{get_emoji('a_star')} **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
+        title=f" **ПРОФИЛЬ ПИТОМЦА | {pet_name.upper()}**",
         description=(
-            f"{get_emoji('a_sparkle')} **Имя:** **{pet_name}**\n"
-            f"{get_emoji('white_arrow')} **Уровень:** `{age}`\n"
-            f"{get_emoji('white_arrow')} **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
+            f" **Имя:** **{pet_name}**\n"
+            f" **Уровень:** `{age}`\n"
+            f" **Опекуны:** {owner1_mention}{owner2_mention}\n\n"
             f"**Состояние:**\n"
-            f"{get_emoji('white_dot')} 🍖 **Сытость:** `{fullness}%`\n"
-            f"{get_emoji('white_dot')} ⚡ **Энергия:** `{energy}%`\n"
-            f"{get_emoji('white_dot')} ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
+            f" 🍖 **Сытость:** `{fullness}%`\n"
+            f" ⚡ **Энергия:** `{energy}%`\n"
+            f" ✨ **Опыт:** `{exp}` / `{max_exp} EXP`\n\n"
             f"**Пассивные эффекты:**\n"
             f"{abilities_formatted}"
             f"{status_text}"
@@ -134,8 +134,8 @@ class PetCog(commands.Cog):
             description=(
                 f"Вы действительно хотите попрощаться с питомцем **{pet_dict['pet_name']}**?\n\n"
                 f"⚠️ **ВНИМАНИЕ:**\n"
-                f"{replace_emojis('white_dot')} Весь прогресс, уровень и способности **будут стерты**.\n"
-                f"{replace_emojis('white_dot')} Вернуть питомца назад будет невозможно.\n\n"
+                f" Весь прогресс, уровень и способности **будут стерты**.\n"
+                f" Вернуть питомца назад будет невозможно.\n\n"
                 f"> *Это сообщение видите только вы.*"
             ),
             color=discord.Color.red()
@@ -194,12 +194,12 @@ class PetCog(commands.Cog):
         embed = discord.Embed(
             title=replace_emojis("ПРЕДЛОЖЕНИЕ СО-ОПЕКУНСТВА"),
             description=(
-                f"{replace_emojis('a_sparkle')} {interaction.user.mention} предлагает {target.mention} стать со-опекуном питомца!\n\n"
+                f" {interaction.user.mention} предлагает {target.mention} стать со-опекуном питомца!\n\n"
                 f"**Питомец:** **{pet_display_name}** (*{pet_dict['rarity']}*)\n"
                 f"**Уровень:** `{pet_dict['level']} level`\n\n"
                 f"📜 **Что даст со-опекунство?**\n"
-                f"{replace_emojis('white_dot')} Вы сможете вместе кормить питомца через `/pet profile`.\n"
-                f"{replace_emojis('white_dot')} Оба опекуна получают эффекты от активных пассивных способностей.\n\n"
+                f" Вы сможете вместе кормить питомца через `/pet profile`.\n"
+                f" Оба опекуна получают эффекты от активных пассивных способностей.\n\n"
                 f"> {target.mention}, используйте кнопки ниже для ответа."
             ),
             color=discord.Color.purple()
@@ -263,9 +263,9 @@ class PetCog(commands.Cog):
             embed = discord.Embed(
                 title=replace_emojis("СО-ОПЕКУН УБРАН"),
                 description=(
-                    f"{replace_emojis('a_sparkle')} Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
-                    f"{replace_emojis('white_dot')} {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
-                    f"{replace_emojis('white_dot')} Питомец снова находится под вашей единоличной опекой."
+                    f" Главный опекун {interaction.user.mention} прекратил совместную опеку с {old_coowner_mention} для питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
+                    f" {old_coowner_mention} больше не имеет доступа к управлению и бонусам этого питомца.\n"
+                    f" Питомец снова находится под вашей единоличной опекой."
                 ),
                 color=discord.Color.red()
             )
@@ -274,9 +274,9 @@ class PetCog(commands.Cog):
             embed = discord.Embed(
                 title=replace_emojis("ВЫХОД ИЗ СО-ОПЕКУНСТВА"),
                 description=(
-                    f"{replace_emojis('a_sparkle')} {interaction.user.mention} вышел из со-опекунства питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
-                    f"{replace_emojis('white_dot')} Вы больше не имеете доступа к управлению и бонусам этого питомца.\n"
-                    f"{replace_emojis('white_dot')} Питомец теперь находится под единоличной опекой главного опекуна."
+                    f" {interaction.user.mention} вышел из со-опекунства питомца **{pet_dict['pet_name']}** (*{pet_dict['rarity']}*).\n\n"
+                    f" Вы больше не имеете доступа к управлению и бонусам этого питомца.\n"
+                    f" Питомец теперь находится под единоличной опекой главного опекуна."
                 ),
                 color=discord.Color.orange()
             )
@@ -386,14 +386,14 @@ class PetTopView(discord.ui.View):
 
             description += (
                 f"{medal} **Уровень {pet_dict['level']}** — **{pet_dict['pet_name']}**\n"
-                f"{replace_emojis('white_arrow')} **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
+                f" **Опекуны:** {owner_mention} — `{pet_dict['exp']:,} EXP`\n\n"
             )
 
         if self._user_rank_info:
-            description += f"───\n{replace_emojis('white_dot')} {self._user_rank_info}"
+            description += f"───\n {self._user_rank_info}"
 
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ТОП ПИТОМЦЕВ**",
+            title=f" **ТОП ПИТОМЦЕВ**",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -527,17 +527,17 @@ class PetCatalogView(discord.ui.View):
                 ab = abilities[ab_key]
                 desc_template = ab.get("desc_template", "")
                 desc = desc_template.replace("{val}", f"{ab.get('max_val', 0)}")
-                abilities_text += f"{get_emoji('white_arrow')} **{ab['name']}:** {desc}\n"
+                abilities_text += f" **{ab['name']}:** {desc}\n"
         
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **КАТАЛОГ ПИТОМЦЕВ**",
+            title=f" **КАТАЛОГ ПИТОМЦЕВ**",
             description=(
-                f"{get_emoji('a_sparkle')} **{pet_data['name']}** (*{pet_data['rarity']}*)\n\n"
-                f"{get_emoji('white_dot')} **ID:** `{pet_id}`\n"
-                f"{get_emoji('white_dot')} **Класс:** `{pet_data['rarity']}`\n"
-                f"{get_emoji('white_dot')} **Стоимость:** `{pet_data['price']:,}` {get_emoji('money')}\n\n"
-                f"{get_emoji('white_dot')} **Описание:**\n{pet_data['description']}\n\n"
-                f"{get_emoji('white_dot')} **Способности:**\n{abilities_text}"
+                f" **{pet_data['name']}** (*{pet_data['rarity']}*)\n\n"
+                f" **ID:** `{pet_id}`\n"
+                f" **Класс:** `{pet_data['rarity']}`\n"
+                f" **Стоимость:** `{pet_data['price']:,}` {get_emoji('money')}\n\n"
+                f" **Описание:**\n{pet_data['description']}\n\n"
+                f" **Способности:**\n{abilities_text}"
             ),
             color=pet_data.get("color", discord.Color.from_rgb(69, 69, 69))
         )
@@ -582,8 +582,8 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title=replace_emojis("🐾 Питомец"),
             description=(
-                f"{replace_emojis('sub_middle')} У вас нет питомца.\n"
-                f"{replace_emojis('sub_middle')} Используйте `/shop` → **Питомцы** для покупки."
+                f" У вас нет питомца.\n"
+                f" Используйте `/shop` → **Питомцы** для покупки."
             ),
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -598,8 +598,8 @@ async def pet_profile_impl(interaction: discord.Interaction) -> None:
         embed = discord.Embed(
             title=replace_emojis("💀 Питомец умер"),
             description=(
-                f"{replace_emojis('sub_middle')} Ваш питомец умер от голода.\n"
-                f"{replace_emojis('sub_middle')} Используйте `/shop` для нового питомца."
+                f" Ваш питомец умер от голода.\n"
+                f" Используйте `/shop` для нового питомца."
             ),
             color=discord.Color.red()
         )
@@ -767,9 +767,9 @@ class FeedPetButton(discord.ui.Button):
             embed = discord.Embed(
                 title=replace_emojis("✅ Питомец покормлен"),
                 description=(
-                    f"{replace_emojis('sub_middle')} **Сытость:** +20\n"
-                    f"{replace_emojis('sub_middle')} **Энергия:** +5\n"
-                    f"{replace_emojis('sub_middle')} **Опыт:** +5"
+                    f" **Сытость:** +20\n"
+                    f" **Энергия:** +5\n"
+                    f" **Опыт:** +5"
                 ),
                 color=discord.Color.green()
             )
@@ -1130,9 +1130,9 @@ class PetDeleteConfirmView(discord.ui.View):
         public_embed = discord.Embed(
             title=replace_emojis("ПИТОМЕЦ ОТПУЩЕН НА ВОЛЮ"),
             description=(
-                f"{replace_emojis('a_sparkle')} Опекун {interaction.user.mention} снял ошейник и попрощался с питомцем **{pet_name}**.\n\n"
-                f"{replace_emojis('white_dot')} Питомец радостно побежал в дикую природу к своим сородичам.\n"
-                f"{replace_emojis('white_dot')} Слот освободился. Новый питомец ждет вас в магазине (`/shop`)."
+                f" Опекун {interaction.user.mention} снял ошейник и попрощался с питомцем **{pet_name}**.\n\n"
+                f" Питомец радостно побежал в дикую природу к своим сородичам.\n"
+                f" Слот освободился. Новый питомец ждет вас в магазине (`/shop`)."
             ),
             color=discord.Color.from_rgb(149, 165, 166)
         )
@@ -1176,10 +1176,10 @@ class CoOwnerInviteView(discord.ui.View):
     @discord.ui.button(label="Принять предложение", style=discord.ButtonStyle.success, custom_id="pet_coowner:accept")
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         # Получаем эмодзи
-        emoji_dot = get_emoji("white_dot")
-        emoji_star = get_emoji("a_star")
-        emoji_sparkle = get_emoji("a_sparkle")
-        emoji_arrow = get_emoji("white_arrow")
+        emoji_dot = ""
+        emoji_star = ""
+        emoji_sparkle = ""
+        emoji_arrow = ""
 
         # Проверка: нажать может только тот, кого пригласили
         if interaction.user.id != self.target_id:
@@ -1228,8 +1228,8 @@ class CoOwnerInviteView(discord.ui.View):
 
     @discord.ui.button(label="Отклонить", style=discord.ButtonStyle.secondary, custom_id="pet_coowner:decline")
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        emoji_dot = get_emoji("white_dot")
-        emoji_star = get_emoji("a_star")
+        emoji_dot = ""
+        emoji_star = ""
 
         if interaction.user.id != self.target_id:
             await interaction.response.send_message(f"{emoji_dot} Это предложение адресовано не вам!", ephemeral=True)

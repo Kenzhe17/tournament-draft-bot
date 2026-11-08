@@ -57,11 +57,11 @@ class RobView(discord.ui.View):
         """Построить embed для ограбления."""
         chance_percent = int(success_chance * 100)
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ОГРАБЛЕНИЕ** | `/rob`",
+            title=f" **ОГРАБЛЕНИЕ** | `/rob`",
             description=(
-                f"{get_emoji('a_sparkle')} **Жертва:** <@{self.victim_id}>\n"
-                f"{get_emoji('white_arrow')} **Грабитель:** <@{self.robber_id}>\n"
-                f"{get_emoji('white_arrow')} **Шанс:** `{chance_percent}%` | **Лимит:** до `100%` баланса\n"
+                f" **Жертва:** <@{self.victim_id}>\n"
+                f" **Грабитель:** <@{self.robber_id}>\n"
+                f" **Шанс:** `{chance_percent}%` | **Лимит:** до `100%` баланса\n"
             ),
             color=0x2B2D31
         )
@@ -322,12 +322,12 @@ class RobStartButton(discord.ui.Button):
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['robber_loot_name']}):** Увеличил куш на +{pet_bonuses['robber_loot_bonus']:.1f}%!"
 
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Предмет защищён (абсолютно)!**\n"
-                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
+                            f" **Грабитель:** <@{self.robber_id}>\n"
+                            f" **Жертва:** <@{self.victim_id}>\n"
+                            f" **Предмет защищён (абсолютно)!**\n"
+                            f" **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
                         ),
                         color=0x2ECC71
                     )
@@ -338,12 +338,12 @@ class RobStartButton(discord.ui.Button):
                     stolen_item = random.choice(stealable_items)
 
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
+                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ ЗАЩИЩЁН**",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                            f"{get_emoji('white_dot')} **Результат:** Предмет защищён!\n\n"
+                            f" **Грабитель:** <@{self.robber_id}>\n"
+                            f" **Жертва:** <@{self.victim_id}>\n"
+                            f" **Предмет:** {stolen_item.name}\n"
+                            f" **Результат:** Предмет защищён!\n\n"
                             f"🐾 **Сова-казначей ({pet_bonuses['victim_item_protect_name']}):** Защитил предмет от кражи!"
                         ),
                         color=0x2ECC71  # Green for success
@@ -391,12 +391,12 @@ class RobStartButton(discord.ui.Button):
                         bonus_text += f"\n\n🐾 **Енот-грабитель ({pet_bonuses['black_market_name']}):** Уменьшил комиссию на -{pet_bonuses['black_market_bonus']:.1f}%!"
                     
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
+                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ | ТРОФЕЙ!**",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Предмет:** {stolen_item.name}\n"
-                            f"{get_emoji('white_dot')} **Продан за:** `{sale_price}` {get_emoji('money')}{bonus_text}\n"
+                            f" **Грабитель:** <@{self.robber_id}>\n"
+                            f" **Жертва:** <@{self.victim_id}>\n"
+                            f" **Предмет:** {stolen_item.name}\n"
+                            f" **Продан за:** `{sale_price}` {get_emoji('money')}{bonus_text}\n"
                         ),
                         color=0x2ECC71  # Green for success
                     )
@@ -407,11 +407,11 @@ class RobStartButton(discord.ui.Button):
                 if victim_balance == 0:
                     # У жертвы нет монет - считаем ограбление неуспешным
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **ОГРАБЛЕНИЕ НЕУДАЧНО** | `/rob`",
+                        title=f" **ОГРАБЛЕНИЕ НЕУДАЧНО** | `/rob`",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Результат:** У жертвы 0 {get_emoji('money')}\n"
+                            f" **Грабитель:** <@{self.robber_id}>\n"
+                            f" **Жертва:** <@{self.victim_id}>\n"
+                            f" **Результат:** У жертвы 0 {get_emoji('money')}\n"
                         ),
                         color=0xE74C3C  # Red for failure
                     )
@@ -488,11 +488,11 @@ class RobStartButton(discord.ui.Button):
 
                     # Build success embed
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
+                        title=f" **УСПЕШНОЕ ОГРАБЛЕНИЕ** | `/rob`",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                            f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                            f"{get_emoji('white_dot')} **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
+                            f" **Грабитель:** <@{self.robber_id}>\n"
+                            f" **Жертва:** <@{self.victim_id}>\n"
+                            f" **Украдено:** `{stolen}` {get_emoji('money')}{bonus_text}"
                         ),
                         color=0x2ECC71  # Green for success
                     )
@@ -566,12 +566,12 @@ class RobStartButton(discord.ui.Button):
                 bonus_text += f"\n\n🐾 **Лис-разведчик ({pet.pet_name}):** Сократил срок тюрьмы на -{jail_reduction_pct:.1f}%!"
 
             embed = discord.Embed(
-                title=f"{get_emoji('a_star')} **ОГРАБЛЕНИЕ ПРОВАЛЕНО** | `/rob`",
+                title=f" **ОГРАБЛЕНИЕ ПРОВАЛЕНО** | `/rob`",
                 description=(
-                    f"{get_emoji('a_sparkle')} **Грабитель:** <@{self.robber_id}>\n"
-                    f"{get_emoji('white_arrow')} **Жертва:** <@{self.victim_id}>\n"
-                    f"{get_emoji('white_dot')} **Штраф:** `{penalty}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_dot')} **Тюрьма:** {jail_text}{bonus_text}"
+                    f" **Грабитель:** <@{self.robber_id}>\n"
+                    f" **Жертва:** <@{self.victim_id}>\n"
+                    f" **Штраф:** `{penalty}` {get_emoji('money')}\n"
+                    f" **Тюрьма:** {jail_text}{bonus_text}"
                 ),
                 color=0xE74C3C  # Red for failure
             )
@@ -784,12 +784,12 @@ class RobGroupView(discord.ui.View):
             members_list += f" (+{len(self.members) - 6})"
 
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ** | `/robgroup`",
+            title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ** | `/robgroup`",
             description=(
-                f"{get_emoji('a_sparkle')} **Цель:** <@{self.victim_id}>\n"
-                f"{get_emoji('white_arrow')} **Лидер:** <@{self.leader_id}>\n"
-                f"{get_emoji('white_arrow')} **Шанс:** `{success_chance}%` | **Сбор:** `{time_str}`\n"
-                f"{get_emoji('white_dot')} **Банда ({len(self.members)}/6):** {members_list}\n\n"
+                f" **Цель:** <@{self.victim_id}>\n"
+                f" **Лидер:** <@{self.leader_id}>\n"
+                f" **Шанс:** `{success_chance}%` | **Сбор:** `{time_str}`\n"
+                f" **Банда ({len(self.members)}/6):** {members_list}\n\n"
             ),
             color=0x2B2D31
         )
@@ -1070,14 +1070,14 @@ class RobGroupStartButton(discord.ui.Button):
                     for member_id in members:
                         await user_balance_store.add_balance(guild_id, member_id, share)
                     
-                    party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+                    party_list = "\n".join([f" <@{mid}>" for mid in members])
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
+                        title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
-                            f"{get_emoji('white_arrow')} **Результат:** Предмет защищён сейфом!\n"
-                            f"{get_emoji('white_dot')} **Получено:** `{share}` {get_emoji('money')} (каждому)\n"
-                            f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n\n"
+                            f" **Цель:** <@{victim_id}>\n"
+                            f" **Результат:** Предмет защищён сейфом!\n"
+                            f" **Получено:** `{share}` {get_emoji('money')} (каждому)\n"
+                            f" **Банда ({len(members)}):**\n{party_list}\n\n"
                             f"🐾 **Черепаха-хранитель ({protect_pet_name}):** Абсолютная защита предмета!"
                         ),
                         color=0x2ECC71
@@ -1101,13 +1101,13 @@ class RobGroupStartButton(discord.ui.Button):
                 # Кража монет
                 if victim_balance == 0:
                     # У жертвы нет монет - считаем ограбление неуспешным
-                    party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+                    party_list = "\n".join([f" <@{mid}>" for mid in members])
                     embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ НЕУДАЧНО** | `/robgroup`",
+                        title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ НЕУДАЧНО** | `/robgroup`",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
-                            f"{get_emoji('white_arrow')} **Результат:** У жертвы 0 {get_emoji('money')}\n"
-                            f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
+                            f" **Цель:** <@{victim_id}>\n"
+                            f" **Результат:** У жертвы 0 {get_emoji('money')}\n"
+                            f" **Банда ({len(members)}):**\n{party_list}\n"
                         ),
                         color=0xE74C3C  # Red for failure
                     )
@@ -1180,7 +1180,7 @@ class RobGroupStartButton(discord.ui.Button):
 
         # Build success embed
         if success:
-            party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+            party_list = "\n".join([f" <@{mid}>" for mid in members])
             if use_item_steal:
                 stolen_amount = sale_price
             else:
@@ -1190,12 +1190,12 @@ class RobGroupStartButton(discord.ui.Button):
             bonus_text = ""
 
             embed = discord.Embed(
-                title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
+                title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ УСПЕХ** | `/robgroup`",
                 description=(
-                    f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
-                    f"{get_emoji('white_arrow')} **Украдено:** `{stolen_amount}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_arrow')} **Доля каждого:** `{share}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}{bonus_text}"
+                    f" **Цель:** <@{victim_id}>\n"
+                    f" **Украдено:** `{stolen_amount}` {get_emoji('money')}\n"
+                    f" **Доля каждого:** `{share}` {get_emoji('money')}\n"
+                    f" **Банда ({len(members)}):**\n{party_list}{bonus_text}"
                 ),
                 color=0x2ECC71  # Green for success
             )
@@ -1203,7 +1203,7 @@ class RobGroupStartButton(discord.ui.Button):
             await interaction.response.edit_message( view=compose(embed, None))
         else:
             # Failure embed
-            party_list = "\n".join([f"{get_emoji('white_dot')} <@{mid}>" for mid in members])
+            party_list = "\n".join([f" <@{mid}>" for mid in members])
 
             # Apply jail time reduction from pets (Scout Fox - Побег из тюрьмы)
             jail_hours = 2
@@ -1244,12 +1244,12 @@ class RobGroupStartButton(discord.ui.Button):
                 jail_text += f" (-{jail_reduction_pct:.1f}% от {jail_pet_name})"
 
             embed = discord.Embed(
-                title=f"{get_emoji('a_star')} **ГРУППОВОЕ ОГРАБЛЕНИЕ ПРОВАЛ** | `/robgroup`",
+                title=f" **ГРУППОВОЕ ОГРАБЛЕНИЕ ПРОВАЛ** | `/robgroup`",
                 description=(
-                    f"{get_emoji('a_sparkle')} **Цель:** <@{victim_id}>\n"
-                    f"{get_emoji('white_arrow')} **Штраф:** `{collected}` {get_emoji('money')}\n"
-                    f"{get_emoji('white_arrow')} **Тюрьма:** {jail_text}\n"
-                    f"{get_emoji('white_dot')} **Банда ({len(members)}):**\n{party_list}\n"
+                    f" **Цель:** <@{victim_id}>\n"
+                    f" **Штраф:** `{collected}` {get_emoji('money')}\n"
+                    f" **Тюрьма:** {jail_text}\n"
+                    f" **Банда ({len(members)}):**\n{party_list}\n"
                 ),
                 color=0xE74C3C  # Red for failure
             )

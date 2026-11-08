@@ -179,4 +179,4 @@ async def send_ultimatum_room_notifications(
     # Send to general channel
     general_channel = bot.get_channel(1200125075156910181)
     if general_channel:
-        await general_channel.send( view=text_card(f"{pings}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1567585136957063229>"))
+        await general_channel.send( view=text_card(f"{pings}\n\n Комната открыта, данные  <#1567585136957063229>"))

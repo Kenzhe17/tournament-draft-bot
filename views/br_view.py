@@ -296,19 +296,19 @@ class StartBRButton(Button):
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         # Update embed in bot style
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Команды\n"
-                f"{replace_emojis('sub_directory')} Команд: {team_count}\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Команды\n"
+                f" Команд: {team_count}\n\n"
+                f" **Команды:**\n"
                 + "\n".join(teams_text) + "\n\n"
                 f"{replace_emojis('a_dot_smaller')} Капитаны могут переименовать свои команды в течение 1 минуты."
             ),
@@ -362,17 +362,17 @@ class JoinBRButton(Button):
         players_text = ", ".join(player_names) if player_names else "*"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
-                f"{replace_emojis('white_dot')} **Игроки:**\n"
-                f"{replace_emojis('white_arrow')} {players_text}\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Регистрация\n"
+                f" Игроков: {len(tournament.players)}/48\n\n"
+                f" **Игроки:**\n"
+                f" {players_text}\n\n"
+                f" **Правила:**\n"
+                f" Нажмите кнопку 'Войти' для регистрации.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -421,17 +421,17 @@ class LeaveBRButton(Button):
         players_text = ", ".join(player_names) if player_names else "*"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
-                f"{replace_emojis('white_dot')} **Игроки:**\n"
-                f"{replace_emojis('white_arrow')} {players_text}\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Нажмите кнопку 'Войти' для регистрации.\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Регистрация\n"
+                f" Игроков: {len(tournament.players)}/48\n\n"
+                f" **Игроки:**\n"
+                f" {players_text}\n\n"
+                f" **Правила:**\n"
+                f" Нажмите кнопку 'Войти' для регистрации.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -502,15 +502,15 @@ class LeaveTournamentButton(Button):
                 team_list.append(f"{emoji} {team.team_name}")
 
         # Build description parts
-        organizer_line = f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>"
-        info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
-        format_line = f"{replace_emojis('sub_middle')} Формат: Team"
-        phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
-        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
-        teams_header = f"{replace_emojis('white_dot')} **Команды:**"
-        teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
-        rules_header = f"{replace_emojis('white_dot')} **Правила:**"
-        rules_content = f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+        organizer_line = f" **Организатор:** <@{tournament.organizer_id}>"
+        info_header = f" **Информация о турнире:**"
+        format_line = f" Формат: Team"
+        phase_line = f" Фаза: Регистрация"
+        count_line = f" Команд: {len(tournament.registered_teams)}/12"
+        teams_header = f" **Команды:**"
+        teams_content = "\n".join(team_list) if team_list else f" *"
+        rules_header = f" **Правила:**"
+        rules_content = f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
         footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
 
         description = (
@@ -527,7 +527,7 @@ class LeaveTournamentButton(Button):
         )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -638,15 +638,15 @@ class RegisterTeamButton(Button):
                 team_list.append(f"{emoji} {registered_team.team_name}")
 
         # Build description parts for debugging
-        organizer_line = f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>"
-        info_header = f"{replace_emojis('white_dot')} **Информация о турнире:**"
-        format_line = f"{replace_emojis('sub_middle')} Формат: Team"
-        phase_line = f"{replace_emojis('sub_middle')} Фаза: Регистрация"
-        count_line = f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12"
-        teams_header = f"{replace_emojis('white_dot')} **Команды:**"
-        teams_content = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
-        rules_header = f"{replace_emojis('white_dot')} **Правила:**"
-        rules_content = f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
+        organizer_line = f" **Организатор:** <@{tournament.organizer_id}>"
+        info_header = f" **Информация о турнире:**"
+        format_line = f" Формат: Team"
+        phase_line = f" Фаза: Регистрация"
+        count_line = f" Команд: {len(tournament.registered_teams)}/12"
+        teams_header = f" **Команды:**"
+        teams_content = "\n".join(team_list) if team_list else f" *"
+        rules_header = f" **Правила:**"
+        rules_content = f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды."
         footer = f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
 
         print(f"organizer_line: {organizer_line}")
@@ -670,7 +670,7 @@ class RegisterTeamButton(Button):
         print(f"Full description: {description}")
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
             description=description,
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -839,21 +839,21 @@ class RemoveTeamSelectView(View):
                             emoji = get_emoji(team_emoji_names[i]) if i < len(team_emoji_names) else f"{i+1}"
                             team_list.append(f"{emoji} {registered_team.team_name}")
 
-                    team_list_str = "\n".join(team_list) if team_list else f"{replace_emojis('white_arrow')} *"
+                    team_list_str = "\n".join(team_list) if team_list else f" *"
                     print(f"Team list: {team_list_str[:200]}")
 
                     new_embed = discord.Embed(
-                        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
+                        title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Team | Регистрация",
                         description=(
-                            f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                            f"{replace_emojis('sub_middle')} Формат: Team\n"
-                            f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                            f"{replace_emojis('sub_directory')} Команд: {len(tournament.registered_teams)}/12\n\n"
-                            f"{replace_emojis('white_dot')} **Команды:**\n"
+                            f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                            f" **Информация о турнире:**\n"
+                            f" Формат: Team\n"
+                            f" Фаза: Регистрация\n"
+                            f" Команд: {len(tournament.registered_teams)}/12\n\n"
+                            f" **Команды:**\n"
                             f"{team_list_str}\n\n"
-                            f"{replace_emojis('white_dot')} **Правила:**\n"
-                            f"{replace_emojis('white_arrow')} Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
+                            f" **Правила:**\n"
+                            f" Нажмите кнопку '🏆 Зарегистрировать Команду' для регистрации вашей команды.\n\n"
                             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир"
                         ),
                         color=discord.Color.from_rgb(69, 69, 69)
@@ -994,14 +994,14 @@ class RemoveBRPlayerSelect(Select):
             players_text = ", ".join(player_names) if player_names else "*"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Регистрация",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_middle')} Фаза: Регистрация\n"
-                    f"{replace_emojis('sub_directory')} Игроков: {len(tournament.players)}/48\n\n"
-                    f"{replace_emojis('white_dot')} **Зарегистрированные игроки:**\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {tournament.formation.value.capitalize()}\n"
+                    f" Фаза: Регистрация\n"
+                    f" Игроков: {len(tournament.players)}/48\n\n"
+                    f" **Зарегистрированные игроки:**\n"
                     f"{players_text}\n\n"
                     f"{replace_emojis('a_dot_smaller')} Зарегистрируйтесь для участия!"
                 ),
@@ -1277,7 +1277,7 @@ class BRDataButton(Button):
             # Send to general channel
             general_channel = interaction.guild.get_channel(1200125075156910181)
             if general_channel:
-                await general_channel.send( view=text_card(f"{role_mention}\n\n{replace_emojis('white_dot')} Комната открыта, данные {replace_emojis('white_arrow')} <#1563195265395982466>")                )
+                await general_channel.send( view=text_card(f"{role_mention}\n\n Комната открыта, данные  <#1563195265395982466>")                )
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")
             await interaction.followup.send(
@@ -1452,17 +1452,17 @@ class StartBRButton(Button):
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('bermuda', 'bermuda')}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('bermuda', 'bermuda')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {tournament.formation.value.capitalize()}\n"
+                    f" Карта: {map_names.get('bermuda', 'bermuda')}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text)
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
@@ -1556,7 +1556,7 @@ class StartBRButton(Button):
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         # Создать view для фазы команд
@@ -1564,14 +1564,14 @@ class StartBRButton(Button):
 
         # Создать embed в стиле бота
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
-                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Бермуды\n"
+                f" Команд: {len(tournament.teams)}\n\n"
+                f" **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -1704,18 +1704,18 @@ class StartBermudaButton(Button):
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
-                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Бермуды\n"
+                f" Команд: {len(tournament.teams)}\n\n"
+                f" **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -1979,17 +1979,17 @@ class BRSingleTeamStatsModal(Modal):
 
                         teams_text.append(
                             f"{num_emoji} {team_name} ({points} очков)\n"
-                            f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                            f"  {players_str}\n"
                         )
 
                     embed = discord.Embed(
-                        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_display}",
+                        title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_display}",
                         description=(
-                            f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                            f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                            f"{replace_emojis('sub_directory')} Карта: {map_display}\n\n"
-                            f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                            f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                            f" **Информация о турнире:**\n"
+                            f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                            f" Карта: {map_display}\n\n"
+                            f" **Участники команд:**\n\n"
                             + "\n".join(teams_text)
                         ),
                         color=discord.Color.from_rgb(69, 69, 69)
@@ -2154,17 +2154,17 @@ class BRConfirmPurgatoryButton(Button):
                     num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                     teams_text.append(
                         f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {team_data['players_str']}\n"
+                        f"  {team_data['players_str']}\n"
                     )
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
+                    title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                        f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                        f"{replace_emojis('sub_directory')} Статус: Завершен\n\n"
-                        f"{replace_emojis('white_dot')} **Результаты команд:**\n\n"
+                        f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                        f" **Информация о турнире:**\n"
+                        f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                        f" Статус: Завершен\n\n"
+                        f" **Результаты команд:**\n\n"
                         + "\n".join(teams_text)
                     ),
                     color=discord.Color.gold()
@@ -2255,17 +2255,17 @@ class BRConfirmPurgatoryButton(Button):
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('purgatory', 'purgatory')}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('purgatory', 'purgatory')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                    f" Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text)
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
@@ -2357,17 +2357,17 @@ class BRConfirmKalahariButton(Button):
                     num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                     teams_text.append(
                         f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {team_data['players_str']}\n"
+                        f"  {team_data['players_str']}\n"
                     )
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
+                    title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                        f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                        f"{replace_emojis('sub_directory')} Статус: Завершен\n\n"
-                        f"{replace_emojis('white_dot')} **Результаты команд:**\n\n"
+                        f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                        f" **Информация о турнире:**\n"
+                        f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                        f" Статус: Завершен\n\n"
+                        f" **Результаты команд:**\n\n"
                         + "\n".join(teams_text)
                     ),
                     color=discord.Color.gold()
@@ -2458,17 +2458,17 @@ class BRConfirmKalahariButton(Button):
 
                 teams_text.append(
                     f"{num_emoji} {team_name} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {self.tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                    f" Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text)
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
@@ -2564,21 +2564,21 @@ class BRConfirmNextMapButton(Button):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_middle')} Фаза: {map_display}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_display}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: Random\n"
+                    f" Фаза: {map_display}\n"
+                    f" Карта: {map_display}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
-                    f"{replace_emojis('white_dot')} **Статус:**\n"
-                    f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
+                    f" **Статус:**\n"
+                    f" Все команды заполнили статистику. Переход к следующей карте."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -2667,17 +2667,17 @@ class BRShowResultsButton(Button):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
                     f"{num_emoji} {team_data['captain']} ({team_data['total_points']} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {team_data['players_str']}\n"
+                    f"  {team_data['players_str']}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Итоги",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_directory')} Статус: Завершен\n\n"
-                    f"{replace_emojis('white_dot')} **Результаты команд:**\n\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {tournament.formation.value.capitalize()}\n"
+                    f" Статус: Завершен\n\n"
+                    f" **Результаты команд:**\n\n"
                     + "\n".join(teams_text)
                 ),
                 color=discord.Color.gold()
@@ -2782,21 +2782,21 @@ class BRNextMapButton(Button):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_display}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_middle')} Фаза: {map_display}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_display}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: Random\n"
+                    f" Фаза: {map_display}\n"
+                    f" Карта: {map_display}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
-                    f"{replace_emojis('white_dot')} **Статус:**\n"
-                    f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
+                    f" **Статус:**\n"
+                    f" Все команды заполнили статистику. Переход к следующей карте."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
@@ -2887,32 +2887,32 @@ class BRConfirmResultsButton(Button):
                 if i == 0:
                     teams_text.append(
                         f"{get_emoji('winner')} **{team_name}** ({total_points} очков) - ПОБЕДИТЕЛЬ!\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        f"  {players_str}\n"
                     )
                 elif i == 1:
                     teams_text.append(
                         f"{get_emoji('silver_medal')} **{team_name}** ({total_points} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        f"  {players_str}\n"
                     )
                 elif i == 2:
                     teams_text.append(
                         f"{get_emoji('bronze_medal')} **{team_name}** ({total_points} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        f"  {players_str}\n"
                     )
                 else:
                     teams_text.append(
                         f"{num_emoji} {team_name} ({total_points} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        f"  {players_str}\n"
                     )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | ИТОГИ",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | ИТОГИ",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{self.tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: {self.tournament.formation.value.capitalize()}\n"
-                    f"{replace_emojis('sub_directory')} Финальные результаты\n\n"
-                    f"{replace_emojis('white_dot')} **Команды по очкам:**\n\n"
+                    f" **Организатор:** <@{self.tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: {self.tournament.formation.value.capitalize()}\n"
+                    f" Финальные результаты\n\n"
+                    f" **Команды по очкам:**\n\n"
                     + "\n".join(teams_text)
                 ),
                 color=discord.Color.gold()
@@ -3020,17 +3020,17 @@ class BRPurgatoryButton(Button):
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {map_names.get('purgatory', 'purgatory')}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_directory')} Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Карта: {map_names.get('purgatory', 'purgatory')}\n\n"
+                f" **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -3160,17 +3160,17 @@ class BRKalahariButton(Button):
 
             teams_text.append(
                 f"{num_emoji} {team_name} ({points} очков)\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | {map_names.get('kalahari', 'kalahari')}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_directory')} Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Карта: {map_names.get('kalahari', 'kalahari')}\n\n"
+                f" **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -3311,7 +3311,7 @@ class TeamNameModal(Modal):
 
             teams_text.append(
                 f"{num_emoji} {team_name}\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         # Обновить view (убрать кнопку если больше нельзя переименовывать)
@@ -3319,14 +3319,14 @@ class TeamNameModal(Modal):
 
         # Обновить embed в стиле бота
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | {tournament.formation.value.capitalize()} | Команды",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: Бермуды\n"
-                f"{replace_emojis('sub_directory')} Команд: {len(tournament.teams)}\n\n"
-                f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: Бермуды\n"
+                f" Команд: {len(tournament.teams)}\n\n"
+                f" **Участники команд:**\n\n"
                 + "\n".join(teams_text)
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -3492,21 +3492,21 @@ class MapSelectMenu(Select):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get(value, value)}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {map_names.get(value, value)}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_middle')} Фаза: {map_names.get(value, value)}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {map_names.get(value, value)}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: Random\n"
+                    f" Фаза: {map_names.get(value, value)}\n"
+                    f" Карта: {map_names.get(value, value)}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
-                    f"{replace_emojis('white_dot')} **Правила:**\n"
-                    f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
+                    f" **Правила:**\n"
+                    f" Выберите группу команд для ввода статистики.\n\n"
                     f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)
@@ -3675,17 +3675,17 @@ class BackToMapButton(Button):
             )
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
+            title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
             description=(
-                f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                f"{replace_emojis('sub_middle')} Формат: {tournament.formation.value.capitalize()}\n"
-                f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
-                f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
-                f"{replace_emojis('white_dot')} **Команды:**\n"
+                f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                f" **Информация о турнире:**\n"
+                f" Формат: {tournament.formation.value.capitalize()}\n"
+                f" Фаза: {current_map_name}\n"
+                f" Карта: {current_map_name}\n\n"
+                f" **Команды:**\n"
                 + "\n".join(teams_text) + "\n\n"
-                f"{replace_emojis('white_dot')} **Правила:**\n"
-                f"{replace_emojis('white_arrow')} Выберите действие для ввода статистики или отправки данных.\n\n"
+                f" **Правила:**\n"
+                f" Выберите действие для ввода статистики или отправки данных.\n\n"
                 f"{replace_emojis('a_dot_smaller')} Данные пингуют роль BR игроков."
             ),
             color=discord.Color.from_rgb(69, 69, 69)
@@ -3798,7 +3798,7 @@ class BRStatsModal(Modal):
             num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
             teams_text.append(
                 f"{num_emoji} {captain} ({points} очков)\n"
-                f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                f"  {players_str}\n"
             )
 
         # Проверить все ли команды заполнили статистику для текущей карты
@@ -3872,10 +3872,10 @@ class BRStatsModal(Modal):
                     )
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Результаты",
+                    title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | Результаты",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                        f"{replace_emojis('white_dot')} **Результаты турнира:**\n"
+                        f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                        f" **Результаты турнира:**\n"
                         + "\n".join(results_text)
                     ),
                     color=discord.Color.gold()
@@ -3934,21 +3934,21 @@ class BRStatsModal(Modal):
                     num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                     teams_text.append(
                         f"{num_emoji} {captain} ({points} очков)\n"
-                        f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                        f"  {players_str}\n"
                     )
 
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {next_map}",
+                    title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {next_map}",
                     description=(
-                        f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                        f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                        f"{replace_emojis('sub_middle')} Формат: Random\n"
-                        f"{replace_emojis('sub_middle')} Фаза: {next_map}\n"
-                        f"{replace_emojis('sub_directory')} Карта: {next_map}\n\n"
-                        f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                        f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                        f" **Информация о турнире:**\n"
+                        f" Формат: Random\n"
+                        f" Фаза: {next_map}\n"
+                        f" Карта: {next_map}\n\n"
+                        f" **Участники команд:**\n\n"
                         + "\n".join(teams_text) + "\n\n"
-                        f"{replace_emojis('white_dot')} **Статус:**\n"
-                        f"{replace_emojis('white_arrow')} Все команды заполнили статистику. Переход к следующей карте."
+                        f" **Статус:**\n"
+                        f" Все команды заполнили статистику. Переход к следующей карте."
                     ),
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
@@ -4000,21 +4000,21 @@ class BRStatsModal(Modal):
                 num_emoji = num_emojis[rank] if rank < len(num_emojis) else "🎮"
                 teams_text.append(
                     f"{num_emoji} {captain} ({points} очков)\n"
-                    f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {players_str}\n"
+                    f"  {players_str}\n"
                 )
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
+                title=f" {replace_emojis('winner')} BATTLE ROYALE CUP | Random | {current_map_name}",
                 description=(
-                    f"{replace_emojis('white_arrow')} **Организатор:** <@{tournament.organizer_id}>\n\n"
-                    f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-                    f"{replace_emojis('sub_middle')} Формат: Random\n"
-                    f"{replace_emojis('sub_middle')} Фаза: {current_map_name}\n"
-                    f"{replace_emojis('sub_directory')} Карта: {current_map_name}\n\n"
-                    f"{replace_emojis('white_dot')} **Участники команд:**\n\n"
+                    f" **Организатор:** <@{tournament.organizer_id}>\n\n"
+                    f" **Информация о турнире:**\n"
+                    f" Формат: Random\n"
+                    f" Фаза: {current_map_name}\n"
+                    f" Карта: {current_map_name}\n\n"
+                    f" **Участники команд:**\n\n"
                     + "\n".join(teams_text) + "\n\n"
-                    f"{replace_emojis('white_dot')} **Правила:**\n"
-                    f"{replace_emojis('white_arrow')} Выберите группу команд для ввода статистики.\n\n"
+                    f" **Правила:**\n"
+                    f" Выберите группу команд для ввода статистики.\n\n"
                     f"{replace_emojis('a_dot_smaller')} Введите место (1-12) и убийства (0-50) для каждой команды."
                 ),
                 color=discord.Color.from_rgb(69, 69, 69)

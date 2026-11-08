@@ -85,7 +85,7 @@ class CoinFlipView(discord.ui.View):
     def create_game_embed(self, state: str = "menu", initiator_avatar: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **COIN FLIP | /coin_flip**",
+            title=f" **COIN FLIP | /coin_flip**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -97,7 +97,7 @@ class CoinFlipView(discord.ui.View):
                 embed.set_thumbnail(url=initiator_avatar)
 
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                name=f"  Информация о игре",
                 value=f"• Режим: **{mode}**\n"
                       f"• Игрок: <@{self.game.initiator_id}>\n"
                       f"• Ставка: **{self.game.bet}** {get_emoji('money')}\n"
@@ -106,15 +106,15 @@ class CoinFlipView(discord.ui.View):
             )
 
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Выберите сторону монеты (PvE) или дождитесь ответа оппонента (PvP).",
                 inline=False
             )
 
         elif state == "animating":
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"• Монета подбрасывается... {replace_emojis('white_dots')}",
+                name=f"  Результат",
+                value=f"• Монета подбрасывается... ",
                 inline=False
             )
 
@@ -124,7 +124,7 @@ class CoinFlipView(discord.ui.View):
                 result_text = "Орёл" if self.game.result == "heads" else "Решка"
                 embed.color = discord.Color.green()
                 embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                    name=f"  Результат",
                     value=f"• Выпало: **{result_text}**\n"
                           f"• Победитель: <@{self.game.winner}> (+**{self.game.bet * 2}** {get_emoji('money')})",
                     inline=False
@@ -138,7 +138,7 @@ class CoinFlipView(discord.ui.View):
                 if won:
                     embed.color = discord.Color.green()
                     embed.add_field(
-                        name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                        name=f"  Результат",
                         value=f"• Ваша ставка: **{initiator_text}**\n"
                               f"• Выпало: **{result_text}**\n"
                               f"• Итог: Вы выиграли **{self.game.bet * 2}** {get_emoji('money')}!",
@@ -147,7 +147,7 @@ class CoinFlipView(discord.ui.View):
                 else:
                     embed.color = discord.Color.red()
                     embed.add_field(
-                        name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                        name=f"  Результат",
                         value=f"• Ваша ставка: **{initiator_text}**\n"
                               f"• Выпало: **{result_text}**\n"
                               f"• Итог: Вы проиграли **{self.game.bet}** {get_emoji('money')}.",

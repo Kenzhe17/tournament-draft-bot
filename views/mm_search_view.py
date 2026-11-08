@@ -31,12 +31,12 @@ async def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.
     current = len(search.players)
 
     embed = discord.Embed(
-        title=replace_emojis("a_star winner " + format_name + " | ПОИСК"),
-        description=replace_emojis("white_dot Информация о поиске:\n"
-                                  "sub_middle Формат: " + format_name + "\n"
-                                  "sub_middle Игроки: " + str(current) + "/" + str(required) + "\n"
-                                  "sub_directory Таймер: " + ('Запущен' if search.timer_started else 'Ожидание первого игрока') + "\n\n"
-                                  "white_arrow Игроки в поиске:\n\n"
+        title=replace_emojis("winner " + format_name + " | ПОИСК"),
+        description=replace_emojis("Информация о поиске:\n"
+                                  "Формат: " + format_name + "\n"
+                                  "Игроки: " + str(current) + "/" + str(required) + "\n"
+                                  "Таймер: " + ('Запущен' if search.timer_started else 'Ожидание первого игрока') + "\n\n"
+                                  "Игроки в поиске:\n\n"
                                   "Нажмите кнопку ниже чтобы войти в поиск"),
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -49,9 +49,9 @@ async def build_search_embed(search: MMSearch, guild: discord.Guild) -> discord.
             if user_id > 0:
                 stats = await player_stats_store.get(guild.id, user_id)
                 sr = stats.skill_rating if stats else 1.0
-                player_info.append(replace_emojis("white_arrow " + player_name + " (SR: " + f"{sr:.1f}" + ")"))
+                player_info.append(replace_emojis(player_name + " (SR: " + f"{sr:.1f}" + ")"))
             else:
-                player_info.append(replace_emojis("white_arrow " + player_name))
+                player_info.append(replace_emojis(player_name))
         embed.add_field(name="", value="\n".join(player_info), inline=False)
 
     return embed

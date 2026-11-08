@@ -153,7 +153,7 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
         if not matches:
             description_parts.append(f"{replace_emojis('a_dot_smaller')} Ещё не играл в турниры")
 
-        title = f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ"
+        title = f" ИСТОРИЯ МАТЧЕЙ — {user_name}" if user_name else f" ИСТОРИЯ МАТЧЕЙ"
         embed = discord.Embed(
             title=title,
             description="\n".join(description_parts),
@@ -202,13 +202,13 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
                 description_parts.append(f"{replace_emojis('a_dot_smaller')} Ставка: {match.bet_amount} → {match.bet_win} {get_emoji('money')}")
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
+                title=f" ИСТОРИЯ МАТЧЕЙ — Матч #{match_index + 1}",
                 description="\n".join(description_parts),
                 color=discord.Color.from_rgb(69, 69, 69)
             )
         else:
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} ИСТОРИЯ МАТЧЕЙ",
+                title=f" ИСТОРИЯ МАТЧЕЙ",
                 description="Матч не найден",
                 color=discord.Color.from_rgb(69, 69, 69)
             )

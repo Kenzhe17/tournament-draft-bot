@@ -60,7 +60,7 @@ class CaseOpenButton(discord.ui.Button):
         )
 
         try:
-            await msg.add_reaction(replace_emojis("a_sparkle"))
+            await msg.add_reaction("")
             await asyncio.sleep(1)
             await msg.remove_reaction(replace_emojis("flash"), interaction.guild.me)
         except Exception:
@@ -97,9 +97,9 @@ class CaseOpenButton(discord.ui.Button):
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
-            message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
+            message = f" Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.green()
-            reaction_emoji = "a_star"
+            reaction_emoji = "⭐"
         else:
             message = replace_emojis("cross Ошибка при открытии."),
             color = discord.Color.red()
@@ -118,7 +118,7 @@ class CaseOpenButton(discord.ui.Button):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )
@@ -207,7 +207,7 @@ class CaseSelect(discord.ui.Select):
         )
 
         try:
-            await msg.add_reaction(replace_emojis("a_sparkle"))
+            await msg.add_reaction("")
             await asyncio.sleep(1)
             await msg.remove_reaction(replace_emojis("flash"), interaction.guild.me)
         except Exception:
@@ -244,9 +244,9 @@ class CaseSelect(discord.ui.Select):
         elif result["type"] == "item":
             item_name = result['value']
             item_rarity = result.get('rarity', 'common')
-            message = f"{replace_emojis('a_star')} Выпало: **{item_name}** ({item_rarity})!"
+            message = f" Выпало: **{item_name}** ({item_rarity})!"
             color = discord.Color.green()
-            reaction_emoji = "a_star"
+            reaction_emoji = "⭐"
         else:
             message = replace_emojis("cross Ошибка при открытии."),
             color = discord.Color.red()
@@ -265,7 +265,7 @@ class CaseSelect(discord.ui.Select):
             name_emoji = "emoji_special_case"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Результат открытия {replace_emojis(name_emoji)} {case.name}",
+            title=f" Результат открытия {replace_emojis(name_emoji)} {case.name}",
             description=message,
             color=color
         )

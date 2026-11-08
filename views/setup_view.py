@@ -1289,9 +1289,9 @@ class StartTournamentButton(discord.ui.Button):
                 first_captain_name = tournament.captains[tournament.captain_order[first_picker_pos]]
                 first_captain_id = tournament.player_user_ids.get(first_captain_name, 0)
                 if first_captain_id > 0:
-                    draft_message = await interaction.channel.send(f"{replace_emojis('white_arrow')} <@{first_captain_id}> - ваша очередь выбирать!")
+                    draft_message = await interaction.channel.send(f" <@{first_captain_id}> - ваша очередь выбирать!")
                 else:
-                    draft_message = await interaction.channel.send(f"{replace_emojis('white_arrow')} {first_captain_name} - ваша очередь выбирать!")
+                    draft_message = await interaction.channel.send(f" {first_captain_name} - ваша очередь выбирать!")
                 tournament.draft_message_id = draft_message.id
                 store.set(tournament)
 

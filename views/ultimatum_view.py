@@ -47,8 +47,8 @@ async def update_round_embed(guild: discord.Guild, tournament_id: str, round_num
 async def build_ultimatum_round_embed(tournament_id: str, round_number: int, guild: discord.Guild) -> discord.Embed:
     """Build embed for Ultimatum round."""
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} 16 | УЛЬТИМАТУМ СОЛО",
-        description=f"{replace_emojis('white_dot')} Матчи:",
+        title=f" {replace_emojis('winner')} 16 | УЛЬТИМАТУМ СОЛО",
+        description=f" Матчи:",
         color=discord.Color.from_rgb(69, 69, 69)
     )
 
@@ -73,7 +73,7 @@ async def build_ultimatum_round_embed(tournament_id: str, round_number: int, gui
         p1_stats = f" ({p1_player.wins}:{p1_player.losses})" if p1_player else " (0:0)"
         p2_stats = f" ({p2_player.wins}:{p2_player.losses})" if p2_player else " (0:0)"
 
-        field_value = f"{replace_emojis('white_arrow')} {p1_name}{p1_stats} vs {p2_name}{p2_stats}"
+        field_value = f" {p1_name}{p1_stats} vs {p2_name}{p2_stats}"
 
         embed.add_field(
             name="\u200b",  # Zero-width space

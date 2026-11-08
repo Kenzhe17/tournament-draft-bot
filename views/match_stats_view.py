@@ -194,7 +194,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             from utils.logging import log_stats_filled
             stats_summary = ""
             for player, kd in stats.items():
-                stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+                stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
             await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
 
             # Save match to history for captain's team players
@@ -692,7 +692,7 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         from utils.logging import log_stats_filled
         stats_summary = ""
         for player, kd in stats.items():
-            stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+            stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
         await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
 
         # Update tournament message to refresh view
@@ -988,7 +988,7 @@ class AdminConfirmView(View):
             from utils.logging import log_stats_filled
             stats_summary = ""
             for player, kd in temp_stats.items():
-                stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+                stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
             await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
 
             # Process the match with statistics (this applies ELO and stats immediately)

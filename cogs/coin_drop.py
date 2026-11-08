@@ -65,7 +65,7 @@ class SpeedDropView(discord.ui.View):
 
         if self.claimed:
             await interaction.followup.send(
-                f"{get_emoji('white_dot')} Кто-то оказался быстрее вас!",
+                f" Кто-то оказался быстрее вас!",
                 ephemeral=True
             )
             return
@@ -77,11 +77,11 @@ class SpeedDropView(discord.ui.View):
         await add_balance(interaction.guild_id, interaction.user.id, self.reward_amount)
 
         result_embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
+            title=f" **ИВЕНТ ЗАВЕРШЁН | НАГРАДА ЗАБРАНА**",
             description=(
-                f"{get_emoji('a_sparkle')} **Счастливчик:** {interaction.user.mention}\n"
-                f"{get_emoji('white_arrow')} **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
-                f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                f" **Счастливчик:** {interaction.user.mention}\n"
+                f" **Выигрыш:** **`{self.reward_amount:,}`** {get_emoji('money')}\n\n"
+                f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
             ),
             color=0x2ECC71
         )
@@ -99,12 +99,12 @@ class RaffleDropView(discord.ui.View):
 
     def build_embed(self) -> discord.Embed:
         return discord.Embed(
-            title=f"{get_emoji('a_star')} **СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
+            title=f" **СПОНТАННЫЙ ИВЕНТ | ЛОТЕРЕЯ МОНЕТ**",
             description=(
-                f"{get_emoji('a_sparkle')} В чате разыгрывается мешок с монетами!\n"
-                f"{get_emoji('white_arrow')} Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
-                f"{get_emoji('white_arrow')} Участников: **`{len(self.participants)}`**\n\n"
-                f"{get_emoji('white_dot')} *Победитель решится случайно <t:{int(datetime.now().timestamp()) + 60}:R>*"
+                f" В чате разыгрывается мешок с монетами!\n"
+                f" Награда: **`{self.reward_amount:,}`** {get_emoji('money')}\n"
+                f" Участников: **`{len(self.participants)}`**\n\n"
+                f" *Победитель решится случайно <t:{int(datetime.now().timestamp()) + 60}:R>*"
             ),
             color=0xF1C40F
         )
@@ -119,7 +119,7 @@ class RaffleDropView(discord.ui.View):
 
         if interaction.user.id in self.participants:
             await interaction.followup.send(
-                f"{get_emoji('white_dot')} Вы уже участвуете в этом розыгрыше!",
+                f" Вы уже участвуете в этом розыгрыше!",
                 ephemeral=True
             )
             return
@@ -192,11 +192,11 @@ class CoinDropCog(commands.Cog):
                 item.custom_id = f"speed_coin_drop_{event_id}"
 
             embed = discord.Embed(
-                title=f"{get_emoji('a_star')} **СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
+                title=f" **СПОНТАННЫЙ ИВЕНТ | БЫСТРЫЕ МОНЕТЫ**",
                 description=(
-                    f"{get_emoji('a_sparkle')} В чате обнаружен мешок с монетами!\n"
-                    f"{get_emoji('white_arrow')} Нажмите кнопку как можно быстрее — кто успеет первым, тот забрал куш.\n\n"
-                    f"{get_emoji('white_dot')} Награда: **`{reward:,}`** {get_emoji('money')} | *Режим: На скорость*"
+                    f" В чате обнаружен мешок с монетами!\n"
+                    f" Нажмите кнопку как можно быстрее — кто успеет первым, тот забрал куш.\n\n"
+                    f" Награда: **`{reward:,}`** {get_emoji('money')} | *Режим: На скорость*"
                 ),
                 color=0xF1C40F
             )
@@ -217,8 +217,8 @@ class CoinDropCog(commands.Cog):
 
             if not view.participants:
                 no_p_embed = discord.Embed(
-                    title=f"{get_emoji('a_star')} **ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
-                    description=f"{get_emoji('white_dot')} Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
+                    title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | НИКОГО**",
+                    description=f" Никто не успел принять участие за 60 секунд. Мешок с {get_emoji('money')} сгорел!",
                     color=0xED4245
                 )
                 try:
@@ -240,12 +240,12 @@ class CoinDropCog(commands.Cog):
                     await add_balance(channel.guild.id, winner.id, reward)
 
                     result_embed = discord.Embed(
-                        title=f"{get_emoji('a_star')} **ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
+                        title=f" **ЛОТЕРЕЯ ЗАВЕРШЕНА | ПОБЕДИТЕЛЬ**",
                         description=(
-                            f"{get_emoji('a_sparkle')} **Победитель:** {winner.mention}\n"
-                            f"{get_emoji('white_arrow')} **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
-                            f"{get_emoji('white_arrow')} **Всего участников:** `{len(view.participants)}`\n\n"
-                            f"{get_emoji('white_dot')} *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
+                            f" **Победитель:** {winner.mention}\n"
+                            f" **Выигрыш:** **`{reward:,}`** {get_emoji('money')}\n"
+                            f" **Всего участников:** `{len(view.participants)}`\n\n"
+                            f" *Монеты зачислены на ваш баланс. Проверить: `/balance`*"
                         ),
                         color=0x2ECC71
                     )
@@ -264,7 +264,7 @@ class CoinDropCog(commands.Cog):
     async def force_drop(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         await self.trigger_drop(interaction.channel)
-        await interaction.followup.send(f"{get_emoji('white_dot')} Ивент успешно вызван принудительно!", ephemeral=True)
+        await interaction.followup.send(f" Ивент успешно вызван принудительно!", ephemeral=True)
 
 
 async def setup(bot: "TournamentBot"):

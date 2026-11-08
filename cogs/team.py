@@ -56,12 +56,12 @@ class TeamCog(commands.Cog):
         await team_store.create(team)
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Команда создана!",
+            title=f" Команда создана!",
             description=(
-                f"{replace_emojis('white_dot')} **Название:** {team.team_name}\n"
-                f"{replace_emojis('white_dot')} **Пароль:** ||{password}||\n"
-                f"{replace_emojis('white_dot')} **Капитан:** {interaction.user.mention}\n\n"
-                f"{replace_emojis('white_arrow')} Используйте `/team status` для управления командой"
+                f" **Название:** {team.team_name}\n"
+                f" **Пароль:** ||{password}||\n"
+                f" **Капитан:** {interaction.user.mention}\n\n"
+                f" Используйте `/team status` для управления командой"
             ),
             color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
         )
@@ -96,8 +96,8 @@ class TeamCog(commands.Cog):
         await team_store.delete(team.team_id)
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} Команда удалена",
-            description=f"{replace_emojis('white_arrow')} Команда **{team.team_name}** была удалена.",
+            title=f" Команда удалена",
+            description=f" Команда **{team.team_name}** была удалена.",
             color=discord.Color.from_rgb(235, 100, 100)  # Pastel red
         )
 
@@ -151,11 +151,11 @@ class TeamCog(commands.Cog):
                 status_text = f"(Недостаёт {missing} игроков)"
 
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} {team.team_name}",
+            title=f" {team.team_name}",
             description=(
-                f"{replace_emojis('white_dot')} **Состав:** {count}/4\n"
-                f"{replace_emojis('white_arrow')} {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
-                f"{replace_emojis('white_dot')} **Статус:** {status_emoji} {status_text}"
+                f" **Состав:** {count}/4\n"
+                f" {', '.join(member_mentions) if member_mentions else 'Нет участников'}\n\n"
+                f" **Статус:** {status_emoji} {status_text}"
             ),
             color=discord.Color.from_rgb(114, 137, 218)  # Pastel blue
         )

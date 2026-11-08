@@ -235,12 +235,12 @@ class WardrobeView(discord.ui.View):
                     equipped_line = f"**{it.get('name')}** `{it.get('type')}`"
                     thumb = ff_catalog.icon_url(equipped_id)
             embed = discord.Embed(
-                title=f"{get_emoji('a_star')} ГАРДЕРОБ",
+                title=f" ГАРДЕРОБ",
                 description=(
-                    f"{replace_emojis('white_dot')} Вещей: **{owned}**\n"
-                    f"{replace_emojis('white_dot')} Баланс: **{_fmt_money(balance)}** {get_emoji('money')}\n"
-                    f"{replace_emojis('white_dot')} Образ: {equipped_line}\n\n"
-                    f"{replace_emojis('sub_directory')} Выберите категорию ниже или воспользуйтесь поиском."
+                    f" Вещей: **{owned}**\n"
+                    f" Баланс: **{_fmt_money(balance)}** {get_emoji('money')}\n"
+                    f" Образ: {equipped_line}\n\n"
+                    f" Выберите категорию ниже или воспользуйтесь поиском."
                 ),
                 color=discord.Color.from_rgb(240, 178, 50),
             )
@@ -263,11 +263,11 @@ class WardrobeView(discord.ui.View):
 
         pages = max(1, -(-total // PAGE_SIZE))
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} {cat_name}",
+            title=f" {cat_name}",
             description=(
-                f"{replace_emojis('white_dot')} Найдено: **{total}** · "
+                f" Найдено: **{total}** · "
                 f"Страница **{self.page + 1}/{pages}**\n"
-                f"{replace_emojis('sub_directory')} Выберите предмет из списка."
+                f" Выберите предмет из списка."
             ),
             color=discord.Color.from_rgb(88, 101, 242),
         )
@@ -294,13 +294,13 @@ class WardrobeView(discord.ui.View):
             status += " · ⭐ **Ваш образ**"
 
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} {item.get('name', '?')}",
+            title=f" {item.get('name', '?')}",
             description=(
-                f"{replace_emojis('white_dot')} {item.get('description') or '—'}\n\n"
-                f"{replace_emojis('white_dot')} Тип: **{item.get('type') or '—'}**\n"
-                f"{replace_emojis('white_dot')} Редкость: **{RARITY_LABELS.get(rarity, rarity)}**\n"
-                f"{replace_emojis('white_dot')} Статус: {status}\n"
-                f"{replace_emojis('sub_directory')} Баланс: {_fmt_money(balance)} {get_emoji('money')}"
+                f" {item.get('description') or '—'}\n\n"
+                f" Тип: **{item.get('type') or '—'}**\n"
+                f" Редкость: **{RARITY_LABELS.get(rarity, rarity)}**\n"
+                f" Статус: {status}\n"
+                f" Баланс: {_fmt_money(balance)} {get_emoji('money')}"
             ),
             color=ff_catalog.rarity_color(rarity),
         )

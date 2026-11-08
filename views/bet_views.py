@@ -170,7 +170,7 @@ class ViewBetsButton(Button):
                 odds_a = 1.9
                 odds_b = 1.9
             
-            star_emoji = replace_emojis("a_star")
+            star_emoji = ""
             match_text = f"{star_emoji} Игра #{i + 1}: {name_a} `{odds_a:.2f}x` vs {name_b} `{odds_b:.2f}x`\n\n"
 
             # Group bets by team (using team_index)
@@ -181,21 +181,21 @@ class ViewBetsButton(Button):
             team_a_total = sum(b.amount for b in team_a_bets)
             team_b_total = sum(b.amount for b in team_b_bets)
 
-            match_text += f"{replace_emojis('white_dot')} `Ставки:`\n"
+            match_text += f" `Ставки:`\n"
 
             if team_a_bets:
                 users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {get_emoji('money')})" for b in team_a_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: {team_a_total:,} {get_emoji('money')} - {users_str}\n"
+                match_text += f">  **{name_a}**: {team_a_total:,} {get_emoji('money')} - {users_str}\n"
             else:
-                match_text += f"> {replace_emojis('white_dot')} **{name_a}**: *Нет ставок*\n"
+                match_text += f">  **{name_a}**: *Нет ставок*\n"
 
             if team_b_bets:
                 users_with_amounts = [f"<@{b.user_id}> ({b.amount:,} {get_emoji('money')})" for b in team_b_bets]
                 users_str = ", ".join(users_with_amounts)
-                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: {team_b_total:,} {get_emoji('money')} - {users_str}\n"
+                match_text += f">  **{name_b}**: {team_b_total:,} {get_emoji('money')} - {users_str}\n"
             else:
-                match_text += f"> {replace_emojis('white_dot')} **{name_b}**: *Нет ставок*\n"
+                match_text += f">  **{name_b}**: *Нет ставок*\n"
             
             bets_text.append(match_text)
         

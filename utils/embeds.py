@@ -487,11 +487,11 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             odds_b = max(1.1, min(2.7, odds_b))
 
         # Build field name
-        star_emoji = replace_emojis("a_star")
+        star_emoji = ""
         field_name = f"{star_emoji} Игра #{i + 1}"
 
         # Build field value - match info with odds only (no betting details)
-        field_value = f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **{name_a}** {odds_a:.2f}x vs **{name_b}** {odds_b:.2f}x"
+        field_value = f"  **{name_a}** {odds_a:.2f}x vs **{name_b}** {odds_b:.2f}x"
 
         embed.add_field(name=field_name, value=field_value, inline=False)
 
@@ -543,7 +543,7 @@ async def build_setup_embed(
     tournament: Tournament, guild: discord.Guild
 ) -> discord.Embed:
     """Embed настройки турнира."""
-    status_emoji = replace_emojis("white_dot") if tournament.registration == RegistrationState.OPEN else replace_emojis("white_dot")
+    status_emoji = "" if tournament.registration == RegistrationState.OPEN else ""
     formation_text = "Skill" if tournament.formation_mode == FormationMode.SKILL else "ELO" if tournament.formation_mode == FormationMode.ELO else "RANDOM"
     if tournament.registration == RegistrationState.ISOLATED:
         status_text = "Изолирован"
@@ -585,15 +585,15 @@ async def build_setup_embed(
         players_text = ", ".join(player_strings) if player_strings else "*"
 
         description = (
-            f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-            f"{replace_emojis('sub_middle')} Размер: {tournament.size.value}\n"
-            f"{replace_emojis('sub_middle')} Режим формирования: {formation_text}\n"
-            f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
-            f"{replace_emojis('white_dot')} **Пул игроков:**\n"
-            f"{replace_emojis('white_arrow')} {players_text}\n\n"
+            f" **Организатор:** {organizer_mention}\n\n"
+            f" **Информация о турнире:**\n"
+            f" Размер: {tournament.size.value}\n"
+            f" Режим формирования: {formation_text}\n"
+            f" Статус регистрации: {status_text}\n\n"
+            f" **Пул игроков:**\n"
+            f" {players_text}\n\n"
             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
-            f"{replace_emojis('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
+            f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
     else:
         # ELO/SKILL modes: show circles
@@ -616,21 +616,21 @@ async def build_setup_embed(
                 limit_info = f" ({count}/∞)"
 
             value = _circle_line(circle_list, elo_dict, tournament, guild.id) or "*"
-            circle_sections.append(f"{replace_emojis('white_dot')} **{circle_name}{limit_info}:**\n{replace_emojis('white_arrow')} {value}")
+            circle_sections.append(f" **{circle_name}{limit_info}:**\n {value}")
 
         description = (
-            f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-            f"{replace_emojis('white_dot')} **Информация о турнире:**\n"
-            f"{replace_emojis('sub_middle')} Размер: {tournament.size.value}\n"
-            f"{replace_emojis('sub_middle')} Режим формирования: {formation_text}\n"
-            f"{replace_emojis('sub_directory')} Статус регистрации: {status_text}\n\n"
+            f" **Организатор:** {organizer_mention}\n\n"
+            f" **Информация о турнире:**\n"
+            f" Размер: {tournament.size.value}\n"
+            f" Режим формирования: {formation_text}\n"
+            f" Статус регистрации: {status_text}\n\n"
             + "\n\n".join(circle_sections) + "\n\n"
             f"{replace_emojis('a_dot_smaller')} Используйте кнопки ниже для регистрации на турнир\n\n"
-            f"{replace_emojis('white_dot')} Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
+            f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} {tournament.size.value} | {status_text} | {formation_text}",
+        title=f" {replace_emojis('winner')} {tournament.size.value} | {status_text} | {formation_text}",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -651,9 +651,9 @@ async def build_draft_embed(
         current_captain_name = tournament.captains[tournament.captain_order[current_picker_pos]]
         current_captain_id = tournament.player_user_ids.get(current_captain_name, 0)
         if current_captain_id > 0:
-            current_line = f"white_arrow **Сейчас выбирает:** <@{current_captain_id}>\nwhite_arrow У вас есть 60 сек на выбор!"
+            current_line = f"**Сейчас выбирает:** <@{current_captain_id}>\nУ вас есть 60 сек на выбор!"
         else:
-            current_line = f"white_arrow **Сейчас выбирает:** {current_captain_name}\nwhite_arrow У вас есть 60 сек на выбор!"
+            current_line = f"**Сейчас выбирает:** {current_captain_name}\nУ вас есть 60 сек на выбор!"
     else:
         current_line = "Драфт завершён"
 
@@ -686,21 +686,21 @@ async def build_draft_embed(
             captain_mention = f"<@{captain_id}>" if captain_id > 0 else captain_name
 
             if circle > tournament.current_circle or not pick:
-                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ `[Ожидание]`")
+                lines.append(f" {captain_mention} ➔ `[Ожидание]`")
             elif circle == tournament.current_circle and pick:
                 pick_id = tournament.player_user_ids.get(pick, 0)
                 pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ {pick_mention}")
+                lines.append(f" {captain_mention} ➔ {pick_mention}")
             elif circle < tournament.current_circle:
                 pick_id = tournament.player_user_ids.get(pick, 0)
                 pick_mention = f"<@{pick_id}>" if pick_id > 0 else pick
-                lines.append(f"{replace_emojis('white_arrow')} {captain_mention} ➔ {pick_mention}")
+                lines.append(f" {captain_mention} ➔ {pick_mention}")
 
         status = ""
         if circle == tournament.current_circle:
             status = f" ◄ `[Текущий]`"
 
-        picks_sections.append(f"{replace_emojis('sub_middle')} **Круг {circle}:{status}**\n" + "\n".join(lines))
+        picks_sections.append(f" **Круг {circle}:{status}**\n" + "\n".join(lines))
 
     # Warning if more than 25 players available
     warning = ""
@@ -711,15 +711,15 @@ async def build_draft_embed(
 
     description = (
         f"{replace_emojis(current_line)}\n\n"
-        f"{replace_emojis('white_dot')} **Очередь выбора:**\n"
-        f"{replace_emojis('white_arrow')} {', '.join(next_captains)}\n\n"
-        f"{replace_emojis('white_dot')} **Выборы по кругам:**\n"
+        f" **Очередь выбора:**\n"
+        f" {', '.join(next_captains)}\n\n"
+        f" **Выборы по кругам:**\n"
         + "\n\n".join(picks_sections)
         + warning
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ⚔️ Порядок капитанов | Фаза Драфта",
+        title=f" ⚔️ Порядок капитанов | Фаза Драфта",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -781,10 +781,10 @@ async def build_qualifiers_embed(
                 winner_idx = tournament.qualifier_winners[i]
                 # Use team_names to get the custom team name
                 winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
-                winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+                winner_info = f"\n  **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Отбор #{i + 1}:**  **{name_a}:** vs  **{name_b}:** {winner_info}"
+            f" **Отбор #{i + 1}:**  **{name_a}:** vs  **{name_b}:** {winner_info}"
         )
 
     # Build footer
@@ -795,13 +795,13 @@ async def build_qualifiers_embed(
         footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
-        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-        f"{replace_emojis('white_dot')} **Отборочные матчи:**\n"
+        f" **Организатор:** {organizer_mention}\n\n"
+        f" **Отборочные матчи:**\n"
         + "\n\n".join(matches_section) + "\n\n\n"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ОТБОР",
+        title=f" {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ОТБОР",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -832,7 +832,7 @@ async def build_qualifiers_embed(
         team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                            "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
         num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -881,10 +881,10 @@ async def build_semifinals_embed(
                 winner_idx = tournament.semifinal_winners[i]
                 # Use team_names to get the custom team name
                 winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
-                winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+                winner_info = f"\n  **Победитель:** {winner_name}"
 
         matches_section.append(
-            f"{replace_emojis('white_arrow')} **Игра #{i + 1}:** {name_a} vs {name_b}{winner_info}"
+            f" **Игра #{i + 1}:** {name_a} vs {name_b}{winner_info}"
         )
 
     # Build footer
@@ -895,13 +895,13 @@ async def build_semifinals_embed(
         footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
-        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-        f"{replace_emojis('white_dot')} **Полуфинальные матчи:**\n"
+        f" **Организатор:** {organizer_mention}\n\n"
+        f" **Полуфинальные матчи:**\n"
         + "\n\n".join(matches_section) + "\n\n\n"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
+        title=f" {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ПОЛУФИНАЛ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -932,7 +932,7 @@ async def build_semifinals_embed(
         team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                            "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
         num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -976,7 +976,7 @@ async def build_final_embed(
         winner_idx = tournament.winner_team_index
         # Use team_names to get the custom team name
         winner_name = tournament.team_names.get(winner_idx, f"Team {winner_idx + 1}")
-        winner_info = f"\n{replace_emojis('white_dot')} {replace_emojis('white_arrow')} **Победитель:** {winner_name}"
+        winner_info = f"\n  **Победитель:** {winner_name}"
 
     # Build footer
     footer = ""
@@ -986,14 +986,14 @@ async def build_final_embed(
         footer = "🔒 СТАВКИ ЗАКРЫТЫ"
 
     description = (
-        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-        f"{replace_emojis('white_dot')} **Главная битва:**\n"
-        f"{replace_emojis('white_arrow')} **Финал:** {name_a} vs {name_b}{winner_info}\n\n\n\n"
-        f"{replace_emojis('white_dot')} **Участники команд:**\n"
+        f" **Организатор:** {organizer_mention}\n\n"
+        f" **Главная битва:**\n"
+        f" **Финал:** {name_a} vs {name_b}{winner_info}\n\n\n\n"
+        f" **Участники команд:**\n"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ФИНАЛ",
+        title=f" {replace_emojis('winner')} ТУРНИРНАЯ СЕТКА — ФИНАЛ",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -1025,7 +1025,7 @@ async def build_final_embed(
         team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
                            "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
         num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} {', '.join(formatted_players)}", inline=False)
+        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -1048,7 +1048,7 @@ async def build_winner_embed(
     idx = tournament.winner_team_index
     if idx is None:
         return discord.Embed(
-            title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
+            title=f" {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
             description="Победитель не определен",
             color=discord.Color.from_rgb(69, 69, 69)
         )
@@ -1197,7 +1197,7 @@ async def build_winner_embed(
                     formatted_name = player
                 players.append(formatted_name)
         if players:
-            team_list += f"{replace_emojis('white_arrow')} **{team_name}:** {', '.join(players)}\n"
+            team_list += f" **{team_name}:** {', '.join(players)}\n"
 
     # Calculate display values for stats
     best_kd_display = f"{best_kd:.2f}" if best_kd > 0 else "0.00"
@@ -1206,21 +1206,21 @@ async def build_winner_embed(
     max_payout_display = f"{max_payout:,}" if max_payout > 0 else "0"
 
     description = (
-        f"{replace_emojis('white_arrow')} **Организатор:** {organizer_mention}\n\n"
-        f"{replace_emojis('white_dot')} **Победитель:**\n"
-        f"{replace_emojis('white_arrow')} **{winner_team_name}** — {replace_emojis('winner')} {replace_emojis('white_arrow')} {roster_str}\n\n\n"
-        f"{replace_emojis('white_dot')} **Список команд:**\n"
+        f" **Организатор:** {organizer_mention}\n\n"
+        f" **Победитель:**\n"
+        f" **{winner_team_name}** — {replace_emojis('winner')}  {roster_str}\n\n\n"
+        f" **Список команд:**\n"
         f"{team_list}\n"
-        f"{replace_emojis('white_dot')} **Статистика турнира:**\n"
-        f"{replace_emojis('sub_middle')} **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd_display})\n"
-        f"{replace_emojis('sub_middle')} **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg_display})\n"
-        f"{replace_emojis('sub_middle')} **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills_display})\n"
-        f"{replace_emojis('sub_directory')} **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout_display} {get_emoji('money') if max_payout > 0 else ''})\n\n"
+        f" **Статистика турнира:**\n"
+        f" **Best K/D:** {best_kd_player if best_kd_player else 'Нет данных'} ({best_kd_display})\n"
+        f" **Best AVG:** {best_avg_player if best_avg_player else 'Нет данных'} ({best_avg_display})\n"
+        f" **Max Kills:** {best_kills_player if best_kills_player else 'Нет данных'} ({best_kills_display})\n"
+        f" **Лудик:** {max_payout_player if max_payout_player else 'Нет данных'} ({max_payout_display} {get_emoji('money') if max_payout > 0 else ''})\n\n"
         f"{replace_emojis('a_dot_smaller')} Поздравляем победителей! Спасибо всем за участие"
     )
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
+        title=f" {replace_emojis('winner')} ПОБЕДИТЕЛЬ ТУРНИРА",
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
@@ -1302,16 +1302,16 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
     # Set title and color based on type
     if leaderboard_type == "level":
-        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
+        title = f" ЛИДЕРЫ СЕРВЕРА | УРОВЕНЬ И ОПЫТ"
         color = discord.Color.from_rgb(155, 89, 182)  # Пастельно-фиолетовый
     elif leaderboard_type == "money":
-        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
+        title = f" ЛИДЕРЫ СЕРВЕРА | БАЛАНС МОНЕТ"
         color = discord.Color.from_rgb(241, 196, 15)  # Пастельно-золотой
     elif leaderboard_type == "ulti_elo":
-        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
+        title = f" ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
         color = discord.Color.from_rgb(46, 204, 113)  # Пастельно-зеленый
     else:  # elo
-        title = f"{replace_emojis('a_star')} ЛИДЕРЫ СЕРВЕРА | ELO"
+        title = f" ЛИДЕРЫ СЕРВЕРА | ELO"
         color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
 
     # Get total pages based on type
@@ -1427,9 +1427,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
                 user_value = f"{int(user_stats.elo)} ELO"
 
             if user_rank:
-                embed.description += f"\n\n───\n{replace_emojis('white_dot')} **Ваше место:** **`#{user_rank}`** | **{user_value}**"
+                embed.description += f"\n\n───\n **Ваше место:** **`#{user_rank}`** | **{user_value}**"
             else:
-                embed.description += f"\n\n───\n{replace_emojis('white_dot')} Вы пока не в рейтинге. Сыграйте хотя бы один турнир!"
+                embed.description += f"\n\n───\n Вы пока не в рейтинге. Сыграйте хотя бы один турнир!"
 
     embed.set_footer(text=f"Страница {page}/{total_pages}")
 

@@ -60,13 +60,13 @@ class GuessNumberView(discord.ui.View):
     def create_embed(self, state: str = "playing", result: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **УГАДАЙ ЧИСЛО | /guess_number**",
+            title=f" **УГАДАЙ ЧИСЛО | /guess_number**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
         if state == "playing":
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                name=f"  Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
                       f"• Диапазон: **{self.min_range} - {self.max_range}**\n"
                       f"• Попытки: **{self.attempts}/{self.max_attempts}**\n"
@@ -74,7 +74,7 @@ class GuessNumberView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Угадайте число от 1 до 100. У вас есть 5 попыток. Используйте бинарный поиск для максимального шанса!",
                 inline=False
             )
@@ -83,14 +83,14 @@ class GuessNumberView(discord.ui.View):
             winnings = self.bet * 5
             embed.color = discord.Color.green()
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Вы угадали число **{self.secret_number}**!\n"
+                name=f"  Результат",
+                value=f" Вы угадали число **{self.secret_number}**!\n"
                       f"• Попыток: **{self.attempts}**\n"
                       f"• Выигрыш: **{winnings}** {get_emoji('money')} (5x)",
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                name=f"  Результат",
                 value=f"• Секретное число: **{self.secret_number}**\n"
                       f"• Попыток: **{self.attempts}**\n"
                       f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
@@ -100,8 +100,8 @@ class GuessNumberView(discord.ui.View):
         elif state == "lost":
             embed.color = discord.Color.red()
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Вы не угадали число **{self.secret_number}**.\n"
+                name=f"  Результат",
+                value=f" Вы не угадали число **{self.secret_number}**.\n"
                       f"• Попыток: **{self.attempts}**\n"
                       f"• Проигрыш: **{self.bet}** {get_emoji('money')}.",
                 inline=False

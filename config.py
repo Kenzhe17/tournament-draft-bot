@@ -546,16 +546,10 @@ def replace_emojis(text: str) -> str:
         "👁️": "eye",
 
         # Special
-        "•": "white_dot",
-        "└": "sub_directory",
         "🏠": "room",
 
         # Additional symbols for replacement
-        "⚪": "white_dot",
-        "➡️": "white_arrow",
         "⬅️": "arrow_left",
-        "✨": "a_sparkle",
-        "⭐": "a_star",
         "⋯": "a_triple_dots",
 
         # Case emojis

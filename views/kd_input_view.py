@@ -133,7 +133,7 @@ class ProcessMatchButton(discord.ui.Button):
         # Build stats summary
         stats_summary = ""
         for player, kd in temp_stats.items():
-            stats_summary += f"{get_emoji('white_dot')} {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
+            stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
 
         await log_stats_filled(interaction.client, interaction.guild, interaction.user, match_type, match_index, stats_summary)
 

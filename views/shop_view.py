@@ -44,10 +44,10 @@ def build_won_pet_embed(pet_id: str, user: discord.abc.User, is_egg_drop: bool =
     desc2 = desc2_template.replace("{val}", str(ab2.get("max_val", 0)))
 
     # Получаем реальные эмодзи через get_emoji
-    emoji_star = get_emoji("a_star")
-    emoji_sparkle = get_emoji("a_sparkle")
-    emoji_arrow = get_emoji("white_arrow")
-    emoji_dot = get_emoji("white_dot")
+    emoji_star = ""
+    emoji_sparkle = ""
+    emoji_arrow = ""
+    emoji_dot = ""
     emoji_money = get_emoji("money")
 
     embed = discord.Embed(
@@ -161,26 +161,26 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     cases_parts = []
     for case in cases:
         case_emoji = "case_basic"  # default
-        sub_emoji = "sub_middle"  # default
+        sub_emoji = ""  # default
         name_prefix = " "
         sparkle = ""
         if "Basic" in case.name:
             case_emoji = "case_basic"
-            sub_emoji = "sub_middle"
+            sub_emoji = ""
             name_prefix = "  "
         elif "Premium" in case.name:
             case_emoji = "case_premium"
-            sub_emoji = "sub_middle"
+            sub_emoji = ""
             name_prefix = " "
         elif "Elite" in case.name:
             case_emoji = "case_elite"
-            sub_emoji = "sub_middle"
+            sub_emoji = ""
             name_prefix = "  "
         elif "Special" in case.name:
             case_emoji = "case_special"
-            sub_emoji = "sub_directory"
+            sub_emoji = ""
             name_prefix = " "
-            sparkle = f" {replace_emojis('a_star')}"
+            sparkle = f" "
 
         cases_parts.append(
             f"{replace_emojis(sub_emoji)} {replace_emojis(case_emoji)}{name_prefix}**{case.name}** • {case.price} {get_emoji('money')}{sparkle}"
@@ -202,7 +202,7 @@ async def show_cases_category(interaction: discord.Interaction) -> None:
     # Создать embed
     embed = discord.Embed(
         title=replace_emojis("КАТАЛОГ | Кейсы"),
-        description=f"Выберите кейс из списка ниже для открытия:\n\n{replace_emojis('⚪')} **Доступные кейсы:**\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите кейс в меню ниже",
+        description=f"Выберите кейс из списка ниже для открытия:\n\n{replace_emojis('⚪')} **Доступные кейсы:**\n{cases_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите кейс в меню ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -234,8 +234,8 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     # Создать список ролей
     roles_list = "\n\n".join([
         f"{item.value if item.value else ''} **{item.name}**\n"
-        f"{replace_emojis('sub_middle')} {item.description}\n"
-        f"{replace_emojis('sub_directory')} **Цена:** {item.price} {get_emoji('money')}"
+        f" {item.description}\n"
+        f" **Цена:** {item.price} {get_emoji('money')}"
         for item in roles
     ])
 
@@ -261,9 +261,9 @@ async def show_roles_list(interaction: discord.Interaction) -> None:
     # Профиль
     embed.add_field(
         name=replace_emojis("⚪ ВАШ ПРОФИЛЬ"),
-        value=f"{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n"
-              f"{replace_emojis('sub_middle')} Ранг: {rank}\n"
-              f"{replace_emojis('sub_directory')} Мест в инвентаре: {inventory_count}/{max_inventory}",
+        value=f" Баланс: {balance:,} {get_emoji('money')}\n"
+              f" Ранг: {rank}\n"
+              f" Мест в инвентаре: {inventory_count}/{max_inventory}",
         inline=False
     )
 
@@ -285,7 +285,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     from cogs.tournament import get_rank_emoji
 
     category_label = "Значки" if category == "icons" else "Теги"
-    category_emoji = "a_sparkle" if category == "icons" else "tag"
+    category_emoji = "" if category == "icons" else "tag"
 
     # Получить данные профиля
     balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
@@ -301,7 +301,7 @@ async def show_rarity_selection(interaction: discord.Interaction, category: str)
     # Создать embed
     embed = discord.Embed(
         title=f"{replace_emojis(category_emoji)} КАТАЛОГ | {category_label}",
-        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n{replace_emojis('sub_middle')} {replace_emojis('rare_basic')} **Basic** • Базовые товары\n{replace_emojis('sub_middle')} {replace_emojis('rare_premium')} **Premium** • Премиум товары\n{replace_emojis('sub_middle')} {replace_emojis('rare_elite')} **Elite** • Элитные товары\n{replace_emojis('sub_directory')} {replace_emojis('rare_special')} **Special** • Специальные редкие товары {replace_emojis('a_star')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
+        description=f"Выберите уровень товаров из списка ниже для просмотра доступных предметов и цен:\n\n{replace_emojis('⚪')} **Доступные категории:**\n {replace_emojis('rare_basic')} **Basic** • Базовые товары\n {replace_emojis('rare_premium')} **Premium** • Премиум товары\n {replace_emojis('rare_elite')} **Elite** • Элитные товары\n {replace_emojis('rare_special')} **Special** • Специальные редкие товары \n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для перехода выберите подкатегорию в меню",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -377,7 +377,7 @@ class RaritySelect(discord.ui.Select):
 
         # Создать список товаров
         category_label = "Значки" if self.category == "icons" else "Теги"
-        category_emoji = replace_emojis("a_star") if self.category == "icons" else replace_emojis("tag")
+        category_emoji = "" if self.category == "icons" else replace_emojis("tag")
 
         if self.category == "tags":
             # Маппинг rare эмодзи по редкости
@@ -391,7 +391,7 @@ class RaritySelect(discord.ui.Select):
             items_parts = []
             for i, item in enumerate(items):
                 rare_emoji = rare_map.get(item.rarity, "rare_basic")
-                sub_emoji = "sub_middle" if i < len(items) - 1 else "sub_directory"
+                sub_emoji = "" if i < len(items) - 1 else ""
                 items_parts.append(
                     f"{replace_emojis(sub_emoji)} **{item.name}** • {item.price} {get_emoji('money')} {replace_emojis(rare_emoji)}"
                 )
@@ -442,7 +442,7 @@ class RaritySelect(discord.ui.Select):
         # Создать список товаров (без кастомных эмодзи для icons)
         items_parts = []
         for i, item in enumerate(items):
-            sub_emoji = "sub_middle" if i < len(items) - 1 else "sub_directory"
+            sub_emoji = "" if i < len(items) - 1 else ""
             if self.category == "tags":
                 # Tags don't have icon emojis
                 items_parts.append(
@@ -459,8 +459,8 @@ class RaritySelect(discord.ui.Select):
 
         # Создать embed
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} КАТАЛОГ | {category_label} — {rarity_value.capitalize()}",
-            description=f"Выберите {category_label.lower()} из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные товары:**\n{items_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите предмет в выпадающем меню для покупки",
+            title=f" КАТАЛОГ | {category_label} — {rarity_value.capitalize()}",
+            description=f"Выберите {category_label.lower()} из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные товары:**\n{items_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите предмет в выпадающем меню для покупки",
             color=embed_color
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -473,7 +473,7 @@ class RaritySelect(discord.ui.Select):
 def get_item_emoji(category: str) -> str:
     """Получить эмодзи для категории товара."""
     emoji_map = {
-        "icons": replace_emojis("a_star"),
+        "icons": "",
         "tags": replace_emojis("tag"),
     }
     return emoji_map.get(category, replace_emojis("shop"))
@@ -633,7 +633,7 @@ async def show_item_card(interaction: discord.Interaction, item) -> None:
     # Create embed with custom emoji
     embed = discord.Embed(
         title=f"{icon_emoji} ПОКУПКА ЭМОДЗИ | {item.name}",
-        description=f"Вы действительно хотите приобрести данный предмет?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Тип: {category_label} • {label} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        description=f"Вы действительно хотите приобрести данный предмет?\n\n{replace_emojis('⚪')} **Информация:**\n Тип: {category_label} • {label} {replace_emojis(rare_emoji)}\n Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=embed_color
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -682,7 +682,7 @@ async def show_tag_card(interaction: discord.Interaction, item) -> None:
     # Создать embed
     embed = discord.Embed(
         title=f"🏷️ ПОКУПКА ТЕГА | {item.name}",
-        description=f"Вы действительно хотите приобрести данный тег?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Теги • {label} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Предпросмотр:**\n{replace_emojis('sub_directory')} **{item.value}** {interaction.user.display_name}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        description=f"Вы действительно хотите приобрести данный тег?\n\n{replace_emojis('⚪')} **Информация:**\n Категория: Теги • {label} {replace_emojis(rare_emoji)}\n Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Предпросмотр:**\n **{item.value}** {interaction.user.display_name}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=embed_color
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -710,8 +710,8 @@ async def show_role_card(interaction: discord.Interaction, item) -> None:
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ПОКУПКА РОЛИ | {item.name}",
-        description=f"Вы действительно хотите приобрести эту роль?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Discord Роли\n{replace_emojis('sub_middle')} Описание: {item.description}\n{replace_emojis('sub_directory')} Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Отображение в профиле:**\n{replace_emojis('sub_directory')} Роль: <@&{item.role_id}>\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        title=f" ПОКУПКА РОЛИ | {item.name}",
+        description=f"Вы действительно хотите приобрести эту роль?\n\n{replace_emojis('⚪')} **Информация:**\n Категория: Discord Роли\n Описание: {item.description}\n Стоимость: {item.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Отображение в профиле:**\n Роль: <@&{item.role_id}>\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -740,35 +740,35 @@ async def show_case_card(interaction: discord.Interaction, case) -> None:
     # Определить эмодзи для кейса
     case_emoji = "case_basic"
     rare_emoji = "rare_basic"
-    sub_emoji = "sub_middle"
+    sub_emoji = ""
     name_emoji = "emoji_basic_case"  # For display before case name
     sparkle = ""
     if "Basic" in case.name:
         case_emoji = "case_basic"
         rare_emoji = "rare_basic"
-        sub_emoji = "sub_middle"
+        sub_emoji = ""
         name_emoji = "emoji_basic_case"
     elif "Premium" in case.name:
         case_emoji = "case_premium"
         rare_emoji = "rare_premium"
-        sub_emoji = "sub_middle"
+        sub_emoji = ""
         name_emoji = "emoji_premium_case"
     elif "Elite" in case.name:
         case_emoji = "case_elite"
         rare_emoji = "rare_elite"
-        sub_emoji = "sub_middle"
+        sub_emoji = ""
         name_emoji = "emoji_elite_case"
     elif "Special" in case.name:
         case_emoji = "case_special"
         rare_emoji = "rare_special"
-        sub_emoji = "sub_directory"
+        sub_emoji = ""
         name_emoji = "emoji_special_case"
-        sparkle = f" {replace_emojis('a_star')}"
+        sparkle = f" "
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ПОКУПКА КЕЙСА | {replace_emojis(name_emoji)} {case.name}",
-        description=f"Вы действительно хотите открыть этот кейс?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} {replace_emojis(case_emoji)} Категория: Кейсы • {replace_emojis(rare_emoji)}{sparkle}\n{replace_emojis('sub_directory')} Стоимость: {case.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Монеты: 50%\n{replace_emojis('sub_middle')} Предмет: 20%\n{replace_emojis('sub_directory')} Ничего: 30%\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку и открытие кнопкой ниже",
+        title=f" ПОКУПКА КЕЙСА | {replace_emojis(name_emoji)} {case.name}",
+        description=f"Вы действительно хотите открыть этот кейс?\n\n{replace_emojis('⚪')} **Информация:**\n {replace_emojis(case_emoji)} Категория: Кейсы • {replace_emojis(rare_emoji)}{sparkle}\n Стоимость: {case.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n Монеты: 50%\n Предмет: 20%\n Ничего: 30%\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку и открытие кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -864,8 +864,8 @@ class BuyButton(discord.ui.Button):
             )
             if success:
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} ПОКУПКА РОЛИ | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n{replace_emojis('sub_middle')} Роль: {item.name}\n{replace_emojis('sub_middle')} Права: {item.description}\n{replace_emojis('sub_directory')} Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n{replace_emojis('white_arrow')} {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Роль успешно назначена",
+                    title=f" ПОКУПКА РОЛИ | {item.name}",
+                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n Роль: {item.name}\n Права: {item.description}\n Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Роль успешно назначена",
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -908,15 +908,15 @@ class BuyButton(discord.ui.Button):
 
             if item.category == "tags":
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} ПОКУПКА ТЕГА | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n{replace_emojis('sub_middle')} Префикс: {item.value}\n{replace_emojis('sub_middle')} Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n{replace_emojis('white_arrow')} {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
+                    title=f" ПОКУПКА ТЕГА | {item.name}",
+                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n Префикс: {item.value}\n Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
             else:
                 embed = discord.Embed(
-                    title=f"{replace_emojis('a_star')} ПОКУПКА ЗНАЧКА | {item.name}",
-                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n{replace_emojis('sub_middle')} Предмет: {icon_emoji} **{item.name}**\n{replace_emojis('sub_middle')} Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n{replace_emojis('sub_directory')} Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n{replace_emojis('white_arrow')} {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
+                    title=f" ПОКУПКА ЗНАЧКА | {item.name}",
+                    description=f"Покупка успешно совершена!\n\n{replace_emojis('⚪')} **Товар:**\n Предмет: {icon_emoji} **{item.name}**\n Редкость: {rarity_display} {replace_emojis(rare_emoji)}\n Цена: {self.price} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Покупатель:**\n {interaction.user.mention} купил за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Предмет успешно добавлен в ваш инвентарь",
                     color=discord.Color.from_rgb(69, 69, 69)
                 )
                 embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1019,8 +1019,8 @@ class BuyCaseButton(discord.ui.Button):
                 bottom_text = "Повезёт в следующий раз!"
 
             embed = discord.Embed(
-                title=f"{replace_emojis('a_star')} ОТКРЫТИЕ КЕЙСА | {case_rare_display} {replace_emojis(case_rare_emoji)}",
-                description=f"Кейс успешно открыт!\n\n{replace_emojis('⚪')} **Награда:**\n{replace_emojis('sub_middle')} Выигрыш: {result_text}\n{replace_emojis('sub_directory')} С шансом: {chance_text}\n\n{replace_emojis('⚪')} **Открыл:**\n{replace_emojis('white_arrow')} {interaction.user.mention} открыл за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} {bottom_text}{pet_bonus_text}",
+                title=f" ОТКРЫТИЕ КЕЙСА | {case_rare_display} {replace_emojis(case_rare_emoji)}",
+                description=f"Кейс успешно открыт!\n\n{replace_emojis('⚪')} **Награда:**\n Выигрыш: {result_text}\n С шансом: {chance_text}\n\n{replace_emojis('⚪')} **Открыл:**\n {interaction.user.mention} открыл за {self.price} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} {bottom_text}{pet_bonus_text}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1074,8 +1074,8 @@ class ShopBackButton(discord.ui.Button):
 
         # Создать embed в новом формате
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} МАГАЗИН СЕРВЕРА | Главное меню",
-            description=f"Добро пожаловать в игровой магазин {replace_emojis('a_sparkle')}\nВыберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары.\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для навигации используйте компоненты ниже",
+            title=f" МАГАЗИН СЕРВЕРА | Главное меню",
+            description=f"Добро пожаловать в игровой магазин \nВыберите нужный раздел в выпадающем меню ниже, чтобы посмотреть доступные товары.\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Для навигации используйте компоненты ниже",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1116,8 +1116,8 @@ class ShopBackToListButton(discord.ui.Button):
 
         # Создать главное меню
         embed = discord.Embed(
-            title=f"{replace_emojis('a_star')} МАГАЗИН СЕРВЕРА | Главный каталог",
-            description=f"Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.\n\n{replace_emojis('⚪')} **Ваш баланс:**\n{replace_emojis('sub_middle')} {balance:,} {get_emoji('money')}",
+            title=f" МАГАЗИН СЕРВЕРА | Главный каталог",
+            description=f"Добро пожаловать в магазин!\nВыберите категорию ниже, чтобы посмотреть товары и улучшить свой профиль.\n\n{replace_emojis('⚪')} **Ваш баланс:**\n {balance:,} {get_emoji('money')}",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1539,9 +1539,9 @@ async def show_pets_category(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
         title=replace_emojis("🐾 МАГАЗИН ПИТОМЦЕВ"),
         description=(
-            f"{replace_emojis('a_sparkle')} **Питомцы** — ваши верные спутники, которые помогают в экономике, "
+            f" **Питомцы** — ваши верные спутники, которые помогают в экономике, "
             f"ограблениях и Elo-матчах!\n\n"
-            f"{replace_emojis('white_dot')} **Правило:** У каждого игрока может быть только **один** питомец "
+            f" **Правило:** У каждого игрока может быть только **один** питомец "
             f"(включая совместное владение).\n\n"
             f"{replace_emojis('a_dot_smaller')} Выберите редкость питомца в меню ниже:"
         ),
@@ -1654,7 +1654,7 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
     # Сформировать список питомцев
     pets_parts = []
     for i, pet in enumerate(pets):
-        sub_emoji = "sub_middle" if i < len(pets) - 1 else "sub_directory"
+        sub_emoji = "" if i < len(pets) - 1 else ""
         pets_parts.append(
             f"{replace_emojis(sub_emoji)} **{pet['name']}** • {pet['price']:,} {get_emoji('money')} {replace_emojis(rare_emoji)}"
         )
@@ -1663,8 +1663,8 @@ async def show_pets_by_rarity(interaction: discord.Interaction, rarity: str) -> 
 
     # Создать embed
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} КАТАЛОГ | Питомцы — {rarity_names.get(rarity, rarity)}",
-        description=f"Выберите питомца из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные питомцы:**\n{pets_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите питомца в выпадающем меню для покупки",
+        title=f" КАТАЛОГ | Питомцы — {rarity_names.get(rarity, rarity)}",
+        description=f"Выберите питомца из списка ниже для покупки:\n\n{replace_emojis('⚪')} **Доступные питомцы:**\n{pets_list}\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Выберите питомца в выпадающем меню для покупки",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1739,8 +1739,8 @@ async def show_pet_card(interaction: discord.Interaction, pet_def) -> None:
     color = pet_def.get("color", discord.Color.from_rgb(69, 69, 69))
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ПОКУПКА ПИТОМЦА | {pet_def['name']}",
-        description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Питомцы • {pet_def['rarity']}\n{replace_emojis('sub_directory')} Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n{replace_emojis('sub_directory')} {desc_1}\n{replace_emojis('sub_directory')} {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        title=f" ПОКУПКА ПИТОМЦА | {pet_def['name']}",
+        description=f"Вы действительно хотите купить этого питомца?\n\n{replace_emojis('⚪')} **Информация:**\n Категория: Питомцы • {pet_def['rarity']}\n Стоимость: {pet_def['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Способности:**\n {desc_1}\n {desc_2}\n\n{replace_emojis('⚪')} **Описание:**\n *{pet_def['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     if pet_def.get("image_url"):
@@ -1773,8 +1773,8 @@ async def show_mystery_egg(interaction: discord.Interaction) -> None:
         rank = get_rank_emoji(stats.level)
 
     embed = discord.Embed(
-        title=f"{replace_emojis('a_star')} ПОКУПКА ТАИНСТВЕННОГО ЯЙЦА",
-        description=f"Вы действительно хотите купить таинственное яйцо?\n\n{replace_emojis('⚪')} **Информация:**\n{replace_emojis('sub_middle')} Категория: Лотерея компаньонов\n{replace_emojis('sub_directory')} Стоимость: {MYSTERY_EGG_DATA['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n{replace_emojis('sub_middle')} Пустое яйцо: 80%\n{replace_emojis('sub_middle')} Обычный питомец: 12%\n{replace_emojis('sub_middle')} Необычный питомец: 5%\n{replace_emojis('sub_middle')} Эпический питомец: 2.4%\n{replace_emojis('sub_directory')} Легендарный питомец: 0.6%\n\n{replace_emojis('⚪')} **Описание:**\n{replace_emojis('sub_directory')} *{MYSTERY_EGG_DATA['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n{replace_emojis('sub_middle')} Баланс: {balance:,} {get_emoji('money')}\n{replace_emojis('sub_middle')} Ранг: {rank}\n{replace_emojis('sub_directory')} Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
+        title=f" ПОКУПКА ТАИНСТВЕННОГО ЯЙЦА",
+        description=f"Вы действительно хотите купить таинственное яйцо?\n\n{replace_emojis('⚪')} **Информация:**\n Категория: Лотерея компаньонов\n Стоимость: {MYSTERY_EGG_DATA['price']:,} {get_emoji('money')}\n\n{replace_emojis('⚪')} **Шансы выпадения:**\n Пустое яйцо: 80%\n Обычный питомец: 12%\n Необычный питомец: 5%\n Эпический питомец: 2.4%\n Легендарный питомец: 0.6%\n\n{replace_emojis('⚪')} **Описание:**\n *{MYSTERY_EGG_DATA['description']}*\n\n{replace_emojis('⚪')} **Ваш профиль:**\n Баланс: {balance:,} {get_emoji('money')}\n Ранг: {rank}\n Инвентарь: {inventory_count}/{max_inventory}\n\n{replace_emojis('a_dot_smaller')} Подтвердите покупку кнопкой ниже",
         color=discord.Color.from_rgb(69, 69, 69)
     )
     if MYSTERY_EGG_DATA.get("image_url"):
@@ -1905,10 +1905,10 @@ class OpenEggButton(discord.ui.Button):
 
         if result["type"] == "nothing":
             from config import get_emoji
-            emoji_star = get_emoji("a_star")
-            emoji_sparkle = get_emoji("a_sparkle")
-            emoji_arrow = get_emoji("white_arrow")
-            emoji_dot = get_emoji("white_dot")
+            emoji_star = ""
+            emoji_sparkle = ""
+            emoji_arrow = ""
+            emoji_dot = ""
 
             embed = discord.Embed(
                 title=f"{emoji_star} **ЗАГАДОЧНОЕ ЯЙЦО | ПУСТО**",

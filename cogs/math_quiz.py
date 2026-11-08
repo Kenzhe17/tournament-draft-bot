@@ -34,15 +34,15 @@ class QuizLobbyView(discord.ui.View):
         self.started = False
 
     def build_embed(self) -> discord.Embed:
-        players_list = "\n".join([f"{get_emoji('white_dot')} {p.mention}" for p in self.players])
+        players_list = "\n".join([f" {p.mention}" for p in self.players])
         total_bank = len(self.players) * self.bet
 
         embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | ЛОББИ**",
+            title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | ЛОББИ**",
             description=(
-                f"{get_emoji('white_arrow')} **Создатель:** {self.host.mention}\n"
-                f"{get_emoji('white_arrow')} **Ставка:** `{self.bet:,}` {get_emoji('money')}\n"
-                f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
+                f" **Создатель:** {self.host.mention}\n"
+                f" **Ставка:** `{self.bet:,}` {get_emoji('money')}\n"
+                f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
                 f"**Участники ({len(self.players)}/6):**\n{players_list}"
             ),
             color=0x3498DB
@@ -55,16 +55,16 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user in self.players:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Вы уже состоите в этом лобби!", ephemeral=True)
+            await interaction.followup.send(f" Вы уже состоите в этом лобби!", ephemeral=True)
             return
 
         if len(self.players) >= 6:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Лобби уже заполнено (максимум 6 игроков)!", ephemeral=True)
+            await interaction.followup.send(f" Лобби уже заполнено (максимум 6 игроков)!", ephemeral=True)
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if balance < self.bet:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
+            await interaction.followup.send(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
             return
 
         await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, self.bet)
@@ -77,11 +77,11 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user not in self.players:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Вы не состоите в этом лобби!", ephemeral=True)
+            await interaction.followup.send(f" Вы не состоите в этом лобби!", ephemeral=True)
             return
 
         if interaction.user == self.host:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Создатель не может выйти. Используйте кнопку «Отмена».", ephemeral=True)
+            await interaction.followup.send(f" Создатель не может выйти. Используйте кнопку «Отмена».", ephemeral=True)
             return
 
         await user_balance_store.add_balance(self.guild_id, interaction.user.id, self.bet)
@@ -94,11 +94,11 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user != self.host:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Только создатель игры может запустить старт!", ephemeral=True)
+            await interaction.followup.send(f" Только создатель игры может запустить старт!", ephemeral=True)
             return
 
         if len(self.players) < 2:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Для начала игры требуется минимум 2 участника!", ephemeral=True)
+            await interaction.followup.send(f" Для начала игры требуется минимум 2 участника!", ephemeral=True)
             return
 
         self.started = True
@@ -137,12 +137,12 @@ class QuizLobbyView(discord.ui.View):
         for round_idx in range(1, 11):
             expression, correct_answer = examples[round_idx - 1]
 
-            leaderboard = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
+            leaderboard = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
             round_embed = discord.Embed(
-                title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
+                title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
                 description=(
-                    f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
-                    f"### {get_emoji('white_dot')} Пример: **`{expression} = ?`**\n\n"
+                    f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
+                    f"###  Пример: **`{expression} = ?`**\n\n"
                     f"**Текущий счёт:**\n{leaderboard}"
                 ),
                 color=0xF1C40F
@@ -168,13 +168,13 @@ class QuizLobbyView(discord.ui.View):
                         round_solved = True
 
                         confirm_msg = await interaction.channel.send(
-                            f"{get_emoji('a_star')} {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
+                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
                         )
 
                 except asyncio.TimeoutError:
                     round_solved = True
                     timeout_msg = await interaction.channel.send(
-                        f"{get_emoji('white_arrow')} Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
+                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
                     )
 
             # Удалить все сообщения в канале после round_embed (включая ответы участников)
@@ -195,21 +195,21 @@ class QuizLobbyView(discord.ui.View):
             winner = winners[0]
             prize = total_bank
             await user_balance_store.add_balance(self.guild_id, winner.id, prize)
-            result_text = f"{get_emoji('a_star')} **Победитель:** {winner.mention} получает `{prize:,}` {get_emoji('money')}!"
+            result_text = f" **Победитель:** {winner.mention} получает `{prize:,}` {get_emoji('money')}!"
         else:
             # Ничья - разделить приз
             prize_per_player = total_bank // len(winners)
             for winner in winners:
                 await user_balance_store.add_balance(self.guild_id, winner.id, prize_per_player)
             winner_mentions = ", ".join([w.mention for w in winners])
-            result_text = f"{get_emoji('a_star')} **Ничья!** {winner_mentions} получают по `{prize_per_player:,}` {get_emoji('money')}!"
+            result_text = f" **Ничья!** {winner_mentions} получают по `{prize_per_player:,}` {get_emoji('money')}!"
 
         final_embed = discord.Embed(
-            title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РЕЗУЛЬТАТ**",
+            title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РЕЗУЛЬТАТ**",
             description=(
-                f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
+                f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
                 f"**Итоговый счёт:**\n"
-                + "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
+                + "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
                 + f"\n\n{result_text}"
             ),
             color=0xF1C40F
@@ -221,7 +221,7 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user != self.host:
-            await interaction.followup.send(f"{get_emoji('white_dot')} Только создатель может отменить игру!", ephemeral=True)
+            await interaction.followup.send(f" Только создатель может отменить игру!", ephemeral=True)
             return
 
         for player in self.players:
@@ -229,7 +229,7 @@ class QuizLobbyView(discord.ui.View):
 
         self.stop()
         cancel_embed = discord.Embed(
-            title=f"{get_emoji('white_arrow')} **Игра отменена**",
+            title=f" **Игра отменена**",
             description="Создатель распустил лобби. Все ставки возвращены на счета.",
             color=0xED4245
         )
@@ -264,13 +264,13 @@ class MathQuizCog(commands.Cog):
             return
 
         if bet < 20 or bet > 1000:
-            await interaction.response.send_message(f"{get_emoji('white_dot')} Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
+            await interaction.response.send_message(f" Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
             return
 
         guild_id = interaction.guild_id
         balance = await user_balance_store.get_balance(guild_id, interaction.user.id)
         if balance < bet:
-            await interaction.response.send_message(f"{get_emoji('white_dot')} Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
+            await interaction.response.send_message(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
             return
 
         await user_balance_store.subtract_balance(guild_id, interaction.user.id, bet)
@@ -303,12 +303,12 @@ class MathQuizCog(commands.Cog):
         for round_idx in range(1, 11):
             expression, correct_answer = examples[round_idx - 1]
 
-            leaderboard = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
+            leaderboard = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
             round_embed = discord.Embed(
-                title=f"{get_emoji('a_sparkle')} **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
+                title=f" **МАТЕМАТИЧЕСКАЯ ДУЭЛЬ | РАУНД {round_idx}/10**",
                 description=(
-                    f"{get_emoji('white_arrow')} **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
-                    f"### {get_emoji('white_dot')} Пример: **`{expression} = ?`**\n\n"
+                    f" **Призовой банк:** `{total_bank:,}` {get_emoji('money')}\n\n"
+                    f"###  Пример: **`{expression} = ?`**\n\n"
                     f"**Текущий счёт:**\n{leaderboard}"
                 ),
                 color=0xF1C40F
@@ -336,14 +336,14 @@ class MathQuizCog(commands.Cog):
                         round_solved = True
 
                         confirm_msg = await interaction.channel.send(
-                            f"{get_emoji('a_star')} {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
+                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
                         )
                         messages_to_clean.append(confirm_msg)
 
                 except asyncio.TimeoutError:
                     round_solved = True
                     timeout_msg = await interaction.channel.send(
-                        f"{get_emoji('white_arrow')} Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
+                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
                     )
                     messages_to_clean.append(timeout_msg)
 
@@ -371,17 +371,17 @@ class MathQuizCog(commands.Cog):
         if len(winners) == 1:
             winner = winners[0]
             await user_balance_store.add_balance(guild_id, winner.id, total_bank)
-            result_text = f"{get_emoji('a_sparkle')} **Победитель:** {winner.mention}\n{get_emoji('white_arrow')} **Выигрыш:** `{total_bank:,}` {get_emoji('money')}!"
+            result_text = f" **Победитель:** {winner.mention}\n **Выигрыш:** `{total_bank:,}` {get_emoji('money')}!"
         else:
             split_prize = total_bank // len(winners)
             for winner in winners:
                 await user_balance_store.add_balance(guild_id, winner.id, split_prize)
             winners_mentions = ", ".join([w.mention for w in winners])
-            result_text = f"{get_emoji('a_sparkle')} **Ничья между:** {winners_mentions}\n{get_emoji('white_arrow')} **Каждый получает:** `{split_prize:,}` {get_emoji('money')}!"
+            result_text = f" **Ничья между:** {winners_mentions}\n **Каждый получает:** `{split_prize:,}` {get_emoji('money')}!"
 
-        final_board = "\n".join([f"{get_emoji('white_dot')} {p.mention} — **{scores[p.id]}** баллов" for p in players])
+        final_board = "\n".join([f" {p.mention} — **{scores[p.id]}** баллов" for p in players])
         final_embed = discord.Embed(
-            title=f"{get_emoji('a_star')} **ИГРА ЗАВЕРШЕНА | ФИНАЛЬНЫЕ ИТОГИ**",
+            title=f" **ИГРА ЗАВЕРШЕНА | ФИНАЛЬНЫЕ ИТОГИ**",
             description=f"{result_text}\n\n**Финальный счёт:**\n{final_board}",
             color=0x2ECC71
         )

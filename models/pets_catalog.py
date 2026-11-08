@@ -3,10 +3,10 @@
 from typing import Any, Dict, Optional
 
 # Кастомные эмодзи проекта (используем существующие из config)
-EMOJI_STAR = "a_star"
-EMOJI_SPARKLE = "a_sparkle"
-EMOJI_ARROW = "white_arrow"
-EMOJI_DOT = "white_dot"
+EMOJI_STAR = ""
+EMOJI_SPARKLE = ""
+EMOJI_ARROW = ""
+EMOJI_DOT = ""
 EMOJI_MONEY = "money"
 
 # Централизованный словарь каталога

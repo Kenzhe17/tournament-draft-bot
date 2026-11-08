@@ -109,19 +109,19 @@ class BankCog(commands.Cog):
 
             # Build embed
             embed = discord.Embed(
-                title=f"{get_emoji('a_sparkle')} **БАНКОВСКИЙ СЕЙФ | /bank**",
+                title=f" **БАНКОВСКИЙ СЕЙФ | /bank**",
                 color=3447003  # Синий
             )
             embed.set_thumbnail(url="https://cdn.discordapp.com/embed/avatars/0.png")
 
             embed.add_field(
-                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Уровень и Сейф",
+                name=f"  Уровень и Сейф",
                 value=f"• Ваш ранг: **Уровень {level}** *(Диапазон {level_tier}–{level_tier_end} ур.)*\n• Лимит сейфа: **{bank_limit:,}** {get_emoji('money')}\n• Следующий уровень сейфа: **{next_limit:,}** {get_emoji('money')} *(на {next_level_tier} ур.)*",
                 inline=False
             )
 
             embed.add_field(
-                name=f"{get_emoji('white_dot')} {get_emoji('white_arrow')} Состояние счетов",
+                name=f"  Состояние счетов",
                 value=f"• Наличные: **{cash:,}** {get_emoji('money')} *(уязвимы для /rob)*\n• В сейфе: **{bank:,} / {bank_limit:,}** {get_emoji('money')} ({fill_percent:.0f}%)\n• Защита сейфа: **100% Абсолютная**",
                 inline=False
             )

@@ -56,38 +56,6 @@ _COLOR_MAP = {
 
 _DEFAULT_ACCENT = colors.NEUTRAL
 
-# Discord CV2: Container вмещает максимум 10 дочерних компонентов.
-_CONTAINER_MAX_CHILDREN = 10
-
-
-def _split_container(
-    container: discord.ui.Container,
-) -> list[discord.ui.Container]:
-    """Разбить Container на части по <=10 children (лимит Discord CV2).
-
-    Разбивка сохраняет порядок children и акцентную полосу
-    на всех частях — визуально это одна логическая карточка.
-    """
-    children = list(container.children)
-    if len(children) <= _CONTAINER_MAX_CHILDREN:
-        return [container]
-
-    accent = container.accent_color
-    spoiler = getattr(container, "spoiler", False)
-    parts: list[discord.ui.Container] = []
-    for i in range(0, len(children), _CONTAINER_MAX_CHILDREN):
-        chunk = children[i : i + _CONTAINER_MAX_CHILDREN]
-        part = discord.ui.Container(
-            accent_color=accent,
-            spoiler=spoiler,
-        )
-        for child in chunk:
-            container.remove_item(child)
-            part.add_item(child)
-        parts.append(part)
-    return parts
-
-
 class _ComposedLayoutView(discord.ui.LayoutView):
     """LayoutView-обёртка с делегированием к исходному View.
 
@@ -103,13 +71,13 @@ class _ComposedLayoutView(discord.ui.LayoutView):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         delegate = self._delegate
-        if delegate is not None and hasattr(delegate, "interaction_check"):
+        if delegate is not None and hasattr(delegate,"interaction_check"):
             return await delegate.interaction_check(interaction)
         return True
 
     async def on_timeout(self) -> None:
         delegate = self._delegate
-        if delegate is not None and hasattr(delegate, "on_timeout"):
+        if delegate is not None and hasattr(delegate,"on_timeout"):
             try:
                 await delegate.on_timeout()
             except Exception:
@@ -120,7 +88,7 @@ class _ComposedLayoutView(discord.ui.LayoutView):
         self, interaction: discord.Interaction, error: Exception
     ) -> None:
         delegate = self._delegate
-        if delegate is not None and hasattr(delegate, "on_error"):
+        if delegate is not None and hasattr(delegate,"on_error"):
             await delegate.on_error(interaction, error)
         else:
             await super().on_error(interaction, error)
@@ -129,7 +97,7 @@ class _ComposedLayoutView(discord.ui.LayoutView):
         if super().is_finished():
             return True
         delegate = self._delegate
-        if delegate is not None and hasattr(delegate, "is_finished"):
+        if delegate is not None and hasattr(delegate,"is_finished"):
             try:
                 return bool(delegate.is_finished())
             except Exception:
@@ -143,10 +111,10 @@ def _accent_from_embed(embed: discord.Embed) -> int:
     Используется фактический цвет Embed — он становится акцентной
     полосой Container (нативный аналог цветной полосы Embed).
     """
-    color = getattr(embed, "color", None)
+    color = getattr(embed,"color", None)
     if color is None:
         return _DEFAULT_ACCENT
-    value = color.value if hasattr(color, "value") else int(color)
+    value = color.value if hasattr(color,"value") else int(color)
     # discord.Color.default() = 0 — нейтральный акцент
     if value == 0:
         return _DEFAULT_ACCENT
@@ -154,24 +122,39 @@ def _accent_from_embed(embed: discord.Embed) -> int:
 
 
 # Строки-разделители внутри embed-текста (───, ===, --- и т.п.)
-# превращаем в нативный discord.ui.Separator, а не текст.
+# разрывают секции; строки вида «**Заголовок:**» тоже начинают
+# новую секцию (смысловые блоки внутри description).
 _DIVIDER_RE = re.compile(r"^[\s─━═\-_=~•·]{3,}$")
+_HEADER_RE = re.compile(r"^\s*\*\*[^*\n]{1,100}:\*\*\s*$")
 
 
-def _text_segments(content: str) -> list[str | None]:
-    """Разбить текст на сегменты; None = разделитель."""
+def _text_segments(
+    content: str, split_headers: bool = False
+) -> list[str | None]:
+    """Разбить текст на сегменты; None = граница секции.
+
+    split_headers=True — строка «**Заголовок:**» тоже начинает
+    новый сегмент (сama строка остаётся в новом сегменте).
+    """
     segments: list[str | None] = []
     block: list[str] = []
     for line in content.split("\n"):
-        if _DIVIDER_RE.match(line):
-            text = "\n".join(block).strip("\n")
+        is_break = _DIVIDER_RE.match(line) or (
+            split_headers and _HEADER_RE.match(line)
+        )
+        if is_break:
+            text ="\n".join(block).strip("\n")
             if text.strip():
                 segments.append(text)
-            block = []
-            segments.append(None)
-        else:
-            block.append(line)
-    text = "\n".join(block).strip("\n")
+            if _DIVIDER_RE.match(line):
+                segments.append(None)
+                block = []
+            else:
+                # Заголовок начинает новый блок, а не пустую границу
+                block = [line]
+            continue
+        block.append(line)
+    text ="\n".join(block).strip("\n")
     if text.strip():
         segments.append(text)
     # Убрать ведущие/хвостовые разделители и дубли
@@ -182,29 +165,27 @@ def _text_segments(content: str) -> list[str | None]:
     return segments
 
 
-def _add_text(container: discord.ui.Container, content: str) -> None:
-    """Добавить текст с разбивкой на TextDisplay и Separator."""
-    for segment in _text_segments(content):
-        if segment is None:
-            container.add_item(separator())
-            continue
-        for chunk in chunk_text(segment):
-            container.add_item(discord.ui.TextDisplay(content=chunk))
+def embed_to_sections(embed: discord.Embed) -> list[discord.ui.Container]:
+    """Конвертировать discord.Embed в список Container-секций.
 
-
-def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
-    """Конвертировать discord.Embed в discord.ui.Container.
-
-    Структура:
-      - author -> TextDisplay (мелкий)
-      - title  -> '# title'
-      - description -> TextDisplay
-      - thumbnail -> MediaGallery (первым, если есть)
-      - fields -> 'name\\nvalue' блоки через Separator
-      - image -> MediaGallery
-      - footer -> '-# footer • timestamp'
+    Каждая смысловая секция становится отдельным Container со своей
+    акцентной полосой:
+      - author + title + description (до первого разделителя) -> секция 1
+      - строка-разделитель (───, === и т.п.) внутри текста -> граница секции
+      - каждое непустое поле -> своя секция; подряд идущие inline-поля
+        группируются в одну секцию
+      - image -> своя секция (вместе с footer, если он есть)
+      - footer/timestamp -> в конец последней текстовой секции
     """
-    container = discord.ui.Container(accent_color=_accent_from_embed(embed))
+    accent = _accent_from_embed(embed)
+    sections: list[list[discord.ui.Item]] = []
+    current: list[discord.ui.Item] = []
+
+    def _flush() -> None:
+        nonlocal current
+        if current:
+            sections.append(current)
+            current = []
 
     # Thumbnail — маленькая картинка справа от первого текстового блока
     # (Section accessory), как в классическом Embed. MediaGallery не
@@ -219,101 +200,147 @@ def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
     # attachment:// (локальные файлы, например картинки питомцев) не
     # резолвится в Section-аксессуаре — оставляем MediaGallery.
     if thumb_url and thumb_url.startswith("attachment://"):
-        container.add_item(
+        current.append(
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media=thumb_url)
             )
         )
         thumb_url = None
 
-    def _add_text_maybe_thumb(content: str) -> None:
+    def _emit_text(content: str, split_headers: bool = False) -> None:
         nonlocal thumb_used
-        segments = _text_segments(content)
-        for i, segment in enumerate(segments):
+        first = True
+        for segment in _text_segments(content, split_headers=split_headers):
             if segment is None:
-                container.add_item(separator())
+                _flush()
+                first = True
                 continue
-            chunks = chunk_text(segment)
-            if thumb_url and not thumb_used and chunks:
-                container.add_item(
-                    discord.ui.Section(
-                        discord.ui.TextDisplay(content=chunks[0]),
-                        accessory=discord.ui.Thumbnail(media=thumb_url),
+            if split_headers and not first:
+                # Каждый смысловой блок description — своя секция
+                _flush()
+            first = False
+            for chunk in chunk_text(segment):
+                if thumb_url and not thumb_used:
+                    current.append(
+                        discord.ui.Section(
+                            discord.ui.TextDisplay(content=chunk),
+                            accessory=discord.ui.Thumbnail(media=thumb_url),
+                        )
                     )
-                )
-                thumb_used = True
-                for chunk in chunks[1:]:
-                    container.add_item(discord.ui.TextDisplay(content=chunk))
-            else:
-                for chunk in chunks:
-                    container.add_item(discord.ui.TextDisplay(content=chunk))
+                    thumb_used = True
+                else:
+                    current.append(discord.ui.TextDisplay(content=chunk))
 
     # Author — с иконкой (иконка бота/контекста) как Section-аксессуар
     if embed.author and embed.author.name:
         author_text = f"-# {embed.author.name}"
         if embed.author.icon_url:
-            container.add_item(
+            current.append(
                 discord.ui.Section(
                     discord.ui.TextDisplay(content=author_text),
                     accessory=discord.ui.Thumbnail(media=embed.author.icon_url),
                 )
             )
         else:
-            _add_text_maybe_thumb(author_text)
+            _emit_text(author_text)
 
     # Title
     if embed.title:
-        title_text = f"## {embed.title}"
-        if thumb_url and not thumb_used:
-            container.add_item(
-                discord.ui.Section(
-                    discord.ui.TextDisplay(content=title_text),
-                    accessory=discord.ui.Thumbnail(media=thumb_url),
-                )
-            )
-            thumb_used = True
-        else:
-            _add_text(container, title_text)
-        container.add_item(separator())
+        _emit_text(f"## {embed.title}")
+        if embed.description:
+            current.append(separator())
 
-    # Description
+    # Description — строка «**Заголовок:**» начинает новую секцию
     if embed.description:
-        _add_text_maybe_thumb(embed.description)
+        _emit_text(embed.description, split_headers=True)
 
-    # Fields
-    for i, field in enumerate(embed.fields):
-        if i > 0 or embed.description:
-            container.add_item(separator())
-        name = field.name or ""
-        value = field.value or ""
-        block = f"**{name}**\n{value}" if name else value
-        _add_text_maybe_thumb(block)
+    # Fields: непустые поля — отдельные секции; подряд идущие
+    # inline-поля собираются в одну секцию. Поля-заглушки
+    # (только \u200b/пробелы) пропускаются — иначе получаются
+    # пустые карточки.
+    def _field_blank(name: str, value: str) -> bool:
+        return not (name + value).translate({0x200B: None, 0x200C: None, 0x200D: None, 0xFEFF: None}).strip()
 
-    # Image
+
+    i = 0
+    fields = embed.fields
+    while i < len(fields):
+        field = fields[i]
+        name = field.name or""
+        value = field.value or""
+        if _field_blank(name, value):
+            i += 1
+            continue
+        if field.inline:
+            group: list[str] = []
+            while i < len(fields) and fields[i].inline:
+                gf = fields[i]
+                gname = gf.name or""
+                gvalue = gf.value or""
+                if not _field_blank(gname, gvalue):
+                    group.append(f"**{gname}**\n{gvalue}"if gname else gvalue)
+                i += 1
+            _flush()
+            if group:
+                _emit_text("\n\n".join(group))
+            continue
+        _flush()
+        _emit_text(f"**{name}**\n{value}"if name else value)
+        i += 1
+
+    # Image — отдельная секция
     if embed.image and embed.image.url:
-        container.add_item(separator())
-        container.add_item(
+        _flush()
+        current.append(
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media=embed.image.url)
             )
         )
 
-    # Footer
+    # Footer/timestamp — в конец текущей (последней) секции
+    footer_items: list[discord.ui.Item] = []
     if embed.footer and embed.footer.text:
-        container.add_item(separator())
         footer_text = embed.footer.text
         if embed.timestamp:
             footer_text = f"{footer_text} • <t:{int(embed.timestamp.timestamp())}:R>"
-        _add_text_maybe_thumb(f"-# {footer_text}")
+        footer_items.append(separator())
+        footer_items.append(
+            discord.ui.TextDisplay(content=f"-# {footer_text}")
+        )
     elif embed.timestamp:
-        container.add_item(separator())
-        container.add_item(
+        footer_items.append(separator())
+        footer_items.append(
             discord.ui.TextDisplay(
                 content=f"-# <t:{int(embed.timestamp.timestamp())}:R>"
             )
         )
+    if footer_items:
+        # Не оставлять footer одиноким в карточке с одной картинкой
+        # не будем: он логично завершает секцию с image.
+        current.extend(footer_items)
 
-    return container
+    _flush()
+
+    # Лимит компонентов CV2-сообщения (~40): не больше 10 карточек.
+    # При переполнении хвостовые секции сливаются в предыдущую.
+    while len(sections) > 10:
+        sections[-2].append(separator())
+        sections[-2].extend(sections[-1])
+        sections.pop()
+
+    containers: list[discord.ui.Container] = []
+    for sec in sections:
+        container = discord.ui.Container(accent_color=accent)
+        for item in sec:
+            container.add_item(item)
+        containers.append(container)
+    return containers or [discord.ui.Container(accent_color=accent)]
+
+
+def embed_to_container(embed: discord.Embed) -> discord.ui.Container:
+    """Первая секция Embed как Container (совместимость)."""
+    sections = embed_to_sections(embed)
+    return sections[0]
 
 
 def _view_rows(view: discord.ui.View) -> list[discord.ui.ActionRow]:
@@ -373,29 +400,30 @@ def compose(
         # содержать embed; вызывающий код должен мигрировать view)
         return view
 
-    container = (
-        embed_to_container(embed)
-        if embed is not None
-        else discord.ui.Container(accent_color=accent or colors.NEUTRAL)
-    )
-
-    if text:
-        # Текст (бывший content=) идёт первым блоком карточки
-        container.add_item(discord.ui.TextDisplay(content=text))
-        container.add_item(separator())
+    # Embed -> несколько Container-секций (каждая со своей
+    # акцентной полосой); кнопки идут в конец последней секции.
+    if embed is not None:
+        sections = embed_to_sections(embed)
+    else:
+        sections = [
+            discord.ui.Container(accent_color=accent or colors.NEUTRAL)
+        ]
 
     delegate = view if isinstance(view, discord.ui.View) else None
     layout = _ComposedLayoutView(
         delegate=delegate,
-        timeout=getattr(view, "timeout", 180.0),
+        timeout=getattr(view,"timeout", 180.0),
     )
-    # Один Container на всё: Discord убрал лимит children у Container
-    # (api-docs PR #7534) — разбивка создавала лишнюю «вторую карточку».
-    accent_color = container.accent_color
-    layout.add_item(container)
+    for container in sections:
+        layout.add_item(container)
+    target = sections[-1]
+    if text:
+        # Текст (бывший content=) идёт в конец последней секции
+        target.add_item(discord.ui.TextDisplay(content=text))
+        target.add_item(separator())
     if view is not None:
         for row in _view_rows(view):
-            container.add_item(row)
+            target.add_item(row)
     return layout
 
 
@@ -437,7 +465,7 @@ def swap_view(
     """Построить LayoutView на основе СУЩЕСТВУЮЩЕГО V2-сообщения,
     заменив только интерактивные ряды (кнопки/select).
 
-    Используется для правок вида 'edit_message(view=...)' без embed —
+    Используется для правок вида'edit_message(view=...)'без embed —
     текст карточки сохраняется, кнопки обновляются.
     view=None — убрать все кнопки.
     """
@@ -477,8 +505,8 @@ def swap_view(
         target = None
         for child in layout.children:
             if isinstance(child, discord.ui.Container):
-                accent = getattr(child, "accent_color", None)
-                target = child  # последний Container — ряды в конец карточки
+                accent = getattr(child,"accent_color", None)
+                target = child # последний Container — ряды в конец карточки
         if target is None:
             target = discord.ui.Container(accent_color=accent)
             layout.add_item(target)
@@ -490,10 +518,10 @@ def swap_view(
 
 def _is_v2_message(message: discord.Message) -> bool:
     """Проверить, что сообщение отправлено с флагом IS_COMPONENTS_V2."""
-    flags = getattr(message, "flags", None)
+    flags = getattr(message,"flags", None)
     if flags is None:
         return False
-    value = getattr(flags, "value", flags)
+    value = getattr(flags,"value", flags)
     try:
         return bool(int(value) & (1 << 15))
     except (TypeError, ValueError):

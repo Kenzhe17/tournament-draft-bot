@@ -35,19 +35,19 @@ def _avatar_url(user) -> str | None:
 
 def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
     """Собрать мета-данные из Interaction (slash-команда)."""
-    command = getattr(interaction, "command", None)
+    command = getattr(interaction,"command", None)
     name = None
     if command is not None:
-        name = getattr(command, "qualified_name", None) or getattr(
-            command, "name", None
+        name = getattr(command,"qualified_name", None) or getattr(
+            command,"name", None
         )
     if not name:
         return None
-    client = getattr(interaction, "client", None)
-    bot_user = getattr(client, "user", None)
+    client = getattr(interaction,"client", None)
+    bot_user = getattr(client,"user", None)
     return {
         "name": f"/{name}",
-        "user_avatar": _avatar_url(getattr(interaction, "user", None)),
+        "user_avatar": _avatar_url(getattr(interaction,"user", None)),
         "bot_avatar": _avatar_url(bot_user),
     }
 
@@ -96,13 +96,15 @@ def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
     if not avatar:
         return
     for child in list(container.children):
+        if child is author:
+            continue # author-секция с иконкой бота — не блокирует аватар
         if isinstance(child, discord.ui.Section):
-            accessory = getattr(child, "accessory", None)
+            accessory = getattr(child,"accessory", None)
             if isinstance(accessory, discord.ui.Thumbnail):
-                return  # уже есть thumbnail (аватар/embed-thumb)
+                return # уже есть thumbnail (аватар/embed-thumb)
             continue
         if isinstance(child, discord.ui.MediaGallery):
-            return  # уже есть картинка
+            return # уже есть картинка
         if isinstance(child, discord.ui.TextDisplay):
             section = discord.ui.Section(
                 discord.ui.TextDisplay(content=child.content),
@@ -116,7 +118,7 @@ def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
             section._parent = container
             return
         if isinstance(child, discord.ui.ActionRow):
-            return  # кнопки раньше текста — не лезем дальше
+            return # кнопки раньше текста — не лезем дальше
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +188,8 @@ def install() -> None:
 
 def wrap_command_callback(command) -> None:
     """Обёрнуть _callback slash-команды контекстом мета."""
-    original = getattr(command, "_callback", None)
-    if original is None or getattr(original, "_rz3_wrapped", False):
+    original = getattr(command,"_callback", None)
+    if original is None or getattr(original,"_rz3_wrapped", False):
         return
 
     @functools.wraps(original)
@@ -215,10 +217,10 @@ def wrap_all_commands(tree) -> None:
     def _walk(commands):
         for cmd in commands:
             wrap_command_callback(cmd)
-            children = getattr(cmd, "children", None)
+            children = getattr(cmd,"children", None)
             if children:
                 _walk(list(children.values()))
-            nested = getattr(cmd, "commands", None)
+            nested = getattr(cmd,"commands", None)
             if isinstance(nested, dict):
                 _walk(list(nested.values()))
 

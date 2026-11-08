@@ -55,20 +55,20 @@ class DiceBetView(discord.ui.View):
     def create_embed(self, state: str = "menu", result: int = None, dice1: int = None, dice2: int = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **ДАЙС | /dice_bet**",
+            title=f" **ДАЙС | /dice_bet**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
         if state == "menu":
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                name=f"  Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
                       f"• Множитель: **6.0x**\n"
                       f"• Диапазон: **2-12**",
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Выберите сумму двух кубиков (2-12). Если выпадет ваша сумма, вы выиграете 6x ставку!",
                 inline=False
             )
@@ -79,7 +79,7 @@ class DiceBetView(discord.ui.View):
                 winnings = self.bet * 6
                 embed.color = discord.Color.green()
                 embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                    name=f"  Результат",
                     value=f"{result_text}\n"
                           f"• Ваш выбор: **{self.user_choice}**\n"
                           f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
@@ -88,7 +88,7 @@ class DiceBetView(discord.ui.View):
             else:
                 embed.color = discord.Color.red()
                 embed.add_field(
-                    name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
+                    name=f"  Результат",
                     value=f"{result_text}\n"
                           f"• Ваш выбор: **{self.user_choice}**\n"
                           f"• К сожалению, вы проиграли **{self.bet}** {get_emoji('money')}.",

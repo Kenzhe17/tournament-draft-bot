@@ -59,7 +59,7 @@ class HighLowView(discord.ui.View):
     def create_embed(self, state: str = "playing", result: str = None) -> discord.Embed:
         """Создать embed для разных состояний игры."""
         embed = discord.Embed(
-            title=f"{replace_emojis('a_sparkle')} **HIGH-LOW | /high_low**",
+            title=f" **HIGH-LOW | /high_low**",
             color=discord.Color.from_rgb(69, 69, 69)
         )
 
@@ -68,7 +68,7 @@ class HighLowView(discord.ui.View):
             current_prize = int(self.bet * multiplier)
 
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация",
+                name=f"  Информация",
                 value=f"• Текущее число: **{self.current_number}**\n"
                       f"• Раунд: **{self.round}/{self.max_rounds}**\n"
                       f"• Побед: **{self.wins}**\n"
@@ -77,7 +77,7 @@ class HighLowView(discord.ui.View):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Угадайте будет следующее число выше или ниже текущего. Каждая правильная догадка увеличивает множитель на 1.3x!",
                 inline=False
             )
@@ -86,8 +86,8 @@ class HighLowView(discord.ui.View):
             final_prize = int(self.bet * (1.3 ** self.wins))
             embed.color = discord.Color.green()
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Вы прошли все раунды!\n"
+                name=f"  Результат",
+                value=f" Вы прошли все раунды!\n"
                       f"• Побед: **{self.wins}/{self.max_rounds}**\n"
                       f"• Выигрыш: **{final_prize}** {get_emoji('money')}!",
                 inline=False
@@ -96,8 +96,8 @@ class HighLowView(discord.ui.View):
         elif state == "lost":
             embed.color = discord.Color.red()
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Результат",
-                value=f"{replace_emojis('white_arrow')} Вы проиграли на раунде {self.round}!\n"
+                name=f"  Результат",
+                value=f" Вы проиграли на раунде {self.round}!\n"
                       f"• Побед: **{self.wins}**\n"
                       f"• Проигрыш: **{self.bet}** {get_emoji('money')}.",
                 inline=False

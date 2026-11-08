@@ -180,16 +180,16 @@ class PvEChoiceView(RPSView):
             winnings = bet * 2
             await payout_winner(user_id, guild_id, winnings)
             balance_change = f"+{bet} {replace_emojis('🪙')}"
-            title = replace_emojis("white_arrow") + " Победа в игре против ИИ!"
+            title = "" + " Победа в игре против ИИ!"
             embed_color = discord.Color.green()
         elif result == "draw":
             await release_escrow(user_id, guild_id, bet)
             balance_change = f"0 {replace_emojis('🪙')} (возврат)"
-            title = replace_emojis("white_arrow") + " Ничья!"
+            title = "" + " Ничья!"
             embed_color = discord.Color.from_rgb(69, 69, 69)
         else:  # loss
             balance_change = f"-{bet} {replace_emojis('🪙')}"
-            title = replace_emojis("white_arrow") + " Поражение против ИИ!"
+            title = "" + " Поражение против ИИ!"
             embed_color = discord.Color.red()
 
         # Build result embed
@@ -638,14 +638,14 @@ class PvPChoiceView(RPSView):
             # Loser already lost escrow, no action needed
             balance_change_winner = f"+{winner_payout - bet} {replace_emojis('🪙')}"
             balance_change_loser = f"-{bet} {replace_emojis('🪙')}"
-            title = f"{replace_emojis('white_arrow')} Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
+            title = f" Итоги дуэли: <@{game.initiator_id}> vs <@{game.opponent_id}>"
             embed_color = discord.Color.green()
 
         # Build result embed
         if result == "draw":
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"{replace_emojis('white_arrow')} Ничья! Оба игрока получают возврат ставки.\n"
+                          f" Ничья! Оба игрока получают возврат ставки.\n"
                           f"{get_emoji('money')} <@{game.initiator_id}>: {balance_change_p1}\n"
                           f"{get_emoji('money')} <@{game.opponent_id}>: {balance_change_p2}")
             embed_color = discord.Color.from_rgb(69, 69, 69)
@@ -653,7 +653,7 @@ class PvPChoiceView(RPSView):
             winner_name = f"<@{winner_id}>"
             description = (f"<@{game.initiator_id}>: {p1_move.emoji} {p1_move.display_name}\n"
                           f"<@{game.opponent_id}>: {p2_move.emoji} {p2_move.display_name}\n\n"
-                          f"{replace_emojis('white_arrow')} Победитель: {winner_name}!\n"
+                          f" Победитель: {winner_name}!\n"
                           f"{get_emoji('money')} Выигрыш: {winner_payout} {replace_emojis('🪙')} (комиссия 5%)")
             embed_color = discord.Color.green()
 
@@ -752,11 +752,11 @@ class RPSPlayAgainButton(discord.ui.Button):
         try:
             view = PvEChoiceView(game_id, bet)
             embed = discord.Embed(
-                title=f"{replace_emojis('a_sparkle')} **RPS | реванш**",
+                title=f" **RPS | реванш**",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                name=f"  Информация о игре",
                 value=f"• Режим: **PvE**\n"
                       f"• Игрок: <@{user_id}>\n"
                       f"• Ставка: **{bet}** {get_emoji('money')}\n"
@@ -764,7 +764,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
                 inline=False
             )
@@ -853,11 +853,11 @@ class RPSPlayAgainButton(discord.ui.Button):
                 is_initiator=None, is_main=True, bot=interaction.client,
             )
             embed = discord.Embed(
-                title=f"{replace_emojis('a_sparkle')} **RPS | реванш**",
+                title=f" **RPS | реванш**",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                name=f"  Информация о игре",
                 value=f"• Режим: **PvP**\n"
                       f"• Игрок 1: <@{initiator_id}>\n"
                       f"• Игрок 2: <@{opponent_id}>\n"
@@ -866,7 +866,7 @@ class RPSPlayAgainButton(discord.ui.Button):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Каждый выбирает свой ход (Камень, Бумага или Ножницы). У вас есть 40 секунд!",
                 inline=False
             )
@@ -948,11 +948,11 @@ class RPSCog(commands.Cog):
 
             # Send game embed directly in the thread
             embed = discord.Embed(
-                title=f"{replace_emojis('a_sparkle')} **RPS | /rps**",
+                title=f" **RPS | /rps**",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Информация о игре",
+                name=f"  Информация о игре",
                 value=f"• Режим: **PvE**\n"
                       f"• Игрок: <@{user_id}>\n"
                       f"• Ставка: **{bet}** {get_emoji('money')}\n"
@@ -960,7 +960,7 @@ class RPSCog(commands.Cog):
                 inline=False
             )
             embed.add_field(
-                name=f"{replace_emojis('white_dot')} {replace_emojis('white_arrow')} Правила",
+                name=f"  Правила",
                 value="Выберите ваш ход (Камень, Бумага или Ножницы). У вас есть 30 секунд!",
                 inline=False
             )
