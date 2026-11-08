@@ -914,6 +914,15 @@ class MMCog(commands.Cog):
         tournament.message_id = message.id
         store.set(tournament)
 
+        # Анонс старта матчей в канал результатов (MM-флоу не проходит
+        # через update_tournament_message)
+        try:
+            from services.match_announcer import announce_phase_matches
+
+            await announce_phase_matches(tournament, guild)
+        except Exception as exc:
+            logger.error("Match announce failed: %s", exc)
+
         logger.info("Создан турнир из поиска %s в канале %s", search.format.value, tournament_channel.id)
 
         # Разблокировать канал после создания турнира

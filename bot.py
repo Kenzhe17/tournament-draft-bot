@@ -362,6 +362,15 @@ class TournamentBot(commands.Bot):
             await message.edit(view=compose(embed, view))
         except discord.HTTPException as exc:
             logger.error("Не удалось обновить сообщение: %s", exc)
+            return
+
+        # Анонс старта матчей активной фазы в канал результатов
+        try:
+            from services.match_announcer import announce_phase_matches
+
+            await announce_phase_matches(tournament, guild)
+        except Exception as exc:
+            logger.error("Match announce failed: %s", exc)
 
     async def betting_timer_loop(self) -> None:
         """Background task to update betting timer in tournament messages."""

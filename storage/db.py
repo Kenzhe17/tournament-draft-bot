@@ -717,3 +717,22 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_ready_checks_guild_status
             ON ready_checks(guild_id, status)
         """)
+
+        # Глобальная нумерация матчей (карточка «РЕЗУЛЬТАТ МАТЧА» + embed запуска)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_counter (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                value INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        await conn.execute("""
+            INSERT INTO match_counter (id, value) VALUES (1, 0)
+            ON CONFLICT (id) DO NOTHING
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_numbers (
+                match_key TEXT PRIMARY KEY,
+                number INTEGER NOT NULL,
+                announced BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)

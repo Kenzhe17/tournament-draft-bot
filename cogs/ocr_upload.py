@@ -329,9 +329,9 @@ async def publish_match_result_card(
             MatchResultData,
             ResultPlayer,
             TeamTotals,
-            match_num_from_id,
             render_match_result,
         )
+        from storage.match_number_store import match_number_store
         from storage.player_stats_store import player_stats_store
 
         match_id = f"{tournament.id}_{_session_key(match_type, match_index)}"
@@ -414,8 +414,11 @@ async def publish_match_result_card(
         else:
             score_a, score_b = totals_a.kills, totals_b.kills
 
+        # Реальный сквозной номер матча (тот же, что в embed запуска)
+        match_num = await match_number_store.get_or_assign(match_id)
+
         data = MatchResultData(
-            match_num=match_num_from_id(match_id),
+            match_num=f"#{match_num}",
             duration=duration,
             score_a=score_a,
             score_b=score_b,
