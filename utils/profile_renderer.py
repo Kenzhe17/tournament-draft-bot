@@ -79,9 +79,9 @@ def _text(draw: ImageDraw.ImageDraw, xy, s: str, size: int,
 
 
 def _fmt(n) -> str:
-    """Целое число с разделителем тысяч пробелом."""
+    """Целое число без разделителей (как в example: 53746, 1641)."""
     try:
-        return f"{int(round(float(n))):,}".replace(",", " ")
+        return str(int(round(float(n))))
     except (TypeError, ValueError):
         return "0"
 
@@ -105,12 +105,8 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     img = _base()
     draw = ImageDraw.Draw(img)
 
-    # ============ ШАПКА (справа) ============
-    _inpaint(img, (1485, 72, 1900, 140))
-    _text(draw, (1500, 85), "PROFILE STATUS", 13, C_MUTED)
-    _text(draw, (1500, 120), "ACTIVE PLAYER", 27, C_TEXT)
-    _text(draw, (1771, 85), "PROFILE", 13, C_MUTED)
-    _text(draw, (1771, 120), "r!z3", 27, C_VIOLET)
+    # Шапка справа («PROFILE STATUS» / «ACTIVE PLAYER») — статичный текст
+    # нового template, не трогаем
 
     # ============ ВЕРХНЯЯ ПАНЕЛЬ ============
     # Никнейм (пустой слот — рисуем напрямую)
@@ -118,30 +114,25 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     nstr, nsize = _fit_text(draw, name, 720, 60, min_size=26)
     _text(draw, (346, 348), nstr, nsize, C_TEXT)
 
-    # Статус — в шаблоне «СТАТУС: [STATUS]», затираем строку целиком
+    # Статус — в шаблоне «СТАТУС: » + пустой слот
     _inpaint(img, (335, 358, 820, 396), radius=4)
     status = f"СТАТУС: {data.get('status') or 'ок'}"
     sstr, ssize = _fit_text(draw, status, 460, 20, min_size=12)
-    _text(draw, (350, 385), sstr, ssize, C_SOFT)
+    _text(draw, (350, 384), sstr, ssize, C_SOFT)
 
     # Ранг — пустой слот
     _text(draw, (439, 442), (data.get("rank_name") or "BRONZE").upper(),
           20, C_VIOLET, anchor="ms")
 
-    # RANKED ELO — пустой слот
-    _text(draw, (832, 354), _fmt(data.get("elo", 1000)), 62, C_TEXT)
-
-    # Δ ELO последнего матча — плейсхолдер «[Δ ELO]»
-    _inpaint(img, (840, 382, 1160, 418), radius=4)
-    delta = data.get("last_elo_change", 0)
-    dcolor = C_GREEN if delta >= 0 else C_DELTA_NEG
-    dsign = "+" if delta >= 0 else "−"
-    _text(draw, (897, 410), f"{dsign}{abs(delta)}", 24, dcolor, anchor="ms")
-    # «последний матч» — статичный текст шаблона, оставляем
+    # RANKED ELO — крупное число; под ним в шаблоне статичная подпись
+    # «ПОСЛЕДНИХ МАТЧЕЙ», в example она затёрта — удаляем зону и рисуем ELO
+    _inpaint(img, (960, 385, 1140, 428), radius=6)
+    _text(draw, (993, 406), _fmt(data.get("elo", 1000)), 100, C_TEXT,
+          anchor="ms")
 
     # Skill Rating — пустой слот
     sr = data.get("skill_rating", 0.0)
-    _text(draw, (1250, 344), f"{sr:.1f} / 10.0", 37, C_TEXT)
+    _text(draw, (1250, 344), f"{sr:.1f}/ 10.0", 37, C_TEXT)
 
     # LEVEL — «LEVEL [LEVEL]»
     _inpaint(img, (1235, 400, 1480, 438), radius=4)
@@ -173,18 +164,18 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         (109, f"{data.get('avg_kills', 0.0):.2f}"),
         (389.5, _fmt(data.get("avg_damage", 0))),
         (670, _fmt(data.get("max_kills", 0))),
-        (950.5, f"{sr:.1f} / 10"),
+        (950.5, f"{sr:.1f}/10"),
     ]
     for cx, val in squad_cols:
         color = C_VIOLET if cx == 950.5 else C_TEXT
-        _text(draw, (cx, 665), val, 30, color)
+        _text(draw, (cx, 663), val, 30, color)
     for cx, val in squad_cols2:
         color = C_VIOLET if cx == 950.5 else C_TEXT
         _text(draw, (cx, 756), val, 30, color)
 
     # ============ ЭКОНОМИКА ============
-    _text(draw, (1377, 627), _fmt(data.get("balance", 0)), 31, C_TEXT)
-    _text(draw, (1666, 635), f"{_fmt(data.get('items', 0))} шт.", 22, C_TEXT)
+    _text(draw, (1377, 624), _fmt(data.get("balance", 0)), 31, C_TEXT)
+    _text(draw, (1666, 633), f"{_fmt(data.get('items', 0))} шт.", 22, C_TEXT)
 
     # ============ О СЕБЕ ============
     about = [
@@ -194,7 +185,7 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     ]
     for x, val, color, x2 in about:
         vstr, vsize = _fit_text(draw, val, x2 - x - 10, 19, min_size=12)
-        _text(draw, (x, 781), vstr, vsize, color)
+        _text(draw, (x, 779), vstr, vsize, color)
 
     # ============ ДИНАМИКА ELO ============
     # «ПОСЛЕДНИЕ N МАТЧЕЙ» — в шаблоне с литеральной N, перерисовываем
@@ -210,7 +201,7 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     total_delta = data.get("chart_delta", 0)
     td_color = C_GREEN if total_delta >= 0 else C_DELTA_NEG
     tdsign = "+" if total_delta >= 0 else "−"
-    _text(draw, (1150, 935), f"{tdsign}{abs(total_delta)} ELO", 20,
+    _text(draw, (1135, 868), f"{tdsign}{abs(total_delta)} ELO", 20,
           td_color, anchor="rs")
 
     hist = data.get("elo_history") or []  # хронологический список дельт
@@ -250,10 +241,10 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
 
     # W/L блок
     _text(draw, (114, 942), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
-    _text(draw, (114, 980),
+    _text(draw, (114, 961),
           f"{data.get('hist_wins', 0)} / {data.get('hist_losses', 0)}",
           33, C_TEXT)
-    _text(draw, (114, 1009),
+    _text(draw, (114, 1012),
           f"{data.get('hist_count', 0)} записей в истории", 13, C_MUTED)
 
     # Подписи оси — плейсхолдеры [HISTORY_START] / [CURRENT_ELO]
@@ -274,7 +265,7 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         (1621, _fmt(data.get("ult_elo", 1000))),
     ]
     for x, val in ult:
-        _text(draw, (x, 962), val, 33, C_TEXT)
+        _text(draw, (x, 961), val, 33, C_TEXT)
     # [ULTIMATUM_STATUS]
     _inpaint(img, (1260, 998, 1470, 1030), radius=4)
     draw = ImageDraw.Draw(img)
