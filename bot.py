@@ -569,7 +569,7 @@ class TournamentBot(commands.Bot):
                 now_almaty = datetime.now(ZoneInfo("Asia/Almaty"))
                 today = now_almaty.date()
                 # Срабатываем один раз в первый час после полуночи по Астане
-                if now_astana.hour == 0 and self._last_birthday_day != today:
+                if now_almaty.hour == 0 and self._last_birthday_day != today:
                     self._last_birthday_day = today
                     await self._send_birthday_greetings(today)
             except Exception as e:
