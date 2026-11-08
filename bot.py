@@ -58,6 +58,11 @@ class TournamentBot(commands.Bot):
             self.loop.create_task(self.pet_hunger_check_loop())
         except Exception as e:
             logger.error(f"Failed to create pet hunger check loop task: {e}", exc_info=True)
+        # Start birthday greeting background task (00:00 Astana)
+        try:
+            self.loop.create_task(self.birthday_loop())
+        except Exception as e:
+            logger.error(f"Failed to create birthday loop task: {e}", exc_info=True)
         
         # Initialize shop items
         try:
@@ -500,6 +505,70 @@ class TournamentBot(commands.Bot):
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
             except Exception as e:
                 logger.error(f"Error in pet hunger check loop: {e}", exc_info=True)
+
+    async def birthday_loop(self) -> None:
+        """Поздравлять с днём рождения в 00:00 по времени Астаны (UTC+5)."""
+        import asyncio
+        from datetime import datetime, timedelta, timezone
+
+        self._last_birthday_day = None
+        while not self.is_closed():
+            try:
+                await asyncio.sleep(30)
+                if not self.is_ready():
+                    continue
+
+                now_astana = datetime.now(timezone.utc) + timedelta(hours=5)
+                today = now_astana.date()
+                # Срабатываем один раз в первый час после полуночи по Астане
+                if now_astana.hour == 0 and self._last_birthday_day != today:
+                    self._last_birthday_day = today
+                    await self._send_birthday_greetings(today)
+            except Exception as e:
+                logger.error(f"Error in birthday loop: {e}", exc_info=True)
+
+    async def _send_birthday_greetings(self, today) -> None:
+        """Отправить поздравления всем именинникам за сегодня."""
+        from config import NOTIFICATION_CHANNEL_ID, TOURNAMENT_CHANNELS
+        from storage.player_stats_store import player_stats_store
+        from views.birthdays_view import build_birthday_embed, days_until_birthday
+
+        for guild in self.guilds:
+            try:
+                stats_list = await player_stats_store.get_all(guild.id)
+                members = []
+                for s in stats_list:
+                    birthday = getattr(s, "birthday", "") or ""
+                    if days_until_birthday(birthday, today) != 0:
+                        continue
+                    member = guild.get_member(s.user_id)
+                    if member is None:
+                        try:
+                            member = await guild.fetch_member(s.user_id)
+                        except Exception:
+                            member = None
+                    if member is not None:
+                        members.append(member)
+                if not members:
+                    continue
+
+                channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+                if channel is None:
+                    for cid in TOURNAMENT_CHANNELS:
+                        channel = guild.get_channel(cid)
+                        if channel is not None:
+                            break
+                if channel is None:
+                    logger.warning(f"Birthday greetings: no channel found in guild {guild.id}")
+                    continue
+
+                for member in members:
+                    try:
+                        await channel.send(view=compose(build_birthday_embed(member)))
+                    except Exception as e:
+                        logger.error(f"Birthday greeting failed for {member.id}: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Birthday greetings error for guild {guild.id}: {e}", exc_info=True)
 
     async def on_ready(self) -> None:
         logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
