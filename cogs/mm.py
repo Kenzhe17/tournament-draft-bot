@@ -137,54 +137,74 @@ class MMCog(commands.Cog):
             await interaction.response.send_message("❌ Команда только на сервере.", ephemeral=True)
             return
 
-        if mm_search_store.get(guild.id, interaction.channel_id):
+        # Не создаём новый поиск — заполняем уже активный:
+        # сначала в этом канале, иначе любой активный поиск сервера.
+        search = mm_search_store.get(guild.id, interaction.channel_id)
+        if search is None:
+            searches = mm_search_store.get_by_guild(guild.id)
+            search = searches[0] if searches else None
+        if search is None:
             await interaction.response.send_message(
-                "❌ В этом канале уже есть активный поиск.", ephemeral=True
+                "❌ Нет активного поиска — /mmtest только дозаполняет "
+                "существующий поиск.", ephemeral=True
             )
             return
-        if await ready_check_store.get_active_by_search(guild.id, interaction.channel_id):
+        if await ready_check_store.get_active_by_search(
+            guild.id, search.channel_id
+        ):
             await interaction.response.send_message(
-                "❌ В этом канале уже идёт проверка готовности.", ephemeral=True
+                "❌ В канале этого поиска уже идёт проверка готовности.",
+                ephemeral=True
             )
             return
 
-        # Свободный канал для турнира
-        search = MMSearch(
-            guild_id=guild.id,
-            channel_id=interaction.channel_id,
-            format=MMFormat.SQUAD,
-        )
-        for channel_id in TOURNAMENT_CHANNEL_IDS:
-            if channel_id in LOCKED_CHANNELS:
-                continue
-            tournament_channel = self.bot.get_channel(channel_id)
-            if tournament_channel is None:
-                continue
-            tournament = store.get(guild.id, tournament_channel.id)
-            if not tournament or tournament.phase == TournamentPhase.COMPLETE:
-                search.tournament_channel_id = channel_id
-                LOCKED_CHANNELS[channel_id] = interaction.channel_id
-                break
+        needed = search.required_players - len(search.players)
+        if needed <= 0:
+            await interaction.response.send_message(
+                "✅ Поиск уже заполнен.", ephemeral=True
+            )
+            return
+
+        # Свободный канал для турнира (если ещё не назначен)
         if not search.tournament_channel_id:
-            await interaction.response.send_message(
-                "❌ Все каналы для турниров заняты.", ephemeral=True
-            )
-            return
+            for channel_id in TOURNAMENT_CHANNEL_IDS:
+                if channel_id in LOCKED_CHANNELS:
+                    continue
+                tournament_channel = self.bot.get_channel(channel_id)
+                if tournament_channel is None:
+                    continue
+                tournament = store.get(guild.id, tournament_channel.id)
+                if not tournament or tournament.phase == TournamentPhase.COMPLETE:
+                    search.tournament_channel_id = channel_id
+                    LOCKED_CHANNELS[channel_id] = search.channel_id
+                    break
+            if not search.tournament_channel_id:
+                await interaction.response.send_message(
+                    "❌ Все каналы для турниров заняты.", ephemeral=True
+                )
+                return
 
-        # Заполнить поиск искусственными игроками (отрицательные user_id, как в /tournament test)
         # Уникальная база на guild+channel+время, чтобы тесты не пересекались
         base_user_id = -(
             (guild.id % 100000) * 1_000_000
-            + (interaction.channel_id % 1000) * 100
+            + (search.channel_id % 1000) * 100
             + int(time.time()) % 100
         )
-        test_names = [
+        # Имена из тестового пула, пропуская уже занятые в поиске
+        name_pool = [n for n in (
             "TestAce", "TestHunter", "TestRusher", "TestSniper",
             "TestCamper", "TestRookie", "TestNoob", "TestGuest",
-        ]
-        for i, (name, profile) in enumerate(zip(test_names, _MM_TEST_PROFILES)):
-            elo, games, wins, kills, deaths, assists, damage = profile
-            user_id = base_user_id - i
+        ) if n not in search.players]
+        added = 0
+        for i in range(needed):
+            name = name_pool[i] if i < len(name_pool) else f"TestBot{added + 1}"
+            while name in search.players:
+                added += 1
+                name = f"TestBot{added + 1}"
+            elo, games, wins, kills, deaths, assists, damage = (
+                _MM_TEST_PROFILES[i % len(_MM_TEST_PROFILES)]
+            )
+            user_id = base_user_id - added - 1
             stats = PlayerStats(
                 guild_id=guild.id,
                 user_id=user_id,
@@ -201,37 +221,60 @@ class MMCog(commands.Cog):
                 level=min(100, max(1, games // 2)),
             )
             await player_stats_store.set(stats)
-            search.add_player(name, user_id)
-        search.timer_started = True
+            if search.add_player(name, user_id):
+                added += 1
 
-        embed = await build_search_embed(search, guild)
-        view = build_search_view(self.bot, search)
-        message = await interaction.channel.send(view=compose(embed, view))
-        search.message_id = message.id
+        # Таймер поиска — как при обычном входе первого игрока
+        if not search.timer_started:
+            search.timer_started = True
+            self._start_search_timer(search.guild_id, search.channel_id)
         mm_search_store.set(search)
 
-        rc = await self._start_ready_check(search, interaction)
-        if rc is None:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "❌ Не удалось запустить проверку готовности.", ephemeral=True
+        # Обновить сообщение поиска
+        try:
+            channel = self.bot.get_channel(search.channel_id)
+            if channel and search.message_id:
+                message = await channel.fetch_message(search.message_id)
+                embed = await build_search_embed(search, channel.guild)
+                view = build_search_view(self.bot, search)
+                await message.edit(view=compose(embed, view))
+        except Exception as exc:
+            logger.error("mmtest: failed to refresh search embed: %s", exc)
+
+        # Поиск заполнен — запускаем Ready Check, как кнопка «Войти»
+        if search.is_full:
+            self._cancel_search_timer(search.guild_id, search.channel_id)
+            rc = await self._start_ready_check(search, interaction)
+            if rc is None:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Не удалось запустить проверку готовности.",
+                        ephemeral=True,
+                    )
+                return
+            if auto_ready:
+                task = asyncio.create_task(
+                    self._auto_ready_players(rc.match_id)
+                )
+                self._bg_tasks.add(task)
+                task.add_done_callback(self._bg_tasks.discard)
+                await interaction.followup.send(
+                    "🧪 Тест: поиск дозаполнен до 8, авто-готовность включена.",
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    "🧪 Тест: поиск дозаполнен до 8. Готовность не будет "
+                    "подтверждена — проверка завершится по таймауту.",
+                    ephemeral=True,
                 )
             return
 
-        if auto_ready:
-            task = asyncio.create_task(self._auto_ready_players(rc.match_id))
-            self._bg_tasks.add(task)
-            task.add_done_callback(self._bg_tasks.discard)
-            await interaction.followup.send(
-                "🧪 Тест запущен: 8 тестовых игроков, авто-готовность включена.",
-                ephemeral=True,
-            )
-        else:
-            await interaction.followup.send(
-                "🧪 Тест запущен: 8 тестовых игроков. Готовность не будет "
-                "подтверждена — проверка завершится по таймауту.",
-                ephemeral=True,
-            )
+        await interaction.response.send_message(
+            f"🧪 Добавлено {added} тестовых игроков — "
+            f"в поиске {len(search.players)}/{search.required_players}.",
+            ephemeral=True,
+        )
 
     async def _auto_ready_players(self, match_id: str, delay: float = 0.8) -> None:
         """Тест: имитировать нажатие «Готов» за каждого участника матча."""
