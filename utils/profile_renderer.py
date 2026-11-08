@@ -256,9 +256,20 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     if badge_png:
         try:
             badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
-            badge.thumbnail((88, 88), Image.LANCZOS)
-            img.paste(badge, (1588 + (88 - badge.width) // 2,
-                              390 + (88 - badge.height) // 2), badge)
+            badge.thumbnail((76, 76), Image.LANCZOS)
+            # Медальон-подложка: арт рангов — тонкий line-art, на тёмном
+            # фоне карточки эмблема почти не видна (выглядит как пустой
+            # щит). Рисуем круг с фиолетовой окантовкой и кладём эмблему
+            # поверх.
+            bx, by = 1632, 434
+            medal = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            mdraw = ImageDraw.Draw(medal)
+            mdraw.ellipse((bx - 52, by - 52, bx + 52, by + 52),
+                          fill=(44, 34, 60, 235),
+                          outline=C_VIOLET, width=3)
+            img.alpha_composite(medal)
+            img.paste(badge, (bx - badge.width // 2,
+                              by - badge.height // 2), badge)
         except Exception:
             logger.warning("Rank badge paste failed")
 
