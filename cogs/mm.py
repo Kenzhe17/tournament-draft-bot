@@ -804,7 +804,7 @@ class MMCog(commands.Cog):
                         guild = self.bot.get_guild(guild_id)
                         if guild is not None:
                             from services.match_announcer import announce_phase_matches
-                            await announce_phase_matches(t, guild)
+                            await announce_phase_matches(t, guild, self.bot)
                     except Exception as exc:
                         logger.warning("Announce catch-up failed: %s", exc)
                     return
@@ -1044,7 +1044,7 @@ class MMCog(commands.Cog):
         try:
             from services.match_announcer import announce_phase_matches
 
-            await announce_phase_matches(tournament, guild)
+            await announce_phase_matches(tournament, guild, self.bot)
         except Exception as exc:
             logger.error("Match announce failed: %s", exc)
 

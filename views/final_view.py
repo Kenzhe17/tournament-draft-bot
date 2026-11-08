@@ -119,10 +119,13 @@ class FinalView(discord.ui.View):
             _stats_complete,
             match_is_finished,
         )
+        # Для MM-турниров скриншот загружается в канале матча
+        # (cs-4x4-match-N) — здесь кнопку не показываем.
         if (
             tournament.phase == TournamentPhase.FINAL
             and not match_is_finished(tournament, "final", 0)
             and not _stats_complete(tournament, "final", 0)
+            and not getattr(tournament, "mm_search_channel_id", 0)
         ):
             self.add_item(
                 MatchScreenshotButton(

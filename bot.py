@@ -192,6 +192,39 @@ class TournamentBot(commands.Bot):
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
 
+            # MM-флоу: кнопка «Загрузить скриншот» живёт в карточке
+            # матча (cs-4x4-match-N), а не в сообщении турнира —
+            # восстанавливаем её persistent view для активных матчей.
+            if getattr(tournament, "mm_search_channel_id", 0):
+                try:
+                    from services.match_announcer import _phase_matches
+                    from views.ocr_match_view import (
+                        MatchScreenshotButton,
+                        _stats_complete,
+                        match_is_finished,
+                    )
+
+                    for mt, mi, _a, _b in _phase_matches(tournament):
+                        if match_is_finished(tournament, mt, mi):
+                            continue
+                        if _stats_complete(tournament, mt, mi):
+                            continue
+                        mm_view = discord.ui.View(timeout=None)
+                        mm_view.add_item(
+                            MatchScreenshotButton(
+                                tournament.guild_id,
+                                tournament.channel_id,
+                                tournament,
+                                mt, mi, "Загрузить скриншот",
+                            )
+                        )
+                        self.add_view(mm_view)
+                except Exception as exc:
+                    logger.warning(
+                        "MM match screenshot view restore failed for %s: %s",
+                        tournament.id, exc,
+                    )
+
             # Восстанавливаем кнопки публичных OCR-сообщений матчей
             for session in (tournament.ocr_sessions or {}).values():
                 # Squad-режим: отдельные сообщения на каждый отряд
@@ -369,7 +402,7 @@ class TournamentBot(commands.Bot):
         try:
             from services.match_announcer import announce_phase_matches
 
-            await announce_phase_matches(tournament, guild)
+            await announce_phase_matches(tournament, guild, self)
         except Exception as exc:
             logger.error("Match announce failed: %s", exc)
 

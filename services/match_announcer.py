@@ -129,34 +129,51 @@ def _match_started_view(
     name_b: str,
     t1: int,
     t2: int,
+    match_type: str,
+    match_index: int,
     with_png: bool,
 ) -> "discord.ui.LayoutView":
     """V2-карточка «МАТЧ #N НАЧАЛСЯ» для MM-флоу (без эмодзи)."""
     from utils.design.layouts import DesignView
     from cogs.ocr_upload import _roster_mentions as _mentions_fn
+    from views.ocr_match_view import MatchScreenshotButton
 
     view = DesignView(title=f"МАТЧ #{number} НАЧАЛСЯ", timeout=None)
     mentions = _match_mentions(tournament, t1, t2)
     if mentions:
         view.text(mentions)
         view.sep()
-    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
-    view.sep()
-    view.text(f"**{name_a}**\n{_mentions_fn(tournament, t1)}")
-    view.text(f"**{name_b}**\n{_mentions_fn(tournament, t2)}")
     if with_png:
-        view.sep()
         view.component(
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media="attachment://match_found.png")
             )
         )
+        view.sep()
+    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
     view.sep()
-    view.text("-# Матч идёт — по окончании капитан загружает скриншот статистики.")
+    view.text(f"**{name_a}**\n{_mentions_fn(tournament, t1)}")
+    view.text(f"**{name_b}**\n{_mentions_fn(tournament, t2)}")
+    view.sep()
+    view.row(
+        MatchScreenshotButton(
+            tournament.guild_id,
+            tournament.channel_id,
+            tournament,
+            match_type,
+            match_index,
+            "Загрузить скриншот",
+        )
+    )
+    view.text("-# Матч идёт — скриншот статистики загружается кнопкой выше.")
     return view
 
 
-async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -> None:
+async def announce_phase_matches(
+    tournament: Tournament,
+    guild: discord.Guild,
+    bot: "discord.Client | None" = None,
+) -> None:
     """Анонсировать все ещё не анонсированные матчи текущей фазы."""
     matches = _phase_matches(tournament)
     if not matches:
@@ -222,6 +239,7 @@ async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -
                 # V2-карточка «Матч начался» + PNG «Найден матч»
                 view = _match_started_view(
                     tournament, number, label, name_a, name_b, t1, t2,
+                    match_type, match_index,
                     with_png=card_png is not None,
                 )
                 await channel.send(
@@ -233,6 +251,25 @@ async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -
                     ),
                     allowed_mentions=discord.AllowedMentions(users=True),
                 )
+                # Кнопка скриншота в карточке — persistent view на случай рестарта
+                if bot is not None:
+                    try:
+                        from views.ocr_match_view import MatchScreenshotButton
+
+                        persist = discord.ui.View(timeout=None)
+                        persist.add_item(
+                            MatchScreenshotButton(
+                                tournament.guild_id,
+                                tournament.channel_id,
+                                tournament,
+                                match_type,
+                                match_index,
+                                "Загрузить скриншот",
+                            )
+                        )
+                        bot.add_view(persist)
+                    except Exception as exc:
+                        logger.warning("Match screenshot view register failed: %s", exc)
                 # Регистрируем канал: скриншот в нём = загрузка результата
                 tournament.match_channels[str(channel.id)] = {
                     "match_type": match_type,
