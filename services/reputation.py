@@ -358,6 +358,33 @@ async def process_due_boosts(
 
 
 # ---------------------------------------------------------------------------
+# Административная корректировка
+# ---------------------------------------------------------------------------
+
+async def admin_adjust_rep(
+    guild_id: int,
+    admin_id: int,
+    target_id: int,
+    amount: int,
+    target_name: str = "",
+    reason: str = "",
+    store: ReputationStore | None = None,
+) -> dict[str, Any] | None:
+    """Изменить REP администратором. Лог уходит в публичный канал через outbox."""
+    if amount == 0:
+        return None
+    store = store or reputation_store
+    return await store.admin_adjust_rep(
+        guild_id=guild_id,
+        admin_id=admin_id,
+        target_id=target_id,
+        amount=amount,
+        target_name=target_name,
+        reason=reason,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Утилиты
 # ---------------------------------------------------------------------------
 

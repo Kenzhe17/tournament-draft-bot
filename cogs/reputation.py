@@ -23,6 +23,7 @@ from discord.ext import commands
 from config import REP_INVITE_AMOUNT
 from cogs.groups import bind_commands, reputation_group
 from services import reputation as rep_svc
+from services import rep_log
 from storage.player_stats_store import player_stats_store
 from storage.reputation_store import (
     SRC_BOOST,
@@ -32,6 +33,7 @@ from storage.reputation_store import (
 )
 from utils.design import colors
 from utils.design.layouts import DesignView
+from utils.permissions import is_admin
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -64,7 +66,8 @@ class ReputationCog(commands.Cog):
 
     async def cog_load(self) -> None:
         bind_commands(
-            reputation_group, self, ["profile", "history", "stats"]
+            reputation_group, self,
+            ["profile", "history", "stats", "adjust"],
         )
         # Кэш инвайтов: guild_id -> {code: Invite}
         if not hasattr(self.bot, "_rep_invite_cache"):
@@ -72,10 +75,27 @@ class ReputationCog(commands.Cog):
         for guild in self.bot.guilds:
             await self._refresh_invite_cache(guild)
         self._sweep_task = asyncio.create_task(self._reward_sweeper())
+        # Канал публичных логов: создать/проверить один раз при старте
+        self._log_channel_task = asyncio.create_task(
+            self._ensure_log_channels()
+        )
+
+    async def _ensure_log_channels(self) -> None:
+        for guild in self.bot.guilds:
+            try:
+                await rep_log.ensure_log_channel(self.bot, guild)
+            except Exception as exc:
+                logger.warning(
+                    "Rep log channel setup failed for guild %s: %s",
+                    guild.id, exc,
+                )
 
     def cog_unload(self) -> None:
         if self._sweep_task is not None:
             self._sweep_task.cancel()
+        task = getattr(self, "_log_channel_task", None)
+        if task is not None:
+            task.cancel()
 
     async def _refresh_invite_cache(self, guild: discord.Guild) -> None:
         try:
@@ -94,6 +114,8 @@ class ReputationCog(commands.Cog):
                     await self._refresh_invite_cache(guild)
                 await rep_svc.process_due_invites(self.bot)
                 await rep_svc.process_due_boosts(self.bot)
+                # Публикация ожидающих событий в канал логов репутации
+                await rep_log.publish_pending(self.bot)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -249,6 +271,75 @@ class ReputationCog(commands.Cog):
         await interaction.response.send_message(
             view=_card("СТАТИСТИКА РЕПУТАЦИИ", lines, colors.INFO),
             ephemeral=False,
+        )
+
+    @reputation_group.command(
+        name="adjust", description="Изменить репутацию участника (админ)"
+    )
+    @app_commands.describe(
+        user="Участник сервера",
+        amount="Изменение REP (может быть отрицательным)",
+        reason="Причина корректировки (не публикуется публично)",
+    )
+    @is_admin()
+    async def rep_adjust(
+        self,
+        interaction: discord.Interaction,
+        user: discord.Member,
+        amount: int,
+        reason: str = "",
+    ) -> None:
+        if user.bot:
+            await interaction.response.send_message(
+                view=_card("ОШИБКА", ["Нельзя изменить репутацию боту."]),
+                ephemeral=True,
+            )
+            return
+        if amount == 0:
+            await interaction.response.send_message(
+                view=_card("ОШИБКА", ["Изменение не может быть равным 0."]),
+                ephemeral=True,
+            )
+            return
+        if abs(amount) > 1000:
+            await interaction.response.send_message(
+                view=_card("ОШИБКА", ["Слишком большое изменение (максимум ±1000)."]),
+                ephemeral=True,
+            )
+            return
+
+        result = await rep_svc.admin_adjust_rep(
+            guild_id=interaction.guild_id,
+            admin_id=interaction.user.id,
+            target_id=user.id,
+            amount=amount,
+            target_name=user.display_name,
+            reason=reason,
+        )
+        if result is None:
+            await interaction.response.send_message(
+                view=_card("ОШИБКА", ["Не удалось изменить репутацию."]),
+                ephemeral=True,
+            )
+            return
+
+        sign = "+" if amount > 0 else ""
+        await interaction.response.send_message(
+            view=_card(
+                "РЕПУТАЦИЯ ИЗМЕНЕНА",
+                [
+                    f"Участник: {user.mention}",
+                    f"Изменение: {sign}{amount} REP",
+                    f"Текущая репутация: {result['rep_after']}",
+                ],
+                colors.WARNING if amount < 0 else colors.INFO,
+            ),
+            ephemeral=False,
+        )
+        logger.info(
+            "Admin %s adjusted rep of %s by %+d (guild %s, reason: %s)",
+            interaction.user.id, user.id, amount,
+            interaction.guild_id, reason or "-",
         )
 
     @app_commands.command(name="invites", description="Статистика приглашений пользователя")

@@ -38,6 +38,7 @@ class ManualRepResult:
     rep_after: int = 0
     next_available_at: datetime | None = None
     cooldown_seconds: int = 0
+    transaction_id: int = 0  # id записи reputation_transactions (для outbox)
 
 
 class ReputationStore:
@@ -95,7 +96,7 @@ class ReputationStore:
                         )
 
                 # Журнал: UNIQUE event_key — повтор той же пары невозможен
-                inserted = await conn.fetchval(
+                tx_id = await conn.fetchval(
                     """
                     INSERT INTO reputation_transactions
                         (guild_id, user_id, source, amount,
@@ -107,7 +108,7 @@ class ReputationStore:
                     guild_id, target_id, SRC_MANUAL, amount,
                     giver_id, target_id, event_key,
                 )
-                if inserted is None:
+                if tx_id is None:
                     return ManualRepResult(status="already_pair")
 
                 # +REP получателю (upsert player_stats)
@@ -121,6 +122,7 @@ class ReputationStore:
                     """,
                     guild_id, target_id, target_name, amount,
                 )
+                rep_after = int(rep_after or 0)
 
                 await conn.execute(
                     """
@@ -129,7 +131,20 @@ class ReputationStore:
                     """,
                     guild_id, giver_id,
                 )
-                return ManualRepResult(status="ok", rep_after=int(rep_after or 0))
+                await _enqueue_rep_log(
+                    conn,
+                    transaction_id=int(tx_id),
+                    guild_id=guild_id,
+                    user_id=target_id,
+                    source=SRC_MANUAL,
+                    amount=amount,
+                    balance_after=rep_after,
+                    actor_user_id=giver_id,
+                    subject_user_id=target_id,
+                )
+                return ManualRepResult(
+                    status="ok", rep_after=rep_after, transaction_id=int(tx_id)
+                )
 
     # ------------------------------------------------------------------
     # Начисление REP (invite / boost / admin) — одна транзакция
@@ -147,10 +162,37 @@ class ReputationStore:
         user_name: str = "",
     ) -> bool:
         """Начислить REP с записью в журнал. False — event_key уже был."""
+        result = await self.award_rep_logged(
+            guild_id=guild_id,
+            user_id=user_id,
+            source=source,
+            amount=amount,
+            event_key=event_key,
+            actor_user_id=actor_user_id,
+            subject_user_id=subject_user_id,
+            user_name=user_name,
+        )
+        return result is not None
+
+    async def award_rep_logged(
+        self,
+        guild_id: int,
+        user_id: int,
+        source: str,
+        amount: int,
+        event_key: str,
+        actor_user_id: int = 0,
+        subject_user_id: int = 0,
+        user_name: str = "",
+    ) -> dict[str, Any] | None:
+        """Начислить REP + поставить outbox-лог в той же транзакции.
+
+        Возвращает {transaction_id, rep_after} или None при дубликате.
+        """
         pool = await get_pool()
         async with pool.acquire() as conn:
             async with conn.transaction():
-                inserted = await conn.fetchval(
+                tx_id = await conn.fetchval(
                     """
                     INSERT INTO reputation_transactions
                         (guild_id, user_id, source, amount,
@@ -162,18 +204,31 @@ class ReputationStore:
                     guild_id, user_id, source, amount,
                     actor_user_id, subject_user_id, event_key,
                 )
-                if inserted is None:
-                    return False
-                await conn.execute(
+                if tx_id is None:
+                    return None
+                rep_after = await conn.fetchval(
                     """
                     INSERT INTO player_stats (guild_id, user_id, name, reputation)
                     VALUES ($1, $2, $3, $4)
                     ON CONFLICT (guild_id, user_id)
                     DO UPDATE SET reputation = player_stats.reputation + $4
+                    RETURNING reputation
                     """,
                     guild_id, user_id, user_name, amount,
                 )
-                return True
+                rep_after = int(rep_after or 0)
+                await _enqueue_rep_log(
+                    conn,
+                    transaction_id=int(tx_id),
+                    guild_id=guild_id,
+                    user_id=user_id,
+                    source=source,
+                    amount=amount,
+                    balance_after=rep_after,
+                    actor_user_id=actor_user_id,
+                    subject_user_id=subject_user_id,
+                )
+                return {"transaction_id": int(tx_id), "rep_after": rep_after}
 
     # ------------------------------------------------------------------
     # Журнал и аналитика
@@ -503,6 +558,173 @@ class ReputationStore:
     async def get_boost_status(self, guild_id: int, booster_id: int) -> str | None:
         row = await self.get_boost(guild_id, booster_id)
         return row["status"] if row else None
+
+    # ------------------------------------------------------------------
+    # Административная корректировка REP (публично логируется)
+    # ------------------------------------------------------------------
+
+    async def admin_adjust_rep(
+        self,
+        guild_id: int,
+        admin_id: int,
+        target_id: int,
+        amount: int,
+        target_name: str = "",
+        reason: str = "",
+    ) -> dict[str, Any] | None:
+        """Изменить REP администратора: журнал + баланс + outbox в одной tx.
+
+        amount может быть отрицательным; баланс не уходит ниже 0.
+        event_key генерируется уникальным на каждый вызов.
+        """
+        import uuid
+
+        event_key = f"admin_adjust:{guild_id}:{uuid.uuid4()}"
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                tx_id = await conn.fetchval(
+                    """
+                    INSERT INTO reputation_transactions
+                        (guild_id, user_id, source, amount,
+                         actor_user_id, subject_user_id, event_key)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    RETURNING id
+                    """,
+                    guild_id, target_id, SRC_ADMIN, amount,
+                    admin_id, target_id, event_key,
+                )
+                rep_after = await conn.fetchval(
+                    """
+                    INSERT INTO player_stats (guild_id, user_id, name, reputation)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET reputation = GREATEST(
+                        player_stats.reputation + $4, 0)
+                    RETURNING reputation
+                    """,
+                    guild_id, target_id, target_name, amount,
+                )
+                rep_after = int(rep_after or 0)
+                await _enqueue_rep_log(
+                    conn,
+                    transaction_id=int(tx_id),
+                    guild_id=guild_id,
+                    user_id=target_id,
+                    source=SRC_ADMIN,
+                    amount=amount,
+                    balance_after=rep_after,
+                    actor_user_id=admin_id,
+                    subject_user_id=target_id,
+                )
+                return {"transaction_id": int(tx_id), "rep_after": rep_after}
+
+    # ------------------------------------------------------------------
+    # Outbox публичных логов
+    # ------------------------------------------------------------------
+
+    async def get_pending_rep_logs(self, limit: int = 20) -> list[dict[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM rep_log_outbox
+                WHERE log_status = 'pending'
+                ORDER BY id ASC
+                LIMIT $1
+                """,
+                limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def mark_rep_log_sent(
+        self, outbox_id: int, message_id: int
+    ) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE rep_log_outbox
+                SET log_status = 'sent', log_message_id = $2,
+                    published_at = now(), attempts = attempts + 1,
+                    last_error = ''
+                WHERE id = $1
+                """,
+                outbox_id, message_id,
+            )
+
+    async def mark_rep_log_failed(self, outbox_id: int, error: str) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE rep_log_outbox
+                SET attempts = attempts + 1, last_error = $2
+                WHERE id = $1 AND log_status = 'pending'
+                """,
+                outbox_id, (error or "")[:500],
+            )
+
+    async def count_pending_rep_logs(self) -> int:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return int(await conn.fetchval(
+                "SELECT COUNT(*) FROM rep_log_outbox WHERE log_status = 'pending'"
+            ) or 0)
+
+    # ------------------------------------------------------------------
+    # Настройки каналов (bot_settings)
+    # ------------------------------------------------------------------
+
+    async def get_setting(self, guild_id: int, key: str) -> str | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT value FROM bot_settings WHERE guild_id = $1 AND key = $2",
+                guild_id, key,
+            )
+
+    async def set_setting(self, guild_id: int, key: str, value: str) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO bot_settings (guild_id, key, value)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, key) DO UPDATE SET value = $3
+                """,
+                guild_id, key, value,
+            )
+
+
+async def _enqueue_rep_log(
+    conn: Any,
+    *,
+    transaction_id: int,
+    guild_id: int,
+    user_id: int,
+    source: str,
+    amount: int,
+    balance_after: int,
+    actor_user_id: int,
+    subject_user_id: int,
+) -> None:
+    """Поставить событие публичного лога в outbox (внутри tx REP).
+
+    Вызывается только для реально созданных транзакций — дубликаты
+    event_key отсекаются раньше, поэтому повторной постановки нет.
+    """
+    await conn.execute(
+        """
+        INSERT INTO rep_log_outbox
+            (transaction_id, guild_id, user_id, source, amount,
+             balance_after, actor_user_id, subject_user_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (transaction_id) DO NOTHING
+        """,
+        transaction_id, guild_id, user_id, source, amount,
+        balance_after, actor_user_id, subject_user_id,
+    )
 
 
 reputation_store = ReputationStore()

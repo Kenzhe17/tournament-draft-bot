@@ -92,6 +92,10 @@ REP_ONE_INVITE_REWARD_PER_INVITED_USER = os.getenv("REP_ONE_INVITE_REWARD_PER_IN
 REP_ONE_BOOST_REWARD_PER_USER = os.getenv("REP_ONE_BOOST_REWARD_PER_USER", "true").lower() in ("1", "true", "yes")
 REP_ONE_MANUAL_REP_PER_PAIR = os.getenv("REP_ONE_MANUAL_REP_PER_PAIR", "true").lower() in ("1", "true", "yes")
 
+# Публичный канал логов репутации (создаётся автоматически при отсутствии)
+REP_LOG_CHANNEL_ID = int(os.getenv("REP_LOG_CHANNEL_ID", "1569034686691414172"))
+REP_LOG_CHANNEL_NAME = os.getenv("REP_LOG_CHANNEL_NAME", "репутация-логи")
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

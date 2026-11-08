@@ -835,3 +835,41 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_rep_boosts_pending
             ON rep_boosts(guild_id, status, verify_until)
         """)
+
+        # Outbox публичных логов репутации: запись создаётся в той же
+        # транзакции, что и начисление REP. UNIQUE(transaction_id) —
+        # событие не может быть поставлено в очередь дважды.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_log_outbox (
+                id BIGSERIAL PRIMARY KEY,
+                transaction_id BIGINT NOT NULL UNIQUE,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                source TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL DEFAULT 0,
+                actor_user_id BIGINT NOT NULL DEFAULT 0,
+                subject_user_id BIGINT NOT NULL DEFAULT 0,
+                log_status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT NOT NULL DEFAULT '',
+                log_message_id BIGINT,
+                published_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_log_outbox_pending
+            ON rep_log_outbox(log_status, id)
+            WHERE log_status = 'pending'
+        """)
+
+        # Мелкие настройки бота per-guild (id служебных каналов и т.п.)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                guild_id BIGINT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (guild_id, key)
+            )
+        """)
