@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import aiohttp
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,6 @@ TEMPLATE_PATH = ASSETS_DIR / "MATCH FOUND TEMPLATE.png"
 
 TEXT_COLOR = (243, 243, 248)       # имена, MATCH #, средние
 VALUE_COLOR = (173, 180, 203)      # значения статистики игроков
-FALLBACK_AVATAR_BG = (38, 42, 58)  # тёмный круг при отсутствии аватарки
 AVATAR_TIMEOUT = 8.0
 
 # --- Геометрия (1920x1080) ---
@@ -57,11 +56,12 @@ AVG_W = 120
 MATCHNUM_BOX = (1495, 96, 1715, 134)
 MATCHNUM_XY = (1500, 101)
 
-# Зоны аватаров для поиска фиолетового плейсхолдера
-AVATAR_ZONES = {
-    "A": [(100, y - 8, 165, y + 60) for y in NAME_TOPS],
-    "B": [(1048, y - 8, 1113, y + 60) for y in NAME_TOPS],
-}
+# Слоты аватаров (64x64 круг с фиолетовым кольцом) — геометрия нового
+# template: боксы измерены по diff TEMPLATE/EXAMPLE
+AVATAR_X = {"A": 96, "B": 1046}
+AVATAR_TOPS = [395, 520, 645, 770]
+AVATAR_SIZE = 64
+AVATAR_RING = (125, 67, 215)  # #7D43D7
 
 # Шрифт
 _FONT_CACHE: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
@@ -149,7 +149,6 @@ class MatchFoundData:
 # ----------------------------------------------------------------------
 
 _TEMPLATE_IMG: Image.Image | None = None
-_AVATAR_MASKS: dict[tuple[str, int], Image.Image] = {}
 
 
 def _load_template() -> Image.Image:
@@ -157,38 +156,6 @@ def _load_template() -> Image.Image:
     if _TEMPLATE_IMG is None:
         _TEMPLATE_IMG = Image.open(TEMPLATE_PATH).convert("RGBA")
     return _TEMPLATE_IMG.copy()
-
-
-def _is_purple_placeholder(rgb) -> bool:
-    """Фиолетовый плейсхолдер аватара в TEMPLATE."""
-    r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
-    return b > r + 25 and b > 90 and b > g + 30 and r < 170
-
-
-def _avatar_mask(team: str, row: int) -> Image.Image | None:
-    """Alpha-маска слота аватара из фиолетового плейсхолдера шаблона."""
-    key = (team, row)
-    if key in _AVATAR_MASKS:
-        return _AVATAR_MASKS[key]
-
-    tpl = Image.open(TEMPLATE_PATH).convert("RGB")
-    px = tpl.load()
-    x0, y0, x1, y1 = AVATAR_ZONES[team][row]
-    mask = Image.new("L", tpl.size, 0)
-    mpx = mask.load()
-    found = False
-    for y in range(y0, y1):
-        for x in range(x0, x1):
-            if _is_purple_placeholder(px[x, y]):
-                mpx[x, y] = 255
-                found = True
-    if not found:
-        _AVATAR_MASKS[key] = None  # type: ignore[assignment]
-        return None
-    # лёгкое расширение маски на 1px для антиалиасинга
-    mask = mask.filter(ImageFilter.MaxFilter(3))
-    _AVATAR_MASKS[key] = mask
-    return mask
 
 
 # ----------------------------------------------------------------------
@@ -275,15 +242,16 @@ def _cover_resize(img: Image.Image, box: tuple[int, int, int, int]) -> Image.Ima
 
 def _draw_avatar(
     canvas: Image.Image,
-    mask: Image.Image,
     avatar_bytes: bytes | None,
     name: str,
+    box: tuple[int, int, int, int],
 ) -> None:
-    """Наложить аватарку (или fallback-инициал) через маску слота."""
-    x0, y0, x1, y1 = mask.getbbox()
-    if x0 is None:
-        return
-    box = (x0, y0, x1 + 1, y1 + 1)
+    """Наложить аватарку (или fallback-инициал) в круглый слот + кольцо."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+
+    mask = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, w - 1, h - 1), fill=255)
 
     if avatar_bytes:
         try:
@@ -296,17 +264,19 @@ def _draw_avatar(
 
     if av is None:
         # fallback: тёмный круг с первой буквой
-        av = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (*FALLBACK_AVATAR_BG, 255))
+        av = Image.new("RGBA", (w, h), (33, 37, 54, 255))
         d = ImageDraw.Draw(av)
         initial = _sanitize(name, 1).upper() or "?"
-        f = _display_font(max(14, (box[3] - box[1]) // 2))
+        f = _display_font(max(14, h // 2))
         tb = d.textbbox((0, 0), initial, font=f)
         d.text(
-            ((av.width - (tb[2] - tb[0])) // 2 - tb[0], (av.height - (tb[3] - tb[1])) // 2 - tb[1]),
+            ((w - (tb[2] - tb[0])) // 2 - tb[0], (h - (tb[3] - tb[1])) // 2 - tb[1]),
             initial, font=f, fill=TEXT_COLOR,
         )
 
-    canvas.paste(av, box[:2], mask.crop(box))
+    canvas.paste(av, (x0, y0), mask)
+    # Фиолетовое кольцо слота (как в EXAMPLE)
+    ImageDraw.Draw(canvas).ellipse(box, outline=AVATAR_RING, width=4)
 
 
 def render_match_found_sync(
@@ -362,10 +332,12 @@ def render_match_found_sync(
         vy = n_top + VAL_Y_OFFSET
 
         # аватар
-        mask = _avatar_mask(team, row)
-        if mask is not None:
-            _draw_avatar(img, mask, avatars.get(p.user_id), p.name)
-            draw = ImageDraw.Draw(img)
+        box = (
+            AVATAR_X[team], AVATAR_TOPS[row],
+            AVATAR_X[team] + AVATAR_SIZE, AVATAR_TOPS[row] + AVATAR_SIZE,
+        )
+        _draw_avatar(img, avatars.get(p.user_id), p.name, box)
+        draw = ImageDraw.Draw(img)
 
         # ник (fit в ~250px)
         name = _sanitize(p.name, 26)
