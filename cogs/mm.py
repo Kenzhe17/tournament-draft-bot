@@ -977,25 +977,10 @@ class MMCog(commands.Cog):
         
         logger.info("Tournament created with random-auto formation, auto-started and matches generated")
 
-        # Построить embed в зависимости от фазы
-        if tournament.phase == TournamentPhase.FINAL:
-            from utils.embeds import build_final_embed
-            embed = await build_final_embed(tournament, guild)
-        elif tournament.phase == TournamentPhase.QUALIFIERS:
-            from utils.embeds import build_qualifiers_embed
-            embed = await build_qualifiers_embed(tournament, guild)
-        elif tournament.phase == TournamentPhase.SEMIFINALS:
-            from utils.embeds import build_semifinals_embed
-            embed = await build_semifinals_embed(tournament, guild)
-        else:
-            embed = await build_setup_embed(tournament, guild)
-        
-        view = self.bot.build_view_for_tournament(tournament)
-        self.bot._register_view(view)
-
-        # Отправить в канал турниров
-        message = await tournament_channel.send( view=compose(embed, view))
-        tournament.message_id = message.id
+        # MM: турнирный embed (сетка + кнопка комнаты) в канал матча
+        # не отправляем — там только карточка «Матч начался»,
+        # кнопка комнаты перенесена в неё (RoomButton).
+        tournament.message_id = 0
         store.set(tournament)
 
         # Привязать заранее созданный канал матча и PNG карточки

@@ -98,8 +98,19 @@ def _fmt_num(v) -> str:
     return f"{v:,}".replace(",", " ")
 
 
-async def _stats_channel(message: discord.Message):
-    """Канал результатов: заданный ID, иначе канал сообщения."""
+async def _stats_channel(message: discord.Message, tournament=None):
+    """Канал результатов: заданный ID, иначе канал сообщения.
+
+    Для MM-матчей (канал cs-4x4-match-N в match_channels) скриншот и
+    карточка сопоставления живут в канале матча, а не в канале
+    статистики.
+    """
+    if (
+        tournament is not None
+        and getattr(tournament, "mm_search_channel_id", 0)
+        and str(message.channel.id) in (tournament.match_channels or {})
+    ):
+        return message.channel
     channel = message.guild.get_channel(OCR_STATS_CHANNEL_ID)
     if channel is None:
         try:
@@ -556,7 +567,7 @@ class OCRUploadCog(commands.Cog):
                 )
                 return
 
-        stats_channel = await _stats_channel(message)
+        stats_channel = await _stats_channel(message, tournament)
 
         try:
             data = await attachment.read()

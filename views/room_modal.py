@@ -174,21 +174,33 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     line1 = f"**{name1}**\n{_team_line(tournament, team1_data)}"
     line2 = f"**{name2}**\n{_team_line(tournament, team2_data)}"
 
-    # Get specific channel
-    channel = bot.get_channel(1561683314480255057)
+    # Get specific channel: для MM — канал матча cs-4x4-match-N,
+    # иначе канал результатов комнат
+    channel = None
+    if getattr(tournament, "mm_search_channel_id", 0):
+        mm_ch = int(getattr(tournament, "mm_preset_channel_id", 0) or 0)
+        if mm_ch:
+            channel = bot.get_channel(mm_ch)
+            if channel is None:
+                try:
+                    channel = await bot.fetch_channel(mm_ch)
+                except Exception:
+                    channel = None
+    if channel is None:
+        channel = bot.get_channel(1561683314480255057)
     if channel:
         card = (
             f"**КОМНАТА ОТКРЫТА**\n"
             f"Матч: {name1} vs {name2}\n\n"
             f"{line1}\n{line2}\n\n"
             "**Данные:**\n"
-            f"```\nID: {room_id}\nПароль: {room_password}\n```"
+            f"```\n{room_id}\n{room_password}\n```"
         )
         await channel.send( view=text_card(card))
 
     # Send to general channel (1200125075156910181)
     general_channel = bot.get_channel(1200125075156910181)
-    if general_channel:
+    if general_channel and channel is not None:
         await general_channel.send(
-            view=text_card(f"{line1}\n{line2}\n\n Комната открыта, данные  <#1561683314480255057>")
+            view=text_card(f"{line1}\n{line2}\n\n Комната открыта, данные  <#{channel.id}>")
         )

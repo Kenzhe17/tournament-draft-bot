@@ -203,6 +203,15 @@ def _match_started_view(
                 "Отправить результат",
             )
         )
+    if state != "done":
+        # Кнопка комнаты — вместо отдельного турнирного embed
+        from views.room_buttons import RoomButton
+
+        view.row(
+            RoomButton(
+                match_type, match_index, t1, t2, name_a, name_b,
+            )
+        )
     return view
 
 
@@ -367,6 +376,7 @@ async def announce_phase_matches(
                 if bot is not None:
                     try:
                         from views.ocr_match_view import MatchScreenshotButton
+                        from views.room_buttons import RoomButton
 
                         persist = discord.ui.View(timeout=None)
                         persist.add_item(
@@ -377,6 +387,12 @@ async def announce_phase_matches(
                                 match_type,
                                 match_index,
                                 "Отправить результат",
+                            )
+                        )
+                        persist.add_item(
+                            RoomButton(
+                                match_type, match_index, t1, t2,
+                                name_a, name_b,
                             )
                         )
                         bot.add_view(persist)

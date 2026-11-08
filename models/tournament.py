@@ -171,6 +171,9 @@ class Tournament:
     # MM поиск который создал этот турнир (channel_id)
     mm_search_channel_id: int = 0
 
+    # Канал матча cs-4x4-match-N, созданный на этапе ready-check
+    mm_preset_channel_id: int = 0
+
     @property
     def captain_count(self) -> int:
         """Количество капитанов на основе размера турнира."""
@@ -1485,6 +1488,7 @@ class Tournament:
             "organizer_id": self.organizer_id,
             "eliminated_teams": list(self.eliminated_teams),
             "mm_search_channel_id": self.mm_search_channel_id,
+            "mm_preset_channel_id": self.mm_preset_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
             "match_channels": self.match_channels,
         }
@@ -1534,6 +1538,7 @@ class Tournament:
             organizer_id=data.get("organizer_id", 0),
             eliminated_teams=set(data.get("eliminated_teams", [])),
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
+            mm_preset_channel_id=data.get("mm_preset_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
             match_channels=data.get("match_channels", {}),
         )
