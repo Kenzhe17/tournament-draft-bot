@@ -705,7 +705,7 @@ class TournamentCog(commands.Cog):
 
         # Профиль пользователя
         embed.add_field(
-            name=replace_emojis("⚪ Ваш профиль:"),
+            name=replace_emojis("• Ваш профиль:"),
             value=f" Баланс: {balance:,} {get_emoji('money')}\n"
                   f" Ранг: {rank}\n"
                   f" Инвентарь: {inventory_count}/{max_inventory}",
@@ -737,7 +737,7 @@ class TournamentCog(commands.Cog):
 
         if not cosmetics:
             await interaction.response.send_message(
-                replace_emojis("⚪ Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
+                replace_emojis("• Ваш инвентарь пуст. Используйте `/shop` для покупки косметики."),
                 ephemeral=True
             )
             return
@@ -800,7 +800,7 @@ class TournamentCog(commands.Cog):
         description_parts = ["Управление вашей экипировкой и предметами:\n"]
 
         # Экипировано
-        description_parts.append(f"{replace_emojis('⚪')} **Экипировано:**")
+        description_parts.append(f"{replace_emojis('•')} **Экипировано:**")
         if equipped_tags:
             description_parts.extend(equipped_tags)
         if equipped_icons:
@@ -810,7 +810,7 @@ class TournamentCog(commands.Cog):
         description_parts.append("")
 
         # В инвентаре
-        description_parts.append(f"{replace_emojis('⚪')} **В инвентаре:**")
+        description_parts.append(f"{replace_emojis('•')} **В инвентаре:**")
         if unequipped_tags:
             description_parts.extend(unequipped_tags)
         if unequipped_icons:
@@ -820,7 +820,7 @@ class TournamentCog(commands.Cog):
         description_parts.append("")
 
         # Управление
-        description_parts.append(f"{replace_emojis('⚪')} **Управление:**")
+        description_parts.append(f"{replace_emojis('•')} **Управление:**")
         description_parts.append(f" Используйте выпадающие меню ниже для экипировки/снятия.")
         description_parts.append("")
         description_parts.append(f"{replace_emojis('a_dot_smaller')} Максимум 1 тег и 1 значок одновременно")
@@ -1253,7 +1253,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f" УРОВЕНЬ ПОЛЬЗОВАТЕЛЯ | /rank",
-            description=f" {interaction.user.mention}\n\n{replace_emojis('⚪')} **Текущий статус:**\n Уровень: Level {stats.level}\n Ранг: {rank_title}\n\n{replace_emojis('⚪')} **Прогресс опыта:**\n Прогресс: `{progress_bar}` ({progress_percent}%)\n До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
+            description=f" {interaction.user.mention}\n\n{replace_emojis('•')} **Текущий статус:**\n Уровень: Level {stats.level}\n Ранг: {rank_title}\n\n{replace_emojis('•')} **Прогресс опыта:**\n Прогресс: `{progress_bar}` ({progress_percent}%)\n До след. уровня: {xp_remaining:,} XP\n\n{replace_emojis('a_dot_smaller')} Накопить XP можно через участие в турнирах и победы",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1269,7 +1269,7 @@ class TournamentCog(commands.Cog):
 
         if not stats or stats["total_bets"] == 0:
             await interaction.response.send_message(
-                replace_emojis("⚪ У вас пока нет статистики ставок."),
+                replace_emojis("• У вас пока нет статистики ставок."),
                 ephemeral=True
             )
             return
@@ -1279,7 +1279,7 @@ class TournamentCog(commands.Cog):
 
         embed = discord.Embed(
             title=f" СТАТИСТИКА СТАВОК | /bet",
-            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('⚪')} **Основное:**\n Всего ставок: {stats['total_bets']}\n Выигрышных: {stats['successful_bets']}\n Проигрышных: {lost_bets}\n Точность: {accuracy:.1f}%\n\n{replace_emojis('⚪')} **Баланс:**\n Выиграно: +{stats['total_won']} {get_emoji('money')}\n Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
+            description=f"Ваша общая статистика по ставкам:\n\n{replace_emojis('•')} **Основное:**\n Всего ставок: {stats['total_bets']}\n Выигрышных: {stats['successful_bets']}\n Проигрышных: {lost_bets}\n Точность: {accuracy:.1f}%\n\n{replace_emojis('•')} **Баланс:**\n Выиграно: +{stats['total_won']} {get_emoji('money')}\n Проиграно: -{stats['total_lost']} {get_emoji('money')}\n\n{replace_emojis('a_dot_smaller')} Данные обновляются в реальном времени",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1985,7 +1985,7 @@ class TournamentCog(commands.Cog):
                 color=discord.Color.green()
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
-            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('⚪')} **Комиссия:** {fee_display}%\n{replace_emojis('⚪')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
+            embed.description = f"{interaction.user.mention}, Вы успешно **передали** {get_emoji('money')}\n\n{replace_emojis('•')} **Комиссия:** {fee_display}%\n{replace_emojis('•')} **Списалось:** {result['total_deducted']:,} {get_emoji('money')}{pet_bonus_text}"
             embed.add_field(name="Пользователь", value=f" {user.mention} **получил** — {result['amount']:,} {get_emoji('money')}", inline=False)
 
             try:
@@ -2006,7 +2006,7 @@ class TournamentCog(commands.Cog):
         from storage.shop_store import inventory_store, shop_store
 
         if user.id == interaction.user.id:
-            await interaction.response.send_message(replace_emojis("⚪ Нельзя подарить самому себе"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("• Нельзя подарить самому себе"), ephemeral=True)
             return
 
         # Check if sender has at least 1 game played
@@ -2030,7 +2030,7 @@ class TournamentCog(commands.Cog):
         # Get item info
         item = shop_store.get_item(item_id)
         if not item:
-            await interaction.response.send_message(replace_emojis("⚪ Предмет не найден"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("• Предмет не найден"), ephemeral=True)
             return
 
         # Check if sender has the item
@@ -2038,7 +2038,7 @@ class TournamentCog(commands.Cog):
         has_item = any(cosmetic.item_id == item_id for cosmetic in sender_inventory)
 
         if not has_item:
-            await interaction.response.send_message(replace_emojis("⚪ У вас нет этого предмета"), ephemeral=True)
+            await interaction.response.send_message(replace_emojis("• У вас нет этого предмета"), ephemeral=True)
             return
 
         # Calculate fee
@@ -2076,7 +2076,7 @@ class TournamentCog(commands.Cog):
         sender_balance = await user_balance_store.get_balance(interaction.guild_id, interaction.user.id)
         if sender_balance < fee:
             await interaction.response.send_message(
-                replace_emojis(f"⚪ Недостаточно монет для комиссии. Нужно: {fee} {get_emoji('money')}, есть: {sender_balance} {get_emoji('money')}"),
+                replace_emojis(f"• Недостаточно монет для комиссии. Нужно: {fee} {get_emoji('money')}, есть: {sender_balance} {get_emoji('money')}"),
                 ephemeral=True
             )
             return
@@ -2151,7 +2151,7 @@ class TournamentCog(commands.Cog):
             await user_balance_store.add_balance(interaction.guild_id, interaction.user.id, fee)
 
             await interaction.response.send_message(
-                replace_emojis(f"⚪ Не удалось передать предмет: {result['item_name']}"),
+                replace_emojis(f"• Не удалось передать предмет: {result['item_name']}"),
                 ephemeral=True
             )
 
@@ -2238,7 +2238,7 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
 
                     await interaction.response.send_message(
-                        replace_emojis(f"⚪ Вы уже узнали кто ты!\nСледующий вопрос: <t:{int((last_use + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
+                        replace_emojis(f"• Вы уже узнали кто ты!\nСледующий вопрос: <t:{int((last_use + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
                         ephemeral=True
                     )
                     return
@@ -2296,7 +2296,7 @@ class TournamentCog(commands.Cog):
                     minutes = int((remaining.total_seconds() % 3600) // 60)
 
                     await interaction.response.send_message(
-                        replace_emojis(f"⚪ Вы уже получили бонус!\nСледующий бонус: <t:{int((last_claim + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
+                        replace_emojis(f"• Вы уже получили бонус!\nСледующий бонус: <t:{int((last_claim + timedelta(hours=cooldown_hours)).timestamp())}:R>"),
                         ephemeral=True
                     )
                     return
@@ -2343,7 +2343,7 @@ class TournamentCog(commands.Cog):
 
             embed = discord.Embed(
                 title=f" ЕЖЕДНЕВНАЯ НАГРАДА | /daily",
-                description=f" {interaction.user.mention}\n\n{replace_emojis('⚪')} **Ваша награда:**\n Получено: {reward} {get_emoji('money')}\n Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
+                description=f" {interaction.user.mention}\n\n{replace_emojis('•')} **Ваша награда:**\n Получено: {reward} {get_emoji('money')}\n Серия заходов: {streak} дней {fire_emoji}\n\n{replace_emojis('a_dot_smaller')} Возвращайтесь через 12 часов, чтобы получить следующую награду!",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)

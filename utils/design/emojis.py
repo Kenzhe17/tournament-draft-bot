@@ -161,4 +161,12 @@ def em(name: str) -> str:
     emoji_id = EMOJI_IDS.get(name, "")
     if emoji_id:
         return f"<:{name}:{emoji_id}>"
+    # Мост к config.py: там ID берутся из EMOJI_* env-переменных
+    try:
+        from config import get_emoji
+        result = get_emoji(name)
+        if result and result != name:
+            return result
+    except Exception:
+        pass
     return FALLBACKS.get(name, name)

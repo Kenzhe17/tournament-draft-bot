@@ -1327,7 +1327,7 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     )
 
     if not players:
-        embed.description = replace_emojis("⚪ Пока нет данных. Сыграйте хотя бы один турнир!")
+        embed.description = replace_emojis("• Пока нет данных. Сыграйте хотя бы один турнир!")
         return embed
 
     # For money leaderboard, get balances for display (SQL already sorted by balance)

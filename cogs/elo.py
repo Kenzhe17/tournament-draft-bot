@@ -100,7 +100,7 @@ class EloCog(commands.Cog):
 
         for entry in history:
             result_emoji = "✅" if entry['result'] == 'WIN' else "❌"
-            change_color = "🟢" if entry['elo_change'] > 0 else "🔴" if entry['elo_change'] < 0 else "⚪"
+            change_color = "🟢" if entry['elo_change'] > 0 else "🔴" if entry['elo_change'] < 0 else "•"
 
             opponent_name = entry.get('opponent_name', 'Unknown')
 

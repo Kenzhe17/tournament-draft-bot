@@ -1,12 +1,14 @@
-"""Мета-информация команд: author (/cmd), иконка бота, аватар игрока.
+"""Мета-информация команд: author (/cmd + эмодзи), аватар игрока, footer.
 
 ContextVar заполняется обёрткой вокруг callback'ов slash-команд
 (см. install_command_meta в bot.py). Все send/edit-вызовы внутри
 команды автоматически получают:
 
-- author-секцию «/command» с иконкой бота в начало V2-карточки
+- author-строку «/command» с эмодзи команды в начало V2-карточки
 - аватар игрока как thumbnail, если у карточки его ещё нет
-- author + thumbnail на классических Embed
+- footer «powered by <бот> • <время>» с аватаром бота
+- author + thumbnail + footer на классических Embed
+- убирает хвост «| /command» из title embed'а
 
 Component-callback'и (кнопки/select) выполняются вне контекста
 команды — мета не проставляется, турнирные сообщения не засоряются.
@@ -16,14 +18,147 @@ from __future__ import annotations
 
 import contextvars
 import functools
+import re
 
 import discord
+
+from utils.design.emojis import em
 
 _CTX: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "rz3_command_meta", default=None
 )
 
 _installed = False
+
+
+# Команда -> ключ эмодзи дизайн-системы (em()).
+# Ищется по полному имени, затем по последнему и первому слову.
+_COMMAND_EMOJI: dict[str, str] = {
+    # Экономика
+    "balance": "money",
+    "bank": "bank",
+    "pay": "money",
+    "bet": "bet",
+    "daily": "daily",
+    "gift": "gift",
+    "shop": "shop",
+    "sell": "shop",
+    "inventory": "gift",
+    "item": "gift",
+    "rob": "sword",
+    "robgroup": "sword",
+    # Профиль / соц.
+    "profile": "profile",
+    "player": "profile",
+    "rank": "rating",
+    "top": "rating",
+    "leaderboard": "rating",
+    "history": "stats",
+    "elo": "rating",
+    "elo_battle": "sword",
+    "betting": "bet",
+    "setavatar": "profile",
+    "setbio": "profile",
+    # Турниры / матчмейкинг
+    "tournament": "tournament",
+    "create": "tournament",
+    "delete": "delete",
+    "br": "tournament",
+    "booyah": "winner",
+    "mm": "team",
+    "matchmaking": "team",
+    "teams": "team",
+    "draft": "draft",
+    "koth": "winner",
+    "lottery": "gift",
+    "forcedrop": "gift",
+    # Игры
+    "games": "game",
+    "game": "game",
+    "dice": "dice",
+    "roulette": "roulette",
+    "slots": "slots",
+    "rps": "rps",
+    "coin_flip": "dice",
+    "craps": "dice",
+    "snap": "game",
+    "blackjack": "game",
+    "poker": "game",
+    "baccarat": "game",
+    "chess": "game",
+    "checkers": "game",
+    "reversi": "game",
+    "game_2048": "game",
+    "minigame_tournament": "game",
+    "anagrams": "brain",
+    "hangman": "brain",
+    "memory": "brain",
+    "math_quiz": "brain",
+    "mathquiz": "brain",
+    "movie_quiz": "brain",
+    "flag_quiz": "brain",
+    "guess_number": "brain",
+    "guess_emoji": "eye",
+    "high_low": "brain",
+    "highlow": "brain",
+    "logic_puzzle": "brain",
+    "millionaire": "money",
+    "riddles": "brain",
+    "wordle": "brain",
+    "sudoku": "brain",
+    # Free Fire / статистика
+    "ff": "freefire",
+    "freefire": "freefire",
+    "statistic": "stats",
+    "ocr": "screenshot",
+    "catalog": "freefire",
+    "info": "info",
+    # Питомцы
+    "pet": "pet",
+    # Прочее
+    "help": "question",
+    "settings": "settings",
+    "admin": "settings",
+    "coowner": "settings",
+    "role": "tag",
+    "announce": "announce",
+    "limit": "clock",
+    "check2fa": "check",
+    "debug_emoji": "sparkle",
+    "fix": "settings",
+    "isolate": "block",
+    "release": "block",
+    "replace": "refresh",
+    "reset": "refresh",
+    "delete_thread": "delete",
+    "deleteall": "delete",
+    "delete_player": "delete",
+    "edit": "settings",
+}
+
+
+def _command_emoji(qualified_name: str) -> str:
+    """Подобрать эмодзи под команду."""
+    parts = qualified_name.split()
+    for candidate in (qualified_name, parts[-1], parts[0]):
+        key = _COMMAND_EMOJI.get(candidate)
+        if key:
+            return em(key)
+    return em("game")
+
+
+def _is_author_text(content: str, meta: dict) -> bool:
+    """Уже ли в карточке author-строка этой команды."""
+    text = content.strip()
+    return text.startswith("-#") and meta["name"] in text
+
+
+def _has_footer(items) -> bool:
+    return any(
+        "powered by " in t
+        for item in items
+        for t in _iter_texts(item)
+    )
 
 
 def _avatar_url(user) -> str | None:
@@ -45,10 +180,19 @@ def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
         return None
     client = getattr(interaction,"client", None)
     bot_user = getattr(client,"user", None)
+    try:
+        timestamp = int(interaction.created_at.timestamp())
+    except Exception:
+        timestamp = 0
     return {
         "name": f"/{name}",
+        "emoji": _command_emoji(name),
         "user_avatar": _avatar_url(getattr(interaction,"user", None)),
         "bot_avatar": _avatar_url(bot_user),
+        "bot_name": getattr(bot_user,"display_name", None)
+        or getattr(bot_user,"name", None)
+        or "bot",
+        "timestamp": timestamp,
     }
 
 
@@ -60,15 +204,54 @@ def _set_interaction_ctx(interaction):
 # Инъекция в V2 LayoutView
 # ---------------------------------------------------------------------------
 
+def _containers(layout: discord.ui.LayoutView):
+    return [
+        child
+        for child in layout.children
+        if isinstance(child, discord.ui.Container)
+    ]
+
+
 def _first_container(layout: discord.ui.LayoutView):
-    for child in layout.children:
-        if isinstance(child, discord.ui.Container):
-            return child
-    return None
+    containers = _containers(layout)
+    return containers[0] if containers else None
 
 
-def _author_section(meta: dict) -> discord.ui.Item:
-    text = f"-# `{meta['name']}`"
+def _last_container(layout: discord.ui.LayoutView):
+    containers = _containers(layout)
+    if containers:
+        return containers[-1]
+    container = discord.ui.Container()
+    layout.add_item(container)
+    return container
+
+
+def _iter_texts(item) -> list[str]:
+    """Тексты TextDisplay внутри item (включая Section)."""
+    if isinstance(item, discord.ui.TextDisplay):
+        return [item.content]
+    if isinstance(item, discord.ui.Section):
+        children = getattr(item,"children", None) or getattr(
+            item,"_children", []
+        )
+        return [
+            c.content
+            for c in children
+            if isinstance(c, discord.ui.TextDisplay)
+        ]
+    return []
+
+
+def _author_item(meta: dict) -> discord.ui.Item:
+    return discord.ui.TextDisplay(
+        content=f"-# {meta.get('emoji') or ''} {meta['name']}".replace("  "," ").strip()
+    )
+
+
+def _footer_item(meta: dict) -> discord.ui.Item:
+    text = f"-# powered by {meta['bot_name']}"
+    if meta.get("timestamp"):
+        text += f" • <t:{meta['timestamp']}:f>"
     if meta.get("bot_avatar"):
         return discord.ui.Section(
             discord.ui.TextDisplay(content=text),
@@ -78,58 +261,91 @@ def _author_section(meta: dict) -> discord.ui.Item:
 
 
 def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
-    container = _first_container(layout)
-    if container is None:
+    containers = _containers(layout)
+    if not containers:
         container = discord.ui.Container()
         layout.add_item(container)
+        containers = [container]
+    container = containers[0]
 
-    # 1) Author-секция в самое начало контейнера
-    author = _author_section(meta)
-    container.add_item(author)
-    # add_item кладёт в конец — поднимаем в начало
+    # 1) Author-строка «/command» в самое начало контейнера
     children = container._children
-    children.remove(author)
-    children.insert(0, author)
+    already_author = any(
+        _is_author_text(t, meta)
+        for child in list(children)
+        for t in _iter_texts(child)
+    )
+    if not already_author:
+        author = _author_item(meta)
+        container.add_item(author)
+        children = container._children
+        children.remove(author)
+        children.insert(0, author)
 
     # 2) Аватар игрока — на первый текстовый блок без своей картинки
     avatar = meta.get("user_avatar")
-    if not avatar:
-        return
-    for child in list(container.children):
-        if child is author:
-            continue # author-секция с иконкой бота — не блокирует аватар
-        if isinstance(child, discord.ui.Section):
-            accessory = getattr(child,"accessory", None)
-            if isinstance(accessory, discord.ui.Thumbnail):
-                return # уже есть thumbnail (аватар/embed-thumb)
-            continue
-        if isinstance(child, discord.ui.MediaGallery):
-            return # уже есть картинка
-        if isinstance(child, discord.ui.TextDisplay):
-            section = discord.ui.Section(
-                discord.ui.TextDisplay(content=child.content),
-                accessory=discord.ui.Thumbnail(media=avatar),
-            )
-            children = container._children
-            idx = children.index(child)
-            children[idx] = section
-            child._detach_view()
-            section._update_view(layout)
-            section._parent = container
-            return
-        if isinstance(child, discord.ui.ActionRow):
-            return # кнопки раньше текста — не лезем дальше
+    if avatar:
+        for child in list(container.children):
+            if any(_is_author_text(t, meta) for t in _iter_texts(child)):
+                continue
+            if isinstance(child, discord.ui.Section):
+                accessory = getattr(child,"accessory", None)
+                if isinstance(accessory, discord.ui.Thumbnail):
+                    break # уже есть thumbnail (аватар/embed-thumb)
+                continue
+            if isinstance(child, discord.ui.MediaGallery):
+                break # уже есть картинка
+            if isinstance(child, discord.ui.TextDisplay):
+                section = discord.ui.Section(
+                    discord.ui.TextDisplay(content=child.content),
+                    accessory=discord.ui.Thumbnail(media=avatar),
+                )
+                children = container._children
+                idx = children.index(child)
+                children[idx] = section
+                child._detach_view()
+                section._update_view(layout)
+                section._parent = container
+                break
+            if isinstance(child, discord.ui.ActionRow):
+                break # кнопки раньше текста — не лезем дальше
+
+    # 3) Footer «powered by <бот> • <время>» — в конец последнего контейнера
+    last = containers[-1]
+    last_children = list(last._children)
+    if not _has_footer(last_children):
+        last.add_item(discord.ui.Separator())
+        last.add_item(_footer_item(meta))
 
 
 # ---------------------------------------------------------------------------
 # Инъекция в классические Embed
 # ---------------------------------------------------------------------------
 
+_TITLE_CMD_RE = re.compile(r"\s*\|\s*/\S[^\n]*")
+
+
 def _inject_embed(embed: discord.Embed, meta: dict) -> None:
-    embed.set_author(
-        name=meta["name"],
-        icon_url=meta.get("bot_avatar"),
-    )
+    # Убрать «| /command» из заголовка
+    if embed.title:
+        stripped = _TITLE_CMD_RE.sub("", embed.title).rstrip()
+        embed.title = stripped or None
+
+    # Author: команда + её эмодзи (без иконки — аватар только у игрока)
+    author_name = f"{meta.get('emoji') or ''} {meta['name']}".replace("  "," ").strip()
+    embed.set_author(name=author_name)
+
+    # Footer: powered by <бот> • <время>, иконка — аватар бота
+    footer_text = f"powered by {meta['bot_name']}"
+    if meta.get("timestamp"):
+        footer_text += f" • <t:{meta['timestamp']}:f>"
+    existing = embed.footer.text if embed.footer else ""
+    if existing and "powered by " not in existing:
+        footer_text = f"{existing} • {footer_text}"
+    elif existing and "powered by " in existing:
+        footer_text = existing
+    embed.set_footer(text=footer_text, icon_url=meta.get("bot_avatar"))
+
     if not embed.thumbnail and not embed.image:
         if meta.get("user_avatar"):
             embed.set_thumbnail(url=meta["user_avatar"])
@@ -140,7 +356,7 @@ def _inject_embed(embed: discord.Embed, meta: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def _transform_kwargs(kwargs: dict) -> None:
-    """Мутирует kwargs: добавляет author/avatar по ctx-мета."""
+    """Мутирует kwargs: добавляет author/avatar/footer по ctx-мета."""
     meta = _CTX.get()
     if not meta:
         return

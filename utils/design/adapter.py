@@ -166,22 +166,27 @@ def _text_segments(
 
 
 def _quote_first_line(content: str) -> list[str]:
-    """'>' полоска только у первой строки текста.
-
-    Остальные строки сдвигаются на 2 пробела — визуально выравниваются
-    под текстом заголовка после '>' полоски, а не прижимаются к стене.
-    """
+    """'>' полоска только у первой строки текста."""
     head, sep, rest = content.partition("\n")
     if not head.strip() or head.lstrip().startswith(">"):
         return [content]
     parts = [f"> {head}"]
     if sep and rest.strip():
-        indented = "\n".join(
-            f"  {line}" if line.strip() else line
-            for line in rest.split("\n")
-        )
-        parts.append(indented)
+        parts.append(rest)
     return parts
+
+
+# Хвост «| /command» в заголовках embed'ов — убираем: команду
+# показывает author-секция, дублировать в title не нужно.
+_TITLE_CMD_RE = re.compile(r"\s*\|\s*/\S[^\n]*")
+
+
+def strip_title_command(title: str | None) -> str | None:
+    """Убрать «| /cmd» из заголовка embed'а."""
+    if not title:
+        return title
+    stripped = _TITLE_CMD_RE.sub("", title).rstrip()
+    return stripped or None
 
 
 def _is_small_text(content: str) -> bool:
@@ -346,8 +351,9 @@ def embed_to_section_items(
             _emit_text(author_text)
 
     # Title
-    if embed.title:
-        _emit_text(f"## {embed.title}")
+    title_text = strip_title_command(embed.title)
+    if title_text:
+        _emit_text(f"## {title_text}")
         if embed.description:
             current.append(separator())
 

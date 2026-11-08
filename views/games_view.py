@@ -32,7 +32,7 @@ class GamesMainView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("• Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -94,7 +94,7 @@ class GameCategorySelect(Select):
 
         embed = discord.Embed(
             title=f" {category_info['name'].upper()} | Страница {page} из {total_pages}",
-            description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+            description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {page} из {total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -125,7 +125,7 @@ class GamesCategoryView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("• Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -164,7 +164,7 @@ class GameSelect(Select):
 
         if not game:
             await interaction.response.send_message(
-                replace_emojis("⚪ Игра не найдена"),
+                replace_emojis("• Игра не найдена"),
                 ephemeral=True
             )
             return
@@ -180,7 +180,7 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f" {game.name.upper()} | Игровой режим",
-            description=f" {game.short_description}\n\n{replace_emojis('⚪')} **Информация об игре:**\n Канал: <#1561707634938351728>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n{replace_emojis('⚪')} **Правила и особенности:**\n {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f" {game.short_description}\n\n{replace_emojis('•')} **Информация об игре:**\n Канал: <#1561707634938351728>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n{replace_emojis('•')} **Правила и особенности:**\n {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -210,7 +210,7 @@ class GameCardView(View):
         """Проверка: только пользователь который вызвал /games может нажимать."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message(
-                replace_emojis("⚪ Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
+                replace_emojis("• Это меню вызвал другой игрок. Введите `/games` для открытия своего меню!"),
                 ephemeral=True
             )
             return False
@@ -394,7 +394,7 @@ class BackButton(Button):
 
             embed = discord.Embed(
                 title=f" {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -450,7 +450,7 @@ class ForwardButton(Button):
 
             embed = discord.Embed(
                 title=f" {category_info['name'].upper()} | Страница {new_page} из {self.total_pages}",
-                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('⚪')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
+                description=f" {category_info['description']}\n\n **Информация о категории:**\n{replace_emojis('a_dot_smaller')} Страница: {new_page} из {self.total_pages}\n Игр в категории: {len(games)}\n\n{replace_emojis('•')} **Игры на странице:**\n{games_text}\n\n{replace_emojis('a_dot_smaller')} Выберите игру в меню ниже или используйте кнопки пагинации",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
