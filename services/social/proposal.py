@@ -124,7 +124,9 @@ class ProposalView(discord.ui.LayoutView):
                 guild_id=self.guild_id)
             kwargs = {}
             if msg.attachments:
-                kwargs["attachments"] = list(msg.attachments)
+                # V2-edit не сохраняет attachment:// автоматически —
+                # файл нужно передать заново.
+                kwargs["attachments"] = [banner_file(BANNER_PROPOSAL)]
             await msg.edit(view=new_view, **kwargs)
         except Exception:
             logger.debug("proposal timeout edit failed", exc_info=True)
@@ -217,8 +219,8 @@ async def _refresh(interaction: discord.Interaction, p: ProposalView) -> None:
         p.proposer, p.target, state=p.state, guild_id=p.guild_id)
     try:
         await interaction.response.edit_message(
-            view=new_view, attachments=[interaction.message.attachments[0]]
-            if interaction.message.attachments else []
+            view=new_view,
+            attachments=[banner_file(BANNER_PROPOSAL)],
         )
     except Exception:
         logger.exception("proposal refresh failed")

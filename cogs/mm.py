@@ -338,46 +338,43 @@ class MMCog(commands.Cog):
         # Таймер НЕ запускаем при создании — только когда в поиске
         # появится хотя бы один игрок (handle_queue_join).
 
+    async def _notify_search_started(self, guild_id: int, channel_id: int) -> None:
+        """Embed-уведомление о поиске в канал уведомлений с пингом роли."""
+        try:
+            from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
+            notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
+            search_channel = self.bot.get_channel(channel_id)
+            if not notification_channel or not search_channel:
+                return
+            role = self.bot.get_guild(guild_id).get_role(NOTIFICATION_ROLE_ID)
+            role_mention = role.mention if role else ""
+
+            embed = discord.Embed(
+                title="🔍 Поиск игроков",
+                description=f"{role_mention} - {search_channel.mention}",
+                color=discord.Color.from_rgb(69, 69, 69)
+            )
+            await notification_channel.send(
+                embed=embed,
+                allowed_mentions=discord.AllowedMentions(roles=True)
+            )
+        except Exception as e:
+            logger.error(f"Error sending search notification: {e}")
+
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
-        """Запустить таймер для поиска."""
+        """Таймер поиска 10 минут: пинги на 30с / 3мин / 7мин, кик в конце."""
         async def timer_task():
             try:
-                # Уведомление через 15 секунд после старта
-                await asyncio.sleep(15)  # 15 секунд
-                
-                search = mm_search_store.get(guild_id, channel_id)
-                if not search:
-                    return
+                # Уведомления: 30 сек, 3 мин, 7 мин после первого игрока
+                for delay in (30, 150, 240):
+                    await asyncio.sleep(delay)
+                    search = mm_search_store.get(guild_id, channel_id)
+                    if not search or not search.players:
+                        return
+                    await self._notify_search_started(guild_id, channel_id)
 
-                # Не отправлять уведомление если в поиске 0 человек
-                if len(search.players) == 0:
-                    return
-
-                # Отправить уведомление о поиске в канал уведомлений
-                try:
-                    from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
-                    notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
-                    search_channel = self.bot.get_channel(channel_id)
-                    
-                    if notification_channel and search_channel:
-                        role = self.bot.get_guild(guild_id).get_role(NOTIFICATION_ROLE_ID)
-                        role_mention = role.mention if role else ""
-
-                        embed = discord.Embed(
-                            title="🔍 Поиск игроков",
-                            description=f"{role_mention} - {search_channel.mention}",
-                            color=discord.Color.from_rgb(69, 69, 69)
-                        )
-
-                        await notification_channel.send(
-                            embed=embed,
-                            allowed_mentions=discord.AllowedMentions(roles=True)
-                        )
-                except Exception as e:
-                    logger.error(f"Error sending search notification: {e}")
-
-                # Продолжить таймер до 10 минут
-                await asyncio.sleep(540)  # Оставшиеся 9 минут
+                # 10 минут — кик, если поиск не заполнен
+                await asyncio.sleep(180)
 
                 search = mm_search_store.get(guild_id, channel_id)
                 if not search:
@@ -388,7 +385,7 @@ class MMCog(commands.Cog):
                     # Разблокировать канал
                     if search.tournament_channel_id in LOCKED_CHANNELS:
                         del LOCKED_CHANNELS[search.tournament_channel_id]
-                    
+
                     # Кикнуть игроков но сохранить поиск активным
                     search.players = []
                     search.player_user_ids = {}
