@@ -6,7 +6,7 @@ ContextVar заполняется обёрткой вокруг callback'ов sl
 
 - author-строку «/command» с эмодзи команды в начало V2-карточки
 - аватар игрока как thumbnail, если у карточки его ещё нет
-- footer «powered by <бот> • <время>» с аватаром бота
+- footer «powered by <бот> • <время>»
 - author + thumbnail + footer на классических Embed
 - убирает хвост «| /command» из title embed'а
 
@@ -187,7 +187,6 @@ def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
         "name": f"/{name}",
         "emoji": _command_emoji(name),
         "user_avatar": _avatar_url(getattr(interaction,"user", None)),
-        "bot_avatar": _avatar_url(bot_user),
         "bot_name": getattr(bot_user,"display_name", None)
         or getattr(bot_user,"name", None)
         or "bot",
@@ -251,11 +250,6 @@ def _footer_item(meta: dict) -> discord.ui.Item:
     text = f"-# powered by {meta['bot_name']}"
     if meta.get("timestamp"):
         text += f" • <t:{meta['timestamp']}:f>"
-    if meta.get("bot_avatar"):
-        return discord.ui.Section(
-            discord.ui.TextDisplay(content=text),
-            accessory=discord.ui.Thumbnail(media=meta["bot_avatar"]),
-        )
     return discord.ui.TextDisplay(content=text)
 
 
@@ -340,7 +334,7 @@ def _inject_embed(embed: discord.Embed, meta: dict) -> None:
         footer_text = f"{existing} • {footer_text}"
     elif existing and "powered by " in existing:
         footer_text = existing
-    embed.set_footer(text=footer_text, icon_url=meta.get("bot_avatar"))
+    embed.set_footer(text=footer_text)
 
     if not embed.thumbnail and not embed.image:
         if meta.get("user_avatar"):
