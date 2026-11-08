@@ -2006,12 +2006,13 @@ async def finalize_ocr_match(
     try:
         from cogs.ocr_upload import publish_match_result_card
 
-        await publish_match_result_card(
+        result_msg = await publish_match_result_card(
             interaction.guild, tournament, match_type, match_index,
             t1, t2, winning_team_index, temp_stats, session,
         )
     except Exception:
         logger.exception("Match result card publish failed")
+        result_msg = None
 
     # 5.2. Карточка матча в cs-4x4-match-N → финальный статус
     try:
@@ -2029,6 +2030,7 @@ async def finalize_ocr_match(
             state="done",
             winner_name=_team_display_name(tournament, winning_team_index),
             score=score,
+            result_url=result_msg.jump_url if result_msg else "",
         )
     except Exception as exc:
         logger.warning("Match card done update failed: %s", exc)

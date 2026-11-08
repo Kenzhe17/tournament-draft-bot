@@ -135,6 +135,7 @@ def _match_started_view(
     state: str = "active",
     winner_name: str = "",
     score: tuple[int, int] | None = None,
+    result_url: str = "",
 ) -> "discord.ui.LayoutView":
     """V2-карточка матча для MM-флоу (без эмодзи).
 
@@ -151,6 +152,26 @@ def _match_started_view(
     roster_b = team_roster(tournament, t2)
 
     view = DesignView(title=f"МАТЧ · {name_a} vs {name_b}", timeout=None)
+
+    if state == "done":
+        # Финальное состояние: весь текст заменяется ссылкой на
+        # опубликованный результат, изображение (match_found.png)
+        # остаётся на месте.
+        if with_png:
+            view.component(
+                discord.ui.MediaGallery(
+                    discord.MediaGalleryItem(media="attachment://match_found.png")
+                )
+            )
+            view.sep()
+        if result_url:
+            view.text(
+                f"Результат этого матча — [результат матча]({result_url})"
+            )
+        else:
+            view.text("Результат этого матча зафиксирован.")
+        return view
+
     view.text(f"**КОМАНДА A — {name_a}**\n{_mentions_fn(tournament, t1)}")
     view.text(f"**КОМАНДА B — {name_b}**\n{_mentions_fn(tournament, t2)}")
     view.sep()
@@ -169,17 +190,7 @@ def _match_started_view(
     )
     view.sep()
 
-    if state == "done":
-        lines = ["**РЕЗУЛЬТАТ МАТЧА**", "Статус результата: **Завершён**"]
-        if winner_name:
-            lines.append(f"Победитель: **{winner_name}**")
-        if score:
-            lines.append(f"Счёт: {score[0]} : {score[1]}")
-        lines.append(
-            "Итог опубликован в общем канале результатов."
-        )
-        view.text("\n".join(lines))
-    elif state == "processing":
+    if state == "processing":
         view.text(
             "**РЕЗУЛЬТАТ МАТЧА**\n"
             "Статус результата: **Скриншот получен — идёт "
@@ -223,6 +234,7 @@ async def update_match_card(
     state: str = "active",
     winner_name: str = "",
     score: tuple[int, int] | None = None,
+    result_url: str = "",
 ) -> None:
     """Обновить карточку матча в канале cs-4x4-match-N (MM-флоу).
 
@@ -276,6 +288,7 @@ async def update_match_card(
         state=state,
         winner_name=winner_name,
         score=score,
+        result_url=result_url,
     )
     try:
         msg = await channel.fetch_message(int(meta["card_message_id"]))

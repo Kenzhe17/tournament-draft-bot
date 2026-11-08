@@ -300,11 +300,12 @@ async def publish_match_result_card(
     winning_team_index: int,
     temp_stats: dict,
     session: dict,
-) -> None:
+) -> "discord.Message | None":
     """Сгенерировать PNG «РЕЗУЛЬТАТ МАТЧА» и опубликовать в RESULT_CHANNEL_ID.
 
     Использует уже рассчитанные данные (ELO/победитель не пересчитываются).
     Обновляет существующий result_message_id или отправляет новое сообщение.
+    Возвращает сообщение с результатом (нужно для ссылки в карточке матча).
     """
     try:
         from utils.match_result_renderer import (
@@ -423,7 +424,7 @@ async def publish_match_result_card(
 
         channel = await _result_channel(guild, None)
         if channel is None:
-            return
+            return None
         card = _result_card(
             tournament, match_type, match_index, t1, t2, match_num=match_num
         )
@@ -440,7 +441,7 @@ async def publish_match_result_card(
                         )
                     ],
                 )
-                return
+                return msg
             except Exception as e:
                 logger.warning("Result card edit failed: %s", e)
 
@@ -448,8 +449,10 @@ async def publish_match_result_card(
         bot_msg = await channel.send(view=card, file=file)
         session["result_message_id"] = bot_msg.id
         store.set(tournament)
+        return bot_msg
     except Exception:
         logger.exception("Match result card publish failed")
+        return None
 
 
 
