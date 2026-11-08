@@ -1317,6 +1317,7 @@ class TournamentCog(commands.Cog):
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_footer(text="Основная информация и статистика игрока")
         embed.set_thumbnail(url=target_user.display_avatar.url)
 
         # Кнопки только для владельца

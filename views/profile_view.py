@@ -1,9 +1,13 @@
 """View для редактирования профиля."""
+import logging
+
 from config import replace_emojis, get_emoji
 
 import discord
 from utils.design import compose
 from storage.player_stats_store import player_stats_store
+
+logger = logging.getLogger(__name__)
 
 
 class ProfileView(discord.ui.View):
@@ -100,6 +104,20 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         """Сохранить изменения профиля."""
+        try:
+            await self._handle_submit(interaction)
+        except Exception:
+            logger.exception("ProfileEditModal.on_submit failed")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Не удалось сохранить профиль. Попробуйте ещё раз.",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass
+
+    async def _handle_submit(self, interaction: discord.Interaction) -> None:
         nickname = self.nickname.value
         description = self.description.value
 
@@ -242,16 +260,23 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
             description="\n".join(description_parts),
             color=discord.Color.from_rgb(69, 69, 69)
         )
+        embed.set_footer(text="Основная информация и статистика игрока")
         embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
 
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)
+        cv2_view = compose(embed, view)
         try:
-            await interaction.edit_original_response( view=compose(embed, view))
-        except discord.NotFound:
-            # If original response is not available, try followup
-            try:
-                await interaction.followup.send( view=compose(embed, view), ephemeral=True)
-            except discord.NotFound:
-                # If followup also fails, just log and ignore
-                pass
+            # Modal submit has no "original response" — edit the message the modal was opened from
+            if interaction.message is not None:
+                await interaction.message.edit(view=cv2_view)
+                await interaction.response.send_message("✅ Профиль обновлён.", ephemeral=True)
+            else:
+                await interaction.response.send_message(view=cv2_view, ephemeral=True)
+        except Exception:
+            logger.exception("ProfileEditModal: failed to update profile message")
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message(view=cv2_view, ephemeral=True)
+                except Exception:
+                    pass
