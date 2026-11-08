@@ -127,8 +127,21 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     # RANKED ELO — крупное число; под ним в шаблоне статичная подпись
     # «ПОСЛЕДНИХ МАТЧЕЙ», в example она затёрта — удаляем зону и рисуем ELO
     _inpaint(img, (960, 385, 1140, 428), radius=6)
-    _text(draw, (993, 406), _fmt(data.get("elo", 1000)), 100, C_TEXT,
-          anchor="ms")
+    elo_str = _fmt(data.get("elo", 1000))
+    _text(draw, (993, 406), elo_str, 100, C_TEXT, anchor="ms")
+
+    # Последнее изменение ELO сразу справа от текущего значения:
+    # плюс — зелёный, минус — красный, ноль — приглушённый
+    last_d = int(data.get("last_elo_change") or 0)
+    if last_d > 0:
+        d_str, d_color = f"+{last_d}", C_GREEN
+    elif last_d < 0:
+        d_str, d_color = f"−{abs(last_d)}", C_DELTA_NEG
+    else:
+        d_str, d_color = "+0", C_MUTED
+    elo_w = draw.textlength(elo_str, font=_font(100))
+    delta_x = min(993 + elo_w / 2 + 14, 1240)
+    _text(draw, (delta_x, 410), d_str, 34, d_color, anchor="lm")
 
     # Skill Rating — пустой слот
     sr = data.get("skill_rating", 0.0)
@@ -228,7 +241,8 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
             od = ImageDraw.Draw(overlay)
             area = pts + [(pts[-1][0], py1), (pts[0][0], py1)]
             od.polygon(area, fill=(*C_VIOLET, 45))
-            od.line(pts, fill=(*C_VIOLET, 255), width=4, joint="curve")
+            # Прямая полилиния — joint="curve" давал петли («фигуру»)
+            od.line(pts, fill=(*C_VIOLET, 255), width=4)
             for x, y in pts:
                 od.ellipse([x - 4, y - 4, x + 4, y + 4],
                            fill=(*C_VIOLET, 255))
