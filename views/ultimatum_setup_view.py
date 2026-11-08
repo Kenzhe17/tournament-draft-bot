@@ -521,7 +521,10 @@ class UltimatumStartButton(discord.ui.Button):
                     new_embed = await build_ultimatum_round_embed(tournament.id, 1, interaction.guild)
                     new_view = await build_ultimatum_round_view(interaction.client, tournament.id, 1)
                     
-                    logger.info(f"Built round embed: {new_embed}, view: {new_view}")
+                    logger.info(
+                        "Built round embed for tournament %s round 1: %s",
+                        tournament.id, getattr(new_embed, "title", ""),
+                    )
                     
                     # Send new message with round embed and view instead of editing
                     round_message = await interaction.channel.send( view=compose(new_embed, new_view))
