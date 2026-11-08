@@ -33,6 +33,7 @@ from config import BOT_OWNER_ID, replace_emojis, get_emoji, WELCOME_BANNER_URL
 from views.org_role_view import setup_org_role_message
 from cogs.groups import (
     player_group,
+    player_set_group,
     economy_group,
     admin_group,
     server_group,
@@ -1202,6 +1203,111 @@ class TournamentCog(commands.Cog):
             view=view,
         )
 
+    @player_set_group.command(name="bio", description="Установить описание профиля (раз в 7 дней)")
+    @app_commands.describe(value="Текст описания (до 256 символов)")
+    async def player_set_bio(self, interaction: discord.Interaction, value: str) -> None:
+        """Установить bio профиля."""
+        text = value.strip()
+        if not text:
+            await interaction.response.send_message(
+                "❌ Описание не может быть пустым.", ephemeral=True
+            )
+            return
+        if len(text) > 256:
+            await interaction.response.send_message(
+                "❌ Описание слишком длинное (максимум 256 символов).", ephemeral=True
+            )
+            return
+        if not await self._check_profile_field_cooldown(interaction, "description"):
+            return
+        await self._save_profile_field(interaction, description=text)
+        await interaction.response.send_message(
+            "✅ Описание профиля обновлено.", ephemeral=True
+        )
+
+    @player_set_group.command(
+        name="birthday",
+        description="Установить день рождения — ДД.ММ.ГГГГ (раз в 7 дней)",
+    )
+    @app_commands.describe(value="Дата: ДД.ММ.ГГГГ или ГГГГ-ММ-ДД («-» — убрать)")
+    async def player_set_birthday(self, interaction: discord.Interaction, value: str) -> None:
+        """Установить день рождения."""
+        raw = value.strip()
+        new_value = ""
+        if raw not in ("-", "—", "none", "нет"):
+            normalized = None
+            for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+                try:
+                    normalized = datetime.strptime(raw, fmt).strftime("%d.%m.%Y")
+                    break
+                except ValueError:
+                    continue
+            if not normalized:
+                await interaction.response.send_message(
+                    "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ "
+                    "(например, 25.12.2004).",
+                    ephemeral=True,
+                )
+                return
+            new_value = normalized
+
+        if not await self._check_profile_field_cooldown(interaction, "birthday"):
+            return
+        await self._save_profile_field(interaction, birthday=new_value)
+        suffix = "" if new_value else " Дата убрана."
+        await interaction.response.send_message(
+            f"✅ День рождения обновлён.{suffix}", ephemeral=True
+        )
+
+    async def _check_profile_field_cooldown(
+        self, interaction: discord.Interaction, field: str
+    ) -> bool:
+        """7-дневный кулдаун на смену поля профиля (как в старых настройках)."""
+        from storage.profile_cooldowns import format_remaining, profile_cooldowns
+
+        left = profile_cooldowns.seconds_left(
+            interaction.guild_id, interaction.user.id, field
+        )
+        if left > 0:
+            await interaction.response.send_message(
+                replace_emojis(
+                    f"⏳ Это поле можно менять **раз в 7 дней**.\n"
+                    f"Осталось: **{format_remaining(left)}**"
+                ),
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def _save_profile_field(
+        self, interaction: discord.Interaction, **fields
+    ) -> None:
+        """Сохранить поля профиля и отметить кулдаун."""
+        from views.profile_view import _default_stats
+        from storage.profile_cooldowns import profile_cooldowns
+
+        stats = await player_stats_store.get(
+            interaction.guild_id, interaction.user.id
+        )
+        created = stats is None
+        if stats is None:
+            stats = _default_stats(
+                interaction.guild_id, interaction.user.id,
+                interaction.user.display_name,
+            )
+        for key, value in fields.items():
+            setattr(stats, key, value)
+        if created:
+            await player_stats_store.set(stats)
+        else:
+            await player_stats_store.update(
+                interaction.guild_id, interaction.user.id, stats
+            )
+        for field in fields:
+            profile_cooldowns.mark_changed(
+                interaction.guild_id, interaction.user.id, field
+            )
+
     @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
     async def history(self, interaction: discord.Interaction, user: discord.Member = None, limit: int = 10) -> None:
@@ -1223,10 +1329,8 @@ class TournamentCog(commands.Cog):
         # Получить статистику за последние limit матчей
         stats = await match_history_store.get_recent_stats(interaction.guild_id, target_user.id, limit=limit)
 
-        # Получить имя пользователя для отображения
-        from storage.player_stats_store import player_stats_store
-        user_stats = await player_stats_store.get(interaction.guild_id, target_user.id)
-        user_name = user_stats.name if user_stats else target_user.display_name
+        # Ник в профиле = ник в Discord
+        user_name = target_user.display_name
 
         # Создать view и embed
         view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
@@ -2681,12 +2785,38 @@ class TournamentCog(commands.Cog):
     async def cog_load(self) -> None:
         """Привязка подкоманд общих групп к этому cog'у."""
         bind_commands(player_group, self, ["profile", "history", "rank", "marry", "divorce"])
+        bind_commands(player_set_group, self, ["bio", "birthday"])
         bind_commands(economy_group, self, ["balance", "pay", "gift", "bet"])
         bind_commands(admin_group, self, [
             "edit", "fix", "fix_userid", "reset", "debug_emoji",
         ])
         bind_commands(server_group, self, ["role", "welcome", "check2fa"])
         bind_commands(games_group, self, ["list"])
+
+        # Сбросить старые кастомные ники: stats.name = Discord display_name
+        asyncio.create_task(self._sync_profile_names())
+
+    async def _sync_profile_names(self) -> None:
+        """Привести сохранённые ники к Discord-никам (для кэшированных участников)."""
+        try:
+            for guild in self.bot.guilds:
+                try:
+                    stats_list = await player_stats_store.get_all(guild.id)
+                except Exception:
+                    continue
+                for stats in stats_list:
+                    member = guild.get_member(stats.user_id)
+                    if member is None or stats.name == member.display_name:
+                        continue
+                    stats.name = member.display_name
+                    try:
+                        await player_stats_store.update(
+                            guild.id, stats.user_id, stats
+                        )
+                    except Exception:
+                        logger.debug("Profile name sync failed", exc_info=True)
+        except Exception:
+            logger.exception("_sync_profile_names failed")
 
     async def cog_app_command_error(
         self,

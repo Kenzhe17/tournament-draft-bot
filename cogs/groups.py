@@ -14,6 +14,10 @@ from discord import app_commands
 player_group = app_commands.Group(
     name="player", description="Профиль, история, ранг и рейтинг"
 )
+player_set_group = app_commands.Group(
+    name="set", description="Изменить поля профиля"
+)
+player_group.add_command(player_set_group)
 economy_group = app_commands.Group(
     name="economy", description="Баланс, переводы, магазин-сейф и ставки"
 )

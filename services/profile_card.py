@@ -50,6 +50,13 @@ async def collect_profile_data(guild: discord.Guild,
                                user: discord.User) -> dict:
     """Собрать все значения для карточки из существующих сервисов."""
     stats = await player_stats_store.get(guild.id, user.id)
+    if stats is not None and stats.name != user.display_name:
+        # Ник в профиле = ник в Discord — сбрасываем старые кастомные ники
+        stats.name = user.display_name
+        try:
+            await player_stats_store.update(guild.id, user.id, stats)
+        except Exception:
+            logger.debug("Profile name sync failed", exc_info=True)
     if stats is None:
         stats = _default_stats(guild.id, user.id, user.display_name)
 
