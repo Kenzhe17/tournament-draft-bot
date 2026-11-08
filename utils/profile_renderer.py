@@ -110,63 +110,82 @@ def _delta_style(delta: int) -> tuple[str, tuple]:
 
 def render_profile_png(data: dict, avatar_png: bytes | None = None,
                        badge_png: bytes | None = None) -> bytes:
-    """Синхронный рендер. data — словарь со всеми значениями."""
+    """Синхронный рендер. data — словарь со всеми значениями.
+
+    Все координаты/размеры откалиброваны по паре template↔example
+    (rapidocr bbox + ink-bbox подгонка шрифта). Якорь 'ls' = (x, baseline).
+    """
     from utils.ranks import RANKS
 
     img = _base()
+
+    # ================= INPAINT МАРКЕРОВ =================
+    # (x1,y1,x2,y2) — зоны с [МАРКЕРАМИ], затираем перед отрисовкой
+    for box in (
+        (1490, 90, 1730, 130),    # TEMPLATE -> статус
+        (335, 292, 670, 362),     # [USERNAME]
+        (398, 356, 480, 395),     # [BIO] (префикс «SVO: » статичен)
+        (820, 288, 1015, 372),    # [ELO]
+        (845, 380, 960, 422),     # [△ ELO]
+        (1235, 298, 1420, 360),   # [SR]
+        (1298, 398, 1420, 435),   # [LEVEL] (слово LEVEL статично)
+        (375, 412, 505, 460),     # [RANK]
+        (535, 415, 700, 458),     # BRONZE→LEGEND -> tier-прогрессия
+        (1665, 418, 1800, 460),   # [TIER]
+        (1330, 594, 1495, 636),   # [BALANCE]
+        (1625, 594, 1745, 636),   # [ITEMS]
+        (1265, 752, 1340, 794),   # [REP]
+        (1448, 750, 1585, 794),   # [PARTNER]
+        (1643, 752, 1785, 794),   # [BIRTHDAY]
+        (105, 864, 295, 902),     # заголовок W/L (слот)
+        (100, 902, 290, 980),     # [W] / [L]
+        (1028, 834, 1155, 888),   # [△ ELO] у графика
+        (365, 994, 510, 1032),    # [HISTORY_START]
+        (1055, 994, 1190, 1032),  # [CURRENT_ELO]
+        (1265, 928, 1425, 978),   # [MATCHES]
+        (1432, 928, 1545, 978),   # [WINS]
+        (1608, 926, 1730, 980),   # [ELO] ult
+        (1262, 994, 1530, 1034),  # [ULTIMATUM_STATUS]
+    ):
+        _inpaint(img, box, radius=4)
+
     draw = ImageDraw.Draw(img)
 
-    # ============ ШАПКА ============
-    # «PROFILE STATUS» — слот статуса справа вверху (в template «TEMPLATE»)
-    _inpaint(img, (1490, 90, 1730, 128), radius=4)
-    _text(draw, (1500, 121), "ACTIVE PLAYER", 24, C_SOFT)
+    # ================= ШАПКА =================
+    _text(draw, (1501, 119), "ACTIVE PLAYER", 28, C_SOFT)
 
-    # ============ ВЕРХНЯЯ ПАНЕЛЬ ============
-    # [USERNAME] — крупный ник
-    _inpaint(img, (338, 293, 710, 362), radius=6)
+    # ================= ВЕРХ: ИГРОК =================
     name = data.get("name") or "Игрок"
-    nstr, nsize = _fit_text(draw, name, 480, 58, min_size=24)
-    _text(draw, (346, 352), nstr, nsize, C_TEXT)
+    nstr, nsize = _fit_text(draw, name, 460, 58, bold=True, min_size=22)
+    _text(draw, (346, 343), nstr, nsize, C_TEXT, bold=True)
 
-    # «SVO: [BIO]» — статичный префикс в template, слот — только значение
-    _inpaint(img, (396, 355, 900, 398), radius=4)
     bio = str(data.get("status") or data.get("bio") or "ок")
-    bstr, bsize = _fit_text(draw, bio, 430, 22, min_size=13)
-    _text(draw, (410, 386), bstr, bsize, C_SOFT)
+    bstr, bsize = _fit_text(draw, bio, 390, 14, min_size=11)
+    _text(draw, (405, 383), bstr, bsize, C_SOFT)
 
-    # [ELO] — крупное число по центру ~(916, 358)
-    _inpaint(img, (825, 288, 1010, 372), radius=6)
     elo_str = _fmt(data.get("elo", 1000))
-    elo_size = 84
-    while (elo_size > 40
-           and draw.textlength(elo_str, font=_font(elo_size)) > 178):
-        elo_size -= 4
-    _text(draw, (916, 360), elo_str, elo_size, C_TEXT, anchor="ms")
+    estr, esize = _fit_text(draw, elo_str, 185, 72, bold=True, min_size=34)
+    _text(draw, (835, 357), estr, esize, C_TEXT, bold=True)
 
-    # [Δ ELO] — изменение под основным ELO (зелёный/красный)
-    _inpaint(img, (845, 380, 955, 420), radius=4)
     d_str, d_color = _delta_style(int(data.get("last_elo_change") or 0))
-    _text(draw, (868, 413), d_str, 26, d_color)
+    # центрируем под [△ ELO] (~x897), ширина динамическая
+    dsize = 25
+    while dsize > 14 and draw.textlength(
+            d_str, font=_font(dsize)) > 95:
+        dsize -= 2
+    _text(draw, (897, 409), d_str, dsize, d_color, anchor="ms")
 
-    # [SR] — Skill Rating
-    _inpaint(img, (1240, 300, 1420, 356), radius=4)
     sr = float(data.get("skill_rating", 0.0) or 0.0)
-    _text(draw, (1250, 348), f"{sr:.1f} / 10.0", 36, C_TEXT)
+    sstr, ssize = _fit_text(draw, f"{sr:.1f} / 10.0", 175, 35, min_size=18)
+    _text(draw, (1250, 341), sstr, ssize, C_TEXT)
 
-    # LEVEL [LEVEL]
-    _inpaint(img, (1240, 398, 1420, 438), radius=4)
     level = int(data.get("level") or 1)
-    _text(draw, (1250, 430), f"LEVEL {level}", 22, C_SOFT)
+    lstr, lsize = _fit_text(draw, str(level), 110, 22, min_size=14)
+    _text(draw, (1304, 425), lstr, lsize, C_SOFT)
 
-    # [RANK] — название ранга
-    _inpaint(img, (378, 412, 510, 458), radius=4)
+    # ================= РАНГ =================
     rank_name = (data.get("rank_name") or "Bronze").upper()
-    rstr, rsize = _fit_text(draw, rank_name, 115, 22, min_size=14)
-    _text(draw, (390, 447), rstr, rsize, C_VIOLET)
-
-    # «BRONZE→LEGEND» — слот прогрессии: текущий → следующий ранг
-    cur_rank = None
-    next_rank = None
+    cur_rank, next_rank = None, None
     for i, (rname, min_lvl, _) in enumerate(RANKS):
         if level >= min_lvl:
             cur_rank = rname.upper()
@@ -175,76 +194,82 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         else:
             break
     cur_rank = cur_rank or rank_name
-    tier_str = f"{cur_rank} → {next_rank}" if next_rank else "MAX TIER"
-    _inpaint(img, (535, 418, 720, 458), radius=4)
-    tstr, tsize = _fit_text(draw, tier_str, 175, 16, min_size=11)
-    _text(draw, (547, 443), tstr, tsize, C_MUTED)
 
-    # Бейдж ранга: «?» + следующий ранг над лейблом + [TIER] под ним
-    _inpaint(img, (1700, 288, 1760, 330), radius=6)
-    _inpaint(img, (1660, 388, 1800, 414), radius=4)
-    _text(draw, (1732, 406), next_rank or "MAX", 13, C_MUTED, anchor="ms")
-    _inpaint(img, (1670, 420, 1800, 460), radius=4)
-    _text(draw, (1732, 448), rank_name, 19, C_VIOLET, anchor="ms")
+    rstr, rsize = _fit_text(draw, rank_name, 110, 19, bold=True, min_size=13)
+    _text(draw, (439, 439), rstr, rsize, C_VIOLET, anchor="ms", bold=True)
+
+    tier_str = f"{cur_rank} → {next_rank}" if next_rank else "MAX TIER"
+    tstr, tsize = _fit_text(draw, tier_str, 165, 14, min_size=10)
+    _text(draw, (548, 441), tstr, tsize, C_MUTED)
+
+    nx = next_rank or "—"
+    nxstr, nxsize = _fit_text(draw, nx, 90, 16, min_size=11)
+    _text(draw, (1737, 406), nxstr, nxsize, C_MUTED, anchor="ms")
+
+    bstr2, bsize2 = _fit_text(draw, rank_name, 115, 19, bold=True, min_size=13)
+    _text(draw, (1732, 443), bstr2, bsize2, C_VIOLET, anchor="ms",
+          bold=True)
     if badge_png:
         try:
             badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
-            badge.thumbnail((88, 124), Image.LANCZOS)
-            img.paste(badge, (1734 - badge.width // 2,
-                              332 - badge.height // 2), badge)
+            badge.thumbnail((80, 80), Image.LANCZOS)
+            img.paste(badge, (1592 + (80 - badge.width) // 2,
+                              394 + (80 - badge.height) // 2), badge)
         except Exception:
             logger.warning("Rank badge paste failed")
 
-    # ============ БИТВА ОТРЯДОВ ============
-    # Ряд 1: МАТЧИ / ПОБЕДЫ / WINRATE / KDA — пустые слоты
-    _text(draw, (105, 668), _fmt(data.get("matches", 0)), 32, C_TEXT)
-    _text(draw, (386, 668), _fmt(data.get("wins", 0)), 32, C_TEXT)
-    _text(draw, (668, 668), f"{data.get('winrate', 0.0):.1f}%",
-          32, C_TEXT)
-    _text(draw, (947, 668), f"{data.get('kda', 0.0):.2f}", 32, C_VIOLET)
+    # ================= БИТВА ОТРЯДОВ =================
+    _text(draw, (109, 663), _fmt(data.get("matches", 0)), 31, C_TEXT,
+          bold=True)
+    _text(draw, (390, 663), _fmt(data.get("wins", 0)), 31, C_TEXT,
+          bold=True)
+    wr_str, wr_size = _fit_text(
+        draw, f"{data.get('winrate', 0.0):.1f}%", 105, 31, bold=True,
+        min_size=18)
+    _text(draw, (671, 662), wr_str, wr_size, C_TEXT, bold=True)
+    kda_str, kda_size = _fit_text(
+        draw, f"{data.get('kda', 0.0):.2f}", 105, 31, bold=True,
+        min_size=18)
+    _text(draw, (952, 663), kda_str, kda_size, C_VIOLET, bold=True)
 
-    # БАЛАНС / ПРЕДМЕТОВ — значения в одной строке с лейблами
-    _inpaint(img, (1330, 596, 1490, 634), radius=4)
-    _text(draw, (1345, 627), _fmt(data.get("balance", 0)), 26, C_TEXT)
-    _inpaint(img, (1625, 596, 1740, 634), radius=4)
+    _text(draw, (1350, 624), _fmt(data.get("balance", 0)), 22, C_TEXT,
+          bold=True)
     items_str, isize = _fit_text(
-        draw, f"{_fmt(data.get('items', 0))} шт.", 100, 22, min_size=14)
-    _text(draw, (1638, 627), items_str, isize, C_TEXT)
+        draw, f"{_fmt(data.get('items', 0))} шт.", 100, 20, min_size=13)
+    _text(draw, (1634, 622), items_str, isize, C_TEXT)
 
-    # Ряд 2: AVG KILLS / AVG DAMAGE / MAX KILLS / SKILL RATING
-    _text(draw, (104, 762), f"{data.get('avg_kills', 0.0):.2f}",
-          30, C_TEXT)
-    _text(draw, (387, 762), _fmt(data.get("avg_damage", 0)), 30, C_TEXT)
-    _text(draw, (667, 762), _fmt(data.get("max_kills", 0)), 30, C_TEXT)
-    _text(draw, (949, 762), f"{sr:.1f}/10", 30, C_VIOLET)
+    _text(draw, (109, 756), f"{data.get('avg_kills', 0.0):.2f}", 31,
+          C_TEXT, bold=True)
+    _text(draw, (390, 756), _fmt(data.get("avg_damage", 0)), 32, C_TEXT,
+          bold=True)
+    _text(draw, (671, 756), _fmt(data.get("max_kills", 0)), 32, C_TEXT,
+          bold=True)
+    _text(draw, (951, 759), f"{sr:.1f}/10", 37, C_VIOLET, bold=True)
 
-    # ============ О СЕБЕ ============
-    _inpaint(img, (1265, 755, 1340, 792), radius=4)
-    _text(draw, (1274, 783), str(data.get("reputation", 0)), 20, C_TEXT)
-    _inpaint(img, (1450, 755, 1580, 792), radius=4)
+    # ================= О СЕБЕ =================
+    _text(draw, (1272, 779), str(data.get("reputation", 0)), 18, C_TEXT)
     pstr, psize = _fit_text(
-        draw, str(data.get("partner") or "—"), 280, 20, min_size=12)
-    _text(draw, (1461, 783), pstr, psize, C_SOFT)
-    _inpaint(img, (1645, 755, 1785, 792), radius=4)
-    bstr2, bsize2 = _fit_text(
-        draw, str(data.get("birthday") or "—"), 290, 20, min_size=12)
-    _text(draw, (1655, 783), bstr2, bsize2, C_TEXT)
+        draw, str(data.get("partner") or "—"), 180, 19, min_size=12)
+    _text(draw, (1460, 776), pstr, psize, C_SOFT)
+    bd_str, bd_size = _fit_text(
+        draw, str(data.get("birthday") or "—"), 110, 18, min_size=12)
+    _text(draw, (1654, 779), bd_str, bd_size, C_TEXT)
 
-    # ============ ДИНАМИКА ELO ============
-    # Левая колонка: W/L блок («ПОСЛЕДНИЕ N МАТЧЕЙ» в template — слот)
-    _inpaint(img, (105, 866, 560, 902), radius=4)
-    _text(draw, (112, 893), "ПОБЕДЫ / ПОРАЖЕНИЯ", 15, C_MUTED)
+    # ================= ДИНАМИКА ELO =================
+    _text(draw, (118, 887), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
 
-    _inpaint(img, (105, 905, 270, 985), radius=4)
     hist_w = int(data.get("hist_wins", 0) or 0)
     hist_l = int(data.get("hist_losses", 0) or 0)
-    _text(draw, (120, 952), f"{hist_w} / {hist_l}", 40, C_TEXT)
+    wl_str, wl_size = _fit_text(
+        draw, f"{hist_w}/{hist_l}", 140, 41, bold=True, min_size=20)
+    # центр под серединой слота (~x172)
+    wl_w = draw.textlength(wl_str, font=_font(wl_size, True))
+    _text(draw, (172 - wl_w / 2, 949), wl_str, wl_size, C_TEXT,
+          bold=True)
 
-    _inpaint(img, (95, 985, 280, 1022), radius=4)
-    _text(draw, (105, 1011),
+    _text(draw, (101, 1006),
           f"ПОСЛЕДНИЕ {data.get('hist_count', 0)} МАТЧЕЙ", 13, C_MUTED)
 
-    # [Δ ELO] — суммарная дельта графика (справа от графика)
     total_delta = int(data.get("chart_delta", 0) or 0)
     if total_delta > 0:
         td_str, td_color = f"+{total_delta} ELO", C_GREEN
@@ -252,15 +277,11 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         td_str, td_color = f"−{abs(total_delta)} ELO", C_DELTA_NEG
     else:
         td_str, td_color = "+0 ELO", C_MUTED
-    _inpaint(img, (1030, 838, 1150, 884), radius=4)
-    _text(draw, (1040, 876), td_str, 22, td_color)
+    _text(draw, (1041, 869), td_str, 24, td_color)
 
-    # Область графика
-    _inpaint(img, (355, 895, 1225, 1000), radius=8)
-    draw = ImageDraw.Draw(img)
-
-    hist = data.get("elo_history") or []  # хронологический список дельт
-    px0, px1, py0, py1 = 385, 1170, 918, 984
+    # График: область x 385–1170, низ ~y1005 (ось y≈1009)
+    hist = data.get("elo_history") or []
+    px0, px1, py0, py1 = 385, 1170, 895, 1003
     if hist:
         cum = []
         s = 0
@@ -295,34 +316,28 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         _text(draw, ((px0 + px1) / 2, (py0 + py1) / 2), "НЕТ ДАННЫХ",
               20, C_MUTED, anchor="ms")
 
-    # Подписи оси — [HISTORY_START] / [CURRENT_ELO]
-    _inpaint(img, (370, 998, 620, 1032), radius=4)
-    _inpaint(img, (1050, 998, 1200, 1032), radius=4)
-    draw = ImageDraw.Draw(img)
-    _text(draw, (380, 1022),
-          f"НАЧАЛО: {_fmt(data.get('hist_start_elo', data.get('elo', 1000)))}",
+    _text(draw, (379, 1018),
+          f"НАЧАЛО:{_fmt(data.get('hist_start_elo', data.get('elo', 1000)))}",
           14, C_MUTED)
-    _text(draw, (1175, 1022), f"СЕЙЧАС: {_fmt(data.get('elo', 1000))}",
-          14, C_MUTED, anchor="rs")
+    _text(draw, (1175, 1018),
+          f"СЕЙЧАС:{_fmt(data.get('elo', 1000))}", 13, C_MUTED,
+          anchor="rs")
 
-    # ============ ULTIMATUM ============
-    _inpaint(img, (1268, 930, 1440, 972), radius=4)
-    _text(draw, (1278, 966), _fmt(data.get("ult_matches", 0)), 30, C_TEXT)
-    _inpaint(img, (1438, 930, 1545, 972), radius=4)
-    _text(draw, (1448, 966), _fmt(data.get("ult_wins", 0)), 30, C_TEXT)
-    _inpaint(img, (1610, 930, 1730, 972), radius=4)
-    _text(draw, (1626, 966), _fmt(data.get("ult_elo", 1000)), 30, C_TEXT)
+    # ================= ULTIMATUM =================
+    _text(draw, (1273, 962), _fmt(data.get("ult_matches", 0)), 37,
+          C_TEXT, bold=True)
+    _text(draw, (1444, 962), _fmt(data.get("ult_wins", 0)), 37,
+          C_TEXT, bold=True)
+    _text(draw, (1622, 962), _fmt(data.get("ult_elo", 1000)), 38,
+          C_TEXT, bold=True)
 
-    # [ULTIMATUM_STATUS]
-    _inpaint(img, (1265, 996, 1520, 1032), radius=4)
-    draw = ImageDraw.Draw(img)
     ust, usize = _fit_text(
         draw, data.get("ult_status") or "Пока нет сыгранных матчей",
-        500, 17, min_size=12)
-    _text(draw, (1276, 1024), ust, usize, C_MUTED)
+        240, 15, min_size=11)
+    _text(draw, (1274, 1019), ust, usize, C_MUTED)
 
-    # ============ АВАТАР ============
-    # Слот — круг ~(209, 354) диаметром ~228 (в example помечен AVATAR SLOT)
+    # ================= АВАТАР =================
+    # Круг (95,240) 228px — измерено по diff template↔example
     if avatar_png:
         try:
             av = Image.open(io.BytesIO(avatar_png)).convert("RGBA")
