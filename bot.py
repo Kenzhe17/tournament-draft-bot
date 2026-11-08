@@ -610,7 +610,16 @@ class TournamentBot(commands.Bot):
                 logger.error(f"Birthday greetings error for guild {guild.id}: {e}", exc_info=True)
 
     async def on_ready(self) -> None:
-        logger.info("Бот запущен как %s (ID: %s)", self.user, self.user.id)
+        import os
+        commit = (
+            os.getenv("RAILWAY_GIT_COMMIT_SHA")
+            or os.getenv("GIT_COMMIT_SHA")
+            or "unknown"
+        )
+        logger.info(
+            "Бот запущен как %s (ID: %s), commit=%s",
+            self.user, self.user.id, commit[:10],
+        )
 
         # Sync commands with Discord
         try:
