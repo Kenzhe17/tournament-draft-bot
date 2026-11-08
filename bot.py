@@ -663,38 +663,66 @@ class TournamentBot(commands.Bot):
         await log_guild_join(self, guild)
 
     async def on_member_join(self, member: discord.Member) -> None:
-        """Send welcome message when a member joins the server."""
+        """Welcome-сообщение Components V2 для новых участников."""
+        if member.bot:
+            return
+
         # Check if welcome is enabled in settings
         from storage.json_store import store
         settings = store.get_settings()
         if not settings.get("welcome_enabled", True):
             return
 
-        WELCOME_CHANNEL_ID = 1200125075156910181
+        WELCOME_CHANNEL_ID = 1569098034325889144
 
-        # Only send for the specific server
-        if member.guild.id != 1196165488565289012:
-            return
-
-        # Get the welcome channel
+        # Get the welcome channel (сначала гильдия участника, затем все)
         channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
-        if not channel:
+        if channel is None:
             try:
                 channel = await member.guild.fetch_channel(WELCOME_CHANNEL_ID)
             except discord.HTTPException:
-                logger.error(f"Welcome channel {WELCOME_CHANNEL_ID} not found")
-                return
+                channel = None
+        if channel is None:
+            for g in self.guilds:
+                if g.id == member.guild.id:
+                    continue
+                ch = g.get_channel(WELCOME_CHANNEL_ID)
+                if ch is None:
+                    try:
+                        ch = await g.fetch_channel(WELCOME_CHANNEL_ID)
+                    except discord.HTTPException:
+                        ch = None
+                if ch is not None:
+                    channel = ch
+                    break
+        if channel is None:
+            logger.error(f"Welcome channel {WELCOME_CHANNEL_ID} not found")
+            return
 
-        # Calculate member count (current count + 1 for the new member)
-        member_count = member.guild.member_count + 1
+        # Порядковый номер участника (PostgreSQL, сохраняется между рестартами)
+        try:
+            from storage.welcome_store import welcome_store
+            number = await welcome_store.member_number(
+                member.guild.id, member.id)
+        except Exception:
+            logger.exception("welcome number failed")
+            number = max(1, (member.guild.member_count or 1))
 
-        # Send plain text welcome message
-        await channel.send(
-            f"₊˚⊹♡ **Добро пожаловать на сервер**, {member.mention}!\n\n"
-            f"ты стал(а) нашим **{member_count:,}-м** участником ♡\n"
-            f"чувствуй себя как дома, поприветствуй всех и заглядывай в чат!\n\n"
-            f"୨୧ надеемся, тебе у нас понравится ୨୧"
-        )
+        # ID канала с информацией/правилами для упоминания
+        try:
+            from config import INFO_CHANNEL_ID
+            info_channel_id = INFO_CHANNEL_ID or None
+        except Exception:
+            info_channel_id = None
+
+        try:
+            from services.welcome_card import (
+                build_welcome_view, welcome_file,
+            )
+            view = build_welcome_view(number, member, info_channel_id)
+            await channel.send(view=view, file=welcome_file())
+        except Exception:
+            logger.exception("Failed to send welcome message")
 
 
 def main() -> None:
