@@ -1254,33 +1254,44 @@ class MMCog(commands.Cog):
             logger.error("match number assign failed: %s", exc)
             match_num = int(time.time()) % 100000
 
+        async def _revert() -> None:
+            search.state = QUEUE_OPEN
+            search.match_num = 0
+            mm_search_store.set(search)
+            await self._update_queue_panel(search)
+
         # 1. Блокируем очередь до создания канала/RC
         search.state = QUEUE_LOCKED_READY_CHECK
         search.match_num = match_num
         mm_search_store.set(search)
         await self._update_queue_panel(search)
 
-        # 2. Временный канал матча
-        channel = await self._create_match_channel(guild, search, match_num)
-        if channel is None:
-            search.state = QUEUE_OPEN
-            search.match_num = 0
-            mm_search_store.set(search)
-            await self._update_queue_panel(search)
-            return None, "Не удалось создать канал матча. Попробуйте ещё раз."
+        channel = None
+        try:
+            # 2. Временный канал матча
+            channel = await self._create_match_channel(guild, search, match_num)
+            if channel is None:
+                await _revert()
+                return None, "Не удалось создать канал матча. Попробуйте ещё раз."
 
-        # 3. Ready Check
-        rc = await self._start_ready_check(
-            search, interaction,
-            match_id=match_id, match_num=match_num,
-            match_channel_id=channel.id,
-        )
+            # 3. Ready Check
+            rc = await self._start_ready_check(
+                search, interaction,
+                match_id=match_id, match_num=match_num,
+                match_channel_id=channel.id,
+            )
+        except Exception as exc:
+            logger.error("_begin_match failed: %s", exc, exc_info=True)
+            try:
+                await self._delete_channel_by_id(channel.id if channel else 0)
+            except Exception:
+                pass
+            await _revert()
+            return None, "Не удалось запустить матч. Попробуйте ещё раз."
+
         if rc is None:
             await self._delete_channel_by_id(channel.id)
-            search.state = QUEUE_OPEN
-            search.match_num = 0
-            mm_search_store.set(search)
-            await self._update_queue_panel(search)
+            await _revert()
             return None, "Не удалось запустить проверку готовности."
         return rc, None
 
