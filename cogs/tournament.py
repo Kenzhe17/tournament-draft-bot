@@ -2783,6 +2783,29 @@ class TournamentCog(commands.Cog):
                 ephemeral=True
             )
 
+    @admin_group.command(name="resetprogress", description="Сбросить прогресс ВСЕХ пользователей к дефолту (только владелец)")
+    @is_bot_owner()
+    async def resetprogress(self, interaction: discord.Interaction) -> None:
+        """Двухшаговый сброс прогресса: dry-run отчёт + кнопка подтверждения."""
+        from services.progress_reset import (
+            collect_plan, format_plan, guard_problems, execute_plan,
+            _existing_tables,
+        )
+        from storage.db import get_pool
+
+        await interaction.response.defer(ephemeral=True)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            plan = await collect_plan(conn)
+            problems = await guard_problems(conn, await _existing_tables(conn))
+
+        view = _ResetProgressConfirmView(
+            plan=plan, problems=problems, invoker_id=interaction.user.id)
+        await interaction.followup.send(
+            format_plan(plan, problems)
+            + "\n\n**Это необратимо.** Нажми «Подтвердить сброс» для выполнения.",
+            view=view, ephemeral=True)
+
     @is_bot_owner()
     async def trstattest(self, interaction: discord.Interaction) -> None:
         """Рандомно заполнить статистику для всех игроков в текущем турнире."""
@@ -2862,7 +2885,8 @@ class TournamentCog(commands.Cog):
         bind_commands(player_set_group, self, ["bio", "birthday"])
         bind_commands(economy_group, self, ["balance", "pay", "gift", "bet"])
         bind_commands(admin_group, self, [
-            "edit", "fix", "fix_userid", "reset", "debug_emoji",
+            "edit", "fix", "fix_userid", "reset", "resetprogress",
+            "debug_emoji",
         ])
         bind_commands(server_group, self, ["role", "welcome", "check2fa"])
         bind_commands(games_group, self, ["list"])
@@ -3186,6 +3210,69 @@ _HELP_OPTIONS = [
     discord.SelectOption(label="Система рангов", description="Ранги, уровни и ELO", value="ranks"),
     discord.SelectOption(label="Организаторам", description="Турниры, инфо-центр и баннер", value="organizers"),
 ]
+
+
+class _ResetProgressConfirmView(discord.ui.View):
+    """Подтверждение полного сброса прогресса (только для вызвавшего)."""
+
+    def __init__(self, *, plan, problems, invoker_id: int) -> None:
+        super().__init__(timeout=300)
+        self.plan = plan
+        self.problems = problems
+        self.invoker_id = invoker_id
+        self.done = False
+
+    async def _check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.invoker_id:
+            await interaction.response.send_message(
+                "Это подтверждение доступно только вызвавшему команду.",
+                ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Подтвердить сброс", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not await self._check(interaction):
+            return
+        if self.done:
+            await interaction.response.send_message(
+                "Сброс уже выполнен.", ephemeral=True)
+            return
+        self.done = True
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.defer(ephemeral=True)
+
+        from storage.db import get_pool
+        from services.progress_reset import execute_plan
+
+        try:
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    results = await execute_plan(conn, self.plan)
+            summary = "\n".join(f"`{r}`" for r in results[:40])
+            if len(results) > 40:
+                summary += f"\n…и ещё {len(results) - 40} операций"
+            await interaction.followup.send(
+                "✅ **Сброс прогресса выполнен** (одна транзакция).\n"
+                + summary, ephemeral=True)
+            logger.warning(
+                f"User progress reset executed by {interaction.user.id}")
+        except Exception as e:
+            logger.exception("progress reset failed")
+            await interaction.followup.send(
+                f"❌ Ошибка сброса, транзакция откачена: {e}",
+                ephemeral=True)
+
+    @discord.ui.button(label="Отмена", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not await self._check(interaction):
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(
+            content="Сброс отменён.", view=self)
 
 
 class GuideSelectMenu(discord.ui.Select):
