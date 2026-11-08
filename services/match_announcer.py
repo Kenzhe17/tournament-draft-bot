@@ -143,17 +143,14 @@ def _match_started_view(
     """
     import time
 
-    from utils.design.formatters import muted
     from utils.design.layouts import DesignView
     from cogs.ocr_upload import _roster_mentions as _mentions_fn
     from views.ocr_match_view import MatchScreenshotButton, team_roster
 
     roster_a = team_roster(tournament, t1)
     roster_b = team_roster(tournament, t2)
-    total = len(roster_a) + len(roster_b)
 
     view = DesignView(title=f"МАТЧ · {name_a} vs {name_b}", timeout=None)
-    view.text(f"**{label}**")
     view.text(f"**КОМАНДА A — {name_a}**\n{_mentions_fn(tournament, t1)}")
     view.text(f"**КОМАНДА B — {name_b}**\n{_mentions_fn(tournament, t2)}")
     view.sep()
@@ -168,7 +165,6 @@ def _match_started_view(
         "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
         "**Режим:** CS 4×4\n"
         "**Тип:** Ranked\n"
-        f"**Участники:** {total} игроков\n"
         f"**Начало:** <t:{int(time.time())}:t>"
     )
     view.sep()
@@ -195,9 +191,7 @@ def _match_started_view(
             "**РЕЗУЛЬТАТ МАТЧА**\n"
             "Статус результата: **Ожидается**\n"
             "После окончания игры капитан ПОБЕДИВШЕЙ команды должен "
-            "отправить скриншот итоговой статистики в этот канал. "
-            "После проверки OCR результат будет опубликован в общем "
-            "канале результатов."
+            "отправить скриншот."
         )
         view.row(
             MatchScreenshotButton(
@@ -209,7 +203,6 @@ def _match_started_view(
                 "Отправить результат",
             )
         )
-        view.text(muted("Матч идёт — скриншот статистики отправляется кнопкой выше."))
     return view
 
 

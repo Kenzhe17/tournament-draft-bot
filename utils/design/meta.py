@@ -167,7 +167,7 @@ def _avatar_url(user) -> str | None:
 
 
 # Команды, которым аватар пользователя не нужен (thumb/Section-аксессуар)
-_NO_AVATAR_COMMANDS = {"whoami", "birthdays", "rep"}
+_NO_AVATAR_COMMANDS = {"whoami", "birthdays", "rep", "top"}
 
 
 def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
