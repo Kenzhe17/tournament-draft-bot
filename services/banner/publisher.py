@@ -137,5 +137,5 @@ async def publish_day_banner(guild: discord.Guild, day: date) -> dict:
     return {"status": "published", "day": day.isoformat(), **info}
 
 
-async def yesterday_almaty() -> date:
+def yesterday_almaty() -> date:
     return act.today_almaty() - timedelta(days=1)

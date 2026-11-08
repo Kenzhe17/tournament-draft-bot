@@ -46,10 +46,16 @@ class BannerCog(commands.Cog):
 
     def _eligible_members(self, channel) -> list[discord.Member]:
         """Реальные участники, для которых канал 'живой'."""
-        humans = [
-            m for m in channel.members
-            if not m.bot and not m.self_deaf and not m.deaf
-        ]
+        humans = []
+        for m in channel.members:
+            if m.bot:
+                continue
+            voice = getattr(m, "voice", None)
+            if voice is None:
+                continue
+            if getattr(voice, "self_deaf", False) or getattr(voice, "deaf", False):
+                continue
+            humans.append(m)
         return humans
 
     async def scan_voice_once(self) -> None:
