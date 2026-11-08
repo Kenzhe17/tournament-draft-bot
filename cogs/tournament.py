@@ -1508,15 +1508,39 @@ class TournamentCog(commands.Cog):
         await interaction.response.send_message(
             view=view, file=birthdays_file())
 
+    @app_commands.command(name="браки", description="Действующие браки на сервере")
+    async def marriages_cmd(self, interaction: discord.Interaction) -> None:
+        """Список действующих браков с пагинацией."""
+        if not interaction.guild:
+            await interaction.response.send_message(
+                replace_emojis("❌ Команда доступна только на сервере."), ephemeral=True
+            )
+            return
+
+        from services.social.marriages import (
+            build_marriages_view, marriages_file,
+        )
+        from storage.marriage_store import marriage_store
+
+        entries = await marriage_store.list_active(interaction.guild_id)
+        view = build_marriages_view(
+            entries,
+            invoker_id=interaction.user.id,
+            guild_id=interaction.guild_id,
+        )
+        await interaction.response.send_message(
+            view=view, file=marriages_file())
+
     @app_commands.command(name="birthdaytest", description="Тест поздравления с днём рождения")
     @app_commands.describe(user="Пользователь для тестового поздравления")
     async def birthdaytest(self, interaction: discord.Interaction, user: discord.Member) -> None:
         """Отправить тестовое поздравление с днём рождения."""
-        from views.birthdays_view import build_birthday_embed
+        from services.social.birthday_congrats import (
+            build_congrats_view, congrats_file,
+        )
 
-        embed = build_birthday_embed(user)
-        embed.title = " ДЕНЬ РОЖДЕНИЯ | /birthdaytest"
-        await interaction.response.send_message(view=compose(embed))
+        await interaction.response.send_message(
+            view=build_congrats_view(user), file=congrats_file())
 
     @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:

@@ -66,7 +66,7 @@ def build_birthdays_view(entries: list[dict]) -> discord.ui.LayoutView:
         view.sep()
 
     if upcoming:
-        view.text("**БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ**")
+        view.text("**БЛИЖАЙШИЕ**")
         for e in upcoming:
             view.text(
                 f"{_display_name(e)} — {_birthday_label(e['birthday'], e['days'])}"

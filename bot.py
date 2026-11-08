@@ -565,8 +565,9 @@ class TournamentBot(commands.Bot):
                 if not self.is_ready():
                     continue
 
-                now_astana = datetime.now(timezone.utc) + timedelta(hours=5)
-                today = now_astana.date()
+                from zoneinfo import ZoneInfo
+                now_almaty = datetime.now(ZoneInfo("Asia/Almaty"))
+                today = now_almaty.date()
                 # Срабатываем один раз в первый час после полуночи по Астане
                 if now_astana.hour == 0 and self._last_birthday_day != today:
                     self._last_birthday_day = today
@@ -575,15 +576,23 @@ class TournamentBot(commands.Bot):
                 logger.error(f"Error in birthday loop: {e}", exc_info=True)
 
     async def _send_birthday_greetings(self, today) -> None:
-        """Отправить поздравления всем именинникам за сегодня."""
+        """Отправить V2-поздравления именинникам за сегодня (Asia/Almaty).
+
+        Дедупликация через birthday_greetings в PostgreSQL — рестарт
+        бота внутри первого часа суток не создаёт дублей.
+        """
         from config import NOTIFICATION_CHANNEL_ID
+        from storage.birthday_greet_store import birthday_greet_store
         from storage.player_stats_store import player_stats_store
-        from views.birthdays_view import build_birthday_embed, days_until_birthday
+        from views.birthdays_view import days_until_birthday
+        from services.social.birthday_congrats import (
+            build_congrats_view, congrats_file,
+        )
 
         for guild in self.guilds:
             try:
                 stats_list = await player_stats_store.get_all(guild.id)
-                members = []
+                greeted = 0
                 for s in stats_list:
                     birthday = getattr(s, "birthday", "") or ""
                     if days_until_birthday(birthday, today) != 0:
@@ -594,21 +603,36 @@ class TournamentBot(commands.Bot):
                             member = await guild.fetch_member(s.user_id)
                         except Exception:
                             member = None
-                    if member is not None:
-                        members.append(member)
-                if not members:
-                    continue
-
-                channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
-                if channel is None:
-                    logger.warning(f"Birthday greetings: notification channel {NOTIFICATION_CHANNEL_ID} not found in guild {guild.id}")
-                    continue
-
-                for member in members:
+                    if member is None or member.bot:
+                        continue
+                    # Атомарная пометка до отправки: при ошибке отправки
+                    # поздравление считается обработанным (без дублей).
+                    if not await birthday_greet_store.try_mark(
+                        guild.id, member.id, today
+                    ):
+                        continue
+                    channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
+                    if channel is None:
+                        logger.warning(
+                            f"Birthday greetings: notification channel "
+                            f"{NOTIFICATION_CHANNEL_ID} not found in guild {guild.id}"
+                        )
+                        break
                     try:
-                        await channel.send(view=compose(build_birthday_embed(member)))
+                        await channel.send(
+                            view=build_congrats_view(member),
+                            file=congrats_file(),
+                        )
+                        greeted += 1
                     except Exception as e:
-                        logger.error(f"Birthday greeting failed for {member.id}: {e}", exc_info=True)
+                        logger.error(
+                            f"Birthday greeting failed for {member.id}: {e}",
+                            exc_info=True,
+                        )
+                if greeted:
+                    logger.info(
+                        f"Birthday greetings sent: {greeted} in guild {guild.id}"
+                    )
             except Exception as e:
                 logger.error(f"Birthday greetings error for guild {guild.id}: {e}", exc_info=True)
 

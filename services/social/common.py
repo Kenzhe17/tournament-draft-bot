@@ -14,12 +14,14 @@ import discord
 from utils.design.layouts import DesignView
 
 SOCIAL_DIR = (
-    Path(__file__).resolve().parents[2] / "assets_ds_server" / "social"
+    Path(__file__).resolve().parents[2] / "assets" / "social"
 )
 
-BANNER_BIRTHDAYS = "dni_rozhdeniya.png"
-BANNER_PROPOSAL = "predlozhenie.png"
-BANNER_MARRIAGE = "brak.png"
+BANNER_BIRTHDAYS = "birthdays.png"
+BANNER_PROPOSAL = "proposal.png"
+BANNER_MARRIAGE = "marriage.png"
+BANNER_BIRTHDAY_CONGRATS = "birthday_congrats.png"
+BANNER_MARRIAGES = "marriages.png"
 
 
 def banner_path(filename: str) -> Path:

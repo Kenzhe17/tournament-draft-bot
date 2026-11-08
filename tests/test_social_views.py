@@ -5,6 +5,8 @@ import types
 from services.social.birthdays import (
     _birthday_label, build_birthdays_view,
 )
+from services.social.birthday_congrats import build_congrats_view
+from services.social.marriages import build_marriages_view
 from services.social.proposal import build_proposal_view
 
 
@@ -41,7 +43,7 @@ def test_birthdays_today_and_upcoming():
     assert "<@1> — 9 ноября · сегодня" in joined
     assert "<@2> — 12 ноября · 3 дн." in joined
     assert "LeftUser — 24 декабря · 45 дн." in joined  # без mention для вышедшего
-    assert "**БЛИЖАЙШИЕ ДНИ РОЖДЕНИЯ**" in joined
+    assert "**БЛИЖАЙШИЕ**" in joined
 
 
 def test_birthdays_label_no_year():
@@ -56,9 +58,9 @@ def test_proposal_pending_has_buttons():
     rows = [c for c in comps if c["type"] == 1]
     assert len(rows) == 1
     labels = [b["label"] for b in rows[0]["components"]]
-    assert labels == ["Принять предложение", "Отклонить"]
+    assert labels == ["Принять", "Отклонить"]
     assert all(not b["disabled"] for b in rows[0]["components"])
-    assert any("attachment://predlozhenie.png" in str(c) for c in comps)
+    assert any("attachment://proposal.png" in str(c) for c in comps)
 
 
 def test_proposal_final_state_disables_buttons():
@@ -69,3 +71,41 @@ def test_proposal_final_state_disables_buttons():
     assert all(b["disabled"] for b in rows[0]["components"])
     texts = "\n".join(c.get("content", "") for c in comps if c["type"] == 10)
     assert "Предложение принято" in texts
+
+
+def test_congrats_view():
+    view = build_congrats_view(_member(7, "Именинник"))
+    comps = _components(view)
+    texts = "\n".join(c.get("content", "") for c in comps if c["type"] == 10)
+    assert "С днём рождения, <@7>!" in texts
+    assert any("attachment://birthday_congrats.png" in str(c) for c in comps)
+
+
+def test_marriages_empty():
+    view = build_marriages_view([], invoker_id=1, guild_id=1)
+    texts = "\n".join(c.get("content", "") for c in _components(view) if c["type"] == 10)
+    assert "нет действующих союзов" in texts
+    assert any("attachment://marriages.png" in str(c) for c in _components(view))
+
+
+def test_marriages_list_and_pagination():
+    from datetime import datetime, timezone
+    entries = [
+        {"user_a": i, "user_b": i + 100,
+         "married_at": datetime(2026, 11, 9, tzinfo=timezone.utc)}
+        for i in range(10)
+    ]
+    view = build_marriages_view(entries, invoker_id=1, guild_id=1)
+    comps = _components(view)
+    texts = "\n".join(c.get("content", "") for c in comps if c["type"] == 10)
+    assert "Всего действующих браков: 10" in texts
+    assert "стр. 1/2" in texts
+    assert "01 · <@0> & <@100>" in texts
+    # 8 на страницу — 9-й и 10-й на второй
+    assert "<@8>" not in texts
+    rows = [c for c in comps if c["type"] == 1]
+    assert len(rows) == 1
+    labels = [b["label"] for b in rows[0]["components"]]
+    assert labels == ["Назад", "Далее"]
+    disabled = [b["disabled"] for b in rows[0]["components"]]
+    assert disabled == [True, False]

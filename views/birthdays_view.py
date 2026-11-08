@@ -41,25 +41,19 @@ async def collect_entries(guild: discord.Guild) -> list[dict]:
         if days is None:
             continue
         member = guild.get_member(s.user_id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(s.user_id)
+            except Exception:
+                member = None
+        if member is None:
+            continue  # участник покинул сервер — не показываем
         entries.append({
             "user_id": s.user_id,
             "name": getattr(s, "name", "") or "Unknown",
             "birthday": birthday,
             "days": days,
-            "mention": member.mention if member else None,
+            "mention": member.mention,
         })
     entries.sort(key=lambda e: (e["days"], e["name"].lower()))
     return entries
-
-
-def build_birthday_embed(member: discord.Member) -> discord.Embed:
-    """Карточка поздравления (общая для /birthdaytest и авто-поздравлений)."""
-    return discord.Embed(
-        title=" ДЕНЬ РОЖДЕНИЯ",
-        description=(
-            f" {member.mention}\n\n"
-            " С днём рождения! Желаем побед во всех турнирах и "
-            "побольше монет на балансе "
-        ),
-        color=discord.Color.from_rgb(69, 69, 69),
-    )

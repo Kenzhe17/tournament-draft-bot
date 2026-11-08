@@ -28,7 +28,7 @@ _STATE_TEXT = {
     "pending": None,  # рендерится динамически
     "accepted": "*Предложение принято.*",
     "declined": "*Предложение отклонено.*",
-    "expired": "*Срок действия предложения истёк.*",
+    "expired": "*Срок предложения истёк.*",
     "failed": "*Не удалось заключить брак.*",
 }
 
@@ -147,7 +147,7 @@ class _ProposalButton(discord.ui.Button):
 
 class _AcceptButton(_ProposalButton):
     def __init__(self, view: ProposalView) -> None:
-        super().__init__(view, "Принять предложение", discord.ButtonStyle.primary)
+        super().__init__(view, "Принять", discord.ButtonStyle.primary)
 
     async def callback(self, interaction: discord.Interaction) -> None:
         p = self.proposal
@@ -241,7 +241,7 @@ async def _send_marriage_notice(
     view.sep()
     view.text(
         f"**{p.proposer.mention} & {p.target.mention}**\n"
-        "Официально связали свои судьбы!"
+        "Официально связали свои судьбы."
     )
     view.sep()
     view.text(f"**ДАТА БРАКА**\n{date_str}")
