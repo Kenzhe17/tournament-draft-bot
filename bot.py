@@ -529,7 +529,7 @@ class TournamentBot(commands.Bot):
 
     async def _send_birthday_greetings(self, today) -> None:
         """Отправить поздравления всем именинникам за сегодня."""
-        from config import NOTIFICATION_CHANNEL_ID, TOURNAMENT_CHANNELS
+        from config import NOTIFICATION_CHANNEL_ID
         from storage.player_stats_store import player_stats_store
         from views.birthdays_view import build_birthday_embed, days_until_birthday
 
@@ -554,12 +554,7 @@ class TournamentBot(commands.Bot):
 
                 channel = guild.get_channel(NOTIFICATION_CHANNEL_ID)
                 if channel is None:
-                    for cid in TOURNAMENT_CHANNELS:
-                        channel = guild.get_channel(cid)
-                        if channel is not None:
-                            break
-                if channel is None:
-                    logger.warning(f"Birthday greetings: no channel found in guild {guild.id}")
+                    logger.warning(f"Birthday greetings: notification channel {NOTIFICATION_CHANNEL_ID} not found in guild {guild.id}")
                     continue
 
                 for member in members:
