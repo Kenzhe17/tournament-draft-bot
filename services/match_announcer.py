@@ -59,7 +59,7 @@ def _match_mentions(tournament: Tournament, t1: int, t2: int) -> str:
     for idx in (t1, t2):
         for name in team_roster(tournament, idx):
             uid = tournament.player_user_ids.get(name)
-            if uid:
+            if uid and uid > 0:
                 parts.append(f"<@{uid}>")
     return " ".join(dict.fromkeys(parts))
 
@@ -134,27 +134,53 @@ def _match_started_view(
     with_png: bool,
 ) -> "discord.ui.LayoutView":
     """V2-карточка «МАТЧ #N НАЧАЛСЯ» для MM-флоу (без эмодзи)."""
+    import time
+
+    from utils.design.formatters import muted
     from utils.design.layouts import DesignView
     from cogs.ocr_upload import _roster_mentions as _mentions_fn
-    from views.ocr_match_view import MatchScreenshotButton
+    from views.ocr_match_view import MatchScreenshotButton, team_roster
 
-    view = DesignView(title=f"МАТЧ #{number} НАЧАЛСЯ", timeout=None)
+    roster_a = team_roster(tournament, t1)
+    roster_b = team_roster(tournament, t2)
+    total = len(roster_a) + len(roster_b)
+
+    view = DesignView(title=f"МАТЧ #{number}", timeout=None)
+    view.text("**МАТЧ ЗАПУЩЕН**")
+    view.text(muted("r!z3 / RANKED · FREE FIRE · CS 4×4 · SOLO QUEUE"))
     mentions = _match_mentions(tournament, t1, t2)
     if mentions:
-        view.text(mentions)
         view.sep()
+        view.text(mentions)
+    view.sep()
+    view.text(f"**СОСТОЯНИЕ:** Активен\n**ГОТОВНОСТЬ:** {total}/{total}")
+    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
+    view.text(f"**КОМАНДА A — {name_a}**\n{_mentions_fn(tournament, t1)}")
+    view.text(f"**КОМАНДА B — {name_b}**\n{_mentions_fn(tournament, t2)}")
     if with_png:
+        view.sep()
         view.component(
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media="attachment://match_found.png")
             )
         )
-        view.sep()
-    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
     view.sep()
-    view.text(f"**{name_a}**\n{_mentions_fn(tournament, t1)}")
-    view.text(f"**{name_b}**\n{_mentions_fn(tournament, t2)}")
+    view.text(
+        "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
+        "**Режим:** CS 4×4\n"
+        "**Тип:** Ranked\n"
+        f"**Участники:** {total} игроков\n"
+        f"**Начало:** <t:{int(time.time())}:t>"
+    )
     view.sep()
+    view.text(
+        "**РЕЗУЛЬТАТ МАТЧА**\n"
+        "Статус результата: **Ожидается**\n"
+        "После окончания игры капитан или организатор отправляет "
+        "скриншот итоговой статистики в этот канал. "
+        "После проверки OCR результат будет опубликован в общем "
+        "канале результатов."
+    )
     view.row(
         MatchScreenshotButton(
             tournament.guild_id,
@@ -162,10 +188,10 @@ def _match_started_view(
             tournament,
             match_type,
             match_index,
-            "Загрузить скриншот",
+            "Отправить результат",
         )
     )
-    view.text("-# Матч идёт — скриншот статистики загружается кнопкой выше.")
+    view.text(muted("Матч идёт — скриншот статистики отправляется кнопкой выше."))
     return view
 
 
@@ -242,7 +268,7 @@ async def announce_phase_matches(
                     match_type, match_index,
                     with_png=card_png is not None,
                 )
-                await channel.send(
+                match_msg = await channel.send(
                     view=view,
                     file=(
                         discord.File(io.BytesIO(card_png), filename="match_found.png")
@@ -251,6 +277,11 @@ async def announce_phase_matches(
                     ),
                     allowed_mentions=discord.AllowedMentions(users=True),
                 )
+                # Закрепляем карточку матча — состав и статус всегда под рукой
+                try:
+                    await match_msg.pin(reason=f"MM match #{number} card")
+                except Exception as exc:
+                    logger.warning("Match card pin failed: %s", exc)
                 # Кнопка скриншота в карточке — persistent view на случай рестарта
                 if bot is not None:
                     try:
@@ -264,7 +295,7 @@ async def announce_phase_matches(
                                 tournament,
                                 match_type,
                                 match_index,
-                                "Загрузить скриншот",
+                                "Отправить результат",
                             )
                         )
                         bot.add_view(persist)

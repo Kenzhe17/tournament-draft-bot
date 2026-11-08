@@ -248,44 +248,39 @@ def _roster_mentions(tournament, team_index: int) -> str:
     parts = []
     for name in team_roster(tournament, team_index):
         uid = tournament.player_user_ids.get(name)
-        parts.append(f"<@{uid}>" if uid else name)
+        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
     return " ".join(parts)
 
 
-def _result_embed(
-    tournament, match_type: str, match_index: int, t1: int, t2: int
-) -> discord.Embed:
-    """Стилизованная карточка итога матча: команды, капитаны, игроки.
+def _result_card(
+    tournament, match_type: str, match_index: int, t1: int, t2: int,
+    match_num: int = 0,
+) -> "discord.ui.LayoutView":
+    """V2-карточка итога матча: номер, команды, игроки, скриншот.
 
-    Для MM-турниров (mm_search_channel_id > 0) — вариант без эмодзи.
+    Состав — мелким текстом (-#). Для MM-турниров заголовок без эмодзи.
     """
+    from utils.design.formatters import muted
+    from utils.design.layouts import DesignView
+
     name_a = _captain_name(tournament, t1)
     name_b = _captain_name(tournament, t2)
     is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
-    if is_mm:
-        embed = discord.Embed(
-            title=f"ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
-            description=(
-                f"**{name_a}** vs **{name_b}**\n\n"
-                f"**{name_a}**\n{_roster_mentions(tournament, t1)}\n\n"
-                f"**{name_b}**\n{_roster_mentions(tournament, t2)}"
-            ),
-            color=discord.Color.gold(),
+    prefix = "" if is_mm else f"{get_emoji('winner')} "
+    num_part = f"#{match_num}: " if match_num else ""
+    view = DesignView(
+        title=f"{prefix}ИТОГ МАТЧА {num_part}{name_a} vs {name_b}",
+        timeout=None,
+    )
+    view.component(
+        discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=f"attachment://{SHOT_FILENAME}")
         )
-    else:
-        embed = discord.Embed(
-            title=f" {replace_emojis('winner')} ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
-            description=(
-                f"**{name_a}** vs **{name_b}**\n\n"
-                f"{get_emoji('num_1')} **{name_a}**\n"
-                f"{_roster_mentions(tournament, t1)}\n\n"
-                f"{get_emoji('num_2')} **{name_b}**\n"
-                f"{_roster_mentions(tournament, t2)}"
-            ),
-            color=discord.Color.gold(),
-        )
-    embed.set_image(url=f"attachment://{SHOT_FILENAME}")
-    return embed
+    )
+    view.sep()
+    view.text(muted(f"{name_a}\n{_roster_mentions(tournament, t1)}"))
+    view.text(muted(f"{name_b}\n{_roster_mentions(tournament, t2)}"))
+    return view
 
 
 async def _result_channel(guild: discord.Guild, fallback):
@@ -471,14 +466,16 @@ async def publish_match_result_card(
         channel = await _result_channel(guild, None)
         if channel is None:
             return
-        embed = _result_embed(tournament, match_type, match_index, t1, t2)
+        card = _result_card(
+            tournament, match_type, match_index, t1, t2, match_num=match_num
+        )
         msg_id = session.get("result_message_id")
 
         if msg_id:
             try:
                 msg = await channel.fetch_message(msg_id)
                 await msg.edit(
-                    view=compose(embed),
+                    view=card,
                     attachments=[
                         discord.AttachmentInput(
                             io.BytesIO(png), filename=SHOT_FILENAME
@@ -490,7 +487,7 @@ async def publish_match_result_card(
                 logger.warning("Result card edit failed: %s", e)
 
         file = discord.File(io.BytesIO(png), filename=SHOT_FILENAME)
-        bot_msg = await channel.send(view=compose(embed), file=file)
+        bot_msg = await channel.send(view=card, file=file)
         session["result_message_id"] = bot_msg.id
         store.set(tournament)
     except Exception:
@@ -516,7 +513,13 @@ async def _upsert_result_message(
         channel = await _result_channel(guild, fallback_channel)
         if channel is None:
             return
-        embed = _result_embed(tournament, match_type, match_index, t1, t2)
+        from storage.match_number_store import match_number_store
+
+        match_id = f"{tournament.id}_{_session_key(match_type, match_index)}"
+        match_num = await match_number_store.get_or_assign(match_id)
+        card = _result_card(
+            tournament, match_type, match_index, t1, t2, match_num=match_num
+        )
         key = _session_key(match_type, match_index)
         session = tournament.ocr_sessions.get(key)
         msg_id = session.get("result_message_id") if session else None
@@ -525,7 +528,7 @@ async def _upsert_result_message(
             try:
                 msg = await channel.fetch_message(msg_id)
                 await msg.edit(
-                    view=compose(embed),
+                    view=card,
                     attachments=[
                         discord.AttachmentInput(
                             io.BytesIO(data), filename=SHOT_FILENAME
@@ -537,7 +540,7 @@ async def _upsert_result_message(
                 logger.warning("Result message edit failed: %s", e)
 
         file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
-        bot_msg = await channel.send(view=compose(embed), file=file)
+        bot_msg = await channel.send(view=card, file=file)
         if session is not None:
             session["result_message_id"] = bot_msg.id
             store.set(tournament)

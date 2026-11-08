@@ -277,6 +277,11 @@ class MMCog(commands.Cog):
                 rc = await ready_check_store.get(match_id)
                 if rc is None or rc.status != ReadyCheckStatus.READY_CHECK:
                     return
+                # Авто-готовность — только для тестовых игроков
+                # (отрицательные ID из /mmtest). Реальные участники
+                # подтверждают готовность кнопкой самостоятельно.
+                if player.user_id and player.user_id > 0:
+                    continue
                 async with self._rc_lock(match_id):
                     await self._confirm_ready(match_id, player.user_id)
                 await asyncio.sleep(delay)

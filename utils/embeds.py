@@ -476,12 +476,18 @@ def team_roster_mentions(tournament: Tournament, team_data: dict) -> str:
     parts = []
     for name in team_roster_names(team_data):
         uid = tournament.player_user_ids.get(name)
-        parts.append(f"<@{uid}>" if uid else name)
+        # Невалидные ID (тестовые отрицательные значения и т.п.)
+        # не превращаем в <@...> — показываем имя.
+        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
     return " ".join(parts)
 
 
 async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tournament, matches: list[tuple[int, int]], match_type: str) -> None:
     """Добавить секцию ставок в embed с детальной информацией."""
+    # MM/тестовые турниры: ставки отключены — не засоряем карточку
+    # строками коэффициентов.
+    if getattr(tournament, "is_test", False):
+        return
     # Check if betting is open for this phase
     is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
 

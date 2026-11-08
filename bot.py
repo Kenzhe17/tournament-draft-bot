@@ -215,7 +215,7 @@ class TournamentBot(commands.Bot):
                                 tournament.guild_id,
                                 tournament.channel_id,
                                 tournament,
-                                mt, mi, "Загрузить скриншот",
+                                mt, mi, "Отправить результат",
                             )
                         )
                         self.add_view(mm_view)
