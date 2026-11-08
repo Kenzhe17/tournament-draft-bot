@@ -81,6 +81,17 @@ MOD_LOG_WEBHOOK_URL = os.getenv("MOD_LOG_WEBHOOK_URL", "")
 # Ready Check («Найден матч») для Ranked Matchmaking
 RANKED_READY_TIMEOUT_SECONDS = int(os.getenv("RANKED_READY_TIMEOUT_SECONDS", "90"))
 
+# Reputation System 2.0
+REP_MANUAL_AMOUNT = int(os.getenv("REP_MANUAL_AMOUNT", "1"))
+REP_MANUAL_COOLDOWN_HOURS = int(os.getenv("REP_MANUAL_COOLDOWN_HOURS", "24"))
+REP_INVITE_AMOUNT = int(os.getenv("REP_INVITE_AMOUNT", "5"))
+REP_INVITE_VERIFICATION_HOURS = int(os.getenv("REP_INVITE_VERIFICATION_HOURS", "72"))
+REP_BOOST_AMOUNT = int(os.getenv("REP_BOOST_AMOUNT", "10"))
+REP_BOOST_VERIFICATION_DAYS = int(os.getenv("REP_BOOST_VERIFICATION_DAYS", "7"))
+REP_ONE_INVITE_REWARD_PER_INVITED_USER = os.getenv("REP_ONE_INVITE_REWARD_PER_INVITED_USER", "true").lower() in ("1", "true", "yes")
+REP_ONE_BOOST_REWARD_PER_USER = os.getenv("REP_ONE_BOOST_REWARD_PER_USER", "true").lower() in ("1", "true", "yes")
+REP_ONE_MANUAL_REP_PER_PAIR = os.getenv("REP_ONE_MANUAL_REP_PER_PAIR", "true").lower() in ("1", "true", "yes")
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

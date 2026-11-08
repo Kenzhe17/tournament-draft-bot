@@ -1,0 +1,508 @@
+"""Хранилище Reputation System 2.0 — PostgreSQL.
+
+Таблицы (создаются в storage/db.py::init_db):
+- reputation_transactions: журнал всех начислений REP,
+  event_key UNIQUE — защита от повторных операций.
+- rep_giver_state: скользящий cooldown /rep (24ч) на отправителя.
+- rep_invites: кандидаты и подтверждённые награды за приглашения,
+  UNIQUE(guild_id, invitee_id) — один приглашённый = одна награда.
+- rep_boosts: периоды проверки буста, UNIQUE(guild_id, booster_id).
+
+Начисление REP и запись журнала выполняются в одной транзакции
+PostgreSQL — отдельного JSON-fallback нет (как player_stats_store).
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from storage.db import get_pool
+
+logger = logging.getLogger(__name__)
+
+# Источники операций
+SRC_MANUAL = "MANUAL_REP"
+SRC_INVITE = "INVITE"
+SRC_BOOST = "BOOST"
+SRC_ADMIN = "ADMIN_ADJUSTMENT"
+
+
+@dataclass
+class ManualRepResult:
+    """Результат попытки выдачи /rep."""
+
+    status: str  # ok | already_pair | cooldown | error
+    rep_after: int = 0
+    next_available_at: datetime | None = None
+    cooldown_seconds: int = 0
+
+
+class ReputationStore:
+    """Все операции репутации — через пул asyncpg."""
+
+    # ------------------------------------------------------------------
+    # /rep — атомарная выдача
+    # ------------------------------------------------------------------
+
+    async def try_give_manual_rep(
+        self,
+        guild_id: int,
+        giver_id: int,
+        target_id: int,
+        amount: int,
+        cooldown: timedelta,
+        target_name: str = "",
+    ) -> ManualRepResult:
+        """Атомарно: проверить cooldown/пару → журнал → +REP → cooldown.
+
+        Блокировки: rep_giver_state строка FOR UPDATE + UNIQUE event_key.
+        """
+        event_key = f"manual_rep:{guild_id}:{giver_id}:{target_id}"
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # Строка состояния выдающего (создаём при первом /rep)
+                await conn.execute(
+                    """
+                    INSERT INTO rep_giver_state (guild_id, giver_id, last_rep_at)
+                    VALUES ($1, $2, NULL)
+                    ON CONFLICT (guild_id, giver_id) DO NOTHING
+                    """,
+                    guild_id, giver_id,
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT last_rep_at FROM rep_giver_state
+                    WHERE guild_id = $1 AND giver_id = $2
+                    FOR UPDATE
+                    """,
+                    guild_id, giver_id,
+                )
+                last = row["last_rep_at"] if row else None
+                now = datetime.now(timezone.utc)
+                if last is not None:
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    available_at = last + cooldown
+                    if now < available_at:
+                        return ManualRepResult(
+                            status="cooldown",
+                            next_available_at=available_at,
+                            cooldown_seconds=max(0, int((available_at - now).total_seconds())),
+                        )
+
+                # Журнал: UNIQUE event_key — повтор той же пары невозможен
+                inserted = await conn.fetchval(
+                    """
+                    INSERT INTO reputation_transactions
+                        (guild_id, user_id, source, amount,
+                         actor_user_id, subject_user_id, event_key)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (event_key) DO NOTHING
+                    RETURNING id
+                    """,
+                    guild_id, target_id, SRC_MANUAL, amount,
+                    giver_id, target_id, event_key,
+                )
+                if inserted is None:
+                    return ManualRepResult(status="already_pair")
+
+                # +REP получателю (upsert player_stats)
+                rep_after = await conn.fetchval(
+                    """
+                    INSERT INTO player_stats (guild_id, user_id, name, reputation)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET reputation = player_stats.reputation + $4
+                    RETURNING reputation
+                    """,
+                    guild_id, target_id, target_name, amount,
+                )
+
+                await conn.execute(
+                    """
+                    UPDATE rep_giver_state SET last_rep_at = now()
+                    WHERE guild_id = $1 AND giver_id = $2
+                    """,
+                    guild_id, giver_id,
+                )
+                return ManualRepResult(status="ok", rep_after=int(rep_after or 0))
+
+    # ------------------------------------------------------------------
+    # Начисление REP (invite / boost / admin) — одна транзакция
+    # ------------------------------------------------------------------
+
+    async def award_rep(
+        self,
+        guild_id: int,
+        user_id: int,
+        source: str,
+        amount: int,
+        event_key: str,
+        actor_user_id: int = 0,
+        subject_user_id: int = 0,
+        user_name: str = "",
+    ) -> bool:
+        """Начислить REP с записью в журнал. False — event_key уже был."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                inserted = await conn.fetchval(
+                    """
+                    INSERT INTO reputation_transactions
+                        (guild_id, user_id, source, amount,
+                         actor_user_id, subject_user_id, event_key)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (event_key) DO NOTHING
+                    RETURNING id
+                    """,
+                    guild_id, user_id, source, amount,
+                    actor_user_id, subject_user_id, event_key,
+                )
+                if inserted is None:
+                    return False
+                await conn.execute(
+                    """
+                    INSERT INTO player_stats (guild_id, user_id, name, reputation)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET reputation = player_stats.reputation + $4
+                    """,
+                    guild_id, user_id, user_name, amount,
+                )
+                return True
+
+    # ------------------------------------------------------------------
+    # Журнал и аналитика
+    # ------------------------------------------------------------------
+
+    async def get_transactions(
+        self, guild_id: int, user_id: int, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT source, amount, actor_user_id, created_at
+                FROM reputation_transactions
+                WHERE guild_id = $1 AND user_id = $2
+                ORDER BY created_at DESC, id DESC
+                LIMIT $3
+                """,
+                guild_id, user_id, limit,
+            )
+        return [dict(r) for r in rows]
+
+    async def get_source_breakdown(
+        self, guild_id: int, user_id: int
+    ) -> dict[str, int]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT source, COALESCE(SUM(amount), 0) AS total
+                FROM reputation_transactions
+                WHERE guild_id = $1 AND user_id = $2
+                GROUP BY source
+                """,
+                guild_id, user_id,
+            )
+        return {r["source"]: int(r["total"]) for r in rows}
+
+    async def count_manual_given(self, guild_id: int, giver_id: int) -> int:
+        """Сколько разных получателей получил giver через /rep."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return int(await conn.fetchval(
+                """
+                SELECT COUNT(DISTINCT user_id) FROM reputation_transactions
+                WHERE guild_id = $1 AND actor_user_id = $2 AND source = $3
+                """,
+                guild_id, giver_id, SRC_MANUAL,
+            ) or 0)
+
+    async def get_rep_leaderboard(
+        self, guild_id: int, page: int = 1, per_page: int = 10
+    ) -> list[dict[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT user_id, name, reputation
+                FROM player_stats
+                WHERE guild_id = $1 AND reputation > 0 AND user_id > 0
+                ORDER BY reputation DESC, user_id ASC
+                LIMIT $2 OFFSET $3
+                """,
+                guild_id, per_page, (page - 1) * per_page,
+            )
+        return [dict(r) for r in rows]
+
+    async def get_rep_leaderboard_count(self, guild_id: int) -> int:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return int(await conn.fetchval(
+                "SELECT COUNT(*) FROM player_stats"
+                " WHERE guild_id = $1 AND reputation > 0 AND user_id > 0",
+                guild_id,
+            ) or 0)
+
+    async def get_player_rep_rank(self, guild_id: int, user_id: int) -> int | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT reputation FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                guild_id, user_id,
+            )
+            if row is None or int(row["reputation"] or 0) <= 0:
+                return None
+            rep = int(row["reputation"])
+            rank = await conn.fetchval(
+                """
+                SELECT COUNT(*) + 1 FROM player_stats
+                WHERE guild_id = $1 AND user_id > 0 AND (
+                    reputation > $2
+                    OR (reputation = $2 AND user_id < $3)
+                )
+                """,
+                guild_id, rep, user_id,
+            )
+            return int(rank)
+
+    async def get_guild_rep_stats(self, guild_id: int) -> dict[str, Any]:
+        """Общая статистика репутации сервера."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            totals = await conn.fetch(
+                """
+                SELECT source, COUNT(*) AS ops, COALESCE(SUM(amount), 0) AS total
+                FROM reputation_transactions
+                WHERE guild_id = $1
+                GROUP BY source
+                """,
+                guild_id,
+            )
+            users_with_rep = await conn.fetchval(
+                "SELECT COUNT(*) FROM player_stats"
+                " WHERE guild_id = $1 AND reputation > 0",
+                guild_id,
+            )
+            legacy = await conn.fetchval(
+                """
+                SELECT COALESCE(SUM(GREATEST(reputation - COALESCE(tx.total, 0), 0)), 0)
+                FROM player_stats ps
+                LEFT JOIN (
+                    SELECT user_id, SUM(amount) AS total
+                    FROM reputation_transactions
+                    WHERE guild_id = $1
+                    GROUP BY user_id
+                ) tx ON tx.user_id = ps.user_id
+                WHERE ps.guild_id = $1 AND ps.reputation > 0
+                """,
+                guild_id,
+            )
+        return {
+            "by_source": {r["source"]: {"ops": int(r["ops"]), "total": int(r["total"])} for r in totals},
+            "users_with_rep": int(users_with_rep or 0),
+            "legacy_rep": int(legacy or 0),
+        }
+
+    # ------------------------------------------------------------------
+    # Приглашения
+    # ------------------------------------------------------------------
+
+    async def create_invite_candidate(
+        self,
+        guild_id: int,
+        inviter_id: int | None,
+        invitee_id: int,
+        invite_code: str,
+        verify_until: datetime,
+        attribution: str,
+        reject_reason: str = "",
+    ) -> int | None:
+        """Создать кандидата на награду. None — invitee уже учтён."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO rep_invites
+                    (guild_id, inviter_id, invitee_id, invite_code,
+                     verify_until, attribution, reject_reason)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (guild_id, invitee_id) DO NOTHING
+                RETURNING id
+                """,
+                guild_id, inviter_id, invitee_id, invite_code,
+                verify_until, attribution, reject_reason,
+            )
+
+    async def get_invite(self, invite_id: int) -> dict[str, Any] | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM rep_invites WHERE id = $1", invite_id
+            )
+        return dict(row) if row else None
+
+    async def get_due_invites(self, now: datetime) -> list[dict[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM rep_invites
+                WHERE reward_status = 'pending' AND verify_until <= $1
+                ORDER BY verify_until ASC
+                LIMIT 100
+                """,
+                now,
+            )
+        return [dict(r) for r in rows]
+
+    async def update_invite(
+        self,
+        invite_id: int,
+        *,
+        attribution: str | None = None,
+        reward_status: str | None = None,
+        reject_reason: str | None = None,
+    ) -> None:
+        sets, args = [], []
+        if attribution is not None:
+            args.append(attribution)
+            sets.append(f"attribution = ${len(args)}")
+        if reward_status is not None:
+            args.append(reward_status)
+            sets.append(f"reward_status = ${len(args)}")
+            if reward_status == "rewarded":
+                sets.append("rewarded_at = now()")
+        if reject_reason is not None:
+            args.append(reject_reason)
+            sets.append(f"reject_reason = ${len(args)}")
+        if not sets:
+            return
+        args.append(invite_id)
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f"UPDATE rep_invites SET {', '.join(sets)} WHERE id = ${len(args)}",
+                *args,
+            )
+
+    async def get_user_invite_stats(self, guild_id: int, user_id: int) -> dict[str, Any]:
+        """Статистика приглашений пользователя (как пригласившего)."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT attribution, reward_status, COUNT(*) AS cnt
+                FROM rep_invites
+                WHERE guild_id = $1 AND inviter_id = $2
+                GROUP BY attribution, reward_status
+                """,
+                guild_id, user_id,
+            )
+            invited = await conn.fetchval(
+                "SELECT COUNT(*) FROM rep_invites WHERE guild_id = $1 AND invitee_id = $2",
+                guild_id, user_id,
+            )
+        stats: dict[str, Any] = {"invited": int(invited or 0), "total": 0, "rewarded": 0, "pending": 0, "rejected": 0}
+        for r in rows:
+            cnt = int(r["cnt"])
+            stats["total"] += cnt
+            if r["reward_status"] == "rewarded":
+                stats["rewarded"] += cnt
+            elif r["reward_status"] == "pending":
+                stats["pending"] += cnt
+            else:
+                stats["rejected"] += cnt
+        return stats
+
+    # ------------------------------------------------------------------
+    # Бусты
+    # ------------------------------------------------------------------
+
+    async def upsert_boost_pending(
+        self,
+        guild_id: int,
+        booster_id: int,
+        boost_started_at: datetime,
+        verify_until: datetime,
+    ) -> bool:
+        """Создать/сбросить ожидающий период буста.
+
+        True — период создан/обновлён; False — награда уже получена.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO rep_boosts
+                    (guild_id, booster_id, boost_started_at, verify_until, status)
+                VALUES ($1, $2, $3, $4, 'pending')
+                ON CONFLICT (guild_id, booster_id) DO UPDATE SET
+                    boost_started_at = EXCLUDED.boost_started_at,
+                    verify_until = EXCLUDED.verify_until,
+                    status = 'pending',
+                    rewarded_at = NULL
+                WHERE rep_boosts.status <> 'rewarded'
+                RETURNING id
+                """,
+                guild_id, booster_id, boost_started_at, verify_until,
+            )
+            return row is not None
+
+    async def cancel_boost_pending(self, guild_id: int, booster_id: int) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE rep_boosts SET status = 'cancelled'
+                WHERE guild_id = $1 AND booster_id = $2 AND status = 'pending'
+                """,
+                guild_id, booster_id,
+            )
+
+    async def get_boost(self, guild_id: int, booster_id: int) -> dict[str, Any] | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM rep_boosts WHERE guild_id = $1 AND booster_id = $2",
+                guild_id, booster_id,
+            )
+        return dict(row) if row else None
+
+    async def get_due_boosts(self, now: datetime) -> list[dict[str, Any]]:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM rep_boosts
+                WHERE status = 'pending' AND verify_until <= $1
+                ORDER BY verify_until ASC
+                LIMIT 100
+                """,
+                now,
+            )
+        return [dict(r) for r in rows]
+
+    async def mark_boost_rewarded(self, guild_id: int, booster_id: int) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE rep_boosts SET status = 'rewarded', rewarded_at = now()
+                WHERE guild_id = $1 AND booster_id = $2 AND status = 'pending'
+                """,
+                guild_id, booster_id,
+            )
+
+    async def get_boost_status(self, guild_id: int, booster_id: int) -> str | None:
+        row = await self.get_boost(guild_id, booster_id)
+        return row["status"] if row else None
+
+
+reputation_store = ReputationStore()

@@ -1341,58 +1341,87 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message( view=compose(embed, view))
 
-    @app_commands.command(name="rep", description="Дать +1 репутацию (1 раз на человека, макс. 3 в день)")
+    @app_commands.command(name="rep", description="Дать +1 репутацию (1 раз на человека, раз в 24 часа)")
     @app_commands.describe(user="Пользователь")
     async def rep(self, interaction: discord.Interaction, user: discord.Member) -> None:
-        """Дать +1 репутацию: один раз на пару, не более 3 в день."""
-        from storage.rep_store import DAILY_LIMIT, rep_store
-        from views.profile_view import _default_stats
-
-        if user.id == interaction.user.id:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нельзя дать репутацию самому себе."), ephemeral=True
-            )
-            return
-        if user.bot:
-            await interaction.response.send_message(
-                replace_emojis("❌ Нельзя дать репутацию боту."), ephemeral=True
-            )
-            return
+        """Дать +1 репутацию: раз в 24 часа, один раз на пару навсегда."""
+        from services import reputation as rep_svc
+        from utils.design import colors
+        from utils.design.layouts import DesignView
 
         guild_id = interaction.guild_id
-        if rep_store.has_given(guild_id, interaction.user.id, user.id):
-            await interaction.response.send_message(
-                replace_emojis(f"❌ Вы уже давали репутацию {user.mention}."), ephemeral=True
-            )
-            return
 
-        used = rep_store.used_today(guild_id, interaction.user.id)
-        if used >= DAILY_LIMIT:
+        async def _err(title: str, text: str) -> None:
             await interaction.response.send_message(
-                replace_emojis(
-                    f"❌ Дневной лимит исчерпан: **{DAILY_LIMIT}** репутации в день. "
-                    "Попробуйте завтра."
+                view=DesignView.simple(
+                    title=title, body=text, accent=colors.ERROR,
+                    timeout=None,
                 ),
                 ephemeral=True,
             )
+
+        if user.id == interaction.user.id:
+            await _err("ОШИБКА", "Нельзя выдать репутацию самому себе.")
+            return
+        if user.bot:
+            await _err("ОШИБКА", "Нельзя выдать репутацию боту.")
+            return
+        if interaction.user.bot:
+            await _err("ОШИБКА", "Боты не могут выдавать репутацию.")
             return
 
-        stats = await player_stats_store.get(guild_id, user.id)
-        if not stats:
-            stats = _default_stats(guild_id, user.id, user.display_name)
-        stats.reputation = getattr(stats, "reputation", 0) + 1
-        await player_stats_store.set(stats)
-        rep_store.mark_given(guild_id, interaction.user.id, user.id)
+        # Legacy-история /rep (rep_given.json): пары, уже выдававшие
+        # репутацию до Reputation 2.0, остаются заблокированными навсегда.
+        try:
+            from storage.rep_store import rep_store
+            if rep_store.has_given(guild_id, interaction.user.id, user.id):
+                await _err(
+                    "РЕПУТАЦИЯ УЖЕ ВЫДАНА",
+                    f"Вы уже выдавали репутацию {user.mention}.\n"
+                    "Повторная выдача одному человеку запрещена.",
+                )
+                return
+        except Exception:
+            pass
 
-        embed = discord.Embed(
-            title=" РЕПУТАЦИЯ | /rep",
-            description=(
-                f" {interaction.user.mention} дал +1 репутации {user.mention}\n\n"
-                f" Репутация {user.mention}: **{stats.reputation:,}**"
-            ),
-            color=discord.Color.from_rgb(69, 69, 69),
+        result = await rep_svc.give_manual_rep(
+            guild_id=guild_id,
+            giver_id=interaction.user.id,
+            target_id=user.id,
+            target_name=user.display_name,
         )
-        await interaction.response.send_message(view=compose(embed))
+
+        if result.status == "ok":
+            cooldown_ts = int(
+                __import__("time").time() + rep_svc.REP_MANUAL_COOLDOWN_HOURS * 3600
+            )
+            body = "\n".join([
+                f"Получатель: {user.mention}",
+                f"Начислено: +{rep_svc.REP_MANUAL_AMOUNT} REP",
+                f"Текущая репутация: {result.rep_after}",
+                f"Следующая выдача доступна <t:{cooldown_ts}:R>.",
+            ])
+            await interaction.response.send_message(
+                view=DesignView.simple(
+                    title="РЕПУТАЦИЯ ВЫДАНА", body=body,
+                    accent=colors.SUCCESS, timeout=None,
+                )
+            )
+        elif result.status == "already_pair":
+            await _err(
+                "РЕПУТАЦИЯ УЖЕ ВЫДАНА",
+                f"Вы уже выдавали репутацию {user.mention}.\n"
+                "Повторная выдача одному человеку запрещена.",
+            )
+        elif result.status == "cooldown":
+            ts = int(result.next_available_at.timestamp()) if result.next_available_at else 0
+            await _err(
+                "ЛИМИТ РЕПУТАЦИИ",
+                f"Вы сможете выдать репутацию снова <t:{ts}:R> "
+                f"({rep_svc.format_cooldown(result.cooldown_seconds)}).",
+            )
+        else:
+            await _err("ОШИБКА", "Не удалось обработать выдачу репутации. Попробуйте позже.")
 
     @player_group.command(name="marry", description="Предложить руку и сердце пользователю")
     @app_commands.describe(user="Пользователь")

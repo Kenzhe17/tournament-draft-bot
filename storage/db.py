@@ -760,3 +760,78 @@ async def init_db() -> None:
                 announced BOOLEAN NOT NULL DEFAULT FALSE
             )
         """)
+
+        # Reputation System 2.0
+        # Журнал всех начислений REP (MANUAL_REP / INVITE / BOOST / ADMIN_ADJUSTMENT)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS reputation_transactions (
+                id BIGSERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                source TEXT NOT NULL,
+                amount INTEGER NOT NULL,
+                actor_user_id BIGINT NOT NULL DEFAULT 0,
+                subject_user_id BIGINT NOT NULL DEFAULT 0,
+                event_key TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_tx_user
+            ON reputation_transactions(guild_id, user_id)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_tx_giver
+            ON reputation_transactions(guild_id, actor_user_id)
+            WHERE source = 'MANUAL_REP'
+        """)
+
+        # Состояние выдачи /rep: скользящий cooldown 24ч на отправителя
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_giver_state (
+                guild_id BIGINT NOT NULL,
+                giver_id BIGINT NOT NULL,
+                last_rep_at TIMESTAMPTZ,
+                PRIMARY KEY (guild_id, giver_id)
+            )
+        """)
+
+        # Ожидающие/подтверждённые награды за приглашения
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_invites (
+                id BIGSERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                inviter_id BIGINT,
+                invitee_id BIGINT NOT NULL,
+                invite_code TEXT NOT NULL DEFAULT '',
+                joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                verify_until TIMESTAMPTZ NOT NULL,
+                attribution TEXT NOT NULL DEFAULT 'pending',
+                reward_status TEXT NOT NULL DEFAULT 'pending',
+                rewarded_at TIMESTAMPTZ,
+                reject_reason TEXT NOT NULL DEFAULT '',
+                UNIQUE (guild_id, invitee_id)
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_invites_pending
+            ON rep_invites(guild_id, reward_status, verify_until)
+        """)
+
+        # Ожидающие/подтверждённые награды за бусты
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_boosts (
+                id BIGSERIAL PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                booster_id BIGINT NOT NULL,
+                boost_started_at TIMESTAMPTZ NOT NULL,
+                verify_until TIMESTAMPTZ NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                rewarded_at TIMESTAMPTZ,
+                UNIQUE (guild_id, booster_id)
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_boosts_pending
+            ON rep_boosts(guild_id, status, verify_until)
+        """)

@@ -33,6 +33,9 @@ admin_group = app_commands.Group(
 server_group = app_commands.Group(
     name="server", description="Настройки сервера"
 )
+reputation_group = app_commands.Group(
+    name="reputation", description="Репутация: профиль, история, статистика"
+)
 
 # Группы, регистрируемые в корне дерева (bot.py)
 ROOT_GROUPS = (
@@ -42,6 +45,7 @@ ROOT_GROUPS = (
     crime_group,
     admin_group,
     server_group,
+    reputation_group,
 )
 
 

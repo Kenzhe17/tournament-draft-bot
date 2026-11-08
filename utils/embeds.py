@@ -1310,6 +1310,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
             players = await player_stats_store.get_leaderboard_by_earnings(guild_id, page, per_page=10)
         elif leaderboard_type == "ulti_elo":
             players = await elo_store.get_leaderboard(limit=10, offset=(page - 1) * 10)
+        elif leaderboard_type == "rep":
+            from storage.reputation_store import reputation_store
+            players = await reputation_store.get_rep_leaderboard(guild_id, page, per_page=10)
         else:  # elo
             players = await player_stats_store.get_leaderboard(guild_id, page, per_page=10)
 
@@ -1327,6 +1330,9 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     elif leaderboard_type == "ulti_elo":
         title = f" ЛИДЕРЫ СЕРВЕРА | ULTIMATUM ELO"
         color = discord.Color.from_rgb(46, 204, 113)  # Пастельно-зеленый
+    elif leaderboard_type == "rep":
+        title = f" ЛИДЕРЫ СЕРВЕРА | РЕПУТАЦИЯ"
+        color = discord.Color.from_rgb(142, 68, 173)  # Пастельно-фиолетовый
     else:  # elo
         title = f" ЛИДЕРЫ СЕРВЕРА | ELO"
         color = discord.Color.from_rgb(231, 76, 60)  # Пастельно-красный
@@ -1335,6 +1341,10 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
     if leaderboard_type == "ulti_elo":
         total_pages = await elo_store.get_leaderboard_count()
         total_pages = (total_pages + 9) // 10  # Round up
+    elif leaderboard_type == "rep":
+        from storage.reputation_store import reputation_store
+        total_count = await reputation_store.get_rep_leaderboard_count(guild_id)
+        total_pages = max(1, (total_count + 9) // 10)
     else:
         total_pages = await player_stats_store.get_total_pages(guild_id, per_page=10)
 
@@ -1399,6 +1409,22 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
 
             line = f"{rank_emoji} {username} — {elo} Elo"
             lines.append(line)
+    elif leaderboard_type == "rep":
+        for i, player in enumerate(players):
+            rank = global_rank + i + 1
+            if rank == 1:
+                rank_emoji = get_emoji("gold_medal") or "🥇"
+            elif rank == 2:
+                rank_emoji = get_emoji("silver_medal") or "🥈"
+            elif rank == 3:
+                rank_emoji = get_emoji("bronze_medal") or "🥉"
+            else:
+                rank_emoji = f"{rank}."
+
+            formatted_name = format_player_name(
+                guild_id, player["user_id"], player.get("name", "")
+            )
+            lines.append(f"{rank_emoji} {formatted_name} — {int(player['reputation'])} REP")
     else:
         for i, player in enumerate(players):
             rank = global_rank + i + 1
@@ -1439,6 +1465,10 @@ async def build_leaderboard_embed(guild_id: int, page: int = 1, leaderboard_type
                 user_balance = await user_balance_store.get_balance(guild_id, user_id)
                 user_rank = await player_stats_store.get_player_rank_by_earnings(guild_id, user_id)
                 user_value = f"{user_balance:,} {get_emoji('money')}"
+            elif leaderboard_type == "rep":
+                from storage.reputation_store import reputation_store
+                user_rank = await reputation_store.get_player_rep_rank(guild_id, user_id)
+                user_value = f"{int(user_stats.reputation or 0)} REP"
             else:  # elo
                 user_rank = await player_stats_store.get_player_rank(guild_id, user_id)
                 user_value = f"{int(user_stats.elo)} ELO"

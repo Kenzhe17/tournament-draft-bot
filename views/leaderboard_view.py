@@ -17,6 +17,16 @@ if TYPE_CHECKING:
     from bot import TournamentBot
 
 
+async def _total_pages_for(guild_id: int, leaderboard_type: str, per_page: int) -> int:
+    """Количество страниц лидерборда для конкретной категории."""
+    if leaderboard_type == "rep":
+        from storage.reputation_store import reputation_store
+
+        count = await reputation_store.get_rep_leaderboard_count(guild_id)
+        return max(1, (count + per_page - 1) // per_page)
+    return await player_stats_store.get_total_pages(guild_id, per_page)
+
+
 class TopCategorySelect(discord.ui.Select):
     """Выпадающее меню для переключения категорий лидерборда."""
 
@@ -45,6 +55,12 @@ class TopCategorySelect(discord.ui.Select):
                 value="level",
                 description="Опыт аккаунта и прогресс",
                 emoji="✨"
+            ),
+            discord.SelectOption(
+                label="Топ по Репутации",
+                value="rep",
+                description="Вклад в развитие сервера",
+                emoji="🏅"
             )
         ]
         super().__init__(
@@ -68,7 +84,7 @@ class TopCategorySelect(discord.ui.Select):
         await interaction.response.defer()
         view.leaderboard_type = self.values[0]
         view.page = 1
-        view._total_pages = await player_stats_store.get_total_pages(view.guild_id, view.per_page)
+        view._total_pages = await _total_pages_for(view.guild_id, view.leaderboard_type, view.per_page)
 
         embed = await build_leaderboard_embed(view.guild_id, view.page, view.leaderboard_type, view.user_id)
         view.refresh_buttons()
@@ -91,7 +107,7 @@ class UniversalLeaderboardView(discord.ui.View):
 
     async def initialize(self) -> None:
         """Initialize total pages asynchronously."""
-        self._total_pages = await player_stats_store.get_total_pages(self.guild_id, self.per_page)
+        self._total_pages = await _total_pages_for(self.guild_id, self.leaderboard_type, self.per_page)
 
         # Add category select menu
         self.add_item(TopCategorySelect(self))
