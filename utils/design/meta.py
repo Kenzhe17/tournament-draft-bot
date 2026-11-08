@@ -166,6 +166,10 @@ def _avatar_url(user) -> str | None:
         return None
 
 
+# Команды, которым аватар пользователя не нужен (thumb/Section-аксессуар)
+_NO_AVATAR_COMMANDS = {"whoami", "birthdays"}
+
+
 def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
     """Собрать мета-данные из Interaction (slash-команда)."""
     command = getattr(interaction,"command", None)
@@ -176,6 +180,7 @@ def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
         )
     if not name:
         return None
+    no_avatar = name.split()[-1] in _NO_AVATAR_COMMANDS
     client = getattr(interaction,"client", None)
     bot_user = getattr(client,"user", None)
     try:
@@ -185,7 +190,10 @@ def meta_from_interaction(interaction: discord.Interaction) -> dict | None:
     return {
         "name": f"/{name}",
         "emoji": _command_emoji(name),
-        "user_avatar": _avatar_url(getattr(interaction,"user", None)),
+        "user_avatar": (
+            None if no_avatar
+            else _avatar_url(getattr(interaction,"user", None))
+        ),
         "bot_name": getattr(bot_user,"display_name", None)
         or getattr(bot_user,"name", None)
         or "bot",

@@ -153,10 +153,11 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
           20, C_VIOLET, anchor="ms")
 
     # ============ БИТВА ОТРЯДОВ ============
+    # Колонка «ПОБЕД» убрана: W/L выводится единым блоком внизу карточки
+    _inpaint(img, (368, 600, 580, 635), radius=4)
     # Значения — left-aligned по x лейблов, пустые слоты
     squad_cols = [
         (109, _fmt(data.get("matches", 0))),
-        (389.5, _fmt(data.get("wins", 0))),
         (670, f"{data.get('winrate', 0.0):.1f}%"),
         (950.5, f"{data.get('kda', 0.0):.2f}"),
     ]
@@ -239,12 +240,15 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         _text(draw, ((px0 + px1) / 2, (py0 + py1) / 2), "НЕТ ДАННЫХ",
               20, C_MUTED, anchor="ms")
 
-    # W/L блок
-    _text(draw, (114, 942), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
-    _text(draw, (114, 961),
+    # W/L блок — единственное отображение побед/поражений, поднято выше;
+    # шаблонный текст «ПОБЕДЫ ПОРАЖЕНИЯ» и [HISTORY_START] затираем inpaint
+    _inpaint(img, (105, 988, 620, 1032), radius=4)
+    draw = ImageDraw.Draw(img)
+    _text(draw, (114, 916), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
+    _text(draw, (114, 943),
           f"{data.get('hist_wins', 0)} / {data.get('hist_losses', 0)}",
           33, C_TEXT)
-    _text(draw, (114, 1012),
+    _text(draw, (114, 982),
           f"{data.get('hist_count', 0)} записей в истории", 13, C_MUTED)
 
     # Подписи оси — плейсхолдеры [HISTORY_START] / [CURRENT_ELO]
