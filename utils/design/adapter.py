@@ -85,13 +85,16 @@ class _ComposedLayoutView(discord.ui.LayoutView):
         await super().on_timeout()
 
     async def on_error(
-        self, interaction: discord.Interaction, error: Exception
+        self,
+        interaction: discord.Interaction,
+        error: Exception,
+        item: discord.ui.Item | None = None,
     ) -> None:
         delegate = self._delegate
         if delegate is not None and hasattr(delegate,"on_error"):
-            await delegate.on_error(interaction, error)
+            await delegate.on_error(interaction, error, item)
         else:
-            await super().on_error(interaction, error)
+            await super().on_error(interaction, error, item)
 
     def is_finished(self) -> bool:
         if super().is_finished():

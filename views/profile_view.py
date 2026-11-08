@@ -78,11 +78,12 @@ class _SettingsFieldButton(discord.ui.Button):
     """Базовая кнопка поля настроек."""
 
     modal_cls = None
+    label_text = ""
 
-    def __init__(self, guild_id: int, user_id: int, label: str):
+    def __init__(self, guild_id: int, user_id: int):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label=label,
+            label=self.label_text,
             custom_id=f"profile_field:{type(self).__name__}:{guild_id}:{user_id}"
         )
         self.guild_id = guild_id
@@ -100,14 +101,17 @@ class _SettingsFieldButton(discord.ui.Button):
 
 class BirthdayButton(_SettingsFieldButton):
     modal_cls = None  # задаётся после объявления BirthdayModal
+    label_text = "День рождения"
 
 
 class NicknameButton(_SettingsFieldButton):
     modal_cls = None
+    label_text = "Никнейм"
 
 
 class DescriptionButton(_SettingsFieldButton):
     modal_cls = None
+    label_text = "Описание"
 
 
 class BackToProfileButton(discord.ui.Button):
