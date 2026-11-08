@@ -202,10 +202,6 @@ class TournamentCog(commands.Cog):
 
         logger.info("Турнир создан на сервере %s с размером %s и режимом %s", interaction.guild_id, size, formation)
 
-        # Log tournament creation
-        from utils.logging import log_tournament_created
-        await log_tournament_created(self.bot, interaction.guild, interaction.user, size, formation)
-
     @tournament_group.command(name="delete", description="Удалить активный турнир")
     @is_channel_organizer_decorator()
     async def tournament_delete(self, interaction: discord.Interaction) -> None:
@@ -260,10 +256,6 @@ class TournamentCog(commands.Cog):
                         await update_message.edit( view=compose(new_embed, new_view))
                 except Exception:
                     pass
-
-        # Log tournament deletion
-        from utils.logging import log_tournament_deleted
-        await log_tournament_deleted(self.bot, interaction.guild, interaction.user)
 
         await interaction.response.send_message(
             "🗑️ **Турнир успешно удален.**",

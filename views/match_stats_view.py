@@ -190,13 +190,6 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
             tournament.temp_match_stats[match_id].update(stats)
             store.set(tournament)
 
-            # Log stats filling
-            from utils.logging import log_stats_filled
-            stats_summary = ""
-            for player, kd in stats.items():
-                stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
-            await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
-
             # Save match to history for captain's team players
             # Note: This is preliminary - full history is saved when admin confirms
             # But we can prepare partial data here
@@ -688,13 +681,6 @@ class AdminStatsModal(Modal, title="Статистика команды (Адм�
         tournament.temp_match_stats[match_id].update(stats)
         store.set(tournament)
 
-        # Log stats filling
-        from utils.logging import log_stats_filled
-        stats_summary = ""
-        for player, kd in stats.items():
-            stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
-        await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
-
         # Update tournament message to refresh view
         from bot import TournamentBot
         bot = interaction.client  # type: ignore[assignment]
@@ -984,13 +970,6 @@ class AdminConfirmView(View):
 
             logging.info(f"Processing match result: match_id={match_id}, temp_stats={temp_stats}")
 
-            # Log stats filling
-            from utils.logging import log_stats_filled
-            stats_summary = ""
-            for player, kd in temp_stats.items():
-                stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
-            await log_stats_filled(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, stats_summary)
-
             # Process the match with statistics (this applies ELO and stats immediately)
             await process_match_result(self.guild_id, tournament, {
                 "match_type": self.match_type,
@@ -1171,10 +1150,6 @@ class AdminConfirmView(View):
             winning_team = tournament.teams[winning_team_index] if winning_team_index < len(tournament.teams) else {}
             winning_team_name = tournament.team_names.get(winning_team_index, winning_team.get("captain", f"Team {winning_team_index}"))
 
-            # Log winner confirmation
-            from utils.logging import log_winner_confirmed
-            await log_winner_confirmed(interaction.client, interaction.guild, interaction.user, self.match_type, self.match_index, winning_team_name)
-            
             # Calculate winning_team_index (0 or 1) based on match teams
             if self.match_type == "qualifier":
                 match = tournament.qualifier_matches[self.match_index]
@@ -1191,13 +1166,6 @@ class AdminConfirmView(View):
                 payouts, payouts_by_name = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index_resolved)
                 import logging
                 logging.info(f"Received payouts from bet resolution: {payouts}")
-                
-                # Calculate total payout
-                total_payout = sum(payout for payout in payouts.values() if payout > 0)
-
-                # Log bet resolution with individual payouts
-                from utils.logging import log_bets_resolved
-                await log_bets_resolved(interaction.client, interaction.guild, self.match_type, self.match_index, winning_team_name, total_payout, payouts_by_name)
                 
                 for user_id, payout in payouts.items():
                     logging.info(f"Adding balance: user_id={user_id}, payout={payout}")

@@ -1046,11 +1046,6 @@ class AutoDistributeButton(discord.ui.Button):
         await tournament.distribute_by_elo(self.guild_id)
         store.set(tournament)
 
-        # Log player distribution
-        from utils.logging import log_players_distributed
-        team_names = [tournament.team_names.get(i, f"Team {i}") for i in range(len(tournament.teams))]
-        await log_players_distributed(interaction.client, interaction.guild, interaction.user, "elo", team_names)
-
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)
 
@@ -1125,11 +1120,6 @@ class AutoDistributeAvgButton(discord.ui.Button):
         # Distribute by Skill Rating
         await tournament.distribute_by_skill_rating(self.guild_id)
         store.set(tournament)
-
-        # Log player distribution
-        from utils.logging import log_players_distributed
-        team_names = [tournament.team_names.get(i, f"Team {i}") for i in range(len(tournament.teams))]
-        await log_players_distributed(interaction.client, interaction.guild, interaction.user, "skill_rating", team_names)
 
         bot: TournamentBot = interaction.client  # type: ignore[assignment]
         await bot.update_tournament_message(interaction.guild, tournament)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import random
 import discord
 from dataclasses import dataclass, field
@@ -1297,46 +1296,6 @@ class Tournament:
                                 pass
         except Exception:
             pass
-
-        # Log tournament completion
-        try:
-            from utils.logging import log_tournament_completed
-            from datetime import datetime
-
-            bot = get_bot_instance()
-            if not bot:
-                print("Bot instance not available for logging")
-                return
-
-            winner_team = self.teams[team_index] if team_index < len(self.teams) else {}
-            winner_name = self.team_names.get(team_index, winner_team.get("captain", f"Team {team_index}"))
-            participant_count = len(self.player_user_ids)
-
-            # Calculate duration
-            if self.start_time:
-                start_dt = datetime.fromisoformat(self.start_time)
-                end_dt = datetime.now()
-                duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
-            else:
-                duration_minutes = 0
-
-            # Get actual guild object for logging
-            guild = bot.get_guild(self.guild_id)
-            if not guild:
-                print(f"Failed to get guild {self.guild_id} for logging")
-                return
-
-            # Log asynchronously
-            asyncio.create_task(log_tournament_completed(
-                bot,
-                guild,
-                f"Турнир {self.size.value}",
-                winner_name,
-                participant_count,
-                duration_minutes
-            ))
-        except Exception as e:
-            print(f"Failed to log tournament completion: {e}")
 
     def calculate_earnings(self, player_name: str, position: int) -> int:
         """Рассчитать награды за турнир по позиции."""

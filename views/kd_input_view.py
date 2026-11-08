@@ -125,18 +125,6 @@ class ProcessMatchButton(discord.ui.Button):
         # Update match_info with stats data from tournament
         self.match_info['temp_kd_data'] = temp_stats
 
-        # Log stats filling
-        from utils.logging import log_stats_filled
-        match_type = self.match_info.get('match_type', 'unknown')
-        match_index = self.match_info.get('match_index', 0)
-
-        # Build stats summary
-        stats_summary = ""
-        for player, kd in temp_stats.items():
-            stats_summary += f" {player}: {kd.get('kills', 0)}/{kd.get('deaths', 0)}\n"
-
-        await log_stats_filled(interaction.client, interaction.guild, interaction.user, match_type, match_index, stats_summary)
-
         # Process the match result with new rating system
         await process_match_result(self.guild_id, tournament, self.match_info, interaction)
 
