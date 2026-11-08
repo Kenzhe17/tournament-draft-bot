@@ -401,6 +401,9 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     return out.getvalue()
 
 
+RENDERER_VERSION = "pixelmask-v3"
+
+
 async def render_profile_png_async(data: dict,
                                    avatar_png: bytes | None = None,
                                    badge_png: bytes | None = None) -> bytes:
@@ -412,8 +415,15 @@ async def render_profile_png_async(data: dict,
             result = await loop.run_in_executor(
                 None, render_profile_png, data, avatar_png, badge_png
             )
-            logger.info("Profile PNG rendered in %.0fms",
-                        (loop.time() - t0) * 1000)
+            import hashlib
+            logger.info(
+                "Profile PNG rendered in %.0fms | renderer=%s v%s "
+                "module=%s sha256=%s",
+                (loop.time() - t0) * 1000,
+                Path(__file__).name, RENDERER_VERSION,
+                str(Path(__file__).resolve()),
+                hashlib.sha256(result).hexdigest()[:16],
+            )
             return result
         except Exception:
             logger.exception("Profile PNG render failed")
