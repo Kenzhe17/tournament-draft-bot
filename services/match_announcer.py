@@ -132,8 +132,15 @@ def _match_started_view(
     match_type: str,
     match_index: int,
     with_png: bool,
+    state: str = "active",
+    winner_name: str = "",
+    score: tuple[int, int] | None = None,
 ) -> "discord.ui.LayoutView":
-    """V2-карточка «МАТЧ #N НАЧАЛСЯ» для MM-флоу (без эмодзи)."""
+    """V2-карточка матча для MM-флоу (без эмодзи).
+
+    state: active — ждём скриншот; processing — скриншот получен,
+    идёт сопоставление; done — результат зафиксирован.
+    """
     import time
 
     from utils.design.formatters import muted
@@ -145,26 +152,18 @@ def _match_started_view(
     roster_b = team_roster(tournament, t2)
     total = len(roster_a) + len(roster_b)
 
-    view = DesignView(title=f"МАТЧ #{number}", timeout=None)
-    view.text("**МАТЧ ЗАПУЩЕН**")
-    view.text(muted("r!z3 / RANKED · FREE FIRE · CS 4×4 · SOLO QUEUE"))
-    mentions = _match_mentions(tournament, t1, t2)
-    if mentions:
-        view.sep()
-        view.text(mentions)
-    view.sep()
-    view.text(f"**СОСТОЯНИЕ:** Активен\n**ГОТОВНОСТЬ:** {total}/{total}")
-    view.text(f"**{label}** · **{name_a}** vs **{name_b}**")
+    view = DesignView(title=f"МАТЧ · {name_a} vs {name_b}", timeout=None)
+    view.text(f"**{label}**")
     view.text(f"**КОМАНДА A — {name_a}**\n{_mentions_fn(tournament, t1)}")
     view.text(f"**КОМАНДА B — {name_b}**\n{_mentions_fn(tournament, t2)}")
+    view.sep()
     if with_png:
-        view.sep()
         view.component(
             discord.ui.MediaGallery(
                 discord.MediaGalleryItem(media="attachment://match_found.png")
             )
         )
-    view.sep()
+        view.sep()
     view.text(
         "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
         "**Режим:** CS 4×4\n"
@@ -173,26 +172,115 @@ def _match_started_view(
         f"**Начало:** <t:{int(time.time())}:t>"
     )
     view.sep()
-    view.text(
-        "**РЕЗУЛЬТАТ МАТЧА**\n"
-        "Статус результата: **Ожидается**\n"
-        "После окончания игры капитан или организатор отправляет "
-        "скриншот итоговой статистики в этот канал. "
-        "После проверки OCR результат будет опубликован в общем "
-        "канале результатов."
-    )
-    view.row(
-        MatchScreenshotButton(
-            tournament.guild_id,
-            tournament.channel_id,
-            tournament,
-            match_type,
-            match_index,
-            "Отправить результат",
+
+    if state == "done":
+        lines = ["**РЕЗУЛЬТАТ МАТЧА**", "Статус результата: **Завершён**"]
+        if winner_name:
+            lines.append(f"Победитель: **{winner_name}**")
+        if score:
+            lines.append(f"Счёт: {score[0]} : {score[1]}")
+        lines.append(
+            "Итог опубликован в общем канале результатов."
         )
-    )
-    view.text(muted("Матч идёт — скриншот статистики отправляется кнопкой выше."))
+        view.text("\n".join(lines))
+    elif state == "processing":
+        view.text(
+            "**РЕЗУЛЬТАТ МАТЧА**\n"
+            "Статус результата: **Скриншот получен — идёт "
+            "сопоставление игроков**\n"
+            "Капитаны сопоставляют ники со скриншота Discord-игрокам."
+        )
+    else:
+        view.text(
+            "**РЕЗУЛЬТАТ МАТЧА**\n"
+            "Статус результата: **Ожидается**\n"
+            "После окончания игры капитан ПОБЕДИВШЕЙ команды должен "
+            "отправить скриншот итоговой статистики в этот канал. "
+            "После проверки OCR результат будет опубликован в общем "
+            "канале результатов."
+        )
+        view.row(
+            MatchScreenshotButton(
+                tournament.guild_id,
+                tournament.channel_id,
+                tournament,
+                match_type,
+                match_index,
+                "Отправить результат",
+            )
+        )
+        view.text(muted("Матч идёт — скриншот статистики отправляется кнопкой выше."))
     return view
+
+
+async def update_match_card(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    state: str = "active",
+    winner_name: str = "",
+    score: tuple[int, int] | None = None,
+) -> None:
+    """Обновить карточку матча в канале cs-4x4-match-N (MM-флоу).
+
+    Ищет канал по tournament.match_channels, пересобирает V2-карточку
+    с новым состоянием результата. Не-MM турниры молча пропускаются.
+    """
+    channel_id = 0
+    meta: dict | None = None
+    for ch_id, m in (tournament.match_channels or {}).items():
+        if (
+            m.get("match_type") == match_type
+            and m.get("match_index") == match_index
+        ):
+            channel_id = int(ch_id)
+            meta = m
+            break
+    if not meta or not meta.get("card_message_id"):
+        return
+
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(channel_id)
+        except Exception:
+            return
+    if not isinstance(channel, discord.TextChannel):
+        return
+
+    from cogs.ocr_upload import _captain_name, _match_label
+    from views.ocr_match_view import _match_tuple
+    from storage.match_number_store import match_number_store
+
+    try:
+        t1, t2 = _match_tuple(tournament, match_type, match_index)
+    except Exception:
+        return
+    name_a = _captain_name(tournament, t1)
+    name_b = _captain_name(tournament, t2)
+    label = _match_label(match_type, match_index)
+    try:
+        number = await match_number_store.get_or_assign(
+            _match_key(tournament, match_type, match_index)
+        )
+    except Exception:
+        number = 0
+
+    view = _match_started_view(
+        tournament, number, label, name_a, name_b, t1, t2,
+        match_type, match_index,
+        with_png=bool(meta.get("has_png")),
+        state=state,
+        winner_name=winner_name,
+        score=score,
+    )
+    try:
+        msg = await channel.fetch_message(int(meta["card_message_id"]))
+        # Вложения не трогаем — match_found.png остаётся на месте
+        await msg.edit(view=view)
+    except Exception as exc:
+        logger.warning("Match card update failed: %s", exc)
 
 
 async def announce_phase_matches(
@@ -301,10 +389,14 @@ async def announce_phase_matches(
                         bot.add_view(persist)
                     except Exception as exc:
                         logger.warning("Match screenshot view register failed: %s", exc)
-                # Регистрируем канал: скриншот в нём = загрузка результата
+                # Регистрируем канал: скриншот в нём = загрузка результата.
+                # card_message_id/has_png — для динамического обновления
+                # карточки после OCR (processing/done).
                 tournament.match_channels[str(channel.id)] = {
                     "match_type": match_type,
                     "match_index": match_index,
+                    "card_message_id": match_msg.id,
+                    "has_png": card_png is not None,
                 }
                 store.set(tournament)
                 logger.info(

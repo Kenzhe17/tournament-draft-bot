@@ -1,4 +1,4 @@
-from config import replace_emojis, get_emoji
+from config import replace_emojis
 """Modal form for entering room ID and password."""
 
 import time
@@ -153,13 +153,13 @@ def _team_roster(tournament: Any, team_data: dict) -> list[str]:
     ]
 
 
-def _team_line(num_emoji: str, tournament: Any, team_data: dict) -> str:
-    """Строка вида 'num_X <@p1> <@p2> <@p3> <@p4>'."""
+def _team_line(tournament: Any, team_data: dict) -> str:
+    """Строка вида '<@p1> <@p2> <@p3> <@p4>'."""
     parts = []
     for name in _team_roster(tournament, team_data):
         uid = tournament.player_user_ids.get(name)
-        parts.append(f"<@{uid}>" if uid else name)
-    return f"{num_emoji} {' '.join(parts)}" if parts else f"{num_emoji} *"
+        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
+    return " ".join(parts) if parts else "*"
 
 
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
@@ -171,8 +171,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     name1 = team1_data.get("captain", f"Team {team1_index}")
     name2 = team2_data.get("captain", f"Team {team2_index}")
 
-    line1 = _team_line(get_emoji("num_1"), tournament, team1_data)
-    line2 = _team_line(get_emoji("num_2"), tournament, team2_data)
+    line1 = f"**{name1}**\n{_team_line(tournament, team1_data)}"
+    line2 = f"**{name2}**\n{_team_line(tournament, team2_data)}"
 
     # Get specific channel
     channel = bot.get_channel(1561683314480255057)
@@ -181,7 +181,8 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
             f"**КОМНАТА ОТКРЫТА**\n"
             f"Матч: {name1} vs {name2}\n\n"
             f"{line1}\n{line2}\n\n"
-            f"**Данные:**\n{room_id}\n{room_password}"
+            "**Данные:**\n"
+            f"```\nID: {room_id}\nПароль: {room_password}\n```"
         )
         await channel.send( view=text_card(card))
 

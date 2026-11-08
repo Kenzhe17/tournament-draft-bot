@@ -93,11 +93,44 @@ def _results_embed(
     t1: int,
     t2: int,
 ) -> discord.Embed:
-    """Embed с распознанной таблицей + инструкцией по сопоставлению."""
-    from cogs.statistic import _build_embed
+    """Компактный embed распознанных результатов: счёт, ники с экрана.
 
-    embed = _build_embed(parsed)
+    Без таблицы статистики — капитаны сопоставляют ники кнопками.
+    """
+    embed = discord.Embed(
+        title=f"📊 {_match_label(match_type, match_index)} — результаты распознаны",
+        color=discord.Color.gold(),
+    )
     embed.set_image(url=f"attachment://{SHOT_FILENAME}")
+
+    lines: list[str] = []
+    score = parsed.get("score")
+    if isinstance(score, (list, tuple)) and len(score) == 2:
+        lines.append(f"**Счёт:** {score[0]} : {score[1]}")
+    side = parsed.get("winner_side") or parsed.get("winner")
+    side_label = {
+        "left": "Левая панель", "right": "Правая панель",
+        "a": "Панель A", "b": "Панель B",
+    }.get(side)
+    if side_label:
+        lines.append(f"**Панель-победитель:** {side_label}")
+
+    panel_specs = (
+        ("Левая панель", "team_a_name", "team_a"),
+        ("Правая панель", "team_b_name", "team_b"),
+    )
+    for fallback, name_key, players_key in panel_specs:
+        panel_name = parsed.get(name_key) or fallback
+        names = [
+            p.get("name")
+            for p in parsed.get(players_key, []) or []
+            if p.get("name")
+        ]
+        if not names:
+            continue
+        lines.append(f"**{panel_name}**\n" + "\n".join(names))
+
+    embed.description = "\n\n".join(lines) if lines else "Результаты распознаны."
     embed.add_field(
         name="🧩 Следующий шаг",
         value=(
@@ -105,8 +138,8 @@ def _results_embed(
             f"({_team_display_name(tournament, t1)} vs "
             f"{_team_display_name(tournament, t2)})\n"
             "Капитаны нажимают **свои** кнопки ниже и сопоставляют "
-            "игроков своей команды. После сопоставления обеих команд "
-            "результат зафиксируется автоматически."
+            "игровые ники с участниками Discord. После сопоставления "
+            "обеих команд результат зафиксируется автоматически."
         ),
         inline=False,
     )
@@ -148,27 +181,14 @@ def _squad_embed(
         else discord.Color.dark_grey(),
     )
     embed.set_image(url=f"attachment://{SHOT_FILENAME}")
-    for i, p in enumerate(squad.get("players", []), 1):
-        hs = p.get("headshots")
-        hs_str = f"{_fmt_num(hs)}%" if hs is not None else "—"
-        rev_x = p.get("revive_x")
-        rev_str = _fmt_num(p.get("revives"))
-        if rev_x is not None:
-            rev_str = f"{rev_str} / {_fmt_num(rev_x)}"
-        lines = [
-            f"**K/D/A:** {p.get('kills', 0)}/{p.get('deaths', 0)}/"
-            f"{p.get('assists', 0)}   **DMG:** {_fmt_num(p.get('dmg'))}",
-            f"**Факт. урон:** {_fmt_num(p.get('fact_dmg'))}"
-            f"   **Нокдауны:** {_fmt_num(p.get('knockdowns'))}",
-            f"**Исцеление:** {_fmt_num(p.get('healing'))}"
-            f"   **Поднятия:** {rev_str}"
-            f"   **Хэдшоты:** {hs_str}",
-        ]
-        embed.add_field(
-            name=f"{i}. {p.get('name', '?')}",
-            value="\n".join(lines),
-            inline=False,
-        )
+    names = [
+        p.get("name", "?") for p in squad.get("players", []) if p.get("name")
+    ]
+    embed.description = (
+        (embed.description or "")
+        + "\n\n**Ники на экране:**\n"
+        + ("\n".join(names) if names else "—")
+    )
     embed.add_field(
         name="🧩 Следующий шаг",
         value=(
@@ -825,6 +845,15 @@ class OCRUploadCog(commands.Cog):
                     message.guild, tournament, match_type, match_index,
                     t1, t2, data, stats_channel,
                 )
+                try:
+                    from services.match_announcer import update_match_card
+
+                    await update_match_card(
+                        message.guild, tournament, match_type, match_index,
+                        state="processing",
+                    )
+                except Exception as exc:
+                    logger.warning("Match card processing update failed: %s", exc)
                 return
 
             # Новая сессия
@@ -858,6 +887,17 @@ class OCRUploadCog(commands.Cog):
                 session["message_id"] = bot_msg.id
                 store.set(tournament)
 
+            # Карточка матча в cs-4x4-match-N → «идёт сопоставление»
+            try:
+                from services.match_announcer import update_match_card
+
+                await update_match_card(
+                    message.guild, tournament, match_type, match_index,
+                    state="processing",
+                )
+            except Exception as exc:
+                logger.warning("Match card processing update failed: %s", exc)
+
             await _upsert_result_message(
                 message.guild, tournament, match_type, match_index,
                 t1, t2, data, stats_channel,
@@ -889,6 +929,17 @@ class OCRUploadCog(commands.Cog):
         t2: int = 0,
     ) -> None:
         """Отправить или обновить сообщение со статой одного отряда."""
+        # Карточка матча в cs-4x4-match-N → «идёт сопоставление»
+        if match_type:
+            try:
+                from services.match_announcer import update_match_card
+
+                await update_match_card(
+                    message.guild, tournament, match_type, match_index,
+                    state="processing",
+                )
+            except Exception as exc:
+                logger.warning("Match card processing update failed: %s", exc)
         if entry.get("message_id"):
             try:
                 msg = await stats_channel.fetch_message(

@@ -335,9 +335,8 @@ class MMCog(commands.Cog):
             logger.warning("add_view for queue panel failed: %s", e)
 
         logger.info("Создан поиск %s в канале %s", format.value, interaction.channel_id)
-        
-        # Запустить таймер
-        self._start_search_timer(interaction.guild_id, interaction.channel_id)
+        # Таймер НЕ запускаем при создании — только когда в поиске
+        # появится хотя бы один игрок (handle_queue_join).
 
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
         """Запустить таймер для поиска."""
@@ -386,8 +385,6 @@ class MMCog(commands.Cog):
 
                 # Если не заполнен, кикнуть игроков и сбросить канал
                 if not search.is_full:
-                    player_count = len(search.players)
-                    
                     # Разблокировать канал
                     if search.tournament_channel_id in LOCKED_CHANNELS:
                         del LOCKED_CHANNELS[search.tournament_channel_id]
@@ -399,14 +396,9 @@ class MMCog(commands.Cog):
                     search.tournament_channel_id = 0
                     mm_search_store.set(search)
 
-                    # Обновить панель и уведомить в канале
+                    # Обновить панель (без сообщения в канал)
                     try:
                         await self._update_queue_panel(search)
-                        channel = self.bot.get_channel(channel_id)
-                        if channel:
-                            await channel.send(
-                                f"Не набралось достаточно игроков за 10 минут. {player_count} игроков были кикнуты из поиска. Ожидание новых игроков..."
-                            )
                     except Exception as e:
                         logger.error(f"Error updating search timer message: {e}")
             except asyncio.CancelledError:

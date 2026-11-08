@@ -68,7 +68,7 @@ def br_room_card(tournament: "BRTournament", map_name: str, role_mention: str) -
         f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n"
         + "\n".join(lines)
         + "\n\n"
-        f"**Данные:**\n{tournament.room_data.get('id', '')}\n{tournament.room_data.get('password', '')}"
+        f"**Данные:**\n```\nID: {tournament.room_data.get('id', '')}\nПароль: {tournament.room_data.get('password', '')}\n```"
     )
 
 

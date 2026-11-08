@@ -171,9 +171,7 @@ async def send_ultimatum_room_notifications(
     pings = f"<@{player1_id}> <@{player2_id}>"
 
     # Send messages
-    await channel.send( view=text_card(f"**КОМНАТА ОТКРЫТА**\nМатч: {p1_name} vs {p2_name}\n\n{pings}\n\n**Данные:**"))
-    await channel.send( view=text_card(room_id))
-    await channel.send( view=text_card(room_password))
+    await channel.send( view=text_card(f"**КОМНАТА ОТКРЫТА**\nМатч: {p1_name} vs {p2_name}\n\n{pings}\n\n**Данные:**\n```\nID: {room_id}\nПароль: {room_password}\n```"))
     await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d4a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"))
 
     # Send to general channel

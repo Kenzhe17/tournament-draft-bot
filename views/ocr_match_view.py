@@ -2140,6 +2140,26 @@ async def finalize_ocr_match(
     except Exception:
         logger.exception("Match result card publish failed")
 
+    # 5.2. Карточка матча в cs-4x4-match-N → финальный статус
+    try:
+        from services.match_announcer import update_match_card
+
+        raw_score = session.get("score")
+        score = None
+        if isinstance(raw_score, (list, tuple)) and len(raw_score) == 2:
+            try:
+                score = (int(raw_score[0]), int(raw_score[1]))
+            except (TypeError, ValueError):
+                score = None
+        await update_match_card(
+            interaction.guild, tournament, match_type, match_index,
+            state="done",
+            winner_name=_team_display_name(tournament, winning_team_index),
+            score=score,
+        )
+    except Exception as exc:
+        logger.warning("Match card done update failed: %s", exc)
+
     final_text = (
         f"✅ Результат зафиксирован. Победитель: "
         f"**{_team_display_name(tournament, winning_team_index)}**"
