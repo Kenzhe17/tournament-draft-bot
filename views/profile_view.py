@@ -165,13 +165,17 @@ class BackToProfileButton(discord.ui.Button):
             )
             return
 
-        from utils.profile_card import build_profile_embed
+        import io
 
-        embed, rank_file = await build_profile_embed(self.guild_id, interaction.user)
+        from services.profile_card import build_profile_png
+
+        png = await build_profile_png(
+            interaction.guild, interaction.user
+        )
         view = ProfileView(self.guild_id, self.user_id, True)
         await interaction.response.edit_message(
-            view=compose(embed, view),
-            attachments=[rank_file] if rank_file else [],
+            view=view,
+            attachments=[discord.File(io.BytesIO(png), filename="profile.png")],
         )
 
 
@@ -249,12 +253,15 @@ async def _save_and_refresh(interaction: discord.Interaction, guild_id: int, use
     else:
         await player_stats_store.update(guild_id, user_id, stats)
 
-    from utils.profile_card import build_profile_embed
+    import io
 
-    embed, rank_file = await build_profile_embed(guild_id, interaction.user)
+    from services.profile_card import build_profile_png
+
+    png = await build_profile_png(interaction.guild, interaction.user)
     view = ProfileView(guild_id, user_id, True)
-    cv2_view = compose(embed, view)
-    attachments = [rank_file] if rank_file else []
+    file = discord.File(io.BytesIO(png), filename="profile.png")
+    cv2_view = view
+    attachments = [file]
 
     try:
         if interaction.message is not None:

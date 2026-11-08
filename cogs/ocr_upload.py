@@ -45,7 +45,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SHOT_FILENAME = "match_result.png"
 
 # Канал итоговых результатов матчей (команды + игроки + скриншот)
-RESULT_CHANNEL_ID = 1568290145138900992
+RESULT_CHANNEL_ID = 1568992672662819007
 
 
 def _match_label(match_type: str, match_index: int) -> str:
@@ -525,12 +525,29 @@ class OCRUploadCog(commands.Cog):
         if message.author.bot or not message.guild:
             return
 
-        # Сначала точное совпадение канала, затем любой канал сервера —
+        # Сначала проверяем, не является ли канал выделенным каналом матча
+        # (MM-флоу): скриншот в нём автоматически привязывается к матчу.
+        meta = None
+        for t in store.get_by_guild(message.guild.id):
+            mc = (getattr(t, "match_channels", None) or {}).get(
+                str(message.channel.id)
+            )
+            if mc:
+                meta = {
+                    "match_type": mc["match_type"],
+                    "match_index": mc["match_index"],
+                    "tchannel": t.channel_id,
+                    "match_channel": True,
+                }
+                break
+
+        # Затем точное совпадение канала, затем любой канал сервера —
         # скриншот можно прислать и в канал турнира, и в канал результатов
-        meta = pop_pending_upload(
-            message.guild.id, message.channel.id, message.author.id
-        )
-        if not meta:
+        if meta is None:
+            meta = pop_pending_upload(
+                message.guild.id, message.channel.id, message.author.id
+            )
+        if meta is None:
             meta = pop_pending_upload_any(message.guild.id, message.author.id)
         if not meta:
             return
@@ -586,6 +603,19 @@ class OCRUploadCog(commands.Cog):
         except Exception:
             await message.reply(replace_emojis("❌ Матч не найден."))
             return
+
+        # Скриншот из выделенного канала матча — только капитаны/орги
+        if meta.get("match_channel"):
+            from views.ocr_match_view import _can_use_ocr
+
+            if not _can_use_ocr(message.author, tournament, [t1, t2]):
+                await message.reply(
+                    replace_emojis(
+                        "❌ Скриншот может отправить капитан команды "
+                        "или организатор."
+                    )
+                )
+                return
 
         key = _session_key(match_type, match_index)
         existing = tournament.ocr_sessions.get(key)
@@ -783,6 +813,9 @@ class OCRUploadCog(commands.Cog):
                 "maps": {},
             }
             store.set(tournament)
+            await _maybe_delete_match_channel(
+                message.guild, tournament, match_type, match_index
+            )
 
             bot_msg = await _send_results_message(
                 stats_channel, data, embed, view, mentions
@@ -1020,6 +1053,9 @@ class OCRUploadCog(commands.Cog):
             if len(session.get("squads", {})) >= 2:
                 session["status"] = "mapping"
             store.set(tournament)
+            await _maybe_delete_match_channel(
+                message.guild, tournament, match_type, match_index
+            )
 
             view = SquadAssignedView(
                 guild_id, tournament.channel_id, tournament,
@@ -1060,6 +1096,9 @@ class OCRUploadCog(commands.Cog):
         if len(session.get("squads", {})) >= 2:
             session["status"] = "mapping"
         store.set(tournament)
+        await _maybe_delete_match_channel(
+            message.guild, tournament, match_type, match_index
+        )
 
         view = SquadClaimView(
             guild_id, tournament.channel_id, tournament,
@@ -1071,6 +1110,50 @@ class OCRUploadCog(commands.Cog):
             match_type=match_type, match_index=match_index,
             t1=t1, t2=t2,
         )
+
+
+async def _maybe_delete_match_channel(
+    guild: discord.Guild, tournament, match_type: str, match_index: int
+) -> None:
+    """Удалить выделенный канал матча, когда скриншоты больше не нужны.
+
+    Классический режим — после первого скриншота; squad-режим — после
+    загрузки обоих отрядов. Результат при этом уже/будет опубликован
+    в канал результатов.
+    """
+    channels = getattr(tournament, "match_channels", None) or {}
+    if not channels:
+        return
+    session = (tournament.ocr_sessions or {}).get(
+        _session_key(match_type, match_index)
+    ) or {}
+    if session.get("mode") == "squad":
+        loaded = len(session.get("squads", {})) + len(
+            session.get("squad_pool", [])
+        )
+        if loaded < 2:
+            return
+    elif not session:
+        return
+
+    for cid, mc in list(channels.items()):
+        if (
+            mc.get("match_type") != match_type
+            or mc.get("match_index") != match_index
+        ):
+            continue
+        try:
+            channel = guild.get_channel(int(cid))
+            if channel is None:
+                channel = await guild.fetch_channel(int(cid))
+            if channel is not None:
+                await channel.delete(reason="Результат матча загружен")
+                logger.info("Match channel %s deleted", cid)
+        except Exception as exc:
+            logger.warning("Failed to delete match channel %s: %s", cid, exc)
+        channels.pop(cid, None)
+    tournament.match_channels = channels
+    store.set(tournament)
 
 
 class ModalUploadShim:

@@ -231,6 +231,10 @@ class Tournament:
     # key: "{match_type}_{match_index}"
     ocr_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    # Выделенные каналы матчей (MM-флоу): channel_id -> {"match_type","match_index"}
+    # Скриншот, присланный в такой канал, автоматически привязывается к матчу.
+    match_channels: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
     betting_phase: str | None = None  # "qualifiers", "semifinal", "final"
@@ -1482,6 +1486,7 @@ class Tournament:
             "eliminated_teams": list(self.eliminated_teams),
             "mm_search_channel_id": self.mm_search_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
+            "match_channels": self.match_channels,
         }
 
     @classmethod
@@ -1530,6 +1535,7 @@ class Tournament:
             eliminated_teams=set(data.get("eliminated_teams", [])),
             mm_search_channel_id=data.get("mm_search_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
+            match_channels=data.get("match_channels", {}),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())

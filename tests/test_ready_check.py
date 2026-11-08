@@ -107,12 +107,13 @@ class _FakeBot:
         self.user = SimpleNamespace(id=999)
         self.views: list = []
         self._guild = _FakeGuild()
+        self._channels: dict[int, _FakeChannel] = {}
 
     def get_channel(self, channel_id):
-        return _FakeChannel(self._guild)
+        return self._channels.setdefault(channel_id, _FakeChannel(self._guild))
 
     async def fetch_channel(self, channel_id):
-        return _FakeChannel(self._guild)
+        return self.get_channel(channel_id)
 
     def add_view(self, view, message_id=None):
         self.views.append((view, message_id))
@@ -407,9 +408,13 @@ async def test_start_ready_check_creates_card(tmp_path, monkeypatch):
     assert len(rc.team_a) == 4 and len(rc.team_b) == 4
     assert rc.deadline - time.time() <= 90.5
 
-    # сообщение с картинкой отправлено
-    assert len(channel.sent) == 1
-    kwargs = channel.sent[0]["kwargs"]
+    # Карточка «Найден матч» уходит в фиксированный канал, а не в канал вызова
+    from cogs.mm import MATCH_FOUND_CHANNEL_ID
+
+    card_channel = cog.bot.get_channel(MATCH_FOUND_CHANNEL_ID)
+    assert len(card_channel.sent) == 1
+    assert len(channel.sent) == 0
+    kwargs = card_channel.sent[0]["kwargs"]
     assert "file" in kwargs
     assert kwargs["file"].fp.getvalue()[:8] == b"\x89PNG\r\n\x1a\n"
 

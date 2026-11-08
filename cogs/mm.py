@@ -14,6 +14,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis
+
+# Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
+MATCH_FOUND_CHANNEL_ID = 1568992622180311220
 from models.mm_search import MMFormat, MMSearch
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
@@ -508,12 +511,21 @@ class MMCog(commands.Cog):
             png = await render_match_found(render_data)
 
             file = discord.File(io.BytesIO(png), filename=PNG_FILENAME)
-            message = await interaction.channel.send(
+            # Карточка «Найден матч» — всегда в фиксированный канал
+            card_channel = self.bot.get_channel(MATCH_FOUND_CHANNEL_ID)
+            if card_channel is None:
+                try:
+                    card_channel = await self.bot.fetch_channel(MATCH_FOUND_CHANNEL_ID)
+                except Exception:
+                    card_channel = None
+            if card_channel is None:
+                card_channel = interaction.channel
+            message = await card_channel.send(
                 view=ready_card(rc, self.bot),
                 file=file,
                 allowed_mentions=discord.AllowedMentions(users=True),
             )
-            rc.channel_id = interaction.channel_id
+            rc.channel_id = card_channel.id
             rc.message_id = message.id
             await ready_check_store.save(rc)
 

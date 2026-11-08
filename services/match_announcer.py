@@ -1,9 +1,15 @@
-"""Публикация embed'ов «Матч #N начался» в канал результатов.
+"""Публикация embed'ов «Матч #N начался».
 
-Вызывается при входе турнира в фазу с матчами (QUALIFIERS /
-SEMIFINALS / FINAL). Для каждого матча фазыembed отправляется
-один раз — факт отправки хранится в match_number_store (announced).
-Номер матча — глобальный сквозной из match_number_store.
+Два режима:
+- MM-турниры (mm_search_channel_id > 0): для каждого матча создаётся
+  отдельный текстовый канал в категории канала /mm squad с именем
+  «матч-N»; embed запуска публикуется туда, канал регистрируется в
+  tournament.match_channels — скриншот, присланный в него, автоматически
+  привязывается к матчу (cogs/ocr_upload.py), после загрузки канал
+  удаляется.
+- Обычные турниры: embed уходит в канал результатов (RESULT_CHANNEL_ID).
+
+Факт отправки/создания хранится в match_number_store (announced).
 """
 
 from __future__ import annotations
@@ -13,9 +19,12 @@ import logging
 import discord
 
 from models.tournament import Tournament, TournamentPhase
+from storage.json_store import store
 from storage.match_number_store import match_number_store
 
 logger = logging.getLogger(__name__)
+
+ORG_ROLE_IDS = ()  # заполняется лениво из config
 
 
 def _phase_matches(tournament: Tournament) -> list[tuple[str, int, int, int]]:
@@ -40,20 +49,93 @@ def _match_key(tournament: Tournament, match_type: str, match_index: int) -> str
     return f"{tournament.id}_{match_type}_{match_index}"
 
 
+def _match_mentions(tournament: Tournament, t1: int, t2: int) -> str:
+    """Ментions всех игроков матча."""
+    from views.ocr_match_view import team_roster
+
+    parts = []
+    for idx in (t1, t2):
+        for name in team_roster(tournament, idx):
+            uid = tournament.player_user_ids.get(name)
+            if uid:
+                parts.append(f"<@{uid}>")
+    return " ".join(dict.fromkeys(parts))
+
+
+async def _create_match_channel(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_number: int,
+    t1: int,
+    t2: int,
+) -> discord.TextChannel | None:
+    """Создать приватный канал матча в категории канала /mm squad."""
+    search_channel_id = getattr(tournament, "mm_search_channel_id", 0) or 0
+    if not search_channel_id:
+        return None
+    search_channel = guild.get_channel(search_channel_id)
+    if search_channel is None:
+        try:
+            search_channel = await guild.fetch_channel(search_channel_id)
+        except Exception:
+            search_channel = None
+    if search_channel is None:
+        return None
+    category = getattr(search_channel, "category", None)
+
+    # Кому виден канал: игроки матча + организатор + орги
+    from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID, ORG_ROLE_ID
+    from views.ocr_match_view import team_roster
+
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+    }
+    allow = discord.PermissionOverwrite(
+        view_channel=True, send_messages=True, read_message_history=True
+    )
+    seen: set[int] = set()
+    for idx in (t1, t2):
+        for name in team_roster(tournament, idx):
+            uid = tournament.player_user_ids.get(name)
+            if uid and uid not in seen:
+                seen.add(uid)
+                overwrites[discord.Object(id=uid)] = allow
+    if tournament.organizer_id:
+        overwrites[discord.Object(id=tournament.organizer_id)] = allow
+    for rid in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
+        if rid:
+            overwrites[discord.Object(id=rid)] = allow
+
+    try:
+        channel = await guild.create_text_channel(
+            name=f"матч-{match_number}",
+            category=category,
+            overwrites=overwrites,
+            reason=f"MM match #{match_number}",
+        )
+        return channel
+    except Exception as exc:
+        logger.error("Failed to create match channel: %s", exc)
+        return None
+
+
 async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -> None:
-    """Отправить embed запуска для всех ещё не анонсированных матчей фазы."""
+    """Анонсировать все ещё не анонсированные матчи текущей фазы."""
     matches = _phase_matches(tournament)
     if not matches:
         return
 
     # Ленивые импорты — избегаем модульных циклов
-    from cogs.ocr_upload import RESULT_CHANNEL_ID, _captain_name, _match_label, _result_channel, _roster_mentions
-    from views.ocr_match_view import _team_display_name
+    from cogs.ocr_upload import (
+        RESULT_CHANNEL_ID,
+        _captain_name,
+        _match_label,
+        _result_channel,
+        _roster_mentions,
+    )
 
-    channel = await _result_channel(guild, None)
-    if channel is None:
-        logger.warning("Match announce: канал результатов недоступен")
-        return
+    is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
+    fallback_channel = await _result_channel(guild, None) if not is_mm else None
 
     for match_type, match_index, t1, t2 in matches:
         key = _match_key(tournament, match_type, match_index)
@@ -75,8 +157,37 @@ async def announce_phase_matches(tournament: Tournament, guild: discord.Guild) -
             ),
             color=discord.Color.blurple(),
         )
+
+        channel = None
+        if is_mm:
+            channel = await _create_match_channel(guild, tournament, number, t1, t2)
+
         try:
-            await channel.send(embed)
+            if channel is not None:
+                mentions = _match_mentions(tournament, t1, t2)
+                await channel.send(
+                    content=mentions or None,
+                    embed=embed,
+                    allowed_mentions=discord.AllowedMentions(users=True),
+                )
+                # Регистрируем канал: скриншот в нём = загрузка результата
+                tournament.match_channels[str(channel.id)] = {
+                    "match_type": match_type,
+                    "match_index": match_index,
+                }
+                store.set(tournament)
+                logger.info(
+                    "Match #%d channel %s created (%s)",
+                    number, channel.id, label,
+                )
+            elif fallback_channel is not None:
+                await fallback_channel.send(embed)
+            else:
+                # MM без канала (нет прав/категории) — fallback в результаты
+                result_ch = await _result_channel(guild, None)
+                if result_ch is not None:
+                    await result_ch.send(embed)
+
             await match_number_store.mark_announced(key)
             logger.info(
                 "Match #%d announced: %s %s vs %s (tournament %s)",

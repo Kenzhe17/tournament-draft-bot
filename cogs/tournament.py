@@ -1188,14 +1188,17 @@ class TournamentCog(commands.Cog):
         target_user = user if user else interaction.user
         is_owner = target_user.id == interaction.user.id
 
-        from utils.profile_card import build_profile_embed
+        from services.profile_card import build_profile_png
 
-        embed, rank_file = await build_profile_embed(interaction.guild_id, target_user, limit=limit)
+        png = await build_profile_png(interaction.guild, target_user)
 
         # Кнопки только для владельца
         view = ProfileView(interaction.guild_id, target_user.id, is_owner)
 
-        await interaction.response.send_message( view=compose(embed, view), file=rank_file)
+        await interaction.response.send_message(
+            file=discord.File(__import__("io").BytesIO(png), filename="profile.png"),
+            view=view,
+        )
 
     @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
