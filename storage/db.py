@@ -694,3 +694,26 @@ async def init_db() -> None:
             await conn.execute("CREATE INDEX IF NOT EXISTS idx_pet_invitations_invitee ON pet_invitations(invitee_id, status)")
         except Exception as e:
             logger.error(f"Error creating pet_invitations index: {e}")
+
+        # Ready Check («Найден матч») для Ranked Matchmaking — аддитивная таблица
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS ready_checks (
+                match_id TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                search_channel_id BIGINT NOT NULL,
+                tournament_channel_id BIGINT NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'READY_CHECK',
+                deadline DOUBLE PRECISION NOT NULL DEFAULT 0,
+                channel_id BIGINT NOT NULL DEFAULT 0,
+                message_id BIGINT NOT NULL DEFAULT 0,
+                cancel_reason TEXT NOT NULL DEFAULT '',
+                created_at DOUBLE PRECISION NOT NULL DEFAULT 0,
+                match_num INTEGER NOT NULL DEFAULT 0,
+                players JSONB NOT NULL DEFAULT '[]'::jsonb
+            )
+        """)
+
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ready_checks_guild_status
+            ON ready_checks(guild_id, status)
+        """)

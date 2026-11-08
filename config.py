@@ -78,6 +78,9 @@ WARN_GIF_URL = os.getenv("WARN_GIF_URL", "https://klipy.com/gifs/h2di-the-dictat
 UNWARN_GIF_URL = os.getenv("UNWARN_GIF_URL", "https://klipy.com/gifs/slice-execute-4")
 MOD_LOG_WEBHOOK_URL = os.getenv("MOD_LOG_WEBHOOK_URL", "")
 
+# Ready Check («Найден матч») для Ranked Matchmaking
+RANKED_READY_TIMEOUT_SECONDS = int(os.getenv("RANKED_READY_TIMEOUT_SECONDS", "90"))
+
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум
 MIN_BET = 10  # Минимальная ставка

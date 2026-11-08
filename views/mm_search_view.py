@@ -171,18 +171,30 @@ class JoinSearchButton(discord.ui.Button):
 
         mm_search_store.set(search)
 
-        # Проверить если поиск заполнен - создать турнир
+        # Проверить если поиск заполнен - запустить Ready Check («Найден матч»)
         if search.is_full:
             # Отменить таймер
             if hasattr(self.bot, 'mm_cog'):
                 self.bot.mm_cog._cancel_search_timer(self.guild_id, self.channel_id)
 
-            # Создать турнир
             if hasattr(self.bot, 'mm_cog'):
-                await self.bot.mm_cog._create_tournament_from_search(search, interaction.channel)
+                await self.bot.mm_cog._start_ready_check(search, interaction)
+                # Если проверка уже была активна — interaction не отвечен
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "⏳ Проверка готовности уже запущена.", ephemeral=True
+                    )
+                # interaction уже отложен внутри _start_ready_check —
+                # обновляем сообщение поиска напрямую
+                try:
+                    embed = await build_search_embed(search, interaction.guild)
+                    view = build_search_view(self.bot, search)
+                    await interaction.message.edit(view=compose(embed, view))
+                except Exception as e:
+                    logger.error(f"Error updating search embed after ready check start: {e}")
             else:
                 await interaction.response.send_message("❌ Ошибка системы MM.", ephemeral=True)
-                return
+            return
 
         # Обновить embed
         embed = await build_search_embed(search, interaction.guild)
@@ -208,6 +220,16 @@ class LeaveSearchButton(discord.ui.Button):
         search = mm_search_store.get(self.guild_id, self.channel_id)
         if not search:
             await interaction.response.send_message("❌ Поиск не найден.", ephemeral=True)
+            return
+
+        # Нельзя выйти из поиска во время активной проверки готовности
+        from storage.ready_check_store import ready_check_store
+        rc = await ready_check_store.get_active_by_search(self.guild_id, self.channel_id)
+        if rc is not None:
+            await interaction.response.send_message(
+                "⏳ Идёт проверка готовности матча — выход временно недоступен.",
+                ephemeral=True,
+            )
             return
 
         player_name = interaction.user.display_name

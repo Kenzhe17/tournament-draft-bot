@@ -43,6 +43,8 @@ COPY ultimatum/ ultimatum/
 
 COPY assets/ assets/
 
+COPY assets_ds_server/ assets_ds_server/
+
 # Pre-download RapidOCR ONNX models into the image
 RUN python -c "from rapidocr_onnxruntime import RapidOCR; import numpy as np; o=RapidOCR(); o(np.zeros((64,64,3),dtype='uint8'))"
 
