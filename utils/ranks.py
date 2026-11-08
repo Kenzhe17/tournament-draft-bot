@@ -18,8 +18,8 @@ RANKS: list[tuple[str, int, str]] = [
     ("Gold", 26, "gold.png"),
     ("Platinum", 39, "platinum.png"),
     ("Diamond", 51, "diamond.png"),
-    ("Elite", 63, "elite.png"),
-    ("Master", 76, "master.png"),
+    ("Master", 63, "master.png"),
+    ("Elite", 76, "elite.png"),
     ("Legend", 88, "legend.png"),
 ]
 
