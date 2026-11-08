@@ -158,6 +158,22 @@ class TournamentCog(commands.Cog):
         view = self.bot.build_view_for_tournament(tournament)
         self.bot._register_view(view)
 
+        # Диагностика кнопок: что реально уходит в сообщение
+        _composed = None
+        try:
+            from utils.design.adapter import _layout_debug, _view_rows
+            _rows = _view_rows(view) if view is not None else []
+            _composed = compose(embed, view)
+            logger.info(
+                "TOURNAMENT-CREATE view=%s children=%s rows=%s layout=%s",
+                type(view).__name__ if view else None,
+                len(view.children) if view is not None else 0,
+                len(_rows),
+                _layout_debug(_composed),
+            )
+        except Exception:
+            logger.exception("TOURNAMENT-CREATE diagnostics failed")
+
         # Send ephemeral confirmation first
         await interaction.response.send_message(
             replace_emojis("✅ Турнир создан"),
@@ -165,7 +181,7 @@ class TournamentCog(commands.Cog):
         )
 
         # Send main tournament message through channel.send to unbind it
-        message = await interaction.channel.send( view=compose(embed, view))
+        message = await interaction.channel.send( view=_composed if _composed is not None else compose(embed, view))
 
         tournament.message_id = message.id
         store.set(tournament)
