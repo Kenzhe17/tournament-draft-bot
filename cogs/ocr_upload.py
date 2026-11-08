@@ -731,9 +731,6 @@ class OCRUploadCog(commands.Cog):
                 "maps": {},
             }
             store.set(tournament)
-            await _maybe_delete_match_channel(
-                message.guild, tournament, match_type, match_index
-            )
 
             bot_msg = await _send_results_message(
                 stats_channel, data, view
@@ -968,9 +965,6 @@ class OCRUploadCog(commands.Cog):
             if len(session.get("squads", {})) >= 2:
                 session["status"] = "mapping"
             store.set(tournament)
-            await _maybe_delete_match_channel(
-                message.guild, tournament, match_type, match_index
-            )
 
             view = SquadAssignedView(
                 guild_id, tournament.channel_id, tournament,
@@ -1011,9 +1005,6 @@ class OCRUploadCog(commands.Cog):
         if len(session.get("squads", {})) >= 2:
             session["status"] = "mapping"
         store.set(tournament)
-        await _maybe_delete_match_channel(
-            message.guild, tournament, match_type, match_index
-        )
 
         view = SquadClaimView(
             guild_id, tournament.channel_id, tournament,
@@ -1030,11 +1021,13 @@ class OCRUploadCog(commands.Cog):
 async def _maybe_delete_match_channel(
     guild: discord.Guild, tournament, match_type: str, match_index: int
 ) -> None:
-    """Удалить выделенный канал матча, когда скриншоты больше не нужны.
+    """Удалить выделенный канал матча после фиксации результата.
 
-    Классический режим — после первого скриншота; squad-режим — после
-    загрузки обоих отрядов. Результат при этом уже/будет опубликован
-    в канал результатов.
+    Вызывается из finalize_ocr_match — к этому моменту карточка
+    сопоставления и результат уже опубликованы, канал больше не
+    нужен. Раньше удаление происходило при загрузке скриншота, но
+    для MM-матчей сообщение сопоставления живёт в этом же канале —
+    канал удалялся до отправки (404 Unknown Channel).
     """
     channels = getattr(tournament, "match_channels", None) or {}
     if not channels:

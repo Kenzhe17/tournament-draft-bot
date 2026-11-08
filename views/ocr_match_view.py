@@ -2160,6 +2160,17 @@ async def finalize_ocr_match(
     except Exception as exc:
         logger.warning("Match card done update failed: %s", exc)
 
+    # 5.3. Временный канал матча (cs-4x4-match-N) больше не нужен —
+    # результат зафиксирован, карточка переведена в «done».
+    try:
+        from cogs.ocr_upload import _maybe_delete_match_channel
+
+        await _maybe_delete_match_channel(
+            interaction.guild, tournament, match_type, match_index
+        )
+    except Exception as exc:
+        logger.warning("Match channel cleanup failed: %s", exc)
+
     final_text = (
         f"✅ Результат зафиксирован. Победитель: "
         f"**{_team_display_name(tournament, winning_team_index)}**"
