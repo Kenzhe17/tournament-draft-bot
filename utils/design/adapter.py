@@ -165,15 +165,21 @@ def _text_segments(
     return segments
 
 
-def _quote_first_line(content: str) -> list[str]:
-    """'>' полоска только у первой строки текста."""
-    head, sep, rest = content.partition("\n")
+def _quote_block(content: str) -> list[str]:
+    """Весь блок -> markdown blockquote ('>' перед каждой строкой).
+
+    Discord склеивает соседние '>' строки в одну цитату: полоска
+    идёт по высоте всего блока, а заголовок и строки под ним имеют
+    одинаковый отступ от левой стены карточки.
+    """
+    head = content.split("\n", 1)[0]
     if not head.strip() or head.lstrip().startswith(">"):
         return [content]
-    parts = [f"> {head}"]
-    if sep and rest.strip():
-        parts.append(rest)
-    return parts
+    quoted = "\n".join(
+        f"> {line}" if line.strip() else ">"
+        for line in content.split("\n")
+    )
+    return [quoted]
 
 
 # Хвост «| /command» в заголовках embed'ов — убираем: команду
@@ -182,10 +188,11 @@ _TITLE_CMD_RE = re.compile(r"\s*\|\s*/\S[^\n]*")
 
 
 def strip_title_command(title: str | None) -> str | None:
-    """Убрать «| /cmd» из заголовка embed'а."""
+    """Убрать «| /cmd» и markdown-мусор (** и пр.) из заголовка embed'а."""
     if not title:
         return title
-    stripped = _TITLE_CMD_RE.sub("", title).rstrip()
+    stripped = _TITLE_CMD_RE.sub("", title)
+    stripped = stripped.replace("**","").strip(" #*_`~")
     return stripped or None
 
 
@@ -194,40 +201,21 @@ def _is_small_text(content: str) -> bool:
     return content.lstrip().startswith("-#")
 
 
-# Первая строка вида «**Заголовок:**» — такой блок тоже получает
-# короткую '>' полоску, даже если он не первый текст секции
-# (например, «Прогресс» после заголовка-карточки с аватаром).
-_HEADER_LINE_RE = re.compile(r"^\s*\*\*[^*\n]{1,100}:\*\*")
-
-
-def _needs_head_quote(content: str, head_done: bool) -> bool:
-    """Нужна ли '>' полоска этому текстовому блоку."""
-    if _is_small_text(content):
-        return False
-    if not head_done:
-        return True
-    first_line = content.split("\n", 1)[0]
-    return bool(_HEADER_LINE_RE.match(first_line))
-
-
 def _strip_section_head(sec: list[discord.ui.Item]) -> None:
-    """Добавить короткую '>' полоску к первому текстовому блоку секции
-    и к каждому блоку, начинающемуся со строки «**Заголовок:**».
+    """Обернуть каждый текстовый блок секции в blockquote ('>' на
+    каждой строке): короткая вертикальная полоска слева от блока,
+    заголовок и строки под ним имеют одинаковый отступ от стены.
 
-    Полоска по высоте равна одной строке заголовка — в отличие от
-    accent_color Container'а, не тянется на всю карточку.
-    Мелкий текст ('-# ') и секции-картинки пропускаются.
+    Мелкий текст ('-# ' author/footer) и секции-картинки пропускаются.
     """
-    head_done = False
     for idx, item in enumerate(sec):
         if isinstance(item, discord.ui.TextDisplay):
-            if not _needs_head_quote(item.content, head_done):
+            if _is_small_text(item.content):
                 continue
-            parts = _quote_first_line(item.content)
             sec[idx : idx + 1] = [
-                discord.ui.TextDisplay(content=p) for p in parts
+                discord.ui.TextDisplay(content=p)
+                for p in _quote_block(item.content)
             ]
-            head_done = True
             continue
         if isinstance(item, discord.ui.Section):
             accessory = getattr(item,"accessory", None)
@@ -237,24 +225,21 @@ def _strip_section_head(sec: list[discord.ui.Item]) -> None:
                 getattr(item,"children", None)
                 or getattr(item,"_children", [])
             )
-            td_index = next(
-                (
-                    i
-                    for i, c in enumerate(children)
-                    if isinstance(c, discord.ui.TextDisplay)
-                ),
-                None,
-            )
-            if td_index is None:
+            new_children: list[discord.ui.Item] = []
+            changed = False
+            for c in children:
+                if isinstance(c, discord.ui.TextDisplay) and not _is_small_text(
+                    c.content
+                ):
+                    new_children.extend(
+                        discord.ui.TextDisplay(content=p)
+                        for p in _quote_block(c.content)
+                    )
+                    changed = True
+                else:
+                    new_children.append(c)
+            if not changed:
                 continue
-            td = children[td_index]
-            if not _needs_head_quote(td.content, head_done):
-                continue
-            parts = _quote_first_line(td.content)
-            new_children = list(children)
-            new_children[td_index : td_index + 1] = [
-                discord.ui.TextDisplay(content=p) for p in parts
-            ]
             # Section вмещает максимум 3 TextDisplay
             if sum(
                 isinstance(c, discord.ui.TextDisplay) for c in new_children
@@ -263,9 +248,8 @@ def _strip_section_head(sec: list[discord.ui.Item]) -> None:
             sec[idx] = discord.ui.Section(
                 *new_children, accessory=accessory
             )
-            head_done = True
             continue
-        # MediaGallery/Separator и пр. — пропускаем, ищем текст дальше
+        # MediaGallery/Separator и пр. — пропускаем
 
 
 def embed_to_section_items(
@@ -550,8 +534,11 @@ def compose(
         target.add_item(discord.ui.TextDisplay(content=text))
         target.add_item(separator())
     if view is not None:
-        for row in _view_rows(view):
-            target.add_item(row)
+        # Discord рендерит внутри Container только ОДИН ActionRow —
+        # первый ряд оставляем в карточке, остальные выносим на
+        # верхний уровень LayoutView (обычные ряды кнопок под карточкой).
+        for i, row in enumerate(_view_rows(view)):
+            (target if i == 0 else layout).add_item(row)
     return layout
 
 
@@ -636,8 +623,10 @@ def swap_view(
         if target is None:
             target = discord.ui.Container()
             layout.add_item(target)
-        for row in rows:
-            target.add_item(row)
+        # Первый ряд — внутрь карточки; Discord рендерит внутри
+        # Container только один ActionRow, остальные — сверху.
+        for i, row in enumerate(rows):
+            (target if i == 0 else layout).add_item(row)
 
     return layout
 

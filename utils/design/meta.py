@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import contextvars
 import functools
-import re
 
 import discord
 
@@ -322,14 +321,11 @@ def _inject_layout(layout: discord.ui.LayoutView, meta: dict) -> None:
 # Инъекция в классические Embed
 # ---------------------------------------------------------------------------
 
-_TITLE_CMD_RE = re.compile(r"\s*\|\s*/\S[^\n]*")
-
-
 def _inject_embed(embed: discord.Embed, meta: dict) -> None:
-    # Убрать «| /command» из заголовка
+    # Убрать «| /command» и markdown-мусор (**) из заголовка
     if embed.title:
-        stripped = _TITLE_CMD_RE.sub("", embed.title).rstrip()
-        embed.title = stripped or None
+        from utils.design.adapter import strip_title_command
+        embed.title = strip_title_command(embed.title)
 
     # Author: команда + её эмодзи (без иконки — аватар только у игрока)
     author_name = f"{meta.get('emoji') or ''} {meta['name']}".replace("  "," ").strip()

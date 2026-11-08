@@ -53,6 +53,19 @@ class DesignView(discord.ui.LayoutView):
                 )
                 self.container.add_item(separator())
         self.add_item(self.container)
+        self._normalize_rows()
+
+    def _normalize_rows(self) -> None:
+        """Discord рендерит внутри Container только ОДИН ActionRow —
+        первый ряд остаётся в карточке, остальные — сверху."""
+        rows = [
+            c
+            for c in list(self.container.children)
+            if isinstance(c, discord.ui.ActionRow)
+        ]
+        for row in rows[1:]:
+            self.container.remove_item(row)
+            self.add_item(row)
 
     # --- Наполнение карточки ---
     def text(self, content: str) -> "DesignView":
@@ -71,7 +84,13 @@ class DesignView(discord.ui.LayoutView):
         r = discord.ui.ActionRow()
         for item in items:
             r.add_item(item)
-        self.container.add_item(r)
+        # В карточке уже есть ActionRow — Discord покажет только один,
+        # поэтому дополнительные ряды кладём на верхний уровень.
+        has_row = any(
+            isinstance(c, discord.ui.ActionRow)
+            for c in self.container.children
+        )
+        (self if has_row else self.container).add_item(r)
         return self
 
     def section_text(
@@ -125,6 +144,7 @@ class DesignView(discord.ui.LayoutView):
         if rows:
             for r in rows:
                 view.container.add_item(r)
+            view._normalize_rows()
         return view
 
 
