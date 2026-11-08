@@ -2129,6 +2129,17 @@ async def finalize_ocr_match(
     session["winning_team_index"] = winning_team_index
     store.set(tournament)
 
+    # 5.1. Финальная карточка результата в канал MATCH_RESULTS
+    try:
+        from cogs.ocr_upload import publish_match_result_card
+
+        await publish_match_result_card(
+            interaction.guild, tournament, match_type, match_index,
+            t1, t2, winning_team_index, temp_stats, session,
+        )
+    except Exception:
+        logger.exception("Match result card publish failed")
+
     final_text = (
         f"✅ Результат зафиксирован. Победитель: "
         f"**{_team_display_name(tournament, winning_team_index)}**"

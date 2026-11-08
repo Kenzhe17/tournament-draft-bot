@@ -284,6 +284,176 @@ async def _result_channel(guild: discord.Guild, fallback):
     return channel or fallback
 
 
+# ---------------------------------------------------------------------------
+# Финальная карточка результата (генерируемый PNG по новому дизайну)
+# ---------------------------------------------------------------------------
+
+_RESULT_CARD_CACHE: dict[str, bytes] = {}
+_RESULT_CARD_CACHE_MAX = 50
+
+
+async def _member_avatar_url(guild: discord.Guild, user_id: int) -> str:
+    """URL аватара участника сервера (пустая строка если недоступен)."""
+    if not user_id or user_id <= 0:
+        return ""
+    member = guild.get_member(user_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(user_id)
+        except Exception:
+            member = None
+    if member is None:
+        return ""
+    url = member.display_avatar.url
+    return url + ("&" if "?" in url else "?") + "size=128"
+
+
+async def publish_match_result_card(
+    guild: discord.Guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+    t1: int,
+    t2: int,
+    winning_team_index: int,
+    temp_stats: dict,
+    session: dict,
+) -> None:
+    """Сгенерировать PNG «РЕЗУЛЬТАТ МАТЧА» и опубликовать в RESULT_CHANNEL_ID.
+
+    Использует уже рассчитанные данные (ELO/победитель не пересчитываются).
+    Обновляет существующий result_message_id или отправляет новое сообщение.
+    """
+    try:
+        from utils.match_result_renderer import (
+            MatchResultData,
+            ResultPlayer,
+            TeamTotals,
+            match_num_from_id,
+            render_match_result,
+        )
+        from storage.player_stats_store import player_stats_store
+
+        match_id = f"{tournament.id}_{_session_key(match_type, match_index)}"
+
+        # user_id по имени: турнир + все известные stats
+        user_ids: dict[str, int] = dict(tournament.player_user_ids)
+        try:
+            for st in await player_stats_store.get_all(guild.id):
+                user_ids.setdefault(st.name, st.user_id)
+        except Exception:
+            pass
+
+        async def _player(name: str, team: str) -> ResultPlayer:
+            kd = temp_stats.get(name, {}) or {}
+            uid = user_ids.get(name, 0)
+            stats = await player_stats_store.get(guild.id, uid) if uid else None
+            return ResultPlayer(
+                user_id=uid,
+                name=name,
+                team=team,
+                avatar_url=await _member_avatar_url(guild, uid),
+                sr=float(stats.skill_rating) if stats else 0.0,
+                elo=int(stats.elo) if stats else 0,
+                kills=int(kd.get("kills", 0) or 0),
+                deaths=int(kd.get("deaths", 0) or 0),
+                assists=int(kd.get("assists", 0) or 0),
+                damage=int(kd.get("damage", 0) or 0),
+                elo_change=int(getattr(stats, "last_elo_change", 0) or 0) if stats else 0,
+            )
+
+        team_a_names = team_roster(tournament, t1)
+        team_b_names = team_roster(tournament, t2)
+        players = await asyncio.gather(
+            *[_player(n, "A") for n in team_a_names],
+            *[_player(n, "B") for n in team_b_names],
+        )
+        cards_a = [p for p in players if p.team == "A"][:4]
+        cards_b = [p for p in players if p.team == "B"][:4]
+
+        def _totals(cards: list[ResultPlayer]) -> TeamTotals:
+            return TeamTotals(
+                kills=sum(p.kills for p in cards),
+                damage=sum(p.damage for p in cards),
+                elo_change=sum(p.elo_change for p in cards),
+            )
+
+        totals_a, totals_b = _totals(cards_a), _totals(cards_b)
+
+        # MVP — максимальный урон (та же логика, что в /statistic)
+        all_cards = cards_a + cards_b
+        mvp = max(all_cards, key=lambda p: p.damage, default=None)
+        mvp_name = ""
+        mvp_kda = ""
+        mvp_damage = ""
+        if mvp is not None and (mvp.damage > 0 or mvp.kills > 0):
+            mvp.is_mvp = True
+            mvp_name = mvp.name
+            mvp_kda = f"{mvp.kills} / {mvp.deaths} / {mvp.assists}"
+            mvp_damage = _fmt_num(mvp.damage)
+
+        # Длительность: от загрузки скриншота до фиксации результата
+        duration = "— : —"
+        created_raw = session.get("created_at")
+        if created_raw:
+            try:
+                created = datetime.fromisoformat(str(created_raw))
+                secs = max(0, int((datetime.now() - created).total_seconds()))
+                duration = f"{secs // 60:02d}:{secs % 60:02d}"
+            except Exception:
+                pass
+
+        data = MatchResultData(
+            match_num=match_num_from_id(match_id),
+            duration=duration,
+            score_a=totals_a.kills,
+            score_b=totals_b.kills,
+            winner="A" if winning_team_index == t1 else "B",
+            team_a=cards_a,
+            team_b=cards_b,
+            totals_a=totals_a,
+            totals_b=totals_b,
+            mvp_name=mvp_name,
+            mvp_kda=mvp_kda,
+            mvp_damage=mvp_damage,
+        )
+
+        png = _RESULT_CARD_CACHE.get(match_id)
+        if png is None:
+            png = await render_match_result(data)
+            _RESULT_CARD_CACHE[match_id] = png
+            if len(_RESULT_CARD_CACHE) > _RESULT_CARD_CACHE_MAX:
+                _RESULT_CARD_CACHE.pop(next(iter(_RESULT_CARD_CACHE)))
+
+        channel = await _result_channel(guild, None)
+        if channel is None:
+            return
+        embed = _result_embed(tournament, match_type, match_index, t1, t2)
+        msg_id = session.get("result_message_id")
+
+        if msg_id:
+            try:
+                msg = await channel.fetch_message(msg_id)
+                await msg.edit(
+                    view=compose(embed),
+                    attachments=[
+                        discord.AttachmentInput(
+                            io.BytesIO(png), filename=SHOT_FILENAME
+                        )
+                    ],
+                )
+                return
+            except Exception as e:
+                logger.warning("Result card edit failed: %s", e)
+
+        file = discord.File(io.BytesIO(png), filename=SHOT_FILENAME)
+        bot_msg = await channel.send(view=compose(embed), file=file)
+        session["result_message_id"] = bot_msg.id
+        store.set(tournament)
+    except Exception:
+        logger.exception("Match result card publish failed")
+
+
 async def _upsert_result_message(
     guild: discord.Guild,
     tournament,

@@ -1,0 +1,138 @@
+{
+  "dimensions": [
+    1920,
+    1080
+  ],
+  "logo": "Original logo.png embedded unmodified as an image",
+  "editor": "Figma importable SVG with editable vector geometry and text elements (text import behavior depends on Figma)",
+  "fields_per_player": [
+    "name",
+    "avatar",
+    "sr",
+    "elo",
+    "kills",
+    "deaths",
+    "assists",
+    "damage",
+    "elo_change"
+  ],
+  "team_size": 4,
+  "template_data": "all dynamic values placeholder, no results",
+  "example_scores": {
+    "A": 5,
+    "B": 3
+  },
+  "example_mvp": "Nota",
+  "example_teams": {
+    "A": [
+      {
+        "name": "Nota",
+        "init": "N",
+        "sr": "8.6",
+        "elo": "2460",
+        "k": 10,
+        "d": 6,
+        "a": 4,
+        "dmg": 3510,
+        "delta": 28,
+        "mvp": true
+      },
+      {
+        "name": "KaramBa",
+        "init": "K",
+        "sr": "7.4",
+        "elo": "2240",
+        "k": 8,
+        "d": 7,
+        "a": 4,
+        "dmg": 2800,
+        "delta": 25
+      },
+      {
+        "name": "Sirius",
+        "init": "S",
+        "sr": "6.9",
+        "elo": "2120",
+        "k": 7,
+        "d": 7,
+        "a": 5,
+        "dmg": 2380,
+        "delta": 23
+      },
+      {
+        "name": "Riven",
+        "init": "R",
+        "sr": "6.6",
+        "elo": "2020",
+        "k": 6,
+        "d": 7,
+        "a": 3,
+        "dmg": 1950,
+        "delta": 21
+      }
+    ],
+    "B": [
+      {
+        "name": "Arsen",
+        "init": "A",
+        "sr": "8.3",
+        "elo": "2400",
+        "k": 9,
+        "d": 7,
+        "a": 2,
+        "dmg": 3030,
+        "delta": -18
+      },
+      {
+        "name": "Dani",
+        "init": "D",
+        "sr": "7.8",
+        "elo": "2270",
+        "k": 7,
+        "d": 8,
+        "a": 4,
+        "dmg": 2470,
+        "delta": -20
+      },
+      {
+        "name": "Sanzhar",
+        "init": "S",
+        "sr": "6.8",
+        "elo": "2095",
+        "k": 6,
+        "d": 8,
+        "a": 3,
+        "dmg": 2080,
+        "delta": -22
+      },
+      {
+        "name": "Miro",
+        "init": "M",
+        "sr": "6.4",
+        "elo": "2015",
+        "k": 5,
+        "d": 8,
+        "a": 3,
+        "dmg": 1890,
+        "delta": -24
+      }
+    ]
+  },
+  "note": "Example values are fictional; the design is not connected to a live database.",
+  "brand_colors": {
+    "bg": "#090B12",
+    "bg2": "#0E1019",
+    "card": "#111623",
+    "cardHi": "#171C2B",
+    "muted": "#7E889D",
+    "white": "#F3F5FA",
+    "sub": "#B2BED0",
+    "violet": "#9C58FF",
+    "vdeep": "#5D24BD",
+    "blue": "#4BA8FF",
+    "green": "#7CF2C2",
+    "red": "#FF8999",
+    "gold": "#FFD69C",
+    "line": "#2A3041"
+  }
+}

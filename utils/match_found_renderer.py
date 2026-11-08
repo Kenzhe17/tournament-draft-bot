@@ -15,6 +15,7 @@ import io
 import logging
 import re
 import time
+import tracemalloc
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -399,8 +400,14 @@ def render_match_found_sync(
     return buf.getvalue()
 
 
+# Семафор на одновременные CPU-bound рендеры карточек (общий для match_found/match_result)
+CARD_RENDER_SEM = asyncio.Semaphore(2)
+_ACTIVE_RENDERS = 0
+
+
 async def render_match_found(data: MatchFoundData) -> bytes:
     """Полный асинхронный рендер: аватарки + Pillow в thread."""
+    global _ACTIVE_RENDERS
     urls = [p.avatar_url for p in data.team_a + data.team_b if p.avatar_url]
     avatar_bytes = await fetch_avatars(urls)
     by_url = {p.avatar_url: avatar_bytes.get(p.avatar_url) for p in data.team_a + data.team_b}
@@ -409,4 +416,18 @@ async def render_match_found(data: MatchFoundData) -> bytes:
         for p in data.team_a + data.team_b
         if p.avatar_url and by_url.get(p.avatar_url)
     }
-    return await asyncio.to_thread(render_match_found_sync, data, avatars)
+    async with CARD_RENDER_SEM:
+        _ACTIVE_RENDERS += 1
+        t0 = time.perf_counter()
+        tracemalloc.start()
+        try:
+            png = await asyncio.to_thread(render_match_found_sync, data, avatars)
+        finally:
+            _current, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            _ACTIVE_RENDERS -= 1
+        logger.info(
+            "Match found rendered: %.2fs, png=%d bytes, peak_rss~%d MB, active=%d",
+            time.perf_counter() - t0, len(png), peak // (1024 * 1024), _ACTIVE_RENDERS,
+        )
+        return png
