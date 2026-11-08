@@ -1297,35 +1297,28 @@ class MMCog(commands.Cog):
         category = getattr(panel_channel, "category", None)
 
         user_ids = {uid for uid in search.player_user_ids.values() if uid}
-        overwrites: list[discord.PermissionOverwrite] = [
-            discord.PermissionOverwrite(
-                guild.default_role,
+        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
+            guild.default_role: discord.PermissionOverwrite(
                 view_channel=False,
                 send_messages=False,
                 read_message_history=False,
             )
-        ]
+        }
+        allow = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            attach_files=True,
+        )
         for uid in user_ids:
-            member = guild.get_member(uid)
-            target = member or discord.Object(id=uid)
-            overwrites.append(discord.PermissionOverwrite(
-                target,
-                view_channel=True,
-                send_messages=True,
-                read_message_history=True,
-                attach_files=True,
-            ))
+            overwrites[discord.Object(id=uid)] = allow
         for role_id in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
-            if not role_id:
-                continue
-            role = guild.get_role(role_id)
-            if role is not None:
-                overwrites.append(discord.PermissionOverwrite(
-                    role,
+            if role_id:
+                overwrites[discord.Object(id=role_id)] = discord.PermissionOverwrite(
                     view_channel=True,
                     send_messages=True,
                     read_message_history=True,
-                ))
+                )
 
         try:
             return await guild.create_text_channel(
