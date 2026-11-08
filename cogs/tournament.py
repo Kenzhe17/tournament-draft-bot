@@ -1263,6 +1263,8 @@ class TournamentCog(commands.Cog):
         self, interaction: discord.Interaction, field: str
     ) -> bool:
         """7-дневный кулдаун на смену поля профиля (как в старых настройках)."""
+        if interaction.user.id == BOT_OWNER_ID:
+            return True
         from storage.profile_cooldowns import format_remaining, profile_cooldowns
 
         left = profile_cooldowns.seconds_left(
@@ -1303,10 +1305,11 @@ class TournamentCog(commands.Cog):
             await player_stats_store.update(
                 interaction.guild_id, interaction.user.id, stats
             )
-        for field in fields:
-            profile_cooldowns.mark_changed(
-                interaction.guild_id, interaction.user.id, field
-            )
+        if interaction.user.id != BOT_OWNER_ID:
+            for field in fields:
+                profile_cooldowns.mark_changed(
+                    interaction.guild_id, interaction.user.id, field
+                )
 
     @player_group.command(name="history", description="Показать историю матчей")
     @app_commands.describe(user="Пользователь (пусто = ваша история)", limit="Количество матчей (макс 30)")
