@@ -54,7 +54,7 @@ def build_birthdays_view(entries: list[dict]) -> discord.ui.LayoutView:
         view.text("*Установить дату можно через `/player set birthday`.*")
         return view
 
-    today_entries = [e for e in entries if e["days"] == 0]
+    today_entries = [e for e in entries if e["days"] == 0][:5]
     upcoming = [e for e in entries if e["days"] > 0][:5]
 
     if today_entries:

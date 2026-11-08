@@ -12,7 +12,7 @@ from services.social.common import (
     BANNER_MARRIAGES, banner_file, social_view,
 )
 
-PAGE_SIZE = 8
+PAGE_SIZE = 5
 
 
 def _fmt_date(dt) -> str:

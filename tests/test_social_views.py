@@ -101,8 +101,8 @@ def test_marriages_list_and_pagination():
     assert "Всего действующих браков: 10" in texts
     assert "стр. 1/2" in texts
     assert "01 · <@0> & <@100>" in texts
-    # 8 на страницу — 9-й и 10-й на второй
-    assert "<@8>" not in texts
+    # 5 на страницу — 6-й и далее на второй
+    assert "<@5>" not in texts
     rows = [c for c in comps if c["type"] == 1]
     assert len(rows) == 1
     labels = [b["label"] for b in rows[0]["components"]]
