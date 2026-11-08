@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import replace_emojis, get_emoji
 """Modal form for entering room ID and password."""
 
 import time
@@ -142,86 +142,52 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
             pass
 
 
+def _team_roster(tournament: Any, team_data: dict) -> list[str]:
+    """Имена состава: players[] или circle1-4."""
+    players = [p for p in team_data.get("players", []) if p]
+    if players:
+        return players
+    return [
+        team_data.get(f"circle{c}") for c in range(1, 5)
+        if team_data.get(f"circle{c}")
+    ]
+
+
+def _team_line(num_emoji: str, tournament: Any, team_data: dict) -> str:
+    """Строка вида 'num_X <@p1> <@p2> <@p3> <@p4>'."""
+    parts = []
+    for name in _team_roster(tournament, team_data):
+        uid = tournament.player_user_ids.get(name)
+        parts.append(f"<@{uid}>" if uid else name)
+    return f"{num_emoji} {' '.join(parts)}" if parts else f"{num_emoji} *"
+
+
 async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int, team2_index: int, room_id: str, room_password: str) -> None:
-    """Send room info to specific channel with all player pings."""
-    # Get team members for pings
-    team1_members = []
-    team2_members = []
-
-    if team1_index < len(tournament.teams):
-        team1 = tournament.teams[team1_index]
-        for circle in range(1, 5):
-            player_name = team1.get(f"circle{circle}", "")
-            if player_name and player_name in tournament.player_user_ids:
-                team1_members.append(tournament.player_user_ids[player_name])
-
-    if team2_index < len(tournament.teams):
-        team2 = tournament.teams[team2_index]
-        for circle in range(1, 5):
-            player_name = team2.get(f"circle{circle}", "")
-            if player_name and player_name in tournament.player_user_ids:
-                team2_members.append(tournament.player_user_ids[player_name])
-
-    # Get team names
+    """Send room info card to results channel + announcement to general channel."""
     team1_data = tournament.teams[team1_index] if team1_index < len(tournament.teams) else {}
     team2_data = tournament.teams[team2_index] if team2_index < len(tournament.teams) else {}
-    team1_name = tournament.team_names.get(team1_index, team1_data.get("captain", f"Team {team1_index}"))
-    team2_name = tournament.team_names.get(team2_index, team2_data.get("captain", f"Team {team2_index}"))
+
+    # Название команды = имя капитана
+    name1 = team1_data.get("captain", f"Team {team1_index}")
+    name2 = team2_data.get("captain", f"Team {team2_index}")
+
+    line1 = _team_line(get_emoji("num_1"), tournament, team1_data)
+    line2 = _team_line(get_emoji("num_2"), tournament, team2_data)
 
     # Get specific channel
     channel = bot.get_channel(1561683314480255057)
-    if not channel:
-        return
-
-    # Create ping string for all players
-    all_members = team1_members + team2_members
-    pings = " ".join([f"<@{uid}>" for uid in all_members]) if all_members else ""
-
-    # Send messages separately
-    # Message 1: Header
-    await channel.send( view=text_card(f"**КОМНАТА ОТКРЫТА**\nМатч: {team1_name} vs {team2_name}\n\n{pings}\n\n**Данные:**"))
-    # Message 2: Room ID
-    await channel.send( view=text_card(room_id))
-
-    # Message 3: Password
-    await channel.send( view=text_card(room_password))
-
-    # Message 4: GIF
-    await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"))
+    if channel:
+        card = (
+            f"**КОМНАТА ОТКРЫТА**\n"
+            f"Матч: {name1} vs {name2}\n\n"
+            f"{line1}\n{line2}\n\n"
+            f"**Данные:**\n{room_id}\n{room_password}"
+        )
+        await channel.send( view=text_card(card))
 
     # Send to general channel (1200125075156910181)
     general_channel = bot.get_channel(1200125075156910181)
     if general_channel:
-        # Get all players for the match
-        from models.tournament import Tournament
-        if isinstance(tournament, Tournament):
-            # Get players from both teams
-            all_players = []
-            if hasattr(tournament, 'teams'):
-                for team_idx in [team1_index, team2_index]:
-                    if team_idx < len(tournament.teams):
-                        team_data = tournament.teams[team_idx]
-                        if tournament.formation_mode == "random-auto":
-                            all_players.extend(team_data.get("players", []))
-                        else:
-                            # Get players from circles
-                            for circle in range(1, 5):
-                                player = team_data.get(f"circle{circle}")
-                                if player:
-                                    all_players.append(player)
-            
-            # Create mentions if we have user_ids
-            player_mentions = []
-            if hasattr(tournament, 'player_user_ids'):
-                for player_name in all_players:
-                    user_id = tournament.player_user_ids.get(player_name)
-                    if user_id:
-                        player_mentions.append(f"<@{user_id}>")
-                    else:
-                        player_mentions.append(player_name)
-            
-            players_text = ", ".join(player_mentions) if player_mentions else ""
-        else:
-            players_text = ""
-        
-        await general_channel.send( view=text_card(f"{pings}\n\nИгроки: {players_text}\n\n Комната открыта, данные  <#1561683314480255057>"))
+        await general_channel.send(
+            view=text_card(f"{line1}\n{line2}\n\n Комната открыта, данные  <#1561683314480255057>")
+        )

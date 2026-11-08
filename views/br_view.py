@@ -30,6 +30,48 @@ def get_user_lock(guild_id: int, user_id: int) -> asyncio.Lock:
     return get_user_lock._locks[key]
 
 
+BR_NUM_EMOJIS = [
+    "num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+    "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve",
+]
+
+
+def br_team_line(tournament: "BRTournament", team: dict, index: int) -> str:
+    """Строка команды для комнаты/анонсов: 'num_X <@p1> <@p2> <@p3> <@p4>'.
+
+    В BR team["players"] уже включает капитана (первым).
+    """
+    names = [p for p in team.get("players", []) if p]
+    if not names and team.get("captain"):
+        names = [team["captain"]]
+    id_map = {p["name"]: p["id"] for p in tournament.players}
+    parts = []
+    for name in names:
+        uid = id_map.get(name)
+        parts.append(f"<@{uid}>" if uid and uid > 0 else name)
+    # Дедупликация с сохранением порядка (капитан может дублироваться)
+    seen = set()
+    uniq = [p for p in parts if not (p in seen or seen.add(p))]
+    emoji = get_emoji(BR_NUM_EMOJIS[index]) if index < len(BR_NUM_EMOJIS) else f"{index + 1}"
+    return f"{emoji} {' '.join(uniq)}" if uniq else f"{emoji} *"
+
+
+def br_room_card(tournament: "BRTournament", map_name: str, role_mention: str) -> str:
+    """Единая карточка 'КОМНАТА ОТКРЫТА' со всеми командами и данными."""
+    lines = [
+        br_team_line(tournament, team, i)
+        for i, team in enumerate(tournament.teams)
+    ]
+    return (
+        f"{role_mention}\n\n" if role_mention else ""
+    ) + (
+        f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n"
+        + "\n".join(lines)
+        + "\n\n"
+        f"**Данные:**\n{tournament.room_data.get('id', '')}\n{tournament.room_data.get('password', '')}"
+    )
+
+
 class BRRegistrationView(View):
     """View для фазы регистрации BR турнира."""
 
@@ -1261,23 +1303,19 @@ class BRDataButton(Button):
             role = interaction.guild.get_role(tournament.role_id)
             role_mention = f"<@&{tournament.role_id}>" if role else ""
 
-            # Send message 1: Header
-            await channel.send( view=text_card(f"**КОМНАТА ОТКРЫТА**\nКарта: {map_name}\n\n{role_mention}\n\n**Данные:**")            )
-
-            # Send message 2: Room ID
-            await channel.send( view=text_card(tournament.room_data.get("id", "")))
-
-            # Send message 3: Password
-            await channel.send( view=text_card(tournament.room_data.get("password", "")))
-
-            # Send message 4: GIF
-            await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d3a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&")
-            )
+            # Единая карточка: все команды + данные комнаты
+            await channel.send( view=text_card(br_room_card(tournament, map_name, role_mention)))
 
             # Send to general channel
             general_channel = interaction.guild.get_channel(1200125075156910181)
             if general_channel:
-                await general_channel.send( view=text_card(f"{role_mention}\n\n Комната открыта, данные  <#1563195265395982466>")                )
+                team_lines = "\n".join(
+                    br_team_line(tournament, team, i)
+                    for i, team in enumerate(tournament.teams)
+                )
+                await general_channel.send(
+                    view=text_card(f"{role_mention}\n\n{team_lines}\n\n Комната открыта, данные  <#1563195265395982466>")
+                )
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")
             await interaction.followup.send(

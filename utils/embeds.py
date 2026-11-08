@@ -443,12 +443,49 @@ def _circle_line(players: list[str], elo_dict: dict[str, int] | None = None, tou
     return " ".join(player_strings)
 
 
+TEAM_NUM_EMOJI_NAMES = [
+    "num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
+    "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve",
+]
+
+
+def team_num_emoji(index: int) -> str:
+    """Эмодзи номера команды по индексу (num_1..num_twelve)."""
+    if index < len(TEAM_NUM_EMOJI_NAMES):
+        return get_emoji(TEAM_NUM_EMOJI_NAMES[index])
+    return f"{index + 1}"
+
+
+def team_roster_names(team_data: dict) -> list[str]:
+    """Имена состава команды: players[] или circle1-4."""
+    players = []
+    for p in team_data.get("players", []):
+        name = p[0] if isinstance(p, tuple) else p
+        if name:
+            players.append(name)
+    if players:
+        return players
+    return [
+        team_data.get(f"circle{c}") for c in range(1, 5)
+        if team_data.get(f"circle{c}")
+    ]
+
+
+def team_roster_mentions(tournament: Tournament, team_data: dict) -> str:
+    """Состав команды строкой ментионов <@id> (или имен, если id неизвестен)."""
+    parts = []
+    for name in team_roster_names(team_data):
+        uid = tournament.player_user_ids.get(name)
+        parts.append(f"<@{uid}>" if uid else name)
+    return " ".join(parts)
+
+
 async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tournament, matches: list[tuple[int, int]], match_type: str) -> None:
     """Добавить секцию ставок в embed с детальной информацией."""
     # Check if betting is open for this phase
     is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
 
-    # Build match fields with betting info
+    bet_lines: list[str] = []
     for i, (team_a, team_b) in enumerate(matches):
         # Get team names
         team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
@@ -486,14 +523,13 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             odds_a = max(1.1, min(2.7, odds_a))
             odds_b = max(1.1, min(2.7, odds_b))
 
-        # Build field name
-        star_emoji = ""
-        field_name = f"{star_emoji} Игра #{i + 1}"
+        # Inline line — не заголовок-поле (иначе CV2 рисует 'Игра #N' шапкой)
+        bet_lines.append(
+            f" **Игра #{i + 1}:**  **{name_a}** {odds_a:.2f}x vs **{name_b}** {odds_b:.2f}x"
+        )
 
-        # Build field value - match info with odds only (no betting details)
-        field_value = f"  **{name_a}** {odds_a:.2f}x vs **{name_b}** {odds_b:.2f}x"
-
-        embed.add_field(name=field_name, value=field_value, inline=False)
+    if bet_lines:
+        embed.description = (embed.description or "") + "\n\n" + "\n".join(bet_lines)
 
 
 async def _add_teams_block_to_embed(embed: discord.Embed, guild: discord.Guild, tournament: Tournament) -> None:
@@ -810,27 +846,20 @@ async def build_qualifiers_embed(
     # Add empty field for gap before teams section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-    # Add team names and players as inline fields
+    # Команды — компактные строки num_X <@...> в description
+    # (поля-заголовки в CV2 превращаются в шапки — не используем их)
+    team_lines = []
     for team_idx, team_data in enumerate(tournament.teams):
-        captain = team_data.get("captain", f"П{team_idx + 1}")
-        team_name = tournament.team_names.get(team_idx, captain)
-        players = team_data.get("players", [])
-
-        # Format player names with cosmetics (tags and icons)
-        formatted_players = []
-        for player in players:
-            player_user_id = tournament.player_user_ids.get(player, 0)
-            if player_user_id:
-                formatted_name = format_player_name(guild.id, player_user_id, player)
-            else:
-                formatted_name = player
-            formatted_players.append(formatted_name)
-
-        # Get emoji for team number - use get_emoji() like BR
-        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
-                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
-        num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
+        mentions = team_roster_mentions(tournament, team_data)
+        team_lines.append(
+            f"{team_num_emoji(team_idx)} {mentions}" if mentions
+            else f"{team_num_emoji(team_idx)} *"
+        )
+    embed.description = (
+        (embed.description or "")
+        + "\n\n **Участники команд:**\n"
+        + "\n".join(team_lines)
+    )
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -910,27 +939,20 @@ async def build_semifinals_embed(
     # Add empty field for gap before teams section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-    # Add team names and players as inline fields
+    # Команды — компактные строки num_X <@...> в description
+    # (поля-заголовки в CV2 превращаются в шапки — не используем их)
+    team_lines = []
     for team_idx, team_data in enumerate(tournament.teams):
-        captain = team_data.get("captain", f"П{team_idx + 1}")
-        team_name = tournament.team_names.get(team_idx, captain)
-        players = team_data.get("players", [])
-
-        # Format player names with cosmetics (tags and icons)
-        formatted_players = []
-        for player in players:
-            player_user_id = tournament.player_user_ids.get(player, 0)
-            if player_user_id:
-                formatted_name = format_player_name(guild.id, player_user_id, player)
-            else:
-                formatted_name = player
-            formatted_players.append(formatted_name)
-
-        # Get emoji for team number - use get_emoji() like BR
-        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
-                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
-        num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
+        mentions = team_roster_mentions(tournament, team_data)
+        team_lines.append(
+            f"{team_num_emoji(team_idx)} {mentions}" if mentions
+            else f"{team_num_emoji(team_idx)} *"
+        )
+    embed.description = (
+        (embed.description or "")
+        + "\n\n **Участники команд:**\n"
+        + "\n".join(team_lines)
+    )
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
@@ -1002,28 +1024,17 @@ async def build_final_embed(
     # Add empty field for gap before teams section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-    # Add team names and players as inline fields
+    # Команды — компактные строки num_X <@...> в description
+    # (поля-заголовки в CV2 превращаются в шапки — не используем их)
+    final_team_lines = []
     for team_idx in [team_a, team_b]:
         team_data = tournament.teams[team_idx] if team_idx < len(tournament.teams) else {}
-        captain = team_data.get("captain", f"П{team_idx + 1}")
-        team_name = tournament.team_names.get(team_idx, captain)
-        players = team_data.get("players", [])
-
-        # Format player names with cosmetics (tags and icons)
-        formatted_players = []
-        for player in players:
-            player_user_id = tournament.player_user_ids.get(player, 0)
-            if player_user_id:
-                formatted_name = format_player_name(guild.id, player_user_id, player)
-            else:
-                formatted_name = player
-            formatted_players.append(formatted_name)
-
-        # Get emoji for team number - use get_emoji() like BR
-        team_emoji_names = ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6",
-                           "num_7", "num_8", "num_9", "num_ten", "num_eleven", "num_twelve"]
-        num_emoji = get_emoji(team_emoji_names[team_idx]) if team_idx < len(team_emoji_names) else f"{team_idx + 1}"
-        embed.add_field(name=f"{num_emoji} {team_name}", value=f"  {', '.join(formatted_players)}", inline=False)
+        mentions = team_roster_mentions(tournament, team_data)
+        final_team_lines.append(
+            f"{team_num_emoji(team_idx)} {mentions}" if mentions
+            else f"{team_num_emoji(team_idx)} *"
+        )
+    embed.description = (embed.description or "") + "\n".join(final_team_lines)
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)

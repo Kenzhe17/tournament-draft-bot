@@ -21,7 +21,7 @@ import discord
 from utils.design import compose, text_card
 from discord.ext import commands
 
-from config import replace_emojis
+from config import get_emoji, replace_emojis
 from storage.json_store import store
 from views.ocr_match_view import (
     OCR_STATS_CHANNEL_ID,
@@ -35,6 +35,7 @@ from views.ocr_match_view import (
     pop_pending_upload,
     pop_pending_upload_any,
     register_pending_upload,
+    team_roster,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,9 @@ logger = logging.getLogger(__name__)
 MAX_ATTACH = 10 * 1024 * 1024
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SHOT_FILENAME = "match_result.png"
+
+# Канал итоговых результатов матчей (команды + игроки + скриншот)
+RESULT_CHANNEL_ID = 1568290145138900992
 
 
 def _match_label(match_type: str, match_index: int) -> str:
@@ -227,6 +231,105 @@ async def _update_results_message(
         ],
     )
     return msg
+
+
+# ---------------------------------------------------------------------------
+# Итоговый пост в канал результатов (RESULT_CHANNEL_ID)
+# ---------------------------------------------------------------------------
+
+def _captain_name(tournament, team_index: int) -> str:
+    """Название команды = имя капитана."""
+    team = tournament.teams[team_index] if team_index < len(tournament.teams) else {}
+    return team.get("captain") or _team_display_name(tournament, team_index)
+
+
+def _roster_mentions(tournament, team_index: int) -> str:
+    """Состав команды строкой ментионов <@id>."""
+    parts = []
+    for name in team_roster(tournament, team_index):
+        uid = tournament.player_user_ids.get(name)
+        parts.append(f"<@{uid}>" if uid else name)
+    return " ".join(parts)
+
+
+def _result_embed(
+    tournament, match_type: str, match_index: int, t1: int, t2: int
+) -> discord.Embed:
+    """Стилизованная карточка итога матча: команды, капитаны, игроки."""
+    name_a = _captain_name(tournament, t1)
+    name_b = _captain_name(tournament, t2)
+    embed = discord.Embed(
+        title=f" {replace_emojis('winner')} ИТОГ МАТЧА — {_match_label(match_type, match_index)}",
+        description=(
+            f"**{name_a}** vs **{name_b}**\n\n"
+            f"{get_emoji('num_1')} **{name_a}**\n"
+            f"{_roster_mentions(tournament, t1)}\n\n"
+            f"{get_emoji('num_2')} **{name_b}**\n"
+            f"{_roster_mentions(tournament, t2)}"
+        ),
+        color=discord.Color.gold(),
+    )
+    embed.set_image(url=f"attachment://{SHOT_FILENAME}")
+    return embed
+
+
+async def _result_channel(guild: discord.Guild, fallback):
+    """Канал итогов: RESULT_CHANNEL_ID, иначе fallback (канал статистики)."""
+    channel = guild.get_channel(RESULT_CHANNEL_ID)
+    if channel is None:
+        try:
+            channel = await guild.fetch_channel(RESULT_CHANNEL_ID)
+        except Exception:
+            channel = None
+    return channel or fallback
+
+
+async def _upsert_result_message(
+    guild: discord.Guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+    t1: int,
+    t2: int,
+    data: bytes,
+    fallback_channel,
+) -> None:
+    """Отправить/обновить итоговый пост матча в RESULT_CHANNEL_ID.
+
+    Скриншот прикрепляется к карточке; при повторной загрузке
+    сообщение редактируется (result_message_id хранится в сессии).
+    """
+    try:
+        channel = await _result_channel(guild, fallback_channel)
+        if channel is None:
+            return
+        embed = _result_embed(tournament, match_type, match_index, t1, t2)
+        key = _session_key(match_type, match_index)
+        session = tournament.ocr_sessions.get(key)
+        msg_id = session.get("result_message_id") if session else None
+
+        if msg_id:
+            try:
+                msg = await channel.fetch_message(msg_id)
+                await msg.edit(
+                    view=compose(embed),
+                    attachments=[
+                        discord.AttachmentInput(
+                            io.BytesIO(data), filename=SHOT_FILENAME
+                        )
+                    ],
+                )
+                return
+            except Exception as e:
+                logger.warning("Result message edit failed: %s", e)
+
+        file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
+        bot_msg = await channel.send(view=compose(embed), file=file)
+        if session is not None:
+            session["result_message_id"] = bot_msg.id
+            store.set(tournament)
+    except Exception:
+        logger.exception("Result channel publish failed")
 
 
 class OCRUploadCog(commands.Cog):
@@ -461,6 +564,10 @@ class OCRUploadCog(commands.Cog):
                     )
                     existing["message_id"] = bot_msg.id
                     store.set(tournament)
+                await _upsert_result_message(
+                    message.guild, tournament, match_type, match_index,
+                    t1, t2, data, stats_channel,
+                )
                 return
 
             # Новая сессия
@@ -490,6 +597,11 @@ class OCRUploadCog(commands.Cog):
                 session["message_id"] = bot_msg.id
                 store.set(tournament)
 
+            await _upsert_result_message(
+                message.guild, tournament, match_type, match_index,
+                t1, t2, data, stats_channel,
+            )
+
         except Exception:
             logger.exception("OCR upload processing failed")
             await message.reply(
@@ -510,6 +622,10 @@ class OCRUploadCog(commands.Cog):
         view,
         mentions: str,
         entry: dict[str, Any],
+        match_type: str = "",
+        match_index: int = 0,
+        t1: int = 0,
+        t2: int = 0,
     ) -> None:
         """Отправить или обновить сообщение со статой одного отряда."""
         if entry.get("message_id"):
@@ -525,6 +641,11 @@ class OCRUploadCog(commands.Cog):
                     ],
                 )
                 await message.add_reaction("✅")
+                if match_type:
+                    await _upsert_result_message(
+                        message.guild, tournament, match_type, match_index,
+                        t1, t2, data, stats_channel,
+                    )
                 return
             except Exception as e:
                 logger.warning("Squad message edit failed: %s", e)
@@ -539,6 +660,12 @@ class OCRUploadCog(commands.Cog):
         )
         entry["message_id"] = bot_msg.id
         store.set(tournament)
+
+        if match_type:
+            await _upsert_result_message(
+                message.guild, tournament, match_type, match_index,
+                t1, t2, data, stats_channel,
+            )
 
     async def _handle_squad_upload(
         self,
@@ -631,6 +758,8 @@ class OCRUploadCog(commands.Cog):
             await self._publish_squad_message(
                 stats_channel, tournament, message, data, embed,
                 view, mentions, sentry,
+                match_type=match_type, match_index=match_index,
+                t1=t1, t2=t2,
             )
             return
 
@@ -658,6 +787,8 @@ class OCRUploadCog(commands.Cog):
             await self._publish_squad_message(
                 stats_channel, tournament, message, data, embed,
                 view, mentions, entry,
+                match_type=match_type, match_index=match_index,
+                t1=t1, t2=t2,
             )
             return
 
@@ -701,6 +832,8 @@ class OCRUploadCog(commands.Cog):
             await self._publish_squad_message(
                 stats_channel, tournament, message, data, embed,
                 view, mentions, entry,
+                match_type=match_type, match_index=match_index,
+                t1=t1, t2=t2,
             )
             return
 
@@ -739,6 +872,8 @@ class OCRUploadCog(commands.Cog):
         await self._publish_squad_message(
             stats_channel, tournament, message, data, embed,
             view, mentions, entry,
+            match_type=match_type, match_index=match_index,
+            t1=t1, t2=t2,
         )
 
 
