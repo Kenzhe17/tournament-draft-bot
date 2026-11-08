@@ -47,6 +47,7 @@ class RouletteView(discord.ui.View):
         """Вернуть ставку, если игра не завершена."""
         if self.spun:
             return
+        self.spun = True  # до возврата — защита от двойного refund
         try:
             lock = get_user_lock(self.guild_id, self.user_id)
             async with lock:
@@ -66,7 +67,7 @@ class RouletteView(discord.ui.View):
             embed.add_field(
                 name=f"  Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
-                      f"• Множитель: **2x - 35x**\n"
+                      f"• Множитель: **1.6x - 30x**\n"
                       f"• Диапазон: **0-36**",
                 inline=False
             )
@@ -75,7 +76,7 @@ class RouletteView(discord.ui.View):
                 value="Выберите вариант ставки:\n"
                       "• **Красный/Чёрный** - 2x\n"
                       "• **Чёт/Нечёт** - 2x\n"
-                      "• **Точное число** - 35x",
+                      "• **Точное число** - 30x",
                 inline=False
             )
 
@@ -90,19 +91,19 @@ class RouletteView(discord.ui.View):
 
             if choice == "red" and is_red:
                 won = True
-                winnings = self.bet * 2
+                winnings = self.bet * 8 // 5
             elif choice == "black" and is_black:
                 won = True
-                winnings = self.bet * 2
+                winnings = self.bet * 8 // 5
             elif choice == "even" and is_even:
                 won = True
-                winnings = self.bet * 2
+                winnings = self.bet * 8 // 5
             elif choice == "odd" and not is_even and result != 0:
                 won = True
-                winnings = self.bet * 2
+                winnings = self.bet * 8 // 5
             elif choice.isdigit() and int(choice) == result:
                 won = True
-                winnings = self.bet * 35
+                winnings = self.bet * 30
 
             if won:
                 embed.color = discord.Color.green()
@@ -132,7 +133,7 @@ class RouletteRedButton(discord.ui.Button):
     def __init__(self, game_view: RouletteView):
         super().__init__(
             style=discord.ButtonStyle.danger,
-            label="Красный (2x)",
+            label="Красный (1.6x)",
             custom_id=f"roulette_red_{game_view._cid}"
         )
         self.game_view = game_view
@@ -155,7 +156,7 @@ class RouletteBlackButton(discord.ui.Button):
     def __init__(self, game_view: RouletteView):
         super().__init__(
             style=discord.ButtonStyle.secondary,
-            label="Чёрный (2x)",
+            label="Чёрный (1.6x)",
             custom_id=f"roulette_black_{game_view._cid}"
         )
         self.game_view = game_view
@@ -178,7 +179,7 @@ class RouletteEvenButton(discord.ui.Button):
     def __init__(self, game_view: RouletteView):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Чёт (2x)",
+            label="Чёт (1.6x)",
             custom_id=f"roulette_even_{game_view._cid}"
         )
         self.game_view = game_view
@@ -201,7 +202,7 @@ class RouletteOddButton(discord.ui.Button):
     def __init__(self, game_view: RouletteView):
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label="Нечёт (2x)",
+            label="Нечёт (1.6x)",
             custom_id=f"roulette_odd_{game_view._cid}"
         )
         self.game_view = game_view
@@ -224,7 +225,7 @@ class RouletteSpinButton(discord.ui.Button):
     def __init__(self, game_view: RouletteView):
         super().__init__(
             style=discord.ButtonStyle.success,
-            label="Точное число (35x)",
+            label="Точное число (30x)",
             custom_id=f"roulette_number_{game_view._cid}"
         )
         self.game_view = game_view
@@ -295,19 +296,19 @@ async def _spin(self, interaction: discord.Interaction, choice: str):
 
     if choice == "red" and is_red:
         won = True
-        winnings = game_view.bet * 2
+        winnings = game_view.bet * 8 // 5
     elif choice == "black" and is_black:
         won = True
-        winnings = game_view.bet * 2
+        winnings = game_view.bet * 8 // 5
     elif choice == "even" and is_even:
         won = True
-        winnings = game_view.bet * 2
+        winnings = game_view.bet * 8 // 5
     elif choice == "odd" and not is_even and result != 0:
         won = True
-        winnings = game_view.bet * 2
+        winnings = game_view.bet * 8 // 5
     elif choice.isdigit() and int(choice) == result:
         won = True
-        winnings = game_view.bet * 35
+        winnings = game_view.bet * 30
 
     if won:
         lock = get_user_lock(game_view.guild_id, game_view.user_id)
@@ -317,6 +318,8 @@ async def _spin(self, interaction: discord.Interaction, choice: str):
                 game_view.user_id,
                 winnings
             )
+    from services.game_stats import record_game
+    await record_game(game_view.guild_id, "roulette", game_view.bet, winnings if won else 0)
 
     # Показать результат
     result_embed = game_view.create_embed("result", result, choice)
@@ -352,6 +355,7 @@ class RouletteCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game_view.spun = True  # до возврата — защита от гонки с on_timeout
         # Вернуть ставку
         lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
         async with lock:
@@ -360,8 +364,6 @@ class RouletteCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-
-        self.game_view.spun = True
         await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
@@ -439,8 +441,8 @@ class RouletteCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(games_group, self, ["roulette"])
 
-    @games_group.command(name="roulette", description="Классическая рулетка (2x-35x множитель)")
-    @app_commands.describe(bet="Ставка в монетах (50-5,000)")
+    @games_group.command(name="roulette", description="Классическая рулетка (1.6x-30x множитель)")
+    @app_commands.describe(bet="Ставка в монетах (50-3,000)")
     async def roulette(
         self,
         interaction: discord.Interaction,
@@ -451,9 +453,9 @@ class RouletteCog(commands.Cog):
         user_id = interaction.user.id
 
         # Проверить ставку
-        if bet < 50 or bet > 5000:
+        if bet < 50 or bet > 3000:
             await interaction.response.send_message(
-                "❌ Ставка должна быть от 50 до 5,000 монет.",
+                "❌ Ставка должна быть от 50 до 3,000 монет.",
                 ephemeral=True
             )
             return

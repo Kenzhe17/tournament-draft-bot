@@ -74,6 +74,7 @@ class CoinFlipView(discord.ui.View):
         game = self.game
         if game.result is not None or not game.is_active:
             return
+        game.is_active = False  # пометить до возврата — защита от двойного refund
         try:
             lock = get_user_lock(game.guild_id, game.initiator_id)
             async with lock:
@@ -101,7 +102,7 @@ class CoinFlipView(discord.ui.View):
                 value=f"• Режим: **{mode}**\n"
                       f"• Игрок: <@{self.game.initiator_id}>\n"
                       f"• Ставка: **{self.game.bet}** {get_emoji('money')}\n"
-                      f"• Множитель: **2.0x**",
+                      f"• Множитель: **1.6x** (PvE)",
                 inline=False
             )
 
@@ -141,7 +142,7 @@ class CoinFlipView(discord.ui.View):
                         name=f"  Результат",
                         value=f"• Ваша ставка: **{initiator_text}**\n"
                               f"• Выпало: **{result_text}**\n"
-                              f"• Итог: Вы выиграли **{self.game.bet * 2}** {get_emoji('money')}!",
+                              f"• Итог: Вы выиграли **{self.game.bet * 8 // 5}** {get_emoji('money')}!",
                         inline=False
                     )
                 else:
@@ -170,6 +171,10 @@ class CoinFlipHeadsButton(discord.ui.Button):
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
             return
 
+        if not self.game.is_active or self.game.result is not None:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            return
+
         self.game.initiator_choice = "heads"
         await start_game(interaction, self.game, self.game_view)
 
@@ -185,6 +190,10 @@ class CoinFlipTailsButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
             await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            return
+
+        if not self.game.is_active or self.game.result is not None:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
         self.game.initiator_choice = "tails"
@@ -207,6 +216,7 @@ class CoinFlipCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game.is_active = False  # до возврата — защита от гонки с on_timeout
         # Return bet to initiator
         lock = get_user_lock(self.game.guild_id, self.game.initiator_id)
         async with lock:
@@ -216,7 +226,6 @@ class CoinFlipCancelButton(discord.ui.Button):
                 self.game.bet
             )
 
-        self.game.is_active = False
         await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
@@ -233,6 +242,12 @@ class CoinFlipAcceptButton(discord.ui.Button):
         if interaction.user.id != self.game.opponent_id:
             await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
             return
+
+        # Защита от повторного нажатия «Принять» (двойное списание ставки)
+        if getattr(self.game, "_accepting", False) or not self.game.is_active:
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            return
+        self.game._accepting = True
 
         # Deduct bet from opponent
         lock = get_user_lock(self.game.guild_id, self.game.opponent_id)
@@ -270,6 +285,7 @@ class CoinFlipDeclineButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game.is_active = False  # до возврата — защита от гонки с on_timeout
         # Return bet to initiator
         lock = get_user_lock(self.game.guild_id, self.game.initiator_id)
         async with lock:
@@ -279,7 +295,6 @@ class CoinFlipDeclineButton(discord.ui.Button):
                 self.game.bet
             )
 
-        self.game.is_active = False
         await interaction.response.edit_message( view=text_card("❌ Вызов отклонён. Ставка возвращена.")
         )
 
@@ -406,15 +421,18 @@ async def start_game(
                 game.bet * 2
             )
     else:
-        # PvE
-        if game.winner == game.initiator_id:
+        # PvE: house edge — выплата 1.6x от ставки (RTP ~80%)
+        payout = game.bet * 8 // 5 if game.winner == game.initiator_id else 0
+        if payout:
             lock = get_user_lock(game.guild_id, game.initiator_id)
             async with lock:
                 await user_balance_store.add_balance(
                     game.guild_id,
                     game.initiator_id,
-                    game.bet * 2
+                    payout
                 )
+        from services.game_stats import record_game
+        await record_game(game.guild_id, "coin_flip", game.bet, payout)
 
     # Show result
     result_embed = view.create_game_embed("result")

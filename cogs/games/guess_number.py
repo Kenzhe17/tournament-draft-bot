@@ -49,6 +49,7 @@ class GuessNumberView(discord.ui.View):
         """Вернуть ставку, если игра не завершена."""
         if self.game_over:
             return
+        self.game_over = True  # до возврата — защита от двойного refund
         try:
             lock = get_user_lock(self.guild_id, self.user_id)
             async with lock:
@@ -70,7 +71,7 @@ class GuessNumberView(discord.ui.View):
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
                       f"• Диапазон: **{self.min_range} - {self.max_range}**\n"
                       f"• Попытки: **{self.attempts}/{self.max_attempts}**\n"
-                      f"• Множитель: **5.0x** (при угадывании)",
+                      f"• Множитель: **2.5x** (при угадывании)",
                 inline=False
             )
             embed.add_field(
@@ -80,20 +81,13 @@ class GuessNumberView(discord.ui.View):
             )
 
         elif state == "won":
-            winnings = self.bet * 5
+            winnings = self.bet * 5 // 2
             embed.color = discord.Color.green()
             embed.add_field(
                 name=f"  Результат",
                 value=f" Вы угадали число **{self.secret_number}**!\n"
                       f"• Попыток: **{self.attempts}**\n"
-                      f"• Выигрыш: **{winnings}** {get_emoji('money')} (5x)",
-                inline=False
-            )
-            embed.add_field(
-                name=f"  Результат",
-                value=f"• Секретное число: **{self.secret_number}**\n"
-                      f"• Попыток: **{self.attempts}**\n"
-                      f"• Поздравляем! Вы выиграли **{winnings}** {get_emoji('money')}!",
+                      f"• Выигрыш: **{winnings}** {get_emoji('money')} (2.5x)",
                 inline=False
             )
 
@@ -166,7 +160,7 @@ class GuessNumberInput(discord.ui.Modal):
         if guess == self.game_view.secret_number:
             # Победа
             self.game_view.game_over = True
-            winnings = int(self.game_view.bet * 1.25)
+            winnings = self.game_view.bet * 5 // 2
 
             lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
             async with lock:
@@ -175,6 +169,8 @@ class GuessNumberInput(discord.ui.Modal):
                     self.game_view.user_id,
                     winnings
                 )
+            from services.game_stats import record_game
+            await record_game(self.game_view.guild_id, "guess_number", self.game_view.bet, winnings)
 
             result_embed = self.game_view.create_embed("won")
             result_view = discord.ui.View(timeout=None)
@@ -185,6 +181,8 @@ class GuessNumberInput(discord.ui.Modal):
         elif self.game_view.attempts >= self.game_view.max_attempts:
             # Проигрыш
             self.game_view.game_over = True
+            from services.game_stats import record_game
+            await record_game(self.game_view.guild_id, "guess_number", self.game_view.bet, 0)
 
             result_embed = self.game_view.create_embed("lost")
             result_view = discord.ui.View(timeout=None)
@@ -247,6 +245,7 @@ class GuessNumberCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game_view.game_over = True  # до возврата — защита от гонки с on_timeout
         # Вернуть ставку
         lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
         async with lock:
@@ -255,8 +254,6 @@ class GuessNumberCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-
-        self.game_view.game_over = True
         await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
@@ -333,7 +330,7 @@ class GuessNumberCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(games_group, self, ["guess_number"])
 
-    @games_group.command(name="guess_number", description="Угадай число от 1 до 100 (1.25x множитель)")
+    @games_group.command(name="guess_number", description="Угадай число от 1 до 100 (2.5x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def guess_number(
         self,

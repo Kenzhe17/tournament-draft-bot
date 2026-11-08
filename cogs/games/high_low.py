@@ -48,6 +48,7 @@ class HighLowView(discord.ui.View):
         """Вернуть ставку, если игра не завершена."""
         if self.game_over:
             return
+        self.game_over = True  # до возврата — защита от двойного refund
         try:
             lock = get_user_lock(self.guild_id, self.user_id)
             async with lock:
@@ -142,6 +143,8 @@ class HighLowView(discord.ui.View):
             # Проверить конец игры
             if self.game_over:
                 # Проигрыш
+                from services.game_stats import record_game
+                await record_game(self.guild_id, "high_low", self.bet, 0)
                 result_embed = self.create_embed("lost")
                 result_view = discord.ui.View(timeout=None)
                 result_view.add_item(HighLowPlayAgainButton(self.bet, self.user_id))
@@ -158,6 +161,8 @@ class HighLowView(discord.ui.View):
                         self.user_id,
                         final_prize
                     )
+                from services.game_stats import record_game
+                await record_game(self.guild_id, "high_low", self.bet, final_prize)
 
                 result_embed = self.create_embed("won")
                 result_view = discord.ui.View(timeout=None)
@@ -225,6 +230,7 @@ class HighLowCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game_view.game_over = True  # до возврата — защита от гонки с on_timeout
         # Вернуть ставку
         lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
         async with lock:
@@ -233,8 +239,6 @@ class HighLowCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-
-        self.game_view.game_over = True
         await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 

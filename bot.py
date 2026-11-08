@@ -100,6 +100,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.games.guess_number")
         await self.load_extension("cogs.games.high_low")
         await self.load_extension("cogs.games.roulette")
+        await self.load_extension("cogs.games.stats")
         await self.load_extension("cogs.rob")
         await self.load_extension("cogs.bank")
         await self.load_extension("cogs.math_quiz")

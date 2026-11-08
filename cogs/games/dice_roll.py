@@ -44,6 +44,7 @@ class DiceRollView(discord.ui.View):
         """Вернуть ставку, если игра не завершена."""
         if self.rolled:
             return
+        self.rolled = True  # до возврата — защита от двойного refund
         try:
             lock = get_user_lock(self.guild_id, self.user_id)
             async with lock:
@@ -63,20 +64,20 @@ class DiceRollView(discord.ui.View):
             embed.add_field(
                 name=f"  Информация",
                 value=f"• Ставка: **{self.bet}** {get_emoji('money')}\n"
-                      f"• Множитель: **6.0x**\n"
+                      f"• Множитель: **4.8x**\n"
                       f"• Шанс: **1/6** (16.67%)",
                 inline=False
             )
             embed.add_field(
                 name=f"  Правила",
-                value="Выберите число от 1 до 6. Если выпадет ваше число, вы выиграете 6x ставку!",
+                value="Выберите число от 1 до 6. Если выпадет ваше число, вы выиграете 4.8x ставку!",
                 inline=False
             )
 
         elif state == "result":
             result_text = f"🎲 Выпало: **{result}**"
             if result == self.user_choice:
-                winnings = self.bet * 6
+                winnings = self.bet * 24 // 5
                 embed.color = discord.Color.green()
                 embed.add_field(
                     name=f"  Результат",
@@ -135,7 +136,7 @@ class DiceRollButton(discord.ui.Button):
 
         # Обработать выигрыш/проигрыш
         if result == self.number:
-            winnings = self.game_view.bet * 6
+            winnings = self.game_view.bet * 24 // 5
             lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
             async with lock:
                 await user_balance_store.add_balance(
@@ -143,9 +144,11 @@ class DiceRollButton(discord.ui.Button):
                     self.game_view.user_id,
                     winnings
                 )
+            from services.game_stats import record_game
+            await record_game(self.game_view.guild_id, "dice_roll", self.game_view.bet, winnings)
         else:
-            # Ставка уже списана при создании игры
-            pass
+            from services.game_stats import record_game
+            await record_game(self.game_view.guild_id, "dice_roll", self.game_view.bet, 0)
 
         # Показать результат
         result_embed = self.game_view.create_embed("result", result)
@@ -173,6 +176,7 @@ class DiceRollCancelButton(discord.ui.Button):
             await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
             return
 
+        self.game_view.rolled = True  # до возврата — защита от гонки с on_timeout
         # Вернуть ставку
         lock = get_user_lock(self.game_view.guild_id, self.game_view.user_id)
         async with lock:
@@ -181,8 +185,6 @@ class DiceRollCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-
-        self.game_view.rolled = True
         await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
         )
 
@@ -257,7 +259,7 @@ class DiceRollCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(games_group, self, ["dice_roll"])
 
-    @games_group.command(name="dice_roll", description="Бросок кубика 1-6 (6x множитель)")
+    @games_group.command(name="dice_roll", description="Бросок кубика 1-6 (4.8x множитель)")
     @app_commands.describe(bet="Ставка в монетах (10-10,000)")
     async def dice_roll(
         self,
