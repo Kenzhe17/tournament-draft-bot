@@ -166,13 +166,21 @@ def _text_segments(
 
 
 def _quote_first_line(content: str) -> list[str]:
-    """'>' полоска только у первой строки текста."""
+    """'>' полоска только у первой строки текста.
+
+    Остальные строки сдвигаются на 2 пробела — визуально выравниваются
+    под текстом заголовка после '>' полоски, а не прижимаются к стене.
+    """
     head, sep, rest = content.partition("\n")
     if not head.strip() or head.lstrip().startswith(">"):
         return [content]
     parts = [f"> {head}"]
     if sep and rest.strip():
-        parts.append(rest)
+        indented = "\n".join(
+            f"  {line}" if line.strip() else line
+            for line in rest.split("\n")
+        )
+        parts.append(indented)
     return parts
 
 
@@ -181,23 +189,41 @@ def _is_small_text(content: str) -> bool:
     return content.lstrip().startswith("-#")
 
 
+# Первая строка вида «**Заголовок:**» — такой блок тоже получает
+# короткую '>' полоску, даже если он не первый текст секции
+# (например, «Прогресс» после заголовка-карточки с аватаром).
+_HEADER_LINE_RE = re.compile(r"^\s*\*\*[^*\n]{1,100}:\*\*")
+
+
+def _needs_head_quote(content: str, head_done: bool) -> bool:
+    """Нужна ли '>' полоска этому текстовому блоку."""
+    if _is_small_text(content):
+        return False
+    if not head_done:
+        return True
+    first_line = content.split("\n", 1)[0]
+    return bool(_HEADER_LINE_RE.match(first_line))
+
+
 def _strip_section_head(sec: list[discord.ui.Item]) -> None:
-    """Добавить короткую '>' полоску к первому текстовому блоку секции.
+    """Добавить короткую '>' полоску к первому текстовому блоку секции
+    и к каждому блоку, начинающемуся со строки «**Заголовок:**».
 
     Полоска по высоте равна одной строке заголовка — в отличие от
     accent_color Container'а, не тянется на всю карточку.
     Мелкий текст ('-# ') и секции-картинки пропускаются.
     """
+    head_done = False
     for idx, item in enumerate(sec):
         if isinstance(item, discord.ui.TextDisplay):
-            if _is_small_text(item.content):
+            if not _needs_head_quote(item.content, head_done):
                 continue
             parts = _quote_first_line(item.content)
-            new_items = [
+            sec[idx : idx + 1] = [
                 discord.ui.TextDisplay(content=p) for p in parts
             ]
-            sec[idx : idx + 1] = new_items
-            return
+            head_done = True
+            continue
         if isinstance(item, discord.ui.Section):
             accessory = getattr(item,"accessory", None)
             if accessory is None:
@@ -217,7 +243,7 @@ def _strip_section_head(sec: list[discord.ui.Item]) -> None:
             if td_index is None:
                 continue
             td = children[td_index]
-            if _is_small_text(td.content):
+            if not _needs_head_quote(td.content, head_done):
                 continue
             parts = _quote_first_line(td.content)
             new_children = list(children)
@@ -232,7 +258,8 @@ def _strip_section_head(sec: list[discord.ui.Item]) -> None:
             sec[idx] = discord.ui.Section(
                 *new_children, accessory=accessory
             )
-            return
+            head_done = True
+            continue
         # MediaGallery/Separator и пр. — пропускаем, ищем текст дальше
 
 

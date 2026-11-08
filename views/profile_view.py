@@ -1,7 +1,7 @@
 """View для редактирования профиля."""
 import logging
 
-from config import replace_emojis, get_emoji
+from config import replace_emojis
 
 import discord
 from utils.design import compose
@@ -164,104 +164,10 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         else:
             await player_stats_store.update(self.guild_id, self.user_id, stats)
 
-        # Regenerate profile embed with updated data
-        from cogs.tournament import TournamentCog, get_rank_emoji
-        from storage.user_balance_store import user_balance_store
-        from storage.shop_store import inventory_store
-        from utils.cosmetics import format_player_name
+        # Regenerate profile embed with updated data (same card as /player profile)
+        from utils.profile_card import build_profile_embed
 
-        balance = await user_balance_store.get_balance(self.guild_id, self.user_id)
-        cosmetics = inventory_store.get_player_inventory(self.guild_id, self.user_id)
-        inventory_count = len(cosmetics)
-
-        # Get rank
-        rank_title = get_rank_emoji(stats.level)
-
-        # Используем статистику турниров вместо мини-игр
-        total_games_played = stats.games
-        total_games_won = stats.wins
-
-        # Винрейт
-        win_rate = (total_games_won / total_games_played * 100) if total_games_played > 0 else 0
-
-        # Last ELO Change
-        elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
-
-        # Build description (new style)
-        description_parts = []
-
-        # Прогресс
-        description_parts.append("**Прогресс:**")
-        description_parts.append(f" Ранг: {rank_title}")
-        description_parts.append(f" ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
-        description_parts.append(f" Уровень: Level {stats.level}")
-        description_parts.append("")
-
-        # Экономика
-        description_parts.append("**Экономика:**")
-        description_parts.append(f" Баланс: {balance:,} " + get_emoji("money"))
-        description_parts.append(f" Предметов: {inventory_count} шт.")
-        description_parts.append("")
-
-        # Битва Отрядов
-        description_parts.append("**Битва Отрядов:**")
-        description_parts.append(f" Сыграно: {total_games_played} игр")
-        description_parts.append(f" Побед: {total_games_won} `({win_rate:.1f}%)`")
-
-        # Show K/D/A, K+A/D and damage only if player has played games
-        if total_games_played > 0:
-            try:
-                kd_ratio = stats.kd_ratio
-            except AttributeError:
-                kd_ratio = 0.0
-
-            try:
-                kda_ratio = stats.kda_ratio
-            except AttributeError:
-                kda_ratio = 0.0
-
-            try:
-                avg_damage = stats.avg_damage
-            except AttributeError:
-                avg_damage = 0.0
-
-            try:
-                skill_rating = stats.skill_rating
-            except Exception as e:
-                skill_rating = 0.0
-
-            try:
-                best_match_kills = stats.best_match_kills
-            except AttributeError:
-                best_match_kills = 0
-
-            description_parts.append(
-                f" K/D/A: "
-                f"{stats.total_kills}/{stats.total_deaths}/{stats.total_assists}"
-            )
-            description_parts.append(f" K+A/D: {kda_ratio:.2f}")
-            description_parts.append(f" AVG DMG: {avg_damage:,.0f}")
-            description_parts.append(f" Skill Rating: {skill_rating:.1f}/10.0")
-            description_parts.append(f" Max Kills: {best_match_kills}")
-        else:
-            description_parts.append(f" Ещё не играл в турниры")
-
-        description_parts.append("")
-
-        # Био
-        if stats.description:
-            description_parts.append(f" {stats.description}")
-            description_parts.append("")
-
-        # Create new embed (new style)
-        import discord
-        embed = discord.Embed(
-            title=f" {stats.name}",
-            description="\n".join(description_parts),
-            color=discord.Color.from_rgb(69, 69, 69)
-        )
-        embed.set_footer(text="Основная информация и статистика игрока")
-        embed.set_thumbnail(url=interaction.user.avatar.url if interaction.user.avatar else interaction.user.default_avatar.url)
+        embed = await build_profile_embed(self.guild_id, interaction.user)
 
         # Update the original message with new embed and view
         view = ProfileView(self.guild_id, self.user_id, True)
