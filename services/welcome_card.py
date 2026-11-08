@@ -1,17 +1,16 @@
 """Welcome-карточка Components V2 для новых участников.
 
-Структура: MediaGallery(welcome.png) → приветствие → Separator →
-информация → Separator → финальная строка. Без кнопок и эмодзи-UI.
+Структура: приветствие → Separator → информация → Separator →
+финальная строка. Без картинок, кнопок и эмодзи-UI.
 
 send_welcome_message() — полная логика отправки: проверка настройки,
-поиск канала 1569098034325889144, номер участника из PostgreSQL.
-Используется и on_member_join, и /welcometest.
+поиск канала 1569098034325889144. Используется и on_member_join,
+и /welcometest.
 """
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import discord
 
@@ -21,26 +20,15 @@ logger = logging.getLogger(__name__)
 
 WELCOME_CHANNEL_ID = 1569098034325889144
 
-WELCOME_PNG = (
-    Path(__file__).resolve().parents[1]
-    / "assets_ds_server" / "welcome" / "welcome.png"
-)
-WELCOME_FILENAME = "welcome.png"
-
 
 def build_welcome_view(
     member_number: int,
     member: discord.Member,
     info_channel_id: int | None = None,
 ) -> discord.ui.LayoutView:
-    """Собрать V2-view приветствия. Файл прикрепляется к сообщению."""
+    """Собрать V2-view приветствия (без изображения)."""
     info_ref = f"<#{info_channel_id}>" if info_channel_id else "#информация"
     view = DesignView(timeout=None)
-    view.component(
-        discord.ui.MediaGallery(
-            discord.MediaGalleryItem(media=f"attachment://{WELCOME_FILENAME}")
-        )
-    )
     view.sep(large=True)
     view.text(
         "₊˚⊹♡ **Добро пожаловать на сервер**, "
@@ -55,10 +43,6 @@ def build_welcome_view(
     view.sep()
     view.text("୨୧ надеемся, тебе у нас понравится ୨୧")
     return view
-
-
-def welcome_file() -> discord.File:
-    return discord.File(str(WELCOME_PNG), filename=WELCOME_FILENAME)
 
 
 async def _find_channel(
@@ -112,13 +96,8 @@ async def send_welcome_message(
             f"{[g.id for g in client.guilds]})")
         return False
 
-    try:
-        from storage.welcome_store import welcome_store
-        number = await welcome_store.member_number(
-            member.guild.id, member.id)
-    except Exception:
-        logger.exception("welcome number failed")
-        number = max(1, (member.guild.member_count or 1))
+    # N = текущее количество участников + 1
+    number = max(1, (member.guild.member_count or 0) + 1)
 
     try:
         from config import INFO_CHANNEL_ID
@@ -128,7 +107,7 @@ async def send_welcome_message(
 
     try:
         view = build_welcome_view(number, member, info_channel_id)
-        await channel.send(view=view, file=welcome_file())
+        await channel.send(view=view)
         logger.info(
             f"Welcome sent to {channel.id} in guild "
             f"{channel_guild.id if channel_guild else '?'} "
