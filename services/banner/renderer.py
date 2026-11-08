@@ -24,20 +24,20 @@ TEMPLATE_PATH = ASSETS_DIR / "template_clean.png"
 FALLBACK_LOGO_PATH = ASSETS_DIR / "logo.png"
 LOGO_PATH = ASSETS_DIR.parent / "logo+banner" / "logo.png"
 
-# viewport / template scale
+# viewport / template — оба 1920x1080, масштаб 1:1
 VW, VH = 1920, 1080
-TW, TH = 1671, 941
+TW, TH = 1920, 1080
 SX = VW / TW
 SY = VH / TH
 
-# Динамические зоны в координатах шаблона (из OCR-разметки)
-AVATAR_CX, AVATAR_CY, AVATAR_R = 900, 585, 68      # внутри декоративного кольца r~76
-NICK_X, NICK_TOP = 1006, 516                       # верх текста ника (box 519-576)
-NICK_FONT = 56                                    # template px
-NICK_MAX_W = 560                                  # до правого края карточки
-SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1010, 586, 30
-VOICE_X, VOICE_TOP, STAT_FONT = 880, 736, 48
-MATCHES_X = 1334
+# Динамические зоны в координатах шаблона 1920x1080 (OCR-разметка)
+AVATAR_CX, AVATAR_CY, AVATAR_R = 1020, 662, 80    # внутри кольца r~90
+NICK_X, NICK_TOP = 1137, 580                      # верх текста ника
+NICK_FONT = 60
+NICK_MAX_W = 620                                  # до правого края карточки
+SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1141, 658, 34
+VOICE_X, VOICE_TOP, STAT_FONT = 999, 838, 52
+MATCHES_X = 1507
 
 RENDER_TIMEOUT = 20
 RENDER_SEM = asyncio.Semaphore(2)
