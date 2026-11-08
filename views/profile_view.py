@@ -170,20 +170,23 @@ class ProfileEditModal(discord.ui.Modal, title="Редактирование п�
         elo_change = stats.last_elo_change if hasattr(stats, 'last_elo_change') else 0
 
         # Build description (new style)
-        description_parts = ["Основная информация и статистика игрока:\n"]
+        description_parts = []
 
-        # Ранг, ELO, Уровень
+        # Прогресс
+        description_parts.append("**Прогресс:**")
         description_parts.append(f" Ранг: {rank_title}")
         description_parts.append(f" ELO: {int(stats.elo):,} `(Last: {elo_change:+d})`")
         description_parts.append(f" Уровень: Level {stats.level}")
         description_parts.append("")
 
         # Экономика
+        description_parts.append("**Экономика:**")
         description_parts.append(f" Баланс: {balance:,} " + get_emoji("money"))
         description_parts.append(f" Предметов: {inventory_count} шт.")
         description_parts.append("")
 
-        # Статистика игр
+        # Битва Отрядов
+        description_parts.append("**Битва Отрядов:**")
         description_parts.append(f" Сыграно: {total_games_played} игр")
         description_parts.append(f" Побед: {total_games_won} `({win_rate:.1f}%)`")
 
