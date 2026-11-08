@@ -370,7 +370,7 @@ class MMCog(commands.Cog):
                         )
 
                         await notification_channel.send(
-                            embed,
+                            embed=embed,
                             allowed_mentions=discord.AllowedMentions(roles=True)
                         )
                 except Exception as e:
