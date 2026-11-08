@@ -403,11 +403,22 @@ async def publish_match_result_card(
             except Exception:
                 pass
 
+        # Финальный счёт: распознанный «N VS M» со скриншота,
+        # иначе fallback — суммы убийств (squad-скрины без счёта)
+        score = session.get("score")
+        if isinstance(score, (list, tuple)) and len(score) == 2:
+            try:
+                score_a, score_b = int(score[0]), int(score[1])
+            except (TypeError, ValueError):
+                score_a, score_b = totals_a.kills, totals_b.kills
+        else:
+            score_a, score_b = totals_a.kills, totals_b.kills
+
         data = MatchResultData(
             match_num=match_num_from_id(match_id),
             duration=duration,
-            score_a=totals_a.kills,
-            score_b=totals_b.kills,
+            score_a=score_a,
+            score_b=score_b,
             winner="A" if winning_team_index == t1 else "B",
             team_a=cards_a,
             team_b=cards_b,
@@ -659,6 +670,16 @@ class OCRUploadCog(commands.Cog):
                 )
                 return
 
+            # Счёт «N VS M» мог не распознаться — повторный OCR полосы
+            if parsed.get("score") is None:
+                from services.ocr_service import ocr_score_fallback
+
+                score = await loop.run_in_executor(
+                    OCR_EXECUTOR, ocr_score_fallback, data, boxes
+                )
+                if score:
+                    parsed["score"] = list(score)
+
             # Победитель по цветовой подсветке панели (CPU-bound)
             side = await loop.run_in_executor(
                 OCR_EXECUTOR, detect_winner_side, data, boxes
@@ -706,6 +727,7 @@ class OCRUploadCog(commands.Cog):
                         "panels": panels,
                         "winner_side": side,
                         "banner": parsed.get("banner"),
+                        "score": parsed.get("score"),
                         "top5": parsed.get("top5", False),
                         "uploaded_by": message.author.id,
                         "uploaded_by_name": message.author.display_name,
@@ -749,6 +771,7 @@ class OCRUploadCog(commands.Cog):
                 "panels": panels,
                 "winner_side": side,
                 "banner": parsed.get("banner"),
+                "score": parsed.get("score"),
                 "top5": parsed.get("top5", False),
                 "uploaded_by": message.author.id,
                 "uploaded_by_name": message.author.display_name,

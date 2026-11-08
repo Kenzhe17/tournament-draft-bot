@@ -14,6 +14,9 @@ KDA_RE = re.compile(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{1,2})")
 # (ассист всегда 1 цифра, урон 3+ цифр)
 KDA_DMG_GLUED_RE = re.compile(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d)\s*(\d{3,7})")
 NUM_RE = re.compile(r"^\d{1,7}$")
+SCORE_NUM_RE = re.compile(r"^\d{1,2}$")
+VS_RE = re.compile(r"^(vs|v5|ws|vS)[.:]?$", re.IGNORECASE)
+SCORE_GLUED_RE = re.compile(r"(\d{1,2})\s*[:：]?\s*(?:vs|v5|ws)\s*[:：]?\s*(\d{1,2})", re.IGNORECASE)
 NAME_CHAR_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 SKIP_WORDS = {
     "имя", "k/d/a", "dmg", "uma", "a", "b", "битва", "отрядов",
@@ -37,10 +40,55 @@ def _is_kda_text(text: str) -> bool:
     return bool(KDA_RE.search(text))
 
 
+def parse_match_score(
+    boxes: list[dict[str, Any]],
+) -> tuple[int, int] | None:
+    """Счёт матча «N VS M» в шапке экрана (выигранные раунды).
+
+    Возвращает (score_left, score_right) — левой/правой команды
+    на экране (= team A / team B парсера). None если не найден.
+    """
+    # 1) Отдельные боксы: число | VS | число в одной строке
+    for vb in boxes:
+        if not VS_RE.match(vb["text"].strip()):
+            continue
+        tol = 20.0
+        left = [
+            b for b in boxes
+            if b is not vb and SCORE_NUM_RE.match(b["text"].strip())
+            and b["cx"] < vb["cx"] - 15 and abs(b["cy"] - vb["cy"]) <= tol
+        ]
+        right = [
+            b for b in boxes
+            if b is not vb and SCORE_NUM_RE.match(b["text"].strip())
+            and b["cx"] > vb["cx"] + 15 and abs(b["cy"] - vb["cy"]) <= tol
+        ]
+        if not left or not right:
+            continue
+        l = min(left, key=lambda b: vb["cx"] - b["cx"])
+        r = min(right, key=lambda b: b["cx"] - vb["cx"])
+        try:
+            a, c = int(l["text"]), int(r["text"])
+        except ValueError:
+            continue
+        if 0 <= a <= 30 and 0 <= c <= 30 and (a or c):
+            return (a, c)
+
+    # 2) Склеенный вариант в одном боксе: "5:2", "5 VS 2", "5vs2"
+    for b in boxes:
+        m = SCORE_GLUED_RE.search(b["text"])
+        if m:
+            a, c = int(m.group(1)), int(m.group(2))
+            if 0 <= a <= 30 and 0 <= c <= 30 and (a or c):
+                return (a, c)
+    return None
+
+
 def parse_cs_results(
     boxes: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """Возвращает {"team_a": [...], "team_b": [...], "top5": bool} или None."""
+    """Возвращает {"team_a": [...], "team_b": [...], "top5": bool,
+    "score": (a, b)|None, "banner": ...} или None."""
     # 1. Находим все K/D/A (включая склеенные с уроном "12/2/1457")
     kda_matches = []
     for b in boxes:
@@ -257,6 +305,7 @@ def parse_cs_results(
         "team_b_name": name_b,
         "top5": top5,
         "banner": banner,
+        "score": parse_match_score(boxes),
     }
 
 

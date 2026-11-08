@@ -89,6 +89,43 @@ async def extract_text_boxes(image_bytes: bytes) -> list[dict[str, Any]]:
     return await loop.run_in_executor(OCR_EXECUTOR, _run_ocr, image_bytes)
 
 
+def ocr_score_fallback(
+    image_bytes: bytes, boxes: list[dict[str, Any]]
+) -> tuple[int, int] | None:
+    """Повторный OCR полосы со счётом «N VS M», если основной проход
+    не распознал цифры (мелкий/стилизованный шрифт).
+
+    Вырезает полосу ±50px вокруг бокса VS, увеличивает x3 и прогоняет
+    OCR заново. Возвращает (score_left, score_right) или None.
+    """
+    try:
+        from services.cs_parser import VS_RE, parse_match_score
+    except Exception:
+        return None
+
+    vs_boxes = [b for b in boxes if VS_RE.match(b["text"].strip())]
+    if not vs_boxes:
+        return None
+    vb = min(vs_boxes, key=lambda b: b["cy"])
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return None
+    w, h = img.size
+    y0 = max(0, int(vb["y0"]) - 50)
+    y1 = min(h, int(vb["y1"]) + 50)
+    if y1 - y0 < 20:
+        return None
+    crop = img.crop((0, y0, w, y1))
+    crop = crop.resize((w * 3, (y1 - y0) * 3), Image.LANCZOS)
+
+    buf = io.BytesIO()
+    crop.save(buf, format="PNG")
+    sub_boxes = _run_ocr(buf.getvalue()) or []
+    return parse_match_score(sub_boxes)
+
+
 def detect_winner_side(
     image_bytes: bytes, boxes: list[dict[str, Any]]
 ) -> str | None:
