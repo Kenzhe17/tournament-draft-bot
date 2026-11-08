@@ -1209,6 +1209,118 @@ class TournamentCog(commands.Cog):
 
         await interaction.response.send_message( view=compose(embed, view))
 
+    @app_commands.command(name="rep", description="Дать +1 репутацию пользователю (один раз на человека)")
+    @app_commands.describe(user="Пользователь")
+    async def rep(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Дать +1 репутацию пользователю (один раз на пару «кто -> кому»)."""
+        from storage.rep_store import rep_store
+        from views.profile_view import _default_stats
+
+        if user.id == interaction.user.id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нельзя дать репутацию самому себе."), ephemeral=True
+            )
+            return
+        if user.bot:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нельзя дать репутацию боту."), ephemeral=True
+            )
+            return
+
+        guild_id = interaction.guild_id
+        if rep_store.has_given(guild_id, interaction.user.id, user.id):
+            await interaction.response.send_message(
+                replace_emojis(f"❌ Вы уже давали репутацию {user.mention}."), ephemeral=True
+            )
+            return
+
+        stats = await player_stats_store.get(guild_id, user.id)
+        if not stats:
+            stats = _default_stats(guild_id, user.id, user.display_name)
+        stats.reputation = getattr(stats, "reputation", 0) + 1
+        await player_stats_store.set(stats)
+        rep_store.mark_given(guild_id, interaction.user.id, user.id)
+
+        embed = discord.Embed(
+            title=" РЕПУТАЦИЯ | /rep",
+            description=(
+                f" {interaction.user.mention} дал +1 репутации {user.mention}\n\n"
+                f" Репутация {user.mention}: **{stats.reputation:,}**"
+            ),
+            color=discord.Color.from_rgb(69, 69, 69),
+        )
+        await interaction.response.send_message(view=compose(embed))
+
+    @player_group.command(name="marry", description="Предложить руку и сердце пользователю")
+    @app_commands.describe(user="Пользователь")
+    async def marry(self, interaction: discord.Interaction, user: discord.Member) -> None:
+        """Отправить предложение о браке."""
+        from views.marry_view import MarriageProposalView, _get_or_create_stats
+
+        if user.id == interaction.user.id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нельзя жениться на себе."), ephemeral=True
+            )
+            return
+        if user.bot:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нельзя жениться на боте."), ephemeral=True
+            )
+            return
+
+        guild_id = interaction.guild_id
+        own_stats = await _get_or_create_stats(guild_id, interaction.user.id, interaction.user.display_name)
+        target_stats = await _get_or_create_stats(guild_id, user.id, user.display_name)
+
+        if own_stats.spouse_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы уже состоите в браке. Сначала разведитесь через `/player divorce`."),
+                ephemeral=True,
+            )
+            return
+        if target_stats.spouse_id:
+            await interaction.response.send_message(
+                replace_emojis(f"❌ {user.mention} уже состоит в браке."), ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title=" ПРЕДЛОЖЕНИЕ | /player marry",
+            description=(
+                f" {interaction.user.mention} предлагает руку и сердце {user.mention}\n\n"
+                " Нажмите **Принять**, чтобы заключить брак."
+            ),
+            color=discord.Color.from_rgb(69, 69, 69),
+        )
+        view = MarriageProposalView(guild_id, interaction.user, user)
+        await interaction.response.send_message(view=compose(embed, view))
+
+    @player_group.command(name="divorce", description="Разорвать брак")
+    async def divorce(self, interaction: discord.Interaction) -> None:
+        """Развестись с текущим супругом/ой."""
+        stats = await player_stats_store.get(interaction.guild_id, interaction.user.id)
+        spouse_id = getattr(stats, "spouse_id", 0) if stats else 0
+        if not spouse_id:
+            await interaction.response.send_message(
+                replace_emojis("❌ Вы не состоите в браке."), ephemeral=True
+            )
+            return
+
+        spouse_stats = await player_stats_store.get(interaction.guild_id, spouse_id)
+        if stats:
+            stats.spouse_id = 0
+            await player_stats_store.set(stats)
+        if spouse_stats:
+            spouse_stats.spouse_id = 0
+            await player_stats_store.set(spouse_stats)
+
+        embed = discord.Embed(
+            title=" РАЗВОД | /player divorce",
+            description=f" {interaction.user.mention} подал(а) на развод. Брак расторгнут.",
+            color=discord.Color.from_rgb(69, 69, 69),
+        )
+        await interaction.response.send_message(view=compose(embed))
+
     @player_group.command(name="rank", description="Показать ваш ранг и прогресс")
     async def rank(self, interaction: discord.Interaction) -> None:
         """Показать текущий ранг и прогресс до следующего уровня."""
@@ -2506,7 +2618,7 @@ class TournamentCog(commands.Cog):
 
     async def cog_load(self) -> None:
         """Привязка подкоманд общих групп к этому cog'у."""
-        bind_commands(player_group, self, ["profile", "history", "rank"])
+        bind_commands(player_group, self, ["profile", "history", "rank", "marry", "divorce"])
         bind_commands(economy_group, self, ["balance", "pay", "gift", "bet"])
         bind_commands(admin_group, self, [
             "edit", "fix", "fix_userid", "reset", "debug_emoji",

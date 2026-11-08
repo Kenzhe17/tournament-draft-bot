@@ -78,6 +78,11 @@ async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) ->
     # Build description
     description_parts = []
 
+    # Био — сразу под заголовком
+    if stats.description:
+        description_parts.append(f" {stats.description}")
+        description_parts.append("")
+
     # Профиль (под заголовком)
     spouse_id = getattr(stats, "spouse_id", 0) or 0
     spouse_text = f"<@{spouse_id}>" if spouse_id else "—"
@@ -139,11 +144,6 @@ async def build_profile_embed(guild_id: int, target_user, *, limit: int = 10) ->
         logger.error(f"Error getting Ultimatum stats: {e}", exc_info=True)
 
     description_parts.append("")
-
-    # Био
-    if stats.description:
-        description_parts.append(f" {stats.description}")
-        description_parts.append("")
 
     # ELO History (last N matches)
     if total_games_played > 0:
