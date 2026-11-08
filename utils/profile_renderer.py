@@ -2,7 +2,7 @@
 
 Использует чистый template PNG как подложку: динамические области
 затираются цветом панели, поверх рисуются актуальные данные.
-Все координаты соответствуют riz3_player_profile_template.svg.
+Все координаты/якоря/кегли соответствуют riz3_player_profile_example.svg.
 """
 
 from __future__ import annotations
@@ -22,14 +22,13 @@ FONTS_DIR = ASSETS_DIR / "fonts"
 
 CARD_RENDER_SEM = asyncio.Semaphore(2)
 
-# Цвета дизайна
-C_TEXT = (242, 244, 255)
-C_MUTED = (138, 147, 184)
-C_VIOLET = (170, 102, 255)
+# Цвета из example.svg
+C_TEXT = (242, 244, 251)     # #F2F4FB
+C_MUTED = (126, 136, 157)   # #7E889D
+C_SOFT = (184, 193, 211)    # #B8C1D3
+C_VIOLET = (170, 102, 255)  # #AA66FF
+C_DELTA_NEG = (250, 136, 153)  # #FA8899
 C_GREEN = (74, 222, 128)
-C_RED = (248, 113, 113)
-C_GOLD = (255, 209, 102)
-C_PANEL_TOP = None  # сэмплируется из template
 
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
 _base_cache: Image.Image | None = None
@@ -53,32 +52,27 @@ def _base() -> Image.Image:
     return _base_cache.copy()
 
 
-def _panel_color(img: Image.Image, x: int, y: int) -> tuple[int, int, int, int]:
-    return img.getpixel((x, y))
-
-
 def _erase(img: Image.Image, color, x1, y1, x2, y2) -> None:
     ImageDraw.Draw(img).rectangle([x1, y1, x2, y2], fill=color)
 
 
 def _text(draw: ImageDraw.ImageDraw, xy, s: str, size: int,
-          color=C_TEXT, anchor="ls", bold=False, stroke: int = 0) -> None:
+          color=C_TEXT, anchor="ls", bold=False) -> None:
+    """anchor — PIL-якорь; 's' = baseline (как y в SVG)."""
     font = _font(size, bold)
-    draw.text(xy, s, font=font, fill=color, anchor=anchor,
-              stroke_width=stroke, stroke_fill=color)
+    draw.text(xy, s, font=font, fill=color, anchor=anchor)
 
 
-def _fmt(n: float) -> str:
-    """Формат числа с разделителем тысяч."""
-    if isinstance(n, float):
-        s = f"{n:.2f}".rstrip("0").rstrip(".")
-        return s
-    return f"{int(n):,}".replace(",", " ")
+def _fmt(n) -> str:
+    """Целое число с разделителем тысяч пробелом."""
+    try:
+        return f"{int(round(float(n))):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        return "0"
 
 
 def _fit_text(draw, s: str, max_w: int, size: int, bold=False,
               min_size: int = 14) -> tuple[str, int]:
-    """Ужать текст до max_w, уменьшая кегль."""
     font = _font(size, bold)
     while size > min_size and draw.textlength(s, font=font) > max_w:
         size -= 2
@@ -97,50 +91,54 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     draw = ImageDraw.Draw(img)
 
     # --- Цвета панелей (сэмпл из template) ---
-    c_top = _panel_color(img, 700, 300)
-    c_stats = _panel_color(img, 600, 620)
-    c_econ = _panel_color(img, 1400, 600)
-    c_about = _panel_color(img, 1400, 720)
-    c_chart = _panel_color(img, 600, 950)
-    c_ult = _panel_color(img, 1400, 950)
+    c_top = img.getpixel((700, 300))
+    c_head = img.getpixel((1600, 100))
+    c_stats = img.getpixel((600, 620))
+    c_econ = img.getpixel((1400, 600))
+    c_about = img.getpixel((1400, 720))
+    c_chart = img.getpixel((600, 950))
+    c_ult = img.getpixel((1400, 950))
+
+    # ============ ШАПКА (справа) ============
+    _erase(img, c_head, 1485, 72, 1900, 140)
+    _text(draw, (1500, 85), "PROFILE STATUS", 13, C_MUTED)
+    _text(draw, (1500, 120), "ACTIVE PLAYER", 27, C_TEXT, bold=True)
+    _text(draw, (1771, 85), "PROFILE", 13, C_MUTED)
+    _text(draw, (1771, 120), "r!z3", 27, C_VIOLET, bold=True)
 
     # ============ ВЕРХНЯЯ ПАНЕЛЬ ============
-    # Никнейм
-    _erase(img, c_top, 330, 300, 980, 360)
+    # Никнейм (fs60 в example)
+    _erase(img, c_top, 330, 295, 1100, 360)
     name = data.get("name") or "Игрок"
-    nstr, nsize = _fit_text(draw, name, 620, 48, bold=True, min_size=24)
-    _text(draw, (346, 348), nstr, nsize, C_TEXT, bold=True, stroke=1)
+    nstr, nsize = _fit_text(draw, name, 720, 60, min_size=26)
+    _text(draw, (346, 348), nstr, nsize, C_TEXT)
 
     # Статус
     _erase(img, c_top, 335, 366, 800, 398)
-    status = data.get("status") or "ок"
-    _text(draw, (350, 384), f"СТАТУС: {status}", 20, C_MUTED)
+    _text(draw, (350, 384), f"СТАТУС: {data.get('status') or 'ок'}", 20, C_SOFT)
 
-    # Ранг (имя) — узкая зона, чтобы не затереть подпись "BRONZE → LEGEND"
-    _erase(img, c_top, 385, 424, 530, 456)
-    rank_name = data.get("rank_name") or "Bronze"
-    _text(draw, (439, 442), rank_name.upper(), 20, C_GOLD, anchor="ms",
-          bold=True)
+    # Ранг — violet, по центру x=439 (baseline)
+    _erase(img, c_top, 385, 424, 530, 458)
+    _text(draw, (439, 442), (data.get("rank_name") or "BRONZE").upper(),
+          20, C_VIOLET, anchor="ms")
 
-    # ELO
-    _erase(img, c_top, 800, 295, 1120, 372)
-    _text(draw, (832, 354), _fmt(data.get("elo", 1000)), 62, C_TEXT, bold=True)
+    # RANKED ELO
+    _erase(img, c_top, 800, 290, 1130, 372)
+    _text(draw, (832, 354), _fmt(data.get("elo", 1000)), 62, C_TEXT)
     # Δ ELO последнего матча
-    _erase(img, c_top, 855, 392, 1150, 432)
+    _erase(img, c_top, 855, 392, 1150, 435)
     delta = data.get("last_elo_change", 0)
-    dcolor = C_GREEN if delta >= 0 else C_RED
+    dcolor = C_GREEN if delta >= 0 else C_DELTA_NEG
     dsign = "+" if delta >= 0 else "−"
-    _text(draw, (897, 410), f"{dsign}{abs(delta)}", 24, dcolor, anchor="ms",
-          bold=True)
+    _text(draw, (897, 410), f"{dsign}{abs(delta)}", 24, dcolor, anchor="ms")
     _text(draw, (979, 408), "последний матч", 16, C_MUTED)
 
     # Skill Rating + Level
-    _erase(img, c_top, 1235, 305, 1500, 360)
+    _erase(img, c_top, 1235, 305, 1520, 360)
     sr = data.get("skill_rating", 0.0)
-    _text(draw, (1250, 344), f"{sr:.1f} / 10.0", 37, C_VIOLET, bold=True)
-    _erase(img, c_top, 1235, 408, 1500, 442)
-    _text(draw, (1252, 425), f"LEVEL {data.get('level', 1)}", 22, C_TEXT,
-          bold=True)
+    _text(draw, (1250, 344), f"{sr:.1f} / 10.0", 37, C_TEXT)
+    _erase(img, c_top, 1235, 408, 1520, 445)
+    _text(draw, (1252, 425), f"LEVEL {data.get('level', 1)}", 22, C_SOFT)
 
     # Бейдж ранга + тир
     _erase(img, c_top, 1560, 240, 1900, 480)
@@ -148,92 +146,95 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         try:
             badge = Image.open(io.BytesIO(badge_png)).convert("RGBA")
             badge.thumbnail((210, 210), Image.LANCZOS)
-            bx = 1734 - badge.width // 2
-            by = 345 - badge.height // 2
-            img.paste(badge, (bx, by), badge)
+            img.paste(badge, (1734 - badge.width // 2,
+                              350 - badge.height // 2), badge)
         except Exception:
             logger.warning("Rank badge paste failed")
-    _text(draw, (1732, 452), rank_name.upper(), 20, C_GOLD, anchor="ms",
-          bold=True)
+    _text(draw, (1732, 446), (data.get("rank_name") or "").upper(),
+          20, C_VIOLET, anchor="ms")
 
     # ============ БИТВА ОТРЯДОВ ============
-    cols_x = [109, 389.5, 670, 950.5]
-    labels1 = ["МАТЧЕЙ", "ПОБЕД", "WINRATE", "KDA"]
-    labels2 = ["AVG KILLS", "AVG DAMAGE", "MAX KILLS", "SKILL RATING"]
-    vals1 = [
-        _fmt(data.get("matches", 0)),
-        _fmt(data.get("wins", 0)),
-        f"{data.get('winrate', 0.0):.1f}%",
-        f"{data.get('kda', 0.0):.2f}",
+    # Значения — LEFT-aligned по x лейбла (как в example), fs30
+    squad_cols = [
+        (109, "МАТЧЕЙ", _fmt(data.get("matches", 0))),
+        (389.5, "ПОБЕД", _fmt(data.get("wins", 0))),
+        (670, "WINRATE", f"{data.get('winrate', 0.0):.1f}%"),
+        (950.5, "KDA", f"{data.get('kda', 0.0):.2f}"),
     ]
-    vals2 = [
-        f"{data.get('avg_kills', 0.0):.2f}",
-        _fmt(data.get("avg_damage", 0)),
-        _fmt(data.get("max_kills", 0)),
-        f"{sr:.1f} / 10.0",
+    squad_cols2 = [
+        (109, "AVG KILLS", f"{data.get('avg_kills', 0.0):.2f}"),
+        (389.5, "AVG DAMAGE", _fmt(data.get("avg_damage", 0))),
+        (670, "MAX KILLS", _fmt(data.get("max_kills", 0))),
+        (950.5, "SKILL RATING", f"{sr:.1f} / 10"),
     ]
-    for cx, lab, val, vy in zip(cols_x, labels1, vals1, [664] * 4):
-        _erase(img, c_stats, cx - 140, vy - 40, cx + 140, vy + 15)
-        _text(draw, (cx, 624), lab, 14, C_MUTED, anchor="ms")
-        _text(draw, (cx, vy), val, 30, C_TEXT, anchor="ms", bold=True)
-    for cx, lab, val in zip(cols_x, labels2, vals2):
-        _erase(img, c_stats, cx - 140, 717, cx + 140, 775)
-        _text(draw, (cx, 717), lab, 14, C_MUTED, anchor="ms")
-        _text(draw, (cx, 757), val, 30, C_TEXT, anchor="ms", bold=True)
+    bounds = [(100, 640, 380, 700), (380, 640, 660, 700),
+              (655, 640, 940, 700), (940, 640, 1225, 700),
+              (100, 712, 380, 782), (380, 712, 660, 782),
+              (655, 712, 940, 782), (940, 712, 1225, 782)]
+    for (x1, y1, x2, y2), (cx, lab, val) in zip(bounds[:4], squad_cols):
+        _erase(img, c_stats, x1, y1, x2, y2)
+        _text(draw, (cx, 624), lab, 14, C_MUTED)
+        color = C_VIOLET if lab == "SKILL RATING" else C_TEXT
+        _text(draw, (cx, 664), val, 30, color)
+    for (x1, y1, x2, y2), (cx, lab, val) in zip(bounds[4:], squad_cols2):
+        _erase(img, c_stats, x1, y1, x2, y2)
+        _text(draw, (cx, 717), lab, 14, C_MUTED)
+        color = C_VIOLET if lab == "SKILL RATING" else C_TEXT
+        _text(draw, (cx, 757), val, 30, color)
 
     # ============ ЭКОНОМИКА ============
-    _erase(img, c_econ, 1350, 600, 1600, 655)
-    _text(draw, (1377, 625), _fmt(data.get("balance", 0)), 25, C_GOLD,
-          bold=True)
-    _erase(img, c_econ, 1630, 595, 1880, 660)
-    _text(draw, (1666, 634), _fmt(data.get("items", 0)), 22, C_TEXT,
-          bold=True)
+    _erase(img, c_econ, 1350, 600, 1600, 660)
+    _text(draw, (1377, 625), _fmt(data.get("balance", 0)), 31, C_TEXT)
+    _erase(img, c_econ, 1630, 595, 1900, 665)
+    _text(draw, (1666, 634), f"{_fmt(data.get('items', 0))} шт.", 22, C_TEXT)
 
     # ============ О СЕБЕ ============
     about = [
-        (1273, "РЕПУТАЦИЯ", _fmt(data.get("reputation", 0))),
-        (1460, "БРАК", data.get("partner") or "—"),
-        (1655, "ДЕНЬ РОЖДЕНИЯ", data.get("birthday") or "—"),
+        (1273, data.get("reputation", 0), C_TEXT),
+        (1460, data.get("partner") or "—", C_SOFT),
+        (1655, data.get("birthday") or "—", C_TEXT),
     ]
-    for x, lab, val in about:
-        _erase(img, c_about, x - 10, 762, x + 195, 800)
-        _text(draw, (x, 779), val, 18, C_TEXT)
+    for i, (x, val, color) in enumerate(about):
+        x2 = [1445, 1620, 1880][i]
+        _erase(img, c_about, x - 10, 762, x2, 800)
+        vstr, vsize = _fit_text(draw, str(val), x2 - x - 10, 19,
+                                min_size=12)
+        _text(draw, (x, 779), vstr, vsize, color)
 
     # ============ ДИНАМИКА ELO ============
     _erase(img, c_chart, 95, 858, 1205, 1040)
-    _text(draw, (114, 895), f"ПОСЛЕДНИЕ {data.get('hist_count', 0)} МАТЧЕЙ",
-          13, C_MUTED)
+    _text(draw, (114, 889),
+          f"ПОСЛЕДНИЕ {data.get('hist_count', 0)} МАТЧЕЙ", 13, C_MUTED)
     total_delta = data.get("chart_delta", 0)
-    td_color = C_GREEN if total_delta >= 0 else C_RED
-    _text(draw, (1088, 875),
-          f"{'+' if total_delta >= 0 else '−'}{abs(total_delta)}",
-          24, td_color, anchor="ms", bold=True)
+    td_color = C_GREEN if total_delta >= 0 else C_DELTA_NEG
+    tdsign = "+" if total_delta >= 0 else "−"
+    _text(draw, (1088, 870), f"{tdsign}{abs(total_delta)} ELO", 24,
+          td_color, anchor="ms")
 
-    # График: область ~x130-1150, y915-985
+    # График: область ~x140-1140, y915-990
     hist = data.get("elo_history") or []  # хронологический список дельт
-    px0, px1, py0, py1 = 140, 1140, 925, 985
-    if len(hist) >= 1:
+    px0, px1, py0, py1 = 150, 1130, 920, 985
+    if hist:
         cum = []
         s = 0
         for d in hist:
             s += d
             cum.append(s)
         if len(cum) == 1:
-            cum = [cum[0], cum[0]]
+            cum.append(cum[0])
         lo, hi = min(cum), max(cum)
         span = (hi - lo) or 1
-        pts = []
         n = len(cum)
-        for i, v in enumerate(cum):
-            x = px0 + (px1 - px0) * i / (n - 1)
-            y = py1 - (py1 - py0) * (v - lo) / span
-            pts.append((x, y))
-        # область под линией — через overlay для прозрачности
+        pts = [
+            (px0 + (px1 - px0) * i / (n - 1),
+             py1 - (py1 - py0) * (v - lo) / span)
+            for i, v in enumerate(cum)
+        ]
         if len(pts) >= 2:
             overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
             od = ImageDraw.Draw(overlay)
             area = pts + [(pts[-1][0], py1), (pts[0][0], py1)]
-            od.polygon(area, fill=(170, 102, 255, 45))
+            od.polygon(area, fill=(*C_VIOLET, 45))
             od.line(pts, fill=(*C_VIOLET, 255), width=4, joint="curve")
             for x, y in pts:
                 od.ellipse([x - 4, y - 4, x + 4, y + 4],
@@ -246,34 +247,44 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
         _text(draw, ((px0 + px1) / 2, (py0 + py1) / 2), "НЕТ ДАННЫХ",
               20, C_MUTED, anchor="ms")
 
-    w = data.get("hist_wins", 0)
-    l = data.get("hist_losses", 0)
-    _text(draw, (114, 968), f"{w}W / {l}L", 26, C_TEXT, bold=True)
-    _text(draw, (379, 1020),
-          f"старт: {data.get('hist_start_elo', data.get('elo', 1000))}",
+    # W/L блок (как в example: лейбл / значение / подпись)
+    _text(draw, (114, 942), "ПОБЕДЫ / ПОРАЖЕНИЯ", 12, C_MUTED)
+    _text(draw, (114, 980),
+          f"{data.get('hist_wins', 0)} / {data.get('hist_losses', 0)}",
+          33, C_TEXT)
+    _text(draw, (114, 1009),
+          f"{data.get('hist_count', 0)} записей в истории", 13, C_MUTED)
+
+    _text(draw, (379, 1018),
+          f"НАЧАЛО: {_fmt(data.get('hist_start_elo', data.get('elo', 1000)))}",
           13, C_MUTED)
-    _text(draw, (1171, 1020), f"текущий: {_fmt(data.get('elo', 1000))}",
+    _text(draw, (1171, 1018), f"СЕЙЧАС: {_fmt(data.get('elo', 1000))}",
           13, C_MUTED, anchor="rs")
 
     # ============ УЛЬТИМАТУМ ============
     ult = [
-        (1273, "СЫГРАНО", _fmt(data.get("ult_matches", 0))),
-        (1444, "ПОБЕД", _fmt(data.get("ult_wins", 0))),
-        (1621, "ELO", _fmt(data.get("ult_elo", 1000))),
+        (1273, _fmt(data.get("ult_matches", 0))),
+        (1444, _fmt(data.get("ult_wins", 0))),
+        (1621, _fmt(data.get("ult_elo", 1000))),
     ]
-    for x, lab, val in ult:
-        _erase(img, c_ult, x - 10, 945, x + 175, 985)
-        _text(draw, (x, 962), val, 24, C_TEXT, bold=True)
-    _erase(img, c_ult, 1250, 1005, 1880, 1038)
-    _text(draw, (1274, 1022), data.get("ult_status") or "—", 16, C_MUTED)
+    for x, val in ult:
+        _erase(img, c_ult, x - 10, 940, x + 175, 985)
+        _text(draw, (x, 962), val, 33, C_TEXT)
+    _erase(img, c_ult, 1250, 1005, 1900, 1038)
+    _text(draw, (1274, 1020),
+          data.get("ult_status") or "Пока нет сыгранных матчей", 16, C_MUTED)
 
     # ============ АВАТАР ============
     if avatar_png:
         try:
             av = Image.open(io.BytesIO(avatar_png)).convert("RGBA")
-            av = ImageOps_fit_square(av)
+            w, h = av.size
+            side = min(w, h)
+            av = av.crop(((w - side) // 2, (h - side) // 2,
+                          (w + side) // 2, (h + side) // 2))
             av = av.resize((214, 214), Image.LANCZOS)
-            mask = _circle_mask(214)
+            mask = Image.new("L", (214, 214), 0)
+            ImageDraw.Draw(mask).ellipse([0, 0, 213, 213], fill=255)
             img.paste(av, (102, 247), mask)
         except Exception:
             logger.warning("Avatar paste failed")
@@ -281,22 +292,6 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     out = io.BytesIO()
     img.convert("RGB").save(out, format="PNG", optimize=True)
     return out.getvalue()
-
-
-def ImageOps_fit_square(im: Image.Image) -> Image.Image:
-    """Центральный кроп до квадрата."""
-    w, h = im.size
-    side = min(w, h)
-    left = (w - side) // 2
-    top = (h - side) // 2
-    return im.crop((left, top, left + side, top + side))
-
-
-def _circle_mask(size: int):
-    mask = Image.new("L", (size, size), 0)
-    d = ImageDraw.Draw(mask)
-    d.ellipse([0, 0, size - 1, size - 1], fill=255)
-    return mask
 
 
 async def render_profile_png_async(data: dict,

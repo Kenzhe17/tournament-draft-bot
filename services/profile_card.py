@@ -133,7 +133,7 @@ async def collect_profile_data(guild: discord.Guild,
         "ult_elo": ult_elo,
         "ult_status": (
             f"Winrate {ult_wins / ult_matches * 100:.0f}%"
-            if ult_matches else "Нет матчей"
+            if ult_matches else "Пока нет сыгранных матчей"
         ),
         "_badge_level": stats.level,
     }
