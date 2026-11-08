@@ -1,10 +1,19 @@
 """Рендерер графической карточки профиля 1920x1080 (Player Profile).
 
 Использует чистый template PNG как подложку. Плейсхолдеры в template
-помечены метками вида [USERNAME], [BIO], [ELO], [REP] и т.п. —
-каждая метка затирается через cv2.inpaint, значение рисуется по
-координатам, измеренным по riz3_player_profile_template 1.png
-(OCR + pixel-diff против example).
+помечены метками вида [USERNAME], [BIO], [ELO], [REP] и т.п.
+
+Первопричина прошлых артефактов (размытые «вторые версии» текста,
+перечёркнутые цифры, остатки глифов): маркеры затирались
+ПРЯМОУГОЛЬНЫМ cv2.inpaint — TELEA размазывал весь прямоугольник,
+включая градиенты фона и соседние элементы, а неточные рамки
+оставляли «хвосты» букв под новым текстом.
+
+Исправление: для каждого маркера строится ТОЧНАЯ маска — только
+светлые пиксели букв (фон template имеет lum ~30, текст ~140-245),
+маска дилатируется на антиалиасинг и один раз прогоняется через
+cv2.inpaint. Фон, линии и декор не затрагиваются. Результат
+кэшируется — чистая подложка строится один раз на процесс.
 """
 
 from __future__ import annotations
@@ -35,7 +44,6 @@ C_DELTA_NEG = (250, 136, 153)  # #FA8899
 C_GREEN = (74, 222, 128)
 
 _font_cache: dict[tuple[str, int], ImageFont.FreeTypeFont] = {}
-_base_cache: Image.Image | None = None
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
@@ -49,26 +57,74 @@ def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return _font_cache[key]
 
 
-def _base() -> Image.Image:
-    global _base_cache
-    if _base_cache is None:
-        _base_cache = Image.open(TEMPLATE_PATH).convert("RGBA")
-    return _base_cache.copy()
+# Плотные рамки маркеров [XXX] в template (x1,y1,x2,y2), измерены
+# по OCR-боксам template↔example. Внутри рамки маска берёт ТОЛЬКО
+# светлые пиксели букв — статичные подписи рядом не страдают.
+_MARKER_REGIONS = (
+    (1490, 88, 1660, 132),    # TEMPLATE -> статус игрока
+    (340, 296, 668, 362),     # [USERNAME]
+    (404, 356, 455, 395),     # [BIO] после статичного «SVO: »
+    (826, 290, 1014, 370),    # [ELO]
+    (844, 380, 952, 420),     # [△ ELO] под ELO
+    (1242, 300, 1342, 360),   # [SR]
+    (1322, 398, 1418, 438),   # [LEVEL] после статичного «LEVEL »
+    (393, 412, 488, 458),     # [RANK]
+    (538, 418, 698, 455),     # BRONZE→LEGEND
+    (1692, 418, 1776, 460),   # [TIER]
+    (1332, 592, 1492, 638),   # [BALANCE]
+    (1626, 592, 1738, 638),   # [ITEMS]
+    (1264, 752, 1338, 794),   # [REP]
+    (1450, 750, 1578, 794),   # [PARTNER]
+    (1646, 750, 1778, 794),   # [BIRTHDAY]
+    (102, 860, 300, 906),     # «ПОСЛЕДНИЕ N МАТЧЕЙ» заголовок W/L
+    (103, 922, 298, 986),     # [W] / [L]
+    (1030, 836, 1148, 886),   # [△ ELO] у графика
+    (368, 996, 512, 1038),    # [HISTORY_START]
+    (1056, 996, 1192, 1038),  # [CURRENT_ELO]
+    (1264, 930, 1424, 978),   # [MATCHES]
+    (1434, 928, 1542, 978),   # [WINS]
+    (1608, 926, 1702, 980),   # [ELO] ult
+    (1262, 994, 1464, 1038),  # [ULTIMATUM_STATUS]
+)
+
+# Маркеры — светлый текст (~lum 140-245) на тёмном фоне (~lum 30).
+_MARKER_LUM = 100
+_MASK_DILATE = 4
+_clean_base_cache: Image.Image | None = None
 
 
-def _inpaint(img: Image.Image, box, radius: int = 5) -> None:
-    """Восстановить область с плейсхолдером (градиенты сохраняются)."""
-    x1, y1, x2, y2 = [int(v) for v in box]
+def _build_clean_base() -> Image.Image:
+    """Template без маркеров: единая пиксельная маска + один inpaint.
+
+    Для каждой рамки маркера берутся только пиксели с яркостью выше
+    _MARKER_LUM (буквы), маска дилатируется на толщину антиалиасинга
+    и один раз прогоняется через cv2.inpaint по всей картинке.
+    Фон, градиенты и декоративные линии не затрагиваются.
+    """
+    global _clean_base_cache
+    if _clean_base_cache is not None:
+        return _clean_base_cache.copy()
+
+    img = Image.open(TEMPLATE_PATH).convert("RGBA")
     arr = np.array(img)
-    bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-    mask = np.zeros(bgr.shape[:2], np.uint8)
-    mask[y1:y2, x1:x2] = 255
-    # feather mask, чтобы не было резких краёв
-    mask = cv2.GaussianBlur(mask, (0, 0), 2)
-    _, m = cv2.threshold(mask, 40, 255, cv2.THRESH_BINARY)
-    fixed = cv2.inpaint(bgr, m, radius, cv2.INPAINT_TELEA)
-    img.paste(Image.fromarray(cv2.cvtColor(fixed, cv2.COLOR_BGR2RGBA)),
-              (0, 0))
+    lum = arr[..., :3].mean(axis=2)
+    mask = np.zeros(lum.shape, np.uint8)
+    for (x1, y1, x2, y2) in _MARKER_REGIONS:
+        region = lum[y1:y2, x1:x2]
+        mask[y1:y2, x1:x2][region > _MARKER_LUM] = 255
+    if mask.any():
+        kernel = np.ones((_MASK_DILATE * 2 + 1,) * 2, np.uint8)
+        mask = cv2.dilate(mask, kernel)
+        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+        fixed = cv2.inpaint(bgr, mask, 3, cv2.INPAINT_TELEA)
+        arr = cv2.cvtColor(fixed, cv2.COLOR_BGR2RGBA)
+        img = Image.fromarray(arr, "RGBA")
+    _clean_base_cache = img
+    return img.copy()
+
+
+def _base() -> Image.Image:
+    return _build_clean_base()
 
 
 def _text(draw: ImageDraw.ImageDraw, xy, s: str, size: int,
@@ -117,38 +173,8 @@ def render_profile_png(data: dict, avatar_png: bytes | None = None,
     """
     from utils.ranks import RANKS
 
+    # Подложка уже очищена от маркеров (_build_clean_base, один раз).
     img = _base()
-
-    # ================= INPAINT МАРКЕРОВ =================
-    # (x1,y1,x2,y2) — зоны с [МАРКЕРАМИ], затираем перед отрисовкой
-    for box in (
-        (1490, 90, 1730, 130),    # TEMPLATE -> статус
-        (335, 292, 670, 362),     # [USERNAME]
-        (398, 356, 480, 395),     # [BIO] (префикс «SVO: » статичен)
-        (820, 288, 1015, 372),    # [ELO]
-        (845, 380, 960, 422),     # [△ ELO]
-        (1235, 298, 1420, 360),   # [SR]
-        (1298, 398, 1420, 435),   # [LEVEL] (слово LEVEL статично)
-        (375, 412, 505, 460),     # [RANK]
-        (535, 415, 700, 458),     # BRONZE→LEGEND -> tier-прогрессия
-        (1665, 418, 1800, 460),   # [TIER]
-        (1330, 594, 1495, 636),   # [BALANCE]
-        (1625, 594, 1745, 636),   # [ITEMS]
-        (1265, 752, 1340, 794),   # [REP]
-        (1448, 750, 1585, 794),   # [PARTNER]
-        (1643, 752, 1785, 794),   # [BIRTHDAY]
-        (105, 864, 295, 902),     # заголовок W/L (слот)
-        (100, 902, 290, 980),     # [W] / [L]
-        (1028, 834, 1155, 888),   # [△ ELO] у графика
-        (365, 994, 510, 1032),    # [HISTORY_START]
-        (1055, 994, 1190, 1032),  # [CURRENT_ELO]
-        (1265, 928, 1425, 978),   # [MATCHES]
-        (1432, 928, 1545, 978),   # [WINS]
-        (1608, 926, 1730, 980),   # [ELO] ult
-        (1262, 994, 1530, 1034),  # [ULTIMATUM_STATUS]
-    ):
-        _inpaint(img, box, radius=4)
-
     draw = ImageDraw.Draw(img)
 
     # ================= ШАПКА =================
