@@ -308,44 +308,90 @@ async def test_self_bind_taken_row_conflict():
 
 
 @pytest.mark.asyncio
-async def test_captain_cannot_override_self():
-    """Капитан не может изменить ник, закреплённый самим игроком."""
+async def test_captain_can_override_self():
+    """Капитан может переопределить ник, закреплённый игроком."""
     t = _tournament_with_session()
     omv.store._tournaments[(1, 2)] = t
     try:
         await omv._self_bind_row(_FakeInteraction(113), 1, 2, "qualifier", 0, 0)
-        # капитан пытается назначить строку 0 → P2
         view = omv.PanelMappingView(1, 2, t, "qualifier", 0, 0, "left")
-        view.assign = {1: "P2"}  # свободная строка — ок
+        view.assign = {0: "P2", 1: "P3"}
         ix = _FakeInteraction(111, "CapA")
         await view._save_hybrid(ix, t, t.ocr_sessions["qualifier_0"])
         s = t.ocr_sessions["qualifier_0"]
         rows = s["maps"]["0"]["rows"]
-        assert rows[0]["discord_id"] == 113      # self не тронут
-        assert rows[0]["source"] == "self"
-        assert rows[1]["discord_id"] == 114      # капитан назначил P2
+        # override: строка 0 теперь за P2 (капитан), self-привязка снята
+        assert rows[0]["discord_id"] == 114
+        assert rows[0]["discord_name"] == "P2"
+        assert rows[0]["source"] == "captain"
+        assert rows[1]["discord_id"] == 115
         assert rows[1]["source"] == "captain"
     finally:
         omv.store._tournaments.pop((1, 2), None)
 
 
 @pytest.mark.asyncio
-async def test_captain_blocked_from_self_bound_row():
-    """Строка, ставшая self-bound после открытия view — пропускается."""
+async def test_captain_reassign_after_view_open():
+    """Self-bind между открытием view и save — капитан всё равно
+    может переопределить (override, не молчаливый пропуск)."""
     t = _tournament_with_session()
     omv.store._tournaments[(1, 2)] = t
     try:
         view = omv.PanelMappingView(1, 2, t, "qualifier", 0, 0, "left")
-        # на момент создания view строка 0 свободна → есть в eligible
-        assert 0 in view.eligible_rows
-        # игрок успел закрепить её сам
         await omv._self_bind_row(_FakeInteraction(113), 1, 2, "qualifier", 0, 0)
         view.assign = {0: "P2", 1: "P3"}
         ix = _FakeInteraction(111, "CapA")
         await view._save_hybrid(ix, t, t.ocr_sessions["qualifier_0"])
         s = t.ocr_sessions["qualifier_0"]
         rows = s["maps"]["0"]["rows"]
-        assert rows[0]["discord_id"] == 113 and rows[0]["source"] == "self"
+        assert rows[0]["discord_id"] == 114 and rows[0]["source"] == "captain"
         assert rows[1]["discord_id"] == 115 and rows[1]["source"] == "captain"
+    finally:
+        omv.store._tournaments.pop((1, 2), None)
+
+
+@pytest.mark.asyncio
+async def test_captain_same_player_noop():
+    """Капитан назначает того же игрока, что уже self-bound — без override."""
+    t = _tournament_with_session()
+    omv.store._tournaments[(1, 2)] = t
+    try:
+        await omv._self_bind_row(_FakeInteraction(113), 1, 2, "qualifier", 0, 0)
+        view = omv.PanelMappingView(1, 2, t, "qualifier", 0, 0, "left")
+        view.assign = {0: "P1"}  # P1 = uid 113, уже self-bound на строке 0
+        ix = _FakeInteraction(111, "CapA")
+        await view._save_hybrid(ix, t, t.ocr_sessions["qualifier_0"])
+        s = t.ocr_sessions["qualifier_0"]
+        row = s["maps"]["0"]["rows"][0]
+        assert row["discord_id"] == 113
+        # source остаётся self — noop не затирает
+        assert row["source"] == "self"
+    finally:
+        omv.store._tournaments.pop((1, 2), None)
+
+
+@pytest.mark.asyncio
+async def test_captain_moves_bound_player():
+    """Капитан переносит привязанного игрока на другую строку за один save."""
+    t = _tournament_with_session()
+    omv.store._tournaments[(1, 2)] = t
+    try:
+        await omv._self_bind_row(_FakeInteraction(113), 1, 2, "qualifier", 0, 0)
+        view = omv.PanelMappingView(1, 2, t, "qualifier", 0, 0, "left")
+        # P1(self, строка 0) → строка 1; строка 0 → P2
+        view.assign = {0: "P2", 1: "P1"}
+        ix = _FakeInteraction(111, "CapA")
+        await view._save_hybrid(ix, t, t.ocr_sessions["qualifier_0"])
+        s = t.ocr_sessions["qualifier_0"]
+        rows = s["maps"]["0"]["rows"]
+        assert rows[0]["discord_id"] == 114  # P2
+        assert rows[1]["discord_id"] == 113  # P1 перенесён
+        # uid 113 ровно один раз в матче
+        ids = [
+            r["discord_id"]
+            for tm in s["maps"].values() for r in tm["rows"]
+            if r.get("discord_id")
+        ]
+        assert ids.count(113) == 1
     finally:
         omv.store._tournaments.pop((1, 2), None)

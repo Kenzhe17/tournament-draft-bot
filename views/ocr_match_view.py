@@ -558,18 +558,21 @@ async def _open_panel_mapping(
             f"Ваша команда — **{side_label} панель**"
             + (" (определено автоматически)" if auto else "")
             + f".\nСопоставлено: **{done_n}/{total_n}**\n"
-            "Капитан назначает ещё не закреплённые ники. Игроки могут "
-            "закрепить свой ник сами кнопкой «Это мой ник» — их выбор "
-            "приоритетнее."
+            "Капитан назначает ники участникам состава — может "
+            "переопределить и выбор игроков (override логируется). "
+            "Игроки также могут закрепить свой ник сами кнопкой "
+            "«Это мой ник»."
         ),
         color=discord.Color.blurple(),
     )
     shown = 0
     for i, row in enumerate(mapped_rows):
+        mark = ""
         if _row_bound(row):
-            continue
+            src = "self" if row.get("source") == "self" else "капитан"
+            mark = f" ✅ {row.get('discord_name', '?')} ({src})"
         embed.add_field(
-            name=f"{shown + 1}. {row.get('ocr_name', '?')}",
+            name=f"{i + 1}. {row.get('ocr_name', '?')}{mark}",
             value=(
                 f"K/D/A: {row.get('kills', 0)}/{row.get('deaths', 0)}/"
                 f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
@@ -578,7 +581,7 @@ async def _open_panel_mapping(
         )
         shown += 1
     if not shown:
-        embed.description += "\n\n✅ Все ники команды уже сопоставлены."
+        embed.description += "\n\n⚠️ На этой панели не найдено игроков."
 
     view = PanelMappingView(
         interaction.guild.id, interaction.channel.id, tournament,
@@ -1798,35 +1801,33 @@ class PanelMappingView(View):
         rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
         roster = team_roster(tournament, team_index)
 
-        # Гибридный режим (classic): показываем только СВОБОДНЫЕ строки —
-        # уже закреплённые игроками/капитаном ники капитан не видит
-        # и не может изменить. Squad — legacy: все строки сразу.
+        # Гибридный режим (classic): капитан видит ВСЕ строки — он может
+        # переопределить и self-привязки игроков (override логируется
+        # организатору). Squad — legacy: все строки сразу.
         self.hybrid = session.get("mode") != "squad"
         tm = _team_map(session, team_index) or {}
         bound_idx: set[int] = set()
-        if self.hybrid:
-            for i, r in enumerate(tm.get("rows") or []):
-                if _row_bound(r):
-                    bound_idx.add(i)
-        # Discord-ники, уже привязанные в матче — не предлагаем повторно
-        bound_names = {
-            r.get("discord_name")
-            for tm2 in _match_maps(session).values()
-            for r in (tm2.get("rows") or [])
-            if r.get("discord_name")
-        }
-        free_roster = [n for n in roster if n not in bound_names]
+        for i, r in enumerate(tm.get("rows") or []):
+            if _row_bound(r):
+                bound_idx.add(i)
+        # Discord-ники → где привязаны: игрока, закреплённого за ДРУГОЙ
+        # строкой, нельзя назначить повторно (один ID — одна строка)
+        name_locs: dict[str, list] = {}
+        for tk, tm2 in _match_maps(session).items():
+            for j, r2 in enumerate(tm2.get("rows") or []):
+                dn = r2.get("discord_name")
+                if dn:
+                    name_locs.setdefault(dn, []).append((tk, j))
 
-        if self.hybrid:
-            eligible = [
-                i for i in range(min(len(rows), 4)) if i not in bound_idx
-            ]
-        else:
-            eligible = list(range(min(len(rows), 4)))
+        eligible = list(range(min(len(rows), 4)))
         self.eligible_rows = eligible
 
         for i in eligible:
             row = rows[i]
+            forbidden = {
+                dn for dn, locs in name_locs.items()
+                if (str(self.team_index), i) not in locs
+            }
             options = [
                 discord.SelectOption(
                     label="— не назначен —",
@@ -1835,10 +1836,17 @@ class PanelMappingView(View):
                 )
             ] + [
                 discord.SelectOption(label=n[:100], value=n[:100], description="Игрок команды")
-                for n in (free_roster if self.hybrid else roster)
+                for n in roster
+                if (not self.hybrid or n not in forbidden)
             ]
+            bound_self = i in bound_idx and (
+                (tm.get("rows") or [{}])[i].get("source") == "self"
+            )
+            placeholder = f"{row.get('name', '?')[:70]} → игрок"
+            if bound_self:
+                placeholder += " [self]"
             sel = Select(
-                placeholder=f"{row.get('name', '?')[:80]} → игрок",
+                placeholder=placeholder[:150],
                 options=options[:25],
                 min_values=1,
                 max_values=1,
@@ -2152,14 +2160,27 @@ class PanelMappingView(View):
                         )
                     else:
                         new_uids[uid_i] = name
-                    # uid не должен быть привязан к ДРУГОЙ строке;
-                    # связанные строки этого же save проверим ниже
-                    bound_team = _uid_bound_in_match(
-                        session, uid_i,
-                        exclude=(self.team_index, i)
-                        if i < len(mrows) else None,
-                    )
-                    if bound_team is not None:
+                    # uid не должен быть привязан к строке ВНЕ этого
+                    # save — иначе игрок оказался бы на двух никах.
+                    # Перенос внутри выбираемых строк разрешён.
+                    locs = []
+                    for tk, tm2 in _match_maps(session).items():
+                        try:
+                            tidx = int(tk)
+                        except (TypeError, ValueError):
+                            continue
+                        for j, r2 in enumerate(tm2.get("rows") or []):
+                            try:
+                                if r2.get("discord_id") and \
+                                        int(r2["discord_id"]) == uid_i:
+                                    locs.append((tidx, j))
+                            except (TypeError, ValueError):
+                                continue
+                    bad = [
+                        l for l in locs
+                        if not (l[0] == self.team_index and l[1] in chosen)
+                    ]
+                    if bad:
                         problems.append(
                             f"«{name}» уже закреплён за другим ником"
                         )
@@ -2172,14 +2193,19 @@ class PanelMappingView(View):
                 return
 
             bound_now = 0
-            skipped: list[str] = []
+            overridden: list[str] = []
             for i, name in chosen.items():
                 row = mrows[i]
+                prev_name = row.get("discord_name")
+                if _row_bound(row) and prev_name == name:
+                    continue  # уже назначен этому игроку
+                # Капитан может переопределить чужую привязку —
+                # фиксируем override для уведомления организатору
                 if _row_bound(row):
-                    # Между открытием view и сохранением строку мог
-                    # закрепить игрок или другой капитан — не трогаем
-                    skipped.append(str(row.get("ocr_name", "?")))
-                    continue
+                    overridden.append(
+                        f"{row.get('ocr_name', '?')}: "
+                        f"{prev_name} → {name}"
+                    )
                 uid = tournament.player_user_ids.get(name)
                 row["discord_name"] = name
                 row["discord_id"] = uid
@@ -2198,14 +2224,13 @@ class PanelMappingView(View):
             name_team = _team_display_name(tournament, self.team_index)
             done_n, total_n = _mapping_progress(session, self.team_index)
 
-            if skipped:
+            if overridden:
                 await _notify_mapping_conflict(
                     interaction.guild, session,
-                    "⚠️ **OCR mapping conflict** — "
+                    "⚠️ **OCR mapping override** — "
                     f"{_match_label(self.match_type, self.match_index)}: "
-                    f"капитан {name_team} пытался назначить ники, "
-                    f"уже закреплённые: {', '.join(skipped)}. "
-                    "Существующие привязки сохранены.",
+                    f"капитан {name_team} переопределил привязки: "
+                    f"{'; '.join(overridden)}.",
                 )
 
             t1, t2 = _match_tuple(
@@ -2219,11 +2244,11 @@ class PanelMappingView(View):
                 return
 
             extra = ""
-            if skipped:
+            if overridden:
                 extra = (
-                    "\n⚠️ Ники, закреплённые ранее "
-                    f"({', '.join(skipped)}), не изменены — "
-                    "приоритет у уже подтверждённых привязок."
+                    "\n⚠️ Переопределены привязки: "
+                    + "; ".join(overridden)
+                    + " — организатор уведомлён."
                 )
             await interaction.response.send_message(
                 replace_emojis(
