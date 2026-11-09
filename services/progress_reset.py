@@ -7,7 +7,10 @@ ELO=1000, level=1, xp=0, xp_next=250, balance=100, bank=0.
 
 Сохраняются: user_id/guild_id, имена, birthday, spouse_id,
 description/bio/avatar_url; marriages, welcome_*, birthday_greetings,
-teams, pets, каталоги, bot_settings, match numbering, banner settings.
+teams, pets, каталоги, bot_settings, mm_search, ready_checks,
+br_tournaments, tournaments, isolation_state. Репутация и её журналы
+НЕ сбрасываются. Сбрасывается счётчик глобальной нумерации матчей
+(match_counter -> 0, match_numbers очищается) — новая эпоха с #1.
 """
 
 from __future__ import annotations
@@ -47,7 +50,6 @@ PLAYER_STATS_RESET = {
     "xp_to_next_level": 250,
     "total_earnings": 0,
     "tournament_participations": 0,
-    "reputation": 0,
     "daily_tournament_coins": 0,
     "daily_coins_date": "",
 }
@@ -64,11 +66,6 @@ DELETE_TABLES = [
     "whoami_cooldowns",
     "minigame_stats",
     "minigame_sessions",
-    "reputation_transactions",
-    "rep_log_outbox",
-    "rep_invites",
-    "rep_boosts",
-    "rep_giver_state",
     "banner_voice_daily",
     "banner_day_stats",
     "ultimatum_match_history",
@@ -79,6 +76,8 @@ DELETE_TABLES = [
     "ultimatum_rounds",
     "ultimatum_players",
     "ultimatum_tournaments",
+    # Сквозная нумерация матчей — новая эпоха с Match #1
+    "match_numbers",
     # Зал славы: исторические пики — новая эпоха после сброса
     "hof_records",
 ]
@@ -100,7 +99,7 @@ PROGRESS_JSON_FILES = [
     "question_history.json",
     "bets.json",
     "odds.json",
-    "rep_given.json",
+    "match_numbers.json",
     "profile_cooldowns.json",
 ]
 
@@ -133,6 +132,13 @@ def clear_memory_caches() -> list[str]:
         cleared.append("player_stats_store._stats")
     except Exception:
         log.exception("clear_memory_caches: player_stats_store")
+    try:
+        from storage.match_number_store import match_number_store
+        match_number_store._numbers = {}
+        match_number_store._counter = 0
+        cleared.append("match_number_store")
+    except Exception:
+        log.exception("clear_memory_caches: match_number_store")
     return cleared
 
 
@@ -160,6 +166,8 @@ UPDATE_TABLES = {
         "elo": 1000, "peak_elo": 1000,
         "rated_matches": 0, "wins": 0, "losses": 0,
     },
+    # Счётчик глобальной нумерации матчей -> матч #1
+    "match_counter": {"value": 0},
 }
 
 
