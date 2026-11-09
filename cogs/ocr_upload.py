@@ -637,6 +637,21 @@ class OCRUploadCog(commands.Cog):
 
         stats_channel = await _stats_channel(message, tournament)
 
+        # Скриншот принят (все проверки пройдены) — сразу пишем в чат,
+        # чтобы игроки видели, что аналитика запущена, а не «капитан
+        # забыл отправить». Для кнопки это происходит в тот же тик,
+        # что и сабмит модалки (on_message вызывается из on_submit).
+        try:
+            await message.channel.send(
+                f"{message.author.mention} успешно отправил скриншот — "
+                "ожидаем аналитику.",
+                allowed_mentions=discord.AllowedMentions(
+                    users=[message.author]
+                ),
+            )
+        except Exception as exc:
+            logger.warning("upload ack failed: %s", exc)
+
         try:
             data = await attachment.read()
             from services.ocr_service import (
@@ -843,19 +858,6 @@ class OCRUploadCog(commands.Cog):
                 )
             except Exception as exc:
                 logger.warning("Match card processing update failed: %s", exc)
-
-            # Сразу пишем в канал матча — игроки видят, что скриншот
-            # принят и идёт аналитика, а не «капитан забыл отправить»
-            try:
-                await message.channel.send(
-                    f"✅ {message.author.mention} успешно отправил "
-                    "скриншот — ожидаем аналитику.",
-                    allowed_mentions=discord.AllowedMentions(
-                        users=[message.author]
-                    ),
-                )
-            except Exception as exc:
-                logger.warning("upload notify failed: %s", exc)
 
         except Exception:
             logger.exception("OCR upload processing failed")
@@ -1081,16 +1083,6 @@ class OCRUploadCog(commands.Cog):
                 match_type=match_type, match_index=match_index,
                 t1=t1, t2=t2,
             )
-            try:
-                await message.channel.send(
-                    f"✅ {message.author.mention} успешно отправил "
-                    "скриншот отряда — ожидаем аналитику.",
-                    allowed_mentions=discord.AllowedMentions(
-                        users=[message.author]
-                    ),
-                )
-            except Exception as exc:
-                logger.warning("upload notify failed: %s", exc)
             return
 
         # --- Новая загрузка отряда (без привязки — выбор команды кнопкой) ---
@@ -1131,16 +1123,6 @@ class OCRUploadCog(commands.Cog):
             match_type=match_type, match_index=match_index,
             t1=t1, t2=t2,
         )
-        try:
-            await message.channel.send(
-                f"✅ {message.author.mention} успешно отправил "
-                "скриншот отряда — ожидаем аналитику.",
-                allowed_mentions=discord.AllowedMentions(
-                    users=[message.author]
-                ),
-            )
-        except Exception as exc:
-            logger.warning("upload notify failed: %s", exc)
 
 
 async def _maybe_delete_match_channel(
