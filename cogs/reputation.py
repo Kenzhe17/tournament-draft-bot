@@ -452,10 +452,14 @@ class ReputationCog(commands.Cog):
             f"Отклонено: {stats['rejected']}",
             f"REP за приглашения: {stats['rewarded'] * REP_INVITE_AMOUNT}",
         ]
-        await interaction.response.send_message(
-            view=_card("ПРИГЛАШЕНИЯ", [f"{user.mention}:"] + lines, colors.INFO),
-            ephemeral=False,
+        view = DesignView(
+            title="ПРИГЛАШЕНИЯ", accent=colors.INFO, timeout=None
         )
+        view.section_text(
+            f"**{user.display_name}**\n" + "\n".join(lines),
+            thumbnail=user.display_avatar.url,
+        )
+        await interaction.response.send_message(view=view, ephemeral=False)
 
 
 async def setup(bot: "TournamentBot") -> None:
