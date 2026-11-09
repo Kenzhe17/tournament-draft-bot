@@ -1558,6 +1558,12 @@ class MMCog(commands.Cog):
                     begin_search = search
                 else:
                     await self._edit_panel(interaction, search)
+                    # Снимаем состояние «бот думает…» ephemeral-подтверждением
+                    await self._ephemeral(
+                        interaction,
+                        f"✅ Вы в очереди "
+                        f"({len(search.players)}/{search.required_players}).",
+                    )
                     return
 
         # Вне lock: БД, канал, PNG, Ready Check — не блокируем очередь
@@ -1573,6 +1579,10 @@ class MMCog(commands.Cog):
                 )
             else:
                 self._begin_fail_at.pop(key, None)
+                await self._ephemeral(
+                    interaction,
+                    "🚀 Очередь заполнена — матч запускается!",
+                )
 
     async def handle_queue_leave(
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
@@ -1615,6 +1625,8 @@ class MMCog(commands.Cog):
                 self._cancel_search_timer(guild_id, channel_id)
             mm_search_store.set(search)
             await self._edit_panel(interaction, search)
+            # Снимаем состояние «бот думает…» ephemeral-подтверждением
+            await self._ephemeral(interaction, "✅ Вы вышли из очереди.")
 
     async def _begin_match(
         self, search: MMSearch, interaction: discord.Interaction
