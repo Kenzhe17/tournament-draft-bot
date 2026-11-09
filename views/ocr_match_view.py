@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import datetime
@@ -317,6 +318,176 @@ def _auto_panel_for_team(
     return "left" if team_index == uploader_team else "right"
 
 
+# ---------------------------------------------------------------------------
+# Гибридное сопоставление: self-service + капитан
+# ---------------------------------------------------------------------------
+
+def _row_bound(row: dict) -> bool:
+    """Строка OCR уже привязана к Discord-игроку."""
+    return bool(row.get("discord_id") or row.get("discord_name"))
+
+
+def _match_maps(session: dict) -> dict:
+    m = session.get("maps")
+    if m is None:
+        m = {}
+        session["maps"] = m
+    return m
+
+
+def _team_map(session: dict, team_index: int) -> dict | None:
+    return _match_maps(session).get(str(team_index))
+
+
+def _mapping_progress(session: dict, team_index: int) -> tuple[int, int]:
+    """(сопоставлено, всего) строк OCR команды."""
+    tm = _team_map(session, team_index) or {}
+    rows = tm.get("rows") or []
+    if not rows:
+        return 0, 0
+    done = sum(1 for r in rows if _row_bound(r))
+    return done, len(rows)
+
+
+def _team_mapping_complete(session: dict, team_index: int) -> bool:
+    done, total = _mapping_progress(session, team_index)
+    return total > 0 and done == total
+
+
+def _classic_mapping_complete(session: dict, t1: int, t2: int) -> bool:
+    """Все строки OCR обеих команд привязаны, discord_id уникальны."""
+    seen: set[int] = set()
+    for t in (t1, t2):
+        tm = _team_map(session, t)
+        if not tm:
+            return False
+        rows = tm.get("rows") or []
+        if not rows:
+            return False
+        for r in rows:
+            if not _row_bound(r):
+                return False
+            did = r.get("discord_id")
+            if did:
+                try:
+                    did = int(did)
+                except (TypeError, ValueError):
+                    continue
+                if did in seen:
+                    return False
+                seen.add(did)
+    return True
+
+
+def _uid_bound_in_match(session: dict, user_id, exclude: tuple[int, int] | None = None) -> int | None:
+    """team_index, где discord_id уже привязан (кроме exclude=(team,row))."""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    for tkey, tm in _match_maps(session).items():
+        try:
+            tidx = int(tkey)
+        except (TypeError, ValueError):
+            continue
+        for i, r in enumerate(tm.get("rows") or []):
+            if exclude and (tidx, i) == exclude:
+                continue
+            did = r.get("discord_id")
+            try:
+                if did and int(did) == uid:
+                    return tidx
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _roster_name_for_uid(tournament: Tournament, team_index: int, user_id) -> str | None:
+    """Имя в составе команды, за которым закреплён Discord user_id."""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    for name in team_roster(tournament, team_index):
+        mapped = tournament.player_user_ids.get(name)
+        try:
+            if mapped and int(mapped) == uid:
+                return name
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _panel_rows(session: dict, panel: str) -> list[dict]:
+    return (session.get("panels", {}).get(panel) or {}).get("rows", [])
+
+
+def _ensure_team_panel(
+    tournament: Tournament, session: dict, team_index: int
+) -> str | None:
+    """Гарантировать maps[team] = {panel, rows-skeleton}.
+
+    Панель берётся из maps/panel_picks/авто-определения. Возвращает
+    panel или None, если сторону определить нельзя (ручной выбор).
+    """
+    tm = _team_map(session, team_index)
+    if tm and tm.get("panel"):
+        return tm["panel"]
+    panel = (session.get("panel_picks") or {}).get(str(team_index))
+    if panel not in ("left", "right"):
+        panel = _auto_panel_for_team(tournament, session, team_index)
+    if panel not in ("left", "right"):
+        return None
+    session.setdefault("panel_picks", {})[str(team_index)] = panel
+    # Skeleton rows — снимок OCR-строк панели с полями привязки.
+    rows = []
+    for r in _panel_rows(session, panel):
+        row = {
+            "ocr_name": r.get("name", "?"),
+            "kills": int(r.get("kills", 0) or 0),
+            "deaths": int(r.get("deaths", 0) or 0),
+            "assists": int(r.get("assists", 0) or 0),
+            "dmg": int(r.get("dmg", 0) or 0),
+            "discord_name": None,
+            "discord_id": None,
+            "source": None,
+        }
+        for k in EXTRA_STAT_KEYS:
+            if r.get(k) is not None:
+                row[k] = r[k]
+        rows.append(row)
+    _match_maps(session)[str(team_index)] = {"panel": panel, "rows": rows}
+    return panel
+
+
+async def _notify_mapping_conflict(
+    guild: discord.Guild, session: dict, text: str
+) -> None:
+    """Спорная привязка — уведомить организатора в канал статистики."""
+    try:
+        ch = guild.get_channel(OCR_STATS_CHANNEL_ID) or await guild.fetch_channel(
+            OCR_STATS_CHANNEL_ID
+        )
+        await ch.send(replace_emojis(text))
+    except Exception as e:
+        logger.warning("mapping conflict notify failed: %s", e)
+
+
+# Мьютексы на матч для атомарных изменений привязок (self/captain).
+_MAPPING_LOCKS: dict[str, asyncio.Lock] = {}
+_MAPPING_LOCKS_MAX = 200
+
+
+def _mapping_lock(match_key: str) -> asyncio.Lock:
+    lock = _MAPPING_LOCKS.get(match_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _MAPPING_LOCKS[match_key] = lock
+        if len(_MAPPING_LOCKS) > _MAPPING_LOCKS_MAX:
+            _MAPPING_LOCKS.pop(next(iter(_MAPPING_LOCKS)))
+    return lock
+
+
 async def _open_panel_mapping(
     interaction: discord.Interaction,
     tournament: Tournament,
@@ -372,31 +543,42 @@ async def _open_panel_mapping(
     session["panel_picks"] = picks
     store.set(tournament)
 
+    # Skeleton maps[team] — прогресс и привязки игроков по строкам
+    _ensure_team_panel(tournament, session, team_index)
+    store.set(tournament)
+
     name = _team_display_name(tournament, team_index)
-    rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
+    tm = _team_map(session, team_index) or {}
+    mapped_rows = tm.get("rows") or []
     side_label = "Левая" if panel == "left" else "Правая"
+    done_n, total_n = _mapping_progress(session, team_index)
     embed = discord.Embed(
         title=f"🧩 {name} — сопоставление игроков",
         description=(
             f"Ваша команда — **{side_label} панель**"
             + (" (определено автоматически)" if auto else "")
-            + ".\nДля каждого игрового ника выберите Discord-игрока "
-            "из вашего состава.\n"
-            "Кнопки ✏️ позволяют исправить ник и статистику OCR."
+            + f".\nСопоставлено: **{done_n}/{total_n}**\n"
+            "Капитан назначает ещё не закреплённые ники. Игроки могут "
+            "закрепить свой ник сами кнопкой «Это мой ник» — их выбор "
+            "приоритетнее."
         ),
         color=discord.Color.blurple(),
     )
-    for i, row in enumerate(rows):
+    shown = 0
+    for i, row in enumerate(mapped_rows):
+        if _row_bound(row):
+            continue
         embed.add_field(
-            name=f"{i + 1}. {row.get('name', '?')}",
+            name=f"{shown + 1}. {row.get('ocr_name', '?')}",
             value=(
                 f"K/D/A: {row.get('kills', 0)}/{row.get('deaths', 0)}/"
                 f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
             ),
             inline=False,
         )
-    if not rows:
-        embed.description += "\n\n⚠️ На этой панели не найдено игроков — попробуйте другую."
+        shown += 1
+    if not shown:
+        embed.description += "\n\n✅ Все ники команды уже сопоставлены."
 
     view = PanelMappingView(
         interaction.guild.id, interaction.channel.id, tournament,
@@ -828,18 +1010,33 @@ class OCRPublicView(View):
 
         for team_index in (t1, t2):
             name = _team_display_name(tournament, team_index)
-            mapped = str(team_index) in maps
+            done_n, total_n = _mapping_progress(session, team_index)
+            complete = _team_mapping_complete(session, team_index)
+            progress = f" {done_n}/{total_n}" if total_n else ""
             btn = Button(
-                label=f"🧩 {name}"[:80],
+                label=f"🧩 {name}{progress}"[:80],
                 style=discord.ButtonStyle.primary,
                 custom_id=(
                     f"ocr_map:{guild_id}:{channel_id}:{match_type}:"
                     f"{match_index}:{team_index}"
                 ),
-                disabled=not active or mapped,
+                disabled=not active or complete,
             )
             btn.callback = self._map_callback(team_index)
             self.add_item(btn)
+
+        # Self-service: любой участник матча привязывает свой ник
+        if active and session.get("mode") != "squad":
+            sm = Button(
+                label="🎯 Это мой ник",
+                style=discord.ButtonStyle.success,
+                custom_id=(
+                    f"ocr_selfmap:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}"
+                ),
+            )
+            sm.callback = self._self_map_callback()
+            self.add_item(sm)
 
         if active:
             wrong = Button(
@@ -916,9 +1113,10 @@ class OCRPublicView(View):
                     replace_emojis("❌ Турнир не найден."), ephemeral=True
                 )
                 return
-            # Кнопка команды — только её капитан (или организатор)
+            # Кнопка команды — её капитан, организатор или админ
             if not (
                 is_org_check(interaction.user, interaction.guild)
+                or _is_server_admin(interaction.user)
                 or _is_match_captain(interaction.user, tournament, team_index)
             ):
                 await interaction.response.send_message(
@@ -972,6 +1170,80 @@ class OCRPublicView(View):
                 self.match_type, self.match_index, team_index,
             )
             await interaction.response.send_message( view=compose(embed, view), ephemeral=True
+            )
+        return callback
+
+    def _self_map_callback(self):
+        """Кнопка «Это мой ник» — self-service привязка игрока."""
+        async def callback(interaction: discord.Interaction) -> None:
+            tournament = store.get(self.guild_id, self.channel_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Турнир не найден."), ephemeral=True
+                )
+                return
+            session = tournament.ocr_sessions.get(
+                _session_key(self.match_type, self.match_index)
+            )
+            if not session or session.get("status") == "completed":
+                await interaction.response.send_message(
+                    replace_emojis("❌ Сопоставление уже завершено."),
+                    ephemeral=True,
+                )
+                return
+            if session.get("mode") == "squad":
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ В squad-режиме используйте кнопки отрядов."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+            team = _team_of_user(tournament, (t1, t2), interaction.user.id)
+            if team is None:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Вы не участник этого матча."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            roster_name = _roster_name_for_uid(
+                tournament, team, interaction.user.id
+            ) or interaction.user.display_name
+            panel = _ensure_team_panel(tournament, session, team)
+            if panel is None:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⏳ Сторона вашей команды ещё не определена — "
+                        "дождитесь соперника или организатора."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            store.set(tournament)
+
+            done_n, total_n = _mapping_progress(session, team)
+            embed = discord.Embed(
+                title="🎯 Это мой ник",
+                description=(
+                    f"Команда **{_team_display_name(tournament, team)}** "
+                    f"({done_n}/{total_n} сопоставлено).\n"
+                    "Выберите свой игровой ник из списка — он будет "
+                    "закреплён за вашим Discord-аккаунтом."
+                ),
+                color=discord.Color.green(),
+            )
+            view = SelfMapView(
+                self.guild_id, self.channel_id, tournament,
+                self.match_type, self.match_index, team,
+                interaction.user.id, roster_name,
+            )
+            await interaction.response.send_message(
+                view=compose(embed, view), ephemeral=True
             )
         return callback
 
@@ -1526,7 +1798,35 @@ class PanelMappingView(View):
         rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
         roster = team_roster(tournament, team_index)
 
-        for i, row in enumerate(rows[:4]):
+        # Гибридный режим (classic): показываем только СВОБОДНЫЕ строки —
+        # уже закреплённые игроками/капитаном ники капитан не видит
+        # и не может изменить. Squad — legacy: все строки сразу.
+        self.hybrid = session.get("mode") != "squad"
+        tm = _team_map(session, team_index) or {}
+        bound_idx: set[int] = set()
+        if self.hybrid:
+            for i, r in enumerate(tm.get("rows") or []):
+                if _row_bound(r):
+                    bound_idx.add(i)
+        # Discord-ники, уже привязанные в матче — не предлагаем повторно
+        bound_names = {
+            r.get("discord_name")
+            for tm2 in _match_maps(session).values()
+            for r in (tm2.get("rows") or [])
+            if r.get("discord_name")
+        }
+        free_roster = [n for n in roster if n not in bound_names]
+
+        if self.hybrid:
+            eligible = [
+                i for i in range(min(len(rows), 4)) if i not in bound_idx
+            ]
+        else:
+            eligible = list(range(min(len(rows), 4)))
+        self.eligible_rows = eligible
+
+        for i in eligible:
+            row = rows[i]
             options = [
                 discord.SelectOption(
                     label="— не назначен —",
@@ -1535,7 +1835,7 @@ class PanelMappingView(View):
                 )
             ] + [
                 discord.SelectOption(label=n[:100], value=n[:100], description="Игрок команды")
-                for n in roster
+                for n in (free_roster if self.hybrid else roster)
             ]
             sel = Select(
                 placeholder=f"{row.get('name', '?')[:80]} → игрок",
@@ -1547,7 +1847,7 @@ class PanelMappingView(View):
             self.add_item(sel)
 
         # Кнопки правки по одной на строку + сохранение (макс. 5 в ряду)
-        for i, row in enumerate(rows[:4]):
+        for i in eligible:
             btn = Button(
                 label=f"✏️ {i + 1}",
                 style=discord.ButtonStyle.secondary,
@@ -1681,6 +1981,10 @@ class PanelMappingView(View):
             )
             return
 
+        if self.hybrid:
+            await self._save_hybrid(interaction, tournament, session)
+            return
+
         rows = (session.get("panels", {}).get(self.panel) or {}).get("rows", [])
         roster = set(team_roster(tournament, self.team_index))
 
@@ -1783,116 +2087,287 @@ class PanelMappingView(View):
             return
 
         # Обе команды сопоставлены → автоподтверждение результата
-        t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        winner = _ocr_winning_team_index(session)
+        await _auto_finalize_match(
+            interaction, tournament,
+            self.match_type, self.match_index, self.team_index,
+        )
 
-        if winner is not None and winner in (t1, t2):
-            # Скриншот обязан прислать капитан ПОБЕДИВШЕЙ команды
-            # (левая панель / баннер win на скриншоте). Чужой или
-            # неизвестный загрузивший → блок автоподтверждения + орг.
-            if session.get("mode") == "squad":
-                sentry = session.get("squads", {}).get(str(winner)) or {}
-                uploader_id = sentry.get("uploaded_by")
-            else:
-                uploader_id = session.get("uploaded_by")
-            uploader_ok = _uploaded_by_is_captain_of(
-                tournament, winner, uploader_id
-            )
-            if not uploader_ok:
-                # Админ/организатор может прислать скриншот за любую
-                # команду — для них проверка капитана не нужна.
-                uploader_ok = await _uploader_is_privileged(
-                    interaction.guild, uploader_id
+    async def _save_hybrid(
+        self,
+        interaction: discord.Interaction,
+        tournament: Tournament,
+        session: dict,
+    ) -> None:
+        """Капитан назначает ТОЛЬКО свободные OCR-ники команды.
+
+        Привязки игроков («Это мой ник») не трогаем — приоритет у
+        самостоятельного подтверждения; конфликты уходят организатору.
+        """
+        key = _session_key(self.match_type, self.match_index)
+        async with _mapping_lock(key):
+            # Свежие объекты под локом — параллельные self/captain
+            # привязки не должны перетирать друг друга
+            tournament = store.get(self.guild_id, self.channel_id) or tournament
+            session = tournament.ocr_sessions.get(key) or session
+            if session.get("status") == "completed":
+                await interaction.response.send_message(
+                    replace_emojis("❌ Сопоставление уже завершено."),
+                    ephemeral=True,
                 )
-            if not uploader_ok:
+                return
+            _ensure_team_panel(tournament, session, self.team_index)
+            tm = _team_map(session, self.team_index) or {}
+            mrows = tm.get("rows") or []
+            roster = set(team_roster(tournament, self.team_index))
+
+            chosen = {i: n for i, n in self.assign.items() if n}
+            if not chosen:
                 await interaction.response.send_message(
                     replace_emojis(
-                        "⚠️ Скриншот прислан не капитаном победившей "
-                        "команды — результат НЕ подтверждён автоматически. "
-                        "Организатор проверит вручную."
+                        "❌ Выберите хотя бы один свободный ник."
                     ),
                     ephemeral=True,
                 )
-                try:
-                    ch = interaction.guild.get_channel(
-                        OCR_STATS_CHANNEL_ID
-                    ) or await interaction.guild.fetch_channel(
-                        OCR_STATS_CHANNEL_ID
-                    )
-                    wname = _team_display_name(tournament, winner)
-                    await ch.send(
-                        replace_emojis(
-                            f"⚠️ **OCR: автоподтверждение заблокировано** — "
-                            f"{_match_label(self.match_type, self.match_index)}\n"
-                            f"Победитель по левой панели: **{wname}**, "
-                            f"но загрузил <@{uploader_id or 0}> "
-                            f"(не его капитан). Проверьте результат вручную."
-                        )
-                    )
-                except Exception as e:
-                    logger.warning("OCR captain-mismatch warn failed: %s", e)
                 return
 
-            await interaction.response.defer(ephemeral=True)
-            try:
-                await finalize_ocr_match(
-                    interaction, tournament,
-                    self.match_type, self.match_index, winner,
-                )
-                wname = _team_display_name(tournament, winner)
-                await interaction.followup.send(
-                    replace_emojis(
-                        f"✅ Сопоставление завершено — результат "
-                        f"**{_match_label(self.match_type, self.match_index)}** "
-                        f"зафиксирован автоматически. Победитель: **{wname}** "
-                        "(по OCR)."
-                    ),
+            problems: list[str] = []
+            new_uids: dict[int, str] = {}
+            for i, name in chosen.items():
+                if i >= len(mrows):
+                    problems.append(f"строка {i + 1} не найдена")
+                    continue
+                row = mrows[i]
+                if name not in roster:
+                    problems.append(f"«{name}» не входит в состав")
+                    continue
+                uid = tournament.player_user_ids.get(name)
+                try:
+                    uid_i = int(uid) if uid else None
+                except (TypeError, ValueError):
+                    uid_i = None
+                if uid_i is not None:
+                    if uid_i in new_uids:
+                        problems.append(
+                            f"«{name}» и «{new_uids[uid_i]}» — один игрок"
+                        )
+                    else:
+                        new_uids[uid_i] = name
+                    # uid не должен быть привязан к ДРУГОЙ строке;
+                    # связанные строки этого же save проверим ниже
+                    bound_team = _uid_bound_in_match(
+                        session, uid_i,
+                        exclude=(self.team_index, i)
+                        if i < len(mrows) else None,
+                    )
+                    if bound_team is not None:
+                        problems.append(
+                            f"«{name}» уже закреплён за другим ником"
+                        )
+            if problems:
+                uniq = list(dict.fromkeys(problems))[:5]
+                await interaction.response.send_message(
+                    replace_emojis("❌ " + "; ".join(uniq)),
                     ephemeral=True,
                 )
-            except Exception:
-                logger.exception("OCR auto-finalize failed")
-                await interaction.followup.send(
-                    replace_emojis(
-                        "❌ Ошибка при автосохранении результата — "
-                        "вызовите организатора."
-                    ),
-                    ephemeral=True,
-                )
-            return
+                return
 
-        # Победитель по OCR не определён — предлагаем выбрать вручную
-        embed = _confirm_embed(
-            tournament, session, self.match_type, self.match_index
-        )
-        embed.description = (
-            (embed.description or "")
-            + "\n\n⚠️ OCR не определил победителя — выберите вручную:"
-        )
-        try:
-            channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-            if channel is None:
-                channel = await interaction.guild.fetch_channel(
-                    OCR_STATS_CHANNEL_ID
-                )
-        except Exception:
-            channel = None
-        if channel is not None:
+            bound_now = 0
+            skipped: list[str] = []
+            for i, name in chosen.items():
+                row = mrows[i]
+                if _row_bound(row):
+                    # Между открытием view и сохранением строку мог
+                    # закрепить игрок или другой капитан — не трогаем
+                    skipped.append(str(row.get("ocr_name", "?")))
+                    continue
+                uid = tournament.player_user_ids.get(name)
+                row["discord_name"] = name
+                row["discord_id"] = uid
+                row["source"] = "captain"
+                bound_now += 1
+            store.set(tournament)
+
             try:
-                await channel.send( view=compose(embed, OCRWinnerPickView(
-                        self.guild_id, self.channel_id, tournament,
-                        self.match_type, self.match_index,
-                    )),
+                await _refresh_public_message(
+                    interaction, tournament,
+                    self.match_type, self.match_index,
                 )
             except Exception as e:
-                logger.warning("OCR winner-pick send failed: %s", e)
+                logger.warning("public message refresh failed: %s", e)
+
+            name_team = _team_display_name(tournament, self.team_index)
+            done_n, total_n = _mapping_progress(session, self.team_index)
+
+            if skipped:
+                await _notify_mapping_conflict(
+                    interaction.guild, session,
+                    "⚠️ **OCR mapping conflict** — "
+                    f"{_match_label(self.match_type, self.match_index)}: "
+                    f"капитан {name_team} пытался назначить ники, "
+                    f"уже закреплённые: {', '.join(skipped)}. "
+                    "Существующие привязки сохранены.",
+                )
+
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+            if _classic_mapping_complete(session, t1, t2):
+                await _auto_finalize_match(
+                    interaction, tournament,
+                    self.match_type, self.match_index, self.team_index,
+                )
+                return
+
+            extra = ""
+            if skipped:
+                extra = (
+                    "\n⚠️ Ники, закреплённые ранее "
+                    f"({', '.join(skipped)}), не изменены — "
+                    "приоритет у уже подтверждённых привязок."
+                )
+            await interaction.response.send_message(
+                replace_emojis(
+                    f"✅ Команда **{name_team}**: сопоставлено "
+                    f"**{done_n}/{total_n}**.\n"
+                    "Осталось сопоставить свободные ники — результат "
+                    "зафиксируется автоматически, когда будут "
+                    "закреплены все." + extra
+                ),
+                ephemeral=True,
+            )
+
+
+async def _auto_finalize_match(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    team_index: int,
+) -> None:
+    """Обе команды сопоставлены → автоподтверждение результата.
+
+    Общий финальный шаг для капитанского и self-service маппинга:
+    проверка «загрузил капитан победившей» → finalize_ocr_match,
+    либо ручной выбор победителя организатором.
+    """
+    guild_id = tournament.guild_id
+    channel_id = tournament.channel_id
+    session = tournament.ocr_sessions.get(
+        _session_key(match_type, match_index)
+    )
+    if not session:
         await interaction.response.send_message(
-            replace_emojis(
-                f"✅ Команда **{name}** сопоставлена — сопоставление "
-                "завершено. OCR не определил победителя: выбор отправлен "
-                "в канал результатов."
-            ),
-            ephemeral=True,
+            replace_emojis("❌ OCR-сессия не найдена."), ephemeral=True
         )
+        return
+    t1, t2 = _match_tuple(tournament, match_type, match_index)
+    winner = _ocr_winning_team_index(session)
+    name = _team_display_name(tournament, team_index)
+
+    if winner is not None and winner in (t1, t2):
+        # Скриншот обязан прислать капитан ПОБЕДИВШЕЙ команды
+        # (левая панель / баннер win на скриншоте). Чужой или
+        # неизвестный загрузивший → блок автоподтверждения + орг.
+        if session.get("mode") == "squad":
+            sentry = session.get("squads", {}).get(str(winner)) or {}
+            uploader_id = sentry.get("uploaded_by")
+        else:
+            uploader_id = session.get("uploaded_by")
+        uploader_ok = _uploaded_by_is_captain_of(
+            tournament, winner, uploader_id
+        )
+        if not uploader_ok:
+            # Админ/организатор может прислать скриншот за любую
+            # команду — для них проверка капитана не нужна.
+            uploader_ok = await _uploader_is_privileged(
+                interaction.guild, uploader_id
+            )
+        if not uploader_ok:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Скриншот прислан не капитаном победившей "
+                    "команды — результат НЕ подтверждён автоматически. "
+                    "Организатор проверит вручную."
+                ),
+                ephemeral=True,
+            )
+            try:
+                ch = interaction.guild.get_channel(
+                    OCR_STATS_CHANNEL_ID
+                ) or await interaction.guild.fetch_channel(
+                    OCR_STATS_CHANNEL_ID
+                )
+                wname = _team_display_name(tournament, winner)
+                await ch.send(
+                    replace_emojis(
+                        f"⚠️ **OCR: автоподтверждение заблокировано** — "
+                        f"{_match_label(match_type, match_index)}\n"
+                        f"Победитель по левой панели: **{wname}**, "
+                        f"но загрузил <@{uploader_id or 0}> "
+                        f"(не его капитан). Проверьте результат вручную."
+                    )
+                )
+            except Exception as e:
+                logger.warning("OCR captain-mismatch warn failed: %s", e)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await finalize_ocr_match(
+                interaction, tournament, match_type, match_index, winner,
+            )
+            wname = _team_display_name(tournament, winner)
+            await interaction.followup.send(
+                replace_emojis(
+                    f"✅ Сопоставление завершено — результат "
+                    f"**{_match_label(match_type, match_index)}** "
+                    f"зафиксирован автоматически. Победитель: **{wname}** "
+                    "(по OCR)."
+                ),
+                ephemeral=True,
+            )
+        except Exception:
+            logger.exception("OCR auto-finalize failed")
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Ошибка при автосохранении результата — "
+                    "вызовите организатора."
+                ),
+                ephemeral=True,
+            )
+        return
+
+    # Победитель по OCR не определён — предлагаем выбрать вручную
+    embed = _confirm_embed(tournament, session, match_type, match_index)
+    embed.description = (
+        (embed.description or "")
+        + "\n\n⚠️ OCR не определил победителя — выберите вручную:"
+    )
+    try:
+        channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
+        if channel is None:
+            channel = await interaction.guild.fetch_channel(
+                OCR_STATS_CHANNEL_ID
+            )
+    except Exception:
+        channel = None
+    if channel is not None:
+        try:
+            await channel.send( view=compose(embed, OCRWinnerPickView(
+                    guild_id, channel_id, tournament,
+                    match_type, match_index,
+                )),
+            )
+        except Exception as e:
+            logger.warning("OCR winner-pick send failed: %s", e)
+    await interaction.response.send_message(
+        replace_emojis(
+            f"✅ Команда **{name}** сопоставлена — сопоставление "
+            "завершено. OCR не определил победителя: выбор отправлен "
+            "в канал результатов."
+        ),
+        ephemeral=True,
+    )
 
 
 async def _results_channel(
@@ -1976,6 +2451,244 @@ async def _refresh_public_message(
         )
     except Exception as e:
         logger.warning("OCR public message refresh failed: %s", e)
+
+
+# ---------------------------------------------------------------------------
+# Self-service: «Это мой ник» — игрок сам привязывает свой OCR-ник
+# ---------------------------------------------------------------------------
+
+class SelfMapView(View):
+    """Выбор своего игрового ника из распознанных OCR-строк команды."""
+
+    def __init__(
+        self,
+        guild_id: int,
+        channel_id: int,
+        tournament: Tournament,
+        match_type: str,
+        match_index: int,
+        team_index: int,
+        user_id: int,
+        user_name: str,
+    ):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.team_index = team_index
+        self.user_id = user_id
+        self.user_name = user_name
+
+        session = tournament.ocr_sessions.get(
+            _session_key(match_type, match_index), {}
+        )
+        tm = _team_map(session, team_index) or {}
+        options = []
+        for i, r in enumerate((tm.get("rows") or [])[:4]):
+            bound = _row_bound(r)
+            own = bound and str(r.get("discord_id")) == str(user_id)
+            if bound and not own:
+                continue  # чужой или капитанский ник — не показываем
+            label = str(r.get("ocr_name") or "?")[:60]
+            if own:
+                label = f"✓ {label}"[:100]
+            desc = (
+                f"K/D/A {r.get('kills', 0)}/{r.get('deaths', 0)}/"
+                f"{r.get('assists', 0)}"
+            )
+            if own:
+                desc += " — ваш текущий, можно сменить"
+            options.append(
+                discord.SelectOption(
+                    label=label[:100], value=str(i),
+                    description=desc[:100],
+                )
+            )
+        self.select = Select(
+            placeholder=(
+                f"{user_name}: выберите свой игровой ник"
+            )[:150],
+            options=options[:25]
+            or [discord.SelectOption(
+                label="— нет доступных ников —", value="none",
+            )],
+            min_values=1,
+            max_values=1,
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+
+    async def _on_pick(self, interaction: discord.Interaction) -> None:
+        values = getattr(self.select, "values", None) or interaction.data.get(
+            "values", []
+        )
+        if not values or values[0] == "none":
+            await interaction.response.defer()
+            return
+        try:
+            row_idx = int(values[0])
+        except (TypeError, ValueError):
+            await interaction.response.defer()
+            return
+        await _self_bind_row(
+            interaction, self.guild_id, self.channel_id,
+            self.match_type, self.match_index, row_idx,
+        )
+
+
+async def _self_bind_row(
+    interaction: discord.Interaction,
+    guild_id: int,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    row_idx: int,
+) -> None:
+    """Игрок подтверждает/меняет свою привязку OCR-ник → Discord.
+
+    Атомарно под per-match локом: одна строка OCR — один Discord ID,
+    один Discord ID — одна строка за матч. Свои старые привязки
+    освобождаются (перенос на новый ник).
+    """
+    key = _session_key(match_type, match_index)
+    async with _mapping_lock(key):
+        tournament = store.get(guild_id, channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        session = tournament.ocr_sessions.get(key)
+        if not session or session.get("status") == "completed":
+            await interaction.response.send_message(
+                replace_emojis("❌ Сопоставление уже завершено."),
+                ephemeral=True,
+            )
+            return
+        if session.get("mode") == "squad":
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ В squad-режиме сопоставление через кнопки отрядов."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        t1, t2 = _match_tuple(tournament, match_type, match_index)
+        uid = interaction.user.id
+        team = _team_of_user(tournament, (t1, t2), uid)
+        if team is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Вы не участник этого матча — сопоставить ник "
+                    "может только игрок матча."
+                ),
+                ephemeral=True,
+            )
+            return
+        roster_name = _roster_name_for_uid(tournament, team, uid)
+        if not roster_name:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Вы не найдены в составе команды этого матча."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        panel = _ensure_team_panel(tournament, session, team)
+        if panel is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⏳ Сторона вашей команды ещё не определена — "
+                    "дождитесь соперника или организатора."
+                ),
+                ephemeral=True,
+            )
+            return
+        store.set(tournament)
+
+        tm = _team_map(session, team) or {}
+        mrows = tm.get("rows") or []
+        if row_idx >= len(mrows):
+            await interaction.response.send_message(
+                replace_emojis("❌ Строка не найдена."), ephemeral=True
+            )
+            return
+        row = mrows[row_idx]
+
+        if _row_bound(row):
+            try:
+                same = int(row.get("discord_id")) == uid
+            except (TypeError, ValueError):
+                same = False
+            if not same:
+                # Конфликт: ник уже закреплён за другим игроком
+                await _notify_mapping_conflict(
+                    interaction.guild, session,
+                    "⚠️ **OCR mapping conflict** — "
+                    f"{_match_label(match_type, match_index)}: "
+                    f"<@{uid}> пытался занять ник "
+                    f"«{row.get('ocr_name', '?')}», уже закреплённый "
+                    f"за {row.get('discord_name', '?')} "
+                    f"(source={row.get('source')}).",
+                )
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Этот ник уже закреплён за другим игроком. "
+                        "Если это ошибка — вызовите организатора."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Свои прежние привязки в матче освобождаем — игрок может
+        # держать только один ник (перенос на новый).
+        for tk, tm2 in _match_maps(session).items():
+            try:
+                tidx = int(tk)
+            except (TypeError, ValueError):
+                continue
+            for j, r2 in enumerate(tm2.get("rows") or []):
+                if (tidx, j) == (team, row_idx):
+                    continue
+                try:
+                    if r2.get("discord_id") and int(r2["discord_id"]) == uid:
+                        r2["discord_name"] = None
+                        r2["discord_id"] = None
+                        r2["source"] = None
+                except (TypeError, ValueError):
+                    continue
+
+        row["discord_name"] = roster_name
+        row["discord_id"] = uid
+        row["source"] = "self"
+        store.set(tournament)
+
+        try:
+            await _refresh_public_message(
+                interaction, tournament, match_type, match_index,
+            )
+        except Exception as e:
+            logger.warning("public message refresh failed: %s", e)
+
+        t_name = _team_display_name(tournament, team)
+        done_n, total_n = _mapping_progress(session, team)
+
+        if _classic_mapping_complete(session, t1, t2):
+            await _auto_finalize_match(
+                interaction, tournament, match_type, match_index, team,
+            )
+            return
+
+        await interaction.response.send_message(
+            replace_emojis(
+                f"✅ Ваш ник **{row.get('ocr_name', '?')}** закреплён "
+                f"за **{roster_name}** ({t_name}: {done_n}/{total_n})."
+            ),
+            ephemeral=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -2083,6 +2796,19 @@ class OcrRowEditModal(Modal, title="Исправить строку OCR"):
         row["deaths"] = deaths
         row["assists"] = assists
         row["dmg"] = dmg
+        # Гибридный маппинг: maps[team].rows — снимок OCR-строк,
+        # синхронизируем статистику (привязку discord_* не трогаем).
+        for tm in (session.get("maps") or {}).values():
+            if tm.get("panel") != self.panel:
+                continue
+            mrows = tm.get("rows") or []
+            if self.row_idx < len(mrows):
+                mr = mrows[self.row_idx]
+                mr["ocr_name"] = row.get("name", mr.get("ocr_name"))
+                mr["kills"] = kills
+                mr["deaths"] = deaths
+                mr["assists"] = assists
+                mr["dmg"] = dmg
         store.set(tournament)
 
         await interaction.response.send_message(
@@ -2301,6 +3027,8 @@ async def finalize_ocr_match(
     temp_stats: dict[str, dict[str, Any]] = {}
     for mapping in session["maps"].values():
         for i, row in enumerate(mapping["rows"]):
+            if not row.get("discord_name"):
+                continue  # гибридный маппинг: строка ещё не привязана
             entry = {
                 "kills": row["kills"],
                 "deaths": row["deaths"],
