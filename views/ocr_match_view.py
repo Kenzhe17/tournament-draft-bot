@@ -874,7 +874,7 @@ class ScreenshotUploadModal(Modal):
         # FileUpload — компонент нового UI Kit (discord.py >= 2.7),
         # label задаётся через ui.Label-обёртку
         self.file_label = discord.ui.Label(
-            text="Скриншот экрана результатов (PNG/JPG)",
+            text="Скриншот экрана результатов, разрешение 16:9 (PNG/JPG)",
             component=FileUpload(required=True, max_values=1),
         )
         self.add_item(self.file_label)
