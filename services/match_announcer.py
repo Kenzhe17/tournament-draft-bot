@@ -242,26 +242,30 @@ def _match_started_view(
             "загрузить скриншот через кнопку «Отправить результат».\n"
             "Скриншот должен быть в разрешении **16:9**."
         )
-        view.row(
-            MatchScreenshotButton(
-                tournament.guild_id,
-                tournament.channel_id,
-                tournament,
-                match_type,
-                match_index,
-                "Отправить результат",
-            )
-        )
     if state != "done":
+        # Все кнопки — в одной нижней строке карточки
+        buttons = []
+        if state == "active":
+            buttons.append(
+                MatchScreenshotButton(
+                    tournament.guild_id,
+                    tournament.channel_id,
+                    tournament,
+                    match_type,
+                    match_index,
+                    "Отправить результат",
+                )
+            )
         # Кнопка комнаты — вместо отдельного турнирного embed
         from views.room_buttons import RoomButton
 
-        view.row(
+        buttons.append(
             RoomButton(
                 match_type, match_index, t1, t2, name_a, name_b,
             )
         )
-        view.row(MatchRulesButton())
+        buttons.append(MatchRulesButton())
+        view.row(*buttons)
     return view
 
 
@@ -448,6 +452,7 @@ async def announce_phase_matches(
                                 name_a, name_b,
                             )
                         )
+                        persist.add_item(MatchRulesButton())
                         bot.add_view(persist)
                     except Exception as exc:
                         logger.warning("Match screenshot view register failed: %s", exc)

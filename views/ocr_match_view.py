@@ -19,6 +19,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from datetime import datetime
@@ -327,6 +329,15 @@ def _row_bound(row: dict) -> bool:
     return bool(row.get("discord_id") or row.get("discord_name"))
 
 
+def _source_label(source) -> str:
+    """Человекочитаемая подпись источника привязки (без 'self')."""
+    if source == "self":
+        return "Игрок сам выбрал себя"
+    if source == "captain":
+        return "капитан"
+    return str(source or "неизвестно")
+
+
 def _match_maps(session: dict) -> dict:
     m = session.get("maps")
     if m is None:
@@ -555,13 +566,11 @@ async def _open_panel_mapping(
     embed = discord.Embed(
         title=f"🧩 {name} — сопоставление игроков",
         description=(
-            f"Ваша команда — **{side_label} панель**"
-            + (" (определено автоматически)" if auto else "")
-            + f".\nСопоставлено: **{done_n}/{total_n}**\n"
-            "Капитан назначает ники участникам состава — может "
-            "переопределить и выбор игроков (override логируется). "
-            "Игроки также могут закрепить свой ник сами кнопкой "
-            "«Это мой ник»."
+            f"**{side_label} панель**"
+            + (" (авто)" if auto else "")
+            + f" · сопоставлено **{done_n}/{total_n}**\n"
+            "Назначьте ники участникам. Игроки могут выбрать свой ник "
+            "сами — «Это мой ник»."
         ),
         color=discord.Color.blurple(),
     )
@@ -569,8 +578,10 @@ async def _open_panel_mapping(
     for i, row in enumerate(mapped_rows):
         mark = ""
         if _row_bound(row):
-            src = "self" if row.get("source") == "self" else "капитан"
-            mark = f" ✅ {row.get('discord_name', '?')} ({src})"
+            mark = (
+                f" ✅ {row.get('discord_name', '?')} "
+                f"({_source_label(row.get('source'))})"
+            )
         embed.add_field(
             name=f"{i + 1}. {row.get('ocr_name', '?')}{mark}",
             value=(
@@ -1235,10 +1246,9 @@ class OCRPublicView(View):
             embed = discord.Embed(
                 title="🎯 Это мой ник",
                 description=(
-                    f"Команда **{_team_display_name(tournament, team)}** "
-                    f"({done_n}/{total_n} сопоставлено).\n"
-                    "Выберите свой игровой ник из списка — он будет "
-                    "закреплён за вашим Discord-аккаунтом."
+                    f"**{_team_display_name(tournament, team)}** — "
+                    f"сопоставлено {done_n}/{total_n}\n"
+                    "Выберите свой ник — он закрепится за вами."
                 ),
                 color=discord.Color.green(),
             )
@@ -1846,7 +1856,7 @@ class PanelMappingView(View):
             )
             placeholder = f"{row.get('name', '?')[:70]} → игрок"
             if bound_self:
-                placeholder += " [self]"
+                placeholder += " · Игрок сам выбрал себя"
             sel = Select(
                 placeholder=placeholder[:150],
                 options=options[:25],
@@ -2411,6 +2421,34 @@ async def _results_channel(
     return channel
 
 
+# Подпись последнего применённого состояния OCR-сообщений:
+# session_key -> sha1. Повторный refresh без изменений состояния
+# не редактирует сообщение — иначе каждое нажатие перерисовывает
+# MediaGallery и картинка «обновляется бесконечно».
+_REFRESH_SIGS: dict[str, str] = {}
+_REFRESH_SIGS_MAX = 500
+
+
+def _session_view_sig(session: dict) -> str:
+    """Хэш состояния сессии, от которого зависят кнопки/view сообщения."""
+    payload = {
+        k: session.get(k)
+        for k in (
+            "status", "mode", "maps", "squads", "squad_pool",
+            "message_id",
+        )
+    }
+    return hashlib.sha1(
+        json.dumps(payload, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
+def _store_refresh_sig(sig_key: str, sig: str) -> None:
+    _REFRESH_SIGS[sig_key] = sig
+    if len(_REFRESH_SIGS) > _REFRESH_SIGS_MAX:
+        _REFRESH_SIGS.pop(next(iter(_REFRESH_SIGS)))
+
+
 async def _refresh_public_message(
     interaction: discord.Interaction,
     tournament: Tournament,
@@ -2421,6 +2459,13 @@ async def _refresh_public_message(
     session = tournament.ocr_sessions.get(_session_key(match_type, match_index))
     if not session:
         return
+    sig = _session_view_sig(session)
+    sig_key = (
+        f"{tournament.guild_id}:{tournament.channel_id}:"
+        f"{_session_key(match_type, match_index)}"
+    )
+    if _REFRESH_SIGS.get(sig_key) == sig:
+        return  # состояние не менялось — сообщение уже актуально
     channel = await _results_channel(interaction, session)
     if channel is None:
         return
@@ -2431,10 +2476,13 @@ async def _refresh_public_message(
             t1, t2 = _match_tuple(tournament, match_type, match_index)
         except Exception:
             t1, t2 = session.get("teams", [0, 1])[:2]
+        squad_ok = 0
+        squad_total = 0
         for entry in session.get("squad_pool", []):
             mid = entry.get("message_id")
             if not mid:
                 continue
+            squad_total += 1
             try:
                 msg = await channel.fetch_message(mid)
                 await msg.edit(
@@ -2444,6 +2492,7 @@ async def _refresh_public_message(
                         entry["uid"],
                     ))
                 )
+                squad_ok += 1
             except Exception as e:
                 logger.warning("Squad pool view refresh failed: %s", e)
         for tkey, sentry in session.get("squads", {}).items():
@@ -2454,6 +2503,7 @@ async def _refresh_public_message(
                 tidx = int(tkey)
             except (TypeError, ValueError):
                 continue
+            squad_total += 1
             try:
                 msg = await channel.fetch_message(mid)
                 await msg.edit(
@@ -2462,11 +2512,17 @@ async def _refresh_public_message(
                         tournament, match_type, match_index, tidx,
                     ))
                 )
+                squad_ok += 1
             except Exception as e:
                 logger.warning("Squad assigned view refresh failed: %s", e)
+        # Подпись ставим только если хоть одно сообщение обновилось —
+        # иначе следующий вызов повторит попытку.
+        if squad_total == 0 or squad_ok:
+            _store_refresh_sig(sig_key, sig)
         return
 
     if not session.get("message_id"):
+        _store_refresh_sig(sig_key, sig)
         return
     try:
         msg = await channel.fetch_message(session["message_id"])
@@ -2476,6 +2532,7 @@ async def _refresh_public_message(
                 match_type, match_index,
             ))
         )
+        _store_refresh_sig(sig_key, sig)
     except Exception as e:
         logger.warning("OCR public message refresh failed: %s", e)
 
@@ -2524,8 +2581,6 @@ class SelfMapView(View):
                 f"K/D/A {r.get('kills', 0)}/{r.get('deaths', 0)}/"
                 f"{r.get('assists', 0)}"
             )
-            if own:
-                desc += " — ваш текущий, можно сменить"
             options.append(
                 discord.SelectOption(
                     label=label[:100], value=str(i),
@@ -2533,9 +2588,7 @@ class SelfMapView(View):
                 )
             )
         self.select = Select(
-            placeholder=(
-                f"{user_name}: выберите свой игровой ник"
-            )[:150],
+            placeholder="Выберите свой игровой ник",
             options=options[:25]
             or [discord.SelectOption(
                 label="— нет доступных ников —", value="none",
@@ -2659,7 +2712,7 @@ async def _self_bind_row(
                     f"<@{uid}> пытался занять ник "
                     f"«{row.get('ocr_name', '?')}», уже закреплённый "
                     f"за {row.get('discord_name', '?')} "
-                    f"(source={row.get('source')}).",
+                    f"({_source_label(row.get('source'))}).",
                 )
                 await interaction.response.send_message(
                     replace_emojis(
