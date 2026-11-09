@@ -85,12 +85,21 @@ class InventoryStore:
     def __init__(self) -> None:
         self._inventory: dict[str, list[PlayerCosmetic]] = {}  # guild_id:user_id -> list of cosmetics
         self._use_db = True  # Использовать PostgreSQL
+        self._mtime: float | None = None
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 
+    def _file_mtime(self) -> float | None:
+        try:
+            return INVENTORY_FILE.stat().st_mtime
+        except OSError:
+            return None
+
     def load(self) -> None:
         """Загрузить инвентарь из файла."""
-        if not INVENTORY_FILE.exists():
+        self._inventory = {}
+        self._mtime = self._file_mtime()
+        if self._mtime is None:
             return
 
         try:
@@ -101,6 +110,16 @@ class InventoryStore:
         except (json.JSONDecodeError, KeyError):
             self._inventory = {}
 
+    def _refresh_if_changed(self) -> None:
+        """Подхватить внешние изменения файла (CLI-сброс и т.п.).
+
+        Сброс прогресса может выполняться отдельным процессом —
+        без этого in-memory кэш продолжал бы отдавать старые вещи
+        и ближайший save() перезаписал бы очищенный файл.
+        """
+        if self._file_mtime() != self._mtime:
+            self.load()
+
     def save(self) -> None:
         """Сохранить инвентарь в файл."""
         data = {
@@ -109,6 +128,7 @@ class InventoryStore:
         }
         with open(INVENTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        self._mtime = self._file_mtime()
 
     def _get_key(self, guild_id: int, user_id: int) -> str:
         """Получить ключ для хранения."""
@@ -116,11 +136,13 @@ class InventoryStore:
 
     def get_player_inventory(self, guild_id: int, user_id: int) -> list[PlayerCosmetic]:
         """Получить инвентарь игрока."""
+        self._refresh_if_changed()
         key = self._get_key(guild_id, user_id)
         return self._inventory.get(key, [])
 
     def add_cosmetic(self, cosmetic: PlayerCosmetic) -> None:
         """Добавить косметический предмет в инвентарь."""
+        self._refresh_if_changed()
         key = self._get_key(cosmetic.guild_id, cosmetic.user_id)
         if key not in self._inventory:
             self._inventory[key] = []
@@ -135,6 +157,7 @@ class InventoryStore:
 
     def equip_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
         """Экипировать косметический предмет."""
+        self._refresh_if_changed()
         key = self._get_key(guild_id, user_id)
         if key not in self._inventory:
             return False
@@ -168,6 +191,7 @@ class InventoryStore:
 
     def unequip_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
         """Снять косметический предмет."""
+        self._refresh_if_changed()
         key = self._get_key(guild_id, user_id)
         if key not in self._inventory:
             return False
@@ -187,6 +211,7 @@ class InventoryStore:
 
     def remove_cosmetic(self, guild_id: int, user_id: int, item_id: str) -> bool:
         """Удалить косметический предмет из инвентаря."""
+        self._refresh_if_changed()
         key = self._get_key(guild_id, user_id)
         if key not in self._inventory:
             return False

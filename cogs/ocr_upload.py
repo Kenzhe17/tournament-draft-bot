@@ -1129,10 +1129,10 @@ async def _maybe_delete_match_channel(
                 continue
             if is_pool:
                 # Канал пула не удаляем — возвращаем в дефолт:
-                # сбрасываем overwrites и чистим историю. Но только
-                # когда все матчи турнира завершены — канал общий
-                # для всех матчей MM.
-                if await _pool_channel_idle(tournament, cid):
+                # сбрасываем overwrites и чистим историю. Сбрасываем,
+                # когда завершены все матчи, анонсированные именно
+                # в этот канал.
+                if _pool_channel_idle(tournament, cid, mc):
                     await _reset_pool_channel(channel)
                     channels.pop(str(cid), None)
             else:
@@ -1146,22 +1146,41 @@ async def _maybe_delete_match_channel(
     store.set(tournament)
 
 
-async def _pool_channel_idle(tournament, channel_id: int) -> bool:
-    """True, если канал пула можно сбрасывать: нет незавершённых
-    матчей турнира, которые ещё используют его как preset-канал."""
-    if getattr(tournament, "mm_preset_channel_id", 0) != channel_id:
+def _pool_channel_idle(tournament, channel_id: int, entry: dict) -> bool:
+    """True, если канал пула можно сбрасывать: все матчи, идущие
+    в этом канале, завершены.
+
+    entry — запись tournament.match_channels для канала. Список
+    matches заполняется анонсером; для старых записей без него
+    берём матч из match_type/match_index, а для preset-канала MM
+    без записи — все матчи текущей фазы.
+    """
+    pairs = entry.get("matches") or []
+    if not pairs:
+        mt, mi = entry.get("match_type"), entry.get("match_index")
+        if mt is not None and mi is not None:
+            pairs = [(mt, mi)]
+    if not pairs and getattr(tournament, "mm_preset_channel_id", 0) == channel_id:
+        try:
+            from services.match_announcer import _phase_matches
+
+            pairs = [
+                (mt, mi) for mt, mi, _a, _b in _phase_matches(tournament)
+            ]
+        except Exception as exc:
+            logger.warning("Pool idle check failed: %s", exc)
+            return False
+    if not pairs:
         return True
     try:
-        from services.match_announcer import _phase_matches
         from views.ocr_match_view import match_is_finished
 
-        for mt, mi, _a, _b in _phase_matches(tournament):
-            if not match_is_finished(tournament, mt, mi):
-                return False
+        return all(
+            match_is_finished(tournament, mt, mi) for mt, mi in pairs
+        )
     except Exception as exc:
         logger.warning("Pool idle check failed: %s", exc)
         return False
-    return True
 
 
 async def _reset_pool_channel(channel) -> None:

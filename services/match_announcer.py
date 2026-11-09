@@ -414,13 +414,20 @@ async def announce_phase_matches(
                         logger.warning("Match screenshot view register failed: %s", exc)
                 # Регистрируем канал: скриншот в нём = загрузка результата.
                 # card_message_id/has_png — для динамического обновления
-                # карточки после OCR (processing/done).
-                tournament.match_channels[str(channel.id)] = {
+                # карточки после OCR (processing/done). matches — все
+                # матчи, анонсированные в этот канал (для очистки пула).
+                mc_entry = tournament.match_channels.get(str(channel.id), {})
+                mc_entry.update({
                     "match_type": match_type,
                     "match_index": match_index,
                     "card_message_id": match_msg.id,
                     "has_png": card_png is not None,
-                }
+                })
+                bound = mc_entry.setdefault("matches", [])
+                pair = [match_type, match_index]
+                if pair not in bound:
+                    bound.append(pair)
+                tournament.match_channels[str(channel.id)] = mc_entry
                 store.set(tournament)
                 logger.info(
                     "Match #%d channel %s announced (%s)",
@@ -433,10 +440,16 @@ async def announce_phase_matches(
                     embed=embed,
                     allowed_mentions=discord.AllowedMentions(users=True),
                 )
-                tournament.match_channels[str(channel.id)] = {
+                mc_entry = tournament.match_channels.get(str(channel.id), {})
+                mc_entry.update({
                     "match_type": match_type,
                     "match_index": match_index,
-                }
+                })
+                bound = mc_entry.setdefault("matches", [])
+                pair = [match_type, match_index]
+                if pair not in bound:
+                    bound.append(pair)
+                tournament.match_channels[str(channel.id)] = mc_entry
                 store.set(tournament)
                 logger.info(
                     "Match #%d channel %s created (%s)",
