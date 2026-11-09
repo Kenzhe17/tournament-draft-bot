@@ -164,10 +164,10 @@ class MMCog(commands.Cog):
         name="freechannel",
         description="Принудительно освободить канал пула матчей (state → free)",
     )
-    @app_commands.describe(channel_id="ID канала из пула (опционально)")
+    @app_commands.describe(channel_id="ID канала из пула — числом или упоминанием (опционально)")
     @app_commands.checks.has_permissions(administrator=True)
     async def mm_freechannel(
-        self, interaction: discord.Interaction, channel_id: int = 0
+        self, interaction: discord.Interaction, channel_id: str = ""
     ) -> None:
         """Админ: проверить состояние слотов и освободить зависший канал.
 
@@ -178,15 +178,32 @@ class MMCog(commands.Cog):
         """
         from services import match_channel_pool
 
+        # Терпимый парсинг: «1569…», «<#1569…>», «channel_id:1569…»
+        cid = 0
+        if channel_id:
+            import re
+
+            runs = re.findall(r"\d{5,}", str(channel_id))
+            if runs:
+                cid = int(runs[-1])
+            elif str(channel_id).strip().isdigit():
+                cid = int(str(channel_id).strip())
+        if str(channel_id).strip() and not cid:
+            await interaction.response.send_message(
+                "❌ Не удалось распознать ID канала — введите число.",
+                ephemeral=True,
+            )
+            return
+
         await interaction.response.defer(ephemeral=True, thinking=True)
         try:
             await match_channel_pool.ensure_slots()
             slots = await match_channel_pool.list_slots()
-            if channel_id:
-                targets = [s for s in slots if s["channel_id"] == channel_id]
+            if cid:
+                targets = [s for s in slots if s["channel_id"] == cid]
                 if not targets:
                     await interaction.followup.send(
-                        f"❌ Канал `{channel_id}` не найден в пуле.",
+                        f"❌ Канал `{cid}` не найден в пуле.",
                         ephemeral=True,
                     )
                     return
