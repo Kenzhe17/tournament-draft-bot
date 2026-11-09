@@ -32,7 +32,7 @@ from storage.reputation_store import (
     reputation_store,
 )
 from utils.design import colors
-from utils.design.layouts import DesignView
+from utils.design.layouts import DesignView, profile_view
 from utils.permissions import is_admin
 
 if TYPE_CHECKING:
@@ -412,12 +412,11 @@ class ReputationCog(commands.Cog):
     # Команды аналитики
     # ------------------------------------------------------------------
 
-    @reputation_group.command(name="profile", description="Репутация игрока")
-    @app_commands.describe(user="Участник сервера")
-    async def rep_profile(
-        self, interaction: discord.Interaction, user: discord.Member
-    ) -> None:
+    @reputation_group.command(name="profile", description="Твоя репутация")
+    async def rep_profile(self, interaction: discord.Interaction) -> None:
+        """Профиль репутации — только свой, как /invites."""
         guild_id = interaction.guild_id
+        user = interaction.user
         stats = await player_stats_store.get(guild_id, user.id)
         total = int(getattr(stats, "reputation", 0) or 0) if stats else 0
 
@@ -429,7 +428,7 @@ class ReputationCog(commands.Cog):
         legacy = max(0, total - tracked)
 
         lines = [
-            f"Игрок: {user.mention}",
+            f"**{user.display_name}**",
             f"Всего репутации: {total}",
         ]
         if breakdown.get(SRC_INVITE):
@@ -447,12 +446,18 @@ class ReputationCog(commands.Cog):
         lines.append(f"Выдано репутации другим: {given}")
 
         await interaction.response.send_message(
-            view=_card("РЕПУТАЦИЯ УЧАСТНИКА", lines, colors.RATING),
+            view=profile_view(
+                title="ТВОЯ РЕПУТАЦИЯ",
+                lines=lines,
+                thumbnail=user.display_avatar.url,
+            ),
+            allowed_mentions=discord.AllowedMentions.none(),
             ephemeral=False,
         )
 
-    @reputation_group.command(name="history", description="История начислений репутации")
+    @reputation_group.command(name="history", description="История начислений репутации (админ)")
     @app_commands.describe(user="Участник сервера")
+    @is_admin()
     async def rep_history(
         self, interaction: discord.Interaction, user: discord.Member
     ) -> None:
@@ -462,9 +467,10 @@ class ReputationCog(commands.Cog):
             await interaction.response.send_message(
                 view=_card(
                     "ИСТОРИЯ РЕПУТАЦИИ",
-                    [f"{user.mention}: операций пока нет."],
+                    [f"{user.display_name}: операций пока нет."],
                 ),
                 ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             return
 
@@ -485,8 +491,9 @@ class ReputationCog(commands.Cog):
                 f"+{tx['amount']} REP — {src}{extra} · {date_str}"
             )
         await interaction.response.send_message(
-            view=_card("ИСТОРИЯ РЕПУТАЦИИ", [f"{user.mention}:"] + lines),
+            view=_card("ИСТОРИЯ РЕПУТАЦИИ", [f"{user.display_name}:"] + lines),
             ephemeral=False,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
     @reputation_group.command(name="stats", description="Общая статистика репутации сервера")
