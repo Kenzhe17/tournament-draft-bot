@@ -78,6 +78,7 @@ class ReadyCheck:
     cancel_reason: str = ""
     created_at: float = field(default_factory=time.time)
     match_num: int = 0              # номер для надписи MATCH #NNNNN
+    queue_type: str = "normal"      # normal | no_ruin — тип очереди-источника
 
     # ---- derived ----
 
@@ -121,6 +122,7 @@ class ReadyCheck:
             "cancel_reason": self.cancel_reason,
             "created_at": self.created_at,
             "match_num": self.match_num,
+            "queue_type": self.queue_type,
         }
 
     @classmethod
@@ -139,4 +141,5 @@ class ReadyCheck:
             cancel_reason=str(data.get("cancel_reason", "")),
             created_at=float(data.get("created_at", time.time())),
             match_num=int(data.get("match_num", 0)),
+            queue_type=str(data.get("queue_type", "normal") or "normal"),
         )

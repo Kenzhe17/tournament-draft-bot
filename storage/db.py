@@ -617,6 +617,11 @@ async def init_db() -> None:
             await conn.execute(
                 f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {_col} INTEGER DEFAULT 0")
 
+        # Режим матча (normal / no_ruin)
+        await conn.execute(
+            "ALTER TABLE match_history"
+            " ADD COLUMN IF NOT EXISTS match_mode TEXT DEFAULT 'normal'")
+
         # Create index for match_history queries
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_match_history_user_date
@@ -738,6 +743,21 @@ async def init_db() -> None:
             ADD COLUMN IF NOT EXISTS match_channel_id BIGINT NOT NULL DEFAULT 0
         """)
 
+        # Тип очереди-источника (normal / no_ruin) — аддитивная колонка.
+        # Уникальный индекс активного RC расширяем queue_type, чтобы
+        # «Обычка» и «БЕЗ РУИН» могли иметь по одному активному матчу
+        # в одном канале поиска.
+        await conn.execute("""
+            ALTER TABLE ready_checks
+            ADD COLUMN IF NOT EXISTS queue_type TEXT NOT NULL DEFAULT 'normal'
+        """)
+        await conn.execute("DROP INDEX IF EXISTS uq_ready_checks_active_search")
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_ready_checks_active_search
+            ON ready_checks(guild_id, search_channel_id, queue_type)
+            WHERE status NOT IN ('LAUNCHED', 'DECLINED', 'TIMEOUT', 'CANCELLED')
+        """)
+
         # Очередь Ranked Matchmaking (персистентная панель поиска)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS mm_queues (
@@ -752,8 +772,30 @@ async def init_db() -> None:
                 timer_started BOOLEAN NOT NULL DEFAULT FALSE,
                 tournament_channel_id BIGINT NOT NULL DEFAULT 0,
                 match_num INTEGER NOT NULL DEFAULT 0,
-                PRIMARY KEY (guild_id, channel_id)
+                queue_type TEXT NOT NULL DEFAULT 'normal',
+                PRIMARY KEY (guild_id, channel_id, queue_type)
             )
+        """)
+
+        # Миграция существующей таблицы: добавить queue_type и
+        # расширить первичный ключ, чтобы в одном канале жили две
+        # очереди («Обычка» и «БЕЗ РУИН»).
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS queue_type TEXT NOT NULL DEFAULT 'normal'
+        """)
+        await conn.execute("ALTER TABLE mm_queues DROP CONSTRAINT IF EXISTS mm_queues_pkey")
+        await conn.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conrelid = 'mm_queues'::regclass AND contype = 'p'
+                ) THEN
+                    ALTER TABLE mm_queues
+                    ADD PRIMARY KEY (guild_id, channel_id, queue_type);
+                END IF;
+            END $$;
         """)
 
         # Глобальная нумерация матчей (карточка «РЕЗУЛЬТАТ МАТЧА» + embed запуска)

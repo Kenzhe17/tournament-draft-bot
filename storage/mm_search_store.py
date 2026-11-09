@@ -5,6 +5,11 @@
 (asyncio.create_task), JSON-файл остаётся fallback на случай
 недоступности БД и для тестов.
 
+Ключ очереди — (guild_id, channel_id, queue_type): в одном канале
+могут жить две очереди («Обычка» и «БЕЗ РУИН»). queue_type по
+умолчанию "normal" — старые вызовы get/set/delete без него работают
+с обычной очередью.
+
 Таблица mm_queues создаётся в storage/db.py.
 """
 
@@ -14,18 +19,22 @@ import logging
 from pathlib import Path
 
 from config import DATA_DIR, DATABASE_URL
-from models.mm_search import MMSearch
+from models.mm_search import MMSearch, QUEUE_TYPE_NORMAL
 
 logger = logging.getLogger(__name__)
 
 MM_SEARCH_FILE = DATA_DIR / "mm_search.json"
 
 
+def _key(guild_id: int, channel_id: int, queue_type: str) -> tuple[int, int, str]:
+    return (guild_id, channel_id, queue_type or QUEUE_TYPE_NORMAL)
+
+
 class MMSearchStore:
     """Сохранение и загрузка MM поисков (JSON + PostgreSQL)."""
 
     def __init__(self) -> None:
-        self._searches: dict[tuple[int, int], MMSearch] = {}
+        self._searches: dict[tuple[int, int, str], MMSearch] = {}
         self._loaded = False
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         # JSON загружаем сразу — синхронный API остаётся рабочим
@@ -50,8 +59,8 @@ class MMSearchStore:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT guild_id, channel_id, message_id, format, state,"
-                    " players, player_user_ids, created_at, timer_started,"
-                    " tournament_channel_id, match_num"
+                    " queue_type, players, player_user_ids, created_at,"
+                    " timer_started, tournament_channel_id, match_num"
                     " FROM mm_queues"
                 )
             self._searches = {}
@@ -68,7 +77,9 @@ class MMSearchStore:
                     "players": players or [],
                     "player_user_ids": player_user_ids or {},
                 })
-                self._searches[(search.guild_id, search.channel_id)] = search
+                self._searches[_key(
+                    search.guild_id, search.channel_id, search.queue_type
+                )] = search
             logger.info("MMSearchStore: загружено %d очередей из PostgreSQL",
                         len(self._searches))
         except Exception as exc:
@@ -85,7 +96,16 @@ class MMSearchStore:
                 parts = key.split(":")
                 if len(parts) == 2:
                     gid, cid = int(parts[0]), int(parts[1])
-                    self._searches[(gid, cid)] = MMSearch.from_dict(data)
+                    qtype = QUEUE_TYPE_NORMAL
+                elif len(parts) == 3:
+                    gid, cid = int(parts[0]), int(parts[1])
+                    qtype = parts[2] or QUEUE_TYPE_NORMAL
+                else:
+                    continue
+                search = MMSearch.from_dict(data)
+                qt = search.queue_type or qtype
+                search.queue_type = qt
+                self._searches[_key(gid, cid, qt)] = search
             logger.info("Загружено %d MM поисков из JSON", len(self._searches))
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             logger.error("Ошибка загрузки MM JSON: %s", exc)
@@ -94,8 +114,10 @@ class MMSearchStore:
     def _save_json(self) -> None:
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            raw = {f"{gid}:{cid}": s.to_dict()
-                   for (gid, cid), s in self._searches.items()}
+            raw = {
+                f"{gid}:{cid}:{qt}": s.to_dict()
+                for (gid, cid, qt), s in self._searches.items()
+            }
             with open(MM_SEARCH_FILE, "w", encoding="utf-8") as f:
                 json.dump(raw, f, ensure_ascii=False, indent=2)
         except Exception as exc:
@@ -115,10 +137,10 @@ class MMSearchStore:
                 """
                 INSERT INTO mm_queues
                     (guild_id, channel_id, message_id, format, state,
-                     players, player_user_ids, created_at, timer_started,
-                     tournament_channel_id, match_num)
-                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11)
-                ON CONFLICT (guild_id, channel_id) DO UPDATE SET
+                     queue_type, players, player_user_ids, created_at,
+                     timer_started, tournament_channel_id, match_num)
+                VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12)
+                ON CONFLICT (guild_id, channel_id, queue_type) DO UPDATE SET
                     message_id = EXCLUDED.message_id,
                     format = EXCLUDED.format,
                     state = EXCLUDED.state,
@@ -130,6 +152,7 @@ class MMSearchStore:
                 """,
                 search.guild_id, search.channel_id, search.message_id,
                 search.format.value, search.state,
+                search.queue_type or QUEUE_TYPE_NORMAL,
                 json.dumps(search.players, ensure_ascii=False),
                 json.dumps(
                     {str(k): v for k, v in search.player_user_ids.items()},
@@ -139,14 +162,17 @@ class MMSearchStore:
                 search.tournament_channel_id, search.match_num,
             )
 
-    async def _persist_pg_delete(self, guild_id: int, channel_id: int) -> None:
+    async def _persist_pg_delete(
+        self, guild_id: int, channel_id: int, queue_type: str
+    ) -> None:
         from storage.db import get_pool
 
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                "DELETE FROM mm_queues WHERE guild_id = $1 AND channel_id = $2",
-                guild_id, channel_id,
+                "DELETE FROM mm_queues"
+                " WHERE guild_id = $1 AND channel_id = $2 AND queue_type = $3",
+                guild_id, channel_id, queue_type or QUEUE_TYPE_NORMAL,
             )
 
     def _schedule_pg(self, coro) -> None:
@@ -171,23 +197,37 @@ class MMSearchStore:
     # CRUD (синхронный API поверх памяти)
     # ------------------------------------------------------------------
 
-    def get(self, guild_id: int, channel_id: int) -> MMSearch | None:
-        """Получить поиск по guild_id и channel_id."""
-        return self._searches.get((guild_id, channel_id))
+    def get(
+        self,
+        guild_id: int,
+        channel_id: int,
+        queue_type: str = QUEUE_TYPE_NORMAL,
+    ) -> MMSearch | None:
+        """Получить поиск по guild_id, channel_id и типу очереди."""
+        return self._searches.get(_key(guild_id, channel_id, queue_type))
 
     def set(self, search: MMSearch) -> None:
         """Сохранить или обновить поиск."""
-        self._searches[(search.guild_id, search.channel_id)] = search
+        qt = search.queue_type or QUEUE_TYPE_NORMAL
+        search.queue_type = qt
+        self._searches[_key(search.guild_id, search.channel_id, qt)] = search
         self._save_json()
         if DATABASE_URL:
             self._schedule_pg(self._persist_pg_one(search))
 
-    def delete(self, guild_id: int, channel_id: int) -> None:
-        """Удалить поиск по guild_id и channel_id."""
-        self._searches.pop((guild_id, channel_id), None)
+    def delete(
+        self,
+        guild_id: int,
+        channel_id: int,
+        queue_type: str = QUEUE_TYPE_NORMAL,
+    ) -> None:
+        """Удалить поиск по guild_id, channel_id и типу очереди."""
+        self._searches.pop(_key(guild_id, channel_id, queue_type), None)
         self._save_json()
         if DATABASE_URL:
-            self._schedule_pg(self._persist_pg_delete(guild_id, channel_id))
+            self._schedule_pg(
+                self._persist_pg_delete(guild_id, channel_id, queue_type)
+            )
 
     def all(self) -> list[MMSearch]:
         """Получить все активные поиски."""
@@ -195,7 +235,15 @@ class MMSearchStore:
 
     def get_by_guild(self, guild_id: int) -> list[MMSearch]:
         """Получить все поиски сервера."""
-        return [s for (gid, cid), s in self._searches.items() if gid == guild_id]
+        return [s for (gid, _cid, _qt), s in self._searches.items() if gid == guild_id]
+
+    def get_by_channel(self, guild_id: int, channel_id: int) -> dict[str, MMSearch]:
+        """Все очереди канала: {queue_type: MMSearch}."""
+        return {
+            qt: s
+            for (gid, cid, qt), s in self._searches.items()
+            if gid == guild_id and cid == channel_id
+        }
 
 
 # Глобальный экземпляр хранилища

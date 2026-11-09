@@ -55,7 +55,7 @@ class ReadyCheckStore:
             rows = await conn.fetch(
                 "SELECT match_id, guild_id, search_channel_id, tournament_channel_id,"
                 " status, deadline, channel_id, message_id, match_channel_id,"
-                " cancel_reason, created_at, match_num, players"
+                " cancel_reason, created_at, match_num, queue_type, players"
                 " FROM ready_checks"
             )
         for row in rows:
@@ -97,8 +97,8 @@ class ReadyCheckStore:
                 INSERT INTO ready_checks
                     (match_id, guild_id, search_channel_id, tournament_channel_id,
                      status, deadline, channel_id, message_id, match_channel_id,
-                     cancel_reason, created_at, match_num, players)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
+                     cancel_reason, created_at, match_num, queue_type, players)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
                 ON CONFLICT (match_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     deadline = EXCLUDED.deadline,
@@ -112,6 +112,7 @@ class ReadyCheckStore:
                 rc.tournament_channel_id, rc.status.value, rc.deadline,
                 rc.channel_id, rc.message_id, rc.match_channel_id,
                 rc.cancel_reason, rc.created_at, rc.match_num,
+                rc.queue_type or "normal",
                 json.dumps([p.to_dict() for p in rc.players], ensure_ascii=False),
             )
 
@@ -147,10 +148,12 @@ class ReadyCheckStore:
                     dup = await conn.fetchval(
                         "SELECT match_id FROM ready_checks"
                         " WHERE guild_id = $1 AND search_channel_id = $2"
+                        " AND queue_type = $3"
                         " AND status NOT IN"
                         " ('LAUNCHED','DECLINED','TIMEOUT','CANCELLED')"
                         " LIMIT 1",
                         rc.guild_id, rc.search_channel_id,
+                        rc.queue_type or "normal",
                     )
                 if dup is not None:
                     logger.warning(
@@ -161,10 +164,12 @@ class ReadyCheckStore:
                     return False
             except Exception as exc:
                 logger.warning("ReadyCheckStore.create PG pre-check failed: %s", exc)
+        rc_qtype = rc.queue_type or "normal"
         for existing in self._checks.values():
             if (
                 existing.guild_id == rc.guild_id
                 and existing.search_channel_id == rc.search_channel_id
+                and (existing.queue_type or "normal") == rc_qtype
                 and existing.status not in TERMINAL_STATUSES
             ):
                 return False
@@ -176,12 +181,22 @@ class ReadyCheckStore:
         await self._ensure_loaded()
         return self._checks.get(match_id)
 
-    async def get_active_by_search(self, guild_id: int, search_channel_id: int) -> ReadyCheck | None:
+    async def get_active_by_search(
+        self,
+        guild_id: int,
+        search_channel_id: int,
+        queue_type: str | None = None,
+    ) -> ReadyCheck | None:
+        """Активный RC поиска. queue_type=None — любая очередь канала."""
         await self._ensure_loaded()
         for rc in self._checks.values():
             if (
                 rc.guild_id == guild_id
                 and rc.search_channel_id == search_channel_id
+                and (
+                    queue_type is None
+                    or (rc.queue_type or "normal") == queue_type
+                )
                 and rc.status not in TERMINAL_STATUSES
             ):
                 return rc

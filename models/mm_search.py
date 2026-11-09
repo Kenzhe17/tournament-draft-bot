@@ -11,6 +11,13 @@ class MMFormat(str, Enum):
     SQUAD = "squad"  # 4x4, 8 игроков
 
 
+# Тип очереди Ranked Matchmaking
+QUEUE_TYPE_NORMAL = "normal"    # Обычный Ranked — без ограничений по SR
+QUEUE_TYPE_NO_RUIN = "no_ruin"  # «БЕЗ РУИН» — SR 5.5–10.0
+NO_RUIN_MIN_SR = 5.5
+NO_RUIN_MAX_SR = 10.0
+
+
 # Состояния очереди Ranked Matchmaking
 QUEUE_OPEN = "open"                    # принимает игроков
 QUEUE_LOCKED_READY_CHECK = "locked"    # матч найден, идёт ready-check
@@ -32,6 +39,7 @@ class MMSearch:
     tournament_channel_id: int = 0  # Канал в котором будет создан турнир
     state: str = QUEUE_OPEN        # open | locked
     match_num: int = 0             # номер матча на время ready-check
+    queue_type: str = QUEUE_TYPE_NORMAL  # normal | no_ruin
 
     @property
     def required_players(self) -> int:
@@ -96,6 +104,7 @@ class MMSearch:
             "tournament_channel_id": self.tournament_channel_id,
             "state": self.state,
             "match_num": self.match_num,
+            "queue_type": self.queue_type,
         }
 
     @classmethod
@@ -113,4 +122,5 @@ class MMSearch:
             tournament_channel_id=data.get("tournament_channel_id", 0),
             state=data.get("state", QUEUE_OPEN),
             match_num=int(data.get("match_num", 0) or 0),
+            queue_type=data.get("queue_type", QUEUE_TYPE_NORMAL),
         )

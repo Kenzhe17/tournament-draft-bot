@@ -144,6 +144,7 @@ class MatchResultData:
     mvp_name: str = ""
     mvp_kda: str = ""          # "10 / 6 / 4"
     mvp_damage: str = ""
+    mode: str = ""             # "БЕЗ РУИН" и т.п. — бейдж режима
 
 
 def _fmt_num(v: int | float) -> str:
@@ -201,6 +202,8 @@ def render_match_result_sync(data: MatchResultData, avatars: dict[int, bytes]) -
     # ---------- 2. Шапка ----------
     draw.text((1498, 119), _sanitize(data.match_num, 16), font=_display_font(28), fill=TEXT, anchor="ls")
     draw.text((1701, 119), _sanitize(data.duration, 12), font=_display_font(26), fill=TEXT, anchor="ls")
+    if data.mode:
+        draw.text((1498, 168), _sanitize(data.mode, 14), font=_body_font(20), fill=SUB, anchor="ls")
 
     # ---------- 3. Счёт / убийства команд ----------
     draw.text(

@@ -575,6 +575,11 @@ async def _publish_match_result_card_impl(
             mvp_name=mvp_name,
             mvp_kda=mvp_kda,
             mvp_damage=mvp_damage,
+            mode=(
+                "БЕЗ РУИН"
+                if getattr(tournament, "match_mode", "normal") == "no_ruin"
+                else ""
+            ),
         )
 
         png = _RESULT_CARD_CACHE.get(match_id)

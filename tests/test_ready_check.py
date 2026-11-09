@@ -148,7 +148,7 @@ def _make_cog(monkeypatch, tmp_path):
     search.message_id = 77
 
     class _SearchStore:
-        def get(self, guild_id, channel_id):
+        def get(self, guild_id, channel_id, queue_type="normal"):
             return search
 
         def set(self, s):

@@ -157,7 +157,8 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
 
     def _result_line(match: MatchHistory) -> str:
         icon = "✅" if match.result == "win" else "❌"
-        return f"{icon} {_match_type_text(match)} — {match.team_name} vs {match.opponent_team_name} • {match.kills}/{match.deaths} K/D • ELO {match.elo_change:+d} • {_format_date(match.date)}"
+        mode = " · БЕЗ РУИН" if getattr(match, "match_mode", "normal") == "no_ruin" else ""
+        return f"{icon} {_match_type_text(match)}{mode} — {match.team_name} vs {match.opponent_team_name} • {match.kills}/{match.deaths} K/D • ELO {match.elo_change:+d} • {_format_date(match.date)}"
 
     # Первая страница — сводка + последние результаты
     if page == 0:
@@ -195,8 +196,13 @@ def create_history_embed(guild_id: int, user_id: int, matches: List[MatchHistory
             won = match.result == "win"
             result_text = "Победа" if won else "Поражение"
 
+            mode_text = (
+                " · БЕЗ РУИН"
+                if getattr(match, "match_mode", "normal") == "no_ruin"
+                else ""
+            )
             parts = [
-                f"**{_match_type_text(match)}**",
+                f"**{_match_type_text(match)}{mode_text}**",
                 f" {_format_date(match.date)}",
                 "",
                 f"**{match.team_name} vs {match.opponent_team_name}**",

@@ -45,7 +45,8 @@ class MatchHistoryStore:
                 bet_win INTEGER DEFAULT 0,
                 bet_team TEXT DEFAULT '',
                 assists INTEGER DEFAULT 0,
-                damage INTEGER DEFAULT 0
+                damage INTEGER DEFAULT 0,
+                match_mode TEXT DEFAULT 'normal'
             )
         """)
 
@@ -56,6 +57,14 @@ class MatchHistoryStore:
                     f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {col} INTEGER DEFAULT 0")
             except Exception:
                 pass
+
+        # Режим матча (normal / no_ruin) — аддитивная колонка
+        try:
+            await conn.execute(
+                "ALTER TABLE match_history"
+                " ADD COLUMN IF NOT EXISTS match_mode TEXT DEFAULT 'normal'")
+        except Exception:
+            pass
 
         # Create index for match_history queries
         await conn.execute("""
@@ -107,7 +116,8 @@ class MatchHistoryStore:
                                match_type, match_index, team_index, team_name,
                                teammates, opponent_team_index, opponent_team_name,
                                opponents, kills, deaths, result, elo_change,
-                               bet_amount, bet_win, bet_team, assists, damage
+                               bet_amount, bet_win, bet_team, assists, damage,
+                               match_mode
                         FROM match_history
                         WHERE guild_id = $1 AND user_id = $2
                         ORDER BY date DESC
@@ -138,7 +148,8 @@ class MatchHistoryStore:
                             bet_win=row.get("bet_win", 0),
                             bet_team=row.get("bet_team", ""),
                             assists=row.get("assists", 0) or 0,
-                            damage=row.get("damage", 0) or 0
+                            damage=row.get("damage", 0) or 0,
+                            match_mode=row.get("match_mode", "normal") or "normal"
                         )
                         for row in rows
                     ]
@@ -176,8 +187,9 @@ class MatchHistoryStore:
                          match_type, match_index, team_index, team_name,
                          teammates, opponent_team_index, opponent_team_name,
                          opponents, kills, deaths, result, elo_change,
-                         bet_amount, bet_win, bet_team, assists, damage)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                         bet_amount, bet_win, bet_team, assists, damage,
+                         match_mode)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                         """,
                         match.guild_id, match.user_id, match.match_id, match.tournament_id,
                         match.date, match.match_type, match.match_index, match.team_index,
@@ -185,7 +197,8 @@ class MatchHistoryStore:
                         match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                         match.result, match.elo_change, match.bet_amount, match.bet_win,
                         match.bet_team, getattr(match, "assists", 0) or 0,
-                        getattr(match, "damage", 0) or 0
+                        getattr(match, "damage", 0) or 0,
+                        getattr(match, "match_mode", "normal") or "normal"
                     )
                 except Exception as e:
                     # If table doesn't exist, create it and retry
@@ -198,8 +211,9 @@ class MatchHistoryStore:
                              match_type, match_index, team_index, team_name,
                              teammates, opponent_team_index, opponent_team_name,
                              opponents, kills, deaths, result, elo_change,
-                             bet_amount, bet_win, bet_team, assists, damage)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+                             bet_amount, bet_win, bet_team, assists, damage,
+                             match_mode)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
                             """,
                             match.guild_id, match.user_id, match.match_id, match.tournament_id,
                             match.date, match.match_type, match.match_index, match.team_index,
@@ -207,7 +221,8 @@ class MatchHistoryStore:
                             match.opponent_team_name, json.dumps(match.opponents), match.kills, match.deaths,
                             match.result, match.elo_change, match.bet_amount, match.bet_win,
                             match.bet_team, getattr(match, "assists", 0) or 0,
-                            getattr(match, "damage", 0) or 0
+                            getattr(match, "damage", 0) or 0,
+                            getattr(match, "match_mode", "normal") or "normal"
                         )
                     else:
                         raise

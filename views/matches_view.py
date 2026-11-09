@@ -388,7 +388,8 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 assists=kd_data.get("assists", 0),
                 damage=kd_data.get("damage", 0),
                 result=result,
-                elo_change=elo_change
+                elo_change=elo_change,
+                match_mode=getattr(self.tournament, "match_mode", "normal"),
             )
 
             logging.info(f"Saving match history for {player_name}: result={result}, kills={match_entry.kills}, deaths={match_entry.deaths}")
