@@ -6,6 +6,7 @@ import asyncio
 import io
 import logging
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,11 @@ from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID, OR
 
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
 MATCH_FOUND_CHANNEL_ID = 1549809898643001484
+
+# VAC 30 минут — не нажал «Готов» / нажал «Отказаться» на Ready Check
+MM_NO_SHOW_VAC = timedelta(minutes=30)
+# Пауза между попытками запуска матча после ошибки (антиспам API)
+MATCH_START_RETRY_COOLDOWN = 120.0
 from models.mm_search import MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
@@ -79,6 +85,7 @@ class MMCog(commands.Cog):
         self._rc_sweeper_task: asyncio.Task | None = None
         self._rc_recovery_task: asyncio.Task | None = None
         self._queue_locks: dict[tuple[int, int], asyncio.Lock] = {}
+        self._begin_fail_at: dict[tuple[int, int], float] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
     async def cog_load(self) -> None:
@@ -683,6 +690,36 @@ class MMCog(commands.Cog):
         except Exception:
             pass
 
+    async def _issue_mm_vacs(
+        self, guild_id: int, user_ids, reason: str
+    ) -> None:
+        """VAC 30 мин игрокам, не подтвердившим готовность / отказавшимся."""
+        from services.vac_service import issue_vac
+        issued_by = getattr(getattr(self.bot, "user", None), "id", 0) or 0
+        for uid in {int(u) for u in user_ids if u and int(u) > 0}:
+            try:
+                row, err = await issue_vac(
+                    guild_id, uid, issued_by, MM_NO_SHOW_VAC)
+                if row is None:
+                    continue  # already_active или ошибка — не дублируем
+                logger.info("MM VAC issued: user=%s reason=%s", uid, reason)
+                try:
+                    user = self.bot.get_user(uid)
+                    if user is None:
+                        user = await self.bot.fetch_user(uid)
+                    expires = row.get("expires_at")
+                    ts = int(expires.timestamp()) if hasattr(
+                        expires, "timestamp") else 0
+                    await user.send(
+                        f"Вам выдан VAC на 30 минут: {reason}.\n"
+                        f"До <t:{ts}:R> вы не можете участвовать "
+                        "в турнирах r!z3."
+                    )
+                except Exception:
+                    pass  # DM закрыты — VAC всё равно выдан
+            except Exception:
+                logger.exception("Failed to issue MM VAC for %s", uid)
+
     async def handle_decline_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Отказаться»."""
         rc = await ready_check_store.get(match_id)
@@ -708,6 +745,9 @@ class MMCog(commands.Cog):
             rc.status = ReadyCheckStatus.DECLINED
             rc.cancel_reason = f"{player.name} отказался от участия"
             await ready_check_store.save(rc)
+            await self._issue_mm_vacs(
+                rc.guild_id, [player.user_id],
+                "отказ от Ranked-матча")
 
             await interaction.response.send_message(
                 "❌ Вы отказались от матча. Остальные игроки возвращены в очередь.", ephemeral=True
@@ -737,6 +777,11 @@ class MMCog(commands.Cog):
             await ready_check_store.save(rc)
             await self._update_ready_message(rc)
             keep = {p.user_id for p in rc.players if p.is_ready}
+            no_show = [p.user_id for p in rc.players if not p.is_ready]
+            if no_show:
+                await self._issue_mm_vacs(
+                    rc.guild_id, no_show,
+                    "не подтвердил готовность на матч")
             await self._finish_cancelled(rc, keep_user_ids=keep)
 
     async def _finish_cancelled(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
@@ -1155,10 +1200,21 @@ class MMCog(commands.Cog):
                 # Очередь заполнена, но матч не стартовал (ошибка
                 # создания канала/карточки Ready Check). Это единственный
                 # путь повторного запуска — иначе очередь «зависает».
+                key = (guild_id, channel_id)
+                elapsed = time.time() - self._begin_fail_at.get(key, 0.0)
+                if elapsed < MATCH_START_RETRY_COOLDOWN:
+                    wait = int(MATCH_START_RETRY_COOLDOWN - elapsed) + 1
+                    await interaction.response.send_message(
+                        "Запуск матча уже завершился ошибкой — "
+                        f"повторите через {wait} сек.",
+                        ephemeral=True,
+                    )
+                    return
                 self._cancel_search_timer(guild_id, channel_id)
                 rc, err = await self._begin_match(search, interaction)
                 await self._update_queue_panel(search)
                 if rc is None:
+                    self._begin_fail_at[key] = time.time()
                     if not interaction.response.is_done():
                         await interaction.response.send_message(
                             err or "Не удалось запустить матч. Попробуйте ещё раз.",
@@ -1169,6 +1225,8 @@ class MMCog(commands.Cog):
                             err or "Не удалось запустить матч. Попробуйте ещё раз.",
                             ephemeral=True,
                         )
+                else:
+                    self._begin_fail_at.pop(key, None)
                 return
 
             error = await self._validate_join(interaction, search)
@@ -1191,10 +1249,12 @@ class MMCog(commands.Cog):
 
             if search.is_full:
                 # Атомарно: lock → канал → ready-check (внутри _begin_match)
+                key = (guild_id, channel_id)
                 self._cancel_search_timer(guild_id, channel_id)
                 rc, err = await self._begin_match(search, interaction)
                 await self._update_queue_panel(search)
                 if rc is None:
+                    self._begin_fail_at[key] = time.time()
                     if not interaction.response.is_done():
                         await interaction.response.send_message(
                             err or "Не удалось запустить матч.", ephemeral=True
@@ -1203,6 +1263,8 @@ class MMCog(commands.Cog):
                         await interaction.followup.send(
                             err or "Не удалось запустить матч.", ephemeral=True
                         )
+                else:
+                    self._begin_fail_at.pop(key, None)
                 return
 
             await interaction.response.edit_message(
@@ -1293,6 +1355,13 @@ class MMCog(commands.Cog):
             channel, ch_err = await self._create_match_channel(guild, search, match_num)
             if channel is None:
                 await _revert()
+                if ch_err and ch_err.startswith("rate_limited:"):
+                    secs = int(ch_err.split(":", 1)[1])
+                    mins = max(1, secs // 60)
+                    return None, (
+                        f"Discord временно ограничил создание каналов "
+                        f"(серверный rate-limit). Повторите через ~{mins} мин."
+                    )
                 detail = f" ({ch_err})" if ch_err else ""
                 return None, f"Не удалось создать канал матча{detail}. Попробуйте ещё раз."
 
@@ -1366,6 +1435,11 @@ class MMCog(commands.Cog):
                 reason="Ranked match channel",
             )
             return channel, None
+        except discord.RateLimited as exc:
+            logger.error(
+                "Match channel rate limited: retry_after=%.0fs",
+                exc.retry_after)
+            return None, f"rate_limited:{max(1, int(exc.retry_after))}"
         except Exception as exc:
             logger.error("Failed to create match channel: %s", exc, exc_info=True)
             return None, str(exc)[:120]
