@@ -17,7 +17,6 @@ from storage.bet_store import bet_store
 from storage.user_balance_store import user_balance_store
 from utils.embeds import build_embed_for_phase
 from utils.permissions import is_org_check
-from views.bet_views import BetButton, ViewBetsButton, ToggleBettingButton
 from views.room_buttons import RoomButton, AdminRoomsButton
 
 if TYPE_CHECKING:
@@ -388,8 +387,7 @@ class ConfirmFinalWinnerButton(discord.ui.Button):
                 assists=kd_data.get("assists", 0),
                 damage=kd_data.get("damage", 0),
                 result=result,
-                elo_change=elo_change,
-                match_mode=getattr(self.tournament, "match_mode", "normal"),
+                elo_change=elo_change
             )
 
             logging.info(f"Saving match history for {player_name}: result={result}, kills={match_entry.kills}, deaths={match_entry.deaths}")
@@ -1322,11 +1320,6 @@ class QualifiersView(discord.ui.View):
         # if has_editable_team:
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
-        # Add betting buttons (skip for random-auto)
-        if tournament.formation_mode != "random-auto":
-            self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
-            self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "qualifiers"))
-
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):
             # Check if room is already filled
@@ -1377,11 +1370,6 @@ class SemifinalsView(discord.ui.View):
         # has_editable_team = any(tournament.is_team_name_editable(i) for i in range(len(tournament.teams)))
         # if has_editable_team:
         #     self.add_item(TeamNameButton(guild_id, tournament))
-
-        # Add betting buttons (skip for random-auto)
-        if tournament.formation_mode != "random-auto":
-            self.add_item(BetButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
-            self.add_item(ViewBetsButton(guild_id, self.channel_id, tournament, matches, "semifinal"))
 
         # Add room buttons for each match (only if not filled)
         for i, (team_a, team_b) in enumerate(matches):

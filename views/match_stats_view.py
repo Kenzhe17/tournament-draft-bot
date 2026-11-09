@@ -380,8 +380,7 @@ class CaptainStatsModal(Modal, title="Статистика команды"):
                                 assists=kd_data.get("assists", 0),
                                 damage=kd_data.get("damage", 0),
                                 result=result,
-                                elo_change=elo_change,
-                                match_mode=getattr(tournament, "match_mode", "normal"),
+                                elo_change=elo_change
                             )
                             
                             await match_history_store.add(match_entry)
@@ -1120,8 +1119,7 @@ class AdminConfirmView(View):
                     assists=kd_data.get("assists", 0),
                     damage=kd_data.get("damage", 0),
                     result=result,
-                    elo_change=elo_change,
-                    match_mode=getattr(tournament, "match_mode", "normal"),
+                    elo_change=elo_change
                 )
 
                 logging.info(f"Saving match history for {player_name}: result={result}, kills={match_entry.kills}, deaths={match_entry.deaths}")

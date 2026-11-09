@@ -3359,7 +3359,6 @@ async def _save_match_history(
                 damage=kd_data.get("damage", 0),
                 result="win" if my_idx == winning_team_index else "loss",
                 elo_change=elo_change,
-                match_mode=getattr(tournament, "match_mode", "normal"),
             )
         )
 
