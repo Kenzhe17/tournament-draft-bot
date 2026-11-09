@@ -312,7 +312,7 @@ class TournamentCog(commands.Cog):
 
         if getattr(self.bot, "mm_cog", None):
             try:
-                self.bot.mm_cog.reset_search_limit(interaction.guild_id)
+                await self.bot.mm_cog.reset_search_limit(interaction.guild_id)
             except Exception:
                 pass
 
