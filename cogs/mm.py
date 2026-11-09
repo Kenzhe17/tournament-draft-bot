@@ -725,23 +725,27 @@ class MMCog(commands.Cog):
 
     async def handle_decline_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Отказаться»."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
         rc = await ready_check_store.get(match_id)
         if rc is None:
-            await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+            await self._ephemeral(interaction, "❌ Матч не найден.")
             return
         player = rc.player_by_id(interaction.user.id)
         if player is None:
-            await interaction.response.send_message("❌ Вы не участвуете в этом матче.", ephemeral=True)
+            await self._ephemeral(interaction, "❌ Вы не участвуете в этом матче.")
             return
 
         async with self._rc_lock(match_id):
             rc = await ready_check_store.get(match_id)
             if rc is None:
-                await interaction.response.send_message("❌ Матч не найден.", ephemeral=True)
+                await self._ephemeral(interaction, "❌ Матч не найден.")
                 return
             player = rc.player_by_id(interaction.user.id)
             if rc.status != ReadyCheckStatus.READY_CHECK:
-                await interaction.response.send_message("ℹ️ Этот матч уже завершён.", ephemeral=True)
+                await self._ephemeral(interaction, "ℹ️ Этот матч уже завершён.")
                 return
 
             player.declined = True
@@ -752,8 +756,9 @@ class MMCog(commands.Cog):
                 rc.guild_id, [player.user_id],
                 "отказ от Ranked-матча")
 
-            await interaction.response.send_message(
-                "❌ Вы отказались от матча. Остальные игроки возвращены в очередь.", ephemeral=True
+            await self._ephemeral(
+                interaction,
+                "❌ Вы отказались от матча. Остальные игроки возвращены в очередь.",
             )
             await self._update_ready_message(rc)
             await self._finish_cancelled(rc, keep_user_ids={p.user_id for p in rc.players if p.user_id != player.user_id})
@@ -1202,25 +1207,72 @@ class MMCog(commands.Cog):
             return vac_blocked_text(ts)
         return None
 
+    async def _ephemeral(self, interaction: discord.Interaction, text: str) -> None:
+        """Ephemeral-ответ: followup, если interaction уже подтверждён."""
+        try:
+            is_done = interaction.response.is_done()
+        except Exception:
+            is_done = False
+        try:
+            if is_done:
+                await interaction.followup.send(text, ephemeral=True)
+            else:
+                await interaction.response.send_message(text, ephemeral=True)
+        except Exception as exc:
+            logger.warning("MM ephemeral reply failed: %s", exc)
+
+    async def _edit_panel(
+        self, interaction: discord.Interaction, search: MMSearch
+    ) -> None:
+        """Обновить V2-панель очереди.
+
+        После upfront defer edit_message недоступен — правим
+        сообщение напрямую; без defer — через response (старое
+        поведение, в т.ч. для тестовых fake-интеракций).
+        """
+        kwargs = dict(
+            view=build_queue_panel(search),
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+        try:
+            done = interaction.response.is_done()
+        except Exception:
+            done = False
+        try:
+            if done:
+                await interaction.message.edit(**kwargs)
+            else:
+                await interaction.response.edit_message(**kwargs)
+        except Exception as exc:
+            logger.warning("Queue panel edit failed: %s", exc)
+
     async def handle_queue_join(
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
         """Кнопка «Войти в очередь» на V2-панели."""
+        # Подтверждаем interaction сразу — дальше могут быть долгие
+        # операции (lock, канал, рендер PNG), иначе Discord ответит
+        # Unknown interaction (10062) по истечении 3-секундного окна.
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
         search = mm_search_store.get(guild_id, channel_id)
         if search is None:
-            await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+            await self._ephemeral(interaction, "Поиск не найден.")
             return
 
         async with self._queue_lock(guild_id, channel_id):
             search = mm_search_store.get(guild_id, channel_id)
             if search is None:
-                await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+                await self._ephemeral(interaction, "Поиск не найден.")
                 return
             if search.is_locked:
-                await interaction.response.send_message(
+                await self._ephemeral(
+                    interaction,
                     "Идёт проверка готовности — набор закрыт. "
                     "Дождитесь результата матча.",
-                    ephemeral=True,
                 )
                 return
             if search.is_full:
@@ -1231,10 +1283,10 @@ class MMCog(commands.Cog):
                 elapsed = time.time() - self._begin_fail_at.get(key, 0.0)
                 if elapsed < MATCH_START_RETRY_COOLDOWN:
                     wait = int(MATCH_START_RETRY_COOLDOWN - elapsed) + 1
-                    await interaction.response.send_message(
+                    await self._ephemeral(
+                        interaction,
                         "Запуск матча уже завершился ошибкой — "
                         f"повторите через {wait} сек.",
-                        ephemeral=True,
                     )
                     return
                 self._cancel_search_timer(guild_id, channel_id)
@@ -1242,29 +1294,23 @@ class MMCog(commands.Cog):
                 await self._update_queue_panel(search)
                 if rc is None:
                     self._begin_fail_at[key] = time.time()
-                    if not interaction.response.is_done():
-                        await interaction.response.send_message(
-                            err or "Не удалось запустить матч. Попробуйте ещё раз.",
-                            ephemeral=True,
-                        )
-                    else:
-                        await interaction.followup.send(
-                            err or "Не удалось запустить матч. Попробуйте ещё раз.",
-                            ephemeral=True,
-                        )
+                    await self._ephemeral(
+                        interaction,
+                        err or "Не удалось запустить матч. Попробуйте ещё раз.",
+                    )
                 else:
                     self._begin_fail_at.pop(key, None)
                 return
 
             error = await self._validate_join(interaction, search)
             if error:
-                await interaction.response.send_message(error, ephemeral=True)
+                await self._ephemeral(interaction, error)
                 return
 
             player_name = interaction.user.display_name
             if not search.add_player(player_name, interaction.user.id):
-                await interaction.response.send_message(
-                    "Не удалось добавить в очередь.", ephemeral=True
+                await self._ephemeral(
+                    interaction, "Не удалось добавить в очередь."
                 )
                 return
 
@@ -1282,41 +1328,39 @@ class MMCog(commands.Cog):
                 await self._update_queue_panel(search)
                 if rc is None:
                     self._begin_fail_at[key] = time.time()
-                    if not interaction.response.is_done():
-                        await interaction.response.send_message(
-                            err or "Не удалось запустить матч.", ephemeral=True
-                        )
-                    else:
-                        await interaction.followup.send(
-                            err or "Не удалось запустить матч.", ephemeral=True
-                        )
+                    await self._ephemeral(
+                        interaction,
+                        err or "Не удалось запустить матч.",
+                    )
                 else:
                     self._begin_fail_at.pop(key, None)
                 return
 
-            await interaction.response.edit_message(
-                view=build_queue_panel(search),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            await self._edit_panel(interaction, search)
 
     async def handle_queue_leave(
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
         """Кнопка «Выйти из очереди» на V2-панели."""
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except Exception:
+            pass
+
         search = mm_search_store.get(guild_id, channel_id)
         if search is None:
-            await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+            await self._ephemeral(interaction, "Поиск не найден.")
             return
 
         async with self._queue_lock(guild_id, channel_id):
             search = mm_search_store.get(guild_id, channel_id)
             if search is None:
-                await interaction.response.send_message("Поиск не найден.", ephemeral=True)
+                await self._ephemeral(interaction, "Поиск не найден.")
                 return
             if search.is_locked:
-                await interaction.response.send_message(
+                await self._ephemeral(
+                    interaction,
                     "Идёт проверка готовности — выход недоступен.",
-                    ephemeral=True,
                 )
                 return
 
@@ -1326,9 +1370,7 @@ class MMCog(commands.Cog):
                 interaction.user.display_name,
             )
             if name not in search.players:
-                await interaction.response.send_message(
-                    "Вы не в этой очереди.", ephemeral=True
-                )
+                await self._ephemeral(interaction, "Вы не в этой очереди.")
                 return
 
             search.remove_player(name)
@@ -1336,10 +1378,7 @@ class MMCog(commands.Cog):
                 search.timer_started = False
                 self._cancel_search_timer(guild_id, channel_id)
             mm_search_store.set(search)
-            await interaction.response.edit_message(
-                view=build_queue_panel(search),
-                allowed_mentions=discord.AllowedMentions.none(),
-            )
+            await self._edit_panel(interaction, search)
 
     async def _begin_match(
         self, search: MMSearch, interaction: discord.Interaction
