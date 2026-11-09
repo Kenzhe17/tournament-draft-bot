@@ -17,6 +17,10 @@ NUM_RE = re.compile(r"^\d{1,7}$")
 SCORE_NUM_RE = re.compile(r"^\d{1,2}$")
 VS_RE = re.compile(r"^(vs|v5|ws|vS)[.:]?$", re.IGNORECASE)
 SCORE_GLUED_RE = re.compile(r"(\d{1,2})\s*[:：]?\s*(?:vs|v5|ws)\s*[:：]?\s*(\d{1,2})", re.IGNORECASE)
+# «5:2» / «5-2» / «5|2» одним боксом — без букв VS (OCR мог склеить
+# разделитель). Принимается только в шапке (выше строк K/D/A), чтобы
+# не спутать с таймером или другими числами.
+SCORE_PLAIN_RE = re.compile(r"^(\d{1,2})\s*[:：.\-–—|]\s*(\d{1,2})$")
 NAME_CHAR_RE = re.compile(r"[A-Za-zА-Яа-яЁё]")
 SKIP_WORDS = {
     "имя", "k/d/a", "dmg", "uma", "a", "b", "битва", "отрядов",
@@ -81,6 +85,18 @@ def parse_match_score(
             a, c = int(m.group(1)), int(m.group(2))
             if 0 <= a <= 30 and 0 <= c <= 30 and (a or c):
                 return (a, c)
+
+    # 3) «N:M» / «N-M» / «N | M» одним боксом без букв VS.
+    # Только выше строк K/D/A — иначе «12:30» (таймер) даст ложный счёт.
+    kda_cys = [b["cy"] for b in boxes if KDA_RE.search(b["text"])]
+    top_limit = min(kda_cys) if kda_cys else float("inf")
+    for b in boxes:
+        m = SCORE_PLAIN_RE.match(b["text"].strip())
+        if not m or b["cy"] >= top_limit:
+            continue
+        a, c = int(m.group(1)), int(m.group(2))
+        if 0 <= a <= 30 and 0 <= c <= 30 and (a or c):
+            return (a, c)
     return None
 
 

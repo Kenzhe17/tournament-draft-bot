@@ -192,20 +192,25 @@ def ocr_score_fallback(
     except Exception:
         return None
 
-    vs_boxes = [b for b in boxes if VS_RE.match(b["text"].strip())]
-    if not vs_boxes:
-        return None
-    vb = min(vs_boxes, key=lambda b: b["cy"])
-
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception:
         return None
     w, h = img.size
-    y0 = max(0, int(vb["y0"]) - 50)
-    y1 = min(h, int(vb["y1"]) + 50)
-    if y1 - y0 < 20:
-        return None
+
+    vs_boxes = [b for b in boxes if VS_RE.match(b["text"].strip())]
+    if not vs_boxes:
+        # «VS» не распознан — счёт может быть склеен («5:2») или
+        # лежать в верхней полосе шапки. Кропаем верхние ~22% кадра.
+        y0, y1 = 0, int(h * 0.22)
+        if y1 - y0 < 20:
+            return None
+    else:
+        vb = min(vs_boxes, key=lambda b: b["cy"])
+        y0 = max(0, int(vb["y0"]) - 50)
+        y1 = min(h, int(vb["y1"]) + 50)
+        if y1 - y0 < 20:
+            return None
     crop = img.crop((0, y0, w, y1))
     crop = crop.resize((w * 3, (y1 - y0) * 3), Image.LANCZOS)
 
