@@ -155,6 +155,7 @@ class MarriagesView(discord.ui.LayoutView):
             await interaction.response.edit_message(
                 view=new_view,
                 attachments=list(interaction.message.attachments),
+                allowed_mentions=discord.AllowedMentions.none(),
             )
         except Exception:
             import logging

@@ -1506,7 +1506,8 @@ class TournamentCog(commands.Cog):
         entries = await collect_entries(interaction.guild)
         view = build_birthdays_view(entries)
         await interaction.response.send_message(
-            view=view, file=birthdays_file())
+            view=view, file=birthdays_file(),
+            allowed_mentions=discord.AllowedMentions.none())
 
     @app_commands.command(name="браки", description="Действующие браки на сервере")
     async def marriages_cmd(self, interaction: discord.Interaction) -> None:
@@ -1529,7 +1530,8 @@ class TournamentCog(commands.Cog):
             guild_id=interaction.guild_id,
         )
         await interaction.response.send_message(
-            view=view, file=marriages_file())
+            view=view, file=marriages_file(),
+            allowed_mentions=discord.AllowedMentions.none())
 
     @app_commands.command(name="birthdaytest", description="Тест поздравления с днём рождения")
     @app_commands.describe(user="Пользователь для тестового поздравления")
