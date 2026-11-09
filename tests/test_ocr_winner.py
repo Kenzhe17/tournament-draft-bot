@@ -173,3 +173,89 @@ def test_renderer_accepts_score_label():
 def test_renderer_default_label_round_score():
     data = MatchResultData(match_num="#RZ-1", score_a=5, score_b=3)
     assert data.score_label == "СЧЁТ МАТЧА"
+
+
+# --- Авто-выбор панели (без ручного выбора сторон) ---
+
+def _mm_tournament():
+    """Турнир матча qualifier[0] = команды 0 vs 1."""
+    return SimpleNamespace(
+        teams=[
+            {"captain": "CapA", "players": ["CapA", "P1", "P2", "P3"]},
+            {"captain": "CapB", "players": ["CapB", "Q1", "Q2", "Q3"]},
+        ],
+        player_user_ids={
+            "CapA": 111, "P1": 113, "P2": 114, "P3": 115,
+            "CapB": 222, "Q1": 223, "Q2": 224, "Q3": 225,
+        },
+        qualifier_matches=[(0, 1)],
+        semifinal_matches=[],
+        final_teams=(0, 1),
+        team_names={},
+    )
+
+
+def _mm_session(uploaded_by=111, banner="win", mode="classic"):
+    return {
+        "mode": mode,
+        "match_type": "qualifier",
+        "match_index": 0,
+        "teams": [0, 1],
+        "uploaded_by": uploaded_by,
+        "banner": banner,
+        "maps": {},
+        "panel_picks": {},
+    }
+
+
+def test_auto_panel_winner_uploads():
+    """Капитан победившей команды грузил + баннер win → он слева."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=111, banner="win")
+    assert _auto_panel_for_team(t, s, 0) == "left"
+    assert _auto_panel_for_team(t, s, 1) == "right"
+
+
+def test_auto_panel_member_of_winner_team():
+    """Любой участник команды загрузил + win → его команда слева."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=113, banner="win")  # P1, не капитан
+    assert _auto_panel_for_team(t, s, 0) == "left"
+    assert _auto_panel_for_team(t, s, 1) == "right"
+
+
+def test_auto_panel_lose_banner_flips():
+    """Баннер lose → загрузившая команда на правой (проиграла)."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=111, banner="lose")
+    assert _auto_panel_for_team(t, s, 0) == "right"
+    assert _auto_panel_for_team(t, s, 1) == "left"
+
+
+def test_auto_panel_no_banner_assumes_winner():
+    """Баннер не распознан — по правилу загрузки команда слева."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=222, banner=None)
+    assert _auto_panel_for_team(t, s, 1) == "left"
+    assert _auto_panel_for_team(t, s, 0) == "right"
+
+
+def test_auto_panel_unknown_uploader_none():
+    """Админ/посторонний загрузил → ручной выбор стороны."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=999999, banner="win")
+    assert _auto_panel_for_team(t, s, 0) is None
+    assert _auto_panel_for_team(t, s, 1) is None
+
+
+def test_auto_panel_squad_mode_none():
+    """Squad-режим — авто-сторон нет, там свои claim-кнопки."""
+    from views.ocr_match_view import _auto_panel_for_team
+    t = _mm_tournament()
+    s = _mm_session(uploaded_by=111, banner="win", mode="squad")
+    assert _auto_panel_for_team(t, s, 0) is None

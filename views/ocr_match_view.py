@@ -265,6 +265,147 @@ def _captain_mentions(tournament: Tournament, team_indexes: list[int]) -> str:
     return "  ".join(parts)
 
 
+def _team_of_user(
+    tournament: Tournament, team_indexes, user_id
+) -> int | None:
+    """Команда матча, в составе которой состоит Discord-пользователь."""
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return None
+    for idx in team_indexes:
+        for name in team_roster(tournament, idx):
+            mapped = tournament.player_user_ids.get(name)
+            try:
+                if mapped and int(mapped) == uid:
+                    return idx
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _auto_panel_for_team(
+    tournament: Tournament, session: dict, team_index: int
+) -> str | None:
+    """Авто-сторона команды без ручного выбора панели.
+
+    Победитель на скриншоте — всегда Левая Панель. Скриншот по правилам
+    загружает участник одной из команд: баннер ПОБЕДА/ПОРАЖЕНИЕ на
+    скриншоте говорит, выиграла ли его команда. Если загрузивший не
+    опознан (админ и т.п.) или режим squad — возвращаем None, и
+    капитанам показывается обычный выбор стороны.
+    """
+    if session.get("mode") == "squad":
+        return None
+    try:
+        t1, t2 = _match_tuple(
+            tournament,
+            session.get("match_type"),
+            session.get("match_index"),
+        )
+    except Exception:
+        return None
+    uploader_team = _team_of_user(
+        tournament, (t1, t2), session.get("uploaded_by")
+    )
+    if uploader_team is None:
+        return None
+    if session.get("banner") == "lose":
+        return "right" if team_index == uploader_team else "left"
+    # banner "win" или не распознан: загрузившая команда считается
+    # победившей — левая панель (правило загрузки результата).
+    return "left" if team_index == uploader_team else "right"
+
+
+async def _open_panel_mapping(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    team_index: int,
+    panel: str,
+    auto: bool = False,
+) -> None:
+    """Зарезервировать панель и открыть маппинг игроков команды."""
+    session = tournament.ocr_sessions.get(
+        _session_key(match_type, match_index)
+    )
+    if not session:
+        await interaction.response.send_message(
+            replace_emojis("❌ OCR-сессия не найдена."), ephemeral=True
+        )
+        return
+    # Панель не должна быть занята другой командой — ни завершённым
+    # маппингом, ни резервом другой команды
+    picks = session.get("panel_picks", {})
+    own_key = str(team_index)
+    blocker = None
+    for other_key, other_map in session.get("maps", {}).items():
+        if str(other_key) != own_key and isinstance(other_map, dict) \
+                and other_map.get("panel") == panel:
+            blocker = f"maps[{other_key}]"
+            break
+    if blocker is None:
+        for other_key, picked in picks.items():
+            if str(other_key) != own_key and picked == panel:
+                blocker = f"panel_picks[{other_key}]={picked!r}"
+                break
+    if blocker is not None:
+        logger.warning(
+            "OCR panel %s blocked for team %s by %s "
+            "(match %s/%s, session maps=%s picks=%s)",
+            panel, own_key, blocker,
+            match_type, match_index,
+            session.get("maps"), picks,
+        )
+        await interaction.response.send_message(
+            replace_emojis(
+                "❌ Эта панель уже закреплена за другой командой."
+            ),
+            ephemeral=True,
+        )
+        return
+
+    # Резервируем панель сразу — пока идёт маппинг, вторая команда
+    # не сможет выбрать ту же сторону
+    picks[own_key] = panel
+    session["panel_picks"] = picks
+    store.set(tournament)
+
+    name = _team_display_name(tournament, team_index)
+    rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
+    side_label = "Левая" if panel == "left" else "Правая"
+    embed = discord.Embed(
+        title=f"🧩 {name} — сопоставление игроков",
+        description=(
+            f"Ваша команда — **{side_label} панель**"
+            + (" (определено автоматически)" if auto else "")
+            + ".\nДля каждого игрового ника выберите Discord-игрока "
+            "из вашего состава.\n"
+            "Кнопки ✏️ позволяют исправить ник и статистику OCR."
+        ),
+        color=discord.Color.blurple(),
+    )
+    for i, row in enumerate(rows):
+        embed.add_field(
+            name=f"{i + 1}. {row.get('name', '?')}",
+            value=(
+                f"K/D/A: {row.get('kills', 0)}/{row.get('deaths', 0)}/"
+                f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
+            ),
+            inline=False,
+        )
+    if not rows:
+        embed.description += "\n\n⚠️ На этой панели не найдено игроков — попробуйте другую."
+
+    view = PanelMappingView(
+        interaction.guild.id, interaction.channel.id, tournament,
+        match_type, match_index, team_index, panel,
+    )
+    await interaction.response.send_message( view=compose(embed, view), ephemeral=True
+    )
+
+
 def _ocr_winning_team_index(session: dict[str, Any]) -> int | None:
     """Команда-победитель: по подсветке панели (2-панельный экран)
     или по баннеру отряда (детальный экран одного отряда)."""
@@ -804,6 +945,20 @@ class OCRPublicView(View):
                 )
                 return
 
+            # Авто-сторона: загрузивший скриншот участник команды +
+            # баннер win/lose определяют панель без ручного выбора.
+            # Не получилось (админ/посторонний) — обычный выбор стороны.
+            auto_panel = _auto_panel_for_team(
+                tournament, session, team_index
+            )
+            if auto_panel is not None:
+                await _open_panel_mapping(
+                    interaction, tournament,
+                    self.match_type, self.match_index,
+                    team_index, auto_panel, auto=True,
+                )
+                return
+
             embed = discord.Embed(
                 title="🧩 Сопоставление команды",
                 description=(
@@ -1332,79 +1487,9 @@ class PanelPickView(View):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
-        session = tournament.ocr_sessions.get(
-            _session_key(self.match_type, self.match_index)
-        )
-        if not session:
-            await interaction.response.send_message(
-                replace_emojis("❌ OCR-сессия не найдена."), ephemeral=True
-            )
-            return
-        # Панель не должна быть занята другой командой — ни завершённым
-        # маппингом, ни свежим резервом (panel_picks)
-        picks = session.get("panel_picks", {})
-        own_key = str(self.team_index)
-        blocker = None
-        for other_key, other_map in session.get("maps", {}).items():
-            if str(other_key) != own_key and isinstance(other_map, dict) \
-                    and other_map.get("panel") == panel:
-                blocker = f"maps[{other_key}]"
-                break
-        if blocker is None:
-            for other_key, picked in picks.items():
-                if str(other_key) != own_key and picked == panel:
-                    blocker = f"panel_picks[{other_key}]={picked!r}"
-                    break
-        if blocker is not None:
-            logger.warning(
-                "OCR panel %s blocked for team %s by %s "
-                "(match %s/%s, session maps=%s picks=%s)",
-                panel, own_key, blocker,
-                self.match_type, self.match_index,
-                session.get("maps"), picks,
-            )
-            await interaction.response.send_message(
-                replace_emojis(
-                    "❌ Эта панель уже закреплена за другой командой."
-                ),
-                ephemeral=True,
-            )
-            return
-
-        # Резервируем панель сразу — пока идёт маппинг, второй капитан
-        # не сможет выбрать ту же сторону
-        picks[str(self.team_index)] = panel
-        session["panel_picks"] = picks
-        store.set(tournament)
-
-        name = _team_display_name(tournament, self.team_index)
-        rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
-        embed = discord.Embed(
-            title=f"🧩 {name} — сопоставление игроков",
-            description=(
-                "Для каждого игрового ника выберите Discord-игрока "
-                "из вашего состава.\n"
-                "Кнопки ✏️ позволяют исправить ник и статистику OCR."
-            ),
-            color=discord.Color.blurple(),
-        )
-        for i, row in enumerate(rows):
-            embed.add_field(
-                name=f"{i + 1}. {row.get('name', '?')}",
-                value=(
-                    f"K/D/A: {row.get('kills', 0)}/{row.get('deaths', 0)}/"
-                    f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
-                ),
-                inline=False,
-            )
-        if not rows:
-            embed.description += "\n\n⚠️ На этой панели не найдено игроков — попробуйте другую."
-
-        view = PanelMappingView(
-            self.guild_id, self.channel_id, tournament,
+        await _open_panel_mapping(
+            interaction, tournament,
             self.match_type, self.match_index, self.team_index, panel,
-        )
-        await interaction.response.send_message( view=compose(embed, view), ephemeral=True
         )
 
 
