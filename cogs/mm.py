@@ -683,7 +683,7 @@ class MMCog(commands.Cog):
     async def handle_ready_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Готов»."""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
         async with self._rc_lock(match_id):
@@ -726,7 +726,7 @@ class MMCog(commands.Cog):
     async def handle_decline_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Отказаться»."""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
         rc = await ready_check_store.get(match_id)
@@ -1253,16 +1253,14 @@ class MMCog(commands.Cog):
         # Подтверждаем interaction сразу — дальше могут быть долгие
         # операции (lock, канал, рендер PNG), иначе Discord ответит
         # Unknown interaction (10062) по истечении 3-секундного окна.
+        # thinking=True — у component-interaction ephemeral-defer
+        # работает только в паре с ним.
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
 
-        search = mm_search_store.get(guild_id, channel_id)
-        if search is None:
-            await self._ephemeral(interaction, "Поиск не найден.")
-            return
-
+        begin_search: MMSearch | None = None
         async with self._queue_lock(guild_id, channel_id):
             search = mm_search_store.get(guild_id, channel_id)
             if search is None:
@@ -1289,61 +1287,62 @@ class MMCog(commands.Cog):
                         f"повторите через {wait} сек.",
                     )
                     return
-                self._cancel_search_timer(guild_id, channel_id)
-                rc, err = await self._begin_match(search, interaction)
-                await self._update_queue_panel(search)
-                if rc is None:
-                    self._begin_fail_at[key] = time.time()
+                if search.state == QUEUE_OPEN:
+                    # Атомарный захват под lock: только один клик
+                    # запускает матч, остальные видят locked выше.
+                    search.state = QUEUE_LOCKED_READY_CHECK
+                    mm_search_store.set(search)
+                    self._cancel_search_timer(guild_id, channel_id)
+                    begin_search = search
+            else:
+                error = await self._validate_join(interaction, search)
+                if error:
+                    await self._ephemeral(interaction, error)
+                    return
+
+                player_name = interaction.user.display_name
+                if not search.add_player(player_name, interaction.user.id):
                     await self._ephemeral(
-                        interaction,
-                        err or "Не удалось запустить матч. Попробуйте ещё раз.",
+                        interaction, "Не удалось добавить в очередь."
                     )
-                else:
-                    self._begin_fail_at.pop(key, None)
-                return
+                    return
 
-            error = await self._validate_join(interaction, search)
-            if error:
-                await self._ephemeral(interaction, error)
-                return
-
-            player_name = interaction.user.display_name
-            if not search.add_player(player_name, interaction.user.id):
-                await self._ephemeral(
-                    interaction, "Не удалось добавить в очередь."
-                )
-                return
-
-            if not search.timer_started:
-                search.timer_started = True
+                if not search.timer_started:
+                    search.timer_started = True
+                    mm_search_store.set(search)
+                    self._start_search_timer(guild_id, channel_id)
                 mm_search_store.set(search)
-                self._start_search_timer(guild_id, channel_id)
-            mm_search_store.set(search)
 
-            if search.is_full:
-                # Атомарно: lock → канал → ready-check (внутри _begin_match)
-                key = (guild_id, channel_id)
-                self._cancel_search_timer(guild_id, channel_id)
-                rc, err = await self._begin_match(search, interaction)
-                await self._update_queue_panel(search)
-                if rc is None:
-                    self._begin_fail_at[key] = time.time()
-                    await self._ephemeral(
-                        interaction,
-                        err or "Не удалось запустить матч.",
-                    )
+                if search.is_full:
+                    # Атомарный захват: lock снят до тяжёлого _begin_match
+                    search.state = QUEUE_LOCKED_READY_CHECK
+                    mm_search_store.set(search)
+                    self._cancel_search_timer(guild_id, channel_id)
+                    begin_search = search
                 else:
-                    self._begin_fail_at.pop(key, None)
-                return
+                    await self._edit_panel(interaction, search)
+                    return
 
-            await self._edit_panel(interaction, search)
+        # Вне lock: БД, канал, PNG, Ready Check — не блокируем очередь
+        if begin_search is not None:
+            key = (guild_id, channel_id)
+            rc, err = await self._begin_match(begin_search, interaction)
+            await self._update_queue_panel(begin_search)
+            if rc is None:
+                self._begin_fail_at[key] = time.time()
+                await self._ephemeral(
+                    interaction,
+                    err or "Не удалось запустить матч. Попробуйте ещё раз.",
+                )
+            else:
+                self._begin_fail_at.pop(key, None)
 
     async def handle_queue_leave(
         self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
         """Кнопка «Выйти из очереди» на V2-панели."""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
             pass
 
