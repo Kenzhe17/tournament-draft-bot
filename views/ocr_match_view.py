@@ -1139,7 +1139,9 @@ class OCRPublicView(View):
                     ephemeral=True,
                 )
                 return
-            if str(team_index) in session.get("maps", {}):
+            # maps[team] может существовать как skeleton (авто-панель /
+            # self-bind) — «сопоставлена» только когда все строки привязаны
+            if _team_mapping_complete(session, team_index):
                 await interaction.response.send_message(
                     replace_emojis("✅ Эта команда уже сопоставлена."),
                     ephemeral=True,
