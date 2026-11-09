@@ -29,7 +29,7 @@ from utils.permissions import is_admin_check
 
 logger = logging.getLogger(__name__)
 
-_PER_PAGE = 10
+_PER_PAGE = 5
 
 
 class VacsView(discord.ui.LayoutView):
@@ -320,8 +320,13 @@ class VacCog(commands.Cog):
         )
 
     @app_commands.command(name="vacs", description="Список активных VAC")
+    @app_commands.describe(player="Показать VAC конкретного игрока")
     @app_commands.checks.cooldown(1, 3)
-    async def vacs_cmd(self, interaction: discord.Interaction) -> None:
+    async def vacs_cmd(
+        self,
+        interaction: discord.Interaction,
+        player: discord.User | None = None,
+    ) -> None:
         if interaction.guild is None:
             return
         if not is_admin_check(interaction.user, interaction.guild):
@@ -336,9 +341,16 @@ class VacCog(commands.Cog):
             return
 
         rows = await vac_service.list_active_vacs(interaction.guild.id)
+        if player is not None:
+            rows = [r for r in rows if int(r["user_id"]) == player.id]
         if not rows:
+            body = (
+                f"У <@{player.id}> нет активного VAC."
+                if player is not None
+                else "Активных VAC нет."
+            )
             await interaction.response.send_message(
-                view=success_view("Активные VAC", "Активных VAC нет."),
+                view=success_view("Активные VAC", body),
                 ephemeral=True,
             )
             return

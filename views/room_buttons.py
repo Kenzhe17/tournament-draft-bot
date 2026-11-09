@@ -42,23 +42,26 @@ class RoomButton(discord.ui.Button):
             await interaction.response.send_message(replace_emojis("❌ Нет активного турнира."), ephemeral=True)
             return
 
-        # Get team members
+        # Get team members (MM-команды хранят список "players",
+        # обычные турниры — круги circle1..4)
         team1_members = set()
         team2_members = set()
 
-        if self.team1_index < len(tournament.teams):
-            team1 = tournament.teams[self.team1_index]
+        def _collect(team_data: dict, out: set) -> None:
+            for pname in team_data.get("players") or []:
+                uid = tournament.player_user_ids.get(pname)
+                if uid:
+                    out.add(uid)
             for circle in range(1, 5):
-                player_name = team1.get(f"circle{circle}", "")
+                player_name = team_data.get(f"circle{circle}", "")
                 if player_name and player_name in tournament.player_user_ids:
-                    team1_members.add(tournament.player_user_ids[player_name])
+                    out.add(tournament.player_user_ids[player_name])
+
+        if self.team1_index < len(tournament.teams):
+            _collect(tournament.teams[self.team1_index], team1_members)
 
         if self.team2_index < len(tournament.teams):
-            team2 = tournament.teams[self.team2_index]
-            for circle in range(1, 5):
-                player_name = team2.get(f"circle{circle}", "")
-                if player_name and player_name in tournament.player_user_ids:
-                    team2_members.add(tournament.player_user_ids[player_name])
+            _collect(tournament.teams[self.team2_index], team2_members)
 
         # Check if user is in one of the teams or is admin/org
         user_in_team = interaction.user.id in team1_members or interaction.user.id in team2_members

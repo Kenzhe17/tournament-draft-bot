@@ -605,6 +605,81 @@ class OCRPublicView(View):
                 )
                 return
 
+            # Победившая команда всегда на левой панели, а скриншот
+            # отправляет капитан победившей команды — панель можно
+            # определить автоматически без выбора.
+            panel = None
+            if session.get("mode") != "squad":
+                uploader_id = session.get("uploaded_by")
+                if uploader_id:
+                    try:
+                        mt1, mt2 = _match_tuple(
+                            tournament, self.match_type, self.match_index
+                        )
+                    except Exception:
+                        mt1 = mt2 = None
+                    uploader_team = None
+                    if mt1 is not None:
+                        for idx in (mt1, mt2):
+                            team = (
+                                tournament.teams[idx]
+                                if idx < len(tournament.teams) else {}
+                            )
+                            cap = team.get("captain", "")
+                            if (
+                                tournament.player_user_ids.get(cap)
+                                == uploader_id
+                            ):
+                                uploader_team = idx
+                                break
+                    if uploader_team is not None:
+                        panel = (
+                            "left" if team_index == uploader_team
+                            else "right"
+                        )
+
+            if panel is not None:
+                # Авто-панель: сразу маппинг игроков, без выбора стороны
+                rows = (
+                    session.get("panels", {}).get(panel) or {}
+                ).get("rows", [])
+                embed = discord.Embed(
+                    title=(
+                        "🧩 "
+                        f"{_team_display_name(tournament, team_index)}"
+                        " — сопоставление игроков"
+                    ),
+                    description=(
+                        "Для каждого игрового ника выберите Discord-игрока "
+                        "из вашего состава.\n"
+                        "Кнопки ✏️ позволяют исправить ник и статистику OCR."
+                    ),
+                    color=discord.Color.blurple(),
+                )
+                for i, row in enumerate(rows):
+                    embed.add_field(
+                        name=f"{i + 1}. {row.get('name', '?')}",
+                        value=(
+                            f"K/D/A: {row.get('kills', 0)}/"
+                            f"{row.get('deaths', 0)}/"
+                            f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
+                        ),
+                        inline=False,
+                    )
+                if not rows:
+                    embed.description += (
+                        "\n\n⚠️ На этой панели не найдено игроков — "
+                        "попробуйте другую."
+                    )
+                view = PanelMappingView(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index, team_index, panel,
+                )
+                await interaction.response.send_message(
+                    view=compose(embed, view), ephemeral=True
+                )
+                return
+
             embed = discord.Embed(
                 title="🧩 Сопоставление команды",
                 description=(

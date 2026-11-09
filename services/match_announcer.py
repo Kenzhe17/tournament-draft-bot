@@ -146,7 +146,7 @@ def _match_started_view(
 
     from utils.design.layouts import DesignView
     from cogs.ocr_upload import _roster_mentions as _mentions_fn
-    from views.ocr_match_view import MatchScreenshotButton, team_roster
+    from views.ocr_match_view import team_roster
 
     roster_a = team_roster(tournament, t1)
     roster_b = team_roster(tournament, t2)
@@ -202,17 +202,7 @@ def _match_started_view(
             "**РЕЗУЛЬТАТ МАТЧА**\n"
             "Статус результата: **Ожидается**\n"
             "После окончания игры капитан ПОБЕДИВШЕЙ команды должен "
-            "отправить скриншот."
-        )
-        view.row(
-            MatchScreenshotButton(
-                tournament.guild_id,
-                tournament.channel_id,
-                tournament,
-                match_type,
-                match_index,
-                "Отправить результат",
-            )
+            "отправить скриншот в этот канал."
         )
     if state != "done":
         # Кнопка комнаты — вместо отдельного турнирного embed
@@ -385,23 +375,12 @@ async def announce_phase_matches(
                     await match_msg.pin(reason=f"MM match #{number} card")
                 except Exception as exc:
                     logger.warning("Match card pin failed: %s", exc)
-                # Кнопка скриншота в карточке — persistent view на случай рестарта
+                # Кнопка комнаты в карточке — persistent view на случай рестарта
                 if bot is not None:
                     try:
-                        from views.ocr_match_view import MatchScreenshotButton
                         from views.room_buttons import RoomButton
 
                         persist = discord.ui.View(timeout=None)
-                        persist.add_item(
-                            MatchScreenshotButton(
-                                tournament.guild_id,
-                                tournament.channel_id,
-                                tournament,
-                                match_type,
-                                match_index,
-                                "Отправить результат",
-                            )
-                        )
                         persist.add_item(
                             RoomButton(
                                 match_type, match_index, t1, t2,
