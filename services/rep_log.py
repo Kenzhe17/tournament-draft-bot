@@ -232,7 +232,17 @@ def build_log_view(row: dict[str, Any], guild_name: str = "") -> DesignView:
         people = [f"Участник: <@{user_id}>"]
         accent = colors.NEUTRAL
 
-    view = DesignView(title=title, timeout=None)
+    # Баннер reputation.png первым элементом карточки
+    from services.social.common import BANNER_REPUTATION
+    view = DesignView(timeout=None)
+    view.component(
+        discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=f"attachment://{BANNER_REPUTATION}")
+        )
+    )
+    view.sep(large=True)
+    view.text(f"> ## {title}")
+    view.sep()
     view.text(f"> {src_line}")
     view.sep()
     view.lines(*people)
@@ -282,8 +292,10 @@ async def publish_pending(bot: "TournamentBot", limit: int = 20) -> int:
                 continue
 
             view = build_log_view(row, guild_name=channel.guild.name)
+            from services.social.common import BANNER_REPUTATION, banner_file
             message = await channel.send(
                 view=view,
+                file=banner_file(BANNER_REPUTATION),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
             await reputation_store.mark_rep_log_sent(

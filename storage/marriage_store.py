@@ -68,7 +68,8 @@ class MarriageStore:
 
     async def list_active(self, guild_id: int) -> list[dict]:
         """Действующие браки: пары, у которых spouse_id всё ещё указывает
-        друг на друга (разведённые пары отфильтровываются). Новые сверху.
+        друг на друга (разведённые пары отфильтровываются).
+        Сортировка: самые долгие браки первыми (married_at ASC).
         """
         await self._ensure()
         pool = await get_pool()
@@ -84,7 +85,7 @@ class MarriageStore:
                   ON sb.guild_id = m.guild_id AND sb.user_id = m.user_b
                  AND sb.spouse_id = m.user_a
                 WHERE m.guild_id = $1
-                ORDER BY m.married_at DESC
+                ORDER BY m.married_at ASC
                 """,
                 guild_id,
             )

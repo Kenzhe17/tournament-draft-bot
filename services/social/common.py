@@ -22,6 +22,8 @@ BANNER_PROPOSAL = "proposal.png"
 BANNER_MARRIAGE = "marriage.png"
 BANNER_BIRTHDAY_CONGRATS = "birthday_congrats.png"
 BANNER_MARRIAGES = "marriages.png"
+BANNER_WELCOME = "welcome.png"
+BANNER_REPUTATION = "reputation.png"
 
 
 def banner_path(filename: str) -> Path:

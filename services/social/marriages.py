@@ -19,12 +19,25 @@ def _fmt_date(dt) -> str:
     return dt.strftime("%d.%m.%Y") if dt else "—"
 
 
+def _days_together(married_at) -> int | None:
+    """Дней в браке на текущий момент."""
+    if not married_at:
+        return None
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    if married_at.tzinfo is None:
+        married_at = married_at.replace(tzinfo=timezone.utc)
+    return max(0, (now - married_at).days)
+
+
 def _entries_text(entries: list[dict], offset: int) -> str:
     lines = []
     for i, e in enumerate(entries[offset:offset + PAGE_SIZE], start=offset + 1):
+        days = _days_together(e.get("married_at"))
+        together = f" · вместе {days} дн." if days is not None else ""
         lines.append(
             f"**{i:02d} · <@{e['user_a']}> & <@{e['user_b']}>**\n"
-            f"Дата заключения: {_fmt_date(e['married_at'])}"
+            f"Дата заключения: {_fmt_date(e['married_at'])}{together}"
         )
     return "\n\n".join(lines)
 

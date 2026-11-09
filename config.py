@@ -99,7 +99,7 @@ REP_LOG_CHANNEL_NAME = os.getenv("REP_LOG_CHANNEL_NAME", "репутация-л�
 
 # Информационный центр: канал по умолчанию для /info publish
 # (если 0 — ищется канал с именем info/информация или задаётся параметром)
-INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "0"))
+INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "1468250268041871525"))
 
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум

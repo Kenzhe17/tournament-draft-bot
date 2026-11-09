@@ -26,10 +26,11 @@ def build_welcome_view(
     member: discord.Member,
     info_channel_id: int | None = None,
 ) -> discord.ui.LayoutView:
-    """Собрать V2-view приветствия (без изображения)."""
+    """Собрать V2-view приветствия с баннером welcome.png."""
+    from services.social.common import BANNER_WELCOME, social_view
+
     info_ref = f"<#{info_channel_id}>" if info_channel_id else "#информация"
-    view = DesignView(timeout=None)
-    view.sep(large=True)
+    view = social_view(BANNER_WELCOME, timeout=None)
     view.text(
         "₊˚⊹♡ **Добро пожаловать на сервер**, "
         f"{member.mention}!\n\n"
@@ -101,13 +102,14 @@ async def send_welcome_message(
 
     try:
         from config import INFO_CHANNEL_ID
-        info_channel_id = INFO_CHANNEL_ID or None
+        info_channel_id = INFO_CHANNEL_ID or 1468250268041871525
     except Exception:
-        info_channel_id = None
+        info_channel_id = 1468250268041871525
 
     try:
+        from services.social.common import BANNER_WELCOME, banner_file
         view = build_welcome_view(number, member, info_channel_id)
-        await channel.send(view=view)
+        await channel.send(view=view, file=banner_file(BANNER_WELCOME))
         logger.info(
             f"Welcome sent to {channel.id} in guild "
             f"{channel_guild.id if channel_guild else '?'} "
