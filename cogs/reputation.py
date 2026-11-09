@@ -55,24 +55,139 @@ def _card(title: str, lines: list[str], accent: int = colors.NEUTRAL) -> DesignV
     )
 
 
-async def _on_my_invite_click(interaction: discord.Interaction) -> None:
-    """«Моя ссылка» — персональная инвайт-ссылка пользователя.
+def _invite_link_text(url: str) -> str:
+    return (
+        "**ТВОЯ ПРИГЛАСИТЕЛЬНАЯ ССЫЛКА**\n"
+        f"{url}\n\n"
+        "Приглашай друзей в r!z3 и получай +5 REP за каждого "
+        "подтверждённого участника.\n"
+        "Проверка приглашения: 72 часа.\n"
+        "Ссылка постоянная и не меняется при повторном нажатии."
+    )
 
-    Создаёт обычный Discord-инвайт в текущем канале; владелец
-    сохраняется в rep_invite_owners, поэтому атрибуция работает
-    даже хотя invite.inviter = бот.
+
+async def _verify_invite_alive(client, guild_id: int, code: str):
+    """Проверить, что инвайт ещё существует и принадлежит guild."""
+    try:
+        inv = await client.fetch_invite(f"https://discord.gg/{code}")
+    except discord.NotFound:
+        return None
+    except Exception as exc:
+        logger.warning("invite verify failed for %s: %s", code, exc)
+        return None
+    g = getattr(inv, "guild", None)
+    if g is None or int(getattr(g, "id", 0)) != int(guild_id):
+        return None
+    return inv
+
+
+async def _on_my_invite_click(interaction: discord.Interaction) -> None:
+    """«Моя ссылка» — единственная постоянная персональная ссылка.
+
+    rep_user_invites: PK (guild_id, user_id) — одна ссылка на игрока.
+    claim_user_invite резервирует слот в PG до вызова Discord API —
+    конкурентные нажатия/процессы не создадут дубликаты.
     """
     await interaction.response.defer(ephemeral=True)
+    guild_id = interaction.guild_id
+    user_id = interaction.user.id
     channel = interaction.channel
+
+    async def _reply_existing(code: str) -> bool:
+        inv = await _verify_invite_alive(interaction.client, guild_id, code)
+        if inv is None:
+            return False
+        await interaction.followup.send(
+            _invite_link_text(inv.url), ephemeral=True
+        )
+        return True
+
+    # 1. Действующая ссылка?
+    row = await reputation_store.get_user_invite(guild_id, user_id)
+    code = (row or {}).get("invite_code") or ""
+    if code and await _reply_existing(code):
+        return
+
+    # 2. Ссылка удалена/истекла или её нет — нужна замена/создание
+    channel_id = channel.id if channel is not None else 0
+    if code:
+        # Заменяем только если код не успели поменять другие
+        new_invite = await _create_personal_invite(interaction, channel)
+        if new_invite is None:
+            return
+        ok = await reputation_store.replace_user_invite_code(
+            guild_id, user_id, code, new_invite.code, channel_id
+        )
+        if not ok:
+            # Другой процесс уже заменил — отдаём его ссылку
+            fresh = await reputation_store.get_user_invite(guild_id, user_id)
+            fcode = (fresh or {}).get("invite_code") or ""
+            if fcode and await _reply_existing(fcode):
+                return
+            await interaction.followup.send(
+                "❌ Ссылка создаётся другим запросом — попробуйте через пару секунд.",
+                ephemeral=True,
+            )
+            return
+        await reputation_store.set_invite_owner(
+            guild_id, new_invite.code, user_id, channel_id
+        )
+        await interaction.followup.send(
+            _invite_link_text(new_invite.url), ephemeral=True
+        )
+        return
+
+    # 3. Первое создание — резервируем слот в PG
+    claimed = await reputation_store.claim_user_invite(
+        guild_id, user_id, channel_id
+    )
+    if not claimed:
+        # Слот занят: либо ссылка уже есть, либо её создаёт другой
+        # процесс — ждём до ~6 сек появления кода
+        for _ in range(12):
+            await asyncio.sleep(0.5)
+            fresh = await reputation_store.get_user_invite(guild_id, user_id)
+            fcode = (fresh or {}).get("invite_code") or ""
+            if fcode and await _reply_existing(fcode):
+                return
+        await interaction.followup.send(
+            "⏳ Ссылка уже создаётся — попробуйте через несколько секунд.",
+            ephemeral=True,
+        )
+        return
+
+    new_invite = await _create_personal_invite(interaction, channel)
+    if new_invite is None:
+        # Освобождаем слот, чтобы следующая попытка прошла
+        try:
+            await reputation_store.set_user_invite(
+                guild_id, user_id, "", channel_id
+            )
+        except Exception:
+            pass
+        return
+    await reputation_store.set_user_invite(
+        guild_id, user_id, new_invite.code, channel_id
+    )
+    await reputation_store.set_invite_owner(
+        guild_id, new_invite.code, user_id, channel_id
+    )
+    await interaction.followup.send(
+        _invite_link_text(new_invite.url), ephemeral=True
+    )
+
+
+async def _create_personal_invite(interaction, channel):
+    """Создать Discord-инвайт или вернуть None с уже отправленной ошибкой."""
     if channel is None or not isinstance(channel, discord.TextChannel):
         await interaction.followup.send(
             "❌ Персональную ссылку можно создать только в текстовом канале.",
             ephemeral=True,
         )
-        return
+        return None
     try:
-        invite = await channel.create_invite(
-            max_age=0, max_uses=0, unique=True,
+        return await channel.create_invite(
+            max_age=0, max_uses=0, unique=True, temporary=False,
             reason=f"Personal invite link for {interaction.user}",
         )
     except discord.Forbidden:
@@ -80,32 +195,33 @@ async def _on_my_invite_click(interaction: discord.Interaction) -> None:
             "❌ У бота нет права создавать приглашения в этом канале.",
             ephemeral=True,
         )
-        return
+        return None
     except Exception as exc:
         logger.warning("create_invite failed: %s", exc)
         await interaction.followup.send(
             "❌ Не удалось создать ссылку, попробуйте позже.",
             ephemeral=True,
         )
-        return
-    await reputation_store.set_invite_owner(
-        interaction.guild_id, invite.code,
-        interaction.user.id, channel.id,
-    )
-    await interaction.followup.send(
-        f"🔗 Твоя персональная ссылка: {invite.url}\n"
-        "Отправь её друзьям — их вход будет засчитан тебе.",
-        ephemeral=True,
-    )
+        return None
 
 
-def _invite_link_button() -> discord.ui.Button:
+def _invite_link_button(owner_id: int) -> discord.ui.Button:
     btn = discord.ui.Button(
         label="🔗 Моя ссылка",
         style=discord.ButtonStyle.primary,
-        custom_id="rep_my_invite_link",
+        custom_id=f"rep_my_invite_link:{owner_id}",
     )
-    btn.callback = _on_my_invite_click
+
+    async def _cb(interaction: discord.Interaction) -> None:
+        if interaction.user.id != owner_id:
+            await interaction.response.send_message(
+                "❌ Эта кнопка показывает ссылку только владельцу статистики.",
+                ephemeral=True,
+            )
+            return
+        await _on_my_invite_click(interaction)
+
+    btn.callback = _cb
     return btn
 
 
@@ -529,12 +645,11 @@ class ReputationCog(commands.Cog):
                 ephemeral=True,
             )
 
-    @app_commands.command(name="invites", description="Статистика приглашений пользователя")
-    @app_commands.describe(user="Участник сервера")
-    async def invites(
-        self, interaction: discord.Interaction, user: discord.Member
-    ) -> None:
+    @app_commands.command(name="invites", description="Статистика твоих приглашений")
+    async def invites(self, interaction: discord.Interaction) -> None:
+        """Статистика приглашений — только своя, без параметров."""
         guild_id = interaction.guild_id
+        user = interaction.user
         stats = await reputation_store.get_user_invite_stats(guild_id, user.id)
 
         lines = [
@@ -547,11 +662,8 @@ class ReputationCog(commands.Cog):
         view = DesignView(
             title="ПРИГЛАШЕНИЯ", accent=colors.INFO, timeout=None
         )
-        view.section_text(
-            f"**{user.display_name}**\n" + "\n".join(lines),
-            thumbnail=user.display_avatar.url,
-        )
-        view.row(_invite_link_button())
+        view.text(f"**{user.display_name}**\n" + "\n".join(lines))
+        view.row(_invite_link_button(user.id))
         await interaction.response.send_message(
             view=view,
             allowed_mentions=discord.AllowedMentions.none(),

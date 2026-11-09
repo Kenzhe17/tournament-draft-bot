@@ -912,6 +912,21 @@ async def init_db() -> None:
             )
         """)
 
+        # Одна действующая персональная ссылка на пользователя.
+        # invite_code='' — слот зарезервирован, ссылка создаётся
+        # (защита от конкурентного создания между процессами).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_user_invites (
+                guild_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                invite_code TEXT NOT NULL DEFAULT '',
+                channel_id BIGINT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (guild_id, user_id)
+            )
+        """)
+
         # Мелкие настройки бота per-guild (id служебных каналов и т.п.)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (

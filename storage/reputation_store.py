@@ -580,6 +580,83 @@ class ReputationStore:
                 guild_id, code, owner_id, channel_id,
             )
 
+    # ------------------------------------------------------------------
+    # Персональные пригласительные ссылки (одна на пользователя)
+    # ------------------------------------------------------------------
+
+    async def get_user_invite(self, guild_id: int, user_id: int) -> dict[str, Any] | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM rep_user_invites"
+                " WHERE guild_id = $1 AND user_id = $2",
+                guild_id, user_id,
+            )
+        return dict(row) if row else None
+
+    async def claim_user_invite(
+        self, guild_id: int, user_id: int, channel_id: int
+    ) -> bool:
+        """Зарезервировать слот персональной ссылки.
+
+        True — слот наш (invite_code ещё пустой, надо создать ссылку).
+        False — слот уже занят (ссылка есть или создаётся другим
+        процессом) — читать через get_user_invite.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchval(
+                """
+                INSERT INTO rep_user_invites (guild_id, user_id, channel_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, user_id) DO NOTHING
+                RETURNING user_id
+                """,
+                guild_id, user_id, channel_id,
+            )
+        return row is not None
+
+    async def set_user_invite(
+        self, guild_id: int, user_id: int, code: str, channel_id: int
+    ) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO rep_user_invites
+                    (guild_id, user_id, invite_code, channel_id, updated_at)
+                VALUES ($1, $2, $3, $4, now())
+                ON CONFLICT (guild_id, user_id) DO UPDATE SET
+                    invite_code = EXCLUDED.invite_code,
+                    channel_id = EXCLUDED.channel_id,
+                    updated_at = now()
+                """,
+                guild_id, user_id, code, channel_id,
+            )
+
+    async def replace_user_invite_code(
+        self, guild_id: int, user_id: int,
+        expected_code: str, new_code: str, channel_id: int,
+    ) -> bool:
+        """Заменить код только если он всё ещё expected_code.
+
+        Защита от гонки двух процессов, одновременно заменяющих
+        удалённую ссылку: UPDATE сработает у одного.
+        """
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            res = await conn.execute(
+                """
+                UPDATE rep_user_invites SET
+                    invite_code = $4, channel_id = $5, updated_at = now()
+                WHERE guild_id = $1 AND user_id = $2
+                  AND invite_code = $3
+                """,
+                guild_id, user_id, expected_code, new_code, channel_id,
+            )
+        # asyncpg возвращает "UPDATE n"
+        return res.endswith(" 1") or res == "UPDATE 1"
+
     async def get_invite_owner(self, guild_id: int, code: str) -> int | None:
         pool = await get_pool()
         async with pool.acquire() as conn:
