@@ -137,6 +137,8 @@ class MMCog(commands.Cog):
         try:
             from services import match_channel_pool
             await match_channel_pool.ensure_slots()
+            # FREE-слоты: @everyone не может писать в «пустой» канал пула
+            asyncio.create_task(match_channel_pool.apply_resting_permissions(self.bot))
         except Exception as exc:
             logger.error("match channel pool init failed: %s", exc)
         self._rc_sweeper_task = asyncio.create_task(self._ready_check_sweeper())

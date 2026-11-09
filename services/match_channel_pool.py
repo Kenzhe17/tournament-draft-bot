@@ -329,11 +329,30 @@ async def acquire_channel(
     return None, "error:no_usable_slot"
 
 
+def resting_overwrites(guild: discord.Guild) -> dict:
+    """Overwrites «покоющегося» канала пула (state=FREE).
+
+    У @everyone отбираются только права на отправку/реакции/voice —
+    видимость канала наследуется от категории. Все персональные
+    overwrites игроков матча при этом полностью снимаются.
+    """
+    return {
+        guild.default_role: discord.PermissionOverwrite(
+            send_messages=False,
+            send_messages_in_threads=False,
+            add_reactions=False,
+            connect=False,
+        )
+    }
+
+
 async def release_channel(channel: discord.TextChannel) -> bool:
     """Безопасное освобождение: ACTIVE → CLEANING → FREE (или ERROR).
 
-    Закрывает доступ старых игроков (lockdown overwrites), чистит
-    историю и только после этого возвращает слот в ротацию.
+    Снимает персональные overwrites игроков, запрещает @everyone
+    отправку сообщений и чистит историю. Видимость наследуется от
+    категории — канал не «исчезает», но писать в него никто не может.
+    При сбое слот уходит в ERROR и не выдаётся следующей команде.
     """
     cid = channel.id
     info = await slot_info(cid)
@@ -346,18 +365,9 @@ async def release_channel(channel: discord.TextChannel) -> bool:
     if not await transition(cid, {ACTIVE, RESERVED, ERROR}, CLEANING):
         return False
     try:
-        # Закрываем канал для всех до следующего матча — без наследования
-        # прав категории (явный deny @everyone).
-        overwrites = {
-            channel.guild.default_role: discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False,
-                connect=False,
-            )
-        }
+        overwrites = resting_overwrites(channel.guild)
         await _discord_call(
-            lambda: channel.edit(overwrites=overwrites), "lockdown_overwrites"
+            lambda: channel.edit(overwrites=overwrites), "resting_overwrites"
         )
         await purge_channel(channel)
     except Exception as exc:
@@ -366,6 +376,45 @@ async def release_channel(channel: discord.TextChannel) -> bool:
         return False
     await transition(cid, {CLEANING}, FREE)
     return True
+
+
+async def apply_resting_permissions(bot) -> int:
+    """Привести все FREE-слоты пула к resting-overwrites.
+
+    Вызывается при старте бота: гарантирует, что в «пустых» каналах
+    пула @everyone не может писать, даже если права когда-то
+    менялись вручную или после рестарта.
+    """
+    await ensure_slots()
+    applied = 0
+    for s in await list_slots():
+        if s["state"] != FREE:
+            continue
+        cid = int(s["channel_id"])
+        channel = None
+        for guild in getattr(bot, "guilds", []):
+            channel = guild.get_channel(cid)
+            if channel is not None:
+                break
+        if channel is None:
+            continue
+        if not isinstance(channel, discord.TextChannel):
+            continue
+        try:
+            await _discord_call(
+                lambda c=channel: c.edit(
+                    overwrites=resting_overwrites(c.guild),
+                    reason="Match channel pool resting permissions",
+                ),
+                "resting_overwrites_boot",
+            )
+            applied += 1
+        except Exception as exc:
+            logger.warning("resting perms failed for %s: %s", cid, exc)
+    if applied:
+        logger.info("Resting permissions applied to %d pool channels",
+                    applied)
+    return applied
 
 
 async def mark_error(channel_id: int, owner: str = "") -> None:

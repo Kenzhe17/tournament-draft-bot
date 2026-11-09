@@ -285,8 +285,15 @@ async def test_release_channel_locks_down_and_frees(
     ok = await mcp.release_channel(channel)
     assert ok is True
     assert fake_db.rows[101]["state"] == "free"
-    # lockdown edit вызван второй раз (после acquire-edit)
+    # resting edit вызван второй раз (после acquire-edit):
+    # @everyone может видеть канал, но НЕ может отправлять сообщения
     assert channel.edit.await_count == 2
+    resting = channel.edit.await_args.kwargs["overwrites"]
+    ow = resting[guild.default_role]
+    assert ow.send_messages is False
+    assert ow.view_channel is None  # видимость наследуется от категории
+    # персональные overwrites игроков сняты — в dict только default_role
+    assert len(resting) == 1
 
 
 @pytest.mark.asyncio
