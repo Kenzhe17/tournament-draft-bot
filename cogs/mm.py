@@ -27,7 +27,10 @@ MATCH_FOUND_CHANNEL_ID = 1549809898643001484
 MM_NO_SHOW_VAC = timedelta(minutes=30)
 # Пауза между попытками запуска матча после ошибки (антиспам API)
 MATCH_START_RETRY_COOLDOWN = 120.0
-from models.mm_search import MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK
+from models.mm_search import (
+    MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK,
+    QUEUE_WAITING_CHANNEL,
+)
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
 from models.tournament import FormationMode, RegistrationState, TournamentSize, TournamentPhase, Tournament
@@ -77,6 +80,40 @@ _MM_TEST_PROFILES: list[tuple[int, int, int, int, int, int, int]] = [
 ]
 
 
+class _NoopResponse:
+    """response.* для системного запуска матча без реального interaction."""
+
+    async def defer(self, *a, **kw):
+        return None
+
+    async def send_message(self, *a, **kw):
+        return None
+
+
+class _NoopFollowup:
+    async def send(self, *a, **kw):
+        return None
+
+
+class _SystemInteraction:
+    """Минимальный shim discord.Interaction для запуска матча sweeper'ом.
+
+    Используется когда очередь ждёт свободный канал пула и слот
+    освободился — запускать должен бот, а не клик игрока.
+    """
+
+    def __init__(self, guild: discord.Guild, channel_id: int):
+        self.guild = guild
+        self.channel_id = channel_id
+        self.user = guild.me
+        self.response = _NoopResponse()
+        self.followup = _NoopFollowup()
+
+    @property
+    def channel(self):
+        return self.guild.get_channel(self.channel_id)
+
+
 class MMCog(commands.Cog):
     """Cog с командами matchmaking."""
 
@@ -97,6 +134,11 @@ class MMCog(commands.Cog):
             await mm_search_store.load()
         except Exception as exc:
             logger.error("MMSearchStore load failed: %s", exc)
+        try:
+            from services import match_channel_pool
+            await match_channel_pool.ensure_slots()
+        except Exception as exc:
+            logger.error("match channel pool init failed: %s", exc)
         self._rc_sweeper_task = asyncio.create_task(self._ready_check_sweeper())
         self._rc_recovery_task = asyncio.create_task(self._recover_ready_checks())
         self._queue_recovery_task = asyncio.create_task(self._recover_queues())
@@ -108,6 +150,86 @@ class MMCog(commands.Cog):
     async def mm_squad(self, interaction: discord.Interaction) -> None:
         """Создать поиск для формата Squad."""
         await self._create_search(interaction, MMFormat.SQUAD)
+
+    @mm_group.command(
+        name="freechannel",
+        description="Принудительно освободить канал пула матчей (state → free)",
+    )
+    @app_commands.describe(channel_id="ID канала из пула (опционально)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def mm_freechannel(
+        self, interaction: discord.Interaction, channel_id: int = 0
+    ) -> None:
+        """Админ: проверить состояние слотов и освободить зависший канал.
+
+        Действие журналируется. Канал в ERROR/RESERVED/CLEANING можно
+        освободить; ACTIVE освобождается только после проверки — но
+        команда всё равно выполняет release через менеджер (lockdown +
+        purge), так что доступ старых игроков закрывается.
+        """
+        from services import match_channel_pool
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            await match_channel_pool.ensure_slots()
+            slots = await match_channel_pool.list_slots()
+            if channel_id:
+                targets = [s for s in slots if s["channel_id"] == channel_id]
+                if not targets:
+                    await interaction.followup.send(
+                        f"❌ Канал `{channel_id}` не найден в пуле.",
+                        ephemeral=True,
+                    )
+                    return
+            else:
+                # Показать все не-free слоты и освободить их
+                targets = [s for s in slots if s["state"] != "free"]
+                if not targets:
+                    await interaction.followup.send(
+                        "✅ Все каналы пула свободны.", ephemeral=True,
+                    )
+                    return
+
+            lines = []
+            for s in targets:
+                cid = s["channel_id"]
+                old = dict(s)
+                channel = interaction.guild.get_channel(cid)
+                if channel is None:
+                    try:
+                        channel = await interaction.guild.fetch_channel(cid)
+                    except Exception:
+                        channel = None
+                ok = False
+                if isinstance(channel, discord.TextChannel):
+                    try:
+                        ok = await match_channel_pool.release_channel(channel)
+                    except Exception as exc:
+                        logger.error("force release %s failed: %s", cid, exc)
+                if not ok:
+                    prev = await match_channel_pool.force_release(cid)
+                    logger.warning(
+                        "FORCE RELEASE channel %s by admin %s: %s",
+                        cid, interaction.user.id, prev,
+                    )
+                    ok = True
+                state_now = (await match_channel_pool.slot_info(cid) or {}
+                             ).get("state", "?")
+                lines.append(
+                    f"`{cid}`: {old['state']} (owner `{old['owner']}`) "
+                    f"→ `{state_now}`"
+                )
+            await interaction.followup.send(
+                "**Принудительное освобождение каналов**\n"
+                + "\n".join(lines)
+                + f"\n\nВыполнил: {interaction.user} (`{interaction.user.id}`)",
+                ephemeral=True,
+            )
+        except Exception as exc:
+            logger.error("mm freechannel failed: %s", exc, exc_info=True)
+            await interaction.followup.send(
+                f"❌ Ошибка: {exc}", ephemeral=True,
+            )
 
     @mm_group.command(name="delete", description="Удалить все поиски на сервере")
     @app_commands.checks.has_permissions(administrator=True)
@@ -921,6 +1043,8 @@ class MMCog(commands.Cog):
                 # снимаем блокировку и обновляем панель
                 try:
                     for s in mm_search_store.all():
+                        if s.state == QUEUE_WAITING_CHANNEL:
+                            continue  # ждёт канал — обрабатывает sweeper ниже
                         if not s.is_locked:
                             continue
                         rc_active = (
@@ -941,10 +1065,39 @@ class MMCog(commands.Cog):
                         )
                 except Exception as exc:
                     logger.error("Queue unlock sweeper error: %s", exc)
+                # WAITING_FOR_CHANNEL: матч ждёт свободный слот пула —
+                # пробуем запустить при каждом проходе (дешёвый PG-чек,
+                # реальный захват только если слот свободен)
+                try:
+                    for s in mm_search_store.all():
+                        if s.state != QUEUE_WAITING_CHANNEL or not s.is_full:
+                            continue
+                        await self._try_start_waiting_match(s)
+                except Exception as exc:
+                    logger.error("Waiting-channel sweeper error: %s", exc)
             except asyncio.CancelledError:
                 return
             except Exception as exc:
                 logger.error("Ready check sweeper error: %s", exc)
+
+    async def _try_start_waiting_match(self, search: MMSearch) -> None:
+        """Повторная попытка запуска матча, ждущего свободный канал.
+
+        Вызывается sweeper'ом; interaction заменяется системным shim'ом —
+        все ephemeral-ответы игрокам не нужны, статус виден на панели.
+        """
+        guild = self.bot.get_guild(search.guild_id)
+        if guild is None:
+            return
+        shim = _SystemInteraction(guild, search.tournament_channel_id
+                                  or search.channel_id)
+        rc, err = await self._begin_match(search, shim)
+        await self._update_queue_panel(search)
+        if rc is None and err:
+            logger.info(
+                "Waiting match %s/%s still blocked: %s",
+                search.guild_id, search.channel_id, err,
+            )
 
     async def _recover_ready_checks(self) -> None:
         """Восстановление после рестарта: persistent views + дедлайны."""
@@ -1419,6 +1572,17 @@ class MMCog(commands.Cog):
             # 2. Временный канал матча
             channel, ch_err = await self._create_match_channel(guild, search, match_num)
             if channel is None:
+                if ch_err == "pool_full":
+                    # Все 5 слотов заняты — НЕ создаём временный канал.
+                    # Матч ждёт в WAITING_FOR_CHANNEL; sweeper запустит
+                    # его автоматически при освобождении слота.
+                    search.state = QUEUE_WAITING_CHANNEL
+                    mm_search_store.set(search)
+                    await self._update_queue_panel(search)
+                    return None, (
+                        "Все каналы матчей сейчас заняты. "
+                        "Матч начнётся автоматически, когда освободится слот."
+                    )
                 await _revert()
                 if ch_err and ch_err.startswith("rate_limited:"):
                     secs = int(ch_err.split(":", 1)[1])
@@ -1451,164 +1615,49 @@ class MMCog(commands.Cog):
             return None, "Не удалось запустить проверку готовности."
         return rc, None
 
-    def _match_channel_overwrites(
-        self, guild: discord.Guild, user_ids: set[int]
-    ) -> dict:
-        overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
-            guild.default_role: discord.PermissionOverwrite(
-                view_channel=False,
-                send_messages=False,
-                read_message_history=False,
-            )
-        }
-        allow = discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            read_message_history=True,
-            attach_files=True,
-        )
-        for uid in user_ids:
-            overwrites[discord.Object(id=uid)] = allow
-        for role_id in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
-            if role_id:
-                overwrites[discord.Object(id=role_id)] = discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                )
-        return overwrites
-
-    async def _pool_busy_channel_ids(self, guild_id: int) -> set[int]:
-        """ID каналов пула, занятых активным RC или живым турниром."""
-        busy: set[int] = set()
-        try:
-            for rc in await ready_check_store.list_active():
-                cid = getattr(rc, "match_channel_id", 0) or 0
-                if cid:
-                    busy.add(cid)
-        except Exception as exc:
-            logger.warning("pool busy: ready checks failed: %s", exc)
-        try:
-            for t in store.get_by_guild(guild_id):
-                if getattr(t, "phase", None) == TournamentPhase.COMPLETE:
-                    continue
-                for attr in ("channel_id", "mm_preset_channel_id"):
-                    cid = getattr(t, attr, 0) or 0
-                    if cid:
-                        busy.add(cid)
-        except Exception as exc:
-            logger.warning("pool busy: tournaments failed: %s", exc)
-        return busy
-
-    async def _purge_channel(self, channel: discord.TextChannel) -> None:
-        """Очистить историю канала пула перед переиспользованием."""
-        try:
-            for p in await channel.pins():
-                try:
-                    await p.unpin()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        try:
-            while True:
-                msgs = [m async for m in channel.history(limit=100)]
-                if not msgs:
-                    break
-                try:
-                    await channel.delete_messages(
-                        msgs, reason="MM channel pool reset")
-                except Exception:
-                    for m in msgs:
-                        try:
-                            await m.delete()
-                        except Exception:
-                            pass
-                if len(msgs) < 100:
-                    break
-        except Exception as exc:
-            logger.warning("Pool channel purge failed %s: %s",
-                           channel.id, exc)
-
-    async def _acquire_pool_channel(
-        self,
-        guild: discord.Guild,
-        user_ids: set[int],
-        overwrites: dict,
-    ) -> discord.TextChannel | None:
-        """Занять свободный канал из пула: overwrites + очистка истории."""
-        busy = await self._pool_busy_channel_ids(guild.id)
-        for cid in MM_MATCH_CHANNEL_POOL:
-            if cid in busy:
-                continue
-            channel = guild.get_channel(cid)
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(cid)
-                except Exception:
-                    channel = None
-            if not isinstance(channel, discord.TextChannel):
-                continue
-            try:
-                await channel.edit(
-                    overwrites=overwrites,
-                    reason="MM match channel reuse",
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Pool channel %s overwrites edit failed: %s", cid, exc)
-                continue
-            await self._purge_channel(channel)
-            logger.info("MM match channel pool slot %s acquired", cid)
-            return channel
-        return None
-
     async def _create_match_channel(
         self, guild: discord.Guild, search: MMSearch, match_num: int
     ) -> tuple[discord.TextChannel | None, str | None]:
-        """Канал матча: сначала пул постоянных, иначе временный create."""
-        panel_channel = guild.get_channel(search.channel_id)
-        if panel_channel is None:
-            try:
-                panel_channel = await self.bot.fetch_channel(search.channel_id)
-            except Exception:
-                panel_channel = None
-        category = getattr(panel_channel, "category", None)
-        if panel_channel is None:
-            return None, "канал панели не найден"
+        """Канал матча через единый менеджер пула.
 
-        user_ids = {
+        Временные каналы не создаются: если все 5 слотов заняты,
+        возвращается "pool_full" — матч ждёт в WAITING_FOR_CHANNEL.
+        """
+        from services import match_channel_pool
+
+        user_ids = [
             uid for uid in search.player_user_ids.values()
             if isinstance(uid, int) and uid > 0
-        }
-        overwrites = self._match_channel_overwrites(guild, user_ids)
-
-        pooled = await self._acquire_pool_channel(guild, user_ids, overwrites)
-        if pooled is not None:
-            return pooled, None
-
-        try:
-            channel = await guild.create_text_channel(
-                f"cs-4x4-match-{match_num}",
-                category=category,
-                overwrites=overwrites,
-                reason="Ranked match channel",
-            )
-            return channel, None
-        except discord.RateLimited as exc:
-            logger.error(
-                "Match channel rate limited: retry_after=%.0fs",
-                exc.retry_after)
-            return None, f"rate_limited:{max(1, int(exc.retry_after))}"
-        except Exception as exc:
-            logger.error("Failed to create match channel: %s", exc, exc_info=True)
-            return None, str(exc)[:120]
+        ]
+        role_ids = [
+            r for r in (
+                ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID,
+            ) if r
+        ]
+        return await match_channel_pool.acquire_channel(
+            guild, user_ids, role_ids=role_ids,
+            owner=f"mm:{guild.id}:{search.channel_id}",
+        )
 
     async def _delete_channel_by_id(self, channel_id: int) -> None:
         if not channel_id:
             return
         if channel_id in MM_MATCH_CHANNEL_POOL:
-            return  # каналы пула переиспользуются, не удаляются
+            # Канал пула не удаляем — возвращаем слот через менеджер
+            from services import match_channel_pool
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(channel_id)
+                except Exception:
+                    channel = None
+            if isinstance(channel, discord.TextChannel):
+                try:
+                    await match_channel_pool.release_channel(channel)
+                except Exception as exc:
+                    logger.warning(
+                        "Pool channel %s release failed: %s", channel_id, exc)
+            return
         channel = self.bot.get_channel(channel_id)
         if channel is None:
             try:
@@ -1656,12 +1705,14 @@ class MMCog(commands.Cog):
                 except Exception as exc:
                     logger.warning("add_view for queue panel failed: %s", exc)
 
-                if search.is_locked:
+                if search.state == QUEUE_LOCKED_READY_CHECK:
                     rc = await ready_check_store.get_active_by_search(
                         search.guild_id, search.channel_id
                     )
                     if rc is None:
                         # Блокировка без живого Ready Check — снимаем
+                        # (waiting_channel НЕ трогаем — это не зависание,
+                        # sweeper канала сам запустит матч)
                         search.state = QUEUE_OPEN
                         search.match_num = 0
                         search.timer_started = bool(search.players)

@@ -85,40 +85,36 @@ async def _create_match_channel(
         return None
     category = getattr(search_channel, "category", None)
 
-    # Кому виден канал: игроки матча + организатор + орги
-    from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID, ORG_ROLE_ID
+    # Единый менеджер пула: атомарный слот + overwrites + очистка.
+    # Временные каналы не создаются — при полном пуле возвращается None,
+    # и карточка уходит в fallback-канал результатов.
+    from services import match_channel_pool
     from views.ocr_match_view import team_roster
 
-    overwrites = {
-        guild.default_role: discord.PermissionOverwrite(view_channel=False),
-    }
-    allow = discord.PermissionOverwrite(
-        view_channel=True, send_messages=True, read_message_history=True
-    )
+    user_ids = []
     seen: set[int] = set()
     for idx in (t1, t2):
         for name in team_roster(tournament, idx):
             uid = tournament.player_user_ids.get(name)
             if uid and uid not in seen:
                 seen.add(uid)
-                overwrites[discord.Object(id=uid)] = allow
-    if tournament.organizer_id:
-        overwrites[discord.Object(id=tournament.organizer_id)] = allow
-    for rid in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID):
-        if rid:
-            overwrites[discord.Object(id=rid)] = allow
-
-    try:
-        channel = await guild.create_text_channel(
-            name=f"cs-4x4-match-{match_number}",
-            category=category,
-            overwrites=overwrites,
-            reason=f"MM match #{match_number}",
+                user_ids.append(uid)
+    role_ids = [
+        r for r in (ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID)
+        if r
+    ]
+    channel, err = await match_channel_pool.acquire_channel(
+        guild,
+        user_ids,
+        role_ids=role_ids,
+        organizer_id=tournament.organizer_id or 0,
+        owner=f"mm-ann:{guild.id}:{tournament.guild_id}:{number}",
+    )
+    if channel is None:
+        logger.warning(
+            "Match channel acquire failed (%s) for match #%s", err, number
         )
-        return channel
-    except Exception as exc:
-        logger.error("Failed to create match channel: %s", exc)
-        return None
+    return channel
 
 
 def _match_started_view(

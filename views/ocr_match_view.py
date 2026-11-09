@@ -1152,7 +1152,9 @@ class PanelPickView(View):
                 replace_emojis("❌ OCR-сессия не найдена."), ephemeral=True
             )
             return
-        # Панель не должна быть занята другой командой
+        # Панель не должна быть занята другой командой — ни завершённым
+        # маппингом, ни свежим резервом (panel_picks)
+        picks = session.get("panel_picks", {})
         for other_key, other_map in session.get("maps", {}).items():
             if other_key != str(self.team_index) and other_map.get("panel") == panel:
                 await interaction.response.send_message(
@@ -1162,6 +1164,21 @@ class PanelPickView(View):
                     ephemeral=True,
                 )
                 return
+        for other_key, picked in picks.items():
+            if other_key != str(self.team_index) and picked == panel:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Эта панель уже закреплена за другой командой."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Резервируем панель сразу — пока идёт маппинг, второй капитан
+        # не сможет выбрать ту же сторону
+        picks[str(self.team_index)] = panel
+        session["panel_picks"] = picks
+        store.set(tournament)
 
         name = _team_display_name(tournament, self.team_index)
         rows = (session.get("panels", {}).get(panel) or {}).get("rows", [])
@@ -1410,9 +1427,20 @@ class PanelMappingView(View):
             )
             return
 
-        # Панель не должна быть занята другой командой
+        # Панель не должна быть занята другой командой — ни завершённым
+        # маппингом, ни резервом другой команды
+        picks = session.get("panel_picks", {})
         for other_key, other_map in session.get("maps", {}).items():
             if other_key != str(self.team_index) and other_map.get("panel") == self.panel:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Эта панель уже закреплена за другой командой."
+                    ),
+                    ephemeral=True,
+                )
+                return
+        for other_key, picked in picks.items():
+            if other_key != str(self.team_index) and picked == self.panel:
                 await interaction.response.send_message(
                     replace_emojis(
                         "❌ Эта панель уже закреплена за другой командой."

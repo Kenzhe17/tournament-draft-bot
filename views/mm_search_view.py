@@ -104,7 +104,19 @@ def build_queue_panel(
     )
     view.sep()
 
-    if search.is_locked:
+    if search.is_waiting_channel:
+        view.text("## СТАТУС ОЧЕРЕДИ")
+        view.lines(
+            "Статус: Ожидание канала",
+            f"Матч #{search.match_num}" if search.match_num else "Матч —",
+            "Все каналы матчей сейчас заняты.",
+            "Матч начнётся автоматически, как только освободится слот.",
+        )
+        view.sep()
+        view.text(
+            "-# Набор закрыт. Игроки остаются в матче — ждать ничего не нужно."
+        )
+    elif search.is_locked:
         view.text("## СТАТУС ОЧЕРЕДИ")
         view.lines(
             "Статус: Проверка готовности",

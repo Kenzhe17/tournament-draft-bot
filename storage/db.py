@@ -878,3 +878,12 @@ async def init_db() -> None:
                 PRIMARY KEY (guild_id, key)
             )
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS match_channel_slots (
+                channel_id BIGINT PRIMARY KEY,
+                guild_id BIGINT NOT NULL DEFAULT 0,
+                state TEXT NOT NULL DEFAULT 'free',
+                owner TEXT NOT NULL DEFAULT '',
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)

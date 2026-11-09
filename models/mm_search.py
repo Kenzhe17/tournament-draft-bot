@@ -14,6 +14,7 @@ class MMFormat(str, Enum):
 # Состояния очереди Ranked Matchmaking
 QUEUE_OPEN = "open"                    # принимает игроков
 QUEUE_LOCKED_READY_CHECK = "locked"    # матч найден, идёт ready-check
+QUEUE_WAITING_CHANNEL = "waiting_channel"  # матч готов, ждёт свободный канал
 
 
 @dataclass
@@ -44,8 +45,14 @@ class MMSearch:
 
     @property
     def is_locked(self) -> bool:
-        """Очередь закрыта на время ready-check."""
-        return self.state == QUEUE_LOCKED_READY_CHECK
+        """Очередь закрыта на время ready-check или ожидания канала."""
+        return self.state in (
+            QUEUE_LOCKED_READY_CHECK, QUEUE_WAITING_CHANNEL,
+        )
+
+    @property
+    def is_waiting_channel(self) -> bool:
+        return self.state == QUEUE_WAITING_CHANNEL
 
     def add_player(self, name: str, user_id: int) -> bool:
         """Добавить игрока в поиск. Возвращает True если добавлен."""

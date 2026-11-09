@@ -47,6 +47,33 @@ SHOT_FILENAME = "match_result.png"
 RESULT_CHANNEL_ID = 1563149967303118949
 
 
+_KNOWN_TEAM_NAMES = ("хищники", "разрушители")
+
+
+def _normalize_team_name(raw: str) -> str:
+    """Привести OCR-искажённое имя команды к каноническому виду.
+
+    Кириллическая OCR-модель периодически читает «ХИЩНИКИ» как
+    «ИНЖИТИХ» и т.п. Сравниваем нормализованную строку с известными
+    названиями команд режима по similarity — при достаточном
+    совпадении подставляем каноническое имя, иначе оставляем как есть.
+    """
+    import difflib
+    import re as _re
+
+    norm = _re.sub(r"[^а-яa-zё]", "", str(raw).lower())
+    if not norm:
+        return raw
+    best, best_score = None, 0.0
+    for canon in _KNOWN_TEAM_NAMES:
+        score = difflib.SequenceMatcher(None, norm, canon).ratio()
+        if score > best_score:
+            best, best_score = canon, score
+    if best is not None and best_score >= 0.55:
+        return best.capitalize()
+    return raw
+
+
 def _match_label(match_type: str, match_index: int) -> str:
     if match_type == "final":
         return "Финал"
@@ -710,7 +737,7 @@ class OCRUploadCog(commands.Cog):
                     continue
                 cname = await ocr_cyrillic_region(data, region)
                 if cname:
-                    panels[side_name]["name"] = cname
+                    panels[side_name]["name"] = _normalize_team_name(cname)
 
             parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
@@ -735,7 +762,7 @@ class OCRUploadCog(commands.Cog):
                         "uploaded_by": message.author.id,
                         "uploaded_by_name": message.author.display_name,
                         "results_channel_id": stats_channel.id,
-                        "maps": {},
+                        "maps": {}, "panel_picks": {},
                         "reuploaded_at": datetime.now().isoformat(),
                     }
                 )
@@ -785,7 +812,7 @@ class OCRUploadCog(commands.Cog):
                 "uploaded_by_name": message.author.display_name,
                 "created_at": datetime.now().isoformat(),
                 "results_channel_id": stats_channel.id,
-                "maps": {},
+                "maps": {}, "panel_picks": {},
             }
             store.set(tournament)
 
@@ -920,7 +947,7 @@ class OCRUploadCog(commands.Cog):
                 "uploaded_by_name": message.author.display_name,
                 "created_at": datetime.now().isoformat(),
                 "results_channel_id": stats_channel.id,
-                "maps": {},
+                "maps": {}, "panel_picks": {},
             }
             tournament.ocr_sessions[key] = session
 
@@ -1128,12 +1155,13 @@ async def _maybe_delete_match_channel(
                 channels.pop(str(cid), None)
                 continue
             if is_pool:
-                # Канал пула не удаляем — возвращаем в дефолт:
-                # сбрасываем overwrites и чистим историю. Сбрасываем,
-                # когда завершены все матчи, анонсированные именно
-                # в этот канал.
+                # Канал пула не удаляем — возвращаем слот через единый
+                # менеджер (lockdown overwrites + очистка истории → FREE).
+                # Сбрасываем, когда завершены все матчи, анонсированные
+                # именно в этот канал.
                 if _pool_channel_idle(tournament, cid, mc):
-                    await _reset_pool_channel(channel)
+                    from services import match_channel_pool
+                    await match_channel_pool.release_channel(channel)
                     channels.pop(str(cid), None)
             else:
                 await channel.delete(reason="Результат матча загружен")

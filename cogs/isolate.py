@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID, DATA_DIR
+from config import BOT_OWNER_ID, DATA_DIR, MM_MATCH_CHANNEL_POOL
 
 logger = logging.getLogger(__name__)
 
@@ -225,8 +225,12 @@ class Isolate(commands.Cog):
                 # Задержка для rate limits
                 await asyncio.sleep(0.3)
 
-        # Обработать каналы
+        # Обработать каналы (кроме пула матчей — их права управляет
+        # match_channel_pool, трогать их нельзя)
+        pool_ids = {int(x) for x in MM_MATCH_CHANNEL_POOL}
         for channel_id, overwrites in snapshot["channels"].items():
+            if int(channel_id) in pool_ids:
+                continue
             channel = guild.get_channel(int(channel_id))
             if not channel:
                 continue
@@ -285,8 +289,13 @@ class Isolate(commands.Cog):
                 # Задержка для rate limits
                 await asyncio.sleep(0.3)
 
-        # Восстановить права каналов
+        # Восстановить права каналов (кроме пула матчей — их права
+        # управляет match_channel_pool, иначе restore затирал бы
+        # overwrites идущего матча)
+        pool_ids = {int(x) for x in MM_MATCH_CHANNEL_POOL}
         for channel_id, overwrites in snapshot["channels"].items():
+            if int(channel_id) in pool_ids:
+                continue
             channel = guild.get_channel(int(channel_id))
             if not channel:
                 continue
