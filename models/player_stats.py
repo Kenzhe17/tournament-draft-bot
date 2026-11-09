@@ -4,6 +4,35 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def calculate_sr(
+    kills: int, deaths: int, assists: int, damage: int, games: int
+) -> float:
+    """Skill Rating 0-10 по суммарной статистике игрока."""
+    if games <= 0:
+        return 1.0
+
+    kda = (kills + assists) / max(deaths, 1)
+    avg_kills = kills / games
+    avg_damage = damage / games
+
+    kda_score = min(kda / 4.0, 1.25)
+    kills_score = min(avg_kills / 8.0, 1.25)
+    damage_score = min(avg_damage / 3000.0, 1.25)
+
+    performance = (
+        kda_score * 0.40
+        + kills_score * 0.40
+        + damage_score * 0.20
+    )
+
+    # Понижение при недостатке матчей
+    confidence = min(games / 3.0, 1.0)
+
+    sr = 1.0 + 8.0 * performance * confidence
+
+    return round(max(1.0, min(sr, 10.0)), 1)
+
+
 @dataclass
 class PlayerStats:
     """Статистика игрока по всем турнирам."""
@@ -177,33 +206,15 @@ class PlayerStats:
 
     @property
     def skill_rating(self) -> float:
-        """Рейтинг скилла на основе KDA (K+A/D) и AVG Damage (шкала 1.0-10.0)."""
-        if self.games < 3:
-            # Штраф за мало игр (менее 3 каток)
-            games_multiplier = self.games / 3
-        else:
-            games_multiplier = 1.0
-
-        kda = self.kda_ratio
-        avg_dmg = self.avg_damage
-
-        # Сырой индекс: KDA ~0-8, AVG DMG ~500-4000
-        # Типичный игрок (KDA≈2, DMG≈2000) → raw≈120 → SR≈5.3
-        # Топ (KDA≈4+, DMG≈3500+) → raw≈220+ → SR=10.0
-        raw_index = (kda * 20) + (avg_dmg * 0.04)
-
-        # Нормализация в диапазон 1.0-10.0
-        # Raw Index = 30 -> 1.0, Raw Index = 220 -> 10.0
-        rating = 1.0 + ((raw_index - 30) / (220 - 30)) * 9.0
-
-        # Применяем штраф за мало игр
-        rating *= games_multiplier
-
-        # Жёсткие рамки: 1.0-10.0
-        rating = max(1.0, min(10.0, rating))
-
-        # Округление до 1 знака после запятой
-        return round(rating, 1)
+        """Skill Rating 0-10: KDA + avg kills + avg damage, с confidence
+        по количеству игр."""
+        return calculate_sr(
+            self.total_kills,
+            self.total_deaths,
+            self.total_assists,
+            self.total_damage,
+            self.games,
+        )
 
     def add_xp(self, amount: int) -> tuple[int, int]:
         """Добавить XP и автоматически повысить уровень. Возвращает (новый уровень, уровень до)."""

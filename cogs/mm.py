@@ -912,6 +912,30 @@ class MMCog(commands.Cog):
                                     await self._launch_ready_check(fresh)
                     except Exception as exc:
                         logger.error("Sweeper error for %s: %s", rc.match_id, exc)
+                # Self-heal: очередь в locked без живого Ready Check —
+                # снимаем блокировку и обновляем панель
+                try:
+                    for s in mm_search_store.all():
+                        if not s.is_locked:
+                            continue
+                        rc_active = (
+                            await ready_check_store.get_active_by_search(
+                                s.guild_id, s.channel_id
+                            )
+                        )
+                        if rc_active is not None:
+                            continue
+                        s.state = QUEUE_OPEN
+                        s.match_num = 0
+                        s.timer_started = bool(s.players)
+                        mm_search_store.set(s)
+                        await self._update_queue_panel(s)
+                        logger.warning(
+                            "Stuck MM queue unlocked: %s/%s",
+                            s.guild_id, s.channel_id,
+                        )
+                except Exception as exc:
+                    logger.error("Queue unlock sweeper error: %s", exc)
             except asyncio.CancelledError:
                 return
             except Exception as exc:
