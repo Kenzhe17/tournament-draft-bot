@@ -723,6 +723,13 @@ class OCRUploadCog(commands.Cog):
                 )
             }
 
+            # Нормализуем имена из основного парсера тоже — OCR может
+            # выдать «ИНЖИТИХ»/«ижинитх» до cyrillic-добива
+            for side_name in ("left", "right"):
+                nm = panels[side_name].get("name")
+                if nm:
+                    panels[side_name]["name"] = _normalize_team_name(nm)
+
             # Названия команд на экране кириллические («ХИЩНИКИ»), а
             # основной rec-чарсет кириллицу не знает — перепознаём
             # область названия отдельной cyrillic-моделью.

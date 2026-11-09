@@ -1155,24 +1155,33 @@ class PanelPickView(View):
         # Панель не должна быть занята другой командой — ни завершённым
         # маппингом, ни свежим резервом (panel_picks)
         picks = session.get("panel_picks", {})
+        own_key = str(self.team_index)
+        blocker = None
         for other_key, other_map in session.get("maps", {}).items():
-            if other_key != str(self.team_index) and other_map.get("panel") == panel:
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Эта панель уже закреплена за другой командой."
-                    ),
-                    ephemeral=True,
-                )
-                return
-        for other_key, picked in picks.items():
-            if other_key != str(self.team_index) and picked == panel:
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Эта панель уже закреплена за другой командой."
-                    ),
-                    ephemeral=True,
-                )
-                return
+            if str(other_key) != own_key and isinstance(other_map, dict) \
+                    and other_map.get("panel") == panel:
+                blocker = f"maps[{other_key}]"
+                break
+        if blocker is None:
+            for other_key, picked in picks.items():
+                if str(other_key) != own_key and picked == panel:
+                    blocker = f"panel_picks[{other_key}]={picked!r}"
+                    break
+        if blocker is not None:
+            logger.warning(
+                "OCR panel %s blocked for team %s by %s "
+                "(match %s/%s, session maps=%s picks=%s)",
+                panel, own_key, blocker,
+                self.match_type, self.match_index,
+                session.get("maps"), picks,
+            )
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Эта панель уже закреплена за другой командой."
+                ),
+                ephemeral=True,
+            )
+            return
 
         # Резервируем панель сразу — пока идёт маппинг, второй капитан
         # не сможет выбрать ту же сторону
@@ -1430,24 +1439,32 @@ class PanelMappingView(View):
         # Панель не должна быть занята другой командой — ни завершённым
         # маппингом, ни резервом другой команды
         picks = session.get("panel_picks", {})
+        own_key = str(self.team_index)
+        blocker = None
         for other_key, other_map in session.get("maps", {}).items():
-            if other_key != str(self.team_index) and other_map.get("panel") == self.panel:
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Эта панель уже закреплена за другой командой."
-                    ),
-                    ephemeral=True,
-                )
-                return
-        for other_key, picked in picks.items():
-            if other_key != str(self.team_index) and picked == self.panel:
-                await interaction.response.send_message(
-                    replace_emojis(
-                        "❌ Эта панель уже закреплена за другой командой."
-                    ),
-                    ephemeral=True,
-                )
-                return
+            if str(other_key) != own_key and isinstance(other_map, dict) \
+                    and other_map.get("panel") == self.panel:
+                blocker = f"maps[{other_key}]"
+                break
+        if blocker is None:
+            for other_key, picked in picks.items():
+                if str(other_key) != own_key and picked == self.panel:
+                    blocker = f"panel_picks[{other_key}]={picked!r}"
+                    break
+        if blocker is not None:
+            logger.warning(
+                "OCR panel %s save blocked for team %s by %s "
+                "(match %s/%s)",
+                self.panel, own_key, blocker,
+                self.match_type, self.match_index,
+            )
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Эта панель уже закреплена за другой командой."
+                ),
+                ephemeral=True,
+            )
+            return
 
         # Запись маппинга (статистика — актуальная из сессии, после правок)
         mapped_rows = []
