@@ -300,6 +300,17 @@ class TournamentBot(commands.Bot):
                             session.get("match_type"), e,
                         )
 
+        # «📜 Правила» на карточках матчей — статичная кнопка,
+        # регистрируем persistent view глобально (custom_id совпадает).
+        try:
+            from services.match_announcer import MatchRulesButton
+
+            rules_view = discord.ui.View(timeout=None)
+            rules_view.add_item(MatchRulesButton())
+            self.add_view(rules_view)
+        except Exception as exc:
+            logger.warning("Rules button view registration failed: %s", exc)
+
         # Set up error handler for app commands
         self.tree.on_error = self.on_app_command_error
 

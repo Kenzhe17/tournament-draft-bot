@@ -28,6 +28,41 @@ logger = logging.getLogger(__name__)
 
 ORG_ROLE_IDS = ()  # заполняется лениво из config
 
+# Правила матча (казахский) — ephemeral-карточка по кнопке «📜 Правила»
+_MATCH_RULES_TEXT = (
+    "**Ойын ережелері:**\n\n"
+    "Ойын басталуын 5 минут күтеміз. Егер осы уақыт ішінде қарсылас "
+    "келмесе, ойынды бар құраммен бастаймыз. Мысалы: 4:3.\n\n"
+    "Егер ойын барысында бір ойыншы AFK болып, ойыннан шығып кетсе, "
+    "матчты соңына дейін жалғастырамыз. Нәтиже скриншотқа тіркеледі.\n\n"
+    "Бөлме міндетті түрде 5 раундтан тұруы керек. Бұл бот арқылы қай "
+    "команданың жеңгенін анықтау үшін қажет.\n\n"
+    "Жеңілген команда скриншот жібермейді. Скриншотты тек жеңімпаз "
+    "команда жібереді.\n\n"
+    "Комната міндетті түрде 5р форматында ашылуы керек.\n\n"
+    "0:0 кезінде ойыннан шығуға рұқсат етіледі. Ал 1-раунд өткеннен "
+    "кейін ойыннан шығуға болмайды."
+)
+
+
+class MatchRulesButton(discord.ui.Button):
+    """Кнопка «📜 Правила» — ephemeral V2-карточка с правилами матча."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            style=discord.ButtonStyle.secondary,
+            label="📜 Правила",
+            custom_id="match_rules",
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        from utils.design import text_card
+
+        await interaction.response.send_message(
+            view=text_card(_MATCH_RULES_TEXT, title="📜 Ойын ережелері"),
+            ephemeral=True,
+        )
+
 
 def _phase_matches(tournament: Tournament) -> list[tuple[str, int, int, int]]:
     """Матчи текущей фазы: (match_type, match_index, team_a, team_b)."""
@@ -221,6 +256,7 @@ def _match_started_view(
                 match_type, match_index, t1, t2, name_a, name_b,
             )
         )
+        view.row(MatchRulesButton())
     return view
 
 
