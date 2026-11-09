@@ -250,6 +250,22 @@ class StartBRButton(Button):
             )
             return
 
+        # VAC: исключить заблокированных до формирования команд
+        from services import vac_service
+        vac_ids = await vac_service.vac_active_ids(
+            self.guild_id, [p["id"] for p in tournament.players]
+        )
+        if vac_ids:
+            before = len(tournament.players)
+            tournament.players = [p for p in tournament.players if p["id"] not in vac_ids]
+            br_store.set(tournament)
+            await interaction.response.send_message(
+                f"⚠️ Перед стартом исключены игроки с активным VAC "
+                f"({before - len(tournament.players)}). Нажмите «Старт BR» ещё раз.",
+                ephemeral=True
+            )
+            return
+
         # Check player count requirements
         player_count = len(tournament.players)
         if player_count < 20:
@@ -387,6 +403,17 @@ class JoinBRButton(Button):
         from utils.cosmetics import clean_nickname
         user_name = clean_nickname(interaction.user.display_name)
         user_id = interaction.user.id
+
+        # VAC — временная блокировка участия в турнирах
+        from services import vac_service
+        from services.vac_service import vac_blocked_text
+        vac = await vac_service.get_active_vac(self.guild_id, user_id)
+        if vac is not None:
+            await interaction.response.send_message(
+                vac_blocked_text(int(vac["expires_at"].timestamp())),
+                ephemeral=True
+            )
+            return
 
         # Добавить игрока
         if not tournament.add_player(user_name, user_id):
@@ -634,6 +661,20 @@ class RegisterTeamButton(Button):
         if team.team_id in tournament.registered_teams:
             await interaction.response.send_message(
                 "❌ Ваша команда уже зарегистрирована!",
+                ephemeral=True
+            )
+            return
+
+        # VAC — ни один участник команды не должен быть заблокирован
+        from services import vac_service
+        vac_members = []
+        for member_id in team.members:
+            if await vac_service.is_vac_active(self.guild_id, member_id):
+                vac_members.append(member_id)
+        if vac_members:
+            mentions = " ".join(f"<@{m}>" for m in vac_members)
+            await interaction.response.send_message(
+                f"❌ Регистрация невозможна: у {mentions} активен VAC.",
                 ephemeral=True
             )
             return

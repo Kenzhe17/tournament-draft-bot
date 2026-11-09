@@ -81,6 +81,76 @@ DELETE_TABLES = [
     "ultimatum_tournaments",
 ]
 
+# JSON-файлы пользовательского прогресса (fallback-хранилища).
+# /inventory живёт в player_inventory.json, экипировка — в wardrobes.json.
+# При сбросе файлы переименовываются в *.bak (восстановимо, идемпотентно).
+# Каталоги и состояние НЕ трогаем: shop_items, cases, questions, teams,
+# organizers, settings, match_numbers, mm_search, ready_checks,
+# br_tournaments, tournaments, isolation_state.
+PROGRESS_JSON_FILES = [
+    "player_stats.json",
+    "user_balance.json",
+    "decay_tracking.json",
+    "player_inventory.json",
+    "wardrobes.json",
+    "match_history.json",
+    "case_history.json",
+    "question_history.json",
+    "bets.json",
+    "odds.json",
+    "rep_given.json",
+    "profile_cooldowns.json",
+]
+
+
+def clear_memory_caches() -> list[str]:
+    """Очистить in-memory кэши JSON-only сторов в работающем боте.
+
+    Без этого inventory_store/wardrobe_store продолжали бы отдавать
+    старые данные, а ближайший save() пересоздал бы JSON-файлы.
+    PG-сторы перечитывают БД, их кэши не трогаем.
+    """
+    cleared = []
+    try:
+        from storage.shop_store import inventory_store
+        inventory_store._inventory = {}
+        inventory_store.save()
+        cleared.append("inventory_store")
+    except Exception:
+        log.exception("clear_memory_caches: inventory_store")
+    try:
+        from storage.wardrobe_store import wardrobe_store
+        wardrobe_store._data = {}
+        wardrobe_store._save()
+        cleared.append("wardrobe_store")
+    except Exception:
+        log.exception("clear_memory_caches: wardrobe_store")
+    try:
+        from storage.player_stats_store import player_stats_store
+        player_stats_store._stats = {}
+        cleared.append("player_stats_store._stats")
+    except Exception:
+        log.exception("clear_memory_caches: player_stats_store")
+    return cleared
+
+
+def reset_json_files(data_dir: Path | None = None) -> list[str]:
+    """Отложить JSON-файлы прогресса в *.bak. Вернуть список имён."""
+    from config import DATA_DIR
+    base = data_dir or DATA_DIR
+    cleared = []
+    for name in PROGRESS_JSON_FILES:
+        path = base / name
+        if not path.exists():
+            continue
+        try:
+            path.replace(path.with_name(path.name + ".bak"))
+            cleared.append(name)
+        except OSError:
+            log.exception("reset_json_files: failed to move %s", path)
+    return cleared
+
+
 UPDATE_TABLES = {
     "user_balance": {"balance": 100},
     "user_bank": {"bank_balance": 0},

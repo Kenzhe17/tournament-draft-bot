@@ -162,6 +162,16 @@ class CircleSelectButton(discord.ui.Button):
                 )
                 return
 
+            from services import vac_service
+            from services.vac_service import vac_blocked_text
+            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            if vac is not None:
+                await interaction.response.send_message(
+                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    ephemeral=True,
+                )
+                return
+
             # Check if registration is open
             if tournament.registration == RegistrationState.ISOLATED:
                 # Isolated mode - nobody can join
@@ -280,6 +290,16 @@ class JoinPoolButton(discord.ui.Button):
                 await interaction.response.send_message(
                     replace_emojis("❌ Турнир не в фазе настройки."),
                     ephemeral=True
+                )
+                return
+
+            from services import vac_service
+            from services.vac_service import vac_blocked_text
+            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            if vac is not None:
+                await interaction.response.send_message(
+                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    ephemeral=True,
                 )
                 return
 
@@ -428,6 +448,20 @@ class AdminAddModal(discord.ui.Modal):
             if clean_nickname(member.display_name) == player_name:
                 user_id = member.id
                 break
+
+        # VAC — админское добавление тоже проверяется
+        if user_id:
+            from services import vac_service
+            from services.vac_service import vac_blocked_text
+            vac = await vac_service.get_active_vac(self.guild_id, user_id)
+            if vac is not None:
+                await interaction.response.send_message(
+                    f"{replace_emojis('❌')} У {player_name} активен VAC "
+                    f"(до <t:{int(vac['expires_at'].timestamp())}:R>).",
+                    ephemeral=True
+                )
+                asyncio.create_task(_delete_ephemeral_later(interaction))
+                return
 
         # Add player with user_id
         success = tournament.add_player_to_circle(self.circle, player_name, user_id, store)
@@ -1177,6 +1211,32 @@ class StartTournamentButton(discord.ui.Button):
             except discord.NotFound:
                 pass
             return
+
+        # VAC: исключить заблокированных до проверки готовности
+        from services import vac_service
+        vac_ids = await vac_service.vac_active_ids(
+            self.guild_id, tournament.player_user_ids.values()
+        )
+        if vac_ids:
+            removed_names = []
+            for name, uid in list(tournament.player_user_ids.items()):
+                if uid in vac_ids:
+                    tournament.remove_player(name)
+                    if name in tournament.players_pool:
+                        tournament.players_pool.remove(name)
+                        tournament.player_user_ids.pop(name, None)
+                    removed_names.append(name)
+            if removed_names:
+                store.set(tournament)
+                await interaction.response.send_message(
+                    f"{replace_emojis('⚠️')} Перед стартом исключены игроки с активным VAC: "
+                    + ", ".join(removed_names)
+                    + ". Нажмите «Старт» ещё раз.",
+                    ephemeral=True,
+                )
+                bot = interaction.client
+                await bot.update_tournament_message(interaction.guild, tournament)
+                return
 
         # Check if tournament is ready to start based on formation mode
         if tournament.formation_mode == FormationMode.RANDOM:

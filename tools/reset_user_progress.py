@@ -78,6 +78,11 @@ async def run(dry_run: bool, backup_path: Path | None,
             results = await execute_plan(conn, plan)
         for r in results:
             log.info("  %s", r)
+
+        from services.progress_reset import reset_json_files, PROGRESS_JSON_FILES
+        cleared = reset_json_files()
+        log.info("JSON progress files archived -> *.bak: %s",
+                 cleared or "none")
         log.info("RESET COMPLETE (single transaction).")
         return 0
     finally:

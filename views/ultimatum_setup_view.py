@@ -79,6 +79,17 @@ class UltimatumJoinButton(discord.ui.Button):
                 )
                 return
 
+            # VAC — временная блокировка участия в турнирах
+            from services import vac_service
+            from services.vac_service import vac_blocked_text
+            vac = await vac_service.get_active_vac(self.guild_id, interaction.user.id)
+            if vac is not None:
+                await interaction.response.send_message(
+                    vac_blocked_text(int(vac["expires_at"].timestamp())),
+                    ephemeral=True
+                )
+                return
+
             # Add player to tournament
             await ultimatum_store.add_player(
                 tournament.id,
@@ -258,11 +269,35 @@ class UltimatumOrgMenuView(discord.ui.View):
         remove_btn.callback = self.remove_player_callback
         self.add_item(remove_btn)
 
+    async def _vac_sweep(self, interaction: discord.Interaction) -> bool:
+        """True — были исключены VAC-игроки, старт нужно повторить."""
+        from services import vac_service
+        players = await ultimatum_store.get_players(self.tournament.id)
+        vac_ids = await vac_service.vac_active_ids(
+            self.guild_id, [p.discord_id for p in players]
+        )
+        if not vac_ids:
+            return False
+        for pid in vac_ids:
+            try:
+                await ultimatum_store.remove_player(self.tournament.id, pid)
+            except Exception:
+                logger.exception("VAC: failed to remove ultimatum player %s", pid)
+        await interaction.followup.send(
+            "⚠️ Перед стартом исключены игроки с активным VAC. "
+            "Нажмите «Старт» ещё раз.",
+            ephemeral=True
+        )
+        return True
+
     async def start_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
         from ultimatum.tournament import UltimatumTournament
         tournament_logic = UltimatumTournament(ultimatum_store)
+
+        if await self._vac_sweep(interaction):
+            return
 
         players = await ultimatum_store.get_players(self.tournament.id)
         if len(players) != 16:
@@ -323,9 +358,12 @@ class UltimatumOrgMenuView(discord.ui.View):
 
     async def start_callback(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
         from ultimatum.tournament import UltimatumTournament
         tournament_logic = UltimatumTournament(ultimatum_store)
+
+        if await self._vac_sweep(interaction):
+            return
 
         players = await ultimatum_store.get_players(self.tournament.id)
         if len(players) != 16:
@@ -338,7 +376,7 @@ class UltimatumOrgMenuView(discord.ui.View):
         try:
             await tournament_logic.start_tournament(self.tournament.id, interaction.client)
             await interaction.followup.send("✅ Турнир начался!", ephemeral=True)
-            
+
             # Delete the tournament setup message
             try:
                 channel = interaction.client.get_channel(self.channel_id)
@@ -484,6 +522,25 @@ class UltimatumStartButton(discord.ui.Button):
             if tournament.status != TournamentStatus.REGISTRATION:
                 await interaction.response.send_message(
                     f"❌ Турнир не в фазе регистрации. Текущий статус: {tournament.status.value}",
+                    ephemeral=True
+                )
+                return
+
+            # VAC: исключить заблокированных до старта
+            from services import vac_service
+            players = await ultimatum_store.get_players(tournament.id)
+            vac_ids = await vac_service.vac_active_ids(
+                interaction.guild_id, [p.discord_id for p in players]
+            )
+            if vac_ids:
+                for pid in vac_ids:
+                    try:
+                        await ultimatum_store.remove_player(tournament.id, pid)
+                    except Exception:
+                        logger.exception("VAC: failed to remove player %s", pid)
+                await interaction.response.send_message(
+                    "⚠️ Перед стартом исключены игроки с активным VAC. "
+                    "Нажмите «Старт» ещё раз.",
                     ephemeral=True
                 )
                 return

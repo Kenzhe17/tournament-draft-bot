@@ -1102,6 +1102,15 @@ class MMCog(commands.Cog):
         has_tag = interaction.user.primary_guild and interaction.user.primary_guild.id == GUILD_ID
         if not has_tag:
             return "Для входа в очередь нужен тег r!z3."
+
+        # VAC — временная блокировка участия в турнирах
+        from services import vac_service
+        from services.vac_service import vac_blocked_text
+
+        vac = await vac_service.get_active_vac(guild_id, interaction.user.id)
+        if vac is not None:
+            ts = int(vac["expires_at"].timestamp())
+            return vac_blocked_text(ts)
         return None
 
     async def handle_queue_join(
