@@ -155,6 +155,35 @@ def _is_match_captain(user: discord.Member, tournament: Tournament, team_index: 
     return team.get("captain") == clean_nickname(user.display_name)
 
 
+def _uploaded_by_is_captain_of(
+    tournament: Tournament, team_index: int, user_id: int | None
+) -> bool:
+    """Discord-ID загрузившего скриншот — капитан команды team_index.
+
+    Сравнение по player_user_ids (имя капитана → discord id), т.к.
+    в сессии хранится только user_id, а не Member.
+    """
+    if not user_id:
+        return False
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    team = (
+        tournament.teams[team_index]
+        if 0 <= team_index < len(tournament.teams)
+        else {}
+    )
+    captain = team.get("captain", "")
+    if not captain:
+        return False
+    mapped = tournament.player_user_ids.get(captain)
+    try:
+        return bool(mapped) and int(mapped) == uid
+    except (TypeError, ValueError):
+        return False
+
+
 def _can_use_ocr(user: discord.Member, tournament: Tournament, team_indexes: list[int]) -> bool:
     """Организатор или капитан любой из команд матча."""
     if is_org_check(user, user.guild):
@@ -1625,6 +1654,43 @@ class PanelMappingView(View):
         winner = _ocr_winning_team_index(session)
 
         if winner is not None and winner in (t1, t2):
+            # Скриншот обязан прислать капитан ПОБЕДИВШЕЙ команды
+            # (левая панель / баннер win на скриншоте). Чужой или
+            # неизвестный загрузивший → блок автоподтверждения + орг.
+            if session.get("mode") == "squad":
+                sentry = session.get("squads", {}).get(str(winner)) or {}
+                uploader_id = sentry.get("uploaded_by")
+            else:
+                uploader_id = session.get("uploaded_by")
+            if not _uploaded_by_is_captain_of(tournament, winner, uploader_id):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Скриншот прислан не капитаном победившей "
+                        "команды — результат НЕ подтверждён автоматически. "
+                        "Организатор проверит вручную."
+                    ),
+                    ephemeral=True,
+                )
+                try:
+                    ch = interaction.guild.get_channel(
+                        OCR_STATS_CHANNEL_ID
+                    ) or await interaction.guild.fetch_channel(
+                        OCR_STATS_CHANNEL_ID
+                    )
+                    wname = _team_display_name(tournament, winner)
+                    await ch.send(
+                        replace_emojis(
+                            f"⚠️ **OCR: автоподтверждение заблокировано** — "
+                            f"{_match_label(self.match_type, self.match_index)}\n"
+                            f"Победитель по левой панели: **{wname}**, "
+                            f"но загрузил <@{uploader_id or 0}> "
+                            f"(не его капитан). Проверьте результат вручную."
+                        )
+                    )
+                except Exception as e:
+                    logger.warning("OCR captain-mismatch warn failed: %s", e)
+                return
+
             await interaction.response.defer(ephemeral=True)
             try:
                 await finalize_ocr_match(

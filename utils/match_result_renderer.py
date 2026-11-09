@@ -78,6 +78,7 @@ COL_HALF_W = {"k": 45, "d": 45, "a": 45, "dmg": 60, "elo": 48}
 MATCH_ID_BOX = (1485, 90, 1690, 136)
 DURATION_BOX = (1690, 90, 1908, 136)
 SCORE_BOXES = [(845, 270, 920, 380), (935, 295, 985, 375), (1005, 270, 1085, 380)]
+SCORE_LABEL_BOX = (810, 368, 1110, 398)
 TEAM_RESULT_BOX = {"A": (100, 276, 660, 400), "B": (1500, 276, 1850, 400)}
 STATUS_LABEL_BOX = {"A": (825, 470, 925, 508), "B": (1735, 470, 1835, 508)}
 
@@ -134,6 +135,7 @@ class MatchResultData:
     duration: str = "— : —"    # "MM:SS"
     score_a: int = 0
     score_b: int = 0
+    score_label: str = "СЧЁТ МАТЧА"  # "СЧЁТ МАТЧА" | "УБИЙСТВА КОМАНД"
     winner: str = "A"          # "A" | "B"
     team_a: list[ResultPlayer] = field(default_factory=list)
     team_b: list[ResultPlayer] = field(default_factory=list)
@@ -176,7 +178,7 @@ def render_match_result_sync(data: MatchResultData, avatars: dict[int, bytes]) -
     # ---------- 1. Стирание плейсхолдеров ----------
     erase: list[tuple[int, int, int, int]] = [
         MATCH_ID_BOX, DURATION_BOX,
-        *SCORE_BOXES,
+        *SCORE_BOXES, SCORE_LABEL_BOX,
         TEAM_RESULT_BOX["A"], TEAM_RESULT_BOX["B"],
         STATUS_LABEL_BOX["A"], STATUS_LABEL_BOX["B"],
         MVP_NAME_BOX, MVP_KDA_BOX, MVP_DMG_BOX,
@@ -200,7 +202,11 @@ def render_match_result_sync(data: MatchResultData, avatars: dict[int, bytes]) -
     draw.text((1498, 119), _sanitize(data.match_num, 16), font=_display_font(28), fill=TEXT, anchor="ls")
     draw.text((1701, 119), _sanitize(data.duration, 12), font=_display_font(26), fill=TEXT, anchor="ls")
 
-    # ---------- 3. Финальный счёт ----------
+    # ---------- 3. Счёт / убийства команд ----------
+    draw.text(
+        (960, 388), _sanitize(data.score_label, 30),
+        font=_body_font(18), fill=SUB, anchor="ms",
+    )
     f_score = _display_font(92)
     f_colon = _body_font(68)
     draw.text((882, 364), str(data.score_a), font=f_score, fill=TEXT, anchor="ms")

@@ -317,6 +317,24 @@ async def _member_avatar_url(guild: discord.Guild, user_id: int) -> str:
     return url + ("&" if "?" in url else "?") + "size=128"
 
 
+def _resolve_card_score(
+    session: dict, kills_a: int, kills_b: int
+) -> tuple[int, int, str]:
+    """(score_a, score_b, label) для PNG-карточки.
+
+    «СЧЁТ МАТЧА» — только если OCR реально распознал счёт раундов.
+    Иначе показываем суммы убийств команд с честной подписью
+    «УБИЙСТВА КОМАНД» — счёт раундов никогда не подменяется киллами.
+    """
+    score = session.get("score")
+    if isinstance(score, (list, tuple)) and len(score) == 2:
+        try:
+            return int(score[0]), int(score[1]), "СЧЁТ МАТЧА"
+        except (TypeError, ValueError):
+            pass
+    return int(kills_a or 0), int(kills_b or 0), "УБИЙСТВА КОМАНД"
+
+
 async def publish_match_result_card(
     guild: discord.Guild,
     tournament,
@@ -413,16 +431,12 @@ async def publish_match_result_card(
             except Exception:
                 pass
 
-        # Финальный счёт: распознанный «N VS M» со скриншота,
-        # иначе fallback — суммы убийств (squad-скрины без счёта)
-        score = session.get("score")
-        if isinstance(score, (list, tuple)) and len(score) == 2:
-            try:
-                score_a, score_b = int(score[0]), int(score[1])
-            except (TypeError, ValueError):
-                score_a, score_b = totals_a.kills, totals_b.kills
-        else:
-            score_a, score_b = totals_a.kills, totals_b.kills
+        # Счёт раундов: только реально распознанный «N VS M»/«N:M».
+        # Иначе на карточке показываем сумму убийств команд — и
+        # подписываем её честно, без выдуманного счёта раундов.
+        score_a, score_b, score_label = _resolve_card_score(
+            session, totals_a.kills, totals_b.kills
+        )
 
         # Реальный сквозной номер матча (тот же, что в embed запуска)
         match_num = await match_number_store.get_or_assign(match_id)
@@ -432,6 +446,7 @@ async def publish_match_result_card(
             duration=duration,
             score_a=score_a,
             score_b=score_b,
+            score_label=score_label,
             winner="A" if winning_team_index == t1 else "B",
             team_a=cards_a,
             team_b=cards_b,
@@ -713,10 +728,19 @@ class OCRUploadCog(commands.Cog):
                 if score:
                     parsed["score"] = list(score)
 
-            # Победитель по цветовой подсветке панели (CPU-bound)
-            side = await loop.run_in_executor(
+            # Победитель — ЛЕВАЯ панель скриншота: результат отправляет
+            # капитан победившей команды, победившая всегда слева.
+            # Цветовая детекция оставлена только для диагностики —
+            # итог не зависит от неё (kills/damage/KDA не решают).
+            detected = await loop.run_in_executor(
                 OCR_EXECUTOR, detect_winner_side, data, boxes
             )
+            if detected and detected != "left":
+                logger.info(
+                    "winner_side: color-detect=%s overridden -> left",
+                    detected,
+                )
+            side = "left"
 
             panels = {
                 side_name: {
