@@ -15,7 +15,10 @@ from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
-from config import RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
+from config import (
+    RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID,
+    ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID, MM_MATCH_CHANNEL_POOL,
+)
 
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
 MATCH_FOUND_CHANNEL_ID = 1549809898643001484
@@ -1386,24 +1389,9 @@ class MMCog(commands.Cog):
             return None, "Не удалось запустить проверку готовности."
         return rc, None
 
-    async def _create_match_channel(
-        self, guild: discord.Guild, search: MMSearch, match_num: int
-    ) -> tuple[discord.TextChannel | None, str | None]:
-        """Создать временный канал cs-4x4-match-N в категории панели."""
-        panel_channel = guild.get_channel(search.channel_id)
-        if panel_channel is None:
-            try:
-                panel_channel = await self.bot.fetch_channel(search.channel_id)
-            except Exception:
-                panel_channel = None
-        category = getattr(panel_channel, "category", None)
-        if panel_channel is None:
-            return None, "канал панели не найден"
-
-        user_ids = {
-            uid for uid in search.player_user_ids.values()
-            if isinstance(uid, int) and uid > 0
-        }
+    def _match_channel_overwrites(
+        self, guild: discord.Guild, user_ids: set[int]
+    ) -> dict:
         overwrites: dict[discord.abc.Snowflake, discord.PermissionOverwrite] = {
             guild.default_role: discord.PermissionOverwrite(
                 view_channel=False,
@@ -1426,6 +1414,116 @@ class MMCog(commands.Cog):
                     send_messages=True,
                     read_message_history=True,
                 )
+        return overwrites
+
+    async def _pool_busy_channel_ids(self, guild_id: int) -> set[int]:
+        """ID каналов пула, занятых активным RC или живым турниром."""
+        busy: set[int] = set()
+        try:
+            for rc in await ready_check_store.list_active():
+                cid = getattr(rc, "match_channel_id", 0) or 0
+                if cid:
+                    busy.add(cid)
+        except Exception as exc:
+            logger.warning("pool busy: ready checks failed: %s", exc)
+        try:
+            for t in store.get_by_guild(guild_id):
+                if getattr(t, "phase", None) == TournamentPhase.COMPLETE:
+                    continue
+                for attr in ("channel_id", "mm_preset_channel_id"):
+                    cid = getattr(t, attr, 0) or 0
+                    if cid:
+                        busy.add(cid)
+        except Exception as exc:
+            logger.warning("pool busy: tournaments failed: %s", exc)
+        return busy
+
+    async def _purge_channel(self, channel: discord.TextChannel) -> None:
+        """Очистить историю канала пула перед переиспользованием."""
+        try:
+            for p in await channel.pins():
+                try:
+                    await p.unpin()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            while True:
+                msgs = [m async for m in channel.history(limit=100)]
+                if not msgs:
+                    break
+                try:
+                    await channel.delete_messages(
+                        msgs, reason="MM channel pool reset")
+                except Exception:
+                    for m in msgs:
+                        try:
+                            await m.delete()
+                        except Exception:
+                            pass
+                if len(msgs) < 100:
+                    break
+        except Exception as exc:
+            logger.warning("Pool channel purge failed %s: %s",
+                           channel.id, exc)
+
+    async def _acquire_pool_channel(
+        self,
+        guild: discord.Guild,
+        user_ids: set[int],
+        overwrites: dict,
+    ) -> discord.TextChannel | None:
+        """Занять свободный канал из пула: overwrites + очистка истории."""
+        busy = await self._pool_busy_channel_ids(guild.id)
+        for cid in MM_MATCH_CHANNEL_POOL:
+            if cid in busy:
+                continue
+            channel = guild.get_channel(cid)
+            if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(cid)
+                except Exception:
+                    channel = None
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                await channel.edit(
+                    overwrites=overwrites,
+                    reason="MM match channel reuse",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Pool channel %s overwrites edit failed: %s", cid, exc)
+                continue
+            await self._purge_channel(channel)
+            logger.info("MM match channel pool slot %s acquired", cid)
+            return channel
+        return None
+
+    async def _create_match_channel(
+        self, guild: discord.Guild, search: MMSearch, match_num: int
+    ) -> tuple[discord.TextChannel | None, str | None]:
+        """Канал матча: сначала пул постоянных, иначе временный create."""
+        panel_channel = guild.get_channel(search.channel_id)
+        if panel_channel is None:
+            try:
+                panel_channel = await self.bot.fetch_channel(search.channel_id)
+            except Exception:
+                panel_channel = None
+        category = getattr(panel_channel, "category", None)
+        if panel_channel is None:
+            return None, "канал панели не найден"
+
+        user_ids = {
+            uid for uid in search.player_user_ids.values()
+            if isinstance(uid, int) and uid > 0
+        }
+        overwrites = self._match_channel_overwrites(guild, user_ids)
+
+        pooled = await self._acquire_pool_channel(guild, user_ids, overwrites)
+        if pooled is not None:
+            return pooled, None
 
         try:
             channel = await guild.create_text_channel(
@@ -1447,6 +1545,8 @@ class MMCog(commands.Cog):
     async def _delete_channel_by_id(self, channel_id: int) -> None:
         if not channel_id:
             return
+        if channel_id in MM_MATCH_CHANNEL_POOL:
+            return  # каналы пула переиспользуются, не удаляются
         channel = self.bot.get_channel(channel_id)
         if channel is None:
             try:

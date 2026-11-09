@@ -44,6 +44,17 @@ ORG_ROLE_MAP = {
     1563149951033151609: ORG_3_ROLE_ID,  # Channel 3 -> ORG-3
 }
 
+# Пул постоянных каналов MM-матчей: вместо create/delete на каждый
+# матч канал берётся из пула, чистится и переназначается.
+# Переопределяется env MM_MATCH_CHANNEL_POOL (csv id).
+MM_MATCH_CHANNEL_POOL = [
+    int(x) for x in os.getenv(
+        "MM_MATCH_CHANNEL_POOL",
+        "1569279791335608461,1569282744909824061,1569282781270245417,"
+        "1569282801956818965,1569282824966639698",
+    ).split(",") if x.strip()
+]
+
 # Notification role ID for tournament announcements
 NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "1564923985454571560"))
 

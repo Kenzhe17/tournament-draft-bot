@@ -21,7 +21,7 @@ import discord
 from utils.design import compose, text_card
 from discord.ext import commands
 
-from config import get_emoji, replace_emojis
+from config import get_emoji, replace_emojis, MM_MATCH_CHANNEL_POOL
 from storage.json_store import store
 from views.ocr_match_view import (
     OCR_STATS_CHANNEL_ID,
@@ -1093,7 +1093,8 @@ async def _maybe_delete_match_channel(
             channel = guild.get_channel(int(cid))
             if channel is None:
                 channel = await guild.fetch_channel(int(cid))
-            if channel is not None:
+            if channel is not None and int(cid) not in MM_MATCH_CHANNEL_POOL:
+                # Каналы пула MM не удаляем — они переиспользуются
                 await channel.delete(reason="Результат матча загружен")
                 logger.info("Match channel %s deleted", cid)
         except Exception as exc:
