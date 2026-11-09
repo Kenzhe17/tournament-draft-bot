@@ -27,6 +27,9 @@ MATCH_FOUND_CHANNEL_ID = 1549809898643001484
 MM_NO_SHOW_VAC = timedelta(minutes=30)
 # Пауза между попытками запуска матча после ошибки (антиспам API)
 MATCH_START_RETRY_COOLDOWN = 120.0
+# Сколько считается «живым» запуск матча между LOCKED и Ready Check.
+# Должен покрывать acquire канала + рендер PNG + Discord API с 429-retry.
+_BEGIN_INFLIGHT_TTL = 300.0
 from models.mm_search import (
     MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK,
     QUEUE_WAITING_CHANNEL,
@@ -126,6 +129,10 @@ class MMCog(commands.Cog):
         self._rc_recovery_task: asyncio.Task | None = None
         self._queue_locks: dict[tuple[int, int], asyncio.Lock] = {}
         self._begin_fail_at: dict[tuple[int, int], float] = {}
+        # Идущие запуски матчей: (guild_id, search_channel_id) -> ts.
+        # Sweeper не должен «разблокировать» поиск, пока _begin_match
+        # между LOCKED и созданием Ready Check (секунды API-работы).
+        self._begin_inflight: dict[tuple[int, int], float] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
     async def cog_load(self) -> None:
@@ -964,6 +971,14 @@ class MMCog(commands.Cog):
     async def _launch_ready_check(self, rc: ReadyCheck) -> None:
         """8/8 — запустить существующий турнирный флоу ровно один раз."""
         guild_id = rc.guild_id
+        # Повторная проверка актуального статуса: объект rc мог устареть
+        # (другой путь уже перевёл его в терминальный статус).
+        fresh = await ready_check_store.get(rc.match_id)
+        if fresh is None or fresh.status not in (
+            ReadyCheckStatus.ALL_READY, ReadyCheckStatus.LAUNCHING,
+        ):
+            return
+        rc = fresh
         try:
             # Дедупликация: турнир уже мог быть создан (retry/recovery).
             # Совпадением считается ТОЛЬКО тот же матч — тот же канал
@@ -1064,13 +1079,32 @@ class MMCog(commands.Cog):
                     except Exception as exc:
                         logger.error("Sweeper error for %s: %s", rc.match_id, exc)
                 # Self-heal: очередь в locked без живого Ready Check —
-                # снимаем блокировку и обновляем панель
+                # снимаем блокировку и обновляем панель. Но ТОЛЬКО если
+                # нет идущего запуска (_begin_match между LOCKED и RC)
+                # и нет слота пула, закреплённого за этим поиском —
+                # иначе разблокируем легитимный матч в процессе старта.
+                try:
+                    from services import match_channel_pool as _mcp
+
+                    pool_slots = await _mcp.list_slots()
+                except Exception:
+                    pool_slots = []
                 try:
                     for s in mm_search_store.all():
                         if s.state == QUEUE_WAITING_CHANNEL:
                             continue  # ждёт канал — обрабатывает sweeper ниже
                         if not s.is_locked:
                             continue
+                        key = (s.guild_id, s.channel_id)
+                        if time.time() - self._begin_inflight.get(key, 0.0) < _BEGIN_INFLIGHT_TTL:
+                            continue  # _begin_match в процессе — не зависший
+                        owner = f"mm:{s.guild_id}:{s.channel_id}"
+                        if any(
+                            sl.get("owner") == owner
+                            and sl.get("state") in ("reserved", "active")
+                            for sl in pool_slots
+                        ):
+                            continue  # слот пула зарезервирован под этот матч
                         rc_active = (
                             await ready_check_store.get_active_by_search(
                                 s.guild_id, s.channel_id
@@ -1568,6 +1602,35 @@ class MMCog(commands.Cog):
     async def _begin_match(
         self, search: MMSearch, interaction: discord.Interaction
     ) -> tuple[ReadyCheck | None, str | None]:
+        """Идемпотентная обёртка запуска матча.
+
+        Один поиск = максимум один активный Ready Check и один
+        идущий запуск. Повторные вызовы (клик, таймер, sweeper
+        WAITING_FOR_CHANNEL, recovery) безопасно возвращают
+        существующий процесс вместо создания дубля.
+        """
+        key = (search.guild_id, search.channel_id)
+        existing = await ready_check_store.get_active_by_search(
+            search.guild_id, search.channel_id
+        )
+        if existing is not None:
+            logger.info(
+                "_begin_match: active ready check %s exists for %s/%s — skip",
+                existing.match_id, search.guild_id, search.channel_id,
+            )
+            return existing, None
+        started = self._begin_inflight.get(key, 0.0)
+        if time.time() - started < _BEGIN_INFLIGHT_TTL:
+            return None, "Запуск матча уже выполняется — подождите."
+        self._begin_inflight[key] = time.time()
+        try:
+            return await self._begin_match_impl(search, interaction)
+        finally:
+            self._begin_inflight.pop(key, None)
+
+    async def _begin_match_impl(
+        self, search: MMSearch, interaction: discord.Interaction
+    ) -> tuple[ReadyCheck | None, str | None]:
         """Перевести заполненную очередь в ready-check.
 
         Порядок: lock state → match number → канал cs-4x4-match-N → RC.
@@ -1794,6 +1857,14 @@ class MMCog(commands.Cog):
         """Восстановить панели очередей и снять зависшие блокировки."""
         await asyncio.sleep(10)
         try:
+            # Слоты пула, закреплённые за MM-поисками — locked-очередь
+            # с RESERVED/ACTIVE слотом НЕ считается зависшей (рестарт
+            # мог случиться между резервированием канала и созданием RC)
+            try:
+                from services import match_channel_pool as _mcp
+                pool_slots = await _mcp.list_slots()
+            except Exception:
+                pool_slots = []
             for search in mm_search_store.all():
                 try:
                     if search.message_id:
@@ -1809,21 +1880,35 @@ class MMCog(commands.Cog):
                         search.guild_id, search.channel_id
                     )
                     if rc is None:
-                        # Блокировка без живого Ready Check — снимаем
-                        # (waiting_channel НЕ трогаем — это не зависание,
-                        # sweeper канала сам запустит матч)
-                        search.state = QUEUE_OPEN
-                        search.match_num = 0
-                        search.timer_started = bool(search.players)
-                        mm_search_store.set(search)
-                        # Заполненная очередь без таймера — перезапустить
-                        if search.is_full and search.players:
-                            key = (search.guild_id, search.channel_id)
-                            task = self._search_timers.get(key)
-                            if task is None or task.done():
-                                self._start_search_timer(
-                                    search.guild_id, search.channel_id
-                                )
+                        owner = f"mm:{search.guild_id}:{search.channel_id}"
+                        has_slot = any(
+                            sl.get("owner") == owner
+                            and sl.get("state") in ("reserved", "active")
+                            for sl in pool_slots
+                        )
+                        if has_slot:
+                            # Слот пула зарезервирован под этот матч —
+                            # ждём RC/турнир, не разблокируем очередь
+                            logger.info(
+                                "Queue %s/%s locked with pool slot — skip unlock",
+                                search.guild_id, search.channel_id,
+                            )
+                        else:
+                            # Блокировка без живого Ready Check — снимаем
+                            # (waiting_channel НЕ трогаем — это не зависание,
+                            # sweeper канала сам запустит матч)
+                            search.state = QUEUE_OPEN
+                            search.match_num = 0
+                            search.timer_started = bool(search.players)
+                            mm_search_store.set(search)
+                            # Заполненная очередь без таймера — перезапустить
+                            if search.is_full and search.players:
+                                key = (search.guild_id, search.channel_id)
+                                task = self._search_timers.get(key)
+                                if task is None or task.done():
+                                    self._start_search_timer(
+                                        search.guild_id, search.channel_id
+                                    )
                 try:
                     await self._update_queue_panel(search)
                 except Exception:

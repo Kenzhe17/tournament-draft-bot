@@ -723,6 +723,15 @@ async def init_db() -> None:
             ON ready_checks(guild_id, status)
         """)
 
+        # Один поиск = максимум один АКТИВНЫЙ Ready Check.
+        # Терминальные статусы (LAUNCHED/DECLINED/TIMEOUT/CANCELLED)
+        # из индекса выпадают — следующий матч того же поиска легален.
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_ready_checks_active_search
+            ON ready_checks(guild_id, search_channel_id)
+            WHERE status NOT IN ('LAUNCHED', 'DECLINED', 'TIMEOUT', 'CANCELLED')
+        """)
+
         # Канал матча, созданный на этапе ready-check (cs-4x4-match-N)
         await conn.execute("""
             ALTER TABLE ready_checks

@@ -74,8 +74,22 @@ class _FakeInteraction:
         self.message = SimpleNamespace(edit=AsyncMock())
 
 
+class _FakeRCStore:
+    """Минимальный ready_check_store для тестов _begin_match."""
+
+    def __init__(self):
+        self.active = None
+
+    async def get_active_by_search(self, guild_id, channel_id):
+        return self.active
+
+    async def get(self, match_id):
+        return self.active
+
+
 def _cog(monkeypatch, search: MMSearch | None):
     import cogs.mm as mm_mod
+    import time as _time
 
     class _Store:
         def __init__(self, s):
@@ -94,6 +108,7 @@ def _cog(monkeypatch, search: MMSearch | None):
             return [self.s] if self.s else []
 
     monkeypatch.setattr(mm_mod, "mm_search_store", _Store(search))
+    monkeypatch.setattr(mm_mod, "ready_check_store", _FakeRCStore())
     bot = SimpleNamespace(mm_cog=None)
     cog = mm_mod.MMCog(bot)
     return cog
@@ -224,3 +239,98 @@ async def test_begin_match_success_locks_and_passes_channel(monkeypatch):
     kwargs = start_rc.call_args.kwargs
     assert kwargs["match_num"] == 42
     assert kwargs["match_channel_id"] == 555
+
+
+# ------------------------------------------------- begin_match idempotency
+
+@pytest.mark.asyncio
+async def test_begin_match_returns_existing_active_rc(monkeypatch):
+    """Активный RC для поиска → _begin_match возвращает его, не создавая новый."""
+    import cogs.mm as mm_mod
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    existing = SimpleNamespace(match_id="rc_existing")
+    mm_mod.ready_check_store.active = existing
+
+    impl = AsyncMock()
+    monkeypatch.setattr(cog, "_begin_match_impl", impl)
+
+    inter = _FakeInteraction(1000)
+    rc, err = await cog._begin_match(s, inter)
+
+    assert rc is existing and err is None
+    impl.assert_not_called()
+    # Канал не трогали, состояние не меняли
+    assert s.match_num == 0
+
+
+@pytest.mark.asyncio
+async def test_begin_match_skips_while_inflight(monkeypatch):
+    """Повторный вызов во время идущего запуска → отказ без дубля."""
+    import cogs.mm as mm_mod
+    import time as _time
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    cog._begin_inflight[(1, 10)] = _time.time()
+
+    impl = AsyncMock()
+    monkeypatch.setattr(cog, "_begin_match_impl", impl)
+
+    inter = _FakeInteraction(1000)
+    rc, err = await cog._begin_match(s, inter)
+
+    assert rc is None and err and "уже выполняется" in err
+    impl.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_begin_match_inflight_cleared_after_finish(monkeypatch):
+    """После завершения _begin_match inflight-метка снимается —
+    следующий запуск того же поиска возможен."""
+    import cogs.mm as mm_mod
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    monkeypatch.setattr(cog, "_update_queue_panel", AsyncMock())
+    monkeypatch.setattr(
+        cog, "_create_match_channel",
+        AsyncMock(return_value=(None, "pool_full")),
+    )
+    mns = SimpleNamespace(get_or_assign=AsyncMock(return_value=42))
+    monkeypatch.setattr(mm_mod, "match_number_store", mns)
+
+    inter = _FakeInteraction(1000)
+    rc, err = await cog._begin_match(s, inter)
+
+    assert rc is None  # pool_full → WAITING_CHANNEL
+    assert (1, 10) not in cog._begin_inflight
+
+
+@pytest.mark.asyncio
+async def test_concurrent_begin_match_single_impl(monkeypatch):
+    """Два конкурентных _begin_match → impl вызывается один раз."""
+    import asyncio
+    import cogs.mm as mm_mod
+
+    s = _search()
+    cog = _cog(monkeypatch, s)
+    calls = []
+
+    async def _slow_impl(search, interaction):
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        return SimpleNamespace(match_id="rc_1"), None
+
+    monkeypatch.setattr(cog, "_begin_match_impl", _slow_impl)
+
+    inter = _FakeInteraction(1000)
+    (rc_a, err_a), (rc_b, err_b) = await asyncio.gather(
+        cog._begin_match(s, inter), cog._begin_match(s, inter)
+    )
+    assert len(calls) == 1
+    # Ровно один вызов получил RC; второй — RC (если успел после
+    # завершения) или «уже выполняется» — но не второй impl.
+    got_rc = sum(1 for rc in (rc_a, rc_b) if rc is not None)
+    assert got_rc <= 1

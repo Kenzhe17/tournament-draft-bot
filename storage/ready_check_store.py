@@ -134,6 +134,33 @@ class ReadyCheckStore:
         await self._ensure_loaded()
         if rc.match_id in self._checks:
             return False
+        # PG-уровень: частичный UNIQUE INDEX uq_ready_checks_active_search
+        # запрещает два активных RC на один поиск даже между процессами.
+        # Проверяем заранее, чтобы не записать в память то, что БД
+        # отклонит (иначе RC существовал бы только в JSON-fallback).
+        if DATABASE_URL:
+            try:
+                from storage.db import get_pool
+
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    dup = await conn.fetchval(
+                        "SELECT match_id FROM ready_checks"
+                        " WHERE guild_id = $1 AND search_channel_id = $2"
+                        " AND status NOT IN"
+                        " ('LAUNCHED','DECLINED','TIMEOUT','CANCELLED')"
+                        " LIMIT 1",
+                        rc.guild_id, rc.search_channel_id,
+                    )
+                if dup is not None:
+                    logger.warning(
+                        "ReadyCheckStore.create: active RC %s already exists"
+                        " for search %s/%s — rejecting %s",
+                        dup, rc.guild_id, rc.search_channel_id, rc.match_id,
+                    )
+                    return False
+            except Exception as exc:
+                logger.warning("ReadyCheckStore.create PG pre-check failed: %s", exc)
         for existing in self._checks.values():
             if (
                 existing.guild_id == rc.guild_id
