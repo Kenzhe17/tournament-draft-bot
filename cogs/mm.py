@@ -343,10 +343,26 @@ class MMCog(commands.Cog):
         try:
             from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
             notification_channel = self.bot.get_channel(NOTIFICATION_CHANNEL_ID)
+            if notification_channel is None:
+                try:
+                    notification_channel = await self.bot.fetch_channel(
+                        NOTIFICATION_CHANNEL_ID)
+                except Exception as e:
+                    logger.warning(
+                        "MM notify: fetch notification channel failed: %s", e)
             search_channel = self.bot.get_channel(channel_id)
+            if search_channel is None:
+                try:
+                    search_channel = await self.bot.fetch_channel(channel_id)
+                except Exception as e:
+                    logger.warning("MM notify: fetch search channel failed: %s", e)
             if not notification_channel or not search_channel:
+                logger.warning(
+                    "MM notify skipped: notify_ch=%s search_ch=%s",
+                    notification_channel, search_channel)
                 return
-            role = self.bot.get_guild(guild_id).get_role(NOTIFICATION_ROLE_ID)
+            guild_obj = self.bot.get_guild(guild_id)
+            role = guild_obj.get_role(NOTIFICATION_ROLE_ID) if guild_obj else None
             role_mention = role.mention if role else ""
 
             embed = discord.Embed(

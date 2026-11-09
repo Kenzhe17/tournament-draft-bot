@@ -179,8 +179,21 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
                   "Наибольший AVG Damage"):
             c.records.append(Record(t, available=False))
 
-    c.records.append(Record("Больше всего ассистов за матч", available=False))
-    c.records.append(Record("Максимальный урон за матч", available=False))
+    def match_row_rec(title: str, row_key: str, val_key: str,
+                      unit: str) -> None:
+        r = agg.get(row_key)
+        if r:
+            uid, nm = rec_for(int(r["user_id"]))
+            c.records.append(Record(
+                title, f"{int(r[val_key])} {unit}",
+                uid, nm, _match_ctx(r)))
+        else:
+            c.records.append(Record(title, available=False))
+
+    match_row_rec("Больше всего ассистов за матч", "top_assists",
+                  "assists", "ASSISTS")
+    match_row_rec("Максимальный урон за матч", "top_damage",
+                  "damage", "DMG")
 
     if stats:
         p = max(stats, key=lambda x: x.total_kills)
@@ -405,8 +418,4 @@ async def compute_all(guild_id: int) -> dict[str, CategoryData]:
     else:
         c.records.append(Record("Больше всего подтверждённых приглашений",
                                 available=False))
-    # XP хранится как остаток до следующего уровня — суммарный XP
-    # не сохраняется, поэтому отдельный рекорд невозможен.
-    c.records.append(Record("Самый высокий XP", available=False))
-
     return cats

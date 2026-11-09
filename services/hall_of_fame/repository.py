@@ -35,6 +35,20 @@ async def match_aggregates(guild_id: int) -> dict:
             WHERE guild_id=$1 AND user_id >= $2 AND elo_change > 0
             ORDER BY elo_change DESC, date DESC LIMIT 1
             """, guild_id, MIN_REAL_USER_ID)
+        top_assists = await conn.fetchrow(
+            """
+            SELECT user_id, assists, date, match_type, tournament_id
+            FROM match_history
+            WHERE guild_id=$1 AND user_id >= $2 AND assists > 0
+            ORDER BY assists DESC, date DESC LIMIT 1
+            """, guild_id, MIN_REAL_USER_ID)
+        top_damage = await conn.fetchrow(
+            """
+            SELECT user_id, damage, date, match_type, tournament_id
+            FROM match_history
+            WHERE guild_id=$1 AND user_id >= $2 AND damage > 0
+            ORDER BY damage DESC, date DESC LIMIT 1
+            """, guild_id, MIN_REAL_USER_ID)
         # Чемпионаты: победы в финальных матчах по уникальным турнирам
         champ_rows = await conn.fetch(
             """
@@ -53,6 +67,8 @@ async def match_aggregates(guild_id: int) -> dict:
             """, guild_id, MIN_REAL_USER_ID)
     return {
         "top_kills": dict(top_kills) if top_kills else None,
+        "top_assists": dict(top_assists) if top_assists else None,
+        "top_damage": dict(top_damage) if top_damage else None,
         "top_elo_gain": dict(top_elo_gain) if top_elo_gain else None,
         "championships": {int(r["user_id"]): int(r["cnt"]) for r in champ_rows},
         "match_counts": {int(r["user_id"]): int(r["cnt"]) for r in match_counts},

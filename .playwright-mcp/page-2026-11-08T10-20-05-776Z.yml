@@ -1,0 +1,7 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - text: Name
+      - textbox "Name" [ref=e4]
+    - button "Test" [ref=e5]
+  - status
