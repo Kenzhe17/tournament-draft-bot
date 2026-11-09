@@ -254,9 +254,7 @@ async def purge_channel(channel: discord.TextChannel) -> None:
         logger.warning("pins fetch failed for %s: %s", channel.id, exc)
 
     try:
-        messages = await _discord_call(
-            lambda: channel.history(limit=100).flatten(), "history"
-        )
+        messages = [m async for m in channel.history(limit=100)]
         if messages:
             await _discord_call(
                 lambda: channel.delete_messages(messages), "bulk_delete"

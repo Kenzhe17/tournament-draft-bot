@@ -958,25 +958,40 @@ class MMCog(commands.Cog):
         """8/8 — запустить существующий турнирный флоу ровно один раз."""
         guild_id = rc.guild_id
         try:
-            # Дедупликация: турнир уже мог быть создан (retry/recovery)
+            # Дедупликация: турнир уже мог быть создан (retry/recovery).
+            # Совпадением считается ТОЛЬКО тот же матч — тот же канал
+            # матча (mm_preset_channel_id). Иначе второй матч с того же
+            # канала поиска ошибочно пропускался, а его канал оставался
+            # ACTIVE без карточки.
+            dup_t = None
+            rc_channel = getattr(rc, "match_channel_id", 0) or 0
             for t in store.get_by_guild(guild_id):
                 if (
-                    getattr(t, "mm_search_channel_id", 0) == rc.search_channel_id
-                    and t.phase != TournamentPhase.COMPLETE
+                    getattr(t, "mm_search_channel_id", 0) != rc.search_channel_id
+                    or t.phase == TournamentPhase.COMPLETE
                 ):
-                    logger.info("Tournament already exists for search channel %s — skip launch", rc.search_channel_id)
-                    rc.status = ReadyCheckStatus.LAUNCHED
-                    await ready_check_store.save(rc)
-                    await self._update_ready_message(rc)
-                    # Догнать анонс матчей, если он не успел выполниться
-                    try:
-                        guild = self.bot.get_guild(guild_id)
-                        if guild is not None:
-                            from services.match_announcer import announce_phase_matches
-                            await announce_phase_matches(t, guild, self.bot)
-                    except Exception as exc:
-                        logger.warning("Announce catch-up failed: %s", exc)
-                    return
+                    continue
+                preset = getattr(t, "mm_preset_channel_id", 0) or 0
+                if rc_channel and preset == rc_channel:
+                    dup_t = t
+                    break
+                if not rc_channel and not preset:
+                    dup_t = t
+                    break
+            if dup_t is not None:
+                logger.info("Tournament already exists for search channel %s — skip launch", rc.search_channel_id)
+                rc.status = ReadyCheckStatus.LAUNCHED
+                await ready_check_store.save(rc)
+                await self._update_ready_message(rc)
+                # Догнать анонс матчей, если он не успел выполниться
+                try:
+                    guild = self.bot.get_guild(guild_id)
+                    if guild is not None:
+                        from services.match_announcer import announce_phase_matches
+                        await announce_phase_matches(dup_t, guild, self.bot)
+                except Exception as exc:
+                    logger.warning("Announce catch-up failed: %s", exc)
+                return
 
             search = mm_search_store.get(guild_id, rc.search_channel_id)
             if search is None or not search.is_full:
@@ -1077,6 +1092,15 @@ class MMCog(commands.Cog):
                         await self._try_start_waiting_match(s)
                 except Exception as exc:
                     logger.error("Waiting-channel sweeper error: %s", exc)
+                # Reconcile пула: ACTIVE/RESERVED без живого RC/турнира
+                # старше 15 минут → ERROR (НЕ авто-free — решает админ
+                # через /mm freechannel)
+                self._sweep_count = getattr(self, "_sweep_count", 0) + 1
+                if self._sweep_count % 60 == 0:
+                    try:
+                        await self._reconcile_pool_slots()
+                    except Exception as exc:
+                        logger.error("Pool reconcile error: %s", exc)
             except asyncio.CancelledError:
                 return
             except Exception as exc:
@@ -1692,6 +1716,72 @@ class MMCog(commands.Cog):
         except Exception as exc:
             logger.warning("Failed to fetch match card png: %s", exc)
             return None
+
+    async def _reconcile_pool_slots(self) -> None:
+        """Пометить ERROR слоты пула, на которые никто не ссылается.
+
+        Слот считается «живым», если его channel_id есть в активном
+        Ready Check или в не-завершённом турнире (channel_id,
+        mm_preset_channel_id, match_channels). Без ссылок и старше
+        15 минут → ERROR. Авто-освобождения нет: активный матч не
+        роняем по таймеру, решение за админом (/mm freechannel).
+        """
+        from services import match_channel_pool
+        from datetime import datetime, timezone
+
+        slots = await match_channel_pool.list_slots()
+        suspects = [
+            s for s in slots
+            if s["state"] in ("reserved", "active")
+        ]
+        if not suspects:
+            return
+
+        referenced: set[int] = set()
+        try:
+            for rc in await ready_check_store.list_active():
+                cid = getattr(rc, "match_channel_id", 0) or 0
+                if cid:
+                    referenced.add(cid)
+        except Exception as exc:
+            logger.warning("reconcile: ready checks failed: %s", exc)
+        try:
+            for guild in self.bot.guilds:
+                for t in store.get_by_guild(guild.id):
+                    if getattr(t, "phase", None) == TournamentPhase.COMPLETE:
+                        continue
+                    for attr in ("channel_id", "mm_preset_channel_id"):
+                        cid = getattr(t, attr, 0) or 0
+                        if cid:
+                            referenced.add(cid)
+                    for cid in (t.match_channels or {}).keys():
+                        try:
+                            referenced.add(int(cid))
+                        except (TypeError, ValueError):
+                            pass
+        except Exception as exc:
+            logger.warning("reconcile: tournaments failed: %s", exc)
+
+        now = datetime.now(timezone.utc)
+        for s in suspects:
+            cid = int(s["channel_id"])
+            if cid in referenced:
+                continue
+            updated = s.get("updated_at")
+            try:
+                if updated.tzinfo is None:
+                    updated = updated.replace(tzinfo=timezone.utc)
+                age = (now - updated).total_seconds()
+            except Exception:
+                age = 0
+            if age < 900:
+                continue
+            await match_channel_pool.mark_error(cid, s.get("owner", ""))
+            logger.warning(
+                "Pool slot %s marked ERROR: no live RC/tournament "
+                "references it (state=%s owner=%s age=%.0fs)",
+                cid, s["state"], s.get("owner", ""), age,
+            )
 
     async def _recover_queues(self) -> None:
         """Восстановить панели очередей и снять зависшие блокировки."""
