@@ -494,6 +494,22 @@ class OCRUploadCog(commands.Cog):
         if not meta:
             return
 
+        # Канал матча MM: скриншоты принимает только кнопка
+        # «Отправить результат» (модалка → ModalUploadShim).
+        # Обычные картинки в чате канала игнорируем.
+        if meta.get("match_channel") and not isinstance(
+            message, ModalUploadShim
+        ):
+            if message.attachments:
+                await message.reply(
+                    replace_emojis(
+                        "📸 Скриншот результата отправляется кнопкой "
+                        "«Отправить результат» — обычная картинка в чат "
+                        "не запускает обработку."
+                    )
+                )
+            return
+
         # Ждём именно изображение
         attachment = next(
             (
