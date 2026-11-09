@@ -13,7 +13,7 @@ from typing import Iterable
 import discord
 
 from utils.design import colors
-from utils.design.containers import chunk_text, section, separator
+from utils.design.containers import CardBuilder, chunk_text, section, separator
 from utils.design.formatters import muted
 
 

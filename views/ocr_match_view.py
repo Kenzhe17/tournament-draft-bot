@@ -184,6 +184,34 @@ def _uploaded_by_is_captain_of(
         return False
 
 
+async def _uploader_is_privileged(guild: discord.Guild, user_id) -> bool:
+    """Загрузивший — админ сервера / владелец бота / организатор.
+
+    Таким пользователям разрешено присылать скриншот за любую
+    команду — проверка «капитан победившей» к ним не применяется.
+    """
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return False
+    member = guild.get_member(uid)
+    if member is None:
+        try:
+            member = await guild.fetch_member(uid)
+        except Exception:
+            return False
+    if member is None:
+        return False
+    if member.id == BOT_OWNER_ID:
+        return True
+    if getattr(member.guild_permissions, "administrator", False):
+        return True
+    try:
+        return bool(is_org_check(member, guild))
+    except Exception:
+        return False
+
+
 def _can_use_ocr(user: discord.Member, tournament: Tournament, team_indexes: list[int]) -> bool:
     """Организатор или капитан любой из команд матча."""
     if is_org_check(user, user.guild):
@@ -1662,7 +1690,16 @@ class PanelMappingView(View):
                 uploader_id = sentry.get("uploaded_by")
             else:
                 uploader_id = session.get("uploaded_by")
-            if not _uploaded_by_is_captain_of(tournament, winner, uploader_id):
+            uploader_ok = _uploaded_by_is_captain_of(
+                tournament, winner, uploader_id
+            )
+            if not uploader_ok:
+                # Админ/организатор может прислать скриншот за любую
+                # команду — для них проверка капитана не нужна.
+                uploader_ok = await _uploader_is_privileged(
+                    interaction.guild, uploader_id
+                )
+            if not uploader_ok:
                 await interaction.response.send_message(
                     replace_emojis(
                         "⚠️ Скриншот прислан не капитаном победившей "

@@ -662,3 +662,14 @@ async def test_invite_vanity_attribution():
         bot, joiner, {}, store=store, before_vanity=9)
     inv = next(iter(store.invites.values()))
     assert inv["attribution"] == "vanity" and inv["inviter_id"] is None
+
+
+def test_profile_view_builds():
+    """profile_view не должен падать с NameError (CardBuilder)."""
+    from utils.design.layouts import profile_view
+    view = profile_view(
+        title="ТВОЯ РЕПУТАЦИЯ",
+        lines=["**Test**", "Всего репутации: 5"],
+        thumbnail="https://cdn.discordapp.com/avatars/1/a.png",
+    )
+    assert view is not None
