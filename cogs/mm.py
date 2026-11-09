@@ -286,6 +286,14 @@ class MMCog(commands.Cog):
             await interaction.response.send_message("❌ Команда только на сервере.", ephemeral=True)
             return
 
+        # Defer сразу: дальше запись статистики + _begin_match (канал,
+        # PNG) занимают секунды — без раннего ответа токен interaction
+        # истекает (10062/10015).
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except Exception:
+            pass
+
         # Не создаём новый поиск — заполняем уже активный:
         # сначала в этом канале, иначе любой активный поиск сервера.
         search = mm_search_store.get(guild.id, interaction.channel_id)
@@ -293,7 +301,7 @@ class MMCog(commands.Cog):
             searches = mm_search_store.get_by_guild(guild.id)
             search = searches[0] if searches else None
         if search is None:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ Нет активного поиска — /mmtest только дозаполняет "
                 "существующий поиск.", ephemeral=True
             )
@@ -301,7 +309,7 @@ class MMCog(commands.Cog):
         if await ready_check_store.get_active_by_search(
             guild.id, search.channel_id
         ):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ В канале этого поиска уже идёт проверка готовности.",
                 ephemeral=True
             )
@@ -309,7 +317,7 @@ class MMCog(commands.Cog):
 
         needed = search.required_players - len(search.players)
         if needed <= 0:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "✅ Поиск уже заполнен.", ephemeral=True
             )
             return
@@ -371,11 +379,10 @@ class MMCog(commands.Cog):
             self._cancel_search_timer(search.guild_id, search.channel_id)
             rc, err = await self._begin_match(search, interaction)
             if rc is None:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        err or "❌ Не удалось запустить проверку готовности.",
-                        ephemeral=True,
-                    )
+                await interaction.followup.send(
+                    err or "❌ Не удалось запустить проверку готовности.",
+                    ephemeral=True,
+                )
                 return
             if auto_ready:
                 task = asyncio.create_task(
@@ -395,7 +402,7 @@ class MMCog(commands.Cog):
                 )
             return
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"🧪 Добавлено {added} тестовых игроков — "
             f"в поиске {len(search.players)}/{search.required_players}.",
             ephemeral=True,
