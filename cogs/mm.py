@@ -367,10 +367,11 @@ class MMCog(commands.Cog):
 
             embed = discord.Embed(
                 title="🔍 Поиск игроков",
-                description=f"{role_mention} - {search_channel.mention}",
+                description=f"{search_channel.mention}",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
             await notification_channel.send(
+                content=role_mention,
                 embed=embed,
                 allowed_mentions=discord.AllowedMentions(roles=True)
             )
