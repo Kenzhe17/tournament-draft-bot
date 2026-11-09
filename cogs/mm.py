@@ -1152,7 +1152,23 @@ class MMCog(commands.Cog):
                 )
                 return
             if search.is_full:
-                await interaction.response.send_message("Очередь уже заполнена.", ephemeral=True)
+                # Очередь заполнена, но матч не стартовал (ошибка
+                # создания канала/карточки Ready Check). Это единственный
+                # путь повторного запуска — иначе очередь «зависает».
+                self._cancel_search_timer(guild_id, channel_id)
+                rc, err = await self._begin_match(search, interaction)
+                await self._update_queue_panel(search)
+                if rc is None:
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message(
+                            err or "Не удалось запустить матч. Попробуйте ещё раз.",
+                            ephemeral=True,
+                        )
+                    else:
+                        await interaction.followup.send(
+                            err or "Не удалось запустить матч. Попробуйте ещё раз.",
+                            ephemeral=True,
+                        )
                 return
 
             error = await self._validate_join(interaction, search)
