@@ -55,6 +55,60 @@ def _card(title: str, lines: list[str], accent: int = colors.NEUTRAL) -> DesignV
     )
 
 
+async def _on_my_invite_click(interaction: discord.Interaction) -> None:
+    """«Моя ссылка» — персональная инвайт-ссылка пользователя.
+
+    Создаёт обычный Discord-инвайт в текущем канале; владелец
+    сохраняется в rep_invite_owners, поэтому атрибуция работает
+    даже хотя invite.inviter = бот.
+    """
+    await interaction.response.defer(ephemeral=True)
+    channel = interaction.channel
+    if channel is None or not isinstance(channel, discord.TextChannel):
+        await interaction.followup.send(
+            "❌ Персональную ссылку можно создать только в текстовом канале.",
+            ephemeral=True,
+        )
+        return
+    try:
+        invite = await channel.create_invite(
+            max_age=0, max_uses=0, unique=True,
+            reason=f"Personal invite link for {interaction.user}",
+        )
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "❌ У бота нет права создавать приглашения в этом канале.",
+            ephemeral=True,
+        )
+        return
+    except Exception as exc:
+        logger.warning("create_invite failed: %s", exc)
+        await interaction.followup.send(
+            "❌ Не удалось создать ссылку, попробуйте позже.",
+            ephemeral=True,
+        )
+        return
+    await reputation_store.set_invite_owner(
+        interaction.guild_id, invite.code,
+        interaction.user.id, channel.id,
+    )
+    await interaction.followup.send(
+        f"🔗 Твоя персональная ссылка: {invite.url}\n"
+        "Отправь её друзьям — их вход будет засчитан тебе.",
+        ephemeral=True,
+    )
+
+
+def _invite_link_button() -> discord.ui.Button:
+    btn = discord.ui.Button(
+        label="🔗 Моя ссылка",
+        style=discord.ButtonStyle.primary,
+        custom_id="rep_my_invite_link",
+    )
+    btn.callback = _on_my_invite_click
+    return btn
+
+
 class ReputationCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
@@ -67,12 +121,17 @@ class ReputationCog(commands.Cog):
     async def cog_load(self) -> None:
         bind_commands(
             reputation_group, self,
-            ["profile", "history", "stats", "adjust"],
+            ["profile", "history", "stats", "adjust", "invites_debug"],
         )
         bind_commands(tag_group, self, ["claim"])
         # Кэш инвайтов: guild_id -> {code: Invite}
         if not hasattr(self.bot, "_rep_invite_cache"):
             self.bot._rep_invite_cache = {}
+        if not hasattr(self.bot, "_rep_vanity_uses"):
+            self.bot._rep_vanity_uses = {}
+        # Блокировки join-обработки — защита от гонок при
+        # одновременных входах (общий before-кэш)
+        self._join_locks: dict[int, asyncio.Lock] = {}
         for guild in self.bot.guilds:
             await self._refresh_invite_cache(guild)
         self._sweep_task = asyncio.create_task(self._reward_sweeper())
@@ -104,6 +163,13 @@ class ReputationCog(commands.Cog):
             self.bot._rep_invite_cache[guild.id] = {i.code: i for i in invites}
         except Exception as exc:
             logger.warning("Invite cache refresh failed for guild %s: %s", guild.id, exc)
+        try:
+            vanity = await guild.vanity_invite()
+            uses = getattr(vanity, "uses", None)
+            if uses is not None:
+                self.bot._rep_vanity_uses[guild.id] = int(uses)
+        except Exception:
+            pass  # vanity может быть недоступен — не критично
 
     async def _reward_sweeper(self) -> None:
         """Периодически подтверждать награды за приглашения и бусты."""
@@ -129,11 +195,21 @@ class ReputationCog(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
         cache = getattr(self.bot, "_rep_invite_cache", {})
-        before = cache.get(member.guild.id, {})
-        try:
-            await rep_svc.record_member_join(self.bot, member, before)
-        except Exception as exc:
-            logger.error("Invite tracking failed for %s: %s", member.id, exc)
+        vanity_cache = getattr(self.bot, "_rep_vanity_uses", {})
+        guild_id = member.guild.id
+        # Сериализуем join-обработку внутри guild — иначе два
+        # одновременных входа могут увидеть один и тот же before-снимок
+        lock = self._join_locks.setdefault(guild_id, asyncio.Lock())
+        async with lock:
+            before = dict(cache.get(guild_id, {}))
+            before_vanity = vanity_cache.get(guild_id)
+            try:
+                await rep_svc.record_member_join(
+                    self.bot, member, before,
+                    before_vanity=before_vanity,
+                )
+            except Exception as exc:
+                logger.error("Invite tracking failed for %s: %s", member.id, exc)
         # Серверный тег: при входе с активным тегом r!z3
         try:
             await self._maybe_award_tag(member)
@@ -198,6 +274,22 @@ class ReputationCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild) -> None:
+        await self._refresh_invite_cache(guild)
+
+    @commands.Cog.listener()
+    async def on_invite_create(self, invite: discord.Invite) -> None:
+        """Новый инвайт — обновляем кэш, чтобы join-diff его видел."""
+        guild = invite.guild
+        if guild is None:
+            return
+        await self._refresh_invite_cache(guild)
+
+    @commands.Cog.listener()
+    async def on_invite_delete(self, invite: discord.Invite) -> None:
+        """Инвайт удалён — убираем из кэша (revoked uses не считаем)."""
+        guild = invite.guild
+        if guild is None:
+            return
         await self._refresh_invite_cache(guild)
 
     # ------------------------------------------------------------------
@@ -446,10 +538,10 @@ class ReputationCog(commands.Cog):
         stats = await reputation_store.get_user_invite_stats(guild_id, user.id)
 
         lines = [
-            f"Приглашено пользователей: {stats['invited']}",
-            f"Подтверждённых приглашений: {stats['rewarded']}",
+            f"Всего приглашено: {stats['invited']}",
+            f"Подтверждено: {stats['rewarded']}",
             f"Ожидают проверки: {stats['pending']}",
-            f"Отклонено: {stats['rejected']}",
+            f"Отклонено: {stats['rejected'] + stats.get('cancelled', 0)}",
             f"REP за приглашения: {stats['rewarded'] * REP_INVITE_AMOUNT}",
         ]
         view = DesignView(
@@ -459,7 +551,42 @@ class ReputationCog(commands.Cog):
             f"**{user.display_name}**\n" + "\n".join(lines),
             thumbnail=user.display_avatar.url,
         )
-        await interaction.response.send_message(view=view, ephemeral=False)
+        view.row(_invite_link_button())
+        await interaction.response.send_message(
+            view=view,
+            allowed_mentions=discord.AllowedMentions.none(),
+            ephemeral=False,
+        )
+
+    @reputation_group.command(
+        name="invites_debug",
+        description="Диагностика атрибуции приглашений (админ)",
+    )
+    @is_admin()
+    async def invites_debug(self, interaction: discord.Interaction) -> None:
+        data = await reputation_store.get_invite_debug(interaction.guild_id)
+        lines = ["**По attribution / статусу:**"]
+        if data["counts"]:
+            for c in data["counts"]:
+                lines.append(
+                    f"{c['attribution'] or '—'}/{c['reward_status']}: "
+                    f"{c['cnt']}"
+                )
+        else:
+            lines.append("Записей нет.")
+        lines.append("\n**Последние входы:**")
+        for r in data["recent"][:10]:
+            inviter = r["inviter_id"] or "—"
+            lines.append(
+                f"invitee={r['invitee_id']} inviter={inviter} "
+                f"{r['attribution']}/{r['reward_status']} "
+                f"code={r['invite_code'] or '—'} "
+                f"reason={r['reject_reason'] or '—'}"
+            )
+        await interaction.response.send_message(
+            view=_card("ДИАГНОСТИКА ПРИГЛАШЕНИЙ", lines, colors.INFO),
+            ephemeral=True,
+        )
 
 
 async def setup(bot: "TournamentBot") -> None:

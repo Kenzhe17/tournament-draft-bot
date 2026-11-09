@@ -39,6 +39,7 @@ class FakeRepStore:
         self.invites: dict[int, dict] = {}
         self._invite_seq = 0
         self.boosts: dict[tuple[int, int], dict] = {}
+        self.invite_owners: dict[tuple[int, str], int] = {}
 
     # -- player stats ----------------------------------------------------
     def _rep(self, gid, uid):
@@ -104,9 +105,22 @@ class FakeRepStore:
     async def create_invite_candidate(self, guild_id, inviter_id, invitee_id,
                                       invite_code, verify_until, attribution,
                                       reject_reason=""):
+        """Семантика PG-версии: повторный вход переписывает только
+        rejected/cancelled при достоверной 'ok'-атрибуции."""
         for inv in self.invites.values():
-            if inv["guild_id"] == guild_id and inv["invitee_id"] == invitee_id:
-                return None
+            if inv["guild_id"] != guild_id or inv["invitee_id"] != invitee_id:
+                continue
+            if inv["reward_status"] in ("rejected", "cancelled") and (
+                attribution == "ok" and inviter_id is not None
+            ):
+                inv.update({
+                    "inviter_id": inviter_id, "invite_code": invite_code,
+                    "verify_until": verify_until, "attribution": attribution,
+                    "reward_status": "pending", "rewarded_at": None,
+                    "reject_reason": "",
+                })
+                return inv["id"]
+            return None
         self._invite_seq += 1
         self.invites[self._invite_seq] = {
             "id": self._invite_seq, "guild_id": guild_id,
@@ -117,6 +131,15 @@ class FakeRepStore:
             "reject_reason": reject_reason,
         }
         return self._invite_seq
+
+    async def get_invite_owners(self, guild_id, codes):
+        return {
+            code: owner for (gid, code), owner in self.invite_owners.items()
+            if gid == guild_id and code in codes
+        }
+
+    async def set_invite_owner(self, guild_id, code, owner_id, channel_id=0):
+        self.invite_owners[(guild_id, code)] = owner_id
 
     async def get_due_invites(self, now):
         return [i for i in self.invites.values()
@@ -135,21 +158,20 @@ class FakeRepStore:
             inv["reject_reason"] = reject_reason
 
     async def get_user_invite_stats(self, guild_id, user_id):
-        stats = {"invited": 0, "total": 0, "rewarded": 0,
-                 "pending": 0, "rejected": 0}
+        stats = {"invited": 0, "rewarded": 0, "pending": 0,
+                 "rejected": 0, "cancelled": 0}
         for inv in self.invites.values():
-            if inv["guild_id"] != guild_id:
+            if inv["guild_id"] != guild_id or inv["inviter_id"] != user_id:
                 continue
-            if inv["invitee_id"] == user_id:
-                stats["invited"] += 1
-            if inv["inviter_id"] == user_id:
-                stats["total"] += 1
-                if inv["reward_status"] == "rewarded":
-                    stats["rewarded"] += 1
-                elif inv["reward_status"] == "pending":
-                    stats["pending"] += 1
-                else:
-                    stats["rejected"] += 1
+            stats["invited"] += 1
+            if inv["reward_status"] == "rewarded":
+                stats["rewarded"] += 1
+            elif inv["reward_status"] == "pending":
+                stats["pending"] += 1
+            elif inv["reward_status"] == "cancelled":
+                stats["cancelled"] += 1
+            else:
+                stats["rejected"] += 1
         return stats
 
     # -- boosts ------------------------------------------------------------
@@ -518,3 +540,125 @@ async def test_breakdown_and_given_count():
             breakdown[tx["source"]] = breakdown.get(tx["source"], 0) + tx["amount"]
     assert breakdown == {"MANUAL_REP": 2, "INVITE": 5}
     assert store._rep(gid, 2) == 7
+
+
+# ------------------------------------------------------- invite fixes v2
+
+@pytest.mark.asyncio
+async def test_invite_stats_counts_inviter_only():
+    """Все 5 метрик /invites — только по inviter_id = user."""
+    store = FakeRepStore()
+    gid = 1
+    # user 500 пригласил 600 (rewarded) и 700 (pending)
+    for uid, status in ((600, "rewarded"), (700, "pending")):
+        await store.create_invite_candidate(
+            gid, 500, uid, "x",
+            datetime.now(timezone.utc) + timedelta(hours=72), "ok",
+        )
+        if status == "rewarded":
+            inv = next(i for i in store.invites.values() if i["invitee_id"] == uid)
+            inv["reward_status"] = "rewarded"
+    # unknown-вход (inviter NULL) — не должен влиять на статистику 500
+    await store.create_invite_candidate(
+        gid, None, 800, "", datetime.now(timezone.utc), "unknown",
+        reject_reason="no diff",
+    )
+    stats = await store.get_user_invite_stats(gid, 500)
+    assert stats["invited"] == 2
+    assert stats["rewarded"] == 1 and stats["pending"] == 1
+    assert stats["rejected"] == 0 and stats["cancelled"] == 0
+
+
+@pytest.mark.asyncio
+async def test_invite_reattribution_after_rejected():
+    """unknown/rejected кандидат может быть переатрибутирован при
+    повторном входе с достоверными данными; rewarded — никогда."""
+    store = FakeRepStore()
+    gid = 1
+    future = datetime.now(timezone.utc) + timedelta(hours=72)
+
+    # 1) Первый вход — unknown
+    cid = await store.create_invite_candidate(
+        gid, None, 600, "", future, "unknown", reject_reason="no diff")
+    inv = store.invites[cid]
+    inv["reward_status"] = "rejected"
+    inv["reject_reason"] = "attribution=unknown"
+
+    # 2) Повторный вход — ok от 500 → переатрибуция
+    cid2 = await store.create_invite_candidate(
+        gid, 500, 600, "abc", future, "ok")
+    assert cid2 == cid  # та же строка, не дубликат
+    inv = store.invites[cid]
+    assert inv["inviter_id"] == 500 and inv["attribution"] == "ok"
+    assert inv["reward_status"] == "pending"
+
+    # 3) rewarded-кандидат не перезаписывается
+    inv["reward_status"] = "rewarded"
+    cid3 = await store.create_invite_candidate(
+        gid, 999, 600, "zzz", future, "ok")
+    assert cid3 is None
+    assert store.invites[cid]["inviter_id"] == 500
+
+
+@pytest.mark.asyncio
+async def test_invite_personal_link_owner():
+    """Персональная ссылка (invite.inviter=бот) атрибутируется владельцу."""
+    store = FakeRepStore()
+    bot = _FakeBot()
+    guild = _FakeGuild(1)
+    bot._guilds[1] = guild
+    await store.set_invite_owner(1, "mine", 500)
+
+    bot_inviter = SimpleNamespace(id=42, bot=True)
+    bot._rep_invite_cache[1] = {
+        "mine": _invite("mine", 1, 42),
+    }
+    guild._invites["mine"] = SimpleNamespace(
+        code="mine", uses=2, inviter=bot_inviter)
+
+    joiner = _member(600, guild=guild)
+    await rep_svc.record_member_join(
+        bot, joiner, bot._rep_invite_cache[1], store=store)
+    inv = next(iter(store.invites.values()))
+    assert inv["inviter_id"] == 500 and inv["attribution"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_invite_bot_inviter_without_owner_is_unknown():
+    """Инвайт, созданный ботом без owner-маппинга → unknown, не REP боту."""
+    store = FakeRepStore()
+    bot = _FakeBot()
+    guild = _FakeGuild(1)
+    bot._guilds[1] = guild
+
+    bot_inviter = SimpleNamespace(id=42, bot=True)
+    bot._rep_invite_cache[1] = {"x": _invite("x", 1, 42)}
+    guild._invites["x"] = SimpleNamespace(
+        code="x", uses=2, inviter=bot_inviter)
+
+    joiner = _member(600, guild=guild)
+    await rep_svc.record_member_join(
+        bot, joiner, bot._rep_invite_cache[1], store=store)
+    inv = next(iter(store.invites.values()))
+    assert inv["attribution"] == "unknown" and inv["inviter_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_invite_vanity_attribution():
+    """Вход через vanity URL → attribution='vanity', без награды."""
+    store = FakeRepStore()
+    bot = _FakeBot()
+    guild = _FakeGuild(1)
+    bot._guilds[1] = guild
+    guild._vanity_uses = 10
+
+    async def _vanity():
+        return SimpleNamespace(uses=guild._vanity_uses)
+    guild.vanity_invite = _vanity
+
+    joiner = _member(600, guild=guild)
+    # нет diff инвайтов, но vanity uses вырос 9 -> 10
+    await rep_svc.record_member_join(
+        bot, joiner, {}, store=store, before_vanity=9)
+    inv = next(iter(store.invites.values()))
+    assert inv["attribution"] == "vanity" and inv["inviter_id"] is None

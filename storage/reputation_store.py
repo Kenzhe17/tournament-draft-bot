@@ -370,6 +370,22 @@ class ReputationStore:
     # Приглашения
     # ------------------------------------------------------------------
 
+    async def _log_invite_event(
+        self, conn, invite_id: int, guild_id: int, invitee_id: int,
+        old_attribution: str, new_attribution: str,
+        old_status: str, new_status: str, inviter_id: int | None,
+    ) -> None:
+        await conn.execute(
+            """
+            INSERT INTO rep_invite_events
+                (invite_id, guild_id, invitee_id, old_attribution,
+                 new_attribution, old_status, new_status, inviter_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """,
+            invite_id, guild_id, invitee_id, old_attribution,
+            new_attribution, old_status, new_status, inviter_id,
+        )
+
     async def create_invite_candidate(
         self,
         guild_id: int,
@@ -380,21 +396,71 @@ class ReputationStore:
         attribution: str,
         reject_reason: str = "",
     ) -> int | None:
-        """Создать кандидата на награду. None — invitee уже учтён."""
+        """Создать кандидата на награду с безопасной повторной атрибуцией.
+
+        - Новый invitee → INSERT (pending).
+        - Существующая запись pending/rewarded → без изменений (None).
+        - rejected/cancelled + новая ДОСТОВЕРНАЯ атрибуция (ok) →
+          безопасная переатрибуция: новый inviter/code, новый 72ч срок,
+          статус снова pending. Подтверждённого пригласившего
+          (rewarded/pending) перезаписать нельзя.
+        - rejected/cancelled + неопределённая атрибуция → без изменений.
+        """
         pool = await get_pool()
         async with pool.acquire() as conn:
-            return await conn.fetchval(
-                """
-                INSERT INTO rep_invites
-                    (guild_id, inviter_id, invitee_id, invite_code,
-                     verify_until, attribution, reject_reason)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ON CONFLICT (guild_id, invitee_id) DO NOTHING
-                RETURNING id
-                """,
-                guild_id, inviter_id, invitee_id, invite_code,
-                verify_until, attribution, reject_reason,
-            )
+            async with conn.transaction():
+                existing = await conn.fetchrow(
+                    """
+                    SELECT id, attribution, reward_status, inviter_id
+                    FROM rep_invites
+                    WHERE guild_id = $1 AND invitee_id = $2
+                    FOR UPDATE
+                    """,
+                    guild_id, invitee_id,
+                )
+                if existing is None:
+                    new_id = await conn.fetchval(
+                        """
+                        INSERT INTO rep_invites
+                            (guild_id, inviter_id, invitee_id, invite_code,
+                             verify_until, attribution, reject_reason)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        RETURNING id
+                        """,
+                        guild_id, inviter_id, invitee_id, invite_code,
+                        verify_until, attribution, reject_reason,
+                    )
+                    await self._log_invite_event(
+                        conn, int(new_id), guild_id, invitee_id,
+                        "", attribution, "", "pending", inviter_id,
+                    )
+                    return int(new_id)
+
+                old_status = existing["reward_status"]
+                old_attr = existing["attribution"]
+                # Переатрибуция только из терминального статуса и только
+                # при достоверном 'ok' — rewarded/pending не трогаем.
+                if old_status not in ("rejected", "cancelled"):
+                    return None
+                if attribution != "ok" or inviter_id is None:
+                    return None
+                await conn.execute(
+                    """
+                    UPDATE rep_invites SET
+                        inviter_id = $3, invite_code = $4,
+                        verify_until = $5, attribution = $6,
+                        reward_status = 'pending', rewarded_at = NULL,
+                        reject_reason = ''
+                    WHERE id = $1 AND guild_id = $2
+                    """,
+                    existing["id"], guild_id, inviter_id, invite_code,
+                    verify_until, attribution,
+                )
+                await self._log_invite_event(
+                    conn, int(existing["id"]), guild_id, invitee_id,
+                    old_attr, attribution, old_status, "pending", inviter_id,
+                )
+                return int(existing["id"])
 
     async def get_invite(self, invite_id: int) -> dict[str, Any] | None:
         pool = await get_pool()
@@ -443,10 +509,25 @@ class ReputationStore:
         args.append(invite_id)
         pool = await get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                f"UPDATE rep_invites SET {', '.join(sets)} WHERE id = ${len(args)}",
-                *args,
-            )
+            async with conn.transaction():
+                old = await conn.fetchrow(
+                    "SELECT guild_id, invitee_id, attribution,"
+                    " reward_status FROM rep_invites WHERE id = $1"
+                    " FOR UPDATE",
+                    invite_id,
+                )
+                await conn.execute(
+                    f"UPDATE rep_invites SET {', '.join(sets)} WHERE id = ${len(args)}",
+                    *args,
+                )
+                if old is not None:
+                    new_status = reward_status or old["reward_status"]
+                    new_attr = attribution or old["attribution"]
+                    await self._log_invite_event(
+                        conn, invite_id, int(old["guild_id"]),
+                        int(old["invitee_id"]), old["attribution"],
+                        new_attr, old["reward_status"], new_status, None,
+                    )
 
     async def get_user_invite_stats(self, guild_id: int, user_id: int) -> dict[str, Any]:
         """Статистика приглашений пользователя (как пригласившего)."""
@@ -461,21 +542,106 @@ class ReputationStore:
                 """,
                 guild_id, user_id,
             )
-            invited = await conn.fetchval(
-                "SELECT COUNT(*) FROM rep_invites WHERE guild_id = $1 AND invitee_id = $2",
-                guild_id, user_id,
-            )
-        stats: dict[str, Any] = {"invited": int(invited or 0), "total": 0, "rewarded": 0, "pending": 0, "rejected": 0}
+        stats: dict[str, Any] = {
+            "invited": 0, "rewarded": 0, "pending": 0,
+            "rejected": 0, "cancelled": 0,
+        }
         for r in rows:
             cnt = int(r["cnt"])
-            stats["total"] += cnt
-            if r["reward_status"] == "rewarded":
+            stats["invited"] += cnt
+            status = r["reward_status"]
+            if status == "rewarded":
                 stats["rewarded"] += cnt
-            elif r["reward_status"] == "pending":
+            elif status == "pending":
                 stats["pending"] += cnt
+            elif status == "cancelled":
+                stats["cancelled"] += cnt
             else:
                 stats["rejected"] += cnt
         return stats
+
+    # ------------------------------------------------------------------
+    # Персональные пригласительные ссылки
+    # ------------------------------------------------------------------
+
+    async def set_invite_owner(
+        self, guild_id: int, code: str, owner_id: int, channel_id: int = 0
+    ) -> None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO rep_invite_owners (guild_id, code, owner_id, channel_id)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, code) DO UPDATE SET
+                    owner_id = EXCLUDED.owner_id,
+                    channel_id = EXCLUDED.channel_id
+                """,
+                guild_id, code, owner_id, channel_id,
+            )
+
+    async def get_invite_owner(self, guild_id: int, code: str) -> int | None:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT owner_id FROM rep_invite_owners"
+                " WHERE guild_id = $1 AND code = $2",
+                guild_id, code,
+            )
+
+    async def get_invite_owners(
+        self, guild_id: int, codes: list[str]
+    ) -> dict[str, int]:
+        """Владельцы персональных ссылок для набора кодов."""
+        if not codes:
+            return {}
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT code, owner_id FROM rep_invite_owners"
+                " WHERE guild_id = $1 AND code = ANY($2::text[])",
+                guild_id, codes,
+            )
+        return {r["code"]: int(r["owner_id"]) for r in rows}
+
+    async def get_invite_debug(
+        self, guild_id: int, limit: int = 20
+    ) -> dict[str, Any]:
+        """Админ-диагностика: счётчики по attribution/status + последние записи."""
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            counts = await conn.fetch(
+                """
+                SELECT attribution, reward_status, COUNT(*) AS cnt
+                FROM rep_invites
+                WHERE guild_id = $1
+                GROUP BY attribution, reward_status
+                ORDER BY attribution, reward_status
+                """,
+                guild_id,
+            )
+            recent = await conn.fetch(
+                """
+                SELECT invitee_id, inviter_id, invite_code, attribution,
+                       reward_status, reject_reason, joined_at, verify_until
+                FROM rep_invites
+                WHERE guild_id = $1
+                ORDER BY joined_at DESC
+                LIMIT $2
+                """,
+                guild_id, limit,
+            )
+        return {
+            "counts": [
+                {
+                    "attribution": r["attribution"],
+                    "reward_status": r["reward_status"],
+                    "cnt": int(r["cnt"]),
+                }
+                for r in counts
+            ],
+            "recent": [dict(r) for r in recent],
+        }
 
     # ------------------------------------------------------------------
     # Бусты

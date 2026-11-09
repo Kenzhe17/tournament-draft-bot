@@ -101,28 +101,58 @@ def diff_invite_uses(
 def attribute_invite(
     member: "discord.Member",
     increased: list[tuple[str, "discord.Invite"]],
+    owner_map: dict[str, int] | None = None,
 ) -> tuple[int | None, str, str]:
     """Определить пригласившего по diff инвайтов.
 
     Возвращает (inviter_id | None, invite_code, attribution).
-    attribution: ok | ambiguous | unknown | self | bot
+    attribution: ok | ambiguous | unknown | self | bot | vanity
+
+    owner_map — code -> owner_id для персональных ссылок
+    (rep_invite_owners). Персональная ссылка приоритетнее
+    invite.inviter (которым обычно является сам бот).
+    Инвайты, созданные ботами, без owner_map игнорируются —
+    иначе REP доставался бы боту.
     """
     if not increased:
         return None, "", "unknown"
-    inviters = {
-        inv.inviter.id
-        for _code, inv in increased
-        if inv.inviter is not None
-    }
+    owner_map = owner_map or {}
+    inviters: set[int] = set()
+    first_code = ""
+    for code, inv in increased:
+        owner = owner_map.get(code)
+        if owner is not None:
+            inviters.add(owner)
+            if not first_code:
+                first_code = code
+            continue
+        inviter = getattr(inv, "inviter", None)
+        if inviter is None:
+            continue
+        if getattr(inviter, "bot", False):
+            continue  # инвайт создан ботом — не атрибутируем боту
+        inviters.add(inviter.id)
+        if not first_code:
+            first_code = code
+    if not inviters:
+        return None, increased[0][0], "unknown"
     if len(inviters) > 1:
-        return None, increased[0][0], "ambiguous"
-    inviter_id = next(iter(inviters), None)
-    code = next(c for c, inv in increased if inv.inviter and inv.inviter.id == inviter_id)
-    if inviter_id is None:
-        return None, code, "unknown"
+        return None, first_code or increased[0][0], "ambiguous"
+    inviter_id = next(iter(inviters))
+    code = first_code or increased[0][0]
     if inviter_id == member.id:
         return inviter_id, code, "self"
     return inviter_id, code, "ok"
+
+
+async def _vanity_uses(guild) -> int | None:
+    """Текущее число использований vanity-ссылки сервера (или None)."""
+    try:
+        vanity = await guild.vanity_invite()
+    except Exception:
+        return None
+    uses = getattr(vanity, "uses", None)
+    return int(uses) if uses is not None else None
 
 
 async def record_member_join(
@@ -130,6 +160,7 @@ async def record_member_join(
     member: "discord.Member",
     before_invites: dict[str, "discord.Invite"],
     store: ReputationStore | None = None,
+    before_vanity: int | None = None,
 ) -> None:
     """Зафиксировать кандидата на REP-награду за приглашение.
 
@@ -153,7 +184,33 @@ async def record_member_join(
         return
 
     increased = diff_invite_uses(before_invites, after_invites)
-    inviter_id, code, attribution = attribute_invite(member, increased)
+
+    # Персональные ссылки: code -> owner_id
+    owner_map: dict[str, int] = {}
+    if increased:
+        try:
+            owner_map = await store.get_invite_owners(
+                guild_id, [code for code, _ in increased]
+            )
+        except Exception as exc:
+            logger.warning("Invite owner lookup failed: %s", exc)
+
+    inviter_id, code, attribution = attribute_invite(
+        member, increased, owner_map=owner_map
+    )
+
+    # Vanity URL: нет diff по инвайтам, но вырос vanity.uses
+    if attribution == "unknown":
+        after_vanity = await _vanity_uses(member.guild)
+        if (
+            before_vanity is not None
+            and after_vanity is not None
+            and after_vanity > before_vanity
+        ):
+            attribution = "vanity"
+        if after_vanity is not None:
+            getattr(bot, "_rep_vanity_uses", {})[guild_id] = after_vanity
+
     reject_reason = ""
     if attribution == "ambiguous":
         reject_reason = "ambiguous invite attribution"
@@ -165,6 +222,8 @@ async def record_member_join(
         reject_reason = "self invite"
     elif attribution == "unknown":
         reject_reason = "no invite diff detected"
+    elif attribution == "vanity":
+        reject_reason = "vanity url invite"
 
     await store.create_invite_candidate(
         guild_id, inviter_id, member.id, code,

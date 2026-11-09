@@ -869,6 +869,40 @@ async def init_db() -> None:
             WHERE log_status = 'pending'
         """)
 
+        # История статусов приглашений: каждый переход pending/rejected/
+        # cancelled/rewarded и каждая переатрибуция фиксируются здесь.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_invite_events (
+                id BIGSERIAL PRIMARY KEY,
+                invite_id BIGINT NOT NULL,
+                guild_id BIGINT NOT NULL,
+                invitee_id BIGINT NOT NULL,
+                old_attribution TEXT NOT NULL DEFAULT '',
+                new_attribution TEXT NOT NULL DEFAULT '',
+                old_status TEXT NOT NULL DEFAULT '',
+                new_status TEXT NOT NULL DEFAULT '',
+                inviter_id BIGINT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rep_invite_events_invite
+            ON rep_invite_events(invite_id, created_at)
+        """)
+
+        # Персональные пригласительные ссылки: code -> owner_id.
+        # Создаются кнопкой «Моя ссылка» в /invites.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rep_invite_owners (
+                guild_id BIGINT NOT NULL,
+                code TEXT NOT NULL,
+                owner_id BIGINT NOT NULL,
+                channel_id BIGINT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (guild_id, code)
+            )
+        """)
+
         # Мелкие настройки бота per-guild (id служебных каналов и т.п.)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
