@@ -160,6 +160,62 @@ _SQUAD_MAP_CAPTION = (
 )
 
 
+def _mapping_caption(tournament, session: dict) -> str:
+    """Инструкция по маппингу с упоминанием капитанов.
+
+    Скриншот присылает капитан ПОБЕДИВШЕЙ команды — его команда всегда
+    на Левой Панели, соперник — на Правой. Если загрузил админ
+    (uploaded_by не совпадает с капитаном), показываем общий текст.
+    """
+    teams = session.get("teams") or []
+    uploaded_by = session.get("uploaded_by")
+    uids = getattr(tournament, "player_user_ids", {}) or {}
+    tlist = getattr(tournament, "teams", []) or []
+
+    def _cap_uid(idx: int):
+        if not (0 <= idx < len(tlist)):
+            return None
+        captain = (tlist[idx] or {}).get("captain", "")
+        uid = uids.get(captain)
+        try:
+            return int(uid) if uid else None
+        except (TypeError, ValueError):
+            return None
+
+    left_idx = right_idx = None
+    for idx in teams:
+        try:
+            idx = int(idx)
+        except (TypeError, ValueError):
+            continue
+        if _cap_uid(idx) is not None and _cap_uid(idx) == uploaded_by:
+            left_idx = idx
+        elif right_idx is None:
+            right_idx = idx
+
+    if left_idx is not None and right_idx is not None:
+        return (
+            f"<@{_cap_uid(left_idx)}> нажмите на свою кнопку ниже и "
+            "выберите сторону **Левая Панель**\n"
+            f"<@{_cap_uid(right_idx)}> нажмите на свою кнопку ниже и "
+            "выберите сторону **Правая Панель**"
+        )
+
+    # Загрузил не капитан (админ) — подписываем обе команды без
+    # жёсткой привязки сторон до завершения маппинга.
+    mentions = [
+        f"<@{_cap_uid(i)}>" for i in teams
+        if _cap_uid(i) is not None
+    ]
+    if mentions:
+        who = " ".join(mentions)
+        return (
+            f"{who} нажмите на свои кнопки ниже и выберите сторону "
+            "своей команды. **Победитель — Левая Панель.**"
+        )
+    return _OCR_MAP_CAPTION
+
+
 def _mapping_layout(view, caption: str):
     """V2-карточка сопоставления: скриншот игры (MediaGallery) внутри
     карточки + подпись + кнопки view."""
@@ -184,6 +240,7 @@ async def _send_results_message(
     channel: discord.TextChannel,
     data: bytes,
     view: OCRPublicView,
+    caption: str = _OCR_MAP_CAPTION,
 ) -> discord.Message:
     """Новое сообщение: инструкция по сопоставлению + скриншот + кнопки.
 
@@ -192,7 +249,7 @@ async def _send_results_message(
     """
     file = discord.File(io.BytesIO(data), filename=SHOT_FILENAME)
     return await channel.send(
-        view=_mapping_layout(view, _OCR_MAP_CAPTION),
+        view=_mapping_layout(view, caption),
         file=file,
     )
 
@@ -202,6 +259,7 @@ async def _update_results_message(
     message_id: int,
     data: bytes,
     view: OCRPublicView,
+    caption: str = _OCR_MAP_CAPTION,
 ) -> discord.Message:
     """Обновить существующее сообщение (повторный скриншот).
 
@@ -210,7 +268,7 @@ async def _update_results_message(
     """
     msg = await channel.fetch_message(message_id)
     await msg.edit(
-        view=_mapping_layout(view, _OCR_MAP_CAPTION),
+        view=_mapping_layout(view, caption),
         attachments=[
             discord.AttachmentInput(io.BytesIO(data), filename=SHOT_FILENAME)
         ],
@@ -819,16 +877,17 @@ class OCRUploadCog(commands.Cog):
                     message.guild.id, tournament.channel_id, tournament,
                     match_type, match_index,
                 )
+                caption = _mapping_caption(tournament, existing)
                 try:
                     await _update_results_message(
                         stats_channel, existing["message_id"],
-                        data, view,
+                        data, view, caption=caption,
                     )
                     await message.add_reaction("✅")
                 except Exception as e:
                     logger.warning("OCR reupload edit failed: %s", e)
                     bot_msg = await _send_results_message(
-                        stats_channel, data, view
+                        stats_channel, data, view, caption=caption
                     )
                     existing["message_id"] = bot_msg.id
                     store.set(tournament)
@@ -863,7 +922,10 @@ class OCRUploadCog(commands.Cog):
             store.set(tournament)
 
             bot_msg = await _send_results_message(
-                stats_channel, data, view
+                stats_channel, data, view,
+                caption=_mapping_caption(
+                    tournament, tournament.ocr_sessions[key]
+                ),
             )
 
             session = tournament.ocr_sessions.get(key)
