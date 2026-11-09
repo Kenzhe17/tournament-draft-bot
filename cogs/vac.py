@@ -355,7 +355,7 @@ class VacCog(commands.Cog):
             )
             return
         await interaction.response.send_message(
-            view=VacsView(interaction.guild.id, rows).build(),
+            view=VacsView(interaction.guild.id, rows, page=0),
             ephemeral=True,
         )
 

@@ -91,21 +91,32 @@ def pop_pending_upload(
 
 
 def pop_pending_upload_any(
-    guild_id: int, user_id: int
+    guild_id: int, user_id: int, channel_id: int | None = None
 ) -> dict[str, Any] | None:
-    """Найти pending-загрузку пользователя в любом канале сервера.
+    """Найти pending-загрузку пользователя в сервере.
 
-    Нужно, чтобы скриншот можно было прислать и в канал турнира,
-    и в канал результатов — важен сам пользователь, а не канал.
+    Скриншот принимается только в канале, где нажали кнопку, в канале
+    турнира или в канале результатов — посторонние каналы не считаются,
+    pending при этом сохраняется.
     """
     now = time.time()
     for key in list(PENDING_UPLOADS.keys()):
-        g, _c, u = key
+        g, c, u = key
         if g != guild_id or u != user_id:
             continue
-        meta = PENDING_UPLOADS.pop(key)
-        if meta.get("expires", 0) < now:
+        meta = PENDING_UPLOADS.get(key)
+        if meta is None or meta.get("expires", 0) < now:
+            PENDING_UPLOADS.pop(key, None)
             continue
+        if channel_id is not None:
+            allowed = {
+                c,
+                int(meta.get("tchannel") or c),
+                OCR_STATS_CHANNEL_ID,
+            }
+            if channel_id not in allowed:
+                continue
+        PENDING_UPLOADS.pop(key)
         return meta
     return None
 

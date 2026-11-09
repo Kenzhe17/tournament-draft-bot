@@ -488,7 +488,9 @@ class OCRUploadCog(commands.Cog):
                 message.guild.id, message.channel.id, message.author.id
             )
         if meta is None:
-            meta = pop_pending_upload_any(message.guild.id, message.author.id)
+            meta = pop_pending_upload_any(
+                message.guild.id, message.author.id, message.channel.id
+            )
         if not meta:
             return
 
