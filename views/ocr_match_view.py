@@ -68,6 +68,17 @@ def register_pending_upload(
     squad_team: int | None = None,
     squad_uid: str | None = None,
 ) -> None:
+    # Одна активная заявка на матч: новая регистрация вытесняет
+    # старые pending того же пользователя по этому матчу — иначе
+    # pop_pending_upload_any может вернуть устаревшую заявку
+    # (например, обычную загрузку вместо «Неправильный скриншот»).
+    for stale in [
+        k for k, m in PENDING_UPLOADS.items()
+        if k[0] == guild_id and k[2] == user_id
+        and m.get("match_type") == match_type
+        and m.get("match_index") == match_index
+    ]:
+        PENDING_UPLOADS.pop(stale, None)
     PENDING_UPLOADS[(guild_id, channel_id, user_id)] = {
         "match_type": match_type,
         "match_index": match_index,
@@ -100,6 +111,7 @@ def pop_pending_upload_any(
     pending при этом сохраняется.
     """
     now = time.time()
+    fallback: tuple[Any, dict[str, Any]] | None = None
     for key in list(PENDING_UPLOADS.keys()):
         g, c, u = key
         if g != guild_id or u != user_id:
@@ -116,8 +128,16 @@ def pop_pending_upload_any(
             }
             if channel_id not in allowed:
                 continue
-        PENDING_UPLOADS.pop(key)
-        return meta
+            # Приоритет — заявка, зарегистрированная именно в этом
+            # канале (свежий контекст нажатия кнопки)
+            if c == channel_id:
+                PENDING_UPLOADS.pop(key)
+                return meta
+            if fallback is None:
+                fallback = (key, meta)
+    if fallback is not None:
+        PENDING_UPLOADS.pop(fallback[0])
+        return fallback[1]
     return None
 
 
@@ -2272,7 +2292,14 @@ async def finalize_ocr_match(
     session["winning_team_index"] = winning_team_index
     store.set(tournament)
 
-    # 5.1. Финальная карточка результата в канал MATCH_RESULTS
+    # 5.1. Финальная карточка результата в канал MATCH_RESULTS.
+    # Перечитываем tournament/session: store.set выше мог подменить
+    # объект — result_message_id обязан попасть в АКТУАЛЬНУЮ сессию,
+    # иначе повторный finalize отправит дубликат карточки.
+    fresh_t = store.get(guild_id, channel_id)
+    if fresh_t is not None:
+        tournament = fresh_t
+        session = tournament.ocr_sessions.get(key, session)
     try:
         from cogs.ocr_upload import publish_match_result_card
 
@@ -2288,13 +2315,9 @@ async def finalize_ocr_match(
     try:
         from services.match_announcer import update_match_card
 
-        raw_score = session.get("score")
-        score = None
-        if isinstance(raw_score, (list, tuple)) and len(raw_score) == 2:
-            try:
-                score = (int(raw_score[0]), int(raw_score[1]))
-            except (TypeError, ValueError):
-                score = None
+        from services.ocr_service import ordered_round_score
+
+        score = ordered_round_score(session, t1, t2)
         await update_match_card(
             interaction.guild, tournament, match_type, match_index,
             state="done",

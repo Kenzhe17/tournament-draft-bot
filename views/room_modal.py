@@ -189,14 +189,16 @@ async def send_room_dm_notifications(bot: Any, tournament: Any, team1_index: int
     if channel is None:
         channel = bot.get_channel(1561683314480255057)
     if channel:
+        # Простое сообщение: ID и пароль — отдельными блоками кода,
+        # чтобы каждый копировался одним кликом
         card = (
-            f"**КОМНАТА ОТКРЫТА**\n"
+            f"КОМНАТА ОТКРЫТА\n"
             f"Матч: {name1} vs {name2}\n\n"
-            f"{line1}\n{line2}\n\n"
             "**Данные:**\n"
-            f"```\n{room_id}\n{room_password}\n```"
+            f"```\n{room_id}\n```\n"
+            f"```\n{room_password}\n```"
         )
-        await channel.send( view=text_card(card))
+        await channel.send(card)
 
     # Send to general channel (1200125075156910181)
     general_channel = bot.get_channel(1200125075156910181)

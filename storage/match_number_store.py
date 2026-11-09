@@ -158,6 +158,33 @@ class MatchNumberStore:
         if match_key in self._numbers:
             return False
         self._numbers[match_key] = {"number": int(number), "announced": False}
+        self._counter = max(self._counter, int(number))
+        await self._persist()
+        return True
+
+    async def release(self, match_key: str) -> bool:
+        """Освободить номер отменённого матча (не анонсированного).
+
+        Запись удаляется; неанонсированные номера выше сдвигаются
+        вниз (без пересечения с анонсированными), счётчик
+        пересчитывается — следующий матч получит освобождённый
+        номер. Анонсированные номера не трогаем: их уже видели.
+        """
+        await self._ensure_loaded()
+        entry = self._numbers.get(match_key)
+        if entry is None or entry.get("announced"):
+            return False
+        num = int(entry["number"])
+        del self._numbers[match_key]
+        # Номер переиспользуется, только если он был последним выданным —
+        # тогда счётчик откатывается и следующий матч получит его же.
+        # «Дыры» от отмены более старых матчей не заполняем: их номера
+        # могли уже отображаться на карточках Ready Check.
+        if num >= self._counter:
+            self._counter = max(
+                (int(e["number"]) for e in self._numbers.values()),
+                default=0,
+            )
         await self._persist()
         return True
 

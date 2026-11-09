@@ -949,6 +949,12 @@ class MMCog(commands.Cog):
 
     async def _finish_cancelled(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
         """Вернуть игроков в очередь после отмены, удалить канал матча."""
+        # Отменённый матч не должен съедать номер — освобождаем резерв,
+        # следующий сыгранный матч получит этот номер.
+        try:
+            await match_number_store.release(rc.match_id)
+        except Exception as exc:
+            logger.warning("match number release failed: %s", exc)
         await self._requeue_players(rc, keep_user_ids)
         await self._delete_match_channel(rc)
 
@@ -1667,15 +1673,42 @@ class MMCog(commands.Cog):
         """
         guild = interaction.guild
         match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
-        try:
-            match_num = await match_number_store.get_or_assign(match_id)
-        except Exception as exc:
-            logger.error("match number assign failed: %s", exc)
-            match_num = int(time.time()) % 100000
+        # Повторная попытка (WAITING_FOR_CHANNEL и т.п.): search.match_num
+        # уже содержит выданный номер — переиспользуем его, иначе каждый
+        # ретрай сжигал бы новый номер и оставлял «дыру» в нумерации.
+        prev_num = int(getattr(search, "match_num", 0) or 0)
+        prev_key = str(getattr(search, "mm_num_key", "") or "")
+        if prev_num and prev_key:
+            try:
+                await match_number_store.release(prev_key)
+            except Exception:
+                pass
+            try:
+                await match_number_store.assign(match_id, prev_num)
+            except Exception:
+                pass
+            match_num = prev_num
+        else:
+            try:
+                match_num = await match_number_store.get_or_assign(match_id)
+            except Exception as exc:
+                logger.error("match number assign failed: %s", exc)
+                match_num = int(time.time()) % 100000
+        search.mm_num_key = match_id
 
         async def _revert() -> None:
+            # Матч не состоялся — освобождаем номер, чтобы он не
+            # считался сыгранным и не оставлял пропуск в нумерации.
+            try:
+                await match_number_store.release(match_id)
+            except Exception:
+                pass
             search.state = QUEUE_OPEN
             search.match_num = 0
+            try:
+                delattr(search, "mm_num_key")
+            except AttributeError:
+                pass
             search.timer_started = bool(search.players)
             mm_search_store.set(search)
             # Перезапустить таймер, чтобы заполненная очередь не «зависла»

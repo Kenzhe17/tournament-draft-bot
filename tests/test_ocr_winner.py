@@ -93,7 +93,9 @@ def test_captain_of_winner_bad_index():
 # --- Счёт раундов vs убийства команд ---
 
 def test_round_score_kept():
-    a, b, label = _resolve_card_score({"score": [5, 3]}, 23, 10)
+    a, b, label = _resolve_card_score(
+        {}, 23, 10, ordered_score=(5, 3)
+    )
     assert (a, b, label) == (5, 3, "СЧЁТ МАТЧА")
 
 
@@ -103,15 +105,58 @@ def test_no_round_score_shows_kills_not_fake_score():
     assert (a, b, label) == (23, 10, "УБИЙСТВА КОМАНД")
 
 
-def test_invalid_score_falls_back_to_kills():
-    a, b, label = _resolve_card_score({"score": ["x", None]}, 7, 4)
-    assert (a, b, label) == (7, 4, "УБИЙСТВА КОМАНД")
-
-
 def test_kills_never_become_round_score():
-    """Даже если kills «больше», без распознанного счёта — только убийства."""
-    a, b, label = _resolve_card_score({"score": None}, 23, 10)
-    assert label == "УБИЙСТВА КОМАНД"
+    """Без привязанного к командам счёта — только убийства."""
+    a, b, label = _resolve_card_score({"score": [5, 3]}, 23, 10)
+    assert (a, b, label) == (23, 10, "УБИЙСТВА КОМАНД")
+
+
+# --- Порядок счёта: «Команда A : Команда B», не «левый:правый» ---
+
+def _scored_session(left_team, right_team):
+    """Сессия: score=[5,2] — левая панель 5, правая 2."""
+    return {
+        "score": [5, 2],
+        "maps": {
+            str(left_team): {"panel": "left", "rows": []},
+            str(right_team): {"panel": "right", "rows": []},
+        },
+    }
+
+
+def test_score_team_a_left_wins():
+    """A слева, A победил 5:2 → отображается 5:2."""
+    from services.ocr_service import ordered_round_score
+    s = _scored_session(0, 1)
+    assert ordered_round_score(s, 0, 1) == (5, 2)
+
+
+def test_score_team_b_left_wins():
+    """B слева и победил 5:2 → для (A,B) отображается 2:5."""
+    from services.ocr_service import ordered_round_score
+    s = _scored_session(1, 0)  # team1=1 слева, team2=0 справа
+    assert ordered_round_score(s, 0, 1) == (2, 5)
+
+
+def test_score_b_left_team_order():
+    """Проигравшая A имеет меньше очков: B(слева)=5, A(справа)=2 → A:B = 2:5."""
+    from services.ocr_service import ordered_round_score
+    s = _scored_session(1, 0)
+    a, b = ordered_round_score(s, 0, 1)
+    assert (a, b) == (2, 5)
+
+
+def test_score_unmapped_returns_none():
+    """Без panel-маппинга порядок не угадываем."""
+    from services.ocr_service import ordered_round_score
+    s = {"score": [5, 2], "maps": {}}
+    assert ordered_round_score(s, 0, 1) is None
+
+
+def test_score_missing_returns_none():
+    from services.ocr_service import ordered_round_score
+    assert ordered_round_score({"maps": {}}, 0, 1) is None
+    assert ordered_round_score({"score": ["x", 2]}, 0, 1) is None
 
 
 # --- PNG: label прокидывается в рендер ---

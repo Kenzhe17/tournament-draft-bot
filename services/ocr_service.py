@@ -304,3 +304,41 @@ def detect_winner_side(
         "winner detect: %s (left=%.1f right=%.1f)", side, left_score, right_score
     )
     return side
+
+
+def ordered_round_score(
+    session: dict, team1_index: int, team2_index: int
+) -> tuple[int, int] | None:
+    """Счёт раундов, привязанный к командам (team1, team2).
+
+    OCR «N VS M» на скриншоте всегда в порядке «левая панель : правая
+    панель». Маппинг panel->team_index берём из session["maps"]
+    (результат ручного OCR Mapping). Возвращает None, если счёт не
+    распознан или стороны команд не установлены — вызывающий код
+    обязан упасть на убийства/валидацию, а не угадывать порядок.
+    """
+    raw = session.get("score")
+    if not isinstance(raw, (list, tuple)) or len(raw) != 2:
+        return None
+    try:
+        s_left, s_right = int(raw[0]), int(raw[1])
+    except (TypeError, ValueError):
+        return None
+
+    panel_of: dict[int, str] = {}
+    for key, mapping in (session.get("maps") or {}).items():
+        panel = (mapping or {}).get("panel")
+        if panel not in ("left", "right"):
+            continue
+        try:
+            panel_of[int(key)] = panel
+        except (TypeError, ValueError):
+            continue
+
+    p1 = panel_of.get(team1_index)
+    p2 = panel_of.get(team2_index)
+    if p1 == "left" and p2 == "right":
+        return (s_left, s_right)
+    if p1 == "right" and p2 == "left":
+        return (s_right, s_left)
+    return None

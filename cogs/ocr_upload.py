@@ -357,6 +357,8 @@ async def _result_channel(guild: discord.Guild, fallback):
 
 _RESULT_CARD_CACHE: dict[str, bytes] = {}
 _RESULT_CARD_CACHE_MAX = 50
+_RESULT_PUBLISH_LOCKS: dict[str, asyncio.Lock] = {}
+_RESULT_PUBLISH_LOCKS_MAX = 200
 
 
 async def _member_avatar_url(guild: discord.Guild, user_id: int) -> str:
@@ -376,24 +378,69 @@ async def _member_avatar_url(guild: discord.Guild, user_id: int) -> str:
 
 
 def _resolve_card_score(
-    session: dict, kills_a: int, kills_b: int
+    session: dict,
+    kills_a: int,
+    kills_b: int,
+    ordered_score: tuple[int, int] | None = None,
 ) -> tuple[int, int, str]:
     """(score_a, score_b, label) для PNG-карточки.
 
-    «СЧЁТ МАТЧА» — только если OCR реально распознал счёт раундов.
+    «СЧЁТ МАТЧА» — только если OCR реально распознал счёт раундов И
+    он уже привязан к командам через ordered_round_score (порядок
+    «команда t1 : команда t2», а не «левый:правый» с экрана).
     Иначе показываем суммы убийств команд с честной подписью
     «УБИЙСТВА КОМАНД» — счёт раундов никогда не подменяется киллами.
     """
-    score = session.get("score")
-    if isinstance(score, (list, tuple)) and len(score) == 2:
+    if ordered_score:
         try:
-            return int(score[0]), int(score[1]), "СЧЁТ МАТЧА"
+            return (
+                int(ordered_score[0]), int(ordered_score[1]), "СЧЁТ МАТЧА"
+            )
         except (TypeError, ValueError):
             pass
     return int(kills_a or 0), int(kills_b or 0), "УБИЙСТВА КОМАНД"
 
 
 async def publish_match_result_card(
+    guild: discord.Guild,
+    tournament,
+    match_type: str,
+    match_index: int,
+    t1: int,
+    t2: int,
+    winning_team_index: int,
+    temp_stats: dict,
+    session: dict,
+) -> "discord.Message | None":
+    """Один матч = одна карточка результата.
+
+    Блокирует параллельные публикации (авто- и ручное подтверждение,
+    повторный finalize) и перечитывает result_message_id из store —
+    иначе изредка отправлялось два одинаковых embed с результатом.
+    """
+    key = _session_key(match_type, match_index)
+    match_id = f"{tournament.id}_{key}"
+    lock = _RESULT_PUBLISH_LOCKS.get(match_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RESULT_PUBLISH_LOCKS[match_id] = lock
+        if len(_RESULT_PUBLISH_LOCKS) > _RESULT_PUBLISH_LOCKS_MAX:
+            _RESULT_PUBLISH_LOCKS.pop(next(iter(_RESULT_PUBLISH_LOCKS)))
+    async with lock:
+        try:
+            fresh = store.get(guild.id, tournament.channel_id)
+            fs = fresh.ocr_sessions.get(key) if fresh else None
+            if fs and fs.get("result_message_id"):
+                session["result_message_id"] = fs["result_message_id"]
+        except Exception:
+            pass
+        return await _publish_match_result_card_impl(
+            guild, tournament, match_type, match_index, t1, t2,
+            winning_team_index, temp_stats, session,
+        )
+
+
+async def _publish_match_result_card_impl(
     guild: discord.Guild,
     tournament,
     match_type: str,
@@ -489,12 +536,25 @@ async def publish_match_result_card(
             except Exception:
                 pass
 
-        # Счёт раундов: только реально распознанный «N VS M»/«N:M».
-        # Иначе на карточке показываем сумму убийств команд — и
-        # подписываем её честно, без выдуманного счёта раундов.
+        # Счёт раундов: OCR «N VS M» идёт в порядке «левая:правая
+        # панель» скриншота — привязываем к реальным командам через
+        # panel-маппинг. «Команда A : Команда B» на карточке —
+        # независимо от того, кто победил.
+        from services.ocr_service import ordered_round_score
+
+        ordered = ordered_round_score(session, t1, t2)
         score_a, score_b, score_label = _resolve_card_score(
-            session, totals_a.kills, totals_b.kills
+            session, totals_a.kills, totals_b.kills,
+            ordered_score=ordered,
         )
+        if score_label == "СЧЁТ МАТЧА":
+            win_score = score_a if winning_team_index == t1 else score_b
+            lose_score = score_b if winning_team_index == t1 else score_a
+            if win_score <= lose_score:
+                raise ValueError(
+                    f"OCR score inconsistent with winner: "
+                    f"{score_a}:{score_b} (team {winning_team_index} won)"
+                )
 
         # Реальный сквозной номер матча (тот же, что в embed запуска)
         match_num = await match_number_store.get_or_assign(match_id)
