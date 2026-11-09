@@ -75,7 +75,9 @@ class PrevButton(discord.ui.Button):
                 parent_view.current_page -= 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                await interaction.response.edit_message( view=compose(embed, parent_view))
+                await interaction.response.edit_message(
+                    view=compose(embed, parent_view),
+                    allowed_mentions=discord.AllowedMentions.none())
             else:
                 await interaction.response.defer()
 
@@ -98,7 +100,9 @@ class NextButton(discord.ui.Button):
                 parent_view.current_page += 1
                 parent_view.refresh_buttons()
                 embed = create_history_embed(parent_view.guild_id, parent_view.user_id, parent_view.matches, parent_view.stats, parent_view.current_page, parent_view.user_name, parent_view.limit)
-                await interaction.response.edit_message( view=compose(embed, parent_view))
+                await interaction.response.edit_message(
+                    view=compose(embed, parent_view),
+                    allowed_mentions=discord.AllowedMentions.none())
             else:
                 await interaction.response.defer()
 

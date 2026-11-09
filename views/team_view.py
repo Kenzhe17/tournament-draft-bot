@@ -86,7 +86,10 @@ class TeamStatusView(discord.ui.View):
         )
 
         try:
-            await self.message.edit( view=compose(embed, self))
+            await self.message.edit(
+                view=compose(embed, self),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except (discord.NotFound, discord.Forbidden, AttributeError):
             # If message is not available or None, ignore
             pass

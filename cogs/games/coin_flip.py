@@ -168,11 +168,11 @@ class CoinFlipHeadsButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if not self.game.is_active or self.game.result is not None:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game.initiator_choice = "heads"
@@ -189,11 +189,11 @@ class CoinFlipTailsButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if not self.game.is_active or self.game.result is not None:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game.initiator_choice = "tails"
@@ -209,11 +209,11 @@ class CoinFlipCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.initiator_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if not self.game.is_active or self.game.result is not None:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game.is_active = False  # до возврата — защита от гонки с on_timeout
@@ -226,8 +226,7 @@ class CoinFlipCancelButton(discord.ui.Button):
                 self.game.bet
             )
 
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
-        )
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class CoinFlipAcceptButton(discord.ui.Button):
@@ -240,12 +239,12 @@ class CoinFlipAcceptButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.opponent_id:
-            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
+            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия «Принять» (двойное списание ставки)
         if getattr(self.game, "_accepting", False) or not self.game.is_active:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self.game._accepting = True
 
@@ -256,8 +255,7 @@ class CoinFlipAcceptButton(discord.ui.Button):
             if balance < self.game.bet:
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 return
 
             await user_balance_store.subtract_balance(
@@ -278,11 +276,11 @@ class CoinFlipDeclineButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game.opponent_id:
-            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True)
+            await interaction.response.send_message("❌ Вы не были вызваны.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if not self.game.is_active or self.game.result is not None:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game.is_active = False  # до возврата — защита от гонки с on_timeout
@@ -295,8 +293,7 @@ class CoinFlipDeclineButton(discord.ui.Button):
                 self.game.bet
             )
 
-        await interaction.response.edit_message( view=text_card("❌ Вызов отклонён. Ставка возвращена.")
-        )
+        await interaction.response.edit_message( view=text_card("❌ Вызов отклонён. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class CoinFlipPlayAgainButton(discord.ui.Button):
@@ -310,12 +307,12 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if self.user_id and interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -327,8 +324,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             self._activated = False
             await interaction.response.send_message(
                 "❌ Ставка должна быть от 10 до 10,000 монет.",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Check balance
@@ -337,8 +333,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
             self._activated = False
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Deduct bet atomically
@@ -349,8 +344,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
                 self._activated = False
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 return
 
             await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
@@ -378,7 +372,7 @@ class CoinFlipPlayAgainButton(discord.ui.Button):
 
         # Edit the message
         embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-        await interaction.response.edit_message(view=compose(embed, view))
+        await interaction.response.edit_message(view=compose(embed, view), allowed_mentions=discord.AllowedMentions.none())
 
 
 async def start_game(
@@ -393,7 +387,7 @@ async def start_game(
         item.disabled = True
 
     anim_embed = view.create_game_embed("animating")
-    await interaction.response.edit_message( view=compose(anim_embed, view))
+    await interaction.response.edit_message( view=compose(anim_embed, view), allowed_mentions=discord.AllowedMentions.none())
 
     # Wait for animation
     await asyncio.sleep(2)
@@ -456,8 +450,7 @@ async def create_coin_flip_game(
     if bet < 10 or bet > 10000:
         await interaction.response.send_message(
             f"❌ Ставка должна быть от 10 до 10,000 монет.",
-            ephemeral=True
-        )
+            ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
         return
 
     # Check balance
@@ -465,8 +458,7 @@ async def create_coin_flip_game(
     if balance < bet:
         await interaction.response.send_message(
             f"❌ Недостаточно монет. У вас: {balance}",
-            ephemeral=True
-        )
+            ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
         return
 
     # Deduct bet atomically
@@ -476,8 +468,7 @@ async def create_coin_flip_game(
         if balance < bet:
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await user_balance_store.subtract_balance(guild_id, user_id, bet)
@@ -498,7 +489,7 @@ async def create_coin_flip_game(
 
     # Send game embed directly in the thread
     embed = view.create_game_embed("menu", interaction.user.display_avatar.url)
-    await interaction.response.send_message( view=compose(embed, view))
+    await interaction.response.send_message( view=compose(embed, view), allowed_mentions=discord.AllowedMentions.none())
 
 
 from cogs.groups import games_group, bind_commands

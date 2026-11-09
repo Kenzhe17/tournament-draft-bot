@@ -121,15 +121,15 @@ class GuessNumberInput(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if getattr(self.game_view, "_resolving", False):
-            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True)
+            await interaction.response.send_message("⏳ Дождитесь результата предыдущего хода.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self.game_view._resolving = True
 
@@ -141,7 +141,7 @@ class GuessNumberInput(discord.ui.Modal):
             guess = int(self.number_input.value)
         except ValueError:
             self.game_view._resolving = False
-            await interaction.followup.send("❌ Введите корректное число.", ephemeral=True)
+            await interaction.followup.send("❌ Введите корректное число.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Проверить диапазон
@@ -149,8 +149,7 @@ class GuessNumberInput(discord.ui.Modal):
             self.game_view._resolving = False
             await interaction.followup.send(
                 f"❌ Число должно быть от {self.game_view.min_range} до {self.game_view.max_range}.",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Увеличить попытки
@@ -199,7 +198,7 @@ class GuessNumberInput(discord.ui.Modal):
                 hint = f"Меньше! ({self.game_view.min_range} - {guess})"
                 self.game_view.max_range = guess - 1
 
-            await interaction.followup.send(f"💡 {hint}", ephemeral=True)
+            await interaction.followup.send(f"💡 {hint}", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
             # Обновить embed
             updated_embed = self.game_view.create_embed("playing")
@@ -217,11 +216,11 @@ class GuessNumberGuessButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Показать modal
@@ -238,11 +237,11 @@ class GuessNumberCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.game_over or getattr(self.game_view, "_resolving", False):
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game_view.game_over = True  # до возврата — защита от гонки с on_timeout
@@ -254,8 +253,7 @@ class GuessNumberCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
-        )
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class GuessNumberPlayAgainButton(discord.ui.Button):
@@ -268,12 +266,12 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -285,8 +283,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
         if balance < self.bet:
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
 
@@ -297,8 +294,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
             if balance < self.bet:
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return
 
@@ -315,7 +311,7 @@ class GuessNumberPlayAgainButton(discord.ui.Button):
         game_view.add_item(GuessNumberCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.edit_message( view=compose(embed, game_view))
+        await interaction.response.edit_message( view=compose(embed, game_view), allowed_mentions=discord.AllowedMentions.none())
 
 
 from cogs.groups import games_group, bind_commands
@@ -345,8 +341,7 @@ class GuessNumberCog(commands.Cog):
         if bet < 10 or bet > 10000:
             await interaction.response.send_message(
                 "❌ Ставка должна быть от 10 до 10,000 монет.",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Проверить баланс
@@ -354,8 +349,7 @@ class GuessNumberCog(commands.Cog):
         if balance < bet:
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             self._activated = False
             return
 
@@ -366,8 +360,7 @@ class GuessNumberCog(commands.Cog):
             if balance < bet:
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 self._activated = False
                 return
 
@@ -384,7 +377,7 @@ class GuessNumberCog(commands.Cog):
         game_view.add_item(GuessNumberCancelButton(game_view))
 
         embed = game_view.create_embed("playing")
-        await interaction.response.send_message( view=compose(embed, game_view))
+        await interaction.response.send_message( view=compose(embed, game_view), allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot: "TournamentBot"):

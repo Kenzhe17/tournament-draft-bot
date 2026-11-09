@@ -113,11 +113,11 @@ class DiceRollButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.rolled:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Отметить что бросок сделан (до defer — защита от гонки с отменой)
@@ -169,11 +169,11 @@ class DiceRollCancelButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.game_view.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if self.game_view.rolled:
-            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True)
+            await interaction.response.send_message("❌ Игра уже завершена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.game_view.rolled = True  # до возврата — защита от гонки с on_timeout
@@ -185,8 +185,7 @@ class DiceRollCancelButton(discord.ui.Button):
                 self.game_view.user_id,
                 self.game_view.bet
             )
-        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена.")
-        )
+        await interaction.response.edit_message( view=text_card("❌ Игра отменена. Ставка возвращена."), allowed_mentions=discord.AllowedMentions.none())
 
 
 class DiceRollPlayAgainButton(discord.ui.Button):
@@ -199,12 +198,12 @@ class DiceRollPlayAgainButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True)
+            await interaction.response.send_message("❌ Это не ваша игра.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Защита от повторного нажатия (двойное списание ставки)
         if getattr(self, "_activated", False):
-            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True)
+            await interaction.response.send_message("⏳ Игра уже запущена.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         self._activated = True
 
@@ -217,8 +216,7 @@ class DiceRollPlayAgainButton(discord.ui.Button):
             self._activated = False
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Списать ставку
@@ -229,8 +227,7 @@ class DiceRollPlayAgainButton(discord.ui.Button):
                 self._activated = False
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 return
 
             await user_balance_store.subtract_balance(guild_id, user_id, self.bet)
@@ -244,7 +241,7 @@ class DiceRollPlayAgainButton(discord.ui.Button):
         game_view.add_item(DiceRollCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
-        await interaction.response.edit_message( view=compose(embed, game_view))
+        await interaction.response.edit_message( view=compose(embed, game_view), allowed_mentions=discord.AllowedMentions.none())
 
 
 from cogs.groups import games_group, bind_commands
@@ -274,8 +271,7 @@ class DiceRollCog(commands.Cog):
         if bet < 10 or bet > 10000:
             await interaction.response.send_message(
                 "❌ Ставка должна быть от 10 до 10,000 монет.",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Проверить баланс
@@ -283,8 +279,7 @@ class DiceRollCog(commands.Cog):
         if balance < bet:
             await interaction.response.send_message(
                 f"❌ Недостаточно монет. У вас: {balance}",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         # Списать ставку
@@ -294,8 +289,7 @@ class DiceRollCog(commands.Cog):
             if balance < bet:
                 await interaction.response.send_message(
                     f"❌ Недостаточно монет. У вас: {balance}",
-                    ephemeral=True
-                )
+                    ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
                 return
 
             await user_balance_store.subtract_balance(guild_id, user_id, bet)
@@ -309,7 +303,7 @@ class DiceRollCog(commands.Cog):
         game_view.add_item(DiceRollCancelButton(game_view))
 
         embed = game_view.create_embed("menu")
-        await interaction.response.send_message( view=compose(embed, game_view))
+        await interaction.response.send_message( view=compose(embed, game_view), allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot: "TournamentBot"):

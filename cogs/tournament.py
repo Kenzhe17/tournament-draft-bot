@@ -615,7 +615,9 @@ class TournamentCog(commands.Cog):
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
         try:
-            await interaction.response.send_message( view=compose(embed), ephemeral=False)
+            await interaction.response.send_message(
+                view=compose(embed), ephemeral=False,
+                allowed_mentions=discord.AllowedMentions.none())
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
@@ -1339,7 +1341,9 @@ class TournamentCog(commands.Cog):
         view = HistoryView(interaction.guild_id, target_user.id, matches, stats, user_name, limit)
         embed = create_history_embed(interaction.guild_id, target_user.id, matches, stats, page=0, user_name=user_name, limit=limit)
 
-        await interaction.response.send_message( view=compose(embed, view))
+        await interaction.response.send_message(
+            view=compose(embed, view),
+            allowed_mentions=discord.AllowedMentions.none())
 
     @app_commands.command(name="rep", description="Дать +1 репутацию (1 раз на человека, раз в 24 часа)")
     @app_commands.describe(user="Пользователь")
@@ -1612,7 +1616,9 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message( view=compose(embed))
+        await interaction.response.send_message(
+            view=compose(embed),
+            allowed_mentions=discord.AllowedMentions.none())
 
     @economy_group.command(name="bet", description="Показать вашу статистику ставок")
     async def betting_stats(self, interaction: discord.Interaction) -> None:
@@ -1638,7 +1644,9 @@ class TournamentCog(commands.Cog):
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-        await interaction.response.send_message( view=compose(embed))
+        await interaction.response.send_message(
+            view=compose(embed),
+            allowed_mentions=discord.AllowedMentions.none())
 
     # @app_commands.command(name="limit", description="Включить/выключить лимит для круга")
     # @app_commands.describe(
@@ -2627,7 +2635,9 @@ class TournamentCog(commands.Cog):
             )
             embed.set_thumbnail(url=interaction.user.display_avatar.url)
 
-            await interaction.response.send_message( view=compose(embed), ephemeral=False)
+            await interaction.response.send_message(
+                view=compose(embed), ephemeral=False,
+                allowed_mentions=discord.AllowedMentions.none())
 
     @server_group.command(name="role", description="Настроить сообщение для управления ролью организатора (только для админов)")
     async def role(self, interaction: discord.Interaction) -> None:

@@ -172,14 +172,20 @@ class TeamCog(commands.Cog):
                 # Store message in view for dynamic updates
                 view.message = message
                 # Update existing message
-                await message.edit( view=compose(embed, view))
+                await message.edit(
+                    view=compose(embed, view),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             except (discord.NotFound, discord.Forbidden):
                 # Message doesn't exist or can't access, create new
                 message = None
 
         if not message:
             # Create new message
-            message = await interaction.channel.send( view=compose(embed, view))
+            message = await interaction.channel.send(
+                view=compose(embed, view),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
             # Save message_id to team
             team.status_message_id = message.id
             await team_store.update_team(team)

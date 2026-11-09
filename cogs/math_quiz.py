@@ -55,16 +55,16 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user in self.players:
-            await interaction.followup.send(f" Вы уже состоите в этом лобби!", ephemeral=True)
+            await interaction.followup.send(f" Вы уже состоите в этом лобби!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if len(self.players) >= 6:
-            await interaction.followup.send(f" Лобби уже заполнено (максимум 6 игроков)!", ephemeral=True)
+            await interaction.followup.send(f" Лобби уже заполнено (максимум 6 игроков)!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         balance = await user_balance_store.get_balance(self.guild_id, interaction.user.id)
         if balance < self.bet:
-            await interaction.followup.send(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
+            await interaction.followup.send(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await user_balance_store.subtract_balance(self.guild_id, interaction.user.id, self.bet)
@@ -77,11 +77,11 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user not in self.players:
-            await interaction.followup.send(f" Вы не состоите в этом лобби!", ephemeral=True)
+            await interaction.followup.send(f" Вы не состоите в этом лобби!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if interaction.user == self.host:
-            await interaction.followup.send(f" Создатель не может выйти. Используйте кнопку «Отмена».", ephemeral=True)
+            await interaction.followup.send(f" Создатель не может выйти. Используйте кнопку «Отмена».", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await user_balance_store.add_balance(self.guild_id, interaction.user.id, self.bet)
@@ -94,11 +94,11 @@ class QuizLobbyView(discord.ui.View):
         await interaction.response.defer()
 
         if interaction.user != self.host:
-            await interaction.followup.send(f" Только создатель игры может запустить старт!", ephemeral=True)
+            await interaction.followup.send(f" Только создатель игры может запустить старт!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if len(self.players) < 2:
-            await interaction.followup.send(f" Для начала игры требуется минимум 2 участника!", ephemeral=True)
+            await interaction.followup.send(f" Для начала игры требуется минимум 2 участника!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         self.started = True
@@ -148,7 +148,7 @@ class QuizLobbyView(discord.ui.View):
                 color=0xF1C40F
             )
             round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-            await original_message.edit( view=compose(round_embed, None))
+            await original_message.edit( view=compose(round_embed, None), allowed_mentions=discord.AllowedMentions.none())
 
             round_solved = False
 
@@ -168,14 +168,12 @@ class QuizLobbyView(discord.ui.View):
                         round_solved = True
 
                         confirm_msg = await interaction.channel.send(
-                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
-                        )
+                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**", allowed_mentions=discord.AllowedMentions.none())
 
                 except asyncio.TimeoutError:
                     round_solved = True
                     timeout_msg = await interaction.channel.send(
-                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
-                    )
+                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**", allowed_mentions=discord.AllowedMentions.none())
 
             # Удалить все сообщения в канале после round_embed (включая ответы участников)
             try:
@@ -214,14 +212,14 @@ class QuizLobbyView(discord.ui.View):
             ),
             color=0xF1C40F
         )
-        await original_message.edit( view=compose(final_embed))
+        await original_message.edit( view=compose(final_embed), allowed_mentions=discord.AllowedMentions.none())
 
     @discord.ui.button(label="Отмена", style=discord.ButtonStyle.gray, custom_id="math_quiz_cancel")
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
         if interaction.user != self.host:
-            await interaction.followup.send(f" Только создатель может отменить игру!", ephemeral=True)
+            await interaction.followup.send(f" Только создатель может отменить игру!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         for player in self.players:
@@ -259,25 +257,24 @@ class MathQuizCog(commands.Cog):
         if not isinstance(interaction.channel, discord.Thread):
             await interaction.response.send_message(
                 "❌ Игры можно запускать только в игровых тредах. Используйте `/thread` для создания треда или `/delete` для удаления текущего.",
-                ephemeral=True
-            )
+                ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         if bet < 20 or bet > 1000:
-            await interaction.response.send_message(f" Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True)
+            await interaction.response.send_message(f" Ставка должна составлять от 20 до 1 000 монет!", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         guild_id = interaction.guild_id
         balance = await user_balance_store.get_balance(guild_id, interaction.user.id)
         if balance < bet:
-            await interaction.response.send_message(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True)
+            await interaction.response.send_message(f" Недостаточно монет для ставки! Ваш баланс: `{balance:,}` {get_emoji('money')}.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         await user_balance_store.subtract_balance(guild_id, interaction.user.id, bet)
 
         # Create lobby view directly in the thread
         lobby_view = QuizLobbyView(guild_id, interaction.user, bet)
-        await interaction.response.send_message( view=compose(lobby_view.build_embed(), lobby_view))
+        await interaction.response.send_message( view=compose(lobby_view.build_embed(), lobby_view), allowed_mentions=discord.AllowedMentions.none())
 
         if not lobby_view.started:
             return
@@ -314,7 +311,7 @@ class MathQuizCog(commands.Cog):
                 color=0xF1C40F
             )
             round_embed.set_footer(text="Отправляйте ответ числом прямо в чат")
-            await message.edit( view=compose(round_embed, None))
+            await message.edit( view=compose(round_embed, None), allowed_mentions=discord.AllowedMentions.none())
 
             round_solved = False
             messages_to_clean: List[discord.Message] = []
@@ -336,15 +333,13 @@ class MathQuizCog(commands.Cog):
                         round_solved = True
 
                         confirm_msg = await interaction.channel.send(
-                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**"
-                        )
+                            f" {user_msg.author.mention} первым ответил верно! **({expression} = {correct_answer})**", allowed_mentions=discord.AllowedMentions.none())
                         messages_to_clean.append(confirm_msg)
 
                 except asyncio.TimeoutError:
                     round_solved = True
                     timeout_msg = await interaction.channel.send(
-                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**"
-                    )
+                        f" Время вышло! Никто не дал верный ответ. Правильно: **{correct_answer}**", allowed_mentions=discord.AllowedMentions.none())
                     messages_to_clean.append(timeout_msg)
 
             await asyncio.sleep(2.0)
@@ -386,7 +381,7 @@ class MathQuizCog(commands.Cog):
             color=0x2ECC71
         )
 
-        await message.edit( view=compose(final_embed, None))
+        await message.edit( view=compose(final_embed, None), allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot: "TournamentBot"):

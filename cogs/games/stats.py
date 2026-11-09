@@ -24,13 +24,13 @@ class GamesStatsCog(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def game_stats(self, interaction: discord.Interaction):
         if interaction.user.id != BOT_OWNER_ID and not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ Недостаточно прав.", ephemeral=True)
+            await interaction.response.send_message("❌ Недостаточно прав.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
         await interaction.response.defer(ephemeral=True)
 
         stats = await get_stats(interaction.guild_id)
         if not stats:
-            await interaction.followup.send("Статистика пуста — партии ещё не сыграны.", ephemeral=True)
+            await interaction.followup.send("Статистика пуста — партии ещё не сыграны.", ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
             return
 
         names = {
@@ -58,7 +58,7 @@ class GamesStatsCog(commands.Cog):
             f"\n**Итого**: поставлено `{total_w:,}` | выплачено `{total_p:,}` | "
             f"изъято системой `{net:,}`"
         )
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        await interaction.followup.send("\n".join(lines), ephemeral=True, allowed_mentions=discord.AllowedMentions.none())
 
 
 async def setup(bot):

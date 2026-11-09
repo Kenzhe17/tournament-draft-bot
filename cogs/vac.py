@@ -102,18 +102,14 @@ class VacsView(discord.ui.LayoutView):
         self.add_item(container)
 
     async def _page_callback(self, interaction: discord.Interaction) -> None:
-        if not is_admin_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "Недостаточно прав.", ephemeral=True
-            )
-            return
         try:
             page = int(interaction.data["custom_id"].rsplit(":", 1)[1])
         except Exception:
             return
         rows = await vac_service.list_active_vacs(self.guild_id)
         await interaction.response.edit_message(
-            view=VacsView(self.guild_id, rows, page)
+            view=VacsView(self.guild_id, rows, page),
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
@@ -182,7 +178,10 @@ class VacCog(commands.Cog):
                 return
             view = moderation_view(title, "\n".join(lines))
             # moderation_view возвращает DesignView — цвет уже задан
-            await channel.send(view=view)
+            await channel.send(
+                view=view,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
         except Exception:
             logger.exception("VAC: mod log send failed")
 
@@ -264,7 +263,10 @@ class VacCog(commands.Cog):
             "Участие в турнирах запрещено до окончания блокировки.",
         )
         view.container.accent_color = colors.ERROR
-        await interaction.response.send_message(view=view)
+        await interaction.response.send_message(
+            view=view,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
         await self._mod_log(
             "VAC выдан",
             [
@@ -311,7 +313,8 @@ class VacCog(commands.Cog):
                 f"Участник: <@{player.id}>\n"
                 f"Снял: <@{interaction.user.id}>\n\n"
                 "Игрок снова может участвовать в турнирах.",
-            )
+            ),
+            allowed_mentions=discord.AllowedMentions.none(),
         )
         await self._mod_log(
             "VAC снят",
@@ -329,16 +332,6 @@ class VacCog(commands.Cog):
     ) -> None:
         if interaction.guild is None:
             return
-        if not is_admin_check(interaction.user, interaction.guild):
-            await interaction.response.send_message(
-                "Эта команда доступна только администраторам.", ephemeral=True
-            )
-            return
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "Требуется право Administrator.", ephemeral=True
-            )
-            return
 
         rows = await vac_service.list_active_vacs(interaction.guild.id)
         if player is not None:
@@ -351,12 +344,12 @@ class VacCog(commands.Cog):
             )
             await interaction.response.send_message(
                 view=success_view("Активные VAC", body),
-                ephemeral=True,
+                allowed_mentions=discord.AllowedMentions.none(),
             )
             return
         await interaction.response.send_message(
             view=VacsView(interaction.guild.id, rows, page=0),
-            ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
         )
 
 
