@@ -833,6 +833,7 @@ class OCRUploadCog(commands.Cog):
                 store.set(tournament)
 
             # Карточка матча в cs-4x4-match-N → «идёт сопоставление»
+            # (кнопка «Отправить результат» исчезает из карточки)
             try:
                 from services.match_announcer import update_match_card
 
@@ -842,6 +843,19 @@ class OCRUploadCog(commands.Cog):
                 )
             except Exception as exc:
                 logger.warning("Match card processing update failed: %s", exc)
+
+            # Сразу пишем в канал матча — игроки видят, что скриншот
+            # принят и идёт аналитика, а не «капитан забыл отправить»
+            try:
+                await message.channel.send(
+                    f"✅ {message.author.mention} успешно отправил "
+                    "скриншот — ожидаем аналитику.",
+                    allowed_mentions=discord.AllowedMentions(
+                        users=[message.author]
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("upload notify failed: %s", exc)
 
         except Exception:
             logger.exception("OCR upload processing failed")
@@ -1067,6 +1081,16 @@ class OCRUploadCog(commands.Cog):
                 match_type=match_type, match_index=match_index,
                 t1=t1, t2=t2,
             )
+            try:
+                await message.channel.send(
+                    f"✅ {message.author.mention} успешно отправил "
+                    "скриншот отряда — ожидаем аналитику.",
+                    allowed_mentions=discord.AllowedMentions(
+                        users=[message.author]
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("upload notify failed: %s", exc)
             return
 
         # --- Новая загрузка отряда (без привязки — выбор команды кнопкой) ---
@@ -1107,6 +1131,16 @@ class OCRUploadCog(commands.Cog):
             match_type=match_type, match_index=match_index,
             t1=t1, t2=t2,
         )
+        try:
+            await message.channel.send(
+                f"✅ {message.author.mention} успешно отправил "
+                "скриншот отряда — ожидаем аналитику.",
+                allowed_mentions=discord.AllowedMentions(
+                    users=[message.author]
+                ),
+            )
+        except Exception as exc:
+            logger.warning("upload notify failed: %s", exc)
 
 
 async def _maybe_delete_match_channel(

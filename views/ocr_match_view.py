@@ -528,6 +528,62 @@ class ScreenshotUploadModal(Modal):
             )
 
 
+ADMIN_HELP_ROLE_ID = 1563168378196197397
+
+
+class AdminCallConfirmView(View):
+    """Подтверждение вызова админа (ephemeral, 60 сек)."""
+
+    def __init__(self, guild_id, channel_id, tournament, match_type, match_index):
+        super().__init__(timeout=60)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.tournament = tournament
+        self.match_type = match_type
+        self.match_index = match_index
+
+        yes = Button(label="✅ Вызвать", style=discord.ButtonStyle.danger)
+        yes.callback = self._confirm
+        self.add_item(yes)
+        no = Button(label="❌ Отмена", style=discord.ButtonStyle.secondary)
+        no.callback = self._cancel
+        self.add_item(no)
+
+    async def _cancel(self, interaction: discord.Interaction) -> None:
+        await interaction.response.edit_message(
+            content="Отменено.", view=None
+        )
+
+    async def _confirm(self, interaction: discord.Interaction) -> None:
+        session = self.tournament.ocr_sessions.get(
+            _session_key(self.match_type, self.match_index)
+        ) or {}
+        session["admin_call_at"] = time.time()
+        self.tournament.ocr_sessions[
+            _session_key(self.match_type, self.match_index)
+        ] = session
+        store.set(self.tournament)
+
+        name = _team_display_name(
+            self.tournament,
+            _match_tuple(self.tournament, self.match_type, self.match_index)[0],
+        )
+        await interaction.response.edit_message(
+            content="✅ Администратор вызван.", view=None
+        )
+        try:
+            await interaction.channel.send(
+                f"📣 {interaction.user.mention} вызывает администратора "
+                f"по матчу ({name}).\n<@&{ADMIN_HELP_ROLE_ID}>",
+                allowed_mentions=discord.AllowedMentions(
+                    roles=[discord.Object(id=ADMIN_HELP_ROLE_ID)],
+                    users=True,
+                ),
+            )
+        except Exception as exc:
+            logger.warning("admin call ping failed: %s", exc)
+
+
 class OCRPublicView(View):
     """Кнопки на публичном сообщении с распознанными результатами."""
 
@@ -578,6 +634,61 @@ class OCRPublicView(View):
             )
             wrong.callback = self._wrong_shot_callback()
             self.add_item(wrong)
+
+            call = Button(
+                label="📣 Вызвать админа",
+                style=discord.ButtonStyle.secondary,
+                custom_id=(
+                    f"ocr_calladmin:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}"
+                ),
+            )
+            call.callback = self._call_admin_callback()
+            self.add_item(call)
+
+    def _call_admin_callback(self):
+        async def callback(interaction: discord.Interaction) -> None:
+            tournament = store.get(self.guild_id, self.channel_id)
+            if not tournament:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Турнир не найден."), ephemeral=True
+                )
+                return
+            t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
+            # Только капитаны команд матча
+            if not any(
+                _is_match_captain(interaction.user, tournament, i)
+                for i in (t1, t2)
+            ):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Вызвать админа могут только капитаны команд."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            session = tournament.ocr_sessions.get(
+                _session_key(self.match_type, self.match_index)
+            ) or {}
+            # Cooldown 5 минут на матч — от спама вызовами
+            last = session.get("admin_call_at", 0)
+            if time.time() - float(last) < 300:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⏳ Админ уже был вызван недавно — подождите."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            await interaction.response.send_message(
+                "📣 Вызвать администратора по этому матчу?",
+                view=AdminCallConfirmView(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index,
+                ),
+                ephemeral=True,
+            )
+        return callback
 
     def _map_callback(self, team_index: int):
         async def callback(interaction: discord.Interaction) -> None:
