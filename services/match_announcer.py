@@ -213,15 +213,10 @@ def _match_started_view(
             )
         )
         view.sep()
-    mode_label = (
-        " · БЕЗ РУИН"
-        if getattr(tournament, "match_mode", "normal") == "no_ruin"
-        else ""
-    )
     view.text(
         "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
         "**Режим:** CS 4×4\n"
-        f"**Тип:** Ranked{mode_label}\n"
+        "**Тип:** Ranked\n"
         f"**Начало:** <t:{int(time.time())}:t>"
     )
     view.sep()

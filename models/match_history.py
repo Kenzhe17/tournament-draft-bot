@@ -36,9 +36,6 @@ class MatchHistory:
     assists: int = 0
     damage: int = 0
 
-    # Режим матча (normal / no_ruin)
-    match_mode: str = "normal"
-
     # Ставки (опционально)
     bet_amount: int = 0
     bet_win: int = 0
@@ -66,7 +63,6 @@ class MatchHistory:
             "elo_change": self.elo_change,
             "assists": self.assists,
             "damage": self.damage,
-            "match_mode": self.match_mode,
             "bet_amount": self.bet_amount,
             "bet_win": self.bet_win,
             "bet_team": self.bet_team

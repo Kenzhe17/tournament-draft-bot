@@ -80,7 +80,7 @@ class _FakeRCStore:
     def __init__(self):
         self.active = None
 
-    async def get_active_by_search(self, guild_id, channel_id, queue_type=None):
+    async def get_active_by_search(self, guild_id, channel_id):
         return self.active
 
     async def get(self, match_id):
@@ -95,11 +95,8 @@ def _cog(monkeypatch, search: MMSearch | None):
         def __init__(self, s):
             self.s = s
 
-        def get(self, guild_id, channel_id, queue_type="normal"):
+        def get(self, guild_id, channel_id):
             return self.s
-
-        def get_by_channel(self, guild_id, channel_id):
-            return {self.s.queue_type: self.s} if self.s else {}
 
         def set(self, s):
             pass
@@ -276,7 +273,7 @@ async def test_begin_match_skips_while_inflight(monkeypatch):
 
     s = _search()
     cog = _cog(monkeypatch, s)
-    cog._begin_inflight[cog._queue_key(1, 10)] = _time.time()
+    cog._begin_inflight[(1, 10)] = _time.time()
 
     impl = AsyncMock()
     monkeypatch.setattr(cog, "_begin_match_impl", impl)
@@ -308,7 +305,7 @@ async def test_begin_match_inflight_cleared_after_finish(monkeypatch):
     rc, err = await cog._begin_match(s, inter)
 
     assert rc is None  # pool_full → WAITING_CHANNEL
-    assert (1, 10, "normal") not in cog._begin_inflight
+    assert (1, 10) not in cog._begin_inflight
 
 
 @pytest.mark.asyncio

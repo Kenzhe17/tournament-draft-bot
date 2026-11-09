@@ -32,8 +32,7 @@ MATCH_START_RETRY_COOLDOWN = 120.0
 _BEGIN_INFLIGHT_TTL = 300.0
 from models.mm_search import (
     MMFormat, MMSearch, QUEUE_OPEN, QUEUE_LOCKED_READY_CHECK,
-    QUEUE_WAITING_CHANNEL, QUEUE_TYPE_NORMAL, QUEUE_TYPE_NO_RUIN,
-    NO_RUIN_MIN_SR, NO_RUIN_MAX_SR,
+    QUEUE_WAITING_CHANNEL,
 )
 from models.player_stats import PlayerStats
 from models.ready_check import ReadyCheck, ReadyCheckPlayer, ReadyCheckStatus
@@ -51,8 +50,8 @@ from utils.match_found_renderer import (
     render_match_found,
 )
 from views.mm_search_view import (
-    build_channel_panel,
     build_queue_controls,
+    build_queue_panel,
 )
 from views.ready_check_view import PNG_FILENAME, build_ready_embed, build_ready_view, ready_card
 
@@ -269,7 +268,7 @@ class MMCog(commands.Cog):
             try:
                 # Отменить активный Ready Check этого поиска
                 rc = await ready_check_store.get_active_by_search(
-                    search.guild_id, search.channel_id, search.queue_type
+                    search.guild_id, search.channel_id
                 )
                 if rc is not None:
                     rc.status = ReadyCheckStatus.CANCELLED
@@ -288,15 +287,11 @@ class MMCog(commands.Cog):
                         pass
                 
                 # Удалить из хранилища
-                mm_search_store.delete(
-                    search.guild_id, search.channel_id, search.queue_type
-                )
+                mm_search_store.delete(search.guild_id, search.channel_id)
                 deleted_count += 1
                 
                 # Отменить таймер
-                self._cancel_search_timer(
-                    search.guild_id, search.channel_id, search.queue_type
-                )
+                self._cancel_search_timer(search.guild_id, search.channel_id)
             except Exception as e:
                 logger.error(f"Error deleting search: {e}")
         
@@ -336,7 +331,7 @@ class MMCog(commands.Cog):
             )
             return
         if await ready_check_store.get_active_by_search(
-            guild.id, search.channel_id, search.queue_type
+            guild.id, search.channel_id
         ):
             await interaction.followup.send(
                 "❌ В канале этого поиска уже идёт проверка готовности.",
@@ -394,9 +389,7 @@ class MMCog(commands.Cog):
         # Таймер поиска — как при обычном входе первого игрока
         if not search.timer_started:
             search.timer_started = True
-            self._start_search_timer(
-                search.guild_id, search.channel_id, search.queue_type
-            )
+            self._start_search_timer(search.guild_id, search.channel_id)
         mm_search_store.set(search)
 
         # Обновить панель очереди
@@ -407,9 +400,7 @@ class MMCog(commands.Cog):
 
         # Поиск заполнен — блокируем очередь, создаём канал и Ready Check
         if search.is_full:
-            self._cancel_search_timer(
-                search.guild_id, search.channel_id, search.queue_type
-            )
+            self._cancel_search_timer(search.guild_id, search.channel_id)
             rc, err = await self._begin_match(search, interaction)
             if rc is None:
                 await interaction.followup.send(
@@ -466,11 +457,8 @@ class MMCog(commands.Cog):
 
     async def _create_search(self, interaction: discord.Interaction, format: MMFormat) -> None:
         """Создать новый поиск."""
-        # Проверить если уже есть ЛЮБАЯ очередь в канале (Обычка или БЕЗ РУИН)
-        existing = any(
-            s.channel_id == interaction.channel_id
-            for s in mm_search_store.get_by_guild(interaction.guild_id)
-        )
+        # Проверить если уже есть поиск в канале
+        existing = mm_search_store.get(interaction.guild_id, interaction.channel_id)
         if existing:
             await interaction.response.send_message(
                 "❌ В этом канале уже есть активный поиск.",
@@ -487,18 +475,14 @@ class MMCog(commands.Cog):
         # Сначала отправить ephemeral сообщение
         await interaction.response.send_message("Поиск создан!", ephemeral=True)
 
-        # Вечная V2-панель очереди с баннером — показывает обе очереди
+        # Вечная V2-панель очереди с баннером
         banner_file = (
             discord.File(QUEUE_BANNER_PATH, filename="queue_banner.png")
             if QUEUE_BANNER_PATH.exists()
             else None
         )
         message = await interaction.channel.send(
-            view=build_channel_panel(
-                interaction.guild_id,
-                interaction.channel_id,
-                {QUEUE_TYPE_NORMAL: search},
-            ),
+            view=build_queue_panel(search),
             file=banner_file,
             allowed_mentions=discord.AllowedMentions.none(),
         )
@@ -559,19 +543,14 @@ class MMCog(commands.Cog):
         except Exception as e:
             logger.error(f"Error sending search notification: {e}")
 
-    def _start_search_timer(
-        self,
-        guild_id: int,
-        channel_id: int,
-        queue_type: str = QUEUE_TYPE_NORMAL,
-    ) -> None:
+    def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
         """Таймер поиска 10 минут: пинги на 30с / 3мин / 7мин, кик в конце."""
         async def timer_task():
             try:
                 # Уведомления: 30 сек, 3 мин, 7 мин после первого игрока
                 for delay in (30, 150, 240):
                     await asyncio.sleep(delay)
-                    search = mm_search_store.get(guild_id, channel_id, queue_type)
+                    search = mm_search_store.get(guild_id, channel_id)
                     if not search or not search.players:
                         return
                     await self._notify_search_started(guild_id, channel_id)
@@ -579,7 +558,7 @@ class MMCog(commands.Cog):
                 # 10 минут — кик, если поиск не заполнен
                 await asyncio.sleep(180)
 
-                search = mm_search_store.get(guild_id, channel_id, queue_type)
+                search = mm_search_store.get(guild_id, channel_id)
                 if not search:
                     return
 
@@ -607,16 +586,11 @@ class MMCog(commands.Cog):
                 logger.error(f"Error in search timer task: {e}")
 
         task = asyncio.create_task(timer_task())
-        self._search_timers[self._queue_key(guild_id, channel_id, queue_type)] = task
+        self._search_timers[(guild_id, channel_id)] = task
 
-    def _cancel_search_timer(
-        self,
-        guild_id: int,
-        channel_id: int,
-        queue_type: str = QUEUE_TYPE_NORMAL,
-    ) -> None:
+    def _cancel_search_timer(self, guild_id: int, channel_id: int) -> None:
         """Отменить таймер поиска."""
-        key = self._queue_key(guild_id, channel_id, queue_type)
+        key = (guild_id, channel_id)
         if key in self._search_timers:
             self._search_timers[key].cancel()
             del self._search_timers[key]
@@ -646,9 +620,7 @@ class MMCog(commands.Cog):
             return
 
         # Уже есть активная проверка для этого поиска — не дублировать
-        existing = await ready_check_store.get_active_by_search(
-            search.guild_id, search.channel_id, search.queue_type
-        )
+        existing = await ready_check_store.get_active_by_search(search.guild_id, search.channel_id)
         if existing is not None:
             logger.warning("Ready check already active for search %s/%s", search.guild_id, search.channel_id)
             return
@@ -667,12 +639,6 @@ class MMCog(commands.Cog):
                 stats = await player_stats_store.get(guild.id, user_id) if user_id else None
                 stats_map[user_id] = stats
                 players_with_sr.append((name, stats.skill_rating if stats else 0.0))
-
-            # «БЕЗ РУИН»: при равных SR перемешиваем — распределение
-            # не должно повторяться из матча в матч.
-            if search.queue_type == QUEUE_TYPE_NO_RUIN:
-                import random as _random
-                _random.shuffle(players_with_sr)
 
             # Балансировка — тот же алгоритм, что и в _create_tournament_from_search
             probe = Tournament(
@@ -764,7 +730,6 @@ class MMCog(commands.Cog):
                 deadline=time.time() + RANKED_READY_TIMEOUT_SECONDS,
                 match_num=render_data.match_num,
                 match_channel_id=match_channel_id,
-                queue_type=search.queue_type or QUEUE_TYPE_NORMAL,
             )
             if not await ready_check_store.create(rc):
                 await interaction.followup.send("❌ Проверка готовности уже запущена.", ephemeral=True)
@@ -824,10 +789,7 @@ class MMCog(commands.Cog):
 
             # Обновить и панель очереди — живой счётчик готовности
             try:
-                search = mm_search_store.get(
-                    rc.guild_id, rc.search_channel_id,
-                    rc.queue_type or QUEUE_TYPE_NORMAL,
-                )
+                search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
                 if search is not None and search.is_locked:
                     await self._update_queue_panel(search)
             except Exception:
@@ -998,12 +960,9 @@ class MMCog(commands.Cog):
 
     async def _requeue_players(self, rc: ReadyCheck, keep_user_ids: set[int]) -> None:
         """Вернуть подмножество игроков в MM-поиск, сохранив порядок очереди."""
-        search = mm_search_store.get(
-            rc.guild_id, rc.search_channel_id, rc.queue_type or QUEUE_TYPE_NORMAL
-        )
+        search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
         if search is None:
-            logger.warning("Search %s/%s/%s not found for requeue",
-                           rc.guild_id, rc.search_channel_id, rc.queue_type)
+            logger.warning("Search %s/%s not found for requeue", rc.guild_id, rc.search_channel_id)
             return
 
         keep_names = [
@@ -1020,17 +979,11 @@ class MMCog(commands.Cog):
 
         # Перезапустить таймер поиска, если игроки вернулись
         if keep_names:
-            key = self._queue_key(
-                search.guild_id, search.channel_id, search.queue_type
-            )
+            key = (search.guild_id, search.channel_id)
             if key not in self._search_timers or self._search_timers[key].done():
-                self._start_search_timer(
-                    search.guild_id, search.channel_id, search.queue_type
-                )
+                self._start_search_timer(search.guild_id, search.channel_id)
         else:
-            self._cancel_search_timer(
-                search.guild_id, search.channel_id, search.queue_type
-            )
+            self._cancel_search_timer(search.guild_id, search.channel_id)
 
         # Обновить панель очереди
         try:
@@ -1085,10 +1038,7 @@ class MMCog(commands.Cog):
                     logger.warning("Announce catch-up failed: %s", exc)
                 return
 
-            search = mm_search_store.get(
-                guild_id, rc.search_channel_id,
-                rc.queue_type or QUEUE_TYPE_NORMAL,
-            )
+            search = mm_search_store.get(guild_id, rc.search_channel_id)
             if search is None or not search.is_full:
                 logger.error("Cannot launch ready check %s: search missing or not full", rc.match_id)
                 rc.status = ReadyCheckStatus.CANCELLED
@@ -1097,49 +1047,6 @@ class MMCog(commands.Cog):
                 await self._update_ready_message(rc)
                 await self._finish_cancelled(rc, {p.user_id for p in rc.players})
                 return
-
-            # «БЕЗ РУИН»: повторная проверка SR перед созданием
-            # турнира — за время Ready Check рейтинг мог измениться.
-            # Нарушители исключаются, остальные возвращаются в очередь.
-            if search.queue_type == QUEUE_TYPE_NO_RUIN:
-                bad: list[str] = []
-                for name in list(search.players):
-                    uid = search.player_user_ids.get(name, 0)
-                    sr = await self._player_sr(search.guild_id, uid)
-                    if not self._sr_in_no_ruin_range(sr):
-                        bad.append(name)
-                if bad:
-                    bad_uids = {
-                        search.player_user_ids[n] for n in bad
-                        if n in search.player_user_ids
-                    }
-                    for name in bad:
-                        search.remove_player(name)
-                    mm_search_store.set(search)
-                    rc.status = ReadyCheckStatus.CANCELLED
-                    rc.cancel_reason = (
-                        "SR вне диапазона БЕЗ РУИН — игроки исключены"
-                    )
-                    await ready_check_store.save(rc)
-                    await self._update_ready_message(rc)
-                    try:
-                        names = ", ".join(f"**{n}**" for n in bad)
-                        chan = self.bot.get_channel(rc.search_channel_id)
-                        if chan is not None:
-                            await chan.send(
-                                f"⛔ {names} исключены из матча БЕЗ РУИН — "
-                                f"SR вне диапазона {NO_RUIN_MIN_SR:g}–"
-                                f"{NO_RUIN_MAX_SR:g}.",
-                                allowed_mentions=discord.AllowedMentions.none(),
-                            )
-                    except Exception as exc:
-                        logger.warning("no_ruin launch notify failed: %s", exc)
-                    keep = {
-                        p.user_id for p in rc.players
-                        if p.user_id not in bad_uids
-                    }
-                    await self._finish_cancelled(rc, keep_user_ids=keep)
-                    return
 
             # Прокинуть в турнирный флоу номер/канал/PNG карточки матча
             search.mm_match_num = rc.match_num
@@ -1211,13 +1118,10 @@ class MMCog(commands.Cog):
                             continue  # ждёт канал — обрабатывает sweeper ниже
                         if not s.is_locked:
                             continue
-                        key = self._queue_key(s.guild_id, s.channel_id, s.queue_type)
+                        key = (s.guild_id, s.channel_id)
                         if time.time() - self._begin_inflight.get(key, 0.0) < _BEGIN_INFLIGHT_TTL:
                             continue  # _begin_match в процессе — не зависший
-                        owner = (
-                            f"mm:{s.guild_id}:{s.channel_id}:"
-                            f"{s.queue_type or QUEUE_TYPE_NORMAL}"
-                        )
+                        owner = f"mm:{s.guild_id}:{s.channel_id}"
                         if any(
                             sl.get("owner") == owner
                             and sl.get("state") in ("reserved", "active")
@@ -1226,7 +1130,7 @@ class MMCog(commands.Cog):
                             continue  # слот пула зарезервирован под этот матч
                         rc_active = (
                             await ready_check_store.get_active_by_search(
-                                s.guild_id, s.channel_id, s.queue_type
+                                s.guild_id, s.channel_id
                             )
                         )
                         if rc_active is not None:
@@ -1353,8 +1257,6 @@ class MMCog(commands.Cog):
 
         # Сохранить канал поиска для сброса после завершения
         tournament.mm_search_channel_id = search.channel_id
-        # Тип сыгранного режима: normal | no_ruin — в историю и карточки
-        tournament.match_mode = search.queue_type or "normal"
 
         # Добавить игроков в пул с их SR
         players_with_sr = []
@@ -1472,57 +1374,17 @@ class MMCog(commands.Cog):
     # Очередь: join/leave, блокировка, канал матча
     # ------------------------------------------------------------------
 
-    def _queue_key(
-        self, guild_id: int, channel_id: int, queue_type: str = QUEUE_TYPE_NORMAL
-    ) -> tuple[int, int, str]:
-        """Ключ очереди/таймера/лока: канал может содержать две очереди."""
-        return (guild_id, channel_id, queue_type or QUEUE_TYPE_NORMAL)
-
-    def _queue_lock(
-        self,
-        guild_id: int,
-        channel_id: int,
-        queue_type: str = QUEUE_TYPE_NORMAL,
-    ) -> asyncio.Lock:
+    def _queue_lock(self, guild_id: int, channel_id: int) -> asyncio.Lock:
         """Per-queue lock — сериализует join/leave/begin_match."""
-        key = self._queue_key(guild_id, channel_id, queue_type)
+        key = (guild_id, channel_id)
         lock = self._queue_locks.get(key)
         if lock is None:
             lock = self._queue_locks[key] = asyncio.Lock()
         return lock
 
-    async def _player_sr(self, guild_id: int, user_id: int) -> float:
-        """Актуальный Skill Rating игрока (единый источник — player_stats)."""
-        if not user_id:
-            return 0.0
-        try:
-            stats = await player_stats_store.get(guild_id, user_id)
-        except Exception:
-            stats = None
-        return float(stats.skill_rating) if stats else 0.0
-
-    @staticmethod
-    def _sr_in_no_ruin_range(sr: float) -> bool:
-        return NO_RUIN_MIN_SR <= sr <= NO_RUIN_MAX_SR
-
-    async def _channel_searches(self, guild_id: int, channel_id: int) -> dict[str, MMSearch]:
-        """Все очереди канала поиска: {queue_type: MMSearch}."""
-        return mm_search_store.get_by_channel(guild_id, channel_id)
-
     async def _update_queue_panel(self, search: MMSearch) -> None:
-        """Обновить V2-панель очереди на её сообщении.
-
-        Панель общая для канала — показывает обе очереди
-        («Обычка» и «БЕЗ РУИН»), поэтому собираем все поиски канала.
-        """
-        searches = await self._channel_searches(search.guild_id, search.channel_id)
-        if not searches:
-            return
-        # message_id панели — первое непустое среди очередей канала
-        message_id = search.message_id or next(
-            (s.message_id for s in searches.values() if s.message_id), 0
-        )
-        if not message_id:
+        """Обновить V2-панель очереди на её сообщении."""
+        if not search.message_id:
             return
         channel = self.bot.get_channel(search.channel_id)
         if channel is None:
@@ -1530,33 +1392,25 @@ class MMCog(commands.Cog):
                 channel = await self.bot.fetch_channel(search.channel_id)
             except Exception:
                 return
-        # Счётчики готовности для locked-состояния панелей
-        ready_counts: dict[str, int | None] = {}
-        for qtype, s in searches.items():
-            ready_counts[qtype] = None
-            if s.is_locked:
-                try:
-                    rc = await ready_check_store.get_active_by_search(
-                        s.guild_id, s.channel_id, s.queue_type
-                    )
-                    if rc is not None:
-                        ready_counts[qtype] = rc.ready_count
-                except Exception:
-                    pass
+        # Счётчик готовности для locked-состояния панели
+        ready_count = None
+        if search.is_locked:
+            try:
+                rc = await ready_check_store.get_active_by_search(
+                    search.guild_id, search.channel_id
+                )
+                if rc is not None:
+                    ready_count = rc.ready_count
+            except Exception:
+                pass
         try:
-            message = await channel.fetch_message(message_id)
+            message = await channel.fetch_message(search.message_id)
             await message.edit(
-                view=build_channel_panel(
-                    search.guild_id,
-                    search.channel_id,
-                    searches,
-                    ready_counts=ready_counts,
-                    with_banner=True,
-                ),
+                view=build_queue_panel(search, ready_count=ready_count),
                 allowed_mentions=discord.AllowedMentions.none(),
             )
         except discord.NotFound:
-            logger.warning("Queue panel message %s not found", message_id)
+            logger.warning("Queue panel message %s not found", search.message_id)
         except Exception as exc:
             logger.error("Failed to update queue panel: %s", exc)
 
@@ -1572,12 +1426,9 @@ class MMCog(commands.Cog):
                 return ("Вы уже участвуете в активном турнире. "
                         "Завершите его чтобы войти в очередь.")
 
-        # Другой активный поиск (кроме этой же очереди)
+        # Другой активный поиск
         for other in mm_search_store.get_by_guild(guild_id):
-            if (
-                other.channel_id != search.channel_id
-                or other.queue_type != search.queue_type
-            ):
+            if other.channel_id != search.channel_id:
                 if interaction.user.id in other.player_user_ids.values():
                     return ("Вы уже в другой очереди. Выйдите из неё сначала. "
                             "Используйте /mm delete для удаления всех поисков.")
@@ -1597,21 +1448,6 @@ class MMCog(commands.Cog):
         if vac is not None:
             ts = int(vac["expires_at"].timestamp())
             return vac_blocked_text(ts)
-
-        # «БЕЗ РУИН»: SR 5.5–10.0 — проверка при каждом входе в очередь
-        if search.queue_type == QUEUE_TYPE_NO_RUIN:
-            sr = await self._player_sr(guild_id, interaction.user.id)
-            if not self._sr_in_no_ruin_range(sr):
-                if sr < NO_RUIN_MIN_SR:
-                    return (
-                        "Для участия в БЕЗ РУИН требуется минимум "
-                        f"{NO_RUIN_MIN_SR:g} SR. Ваш текущий рейтинг: "
-                        f"{sr:.1f}."
-                    )
-                return (
-                    f"Максимальный SR для БЕЗ РУИН — {NO_RUIN_MAX_SR:g}. "
-                    f"Ваш текущий рейтинг: {sr:.1f}."
-                )
         return None
 
     async def _ephemeral(self, interaction: discord.Interaction, text: str) -> None:
@@ -1631,21 +1467,14 @@ class MMCog(commands.Cog):
     async def _edit_panel(
         self, interaction: discord.Interaction, search: MMSearch
     ) -> None:
-        """Обновить V2-панель очереди (обе очереди канала).
+        """Обновить V2-панель очереди.
 
         После upfront defer edit_message недоступен — правим
         сообщение напрямую; без defer — через response (старое
         поведение, в т.ч. для тестовых fake-интеракций).
         """
-        searches = await self._channel_searches(
-            search.guild_id, search.channel_id
-        )
         kwargs = dict(
-            view=build_channel_panel(
-                search.guild_id,
-                search.channel_id,
-                searches or {search.queue_type: search},
-            ),
+            view=build_queue_panel(search),
             allowed_mentions=discord.AllowedMentions.none(),
         )
         try:
@@ -1661,13 +1490,9 @@ class MMCog(commands.Cog):
             logger.warning("Queue panel edit failed: %s", exc)
 
     async def handle_queue_join(
-        self,
-        interaction: discord.Interaction,
-        guild_id: int,
-        channel_id: int,
-        queue_type: str = QUEUE_TYPE_NORMAL,
+        self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
-        """Кнопка входа в очередь («Обычка» / «БЕЗ РУИН») на V2-панели."""
+        """Кнопка «Войти в очередь» на V2-панели."""
         # Подтверждаем interaction сразу — дальше могут быть долгие
         # операции (lock, канал, рендер PNG), иначе Discord ответит
         # Unknown interaction (10062) по истечении 3-секундного окна.
@@ -1678,74 +1503,9 @@ class MMCog(commands.Cog):
         except Exception:
             pass
 
-        qtype = queue_type or QUEUE_TYPE_NORMAL
-        user_id = interaction.user.id
-
-        # «БЕЗ РУИН» создаётся лениво при первом входе — вторая очередь
-        # не требует отдельной команды; message_id берём с кнопки панели.
-        if mm_search_store.get(guild_id, channel_id, qtype) is None:
-            if qtype == QUEUE_TYPE_NO_RUIN:
-                panel_msg_id = int(
-                    getattr(getattr(interaction, "message", None), "id", 0) or 0
-                )
-                mm_search_store.set(MMSearch(
-                    guild_id=guild_id,
-                    channel_id=channel_id,
-                    format=MMFormat.SQUAD,
-                    queue_type=qtype,
-                    message_id=panel_msg_id,
-                ))
-
-        # Атомарное переключение режима: игрок не может быть в двух
-        # очередях — выходим из всех остальных под их же lock'ами
-        # (ключи отсортированы — порядок захвата детерминирован,
-        # deadlock между очередями невозможен).
-        others = [
-            s for s in mm_search_store.get_by_guild(guild_id)
-            if (s.channel_id != channel_id or s.queue_type != qtype)
-            and user_id in s.player_user_ids.values()
-        ]
-        lock_keys = sorted(
-            {self._queue_key(guild_id, channel_id, qtype)}
-            | {
-                self._queue_key(s.guild_id, s.channel_id, s.queue_type)
-                for s in others
-            }
-        )
-        from contextlib import AsyncExitStack
-
         begin_search: MMSearch | None = None
-        switched_from: list[str] = []
-        async with AsyncExitStack() as stack:
-            locks = [self._queue_lock(*k) for k in lock_keys]
-            for lock in locks:
-                await stack.enter_async_context(lock)
-
-            # Снятие с других очередей — до валидации и добавления
-            for other in others:
-                other = mm_search_store.get(
-                    other.guild_id, other.channel_id, other.queue_type
-                )
-                if other is None:
-                    continue
-                oname = next(
-                    (n for n, u in other.player_user_ids.items() if u == user_id),
-                    None,
-                )
-                if oname and other.remove_player(oname):
-                    if not other.players:
-                        other.timer_started = False
-                        self._cancel_search_timer(
-                            other.guild_id, other.channel_id, other.queue_type
-                        )
-                    mm_search_store.set(other)
-                    switched_from.append(other.queue_type)
-                    try:
-                        await self._update_queue_panel(other)
-                    except Exception:
-                        pass
-
-            search = mm_search_store.get(guild_id, channel_id, qtype)
+        async with self._queue_lock(guild_id, channel_id):
+            search = mm_search_store.get(guild_id, channel_id)
             if search is None:
                 await self._ephemeral(interaction, "Поиск не найден.")
                 return
@@ -1756,14 +1516,11 @@ class MMCog(commands.Cog):
                     "Дождитесь результата матча.",
                 )
                 return
-            if user_id in search.player_user_ids.values():
-                await self._ephemeral(interaction, "Вы уже в этой очереди.")
-                return
             if search.is_full:
                 # Очередь заполнена, но матч не стартовал (ошибка
                 # создания канала/карточки Ready Check). Это единственный
                 # путь повторного запуска — иначе очередь «зависает».
-                key = self._queue_key(guild_id, channel_id, qtype)
+                key = (guild_id, channel_id)
                 elapsed = time.time() - self._begin_fail_at.get(key, 0.0)
                 if elapsed < MATCH_START_RETRY_COOLDOWN:
                     wait = int(MATCH_START_RETRY_COOLDOWN - elapsed) + 1
@@ -1778,7 +1535,7 @@ class MMCog(commands.Cog):
                     # запускает матч, остальные видят locked выше.
                     search.state = QUEUE_LOCKED_READY_CHECK
                     mm_search_store.set(search)
-                    self._cancel_search_timer(guild_id, channel_id, qtype)
+                    self._cancel_search_timer(guild_id, channel_id)
                     begin_search = search
             else:
                 error = await self._validate_join(interaction, search)
@@ -1796,33 +1553,28 @@ class MMCog(commands.Cog):
                 if not search.timer_started:
                     search.timer_started = True
                     mm_search_store.set(search)
-                    self._start_search_timer(guild_id, channel_id, qtype)
+                    self._start_search_timer(guild_id, channel_id)
                 mm_search_store.set(search)
 
                 if search.is_full:
                     # Атомарный захват: lock снят до тяжёлого _begin_match
                     search.state = QUEUE_LOCKED_READY_CHECK
                     mm_search_store.set(search)
-                    self._cancel_search_timer(guild_id, channel_id, qtype)
+                    self._cancel_search_timer(guild_id, channel_id)
                     begin_search = search
                 else:
                     await self._edit_panel(interaction, search)
                     # Снимаем состояние «бот думает…» ephemeral-подтверждением
-                    sr = await self._player_sr(guild_id, user_id)
-                    qname = "БЕЗ РУИН" if qtype == QUEUE_TYPE_NO_RUIN else "Обычка"
-                    msg = (
-                        f"✅ Вы в очереди {qname} "
-                        f"({len(search.players)}/{search.required_players})."
+                    await self._ephemeral(
+                        interaction,
+                        f"✅ Вы в очереди "
+                        f"({len(search.players)}/{search.required_players}).",
                     )
-                    if switched_from:
-                        msg += " Предыдущая очередь освобождена."
-                    msg += f"\nВаш SR: {sr:.1f}"
-                    await self._ephemeral(interaction, msg)
                     return
 
         # Вне lock: БД, канал, PNG, Ready Check — не блокируем очередь
         if begin_search is not None:
-            key = self._queue_key(guild_id, channel_id, qtype)
+            key = (guild_id, channel_id)
             rc, err = await self._begin_match(begin_search, interaction)
             await self._update_queue_panel(begin_search)
             if rc is None:
@@ -1839,11 +1591,7 @@ class MMCog(commands.Cog):
                 )
 
     async def handle_queue_leave(
-        self,
-        interaction: discord.Interaction,
-        guild_id: int,
-        channel_id: int,
-        queue_type: str = QUEUE_TYPE_NORMAL,
+        self, interaction: discord.Interaction, guild_id: int, channel_id: int
     ) -> None:
         """Кнопка «Выйти из очереди» на V2-панели."""
         try:
@@ -1851,14 +1599,13 @@ class MMCog(commands.Cog):
         except Exception:
             pass
 
-        qtype = queue_type or QUEUE_TYPE_NORMAL
-        search = mm_search_store.get(guild_id, channel_id, qtype)
+        search = mm_search_store.get(guild_id, channel_id)
         if search is None:
             await self._ephemeral(interaction, "Поиск не найден.")
             return
 
-        async with self._queue_lock(guild_id, channel_id, qtype):
-            search = mm_search_store.get(guild_id, channel_id, qtype)
+        async with self._queue_lock(guild_id, channel_id):
+            search = mm_search_store.get(guild_id, channel_id)
             if search is None:
                 await self._ephemeral(interaction, "Поиск не найден.")
                 return
@@ -1881,7 +1628,7 @@ class MMCog(commands.Cog):
             search.remove_player(name)
             if not search.players:
                 search.timer_started = False
-                self._cancel_search_timer(guild_id, channel_id, qtype)
+                self._cancel_search_timer(guild_id, channel_id)
             mm_search_store.set(search)
             await self._edit_panel(interaction, search)
             # Снимаем состояние «бот думает…» ephemeral-подтверждением
@@ -1897,11 +1644,9 @@ class MMCog(commands.Cog):
         WAITING_FOR_CHANNEL, recovery) безопасно возвращают
         существующий процесс вместо создания дубля.
         """
-        key = self._queue_key(
-            search.guild_id, search.channel_id, search.queue_type
-        )
+        key = (search.guild_id, search.channel_id)
         existing = await ready_check_store.get_active_by_search(
-            search.guild_id, search.channel_id, search.queue_type
+            search.guild_id, search.channel_id
         )
         if existing is not None:
             logger.info(
@@ -1927,51 +1672,6 @@ class MMCog(commands.Cog):
         При любой ошибке очередь возвращается в open.
         """
         guild = interaction.guild
-
-        # «БЕЗ РУИН»: финальная проверка SR перед формированием матча —
-        # рейтинг мог упасть, пока игрок ждал в очереди. Нарушителей
-        # исключаем с уведомлением; если осталось < 8 — матч не стартует.
-        if search.queue_type == QUEUE_TYPE_NO_RUIN:
-            offenders: list[str] = []
-            offender_uids: set[int] = set()
-            for name in list(search.players):
-                uid = search.player_user_ids.get(name, 0)
-                sr = await self._player_sr(search.guild_id, uid)
-                if not self._sr_in_no_ruin_range(sr):
-                    offenders.append(name)
-                    offender_uids.add(uid)
-            if offenders:
-                for name in offenders:
-                    search.remove_player(name)
-                search.timer_started = bool(search.players)
-                mm_search_store.set(search)
-                try:
-                    names = ", ".join(f"**{n}**" for n in offenders)
-                    await self._ephemeral(
-                        interaction,
-                        f"⛔ Исключены из БЕЗ РУИН (SR вне "
-                        f"{NO_RUIN_MIN_SR:g}–{NO_RUIN_MAX_SR:g}): {names}.",
-                    )
-                    chan = self.bot.get_channel(search.channel_id)
-                    if chan is not None:
-                        await chan.send(
-                            f"⛔ {names} исключены из очереди БЕЗ РУИН — "
-                            f"SR вне диапазона {NO_RUIN_MIN_SR:g}–"
-                            f"{NO_RUIN_MAX_SR:g}.",
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                except Exception as exc:
-                    logger.warning("no_ruin offender notify failed: %s", exc)
-                await self._update_queue_panel(search)
-                if len(search.players) < search.required_players:
-                    search.state = QUEUE_OPEN
-                    search.match_num = 0
-                    mm_search_store.set(search)
-                    return None, (
-                        "Часть игроков исключена из БЕЗ РУИН по SR — "
-                        "набор продолжается."
-                    )
-
         match_id = f"rc_{search.guild_id}_{int(time.time() * 1000)}"
         # Повторная попытка (WAITING_FOR_CHANNEL и т.п.): search.match_num
         # уже содержит выданный номер — переиспользуем его, иначе каждый
@@ -2013,14 +1713,10 @@ class MMCog(commands.Cog):
             mm_search_store.set(search)
             # Перезапустить таймер, чтобы заполненная очередь не «зависла»
             if search.players:
-                key = self._queue_key(
-                    search.guild_id, search.channel_id, search.queue_type
-                )
+                key = (search.guild_id, search.channel_id)
                 task = self._search_timers.get(key)
                 if task is None or task.done():
-                    self._start_search_timer(
-                        search.guild_id, search.channel_id, search.queue_type
-                    )
+                    self._start_search_timer(search.guild_id, search.channel_id)
             await self._update_queue_panel(search)
 
         # 1. Блокируем очередь до создания канала/RC
@@ -2098,10 +1794,7 @@ class MMCog(commands.Cog):
         ]
         return await match_channel_pool.acquire_channel(
             guild, user_ids, role_ids=role_ids,
-            owner=(
-                f"mm:{guild.id}:{search.channel_id}:"
-                f"{search.queue_type or QUEUE_TYPE_NORMAL}"
-            ),
+            owner=f"mm:{guild.id}:{search.channel_id}",
         )
 
     async def _delete_channel_by_id(self, channel_id: int) -> None:
@@ -2234,16 +1927,9 @@ class MMCog(commands.Cog):
                 pool_slots = await _mcp.list_slots()
             except Exception:
                 pool_slots = []
-            seen_panel_messages: set[int] = set()
             for search in mm_search_store.all():
                 try:
-                    # Обе очереди канала делят одну панель — view
-                    # регистрируем один раз на message_id.
-                    if (
-                        search.message_id
-                        and search.message_id not in seen_panel_messages
-                    ):
-                        seen_panel_messages.add(search.message_id)
+                    if search.message_id:
                         self.bot.add_view(
                             build_queue_controls(search.guild_id, search.channel_id),
                             message_id=search.message_id,
@@ -2253,13 +1939,10 @@ class MMCog(commands.Cog):
 
                 if search.state == QUEUE_LOCKED_READY_CHECK:
                     rc = await ready_check_store.get_active_by_search(
-                        search.guild_id, search.channel_id, search.queue_type
+                        search.guild_id, search.channel_id
                     )
                     if rc is None:
-                        owner = (
-                            f"mm:{search.guild_id}:{search.channel_id}:"
-                            f"{search.queue_type or QUEUE_TYPE_NORMAL}"
-                        )
+                        owner = f"mm:{search.guild_id}:{search.channel_id}"
                         has_slot = any(
                             sl.get("owner") == owner
                             and sl.get("state") in ("reserved", "active")
@@ -2282,15 +1965,11 @@ class MMCog(commands.Cog):
                             mm_search_store.set(search)
                             # Заполненная очередь без таймера — перезапустить
                             if search.is_full and search.players:
-                                key = self._queue_key(
-                                    search.guild_id, search.channel_id,
-                                    search.queue_type,
-                                )
+                                key = (search.guild_id, search.channel_id)
                                 task = self._search_timers.get(key)
                                 if task is None or task.done():
                                     self._start_search_timer(
-                                        search.guild_id, search.channel_id,
-                                        search.queue_type,
+                                        search.guild_id, search.channel_id
                                     )
                 try:
                     await self._update_queue_panel(search)

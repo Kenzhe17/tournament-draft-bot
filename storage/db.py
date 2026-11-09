@@ -798,6 +798,21 @@ async def init_db() -> None:
             END $$;
         """)
 
+        # Режим «БЕЗ РУИН» удалён из бота — чистим его активное
+        # состояние: недоигранные поиски и не-запущенные ready-checks.
+        # Завершённые матчи, история и статистика не затрагиваются;
+        # уже запущенный матч (LAUNCHED) доигрывается штатно.
+        await conn.execute(
+            "DELETE FROM mm_queues WHERE queue_type <> 'normal'"
+        )
+        await conn.execute("""
+            UPDATE ready_checks
+            SET status = 'CANCELLED',
+                cancel_reason = 'queue_removed'
+            WHERE queue_type <> 'normal'
+              AND status NOT IN ('LAUNCHED', 'DECLINED', 'TIMEOUT', 'CANCELLED')
+        """)
+
         # Глобальная нумерация матчей (карточка «РЕЗУЛЬТАТ МАТЧА» + embed запуска)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS match_counter (

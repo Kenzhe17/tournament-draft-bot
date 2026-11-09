@@ -92,13 +92,6 @@ class FinalView(discord.ui.View):
         #     from views.matches_view import TeamNameButton
         #     self.add_item(TeamNameButton(guild_id, tournament))
 
-        # Add betting buttons (skip for random-auto)
-        if tournament.formation_mode != "random-auto":
-            from views.bet_views import BetButton, ViewBetsButton
-            final_matches = [(final_teams[0], final_teams[1])]
-            self.add_item(BetButton(guild_id, channel_id, tournament, final_matches, "final"))
-            self.add_item(ViewBetsButton(guild_id, channel_id, tournament, final_matches, "final"))
-
         # Add room button for final (only if not filled)
         if not tournament.final_room:
             team_a = final_teams[0]
