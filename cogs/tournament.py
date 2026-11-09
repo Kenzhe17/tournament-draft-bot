@@ -1795,112 +1795,37 @@ class TournamentCog(commands.Cog):
 
     #     await interaction.followup.send( view=compose(embed))
 
-    @app_commands.command(name="booyah", description="Рекорды турнира")
+    @app_commands.command(name="booyah", description="Зал славы — рекорды сервера")
     async def booyah(self, interaction: discord.Interaction) -> None:
-        """Показать рекорды турнира."""
+        """Интерактивный Зал славы: 7 категорий, 30+ рекордов."""
         await interaction.response.defer()
 
-        from storage.player_stats_store import player_stats_store
-
-        all_players = await player_stats_store.get_all(interaction.guild_id)
-
-        if not all_players:
-            await interaction.edit_original_response( view=text_card(replace_emojis("❌ Пока нет данных для рекордов.")),
-            )
-            return
-
-        # Find records (all players)
-        most_wins = max(all_players, key=lambda p: p.wins)
-        highest_elo = max(all_players, key=lambda p: p.elo)
-        best_match_kills = max(all_players, key=lambda p: p.best_match_kills)  # Убрано ограничение 20 игр
-
-        # Records only for players with 20+ matches
-        players_20_plus = [p for p in all_players if p.games >= 20]
-        highest_kd = max(players_20_plus, key=lambda p: p.kd_ratio) if players_20_plus else None
-        highest_winrate = max(players_20_plus, key=lambda p: p.win_rate) if players_20_plus else None
-        best_avg_kills_20 = max(players_20_plus, key=lambda p: p.avg_kills) if players_20_plus else None
-        best_win_streak_20 = max(players_20_plus, key=lambda p: p.best_win_streak) if players_20_plus else None
-
-        # New records: Most coins and Best bettor
-        from storage.user_balance_store import user_balance_store
-        from storage.betting_stats_store import betting_stats_store
-
-        # Get all user balances
-        richest_player = None
-        max_balance = 0
-        try:
-            for player in all_players:
-                balance = await user_balance_store.get_balance(interaction.guild_id, player.user_id)
-                if balance > max_balance:
-                    max_balance = balance
-                    richest_player = player
-        except Exception:
-            # If balance store fails, skip this record
-            pass
-
-        # Get best bettor (max single win)
-        best_bettor = None
-        max_single_win = 0
-        try:
-            for player in all_players:
-                bet_stats = await betting_stats_store.get(interaction.guild_id, player.user_id)
-                if bet_stats and bet_stats.best_win > max_single_win:
-                    max_single_win = bet_stats.best_win
-                    best_bettor = player
-        except Exception:
-            # If betting stats store fails, skip this record
-            pass
-        best_loss_streak_20 = max(players_20_plus, key=lambda p: p.best_loss_streak) if players_20_plus else None
-        best_match_kills_20 = max(players_20_plus, key=lambda p: p.best_match_kills) if players_20_plus else None
-
-        embed = discord.Embed(
-            title=f" {replace_emojis('winner')} РЕКОРДЫ ТУРНИРА (/booyah)  ",
-            description=f" **Зал славы и абсолютные рекорды сервера r1z3**\n\n **🏆 Боевые достижения:**",
-            color=discord.Color.from_rgb(69, 69, 69)
+        from services.hall_of_fame.cache import get_cached
+        from services.hall_of_fame.view import (
+            HallOfFameView, banner_file,
         )
 
-        # Build description with all records
-        desc = embed.description
+        try:
+            data = await get_cached(interaction.guild_id)
+        except Exception:
+            logger.exception("booyah compute failed")
+            await interaction.edit_original_response(
+                view=text_card(replace_emojis("❌ Не удалось загрузить рекорды.")))
+            return
 
-        # AVG Kills (20+ games)
-        if best_avg_kills_20:
-            desc += f"\n  **Наибольшее AVG Kills:** <@{best_avg_kills_20.user_id}> `({best_avg_kills_20.avg_kills:.2f} / {best_avg_kills_20.games} игр)`"
-
-        # Best match kills (all players)
-        desc += f"\n  **Рекорд киллов за матч:** <@{best_match_kills.user_id}> `({best_match_kills.best_match_kills} kills)`"
-
-        # K/D (20+ games)
-        if highest_kd:
-            desc += f"\n  **Наибольшее K/D:** <@{highest_kd.user_id}> `({highest_kd.kd_ratio:.2f} K/D / {highest_kd.games} игр)`"
-
-        # WinRate (20+ games)
-        if highest_winrate:
-            desc += f"\n  **Лучший WinRate:** <@{highest_winrate.user_id}> `({highest_winrate.win_rate:.1f}% / {highest_winrate.games} игр)`"
-
-        # Highest ELO (all players)
-        desc += f"\n  **Самый высокий ELO:** <@{highest_elo.user_id}> `({highest_elo.elo:,} ELO)`"
-
-        # Win/Loss streaks (20+ games)
-        desc += f"\n\n **🔥 Серии побед и поражений:**"
-        if best_win_streak_20:
-            desc += f"\n  **Лучшая серия побед:** <@{best_win_streak_20.user_id}> `({best_win_streak_20.best_win_streak} подряд)`"
-        if best_loss_streak_20:
-            desc += f"\n  **Худшая серия поражений:** <@{best_loss_streak_20.user_id}> `({best_loss_streak_20.best_loss_streak} подряд)`"
-
-        # Financial records
-        desc += f"\n\n **{get_emoji('money')} Финансовые рекорды:**"
-        if richest_player:
-            desc += f"\n  **Богатейший игрок:** <@{richest_player.user_id}> `({max_balance:,}` {get_emoji('money')}`)`"
-        if best_bettor:
-            bet_stats = await betting_stats_store.get(interaction.guild_id, best_bettor.user_id)
-            bet_winrate = f"{(bet_stats.bets_won / bet_stats.total_bets * 100):.1f}%" if bet_stats and bet_stats.total_bets > 0 else "0%"
-            desc += f"\n  **Лучший беттер:** <@{best_bettor.user_id}> `({max_single_win:,}` {get_emoji('money')} ` / {bet_winrate}%)`"
-
-        desc += f"\n\n{replace_emojis('a_dot_smaller')} Статистика обновляется автоматически после каждого турнирного матча "
-
-        embed.description = desc
-
-        await interaction.edit_original_response( view=compose(embed))
+        view = HallOfFameView(
+            guild_id=interaction.guild_id,
+            invoker_id=interaction.user.id,
+            category_key="combat",
+            data=data,
+            guild=interaction.guild,
+            timeout=None,
+        )
+        file = banner_file()
+        kwargs = {"view": view}
+        if file is not None:
+            kwargs["file"] = file
+        await interaction.edit_original_response(**kwargs)
 
     @commands.command(name="elo")
     @is_org()

@@ -79,6 +79,8 @@ DELETE_TABLES = [
     "ultimatum_rounds",
     "ultimatum_players",
     "ultimatum_tournaments",
+    # Зал славы: исторические пики — новая эпоха после сброса
+    "hof_records",
 ]
 
 # JSON-файлы пользовательского прогресса (fallback-хранилища).
