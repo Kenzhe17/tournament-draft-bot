@@ -774,21 +774,6 @@ class OCRUploadCog(commands.Cog):
 
         stats_channel = await _stats_channel(message, tournament)
 
-        # Скриншот принят (все проверки пройдены) — сразу пишем в чат,
-        # чтобы игроки видели, что аналитика запущена, а не «капитан
-        # забыл отправить». Для кнопки это происходит в тот же тик,
-        # что и сабмит модалки (on_message вызывается из on_submit).
-        try:
-            await message.channel.send(
-                f"{message.author.mention} успешно отправил скриншот — "
-                "ожидаем аналитику.",
-                allowed_mentions=discord.AllowedMentions(
-                    users=[message.author]
-                ),
-            )
-        except Exception as exc:
-            logger.warning("upload ack failed: %s", exc)
-
         try:
             data = await attachment.read()
             from services.ocr_service import (

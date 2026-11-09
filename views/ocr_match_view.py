@@ -433,23 +433,53 @@ def _panel_rows(session: dict, panel: str) -> list[dict]:
     return (session.get("panels", {}).get(panel) or {}).get("rows", [])
 
 
+def _map_has_claims(tm: dict | None) -> bool:
+    """У команды есть реальная привязка к панели: подтверждённый
+    маппинг или хотя бы одна занятая строка."""
+    if not isinstance(tm, dict):
+        return False
+    if tm.get("confirmed"):
+        return True
+    return any(_row_bound(r) for r in (tm.get("rows") or []))
+
+
+def _panel_claimed_by_other(
+    session: dict, team_index: int, panel: str
+) -> bool:
+    """Панель уже занята ДРУГОЙ командой (подтверждение или привязки).
+
+    Skeleton без привязок и «резервы» panel_picks claims не считаются —
+    панель закрепляется только фактическим сопоставлением.
+    """
+    for tk, tm2 in _match_maps(session).items():
+        if str(tk) == str(team_index):
+            continue
+        if not isinstance(tm2, dict) or tm2.get("panel") != panel:
+            continue
+        if _map_has_claims(tm2):
+            return True
+    return False
+
+
 def _ensure_team_panel(
-    tournament: Tournament, session: dict, team_index: int
+    tournament: Tournament, session: dict, team_index: int,
+    panel: str | None = None,
 ) -> str | None:
     """Гарантировать maps[team] = {panel, rows-skeleton}.
 
-    Панель берётся из maps/panel_picks/авто-определения. Возвращает
-    panel или None, если сторону определить нельзя (ручной выбор).
+    Панель берётся из maps/явного параметра/авто-определения
+    (panel_picks — legacy-фолбэк для старых сессий). Возвращает
+    panel или None, если сторону определить нельзя.
     """
     tm = _team_map(session, team_index)
     if tm and tm.get("panel"):
         return tm["panel"]
-    panel = (session.get("panel_picks") or {}).get(str(team_index))
+    if panel not in ("left", "right"):
+        panel = (session.get("panel_picks") or {}).get(str(team_index))
     if panel not in ("left", "right"):
         panel = _auto_panel_for_team(tournament, session, team_index)
     if panel not in ("left", "right"):
         return None
-    session.setdefault("panel_picks", {})[str(team_index)] = panel
     # Skeleton rows — снимок OCR-строк панели с полями привязки.
     rows = []
     for r in _panel_rows(session, panel):
@@ -517,28 +547,16 @@ async def _open_panel_mapping(
             replace_emojis("❌ OCR-сессия не найдена."), ephemeral=True
         )
         return
-    # Панель не должна быть занята другой командой — ни завершённым
-    # маппингом, ни резервом другой команды
-    picks = session.get("panel_picks", {})
-    own_key = str(team_index)
-    blocker = None
-    for other_key, other_map in session.get("maps", {}).items():
-        if str(other_key) != own_key and isinstance(other_map, dict) \
-                and other_map.get("panel") == panel:
-            blocker = f"maps[{other_key}]"
-            break
-    if blocker is None:
-        for other_key, picked in picks.items():
-            if str(other_key) != own_key and picked == panel:
-                blocker = f"panel_picks[{other_key}]={picked!r}"
-                break
-    if blocker is not None:
+    # Панель блокируем только если её уже заняла ДРУГАЯ команда
+    # фактическим сопоставлением. Свой skeleton без привязок можно
+    # переоткрыть на другую панель — выбор панели сам по себе
+    # ничего не закрепляет.
+    if _panel_claimed_by_other(session, team_index, panel):
         logger.warning(
-            "OCR panel %s blocked for team %s by %s "
-            "(match %s/%s, session maps=%s picks=%s)",
-            panel, own_key, blocker,
-            match_type, match_index,
-            session.get("maps"), picks,
+            "OCR panel %s blocked for team %s "
+            "(match %s/%s, session maps=%s)",
+            panel, team_index, match_type, match_index,
+            session.get("maps"),
         )
         await interaction.response.send_message(
             replace_emojis(
@@ -548,20 +566,29 @@ async def _open_panel_mapping(
         )
         return
 
-    # Резервируем панель сразу — пока идёт маппинг, вторая команда
-    # не сможет выбрать ту же сторону
-    picks[own_key] = panel
-    session["panel_picks"] = picks
-    store.set(tournament)
+    # Если у команды skeleton на ДРУГОЙ панели и в нём нет привязок —
+    # пересоздаём под выбранную (выбор панели не является резервом).
+    own_map = _team_map(session, team_index)
+    if (
+        isinstance(own_map, dict)
+        and own_map.get("panel") not in (None, panel)
+        and not _map_has_claims(own_map)
+    ):
+        _match_maps(session).pop(str(team_index), None)
 
-    # Skeleton maps[team] — прогресс и привязки игроков по строкам
-    _ensure_team_panel(tournament, session, team_index)
+    # Skeleton maps[team] — прогресс и привязки игроков по строкам.
+    # Панель НЕ резервируется: закрепление — при первом bind/save.
+    # Если у команды уже есть привязки на другой панели — маппинг
+    # открываем на фактической панели, а не на повторно выбранной.
+    actual_panel = _ensure_team_panel(
+        tournament, session, team_index, panel=panel
+    ) or panel
     store.set(tournament)
 
     name = _team_display_name(tournament, team_index)
     tm = _team_map(session, team_index) or {}
     mapped_rows = tm.get("rows") or []
-    side_label = "Левая" if panel == "left" else "Правая"
+    side_label = "Левая" if actual_panel == "left" else "Правая"
     done_n, total_n = _mapping_progress(session, team_index)
     embed = discord.Embed(
         title=f"🧩 {name} — сопоставление игроков",
@@ -596,7 +623,7 @@ async def _open_panel_mapping(
 
     view = PanelMappingView(
         interaction.guild.id, interaction.channel.id, tournament,
-        match_type, match_index, team_index, panel,
+        match_type, match_index, team_index, actual_panel,
     )
     await interaction.response.send_message( view=compose(embed, view), ephemeral=True
     )
@@ -2033,26 +2060,15 @@ class PanelMappingView(View):
             )
             return
 
-        # Панель не должна быть занята другой командой — ни завершённым
-        # маппингом, ни резервом другой команды
-        picks = session.get("panel_picks", {})
-        own_key = str(self.team_index)
-        blocker = None
-        for other_key, other_map in session.get("maps", {}).items():
-            if str(other_key) != own_key and isinstance(other_map, dict) \
-                    and other_map.get("panel") == self.panel:
-                blocker = f"maps[{other_key}]"
-                break
-        if blocker is None:
-            for other_key, picked in picks.items():
-                if str(other_key) != own_key and picked == self.panel:
-                    blocker = f"panel_picks[{other_key}]={picked!r}"
-                    break
-        if blocker is not None:
+        # Панель закрепляется подтверждением сопоставления: блокируем
+        # только если её фактически заняла другая команда.
+        if _panel_claimed_by_other(
+            session, self.team_index, self.panel
+        ):
             logger.warning(
-                "OCR panel %s save blocked for team %s by %s "
+                "OCR panel %s save blocked for team %s "
                 "(match %s/%s)",
-                self.panel, own_key, blocker,
+                self.panel, self.team_index,
                 self.match_type, self.match_index,
             )
             await interaction.response.send_message(
@@ -2081,7 +2097,11 @@ class PanelMappingView(View):
         session.setdefault("maps", {})[str(self.team_index)] = {
             "panel": self.panel,
             "rows": mapped_rows,
+            "confirmed": True,
         }
+        session.setdefault("panel_picks", {})[str(self.team_index)] = (
+            self.panel
+        )
         done = len(session["maps"])
         auto = done >= 2
         session["status"] = "ready" if auto else "mapping"
@@ -2204,6 +2224,20 @@ class PanelMappingView(View):
                 )
                 return
 
+            # Панель закрепляется подтверждением: если её уже заняла
+            # другая команда — сохранение отклоняем.
+            own_panel = tm.get("panel") or self.panel
+            if own_panel and _panel_claimed_by_other(
+                session, self.team_index, own_panel
+            ):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Эта панель уже закреплена за другой командой."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
             bound_now = 0
             overridden: list[str] = []
             for i, name in chosen.items():
@@ -2223,6 +2257,10 @@ class PanelMappingView(View):
                 row["discord_id"] = uid
                 row["source"] = "captain"
                 bound_now += 1
+            tm["confirmed"] = True
+            session.setdefault("panel_picks", {})[str(self.team_index)] = (
+                own_panel
+            )
             store.set(tournament)
 
             try:
@@ -2697,6 +2735,20 @@ async def _self_bind_row(
             )
             return
         row = mrows[row_idx]
+
+        # Панель закрепляется фактической привязкой: если другая
+        # команда уже заняла её — self-bind отклоняем.
+        own_panel = tm.get("panel")
+        if own_panel and _panel_claimed_by_other(
+            session, team, own_panel
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Эта панель уже закреплена за другой командой."
+                ),
+                ephemeral=True,
+            )
+            return
 
         if _row_bound(row):
             try:
@@ -3241,6 +3293,23 @@ async def finalize_ocr_match(
     except Exception:
         channel = None
 
+    # Публичное OCR-сообщение: гасим кнопки, оставляем скриншот и
+    # короткий финальный статус. Итог с именем победителя уходит
+    # только инициатору — ephemeral.
+    from cogs.ocr_upload import _mapping_layout
+
+    done_caption = "✅ Матч завершён — результат в канале результатов."
+    done_view = _mapping_layout(None, done_caption)
+
+    async def _strip_buttons(mid: int) -> None:
+        if channel is None or not mid:
+            return
+        try:
+            msg = await channel.fetch_message(mid)
+            await msg.edit(view=done_view)
+        except Exception as e:
+            logger.warning("OCR message finalize edit failed: %s", e)
+
     if session.get("mode") == "squad":
         # У каждого отряда своё сообщение — гасим кнопки на всех
         mids = [
@@ -3248,23 +3317,23 @@ async def finalize_ocr_match(
         ] + [
             e.get("message_id") for e in session.get("squad_pool", [])
         ]
-        if channel is not None:
-            for mid in mids:
-                if not mid:
-                    continue
-                try:
-                    msg = await channel.fetch_message(mid)
-                    await msg.edit( view=compose(text=replace_emojis(final_text), view=None)
-                    )
-                except Exception as e:
-                    logger.warning("Squad message finalize failed: %s", e)
-    elif session.get("message_id") and channel is not None:
+        for mid in mids:
+            await _strip_buttons(mid)
+    else:
+        await _strip_buttons(session.get("message_id"))
+
+    # Уведомление о победителе — только тому, кто подтвердил результат
+    try:
+        await interaction.followup.send(
+            replace_emojis(final_text), ephemeral=True
+        )
+    except Exception:
         try:
-            msg = await channel.fetch_message(session["message_id"])
-            await msg.edit( view=compose(text=replace_emojis(final_text), view=None),
+            await interaction.response.send_message(
+                replace_emojis(final_text), ephemeral=True
             )
         except Exception as e:
-            logger.warning("OCR message finalize edit failed: %s", e)
+            logger.warning("final result ephemeral failed: %s", e)
 
     try:
         bot = interaction.client

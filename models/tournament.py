@@ -1235,6 +1235,12 @@ class Tournament:
 
     def generate_final_from_semifinals(self) -> None:
         """Сгенерировать финал из победителей полуфиналов."""
+        # Переход к финалу: пары + фаза + сброс pending-состояния
+        self.final_teams = [
+            w for w in self.semifinal_winners if w is not None
+        ][:2]
+        self.final_pending_winner = None
+        self.phase = TournamentPhase.FINAL
         # Start betting phase for final
         self.start_betting_phase("final")
 

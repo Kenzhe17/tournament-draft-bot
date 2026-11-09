@@ -361,7 +361,6 @@ async def announce_phase_matches(
     )
 
     is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
-    fallback_channel = await _result_channel(guild, None) if not is_mm else None
 
     # Канал, созданный на этапе ready-check (cs-4x4-match-N)
     preset_channel: discord.TextChannel | None = None
@@ -499,10 +498,11 @@ async def announce_phase_matches(
                     "Match #%d channel %s created (%s)",
                     number, channel.id, label,
                 )
-            elif fallback_channel is not None:
-                await fallback_channel.send(embed=embed)
-            else:
-                # MM без канала (нет прав/категории) — fallback в результаты
+            elif is_mm:
+                # MM без выделенного канала (нет прав/категории) —
+                # fallback в канал результатов.
+                # Обычные турниры: анонс-эмбед не отправляем — матчи
+                # отображаются в панели турнира.
                 result_ch = await _result_channel(guild, None)
                 if result_ch is not None:
                     await result_ch.send(embed=embed)
