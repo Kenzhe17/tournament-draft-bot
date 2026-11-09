@@ -1101,25 +1101,105 @@ async def _maybe_delete_match_channel(
     elif not session:
         return
 
-    for cid, mc in list(channels.items()):
+    # Кандидаты: все каналы из match_channels + preset-канал MM
+    # (match_channels хранит одну запись на канал — последняя
+    # анонсированная, поэтому preset проверяем отдельно).
+    candidate_ids = {int(c) for c in channels}
+    preset = getattr(tournament, "mm_preset_channel_id", 0) or 0
+    if preset:
+        candidate_ids.add(int(preset))
+
+    for cid in candidate_ids:
+        mc = channels.get(str(cid)) or {}
+        is_pool = cid in MM_MATCH_CHANNEL_POOL
         if (
-            mc.get("match_type") != match_type
-            or mc.get("match_index") != match_index
+            not is_pool
+            and (
+                mc.get("match_type") != match_type
+                or mc.get("match_index") != match_index
+            )
         ):
             continue
         try:
-            channel = guild.get_channel(int(cid))
+            channel = guild.get_channel(cid)
             if channel is None:
-                channel = await guild.fetch_channel(int(cid))
-            if channel is not None and int(cid) not in MM_MATCH_CHANNEL_POOL:
-                # Каналы пула MM не удаляем — они переиспользуются
+                channel = await guild.fetch_channel(cid)
+            if channel is None:
+                channels.pop(str(cid), None)
+                continue
+            if is_pool:
+                # Канал пула не удаляем — возвращаем в дефолт:
+                # сбрасываем overwrites и чистим историю. Но только
+                # когда все матчи турнира завершены — канал общий
+                # для всех матчей MM.
+                if await _pool_channel_idle(tournament, cid):
+                    await _reset_pool_channel(channel)
+                    channels.pop(str(cid), None)
+            else:
                 await channel.delete(reason="Результат матча загружен")
                 logger.info("Match channel %s deleted", cid)
+                channels.pop(str(cid), None)
         except Exception as exc:
             logger.warning("Failed to delete match channel %s: %s", cid, exc)
-        channels.pop(cid, None)
+            channels.pop(str(cid), None)
     tournament.match_channels = channels
     store.set(tournament)
+
+
+async def _pool_channel_idle(tournament, channel_id: int) -> bool:
+    """True, если канал пула можно сбрасывать: нет незавершённых
+    матчей турнира, которые ещё используют его как preset-канал."""
+    if getattr(tournament, "mm_preset_channel_id", 0) != channel_id:
+        return True
+    try:
+        from services.match_announcer import _phase_matches
+        from views.ocr_match_view import match_is_finished
+
+        for mt, mi, _a, _b in _phase_matches(tournament):
+            if not match_is_finished(tournament, mt, mi):
+                return False
+    except Exception as exc:
+        logger.warning("Pool idle check failed: %s", exc)
+        return False
+    return True
+
+
+async def _reset_pool_channel(channel) -> None:
+    """Вернуть канал пула в дефолт: overwrites категории + чистая история."""
+    try:
+        await channel.edit(
+            overwrites={}, reason="MM match channel pool reset")
+    except Exception as exc:
+        logger.warning("Pool channel %s overwrites reset failed: %s",
+                       channel.id, exc)
+    try:
+        for p in await channel.pins():
+            try:
+                await p.unpin()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        while True:
+            msgs = [m async for m in channel.history(limit=100)]
+            if not msgs:
+                break
+            try:
+                await channel.delete_messages(
+                    msgs, reason="MM channel pool reset")
+            except Exception:
+                for m in msgs:
+                    try:
+                        await m.delete()
+                    except Exception:
+                        pass
+            if len(msgs) < 100:
+                break
+    except Exception as exc:
+        logger.warning("Pool channel %s purge failed: %s",
+                       channel.id, exc)
+    logger.info("Pool channel %s reset to defaults", channel.id)
 
 
 class ModalUploadShim:
