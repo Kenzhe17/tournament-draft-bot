@@ -228,8 +228,8 @@ async def _send_room_data(
     channel: Any, room_id: str, room_password: str
 ) -> None:
     """ID и пароль — двумя отдельными обычными сообщениями."""
-    await channel.send(f"```\n{room_id}\n```")
-    await channel.send(f"```\n{room_password}\n```")
+    await channel.send(room_id)
+    await channel.send(room_password)
 
 
 async def send_room_dm_notifications(

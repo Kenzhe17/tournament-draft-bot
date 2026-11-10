@@ -85,9 +85,9 @@ async def test_mm_room_notify_goes_to_match_channel():
     assert len(match_ch.sent) == 3
     card_view = match_ch.sent[0][1].get("view")
     assert card_view is not None
-    # ID и пароль — отдельные обычные сообщения
-    assert match_ch.sent[1][0][0] == "```\n38765135\n```"
-    assert match_ch.sent[2][0][0] == "```\n11\n```"
+    # ID и пароль — отдельные обычные сообщения (без код-блоков)
+    assert match_ch.sent[1][0][0] == "38765135"
+    assert match_ch.sent[2][0][0] == "11"
     # Общий канал и канал данных НЕ используются для MM
     assert general.sent == []
     assert data_ch.sent == []
