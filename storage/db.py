@@ -784,6 +784,11 @@ async def init_db() -> None:
             ALTER TABLE mm_queues
             ADD COLUMN IF NOT EXISTS queue_type TEXT NOT NULL DEFAULT 'normal'
         """)
+        # Псевдонимы участников очереди (анонимное отображение панели)
+        await conn.execute("""
+            ALTER TABLE mm_queues
+            ADD COLUMN IF NOT EXISTS aliases JSONB NOT NULL DEFAULT '{}'::jsonb
+        """)
         await conn.execute("ALTER TABLE mm_queues DROP CONSTRAINT IF EXISTS mm_queues_pkey")
         await conn.execute("""
             DO $$

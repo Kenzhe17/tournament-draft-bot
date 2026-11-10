@@ -75,15 +75,18 @@ class QueueLeaveButton(discord.ui.Button):
 
 
 def _roster_lines(search: MMSearch) -> str:
-    """Все слоты очереди: 01..NN с игроками или 'Свободно'."""
+    """Все слоты очереди: 01..NN с псевдонимами или 'Свободно'.
+
+    В очереди показываются только анонимные псевдонимы — реальные
+    Discord-ники и упоминания скрыты до формирования матча.
+    """
     required = search.required_players
     lines: list[str] = []
     for i in range(required):
         num = f"{i + 1:02d}"
         if i < len(search.players):
             name = search.players[i]
-            uid = search.player_user_ids.get(name, 0)
-            entry = f"<@{uid}>" if uid else name
+            entry = search.alias_for(name)
         else:
             entry = "Свободно"
         lines.append(f"{num}. {entry}")

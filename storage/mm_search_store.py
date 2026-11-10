@@ -50,8 +50,8 @@ class MMSearchStore:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT guild_id, channel_id, message_id, format, state,"
-                    " players, player_user_ids, created_at, timer_started,"
-                    " tournament_channel_id, match_num"
+                    " players, player_user_ids, aliases, created_at,"
+                    " timer_started, tournament_channel_id, match_num"
                     " FROM mm_queues WHERE queue_type = 'normal'"
                 )
             self._searches = {}
@@ -59,14 +59,18 @@ class MMSearchStore:
                 data = dict(row)
                 players = data.pop("players")
                 player_user_ids = data.pop("player_user_ids")
+                aliases = data.pop("aliases", {})
                 if isinstance(players, str):
                     players = json.loads(players)
                 if isinstance(player_user_ids, str):
                     player_user_ids = json.loads(player_user_ids)
+                if isinstance(aliases, str):
+                    aliases = json.loads(aliases)
                 search = MMSearch.from_dict({
                     **data,
                     "players": players or [],
                     "player_user_ids": player_user_ids or {},
+                    "aliases": aliases or {},
                 })
                 self._searches[(search.guild_id, search.channel_id)] = search
             logger.info("MMSearchStore: загружено %d очередей из PostgreSQL",
@@ -115,15 +119,17 @@ class MMSearchStore:
                 """
                 INSERT INTO mm_queues
                     (guild_id, channel_id, message_id, format, state,
-                     players, player_user_ids, created_at, timer_started,
-                     tournament_channel_id, match_num, queue_type)
-                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,$9,$10,$11,'normal')
+                     players, player_user_ids, aliases, created_at,
+                     timer_started, tournament_channel_id, match_num,
+                     queue_type)
+                VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,'normal')
                 ON CONFLICT (guild_id, channel_id, queue_type) DO UPDATE SET
                     message_id = EXCLUDED.message_id,
                     format = EXCLUDED.format,
                     state = EXCLUDED.state,
                     players = EXCLUDED.players,
                     player_user_ids = EXCLUDED.player_user_ids,
+                    aliases = EXCLUDED.aliases,
                     timer_started = EXCLUDED.timer_started,
                     tournament_channel_id = EXCLUDED.tournament_channel_id,
                     match_num = EXCLUDED.match_num
@@ -135,6 +141,7 @@ class MMSearchStore:
                     {str(k): v for k, v in search.player_user_ids.items()},
                     ensure_ascii=False,
                 ),
+                json.dumps(search.aliases, ensure_ascii=False),
                 search.created_at, search.timer_started,
                 search.tournament_channel_id, search.match_num,
             )

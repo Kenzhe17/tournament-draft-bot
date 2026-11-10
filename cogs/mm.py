@@ -571,6 +571,7 @@ class MMCog(commands.Cog):
                     # Кикнуть игроков но сохранить поиск активным
                     search.players = []
                     search.player_user_ids = {}
+                    search.aliases = {}
                     search.timer_started = False
                     search.tournament_channel_id = 0
                     mm_search_store.set(search)
@@ -972,6 +973,7 @@ class MMCog(commands.Cog):
         ]
         search.players = keep_names
         search.player_user_ids = {n: search.player_user_ids[n] for n in keep_names if n in search.player_user_ids}
+        search.aliases = {n: a for n, a in search.aliases.items() if n in keep_names}
         search.timer_started = bool(keep_names)
         # Очередь снова открыта — готовые игроки ждут следующего матча
         search.state = QUEUE_OPEN
