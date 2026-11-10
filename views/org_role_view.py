@@ -11,7 +11,7 @@ from utils.design import compose, smart_view
 
 from discord.ext import commands
 
-from config import replace_emojis, WELCOME_BANNER_URL, ORG_ROLE_MAP, TOURNAMENT_CHANNELS
+from config import replace_emojis, ORG_ROLE_MAP, TOURNAMENT_CHANNELS
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -21,6 +21,12 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 ORG_SLOT_FILE = DATA_DIR / "org_slot.json"
 MAX_ORG_ROLE_HOLDERS = 1
+
+# Баннер как у панели /mm squad — картинка сверху сообщения
+ORG_BANNER_PATH = (
+    Path(__file__).resolve().parent.parent / "assets" / "queue_banner.png"
+)
+ORG_BANNER_MEDIA = "attachment://queue_banner.png"
 
 
 class OrgSlotState:
@@ -163,7 +169,7 @@ class TakeRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view))
+            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -239,7 +245,7 @@ class ReleaseRoleButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view))
+            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -267,7 +273,7 @@ class BackButton(discord.ui.Button):
         state = load_state()
         view = OrgRoleView(state)
         new_embed = build_org_role_embed(interaction.guild, state)
-        await interaction.response.edit_message( view=compose(new_embed, view))
+        await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
 
 
 class ResetButton(discord.ui.Button):
@@ -311,7 +317,7 @@ class ResetButton(discord.ui.Button):
 
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message( view=compose(new_embed, view))
+            await interaction.response.edit_message( view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA))
 
             await interaction.followup.send(
                 "✅ Все роли организаторов сброшены для всех пользователей",
@@ -437,7 +443,6 @@ def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.E
         description=description,
         color=discord.Color.from_rgb(69, 69, 69)
     )
-    embed.set_image(url=WELCOME_BANNER_URL)
     embed.set_footer(text="r1z3 Tournament System")
 
     return embed
@@ -458,7 +463,10 @@ async def setup_org_role_message(
     view = OrgRoleView(state)
 
     # Send message
-    message = await channel.send( view=compose(main_embed, view))
+    message = await channel.send(
+        view=compose(main_embed, view, top_media=ORG_BANNER_MEDIA),
+        file=discord.File(ORG_BANNER_PATH, filename="queue_banner.png"),
+    )
 
     # Save message info
     state.message_id = message.id

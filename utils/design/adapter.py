@@ -556,6 +556,7 @@ def compose(
     *,
     accent: int | None = None,
     text: str | None = None,
+    top_media: str | None = None,
 ) -> discord.ui.LayoutView:
     """Собрать LayoutView из Embed и/или View.
 
@@ -583,6 +584,13 @@ def compose(
         delegate=delegate,
         timeout=getattr(view,"timeout", 180.0),
     )
+    if top_media:
+        # Картинка сверху карточки (MediaGallery — top-level компонент)
+        layout.add_item(
+            discord.ui.MediaGallery(
+                discord.ui.MediaGalleryItem(media=top_media)
+            )
+        )
     for container in sections:
         layout.add_item(container)
     target = sections[-1]
