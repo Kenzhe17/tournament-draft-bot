@@ -257,3 +257,32 @@ async def test_panel_mapping_view_uses_tournament_channel():
         assert not any(":999:" in c for c in custom_ids)
     finally:
         omv.store._tournaments.pop((1, 2), None)
+
+
+def test_self_display_prefers_discord_nick():
+    """Self-привязка показывается Discord-ником, без длинной подписи."""
+    row = {"discord_name": "GameNick", "discord_display": "DiscordNick",
+           "source": "self"}
+    assert omv._self_display(row) == "DiscordNick"
+    # Старые сессии без discord_display — fallback на discord_name
+    assert omv._self_display({"discord_name": "GameNick"}) == "GameNick"
+
+
+def test_panel_mapping_placeholder_shows_discord_nick():
+    """В окне сопоставления self-строка помечается Discord-ником."""
+    t = _tournament()
+    s = _session()
+    t.ocr_sessions["qualifier_0"] = s
+    omv._ensure_team_panel(t, s, 0, panel="left")
+    row = s["maps"]["0"]["rows"][0]
+    row.update(
+        discord_name="GameNick", discord_id=113,
+        discord_display="DiscordNick", source="self",
+    )
+    view = omv.PanelMappingView(1, 2, t, "qualifier", 0, 0, "left")
+    placeholders = [
+        getattr(item, "placeholder", "") for item in view.children
+        if hasattr(item, "placeholder")
+    ]
+    assert any("DiscordNick" in p for p in placeholders)
+    assert not any("сам выбрал" in p for p in placeholders)

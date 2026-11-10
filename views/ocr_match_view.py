@@ -338,6 +338,15 @@ def _source_label(source) -> str:
     return str(source or "неизвестно")
 
 
+def _self_display(row: dict) -> str:
+    """Discord-ник игрока, сам выбравшего себя (fallback — discord_name)."""
+    return (
+        row.get("discord_display")
+        or row.get("discord_name")
+        or "?"
+    )
+
+
 def _match_maps(session: dict) -> dict:
     m = session.get("maps")
     if m is None:
@@ -605,10 +614,14 @@ async def _open_panel_mapping(
     for i, row in enumerate(mapped_rows):
         mark = ""
         if _row_bound(row):
-            mark = (
-                f" ✅ {row.get('discord_name', '?')} "
-                f"({_source_label(row.get('source'))})"
-            )
+            if row.get("source") == "self":
+                # Self-привязка — показываем просто Discord-ник
+                mark = f" ✅ {_self_display(row)}"
+            else:
+                mark = (
+                    f" ✅ {row.get('discord_name', '?')} "
+                    f"({_source_label(row.get('source'))})"
+                )
         embed.add_field(
             name=f"{i + 1}. {row.get('ocr_name', '?')}{mark}",
             value=(
@@ -1886,7 +1899,9 @@ class PanelMappingView(View):
             )
             placeholder = f"{row.get('name', '?')[:70]} → игрок"
             if bound_self:
-                placeholder += " · Игрок сам выбрал себя"
+                mrows = tm.get("rows") or []
+                brow = mrows[i] if i < len(mrows) else {}
+                placeholder += f" · {_self_display(brow)}"
             sel = Select(
                 placeholder=placeholder[:150],
                 options=options[:25],
@@ -2789,14 +2804,20 @@ async def _self_bind_row(
                 same = False
             if not same:
                 # Конфликт: ник уже закреплён за другим игроком
+                if row.get("source") == "self":
+                    holder = _self_display(row)
+                else:
+                    holder = (
+                        f"{row.get('discord_name', '?')} "
+                        f"({_source_label(row.get('source'))})"
+                    )
                 await _notify_mapping_conflict(
                     interaction.guild, session,
                     "⚠️ **OCR mapping conflict** — "
                     f"{_match_label(match_type, match_index)}: "
                     f"<@{uid}> пытался занять ник "
                     f"«{row.get('ocr_name', '?')}», уже закреплённый "
-                    f"за {row.get('discord_name', '?')} "
-                    f"({_source_label(row.get('source'))}).",
+                    f"за {holder}.",
                 )
                 await interaction.response.send_message(
                     replace_emojis(
@@ -2827,6 +2848,7 @@ async def _self_bind_row(
 
         row["discord_name"] = roster_name
         row["discord_id"] = uid
+        row["discord_display"] = interaction.user.display_name
         row["source"] = "self"
         store.set(tournament)
 
