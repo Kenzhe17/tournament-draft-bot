@@ -785,6 +785,16 @@ class OCRUploadCog(commands.Cog):
 
         stats_channel = await _stats_channel(message, tournament)
 
+        # Сразу подтверждаем приём в канале матча — OCR идёт долго,
+        # без сообщения игроки думают, что скриншот не дошёл, и шлют дубли.
+        try:
+            await message.channel.send(
+                f"{message.author.mention} отправил скриншот — "
+                "ожидайте обработки результата."
+            )
+        except Exception:
+            logger.debug("upload ack send failed", exc_info=True)
+
         try:
             data = await attachment.read()
             from services.ocr_service import (
