@@ -122,6 +122,20 @@ MAX_CAPTAINS = 4
 MAX_PLAYERS_PER_CIRCLE = 4
 CIRCLES = (2, 3, 4)
 
+# Smart Balance (r!z3 Ranked 4×4): веса критериев и допуски.
+# SR в диапазоне 0–10, команды по 4 игрока.
+MM_BALANCE_WEIGHTS = {
+    "sum": float(os.getenv("MM_BALANCE_W_SUM", "0.40")),
+    "top": float(os.getenv("MM_BALANCE_W_TOP", "0.30")),
+    "dist": float(os.getenv("MM_BALANCE_W_DIST", "0.20")),
+    "spread": float(os.getenv("MM_BALANCE_W_SPREAD", "0.10")),
+}
+# Допустимое превышение минимальной разницы суммарного SR
+# на первом этапе отбора комбинаций.
+MM_BALANCE_SUM_TOLERANCE = float(os.getenv("MM_BALANCE_SUM_TOLERANCE", "1.0"))
+# Порог «практически равного» balance_score для случайного выбора.
+MM_BALANCE_EPSILON = float(os.getenv("MM_BALANCE_EPSILON", "0.001"))
+
 # Custom emoji IDs for ranks (get these from Discord server settings)
 # Leave empty to use standard emojis: 👑 🔱 🎯 💎 🌪️ 🥇 🥈 🥉
 RANK_EMOJIS = {

@@ -641,14 +641,18 @@ class MMCog(commands.Cog):
                 stats_map[user_id] = stats
                 players_with_sr.append((name, stats.skill_rating if stats else 0.0))
 
-            # Балансировка — тот же алгоритм, что и в _create_tournament_from_search
-            probe = Tournament(
-                guild_id=search.guild_id,
-                channel_id=search.tournament_channel_id or interaction.channel_id,
-                size=TournamentSize.EIGHT,
-                formation_mode=FormationMode.RANDOM_AUTO,
-            )
-            teams = probe.distribute_players_random_auto(players_with_sr)
+            # Балансировка — Smart Balance 4×4; фолбэк на старый
+            # алгоритм distribute_players_random_auto
+            from utils.smart_balance import smart_balance_4v4
+            teams = smart_balance_4v4(players_with_sr, search.player_user_ids)
+            if teams is None:
+                probe = Tournament(
+                    guild_id=search.guild_id,
+                    channel_id=search.tournament_channel_id or interaction.channel_id,
+                    size=TournamentSize.EIGHT,
+                    formation_mode=FormationMode.RANDOM_AUTO,
+                )
+                teams = probe.distribute_players_random_auto(players_with_sr)
             if len(teams) != 2 or any(len(t) != 4 for t in teams):
                 raise RuntimeError(f"Unexpected team split: {[len(t) for t in teams]}")
 
@@ -1277,8 +1281,12 @@ class MMCog(commands.Cog):
         # Закрыть регистрацию
         tournament.registration = RegistrationState.CLOSED
 
-        # Распределить игроков по SR для random-auto
-        teams = tournament.distribute_players_random_auto(players_with_sr)
+        # Распределить игроков: Smart Balance 4×4 по SR,
+        # фолбэк — старый distribute_players_random_auto
+        from utils.smart_balance import smart_balance_4v4
+        teams = smart_balance_4v4(players_with_sr, tournament.player_user_ids)
+        if teams is None:
+            teams = tournament.distribute_players_random_auto(players_with_sr)
         
         # НЕ заполнять круги - команды создаются напрямую
         # Для random-auto круги не используются, только teams
