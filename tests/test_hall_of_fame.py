@@ -19,14 +19,14 @@ def test_categories_seven():
     ]
 
 
-def test_display_name_member_mention():
+def test_display_name_member_no_ping():
     class FakeMember:
-        mention = "<@123>"
+        display_name = "PlayerNick"
     class FakeGuild:
         def get_member(self, uid):
             return FakeMember() if uid == 123 else None
     rec = Record("T", "1", user_id=123, user_name="Name")
-    assert _display_name(rec, FakeGuild()) == "<@123>"
+    assert _display_name(rec, FakeGuild()) == "PlayerNick"
 
 
 def test_display_name_left_user_uses_stored_name():
@@ -34,7 +34,7 @@ def test_display_name_left_user_uses_stored_name():
         def get_member(self, uid):
             return None
     rec = Record("T", "1", user_id=999, user_name="PlayerName")
-    assert _display_name(rec, FakeGuild()) == "`PlayerName`"
+    assert _display_name(rec, FakeGuild()) == "PlayerName"
 
 
 def test_display_name_no_user():
@@ -54,7 +54,7 @@ def test_record_block_full():
     text = _record_block(rec, None)
     assert "**Best K/D**" in text
     assert "`5.50`" in text
-    assert "`Pro`" in text
+    assert "Pro" in text
     assert "40 матчей" in text
 
 
@@ -62,6 +62,6 @@ def test_no_negative_id_mention():
     # Технические/отрицательные ID никогда не становятся mention
     rec = Record("T", "1", user_id=-123, user_name="Bot5")
     guild = type("G", (), {"get_member": lambda s, u: None})()
-    assert _display_name(rec, guild) == "`Bot5`"
+    assert _display_name(rec, guild) == "Bot5"
     rec2 = Record("T", "1", user_id=-123)
     assert _display_name(rec2, guild) == ""

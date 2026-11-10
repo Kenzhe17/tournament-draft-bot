@@ -24,22 +24,20 @@ def banner_file() -> discord.File | None:
 
 
 def _display_name(record: Record, guild: discord.Guild | None) -> str:
-    """Mention для реального участника, иначе сохранённое имя.
+    """Имя игрока без упоминания (ping).
 
     Технические ID (<=0, тестовые боты) никогда не упоминаются.
     """
     uid = record.user_id
     if uid is None:
         return ""
-    if uid <= 0:
-        return f"`{record.user_name}`" if record.user_name else ""
     if guild is not None:
         member = guild.get_member(uid)
         if member is not None:
-            return member.mention
+            return member.display_name
     if record.user_name:
-        return f"`{record.user_name}`"
-    return f"<@{uid}>"
+        return record.user_name
+    return f"ID {uid}" if uid > 0 else ""
 
 
 def _record_block(rec: Record, guild: discord.Guild | None) -> str:
