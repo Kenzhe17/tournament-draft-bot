@@ -622,7 +622,10 @@ async def _open_panel_mapping(
         embed.description += "\n\n⚠️ На этой панели не найдено игроков."
 
     view = PanelMappingView(
-        interaction.guild.id, interaction.channel.id, tournament,
+        # Канал ТУРНИРА, а не канал сообщения — OCR-карточка для
+        # /tournament create живёт в канале результатов, и store.get
+        # по interaction.channel.id возвращал «Турнир не найден».
+        interaction.guild.id, tournament.channel_id, tournament,
         match_type, match_index, team_index, actual_panel,
     )
     await interaction.response.send_message( view=compose(embed, view), ephemeral=True

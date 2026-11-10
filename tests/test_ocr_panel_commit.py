@@ -227,3 +227,33 @@ async def test_open_panel_mapping_blocked_only_by_other_claim():
         assert s["maps"]["0"]["panel"] == "right"
     finally:
         omv.store._tournaments.pop((1, 2), None)
+
+
+@pytest.mark.asyncio
+async def test_panel_mapping_view_uses_tournament_channel():
+    """Regression: OCR-карточка живёт в канале результатов (999),
+    а store ищет турнир по каналу турнира (2). PanelMappingView
+    обязан получить channel_id ТУРНИРА — иначе все его callback'и
+    падали с «Турнир не найден»."""
+    t = _tournament()  # channel_id=2
+    s = _session()
+    t.ocr_sessions["qualifier_0"] = s
+    omv.store._tournaments[(1, 2)] = t
+
+    ix = _Ix()  # interaction.channel.id = 999 (канал результатов)
+    try:
+        await omv._open_panel_mapping(ix, t, "qualifier", 0, 0, "left")
+        assert ix.response.sent, "mapping view was not sent"
+        view = ix.response.sent[0][1].get("view")
+        assert view is not None
+        custom_ids = [
+            getattr(item, "custom_id", "")
+            for item in view.walk_children()
+        ]
+        edit_ids = [c for c in custom_ids if c.startswith("ocr_edit:")]
+        assert edit_ids, "PanelMappingView buttons missing"
+        # custom_id: ocr_edit:{guild}:{channel_id}:{match_type}:...
+        assert all(":1:2:" in c for c in edit_ids), custom_ids
+        assert not any(":999:" in c for c in custom_ids)
+    finally:
+        omv.store._tournaments.pop((1, 2), None)
