@@ -33,9 +33,9 @@ ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 MANAGER_ROLE_ID = int(os.getenv("MANAGER_ROLE_ID", "1551609736258920538"))
 
 # Tournament organizer roles (one per channel)
-ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "1554429629807333467"))
-ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "1563178763066286192"))
-ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "1563178865826734232"))
+ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "1569740403522142258"))
+ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "1569740427668758698"))
+ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "1569740435838992446"))
 
 # Map channel to role
 ORG_ROLE_MAP = {
