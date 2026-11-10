@@ -230,6 +230,50 @@ class TournamentBot(commands.Bot):
                         tournament.id, exc,
                     )
 
+            # Восстанавливаем кнопки мультикомнатных OCR-сессий
+            for session in (tournament.ocr_sessions or {}).values():
+                if session.get("mode") != "rooms":
+                    continue
+                if session.get("status") in ("completed", "cancelled"):
+                    continue
+                try:
+                    from views.ocr_match_view import RoomView
+                    from cogs.ocr_upload import RoomCollectView
+
+                    mt, mi = session["match_type"], session["match_index"]
+                    # Прогресс-сообщение (только пока идёт сбор)
+                    if session.get("status") == "collecting":
+                        prog_id = session.get("progress_message_id")
+                        prog_ch = session.get("progress_channel_id")
+                        if prog_id and prog_ch:
+                            self.add_view(
+                                RoomCollectView(
+                                    tournament.guild_id,
+                                    tournament.channel_id,
+                                    tournament, mt, mi,
+                                    int(session.get("gen", 1)),
+                                ),
+                                message_id=prog_id,
+                            )
+                    # Кнопки на сообщениях комнат
+                    for room in session.get("rooms") or []:
+                        mid = room.get("message_id")
+                        ridx = room.get("room_index")
+                        if mid and ridx:
+                            self.add_view(
+                                RoomView(
+                                    tournament.guild_id,
+                                    tournament.channel_id,
+                                    tournament, mt, mi, int(ridx),
+                                ),
+                                message_id=mid,
+                            )
+                except Exception as e:
+                    logger.warning(
+                        "Rooms OCR view restore failed for %s: %s",
+                        session.get("match_type"), e,
+                    )
+
             # Восстанавливаем кнопки публичных OCR-сообщений матчей
             for session in (tournament.ocr_sessions or {}).values():
                 # Squad-режим: отдельные сообщения на каждый отряд

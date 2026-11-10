@@ -1497,6 +1497,7 @@ class Tournament:
             "mm_preset_channel_id": self.mm_preset_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
             "match_channels": self.match_channels,
+            "ocr_sessions": self.ocr_sessions,
         }
 
     @classmethod
@@ -1547,6 +1548,7 @@ class Tournament:
             mm_preset_channel_id=data.get("mm_preset_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
             match_channels=data.get("match_channels", {}),
+            ocr_sessions=data.get("ocr_sessions", {}),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())

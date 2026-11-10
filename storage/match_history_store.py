@@ -63,6 +63,16 @@ class MatchHistoryStore:
             CREATE INDEX IF NOT EXISTS idx_match_history_user_date
             ON match_history(guild_id, user_id, date DESC)
         """)
+        # Защита от двойной записи истории при повторной финализации:
+        # один (guild,user,match) — одна запись. UNIQUE может не
+        # создаться на старых БД с дублями — тогда остаётся обычный.
+        try:
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_match_history_user_match
+                ON match_history(guild_id, user_id, match_id)
+            """)
+        except Exception:
+            pass
 
     def load(self) -> None:
         """Загрузить историю из файла (fallback)."""
@@ -182,6 +192,7 @@ class MatchHistoryStore:
                          bet_amount, bet_win, bet_team, assists, damage,
                          duration_seconds)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                        ON CONFLICT DO NOTHING
                         """,
                         match.guild_id, match.user_id, match.match_id, match.tournament_id,
                         match.date, match.match_type, match.match_index, match.team_index,
@@ -206,6 +217,7 @@ class MatchHistoryStore:
                              bet_amount, bet_win, bet_team, assists, damage,
                              duration_seconds)
                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                            ON CONFLICT DO NOTHING
                             """,
                             match.guild_id, match.user_id, match.match_id, match.tournament_id,
                             match.date, match.match_type, match.match_index, match.team_index,

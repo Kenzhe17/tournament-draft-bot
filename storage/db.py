@@ -627,6 +627,13 @@ async def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_match_history_user_date
             ON match_history(guild_id, user_id, date DESC)
         """)
+        try:
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_match_history_user_match
+                ON match_history(guild_id, user_id, match_id)
+            """)
+        except Exception:
+            pass
 
         # Create pets table
         try:

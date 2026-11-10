@@ -136,13 +136,16 @@ def parse_cs_results(
     if len(kda_matches) < 2:
         return None
 
-    # 2. Делим на две команды по крупнейшему разрыву по X
+    # 2. Делим на две команды по крупнейшему разрыву по X.
+    # Порог относительный (доля ширины кадра), а не абсолютные 80px —
+    # иначе на скриншотах ~1280px колонки не разделялись.
     kda_matches.sort(key=lambda r: r["box"]["cx"])
     cxs = [r["box"]["cx"] for r in kda_matches]
     gaps = [cxs[i + 1] - cxs[i] for i in range(len(cxs) - 1)]
     split_idx = max(range(len(gaps)), key=lambda i: gaps[i])
-    # разрыв должен быть реально большим (две колонки)
-    if gaps[split_idx] < 80:
+    img_w = max((b["x1"] for b in boxes), default=0.0)
+    min_gap = max(30.0, img_w * 0.03)
+    if gaps[split_idx] < min_gap:
         return None
     left = kda_matches[: split_idx + 1]
     right = kda_matches[split_idx + 1 :]
@@ -151,6 +154,60 @@ def parse_cs_results(
     # в строки другой (у правой панели K/D/A правее, поэтому без границы
     # она захватывала имена левой команды)
     boundary_x = (cxs[split_idx] + cxs[split_idx + 1]) / 2
+
+    def _pad_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Гарантировать 4 позиции строк на панель CS 4×4.
+
+        K/D/A — якорь детекции, но строка игрока существует и при
+        нераспознанном K/D/A или нике: оцениваем шаг строк по cy
+        и достраиваем недостающие слоты (поля = None, не 0 —
+        статистику заполнит ручное исправление/маппинг).
+        """
+        rows = sorted(rows, key=lambda r: r["box"]["cy"])
+        if len(rows) >= 4:
+            return rows[:4]
+        if len(rows) < 2:
+            return rows
+        cys = [r["box"]["cy"] for r in rows]
+        diffs = [cys[i + 1] - cys[i] for i in range(len(cys) - 1)]
+        pitch = sorted(diffs)[len(diffs) // 2]
+        if pitch <= 0:
+            return rows
+        # Якорь сетки: top = cy_j - j*pitch для каждой строки j —
+        # выбираем вариант с минимальным суммарным отклонением.
+        best_top, best_err = None, float("inf")
+        for j, cy in enumerate(cys):
+            top = cy - j * pitch
+            err = sum(
+                min(abs(cy2 - (top + i * pitch)) for i in range(4))
+                for cy2 in cys
+            )
+            if err < best_err:
+                best_err, best_top = err, top
+        have = {round((r["box"]["cy"] - best_top) / pitch) for r in rows}
+        have = {i for i in have if 0 <= i < 4}
+        panel_cx = sum(r["box"]["cx"] for r in rows) / len(rows)
+        x0 = min(r["box"]["x0"] for r in rows)
+        x1 = max(r["box"]["x1"] for r in rows)
+        y_h = max((r["box"]["y1"] - r["box"]["y0"] for r in rows), default=pitch * 0.6)
+        out = list(rows)
+        for i in range(4):
+            if i in have:
+                continue
+            cy = best_top + i * pitch
+            out.append({
+                "k": None, "d": None, "a": None,
+                "mstart": 0, "dmg_inline": None,
+                "box": {
+                    "text": "", "cx": panel_cx, "cy": cy,
+                    "x0": x0, "x1": x1,
+                    "y0": cy - y_h / 2, "y1": cy + y_h / 2,
+                },
+            })
+        return sorted(out, key=lambda r: r["box"]["cy"])[:4]
+
+    left = _pad_rows(left)
+    right = _pad_rows(right)
 
     def _panel_players(
         rows: list[dict[str, Any]], side: str
@@ -216,12 +273,18 @@ def parse_cs_results(
 
             players.append(
                 {
-                    "name": name[:32],
+                    "name": name[:32] if name != "???" else "???",
                     "kills": row["k"],
                     "deaths": row["d"],
                     "assists": row["a"],
                     "dmg": dmg,
-                    "kd": round(row["k"] / row["d"], 2) if row["d"] else row["k"],
+                    "kd": (
+                        round(row["k"] / row["d"], 2)
+                        if row["k"] is not None and row["d"]
+                        else (float(row["k"]) if row["k"] is not None else None)
+                    ),
+                    "cy": b["cy"],
+                    "row_h": max(8.0, b["y1"] - b["y0"]),
                 }
             )
         return players
@@ -336,7 +399,82 @@ def parse_cs_results(
         "top5": top5,
         "banner": banner,
         "score": parse_match_score(boxes),
+        # Геометрия для targeted re-OCR строк: граница панелей и
+        # x-диапазоны сторон (координаты исходного изображения).
+        "boundary_x": boundary_x,
+        "img_w": img_w,
+        "img_h": max((b["y1"] for b in boxes), default=0.0),
     }
+
+
+def parse_row_fields(
+    boxes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Поля одной строки игрока из боксов узкой полосы (targeted OCR).
+
+    Возвращает только распознанное: name/kills/deaths/assists/dmg —
+    отсутствующее не выдумываем (None), 0 подставляет вызывающий код
+    только после ручного подтверждения.
+    """
+    out: dict[str, Any] = {}
+    kda_box = None
+    for b in boxes:
+        gm = KDA_DMG_GLUED_RE.search(b["text"])
+        if gm:
+            kda_box = b
+            out.update(
+                kills=int(gm.group(1)), deaths=int(gm.group(2)),
+                assists=int(gm.group(3)),
+            )
+            rest = b["text"][gm.end():].strip()
+            dm = re.match(r"^(\d{3,7})", rest)
+            if dm:
+                out["dmg"] = int(dm.group(1))
+            break
+        m = KDA_RE.search(b["text"])
+        if m:
+            kda_box = b
+            out.update(
+                kills=int(m.group(1)), deaths=int(m.group(2)),
+                assists=int(m.group(3)),
+            )
+            break
+    if kda_box is not None:
+        # DMG — ближайшее число правее K/D/A в полосе
+        best = None
+        for b in boxes:
+            if b is kda_box or not NUM_RE.match(b["text"].strip()):
+                continue
+            if b["cx"] <= kda_box["cx"]:
+                continue
+            if best is None or b["cx"] < best["cx"]:
+                best = b
+        if best is not None:
+            try:
+                out["dmg"] = int(best["text"])
+            except ValueError:
+                pass
+    # Имя — текстовые боксы с буквами, не K/D/A и не чистые числа
+    name_parts = []
+    for b in boxes:
+        t = b["text"].strip()
+        if not t or _is_kda_text(t) or NUM_RE.match(t):
+            continue
+        if not _has_name_chars(t) or t.lower() in SKIP_WORDS or len(t) < 2:
+            continue
+        if kda_box is not None and b["cx"] >= kda_box["cx"] - 4:
+            continue
+        name_parts.append((b["cx"], t))
+    name_parts.sort()
+    seen: set[str] = set()
+    name = ""
+    for _, t in name_parts:
+        if t not in seen:
+            seen.add(t)
+            name = f"{name} {t}".strip()
+    if name:
+        out["name"] = name[:32]
+    return out
 
 
 def _inline_dmg(text: str, end_pos: int) -> int | None:

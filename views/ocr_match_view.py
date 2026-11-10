@@ -538,6 +538,125 @@ def _mapping_lock(match_key: str) -> asyncio.Lock:
     return lock
 
 
+def _room_session(session: dict, room_index: int) -> dict | None:
+    """Эффективная session-подобная структура для одной комнаты.
+
+    Все helper'ы маппинга работают с плоским dict; для комнаты отдаём
+    её собственные panels/maps/panel_picks/banner/score. Ссылки на
+    maps/panel_picks — те же объекты, что в room → мутации сохраняются.
+    """
+    if not session or session.get("mode") != "rooms":
+        return None
+    for r in session.get("rooms") or []:
+        try:
+            if int(r.get("room_index", 0)) != int(room_index):
+                continue
+        except (TypeError, ValueError):
+            continue
+        return {
+            "match_type": session.get("match_type"),
+            "match_index": session.get("match_index"),
+            "mode": "classic",
+            "uploaded_by": session.get("uploaded_by"),
+            "banner": r.get("banner"),
+            "score": r.get("score"),
+            "top5": r.get("top5", False),
+            "winner_side": r.get("winner_side"),
+            "panels": r.get("panels") or {},
+            "maps": r.setdefault("maps", {}),
+            "panel_picks": r.setdefault("panel_picks", {}),
+            "status": r.get("status"),
+        }
+    return None
+
+
+def _rooms_all_mapped(session: dict, t1: int, t2: int) -> bool:
+    """Все комнаты имеют полное сопоставление обеих команд."""
+    rooms = session.get("rooms") or []
+    if not rooms:
+        return False
+    for r in rooms:
+        rs = _room_session(session, r.get("room_index"))
+        if rs is None or not _classic_mapping_complete(rs, t1, t2):
+            return False
+    return True
+
+
+def _rooms_unmapped_count(session: dict) -> int:
+    """Сколько комнат ещё не сопоставлены (все строки привязаны)."""
+    n = 0
+    for r in session.get("rooms") or []:
+        maps = r.get("maps") or {}
+        ok = bool(maps) and all(
+            (tm.get("rows") or [])
+            and all(_row_bound(row) for row in tm["rows"])
+            for tm in maps.values()
+        )
+        if not ok:
+            n += 1
+    return n
+
+
+def _rooms_aggregate_stats(session: dict) -> dict:
+    """Суммарная статистика матча по всем комнатам.
+
+    Ключ — discord_name (имя ростера = стабильный ID игрока);
+    игровой ник может меняться между комнатами — учитываем все
+    уникальные ники в ocr_name. Суммируем K/D/A/DMG, НЕ среднее.
+    """
+    temp_stats: dict[str, dict] = {}
+    for room in session.get("rooms") or []:
+        rs = _room_session(session, room.get("room_index"))
+        if rs is None:
+            raise ValueError("Комната без данных сопоставления")
+        for mapping in (rs.get("maps") or {}).values():
+            for i, row in enumerate(mapping.get("rows") or []):
+                if not row.get("discord_name"):
+                    continue
+                dn = row["discord_name"]
+                entry = temp_stats.setdefault(dn, {
+                    "kills": 0, "deaths": 0, "assists": 0,
+                    "damage": 0, "circle": i + 1,
+                    "ocr_name": row.get("ocr_name") or "?",
+                    "_nicks": [],
+                })
+                entry["kills"] += int(row.get("kills") or 0)
+                entry["deaths"] += int(row.get("deaths") or 0)
+                entry["assists"] += int(row.get("assists") or 0)
+                entry["damage"] += int(row.get("dmg") or 0)
+                nick = row.get("ocr_name")
+                if nick and nick not in entry["_nicks"]:
+                    entry["_nicks"].append(nick)
+                for k in EXTRA_STAT_KEYS:
+                    v = row.get(k)
+                    if v is not None:
+                        try:
+                            entry[k] = int(entry.get(k) or 0) + int(v)
+                        except (TypeError, ValueError):
+                            pass
+    for entry in temp_stats.values():
+        nicks = entry.pop("_nicks", [])
+        if nicks:
+            entry["ocr_name"] = " / ".join(nicks)[:64]
+    return temp_stats
+
+
+# Локи финализации по матчу — защита от двойного ELO при
+# одновременных подтверждениях (processed_elo_matches — вторая линия).
+_FINALIZE_LOCKS: dict[str, asyncio.Lock] = {}
+_FINALIZE_LOCKS_MAX = 200
+
+
+def _finalize_lock(match_key: str) -> asyncio.Lock:
+    lock = _FINALIZE_LOCKS.get(match_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _FINALIZE_LOCKS[match_key] = lock
+        if len(_FINALIZE_LOCKS) > _FINALIZE_LOCKS_MAX:
+            _FINALIZE_LOCKS.pop(next(iter(_FINALIZE_LOCKS)))
+    return lock
+
+
 async def _open_panel_mapping(
     interaction: discord.Interaction,
     tournament: Tournament,
@@ -812,6 +931,27 @@ class MatchScreenshotButton(Button):
         upload_channel_id = (
             stats_channel.id if stats_channel else self.channel_id
         )
+
+        # Главная кнопка (без team_index) → мультикомнатный флоу:
+        # сначала «СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?» (1–10), затем
+        # загрузка файлов. Кнопки капитанов (team_index) — squad-путь.
+        if self.team_index is None:
+            from cogs.ocr_upload import RoomCountSelectView
+
+            view = RoomCountSelectView(
+                self.guild_id, self.channel_id, tournament,
+                self.match_type, self.match_index,
+            )
+            await interaction.response.send_message(
+                content=replace_emojis(
+                    "**СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?**\n"
+                    "Выберите количество — потребуется столько же "
+                    "скриншотов (по одному на комнату)."
+                ),
+                view=view,
+                ephemeral=True,
+            )
+            return
 
         if FileUpload is not None:
             # Основной путь: модалка с загрузкой файла
@@ -2383,6 +2523,81 @@ async def _auto_finalize_match(
         )
         return
     t1, t2 = _match_tuple(tournament, match_type, match_index)
+
+    # --- Мультикомнатный режим -------------------------------------
+    #Финализация только когда ВСЕ комнаты сопоставлены. Победитель —
+    # команда отправителя комплекта (правило r!z3); не-участник
+    # (админ) → ручной выбор победителя.
+    if session.get("mode") == "rooms":
+        if not _rooms_all_mapped(session, t1, t2):
+            left = _rooms_unmapped_count(session)
+            await interaction.response.send_message(
+                replace_emojis(
+                    f"✅ Комната сопоставлена. Осталось комнат без "
+                    f"полного сопоставления: **{left}**."
+                ),
+                ephemeral=True,
+            )
+            return
+        winner = _team_of_user(
+            tournament, (t1, t2), session.get("uploaded_by")
+        )
+        if winner is None:
+            embed = _confirm_embed(tournament, session, match_type, match_index)
+            embed.description = (
+                (embed.description or "")
+                + "\n\n⚠️ Отправитель комплекта не входит в команды — "
+                "выберите победителя вручную:"
+            )
+            try:
+                channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
+                if channel is None:
+                    channel = await interaction.guild.fetch_channel(
+                        OCR_STATS_CHANNEL_ID
+                    )
+                await channel.send(
+                    view=compose(embed, OCRWinnerPickView(
+                        guild_id, channel_id, tournament,
+                        match_type, match_index,
+                    )),
+                    ephemeral=False,
+                )
+            except Exception as e:
+                logger.warning("rooms winner pick send failed: %s", e)
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Сопоставление завершено, но отправитель не "
+                    "определён как участник — организатор выберет "
+                    "победителя вручную."
+                ),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await finalize_ocr_match(
+                interaction, tournament, match_type, match_index, winner,
+            )
+            wname = _team_display_name(tournament, winner)
+            await interaction.followup.send(
+                replace_emojis(
+                    f"✅ Все комнаты сопоставлены — результат "
+                    f"**{_match_label(match_type, match_index)}** "
+                    f"зафиксирован. Победитель: **{wname}**."
+                ),
+                ephemeral=True,
+            )
+        except Exception:
+            logger.exception("rooms auto-finalize failed")
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Ошибка при автосохранении результата — "
+                    "вызовите организатора."
+                ),
+                ephemeral=True,
+            )
+        return
+
     winner = _ocr_winning_team_index(session)
     name = _team_display_name(tournament, team_index)
 
@@ -3344,6 +3559,23 @@ async def finalize_ocr_match(
     match_index: int,
     winning_team_index: int,
 ) -> None:
+    """Обёртка финализации с per-match локом (защита от двойного ELO)."""
+    key = _session_key(match_type, match_index)
+    lock = _finalize_lock(key)
+    async with lock:
+        await _finalize_ocr_match_impl(
+            interaction, tournament, match_type, match_index,
+            winning_team_index,
+        )
+
+
+async def _finalize_ocr_match_impl(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    winning_team_index: int,
+) -> None:
     """Сохранить статистику из OCR-маппинга и провести матч до конца.
 
     temp_match_stats → process_match_result (ELO/XP/монеты) → история →
@@ -3353,7 +3585,10 @@ async def finalize_ocr_match(
     channel_id = tournament.channel_id
     key = _session_key(match_type, match_index)
     session = tournament.ocr_sessions.get(key)
-    if not session or len(session.get("maps", {})) < 2:
+    is_rooms = bool(session and session.get("mode") == "rooms")
+    if not session or (
+        not is_rooms and len(session.get("maps", {})) < 2
+    ):
         raise ValueError("OCR-сессия не готова")
 
     match_id = f"{tournament.id}_{key}"
@@ -3361,22 +3596,27 @@ async def finalize_ocr_match(
 
     # Статистика: discord_name -> {kills,deaths,assists,damage,ocr_name[,extra]}
     temp_stats: dict[str, dict[str, Any]] = {}
-    for mapping in session["maps"].values():
-        for i, row in enumerate(mapping["rows"]):
-            if not row.get("discord_name"):
-                continue  # гибридный маппинг: строка ещё не привязана
-            entry = {
-                "kills": row["kills"],
-                "deaths": row["deaths"],
-                "assists": row["assists"],
-                "damage": row["dmg"],
-                "circle": i + 1,
-                "ocr_name": row["ocr_name"],
-            }
-            for k in EXTRA_STAT_KEYS:
-                if row.get(k) is not None:
-                    entry[k] = row[k]
-            temp_stats[row["discord_name"]] = entry
+    if is_rooms:
+        # Агрегация по всем комнатам: суммы K/D/A/DMG на discord_id
+        # (discord_name — имя ростера). Один матч = одна победа/ELO.
+        temp_stats = _rooms_aggregate_stats(session)
+    else:
+        for mapping in session["maps"].values():
+            for i, row in enumerate(mapping["rows"]):
+                if not row.get("discord_name"):
+                    continue  # гибридный маппинг: строка ещё не привязана
+                entry = {
+                    "kills": row["kills"],
+                    "deaths": row["deaths"],
+                    "assists": row["assists"],
+                    "damage": row["dmg"],
+                    "circle": i + 1,
+                    "ocr_name": row["ocr_name"],
+                }
+                for k in EXTRA_STAT_KEYS:
+                    if row.get(k) is not None:
+                        entry[k] = row[k]
+                temp_stats[row["discord_name"]] = entry
 
     already_processed = match_id in tournament.processed_elo_matches
 
@@ -3523,6 +3763,23 @@ async def finalize_ocr_match(
         ]
         for mid in mids:
             await _strip_buttons(mid)
+    elif is_rooms:
+        # Гасим кнопки на сообщениях всех комнат + прогресс
+        mids = [
+            r.get("message_id") for r in session.get("rooms") or []
+        ]
+        prog_ch_id = session.get("progress_channel_id")
+        prog_id = session.get("progress_message_id")
+        for mid in mids:
+            await _strip_buttons(mid)
+        if prog_ch_id and prog_id and channel is not None:
+            try:
+                pmsg = await channel.fetch_message(prog_id)
+                await pmsg.edit(
+                    content=replace_emojis(done_caption), view=None
+                )
+            except Exception as e:
+                logger.warning("rooms progress finalize edit failed: %s", e)
     else:
         await _strip_buttons(session.get("message_id"))
 
@@ -3701,3 +3958,893 @@ async def _resolve_match_bets(
         store.set(tournament)
     except Exception as e:
         logger.error("OCR bet resolution failed: %s", e, exc_info=True)
+
+
+# ---------------------------------------------------------------------------
+# Мультикомнатный режим (OCR V2): маппинг по комнатам
+# ---------------------------------------------------------------------------
+
+def _rooms_session_fresh(guild_id: int, channel_id: int,
+                         match_type: str, match_index: int):
+    """Свежие tournament+session для rooms-операций."""
+    tournament = store.get(guild_id, channel_id)
+    if not tournament:
+        return None, None
+    session = tournament.ocr_sessions.get(
+        _session_key(match_type, match_index)
+    )
+    return tournament, session
+
+
+def _room_map_team(
+    tournament: Tournament, user, team_index: int
+) -> bool:
+    """Маппить команду может её капитан, участник или организатор."""
+    if is_org_check(user, getattr(user, "guild", None)):
+        return True
+    try:
+        uid = int(user.id)
+    except (TypeError, ValueError):
+        return False
+    for name in team_roster(tournament, team_index):
+        mapped = tournament.player_user_ids.get(name)
+        try:
+            if mapped and int(mapped) == uid:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
+async def _rooms_after_map(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    room_index: int,
+) -> None:
+    """После сохранения привязок комнаты: финализация или прогресс."""
+    fresh, session = _rooms_session_fresh(
+        tournament.guild_id, tournament.channel_id, match_type, match_index
+    )
+    if not session or session.get("mode") != "rooms":
+        return
+    t1, t2 = _match_tuple(fresh or tournament, match_type, match_index)
+    if _rooms_all_mapped(session, t1, t2):
+        await interaction.followup.send(
+            replace_emojis(
+                "✅ Все комнаты сопоставлены — фиксирую результат..."
+            ),
+            ephemeral=True,
+        )
+        winner = _team_of_user(
+            fresh or tournament, (t1, t2), session.get("uploaded_by")
+        )
+        if winner is not None:
+            try:
+                await finalize_ocr_match(
+                    interaction, fresh or tournament,
+                    match_type, match_index, winner,
+                )
+                wname = _team_display_name(
+                    fresh or tournament, winner
+                )
+                await interaction.followup.send(
+                    replace_emojis(
+                        f"✅ Результат **{_match_label(match_type, match_index)}** "
+                        f"зафиксирован. Победитель: **{wname}**."
+                    ),
+                    ephemeral=True,
+                )
+            except Exception:
+                logger.exception("rooms finalize failed")
+                await interaction.followup.send(
+                    replace_emojis(
+                        "❌ Ошибка финализации — вызовите организатора."
+                    ),
+                    ephemeral=True,
+                )
+        else:
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Все комнаты сопоставлены, но отправитель не "
+                    "участник команд — организатор выберет победителя "
+                    "вручную."
+                ),
+                ephemeral=True,
+            )
+        return
+    left = _rooms_unmapped_count(session)
+    await interaction.followup.send(
+        replace_emojis(
+            f"✅ Комната {room_index} сопоставлена. "
+            f"Осталось комнат: **{left}**."
+        ),
+        ephemeral=True,
+    )
+
+
+def _rooms_guard(
+    interaction: discord.Interaction, tournament, session,
+    room_index: int,
+) -> tuple:
+    """Проверки для room-операций. (rsession, error_text)."""
+    if not session or session.get("mode") != "rooms":
+        return None, "❌ Сессия не найдена или не мультикомнатная."
+    if session.get("status") not in (
+        "awaiting_mapping", "mapping", "collecting"
+    ):
+        return None, "⚠️ Сопоставление для этого матча уже завершено."
+    rs = _room_session(session, room_index)
+    if rs is None:
+        return None, "❌ Комната не найдена."
+    return rs, None
+
+
+class RoomView(View):
+    """Кнопки под скриншотом комнаты: маппинг команд, self, откат."""
+
+    def __init__(
+        self,
+        guild_id: int,
+        channel_id: int,
+        tournament: Tournament,
+        match_type: str,
+        match_index: int,
+        room_index: int,
+        timeout: float | None = None,
+    ):
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        try:
+            t1, t2 = _match_tuple(tournament, match_type, match_index)
+        except Exception:
+            t1 = t2 = 0
+        for team_index in (t1, t2):
+            if not team_index:
+                continue
+            b = Button(
+                label=f"🧩 {_team_display_name(tournament, team_index)}",
+                style=discord.ButtonStyle.primary,
+                custom_id=(
+                    f"room_map:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}:{room_index}:{team_index}"
+                ),
+                row=0,
+            )
+            b.callback = self._make_team_cb(team_index)
+            self.add_item(b)
+        b = Button(
+            label="🎯 Это мой ник",
+            style=discord.ButtonStyle.success,
+            custom_id=(
+                f"room_self:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}"
+            ),
+            row=1,
+        )
+        b.callback = self._on_self
+        self.add_item(b)
+        b = Button(
+            label="❌ Неправильный скриншот",
+            style=discord.ButtonStyle.danger,
+            custom_id=(
+                f"room_wrong:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}"
+            ),
+            row=1,
+        )
+        b.callback = self._on_wrong
+        self.add_item(b)
+        b = Button(
+            label="📣 Вызвать админа",
+            style=discord.ButtonStyle.secondary,
+            custom_id=(
+                f"room_admin:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}"
+            ),
+            row=1,
+        )
+        b.callback = self._on_admin
+        self.add_item(b)
+
+    def _make_team_cb(self, team_index: int):
+        async def _cb(interaction: discord.Interaction) -> None:
+            await self._on_team(interaction, team_index)
+        return _cb
+
+    async def _on_team(
+        self, interaction: discord.Interaction, team_index: int
+    ) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        _, session = _rooms_session_fresh(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+        )
+        rs, err = _rooms_guard(
+            interaction, tournament, session, self.room_index
+        )
+        if err:
+            await interaction.response.send_message(
+                replace_emojis(err), ephemeral=True
+            )
+            return
+        if not _room_map_team(interaction.user, tournament, team_index):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Сопоставлять команду может её капитан, "
+                    "участник или организатор."
+                ),
+                ephemeral=True,
+            )
+            return
+        if int(session.get("rooms_received") or 0) < int(
+            session.get("rooms_expected") or 0
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⏳ Дождитесь полного комплекта скриншотов."
+                ),
+                ephemeral=True,
+            )
+            return
+        panel = _ensure_team_panel(tournament, rs, team_index)
+        if panel not in ("left", "right"):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "Выберите панель вашей команды на этом скриншоте:"
+                ),
+                view=RoomPanelPickView(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index,
+                    self.room_index, team_index,
+                ),
+                ephemeral=True,
+            )
+            return
+        await _open_room_team_map(
+            interaction, tournament, self.match_type,
+            self.match_index, self.room_index, team_index, panel,
+        )
+
+    async def _on_self(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        _, session = _rooms_session_fresh(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+        )
+        rs, err = _rooms_guard(
+            interaction, tournament, session, self.room_index
+        )
+        if err:
+            await interaction.response.send_message(
+                replace_emojis(err), ephemeral=True
+            )
+            return
+        if int(session.get("rooms_received") or 0) < int(
+            session.get("rooms_expected") or 0
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⏳ Дождитесь полного комплекта скриншотов."
+                ),
+                ephemeral=True,
+            )
+            return
+        t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
+        team_index = _team_of_user(
+            tournament, (t1, t2), interaction.user.id
+        )
+        if team_index is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Вы не участник этого матча — выбрать свой "
+                    "ник могут только игроки команд."
+                ),
+                ephemeral=True,
+            )
+            return
+        panel = _ensure_team_panel(tournament, rs, team_index)
+        if panel not in ("left", "right"):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Сторона вашей команды на этом скриншоте ещё "
+                    "не определена — попросите капитана выбрать панель."
+                ),
+                ephemeral=True,
+            )
+            return
+        name = _roster_name_for_uid(tournament, team_index, interaction.user.id)
+        view = RoomSelfMapView(
+            self.guild_id, self.channel_id, tournament,
+            self.match_type, self.match_index, self.room_index,
+            team_index, panel, interaction.user.id,
+            interaction.user.display_name, name or "?",
+        )
+        await interaction.response.send_message(
+            content=replace_emojis(
+                f"**Комната {self.room_index}** — выберите свой "
+                "игровой ник из списка (только не занятые строки):"
+            ),
+            view=view,
+            ephemeral=True,
+        )
+
+    async def _on_wrong(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        from cogs.ocr_upload import cancel_rooms_session
+
+        res = await cancel_rooms_session(
+            interaction.guild, interaction.user, tournament,
+            self.match_type, self.match_index,
+        )
+        if res == "forbidden":
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ «Неправильный скриншот» доступен только "
+                    "администратору."
+                ),
+                ephemeral=True,
+            )
+        elif res in ("none", "done"):
+            await interaction.response.send_message(
+                replace_emojis("ℹ️ Активной загрузки нет."),
+                ephemeral=True,
+            )
+        else:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "✅ Весь комплект скриншотов отменён — можно "
+                    "загрузить заново."
+                ),
+                ephemeral=True,
+            )
+
+    async def _on_admin(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        try:
+            ch = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
+            if ch is None:
+                ch = await interaction.guild.fetch_channel(OCR_STATS_CHANNEL_ID)
+            await ch.send(
+                replace_emojis(
+                    f"📣 **{interaction.user}** вызвал администратора "
+                    f"— матч **{_match_label(self.match_type, self.match_index)}**, "
+                    f"комната {self.room_index}."
+                )
+            )
+        except Exception as e:
+            logger.warning("room call-admin failed: %s", e)
+        await interaction.response.send_message(
+            replace_emojis("📣 Администратор уведомлён."), ephemeral=True
+        )
+
+
+class RoomPanelPickView(View):
+    """Ручной выбор панели для комнаты (когда авто-определение не сработало)."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, room_index: int,
+        team_index: int,
+    ):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        self.team_index = team_index
+        _, session = _rooms_session_fresh(
+            guild_id, channel_id, match_type, match_index
+        )
+        rs = _room_session(session, room_index) if session else None
+        panels = (rs or {}).get("panels") or {}
+        options = []
+        for side, label in (("left", "Левая панель"), ("right", "Правая панель")):
+            pname = (panels.get(side) or {}).get("name")
+            options.append(discord.SelectOption(
+                label=(f"{label}: {pname}" if pname else label)[:100],
+                value=side,
+                description=(pname or "")[:100],
+            ))
+        self.select = Select(
+            placeholder="Ваша команда — на какой панели?",
+            options=options, min_values=1, max_values=1,
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+
+    async def _on_pick(self, interaction: discord.Interaction) -> None:
+        values = getattr(self.select, "values", None) or []
+        if not values:
+            await interaction.response.defer()
+            return
+        panel = values[0]
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        _, session = _rooms_session_fresh(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+        )
+        rs = _room_session(session, self.room_index) if session else None
+        if rs is None:
+            await interaction.response.send_message(
+                replace_emojis("❌ Комната не найдена."), ephemeral=True
+            )
+            return
+        rs.setdefault("panel_picks", {})[str(self.team_index)] = panel
+        store.set(tournament)
+        await _open_room_team_map(
+            interaction, tournament, self.match_type,
+            self.match_index, self.room_index, self.team_index, panel,
+        )
+
+
+async def _open_room_team_map(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    room_index: int,
+    team_index: int,
+    panel: str,
+) -> None:
+    """Открыть ephemeral-маппинг команды внутри комнаты."""
+    _, session = _rooms_session_fresh(
+        tournament.guild_id, tournament.channel_id,
+        match_type, match_index,
+    )
+    rs = _room_session(session, room_index) if session else None
+    if rs is None:
+        await interaction.response.send_message(
+            replace_emojis("❌ Комната не найдена."), ephemeral=True
+        )
+        return
+    if _panel_claimed_by_other(rs, team_index, panel):
+        await interaction.response.send_message(
+            replace_emojis(
+                "❌ Эта панель уже закреплена за другой командой "
+                "в этой комнате."
+            ),
+            ephemeral=True,
+        )
+        return
+    _ensure_team_panel(tournament, rs, team_index, panel=panel)
+    store.set(tournament)
+
+    name = _team_display_name(tournament, team_index)
+    tm = _team_map(rs, team_index) or {}
+    rows = tm.get("rows") or []
+    side_label = "Левая" if panel == "left" else "Правая"
+    embed = discord.Embed(
+        title=f"🧩 {name} — Комната {room_index}",
+        description=(
+            f"**{side_label} панель** · сопоставьте игроков. "
+            "Игроки могут выбрать свой ник сами («Это мой ник»."
+        ),
+        color=discord.Color.blurple(),
+    )
+    for i, row in enumerate(rows):
+        mark = ""
+        if _row_bound(row):
+            mark = (
+                f" ✅ {_self_display(row)}"
+                if row.get("source") == "self"
+                else f" ✅ {row.get('discord_name', '?')}"
+            )
+        embed.add_field(
+            name=f"{i + 1}. {row.get('ocr_name', '?')}{mark}",
+            value=(
+                f"K/D/A: {row.get('kills', 0)}/{row.get('deaths', 0)}/"
+                f"{row.get('assists', 0)} • DMG {row.get('dmg')}"
+            ),
+            inline=False,
+        )
+    view = RoomTeamMapView(
+        interaction.guild.id, tournament.channel_id, tournament,
+        match_type, match_index, room_index, team_index, panel,
+    )
+    await interaction.response.send_message(
+        view=compose(embed, view), ephemeral=True
+    )
+
+
+class RoomTeamMapView(View):
+    """Маппинг 4 строк команды внутри одной комнаты."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, room_index: int,
+        team_index: int, panel: str,
+    ):
+        super().__init__(timeout=900)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        self.team_index = team_index
+        self.panel = panel
+        self.selects: dict[int, Select] = {}
+
+        _, session = _rooms_session_fresh(
+            guild_id, channel_id, match_type, match_index
+        )
+        rs = _room_session(session, room_index) if session else None
+        tm = (_team_map(rs, self.team_index) if rs else None) or {}
+        rows = tm.get("rows") or []
+        roster = team_roster(tournament, self.team_index)
+
+        eligible = list(range(min(len(rows), 4)))
+        for i in eligible:
+            row = rows[i]
+            cur = row.get("discord_name")
+            forbidden = set()
+            for tk, tm2 in _match_maps(rs or {}).items():
+                for j, r2 in enumerate(tm2.get("rows") or []):
+                    if (str(self.team_index), i) == (tk, j):
+                        continue
+                    dn = r2.get("discord_name")
+                    if dn and dn != cur:
+                        forbidden.add(dn)
+            options = [
+                discord.SelectOption(label="— не назначен —", value=""),
+            ]
+            for name in roster:
+                if name in forbidden:
+                    continue
+                options.append(discord.SelectOption(
+                    label=name[:100], value=name[:100],
+                ))
+            if cur and cur not in [o.value for o in options]:
+                options.append(discord.SelectOption(
+                    label=f"{cur} (текущий)", value=cur[:100],
+                ))
+            sel = Select(
+                placeholder=f"Строка {i + 1}: {row.get('ocr_name', '?')}",
+                options=options[:25],
+                min_values=1, max_values=1,
+                row=i,
+            )
+            sel.callback = self._make_row_cb(i)
+            self.selects[i] = sel
+            self.add_item(sel)
+
+        save = Button(
+            label="✅ Сохранить сопоставление",
+            style=discord.ButtonStyle.success,
+            custom_id=(
+                f"room_save:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}:{team_index}"
+            ),
+            row=4,
+        )
+        save.callback = self._on_save
+        self.add_item(save)
+
+    def _make_row_cb(self, i: int):
+        async def _cb(interaction: discord.Interaction) -> None:
+            values = getattr(self.selects[i], "values", None) or []
+            await interaction.response.defer(ephemeral=True)
+            await interaction.followup.send(
+                replace_emojis(
+                    f"Строка {i + 1} → "
+                    f"**{values[0] if values and values[0] else '—'}** "
+                    "(сохранится по кнопке ниже)"
+                ),
+                ephemeral=True,
+            )
+        return _cb
+
+    async def _on_save(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        _, session = _rooms_session_fresh(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+        )
+        rs, err = _rooms_guard(
+            interaction, tournament, session, self.room_index
+        )
+        if err:
+            await interaction.response.send_message(
+                replace_emojis(err), ephemeral=True
+            )
+            return
+        if not _room_map_team(interaction.user, tournament, self.team_index):
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет прав на сопоставление этой команды."),
+                ephemeral=True,
+            )
+            return
+
+        chosen: dict[int, str] = {}
+        for i, sel in self.selects.items():
+            vals = getattr(sel, "values", None) or []
+            if vals:
+                chosen[i] = vals[0]
+
+        async with _mapping_lock(
+            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
+            f"{self.match_index}:room{self.room_index}"
+        ):
+            tournament = store.get(self.guild_id, self.channel_id)
+            _, session = _rooms_session_fresh(
+                self.guild_id, self.channel_id,
+                self.match_type, self.match_index,
+            )
+            rs = _room_session(session, self.room_index)
+            tm = _team_map(rs, self.team_index)
+            if tm is None:
+                _ensure_team_panel(
+                    tournament, rs, self.team_index, panel=self.panel
+                )
+                tm = _team_map(rs, self.team_index)
+            rows = (tm or {}).get("rows") or []
+
+            used: dict[int, tuple] = {}
+            for tk, tm2 in _match_maps(rs).items():
+                for j, r in enumerate(tm2.get("rows") or []):
+                    try:
+                        if r.get("discord_id"):
+                            used[int(r["discord_id"])] = (int(tk), j)
+                    except (TypeError, ValueError):
+                        pass
+
+            uid_by_name = {
+                n: tournament.player_user_ids.get(n)
+                for n in team_roster(tournament, self.team_index)
+            }
+            errors = []
+            for i, name in chosen.items():
+                if not name or i >= len(rows):
+                    continue
+                row = rows[i]
+                old_did = row.get("discord_id")
+                uid = uid_by_name.get(name)
+                try:
+                    uid_i = int(uid) if uid else None
+                except (TypeError, ValueError):
+                    uid_i = None
+                if uid_i is not None:
+                    loc = used.get(uid_i)
+                    if loc is not None and loc != (self.team_index, i):
+                        errors.append(
+                            f"Игрок {name} уже привязан к другой строке "
+                            "в этой комнате."
+                        )
+                        continue
+                if row.get("source") == "self" and old_did and (
+                    str(old_did) != str(uid)
+                ):
+                    try:
+                        await _notify_mapping_conflict(
+                            interaction.guild, session,
+                            f"⚠️ Капитан изменил self-привязку в комнате "
+                            f"{self.room_index}: строка "
+                            f"{row.get('ocr_name')} — "
+                            f"{row.get('discord_name')} → {name}.",
+                        )
+                    except Exception:
+                        pass
+                row["discord_name"] = name
+                row["discord_id"] = uid
+                row["discord_display"] = name
+                row["source"] = (
+                    "self"
+                    if row.get("source") == "self"
+                    and str(old_did) == str(uid)
+                    else "captain"
+                )
+            if errors:
+                await interaction.response.send_message(
+                    replace_emojis("❌ " + "\n".join(errors[:5])),
+                    ephemeral=True,
+                )
+                return
+            tm["confirmed"] = True
+            store.set(tournament)
+
+        await interaction.response.send_message(
+            replace_emojis(
+                f"✅ Команда **{_team_display_name(tournament, self.team_index)}**, "
+                f"комната {self.room_index} — сопоставление сохранено."
+            ),
+            ephemeral=True,
+        )
+        await _rooms_after_map(
+            interaction, tournament, self.match_type,
+            self.match_index, self.room_index,
+        )
+
+
+class RoomSelfMapView(View):
+    """Self-привязка: игрок выбирает свой ник в строке комнаты."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, room_index: int,
+        team_index: int, panel: str, user_id: int,
+        display_name: str, roster_name: str,
+    ):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        self.team_index = team_index
+        self.panel = panel
+        self.user_id = user_id
+        self.display_name = display_name
+        self.roster_name = roster_name
+
+        _, session = _rooms_session_fresh(
+            guild_id, channel_id, match_type, match_index
+        )
+        rs = _room_session(session, room_index) if session else None
+        tm = (_team_map(rs, team_index) if rs else None) or {}
+        rows = tm.get("rows") or []
+
+        options = []
+        for i, row in enumerate(rows[:4]):
+            if _row_bound(row):
+                continue
+            options.append(discord.SelectOption(
+                label=f"{i + 1}. {row.get('ocr_name', '?')}",
+                value=str(i),
+                description=(
+                    f"K/D/A {row.get('kills', 0)}/{row.get('deaths', 0)}/"
+                    f"{row.get('assists', 0)}"
+                )[:100],
+            ))
+        if not options:
+            self.add_item(Button(
+                label="Нет свободных строк",
+                style=discord.ButtonStyle.secondary,
+                disabled=True, custom_id="room_self_none",
+            ))
+            return
+        self.select = Select(
+            placeholder="Выберите свой игровой ник",
+            options=options[:25], min_values=1, max_values=1,
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+        confirm = Button(
+            label=f"✅ Это я ({display_name})",
+            style=discord.ButtonStyle.success,
+            custom_id=(
+                f"room_self_ok:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}:{team_index}:{user_id}"
+            ),
+        )
+        confirm.callback = self._on_confirm
+        self.add_item(confirm)
+
+    async def _on_pick(self, interaction: discord.Interaction) -> None:
+        values = getattr(self.select, "values", None) or []
+        await interaction.response.defer(ephemeral=True)
+        await interaction.followup.send(
+            replace_emojis(
+                f"Выбрана строка {values[0] if values else '?'} — "
+                "нажмите «Это я» для подтверждения."
+            ),
+            ephemeral=True,
+        )
+
+    async def _on_confirm(self, interaction: discord.Interaction) -> None:
+        if int(interaction.user.id) != int(self.user_id):
+            await interaction.response.send_message(
+                replace_emojis("❌ Подтвердить может только сам игрок."),
+                ephemeral=True,
+            )
+            return
+        values = getattr(self.select, "values", None) or []
+        if not values:
+            await interaction.response.send_message(
+                replace_emojis("❌ Сначала выберите строку."), ephemeral=True
+            )
+            return
+        try:
+            row_idx = int(values[0])
+        except (TypeError, ValueError):
+            return
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        async with _mapping_lock(
+            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
+            f"{self.match_index}:room{self.room_index}"
+        ):
+            tournament = store.get(self.guild_id, self.channel_id)
+            _, session = _rooms_session_fresh(
+                self.guild_id, self.channel_id,
+                self.match_type, self.match_index,
+            )
+            rs, err = _rooms_guard(
+                interaction, tournament, session, self.room_index
+            )
+            if err:
+                await interaction.response.send_message(
+                    replace_emojis(err), ephemeral=True
+                )
+                return
+            for tk, tm2 in _match_maps(rs).items():
+                for j, r in enumerate(tm2.get("rows") or []):
+                    if (str(self.team_index), row_idx) == (tk, j):
+                        continue
+                    try:
+                        if r.get("discord_id") and int(r["discord_id"]) == self.user_id:
+                            await interaction.response.send_message(
+                                replace_emojis(
+                                    "❌ Ваш Discord ID уже привязан к "
+                                    "другой строке в этой комнате."
+                                ), ephemeral=True,
+                            )
+                            return
+                    except (TypeError, ValueError):
+                        pass
+            tm = _team_map(rs, self.team_index)
+            rows = (tm or {}).get("rows") or []
+            if row_idx >= len(rows):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Строка не найдена."), ephemeral=True
+                )
+                return
+            row = rows[row_idx]
+            row["discord_name"] = self.roster_name
+            row["discord_id"] = self.user_id
+            row["discord_display"] = self.display_name
+            row["source"] = "self"
+            if tm is not None:
+                tm["confirmed"] = True
+            store.set(tournament)
+
+        await interaction.response.send_message(
+            replace_emojis(
+                f"✅ Комната {self.room_index}: вы привязаны к "
+                f"**{row.get('ocr_name', '?')}**."
+            ),
+            ephemeral=True,
+        )
+        await _rooms_after_map(
+            interaction, tournament, self.match_type,
+            self.match_index, self.room_index,
+        )

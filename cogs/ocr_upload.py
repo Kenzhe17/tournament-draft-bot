@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any
 
 import discord
+from discord.ui import Button, FileUpload, Modal, Select, View
 from utils.design import compose, text_card
 from discord.ext import commands
 
@@ -583,10 +584,18 @@ async def _publish_match_result_card_impl(
             win_score = score_a if winning_team_index == t1 else score_b
             lose_score = score_b if winning_team_index == t1 else score_a
             if win_score <= lose_score:
-                raise ValueError(
-                    f"OCR score inconsistent with winner: "
-                    f"{score_a}:{score_b} (team {winning_team_index} won)"
-                )
+                if session.get("mode") == "rooms":
+                    # Мультикомнатный матч: сумма поскриншотных счетов
+                    # может не совпадать с официальным победителем
+                    # (переигровки/досрочные выходы) — не роняем
+                    # карточку, откатываемся на убийства команд.
+                    score_a, score_b = totals_a.kills, totals_b.kills
+                    score_label = "УБИЙСТВА КОМАНД"
+                else:
+                    raise ValueError(
+                        f"OCR score inconsistent with winner: "
+                        f"{score_a}:{score_b} (team {winning_team_index} won)"
+                    )
 
         # Реальный сквозной номер матча (тот же, что в embed запуска)
         match_num = await match_number_store.get_or_assign(match_id)
@@ -794,6 +803,95 @@ class OCRUploadCog(commands.Cog):
             existing and existing.get("status") not in ("completed", "cancelled")
         )
         is_reupload = bool(meta.get("reupload")) and session_active
+
+        # --- Мультикомнатный сбор (OCR V2) -------------------------------
+        # Активная rooms-сессия в статусе collecting принимает
+        # изображения как комнаты — до rooms_expected штук, по порядку.
+        if (
+            existing
+            and existing.get("mode") == "rooms"
+            and existing.get("status") == "collecting"
+        ):
+            from views.ocr_match_view import _can_use_ocr
+
+            if not _can_use_ocr(message.author, tournament, [t1, t2]):
+                await message.reply(
+                    replace_emojis(
+                        "❌ Скриншоты может отправить капитан команды "
+                        "или организатор."
+                    )
+                )
+                return
+            image_atts = [
+                a for a in message.attachments
+                if (a.content_type or "").startswith("image/")
+                or any(a.filename.lower().endswith(e) for e in IMAGE_EXTS)
+            ]
+            if not image_atts:
+                await message.reply(
+                    replace_emojis("❌ Нужны скриншоты — прикрепите изображения.")
+                )
+                return
+            stats_channel = await _stats_channel(message, tournament)
+            session = existing
+            for att in image_atts:
+                if att.size and att.size > MAX_ATTACH:
+                    await message.reply(
+                        replace_emojis("❌ Файл слишком большой (макс. 10 МБ).")
+                    )
+                    continue
+                data = await att.read()
+                res = await process_room_image(
+                    guild=message.guild,
+                    channel=message.channel,
+                    user=message.author,
+                    tournament=tournament,
+                    match_type=match_type,
+                    match_index=match_index,
+                    key=key,
+                    session=session,
+                    stats_channel=stats_channel,
+                    data=data,
+                )
+                if res == "ok":
+                    continue
+                if res == "dup":
+                    await message.reply(
+                        replace_emojis("⚠️ Этот скриншот уже загружен в комплект.")
+                    )
+                elif res == "full":
+                    await message.reply(
+                        replace_emojis(
+                            "⚠️ Комплект уже полон — лишние скриншоты "
+                            "не принимаются до отката администратором."
+                        )
+                    )
+                    break
+                elif res == "parse_fail":
+                    await message.reply(
+                        replace_emojis(
+                            "❌ Не удалось распознать таблицу результатов "
+                            "на скриншоте — проверьте, что это экран CS 4x4."
+                        )
+                    )
+                elif res == "squad":
+                    await message.reply(
+                        replace_emojis(
+                            "⚠️ Детальный экран одного отряда не поддерживается "
+                            "в мультикомнатном режиме — нужен двухпанельный "
+                            "экран результатов."
+                        )
+                    )
+                elif res == "cancelled":
+                    await message.reply(
+                        replace_emojis("⚠️ Сессия загрузки была отменена.")
+                    )
+                    break
+                else:
+                    await message.reply(
+                        replace_emojis("❌ Ошибка обработки скриншота — попробуйте ещё раз.")
+                    )
+            return
 
         # Новый скриншот не должен перезаписывать активную сессию —
         # только явная кнопка «Неправильный скриншот» (reupload=True).
@@ -1319,6 +1417,358 @@ class OCRUploadCog(commands.Cog):
         )
 
 
+# ---------------------------------------------------------------------------
+# Мультикомнатный режим (OCR V2): 1–10 скриншотов на один матч
+# ---------------------------------------------------------------------------
+
+# Локи на матч для атомарного приёма комнат и финализации
+_ROOM_LOCKS: dict[str, asyncio.Lock] = {}
+_ROOM_LOCKS_MAX = 200
+
+# Кэш OCR по хэшу файла — одинаковый скриншот не гоняем дважды
+_OCR_BOX_CACHE: dict[str, list] = {}
+_OCR_BOX_CACHE_MAX = 100
+
+
+def _room_lock(match_key: str) -> asyncio.Lock:
+    lock = _ROOM_LOCKS.get(match_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ROOM_LOCKS[match_key] = lock
+        if len(_ROOM_LOCKS) > _ROOM_LOCKS_MAX:
+            _ROOM_LOCKS.pop(next(iter(_ROOM_LOCKS)))
+    return lock
+
+
+async def _ocr_boxes_cached(data: bytes) -> list:
+    """OCR с дедупликацией по sha256 содержимого."""
+    import hashlib
+
+    digest = hashlib.sha256(data).hexdigest()
+    cached = _OCR_BOX_CACHE.get(digest)
+    if cached is not None:
+        return cached
+    from services.ocr_service import OCR_EXECUTOR
+
+    loop = asyncio.get_running_loop()
+    boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
+    _OCR_BOX_CACHE[digest] = boxes
+    if len(_OCR_BOX_CACHE) > _OCR_BOX_CACHE_MAX:
+        _OCR_BOX_CACHE.pop(next(iter(_OCR_BOX_CACHE)))
+    return boxes
+
+
+async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
+    """Targeted re-OCR строк с пропущенными полями (ник/K/D/A/DMG).
+
+    Полный кадр повторно не распознаём — вырезаем только полосу строки
+    и прогоняем OCR по ней. Заполняем ТОЛЬКО отсутствующие значения:
+    распознанное основной моделью не перезаписываем.
+    """
+    from services import cs_parser
+    from services.ocr_service import ocr_image_region_async
+    from PIL import Image
+
+    try:
+        img_w, img_h = Image.open(io.BytesIO(data)).size
+    except Exception:
+        return
+    boundary = float(parsed.get("boundary_x") or img_w / 2)
+
+    for side, players_key in (("left", "team_a"), ("right", "team_b")):
+        x_lo = 0.0 if side == "left" else boundary
+        x_hi = boundary if side == "left" else float(img_w)
+        for p in parsed.get(players_key) or []:
+            needs_name = p.get("name") in (None, "", "???")
+            needs_kda = p.get("kills") is None
+            if not (needs_name or needs_kda):
+                continue
+            cy = float(p.get("cy") or 0)
+            rh = float(p.get("row_h") or 40)
+            if cy <= 0:
+                continue
+            region = (
+                x_lo, max(0.0, cy - rh * 0.75),
+                x_hi, min(float(img_h), cy + rh * 0.75),
+            )
+            try:
+                sub = await ocr_image_region_async(data, region)
+            except Exception:
+                continue
+            if not sub:
+                continue
+            fields = cs_parser.parse_row_fields(sub)
+            if needs_name and fields.get("name"):
+                p["name"] = fields["name"][:32]
+            if needs_kda and fields.get("kills") is not None:
+                p["kills"] = fields["kills"]
+                p["deaths"] = fields.get("deaths")
+                p["assists"] = fields.get("assists")
+                p["dmg"] = fields.get("dmg", p.get("dmg"))
+                if p.get("deaths"):
+                    p["kd"] = round(p["kills"] / p["deaths"], 2)
+
+
+async def _classic_pipeline(data: bytes) -> dict | None:
+    """Общий классический пайплайн: OCR → parse → score fallback →
+    winner detect → cyrillic names → refine строк. Возвращает
+    {"panels","score","banner","top5","winner_side"} или None."""
+    from services.ocr_service import (
+        OCR_EXECUTOR,
+        detect_winner_side,
+        ocr_cyrillic_region,
+        ocr_score_fallback,
+    )
+
+    loop = asyncio.get_running_loop()
+    boxes = await _ocr_boxes_cached(data)
+    if not boxes:
+        return None
+
+    # Сначала пробуем детальный экран одного отряда — rooms-режим
+    # его не поддерживает (нужен двухпанельный экран).
+    from services.cs_squad_parser import parse_squad_results
+
+    squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
+    if squad is not None:
+        return {"squad": squad}
+
+    parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
+    if parsed is None:
+        return None
+
+    if parsed.get("score") is None:
+        score = await loop.run_in_executor(
+            OCR_EXECUTOR, ocr_score_fallback, data, boxes
+        )
+        if score:
+            parsed["score"] = list(score)
+
+    await _refine_parsed_rows(data, parsed)
+
+    panels = {
+        side_name: {
+            "name": parsed.get(name_key),
+            "rows": [
+                {
+                    "name": p["name"],
+                    "kills": p["kills"],
+                    "deaths": p["deaths"],
+                    "assists": p["assists"],
+                    "dmg": p.get("dmg") or 0,
+                }
+                for p in parsed[players_key]
+            ],
+        }
+        for side_name, name_key, players_key in (
+            ("left", "team_a_name", "team_a"),
+            ("right", "team_b_name", "team_b"),
+        )
+    }
+    for side_name in ("left", "right"):
+        nm = panels[side_name].get("name")
+        if nm:
+            panels[side_name]["name"] = _normalize_team_name(nm)
+
+    for side_name, box_key in (
+        ("left", "team_a_name_box"),
+        ("right", "team_b_name_box"),
+    ):
+        region = parsed.get(box_key)
+        if not region:
+            continue
+        cname = await ocr_cyrillic_region(data, region)
+        if cname:
+            panels[side_name]["name"] = _normalize_team_name(cname)
+
+    return {
+        "panels": panels,
+        "score": parsed.get("score"),
+        "banner": parsed.get("banner"),
+        "top5": parsed.get("top5", False),
+        "winner_side": "left",
+        "sha": None,  # заполняется вызывающим
+    }
+
+
+async def _update_progress_message(
+    channel, message_id: int, text: str, view=None
+) -> None:
+    """Обновить сообщение прогресса загрузки (одно, без спама)."""
+    if not message_id:
+        return
+    try:
+        msg = await channel.fetch_message(message_id)
+        await msg.edit(content=text, view=view)
+    except Exception as e:
+        logger.warning("Progress message edit failed: %s", e)
+
+
+async def _publish_room_message(
+    stats_channel, tournament, message, data: bytes,
+    room: dict, match_type: str, match_index: int, t1: int, t2: int,
+) -> None:
+    """Сообщение комнаты: скриншот + кнопки сопоставления (RoomView)."""
+    from views.ocr_match_view import RoomView
+
+    file = discord.File(io.BytesIO(data), filename=f"room_{room['room_index']}.png")
+    view = RoomView(
+        message.guild.id, tournament.channel_id, tournament,
+        match_type, match_index, room["room_index"],
+    )
+    text = (
+        f"**Комната {room['room_index']}**\n"
+        f"Распознано игроков: "
+        f"{sum(len(p.get('rows') or []) for p in (room.get('panels') or {}).values())}"
+    )
+    bot_msg = await stats_channel.send(
+        content=replace_emojis(text), view=view, file=file
+    )
+    room["message_id"] = bot_msg.id
+    store.set(tournament)
+
+
+async def _finalize_rooms_if_ready(
+    guild, tournament, key: str, match_type: str, match_index: int,
+    stats_channel,
+) -> bool:
+    """Все комнаты получили OCR → перевести сессию в awaiting_mapping
+    и опубликовать/обновить сообщения комнат с кнопками."""
+    session = tournament.ocr_sessions.get(key)
+    if not session or session.get("mode") != "rooms":
+        return False
+    if session.get("status") != "collecting":
+        return False
+    rooms = session.get("rooms") or []
+    if len(rooms) < int(session.get("rooms_expected") or 0):
+        return False
+
+    session["status"] = "awaiting_mapping"
+    session["rooms_received"] = len(rooms)
+    store.set(tournament)
+
+    # Прогресс-сообщение → финальный статус
+    prog_id = session.get("progress_message_id")
+    if prog_id and stats_channel is not None:
+        await _update_progress_message(
+            stats_channel, prog_id,
+            replace_emojis(
+                f"✅ Комплект скриншотов принят: **{len(rooms)}** комнат.\n"
+                "Сопоставьте игроков кнопками под каждым скриншотом."
+            ),
+        )
+    return True
+
+
+async def process_room_image(
+    guild: discord.Guild,
+    channel,
+    user,
+    tournament,
+    match_type: str,
+    match_index: int,
+    key: str,
+    session: dict,
+    stats_channel,
+    data: bytes,
+) -> str:
+    """Обработать один скриншот как комнату матча.
+
+    Возвращает код результата: "ok" | "dup" | "full" | "squad" |
+    "parse_fail" | "cancelled".
+    """
+    import hashlib
+
+    expected = int(session.get("rooms_expected") or 0)
+    rooms = session.setdefault("rooms", [])
+
+    sha = hashlib.sha256(data).hexdigest()
+    if any(r.get("sha") == sha for r in rooms):
+        return "dup"
+    if len(rooms) >= expected:
+        return "full"
+
+    gen = session.get("gen", 1)
+    try:
+        pipe = await _classic_pipeline(data)
+    except Exception:
+        logger.exception("Room OCR pipeline failed")
+        return "error"
+
+    # Сессия могла быть отменена/пересоздана пока шёл OCR
+    fresh = store.get(guild.id, tournament.channel_id)
+    fs = (fresh.ocr_sessions.get(key) if fresh else None) or {}
+    if (
+        fs.get("mode") != "rooms"
+        or fs.get("status") != "collecting"
+        or fs.get("gen") != gen
+    ):
+        return "cancelled"
+
+    if pipe is None:
+        return "parse_fail"
+    if pipe.get("squad") is not None:
+        return "squad"
+
+    room_index = len(rooms) + 1
+    room = {
+        "room_index": room_index,
+        "sha": sha,
+        "status": "awaiting_mapping",
+        "panels": pipe["panels"],
+        "winner_side": pipe.get("winner_side"),
+        "banner": pipe.get("banner"),
+        "score": pipe.get("score"),
+        "top5": pipe.get("top5", False),
+        "maps": {},
+        "panel_picks": {},
+        "message_id": None,
+        "uploaded_at": datetime.now().isoformat(),
+    }
+    # Держим bytes только до отправки сообщения — в JSON не пишем
+    rooms.append(room)
+    session["rooms_received"] = len(rooms)
+    store.set(tournament)
+
+    # Сообщение комнаты (скриншот + кнопки — активируются после
+    # приёма полного комплекта, проверка на сервере)
+    try:
+        await _publish_room_message(
+            stats_channel, tournament, channel, data, room,
+            match_type, match_index, 0, 0,
+        )
+    except Exception as e:
+        logger.warning("Room message publish failed: %s", e)
+
+    # Обновить прогресс
+    prog_id = session.get("progress_message_id")
+    total = int(session.get("rooms_expected") or 0)
+    if prog_id and stats_channel is not None:
+        from views.ocr_match_view import RoomCollectView
+
+        done = len(rooms) >= total
+        view = None if done else RoomCollectView(
+            guild.id, tournament.channel_id, tournament,
+            match_type, match_index, session.get("gen", 1),
+        )
+        await _update_progress_message(
+            stats_channel, prog_id,
+            replace_emojis(
+                f"**ОБРАБОТКА СКРИНШОТОВ**\n"
+                f"Комнат: {total}\n"
+                f"Обработано: {len(rooms)}/{total}\n"
+                f"Статус: {'Ожидание остальных скриншотов' if not done else 'Комплект полный'}"
+            ),
+            view=view,
+        )
+
+    if len(rooms) >= total:
+        await _finalize_rooms_if_ready(
+            guild, tournament, key, match_type, match_index, stats_channel,
+        )
+    return "ok"
+
+
 async def _maybe_delete_match_channel(
     guild: discord.Guild, tournament, match_type: str, match_index: int
 ) -> None:
@@ -1466,6 +1916,399 @@ async def _reset_pool_channel(channel) -> None:
     logger.info("Pool channel %s reset to defaults", channel.id)
 
 
+# ---------------------------------------------------------------------------
+# UI мультикомнатной загрузки: выбор числа комнат → сбор файлов → прогресс
+# ---------------------------------------------------------------------------
+
+async def create_rooms_session(
+    guild: discord.Guild,
+    channel: discord.abc.Messageable,
+    user: discord.User,
+    tournament,
+    match_type: str,
+    match_index: int,
+    count: int,
+):
+    """Создать rooms-сессию и сообщение прогресса. None — уже есть сессия."""
+    key = _session_key(match_type, match_index)
+    existing = tournament.ocr_sessions.get(key)
+    if existing and existing.get("status") not in ("completed", "cancelled"):
+        return None
+    t1, t2 = _match_tuple(tournament, match_type, match_index)
+    session = {
+        "match_type": match_type,
+        "match_index": match_index,
+        "mode": "rooms",
+        "status": "collecting",
+        "rooms_expected": int(count),
+        "rooms_received": 0,
+        "rooms": [],
+        "gen": 1,
+        "uploaded_by": user.id,
+        "uploaded_by_name": getattr(user, "display_name", user.name),
+        "teams": [t1, t2],
+        "maps": {},
+        "panel_picks": {},
+        "created_at": datetime.now().isoformat(),
+    }
+    tournament.ocr_sessions[key] = session
+
+    view = RoomCollectView(
+        guild.id, tournament.channel_id, tournament,
+        match_type, match_index, session["gen"],
+    )
+    msg = await channel.send(
+        content=replace_emojis(
+            "**ОБРАБОТКА СКРИНШОТОВ**\n"
+            f"Комнат: {count}\nОбработано: 0/{count}\n"
+            "Статус: Ожидание скриншотов"
+        ),
+        view=view,
+    )
+    session["progress_message_id"] = msg.id
+    session["progress_channel_id"] = channel.id
+    store.set(tournament)
+    return session
+
+
+async def cancel_rooms_session(
+    guild: discord.Guild,
+    user,
+    tournament,
+    match_type: str,
+    match_index: int,
+) -> str:
+    """Полный административный откат комплекта. «ok»|«none»|«done»|«forbidden»."""
+    from views.ocr_match_view import is_org_check
+
+    key = _session_key(match_type, match_index)
+    session = tournament.ocr_sessions.get(key)
+    if not session or session.get("mode") != "rooms":
+        return "none"
+    if session.get("status") in ("completed", "cancelled"):
+        return "done"
+    if not is_org_check(user, guild):
+        return "forbidden"
+
+    async with _room_lock(key):
+        # Повторная проверка под локом — статус мог измениться
+        tournament = store.get(guild.id, tournament.channel_id) or tournament
+        session = tournament.ocr_sessions.get(key)
+        if not session or session.get("mode") != "rooms":
+            return "none"
+        if session.get("status") in ("completed", "cancelled"):
+            return "done"
+        session["gen"] = int(session.get("gen", 1)) + 1
+        session["status"] = "cancelled"
+        # Удаляем сессию целиком — поздние OCR-задачи увидят
+        # отсутствие/несовпадение gen и не запишут результат.
+        tournament.ocr_sessions.pop(key, None)
+        store.set(tournament)
+
+    # Карточка матча → обратно в активное состояние
+    try:
+        from services.match_announcer import update_match_card
+
+        await update_match_card(
+            guild, tournament, match_type, match_index, state="active"
+        )
+    except Exception as e:
+        logger.warning("rooms cancel card update failed: %s", e)
+
+    # Гасим сообщения комнат и прогресса (best effort)
+    channel = None
+    try:
+        channel = guild.get_channel(
+            int(session.get("progress_channel_id") or 0)
+        ) or await guild.fetch_channel(
+            int(session.get("progress_channel_id") or 0)
+        )
+    except Exception:
+        pass
+    if channel is not None:
+        try:
+            prog_id = session.get("progress_message_id")
+            if prog_id:
+                prog = await channel.fetch_message(prog_id)
+                await prog.edit(
+                    content=replace_emojis(
+                        "❌ Комплект скриншотов отменён администратором. "
+                        "Можно загрузить заново."
+                    ),
+                    view=None,
+                )
+        except Exception as e:
+            logger.warning("rooms progress edit failed: %s", e)
+        for room in session.get("rooms") or []:
+            mid = room.get("message_id")
+            if not mid:
+                continue
+            try:
+                msg = await channel.fetch_message(mid)
+                await msg.edit(
+                    content=replace_emojis(
+                        f"**Комната {room.get('room_index')}** — "
+                        "❌ комплект отменён администратором."
+                    ),
+                    view=None,
+                )
+            except Exception as e:
+                logger.warning("room message cancel edit failed: %s", e)
+    return "ok"
+
+
+class RoomCountSelectView(View):
+    """«СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?» — выбор 1..10 (ephemeral)."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int,
+    ):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.tournament = tournament
+        self.select = Select(
+            placeholder="Количество комнат (1–10)",
+            options=[
+                discord.SelectOption(label=f"{n}", value=str(n))
+                for n in range(1, 11)
+            ],
+            min_values=1,
+            max_values=1,
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+
+    async def _on_pick(self, interaction: discord.Interaction) -> None:
+        try:
+            count = int((self.select.values or ["1"])[0])
+        except (TypeError, ValueError):
+            count = 1
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        session = await create_rooms_session(
+            interaction.guild, interaction.channel, interaction.user,
+            tournament, self.match_type, self.match_index, count,
+        )
+        if session is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Для этого матча уже идёт загрузка скриншотов."
+                ),
+                ephemeral=True,
+            )
+            return
+        # Модалка — первый ответ на select-interaction
+        await interaction.response.send_modal(
+            RoomsUploadModal(
+                self.guild_id, self.channel_id, tournament,
+                self.match_type, self.match_index, count, session["gen"],
+                max_files=count,
+            )
+        )
+
+
+class RoomsUploadModal(Modal):
+    """Загрузка до N скриншотов за раз (FileUpload, порядок = комнаты)."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, count: int, gen: int,
+        max_files: int = 10,
+    ):
+        remaining = max(1, min(int(count), int(max_files)))
+        upload = FileUpload(
+            label=f"Скриншоты (до {remaining}, по порядку комнат)",
+            required=True,
+            min_values=1,
+            max_values=remaining,
+        )
+        super().__init__(title=f"Скриншоты — {remaining} комн.", timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.count = count
+        self.gen = gen
+        self.add_item(upload)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        upload = self.children[0]
+        files = list(getattr(upload, "values", None) or [])
+        await interaction.response.defer(ephemeral=True)
+        if not files:
+            await interaction.followup.send(
+                replace_emojis("❌ Файлы не получены — попробуйте ещё раз."),
+                ephemeral=True,
+            )
+            return
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.followup.send(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        key = _session_key(self.match_type, self.match_index)
+        session = tournament.ocr_sessions.get(key)
+        if (
+            not session
+            or session.get("mode") != "rooms"
+            or session.get("status") != "collecting"
+            or int(session.get("gen", 0)) != int(self.gen)
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Сессия загрузки устарела или отменена — "
+                    "начните заново."
+                ),
+                ephemeral=True,
+            )
+            return
+        t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
+        stats_channel = await _stats_channel(interaction, tournament)
+        if stats_channel is None:
+            stats_channel = interaction.channel
+        results = {"ok": 0, "dup": 0, "full": 0, "fail": 0}
+        for f in files:
+            try:
+                data = await f.read()
+            except Exception:
+                results["fail"] += 1
+                continue
+            res = await process_room_image(
+                guild=interaction.guild,
+                channel=stats_channel,
+                user=interaction.user,
+                tournament=tournament,
+                match_type=self.match_type,
+                match_index=self.match_index,
+                key=key,
+                session=session,
+                stats_channel=stats_channel,
+                data=data,
+            )
+            results["ok" if res == "ok" else res if res in results else "fail"] += 1
+            if res == "full":
+                break
+        total = int(session.get("rooms_received") or 0)
+        expected = int(session.get("rooms_expected") or self.count)
+        await interaction.followup.send(
+            replace_emojis(
+                f"📸 Принято комнат: **{total}/{expected}** "
+                f"(дубли: {results['dup']}, ошибок: {results['fail'] + results.get('squad',0) + results.get('parse_fail',0) + results.get('cancelled',0)})"
+            ),
+            ephemeral=True,
+        )
+
+
+class RoomCollectView(View):
+    """Кнопки на сообщении прогресса: дозагрузка + админ-откат."""
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, gen: int,
+    ):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.gen = gen
+        add_btn = Button(
+            label="📸 Добавить скриншоты",
+            style=discord.ButtonStyle.primary,
+            custom_id=(
+                f"rooms_add:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{gen}"
+            ),
+            row=0,
+        )
+        add_btn.callback = self._on_add
+        self.add_item(add_btn)
+        b = Button(
+            label="❌ Отменить комплект",
+            style=discord.ButtonStyle.danger,
+            custom_id=(
+                f"rooms_cancel:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{gen}"
+            ),
+            row=0,
+        )
+        b.callback = self._on_cancel
+        self.add_item(b)
+
+    async def _on_add(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        key = _session_key(self.match_type, self.match_index)
+        session = (tournament.ocr_sessions.get(key) if tournament else None)
+        if (
+            not session
+            or session.get("mode") != "rooms"
+            or session.get("status") != "collecting"
+            or int(session.get("gen", 0)) != int(self.gen)
+        ):
+            await interaction.response.send_message(
+                replace_emojis("⚠️ Сессия загрузки завершена или отменена."),
+                ephemeral=True,
+            )
+            return
+        remaining = int(session.get("rooms_expected") or 0) - len(
+            session.get("rooms") or []
+        )
+        if remaining <= 0:
+            await interaction.response.send_message(
+                replace_emojis("✅ Комплект уже полон."), ephemeral=True
+            )
+            return
+        await interaction.response.send_modal(
+            RoomsUploadModal(
+                self.guild_id, self.channel_id, tournament,
+                self.match_type, self.match_index,
+                int(session.get("rooms_expected") or remaining),
+                int(session.get("gen", 1)),
+                max_files=remaining,
+            )
+        )
+
+    async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        res = await cancel_rooms_session(
+            interaction.guild, interaction.user, tournament,
+            self.match_type, self.match_index,
+        )
+        if res == "forbidden":
+            await interaction.response.send_message(
+                replace_emojis("❌ Отменить комплект может только администратор."),
+                ephemeral=True,
+            )
+        elif res == "done":
+            await interaction.response.send_message(
+                replace_emojis("ℹ️ Сессия уже завершена или отменена."),
+                ephemeral=True,
+            )
+        elif res == "none":
+            await interaction.response.send_message(
+                replace_emojis("ℹ️ Активной загрузки нет."), ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                replace_emojis("✅ Комплект скриншотов отменён."),
+                ephemeral=True,
+            )
+
+
 class ModalUploadShim:
     """Минимальный shim discord.Message для вызова on_message из модалки.
 
@@ -1497,4 +2340,12 @@ class ModalUploadShim:
 
 
 async def setup(bot) -> None:
+    # Прогрев OCR-моделей в фоне — первый инференс ~4с на холодную
+    try:
+        from services.ocr_service import warmup
+
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, warmup)
+    except Exception:
+        logger.debug("OCR warmup schedule failed", exc_info=True)
     await bot.add_cog(OCRUploadCog(bot))

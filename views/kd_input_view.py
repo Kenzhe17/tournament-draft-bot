@@ -230,6 +230,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     elo_results = compute_match_elo_changes(match_players, team_sr_values)
 
     # ---- Применение: статистика → баланс ----
+    pending_stats: list = []
     for p in match_players:
         name = p["name"]
         user_id = user_id_by_name.get(name, 0)
@@ -279,7 +280,14 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             f"games={updated_stats.games}, coins={coin_reward}"
         )
 
-        await player_stats_store.set(updated_stats)
+        pending_stats.append(updated_stats)
+
+    # Статистика всех игроков — одной транзакцией: сбой не оставляет
+    # половину команды с начисленным ELO. Монеты начисляются
+    # поигроково до этого (не покрываются транзакцией — осознанный
+    # компромисс: coins идемпотентны только через processed-флаг).
+    if pending_stats:
+        await player_stats_store.set_many(pending_stats)
 
     # Уведомления о повышении уровня — в канал турнира
     if level_up_notifications and interaction is not None:

@@ -64,8 +64,23 @@ def _box(text: str, x0: float, y0: float, x1: float, y1: float):
     }
 
 
+# Минимальная ширина для OCR: узкие скриншоты (телефон ~1280px)
+# детектор RapidOCR читает хуже — апскейлим с сохранением пропорций,
+# а координаты возвращаем в исходном пространстве.
+_OCR_MIN_WIDTH = 1600
+_OCR_MAX_UPSCALE = 2.5
+
+
 def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    scale = 1.0
+    if img.width < _OCR_MIN_WIDTH:
+        scale = min(_OCR_MAX_UPSCALE, _OCR_MIN_WIDTH / img.width)
+        if scale > 1.0:
+            img = img.resize(
+                (int(img.width * scale), int(img.height * scale)),
+                Image.LANCZOS,
+            )
     # RapidOCR ждёт BGR ndarray
     arr = np.asarray(img)[:, :, ::-1]
     result, _elapse = _get_ocr()(arr)
@@ -77,6 +92,8 @@ def _run_ocr(image_bytes: bytes) -> list[dict[str, Any]]:
         except (TypeError, IndexError):
             continue
         pts = np.asarray(poly, dtype=float).reshape(-1, 2)
+        if scale != 1.0:
+            pts = pts / scale
         boxes.append(
             _box(
                 str(text),
@@ -175,6 +192,95 @@ async def ocr_cyrillic_region(
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         OCR_EXECUTOR, _run_ocr_cyrillic_region, image_bytes, region
+    )
+
+
+def warmup() -> None:
+    """Прогреть обе OCR-модели на пустом кадре (старт бота).
+
+    Первый инференс RapidOCR стоит ~4 с (аллокация сессий ONNX) —
+    лучше сделать его при запуске, а не на первом скриншоте матча.
+    """
+    import numpy as np
+
+    dummy = np.zeros((64, 64, 3), dtype=np.uint8)
+    try:
+        _get_ocr()(dummy[:, :, ::-1])
+    except Exception:
+        logger.warning("OCR warmup failed", exc_info=True)
+    try:
+        _get_cyrillic_ocr()(dummy)
+    except Exception:
+        logger.warning("Cyrillic OCR warmup failed", exc_info=True)
+
+
+def ocr_image_region(
+    image_bytes: bytes,
+    region: tuple[float, float, float, float],
+    *,
+    min_height: int = 48,
+    max_upscale: float = 3.0,
+) -> list[dict[str, Any]]:
+    """Targeted OCR области изображения основным движком.
+
+    Вырезает region (x0,y0,x1,y1), при необходимости увеличивает
+    (мелкий шрифт строк таблицы), прогоняет полный RapidOCR и
+    возвращает боксы с координатами, пересчитанными в систему
+    координат ИСХОДНОГО изображения.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception:
+        return []
+    x0, y0, x1, y1 = region
+    pad = 6
+    crop = img.crop(
+        (
+            max(0, int(x0) - pad),
+            max(0, int(y0) - pad),
+            min(img.width, int(x1) + pad),
+            min(img.height, int(y1) + pad),
+        )
+    )
+    if crop.width < 8 or crop.height < 8:
+        return []
+    scale = 1.0
+    if crop.height < min_height:
+        scale = min(max_upscale, min_height / crop.height)
+    elif crop.width < 200:
+        scale = min(max_upscale, 200 / crop.width)
+    if scale > 1.0:
+        crop = crop.resize(
+            (max(8, int(crop.width * scale)), max(8, int(crop.height * scale))),
+            Image.LANCZOS,
+        )
+    buf = io.BytesIO()
+    crop.save(buf, format="PNG")
+    sub = _run_ocr(buf.getvalue()) or []
+    # Пересчёт координат: crop-offset + scale → исходное изображение
+    ox = max(0, int(x0) - pad)
+    oy = max(0, int(y0) - pad)
+    out = []
+    for b in sub:
+        out.append(_box(
+            b["text"],
+            ox + b["x0"] / scale,
+            oy + b["y0"] / scale,
+            ox + b["x1"] / scale,
+            oy + b["y1"] / scale,
+        ))
+    return out
+
+
+async def ocr_image_region_async(
+    image_bytes: bytes,
+    region: tuple[float, float, float, float],
+    **kwargs,
+) -> list[dict[str, Any]]:
+    """Async-обёртка targeted OCR области."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(
+        OCR_EXECUTOR, ocr_image_region, image_bytes, region, **kwargs
     )
 
 
@@ -316,7 +422,38 @@ def ordered_round_score(
     (результат ручного OCR Mapping). Возвращает None, если счёт не
     распознан или стороны команд не установлены — вызывающий код
     обязан упасть на убийства/валидацию, а не угадывать порядок.
+
+    Режим "rooms" (мультикомнатный матч): session["match_score"] —
+    ручной ввод организатора [score_t1, score_t2]; иначе суммируем
+    поскриншотные счета всех комнат (каждая комната — свой «N VS M»,
+    привязанный к командам через её собственный maps). Если хоть в
+    одной комнате счёт не распознан — None.
     """
+    if session.get("mode") == "rooms":
+        manual = session.get("match_score")
+        if (
+            isinstance(manual, (list, tuple)) and len(manual) == 2
+        ):
+            try:
+                a, b = int(manual[0]), int(manual[1])
+                if 0 <= a <= 99 and 0 <= b <= 99 and (a or b):
+                    return (a, b)
+            except (TypeError, ValueError):
+                pass
+        rooms = session.get("rooms") or []
+        if not rooms:
+            return None
+        total_l = total_r = 0
+        seen = False
+        for room in rooms:
+            sub = ordered_round_score(room, team1_index, team2_index)
+            if sub is None:
+                return None
+            total_l += sub[0]
+            total_r += sub[1]
+            seen = True
+        return (total_l, total_r) if seen else None
+
     raw = session.get("score")
     if not isinstance(raw, (list, tuple)) or len(raw) != 2:
         return None
