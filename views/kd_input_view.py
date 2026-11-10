@@ -139,10 +139,12 @@ class ProcessMatchButton(discord.ui.Button):
         )
 
 
-async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict, interaction: discord.Interaction = None) -> None:
+async def process_match_result(guild_id: int, tournament: Tournament, match_info: dict, interaction: discord.Interaction = None) -> bool:
     """Process match result — новая ELO-система (FACEIT-style).
 
     Начисляет ELO один раз на матч (processed_elo_matches), XP и монеты.
+    Возвращает True, если статистика/ELO реально применены в этом вызове;
+    False — матч уже обработан (идемпотентный пропуск).
     """
     from storage.player_stats_store import player_stats_store
     from storage.json_store import store
@@ -164,7 +166,7 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     # Idempotency: один подтверждённый матч начисляет ELO только один раз
     if match_id in tournament.processed_elo_matches:
         logger.warning("ELO already processed for match %s — skipping", match_id)
-        return
+        return False
     tournament.processed_elo_matches.add(match_id)
 
     # Get K/D data
@@ -287,7 +289,11 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
     # поигроково до этого (не покрываются транзакцией — осознанный
     # компромисс: coins идемпотентны только через processed-флаг).
     if pending_stats:
-        await player_stats_store.set_many(pending_stats)
+        await player_stats_store.set_many(
+            pending_stats,
+            finalize_match_id=match_info.get("finalize_match_id"),
+            guild_id_for_finalize=guild_id,
+        )
 
     # Уведомления о повышении уровня — в канал турнира
     if level_up_notifications and interaction is not None:
@@ -332,3 +338,4 @@ async def process_match_result(guild_id: int, tournament: Tournament, match_info
             "damage": kd.get("damage", 0),
         }
     store.set(tournament)
+    return True

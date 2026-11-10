@@ -257,16 +257,37 @@ class TournamentBot(commands.Bot):
                             )
                     # Кнопки на сообщениях комнат
                     for room in session.get("rooms") or []:
-                        mid = room.get("message_id")
+                        mids = list(room.get("message_ids") or [])
+                        if room.get("message_id"):
+                            mids.append(room["message_id"])
                         ridx = room.get("room_index")
-                        if mid and ridx:
+                        for mid in dict.fromkeys(mids):
+                            if mid and ridx:
+                                self.add_view(
+                                    RoomView(
+                                        tournament.guild_id,
+                                        tournament.channel_id,
+                                        tournament, mt, mi, int(ridx),
+                                    ),
+                                    message_id=mid,
+                                )
+                    # Сообщение подтверждения результатов (после
+                    # полного сопоставления всех комнат)
+                    cmid = session.get("confirm_message_id")
+                    if cmid:
+                        try:
+                            from views.ocr_match_view import RoomsConfirmView
                             self.add_view(
-                                RoomView(
+                                RoomsConfirmView(
                                     tournament.guild_id,
                                     tournament.channel_id,
-                                    tournament, mt, mi, int(ridx),
+                                    tournament, mt, mi,
                                 ),
-                                message_id=mid,
+                                message_id=cmid,
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Rooms confirm view restore failed: %s", e,
                             )
                 except Exception as e:
                     logger.warning(

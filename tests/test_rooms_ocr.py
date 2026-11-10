@@ -110,6 +110,24 @@ def _session(rooms):
     }
 
 
+def _tournament():
+    """Минимальный tournament для агрегации: 2 команды по 4 игрока.
+
+    team0: P1..P4 (uids 1..4), team1: P5..P8 (uids 5..8).
+    """
+    from types import SimpleNamespace
+
+    names = [f"P{i}" for i in range(1, 9)]
+    return SimpleNamespace(
+        teams=[
+            {"players": names[0:4]},
+            {"players": names[4:8]},
+        ],
+        player_user_ids={n: i + 1 for i, n in enumerate(names)},
+        team_names={},
+    )
+
+
 class TestRoomsHelpers:
     def test_room_session_isolation(self):
         from views.ocr_match_view import _room_session
@@ -140,17 +158,21 @@ class TestRoomsHelpers:
                       _bound_row("P2", "NickB", 3, 4, 0, 80, 2),
                   ] + [_bound_row("P3", "N3", 0, 0, 0, 0, 3),
                        _bound_row("P4", "N4", 0, 0, 0, 0, 4)],
-                  rows_b=[_bound_row("P5", "NickE", 4, 3, 2, 90, 5)] * 4),
+                  rows_b=[_bound_row(f"P{i}", "NickE", 4, 3, 2, 90, i)
+                          for i in (5, 6, 7, 8)]),
             _room(2,
                   rows_a=[
                       _bound_row("P1", "NewNick", 7, 1, 3, 300, 1),
                       _bound_row("P2", "NickB", 1, 5, 1, 40, 2),
                   ] + [_bound_row("P3", "N3", 0, 0, 0, 0, 3),
                        _bound_row("P4", "N4", 0, 0, 0, 0, 4)],
-                  rows_b=[_bound_row("P5", "NickE", 2, 4, 0, 70, 5)] * 4),
+                  rows_b=[_bound_row(f"P{i}", "NickE", 2, 4, 0, 70, i)
+                          for i in (5, 6, 7, 8)]),
         ]
-        stats = _rooms_aggregate_stats(_session(rooms))
-        # P1: разные игровые ники в разных комнатах → сумма по discord_name
+        t = _tournament()
+        stats = _rooms_aggregate_stats(_session(rooms), t, 0, 1)
+        # P1 (uid 1): разные игровые ники в разных комнатах → сумма
+        # по discord_id, ключ результата — имя ростера.
         assert stats["P1"]["kills"] == 12
         assert stats["P1"]["deaths"] == 3
         assert stats["P1"]["assists"] == 4
@@ -158,7 +180,57 @@ class TestRoomsHelpers:
         assert "NickA" in stats["P1"]["ocr_name"]
         assert "NewNick" in stats["P1"]["ocr_name"]
         assert stats["P2"]["kills"] == 4
-        assert stats["P5"]["kills"] == 24  # 4+4 по 4 строки × 2 комнаты
+        assert stats["P5"]["kills"] == 6  # 4 + 2 по двум комнатам
+
+    def test_aggregate_rejects_duplicate_discord_id_in_room(self):
+        from views.ocr_match_view import _rooms_aggregate_stats
+
+        # Один discord_id на двух строках одной комнаты → ошибка
+        dup = _bound_row("P1", "NickX", 5, 1, 1, 100, 1)
+        rooms = [
+            _room(1,
+                  rows_a=[dup, _bound_row("P2", "N2", 1, 1, 1, 10, 2),
+                          _bound_row("P3", "N3", 1, 1, 1, 10, 3),
+                          dict(dup)],
+                  rows_b=[_bound_row(f"P{i}", "NB", 1, 1, 1, 10, i)
+                          for i in (5, 6, 7, 8)]),
+        ]
+        with pytest.raises(ValueError, match="двум строкам"):
+            _rooms_aggregate_stats(_session(rooms), _tournament(), 0, 1)
+
+    def test_aggregate_rejects_foreign_discord_id(self):
+        from views.ocr_match_view import _rooms_aggregate_stats
+
+        rooms = [
+            _room(1,
+                  rows_a=[_bound_row("P1", "N", 1, 1, 1, 10, 999)] * 4,
+                  rows_b=[_bound_row(f"P{i}", "NB", 1, 1, 1, 10, i)
+                          for i in (5, 6, 7, 8)]),
+        ]
+        with pytest.raises(ValueError, match="не входит в состав"):
+            _rooms_aggregate_stats(_session(rooms), _tournament(), 0, 1)
+
+    def test_stats_complete_none_vs_zero(self):
+        from views.ocr_match_view import _rooms_stats_complete
+
+        def rows(k=1):
+            return [
+                {"ocr_name": f"N{i}", "kills": k, "deaths": k,
+                 "assists": k, "dmg": k, "discord_id": i,
+                 "discord_name": f"P{i}"}
+                for i in range(1, 5)
+            ]
+
+        rooms = [_room(1, rows_a=rows(), rows_b=rows(2))]
+        # uid→roster проверка не нужна: _rooms_stats_complete смотрит
+        # только привязку и None
+        assert _rooms_stats_complete(_session(rooms))
+
+        # None («не определено») блокирует, явный 0 — нет
+        rooms[0]["maps"]["0"]["rows"][0]["kills"] = None
+        assert not _rooms_stats_complete(_session(rooms))
+        rooms[0]["maps"]["0"]["rows"][0]["kills"] = 0
+        assert _rooms_stats_complete(_session(rooms))
 
     def test_rooms_all_mapped(self):
         from views.ocr_match_view import (
@@ -225,3 +297,86 @@ class TestOrderedRoundScoreRooms:
             ],
         }
         assert ordered_round_score(s, 0, 1) is None
+
+
+class TestSquadRooms:
+    def _squad_room(self, panels=("squad",)):
+        return {
+            "room_index": 1, "kind": "squad",
+            "panels": {k: {"name": "Отряд", "rows": []} for k in panels},
+            "maps": {},
+        }
+
+    def test_squad_panel_keys(self):
+        from views.ocr_match_view import _room_squad_panel_keys
+
+        room = self._squad_room(["squad", "squad2", "left"])
+        assert _room_squad_panel_keys(room) == ["squad", "squad2"]
+
+    def test_squad_panel_for_team_first_free(self):
+        from views.ocr_match_view import _squad_panel_for_team
+
+        room = self._squad_room(["squad", "squad2"])
+        assert _squad_panel_for_team(room, 0) == "squad"
+        # После закрепления за командой 0 — следующая свободная
+        room["maps"]["0"] = {"panel": "squad", "rows": []}
+        assert _squad_panel_for_team(room, 1) == "squad2"
+        room["maps"]["1"] = {"panel": "squad2", "rows": []}
+        # Свободных нет → None (ручной ввод)
+        assert _squad_panel_for_team(room, 0) == "squad"
+        # Обе заняты — для новой команды None
+        assert _squad_panel_for_team(room, 2) is None
+
+    def test_ensure_manual_map_preserves_none(self):
+        from views.ocr_match_view import _ensure_manual_map
+
+        rs = {"maps": {}, "panels": {}}
+        tm = _ensure_manual_map(rs, 1)
+        assert tm["panel"] == "manual"
+        assert len(tm["rows"]) == 4
+        # None сохраняется — не подменяется нулём
+        assert tm["rows"][0]["kills"] is None
+        assert tm["rows"][0]["dmg"] is None
+
+
+class TestManualEditValidation:
+    def test_num_empty_is_none_zero_ok(self):
+        from views.ocr_match_view import RoomRowEditModal
+
+        assert RoomRowEditModal._num("") is None
+        assert RoomRowEditModal._num("   ") is None
+        assert RoomRowEditModal._num("0") == 0
+        assert RoomRowEditModal._num("42") == 42
+
+    def test_num_rejects_invalid(self):
+        from views.ocr_match_view import RoomRowEditModal
+
+        for bad in ("-1", "1.5", "abc", "12x", "1,5"):
+            with pytest.raises(ValueError):
+                RoomRowEditModal._num(bad)
+
+
+class TestStrictAdminRollback:
+    def test_strict_admin_permissions(self):
+        from cogs.ocr_upload import _is_strict_admin
+        from types import SimpleNamespace
+
+        admin = SimpleNamespace(
+            id=111, guild_permissions=SimpleNamespace(administrator=True),
+        )
+        member = SimpleNamespace(
+            id=222, guild_permissions=SimpleNamespace(administrator=False),
+        )
+        no_perms = SimpleNamespace(id=333)  # без guild_permissions
+        assert _is_strict_admin(admin)
+        assert not _is_strict_admin(member)
+        assert not _is_strict_admin(no_perms)
+
+    def test_owner_is_admin(self, monkeypatch):
+        import config
+        from cogs.ocr_upload import _is_strict_admin
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(config, "BOT_OWNER_ID", 777)
+        owner = SimpleNamespace(id=777)  # даже без permissions
+        assert _is_strict_admin(owner)

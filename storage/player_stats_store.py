@@ -98,15 +98,26 @@ class PlayerStatsStore:
             self._stats[key] = stats
             self.save()
 
-    async def set_many(self, stats_list: list) -> None:
+    async def set_many(
+        self,
+        stats_list: list,
+        finalize_match_id: str | None = None,
+        guild_id_for_finalize: int | None = None,
+    ) -> None:
         """Массовое сохранение статистики ОДНОЙ транзакцией.
 
         Используется финализацией матча: ELO/статистика всех игроков
         применяются атомарно — сбой посреди не оставляет половину
         команды с начисленным результатом.
+
+        Если передан finalize_match_id, в ТОЙ ЖЕ транзакции пишется
+        запись match_finalizations(status='stats_done') — она
+        переживает рестарт и позволяет отличить «статистика
+        закоммичена» от «матч не обработан».
         """
         if self._use_db:
             from storage.db import get_pool
+            from storage.finalize_store import mark_stats_done_in_tx
             pool = await get_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
@@ -119,6 +130,12 @@ class PlayerStatsStore:
                             DO UPDATE SET name = $3, elo = $4, wins = $5, finals = $6, games = $7, current_streak = $8, best_win_streak = $9, best_loss_streak = $10, total_kills = $11, total_deaths = $12, total_assists = $13, total_damage = $14, best_match_kills = $15, total_elo_change = $16, last_elo_change = $17, xp = $18, level = $19, xp_to_next_level = $20, total_earnings = $21, tournament_participations = $22, description = $23, daily_tournament_coins = $24, daily_coins_date = $25, reputation = $26, birthday = $27, spouse_id = $28
                             """,
                             stats.guild_id, stats.user_id, stats.name, stats.elo, stats.wins, stats.finals, stats.games, stats.current_streak, stats.best_win_streak, stats.best_loss_streak, stats.total_kills, stats.total_deaths, stats.total_assists, stats.total_damage, stats.best_match_kills, stats.total_elo_change, stats.last_elo_change, stats.xp, stats.level, stats.xp_to_next_level, stats.total_earnings, stats.tournament_participations, stats.description, stats.daily_tournament_coins, stats.daily_coins_date, stats.reputation, stats.birthday, stats.spouse_id
+                        )
+                    if finalize_match_id:
+                        await mark_stats_done_in_tx(
+                            conn,
+                            guild_id_for_finalize or 0,
+                            finalize_match_id,
                         )
             return
         for stats in stats_list:

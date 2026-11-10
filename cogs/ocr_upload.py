@@ -310,6 +310,7 @@ def _result_card(
     tournament, match_type: str, match_index: int, t1: int, t2: int,
     match_num: int = 0,
     duration: str = "",
+    rooms_count: int = 0,
 ) -> "discord.ui.LayoutView":
     """V2-карточка итога матча: номер, команды, игроки, скриншот.
 
@@ -335,6 +336,8 @@ def _result_card(
     view.sep()
     if duration:
         view.text(f"**Длительность матча:** {duration}")
+    if rooms_count:
+        view.text(f"**Комнат сыграно:** {rooms_count}")
     view.text(muted(f"{name_a}\n{_roster_mentions(tournament, t1)}"))
     view.text(muted(f"{name_b}\n{_roster_mentions(tournament, t2)}"))
     return view
@@ -527,13 +530,25 @@ async def _publish_match_result_card_impl(
 
         totals_a, totals_b = _totals(cards_a), _totals(cards_b)
 
-        # MVP — максимальный урон (та же логика, что в /statistic)
+        # MVP: для multi-room — kills → damage → assists → user_id
+        # (стабильно при полном равенстве). Для классики — урон, как раньше.
         all_cards = cards_a + cards_b
-        mvp = max(all_cards, key=lambda p: p.damage, default=None)
+        if session.get("mode") == "rooms":
+            mvp = max(
+                all_cards,
+                key=lambda p: (
+                    p.kills, p.damage, p.assists, p.user_id or 0
+                ),
+                default=None,
+            )
+        else:
+            mvp = max(all_cards, key=lambda p: p.damage, default=None)
         mvp_name = ""
         mvp_kda = ""
         mvp_damage = ""
-        if mvp is not None and (mvp.damage > 0 or mvp.kills > 0):
+        if mvp is not None and (
+            mvp.damage > 0 or mvp.kills > 0 or mvp.assists > 0
+        ):
             mvp.is_mvp = True
             mvp_name = mvp.name
             mvp_kda = f"{mvp.kills} / {mvp.deaths} / {mvp.assists}"
@@ -573,22 +588,30 @@ async def _publish_match_result_card_impl(
         # панель» скриншота — привязываем к реальным командам через
         # panel-маппинг. «Команда A : Команда B» на карточке —
         # независимо от того, кто победил.
-        from services.ocr_service import ordered_round_score
+        # Ranked rooms-режим: итогового счёта раундов НЕТ — блок
+        # показывает командные убийства с честной подписью и число
+        # сыгранных комнат; счёт OCR в rooms не используется.
+        rooms_count = len(session.get("rooms") or []) \
+            if session.get("mode") == "rooms" else 0
+        if session.get("mode") == "rooms":
+            score_a, score_b = totals_a.kills, totals_b.kills
+            score_label = (
+                f"УБИЙСТВА · КОМНАТ: {rooms_count}"
+                if rooms_count else "УБИЙСТВА"
+            )
+        else:
+            from services.ocr_service import ordered_round_score
 
-        ordered = ordered_round_score(session, t1, t2)
-        score_a, score_b, score_label = _resolve_card_score(
-            session, totals_a.kills, totals_b.kills,
-            ordered_score=ordered,
-        )
+            ordered = ordered_round_score(session, t1, t2)
+            score_a, score_b, score_label = _resolve_card_score(
+                session, totals_a.kills, totals_b.kills,
+                ordered_score=ordered,
+            )
         if score_label == "СЧЁТ МАТЧА":
             win_score = score_a if winning_team_index == t1 else score_b
             lose_score = score_b if winning_team_index == t1 else score_a
             if win_score <= lose_score:
                 if session.get("mode") == "rooms":
-                    # Мультикомнатный матч: сумма поскриншотных счетов
-                    # может не совпадать с официальным победителем
-                    # (переигровки/досрочные выходы) — не роняем
-                    # карточку, откатываемся на убийства команд.
                     score_a, score_b = totals_a.kills, totals_b.kills
                     score_label = "УБИЙСТВА КОМАНД"
                 else:
@@ -629,6 +652,7 @@ async def _publish_match_result_card_impl(
         card = _result_card(
             tournament, match_type, match_index, t1, t2, match_num=match_num,
             duration=duration,
+            rooms_count=rooms_count,
         )
         msg_id = session.get("result_message_id")
 
@@ -1509,10 +1533,14 @@ async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
                     p["kd"] = round(p["kills"] / p["deaths"], 2)
 
 
-async def _classic_pipeline(data: bytes) -> dict | None:
+async def _classic_pipeline(data: bytes, need_score: bool = True) -> dict | None:
     """Общий классический пайплайн: OCR → parse → score fallback →
     winner detect → cyrillic names → refine строк. Возвращает
-    {"panels","score","banner","top5","winner_side"} или None."""
+    {"panels","score","banner","top5","winner_side"} или None.
+
+    need_score=False (rooms/Ranked): счёт раундов в итогах не
+    используется — пропускаем лишний OCR-проход шапки.
+    """
     from services.ocr_service import (
         OCR_EXECUTOR,
         detect_winner_side,
@@ -1537,7 +1565,7 @@ async def _classic_pipeline(data: bytes) -> dict | None:
     if parsed is None:
         return None
 
-    if parsed.get("score") is None:
+    if need_score and parsed.get("score") is None:
         score = await loop.run_in_executor(
             OCR_EXECUTOR, ocr_score_fallback, data, boxes
         )
@@ -1625,6 +1653,7 @@ async def _publish_room_message(
         content=replace_emojis(text), view=view, file=file
     )
     room["message_id"] = bot_msg.id
+    room.setdefault("message_ids", []).append(bot_msg.id)
     store.set(tournament)
 
 
@@ -1640,7 +1669,11 @@ async def _finalize_rooms_if_ready(
     if session.get("status") != "collecting":
         return False
     rooms = session.get("rooms") or []
-    if len(rooms) < int(session.get("rooms_expected") or 0):
+    # Завершение по числу принятых файлов (shots), не по rooms —
+    # squad-пары объединяются в одну комнату.
+    if int(session.get("shots_received") or 0) < int(
+        session.get("rooms_expected") or 0
+    ):
         return False
 
     session["status"] = "awaiting_mapping"
@@ -1674,7 +1707,7 @@ async def process_room_image(
 ) -> str:
     """Обработать один скриншот как комнату матча.
 
-    Возвращает код результата: "ok" | "dup" | "full" | "squad" |
+    Возвращает код результата: "ok" | "dup" | "full" |
     "parse_fail" | "cancelled".
     """
     import hashlib
@@ -1683,14 +1716,20 @@ async def process_room_image(
     rooms = session.setdefault("rooms", [])
 
     sha = hashlib.sha256(data).hexdigest()
-    if any(r.get("sha") == sha for r in rooms):
+    if any(
+        r.get("sha") == sha or sha in (r.get("shas") or [])
+        for r in rooms
+    ):
         return "dup"
-    if len(rooms) >= expected:
+    # Лимит — по числу ФАЙЛОВ: два squad-скриншота могут объединиться
+    # в одну комнату, поэтому считаем принятые shots, а не rooms.
+    shots = int(session.get("shots_received") or 0)
+    if shots >= expected:
         return "full"
 
     gen = session.get("gen", 1)
     try:
-        pipe = await _classic_pipeline(data)
+        pipe = await _classic_pipeline(data, need_score=False)
     except Exception:
         logger.exception("Room OCR pipeline failed")
         return "error"
@@ -1707,26 +1746,103 @@ async def process_room_image(
 
     if pipe is None:
         return "parse_fail"
-    if pipe.get("squad") is not None:
-        return "squad"
 
     room_index = len(rooms) + 1
-    room = {
-        "room_index": room_index,
-        "sha": sha,
-        "status": "awaiting_mapping",
-        "panels": pipe["panels"],
-        "winner_side": pipe.get("winner_side"),
-        "banner": pipe.get("banner"),
-        "score": pipe.get("score"),
-        "top5": pipe.get("top5", False),
-        "maps": {},
-        "panel_picks": {},
-        "message_id": None,
-        "uploaded_at": datetime.now().isoformat(),
-    }
+    merged = False
+    if pipe.get("squad") is not None:
+        # Тип B: детальный экран ОДНОЙ команды (4 игрока).
+        # Два squad-скриншота одной игровой комнаты объединяем в одну
+        # комнату (panels "squad"/"squad2"); вторая команда без
+        # скриншота заполняется вручную через «Исправить статистику».
+        squad = pipe["squad"]
+        from views.ocr_match_view import EXTRA_STAT_KEYS
+
+        squad_rows = []
+        for p in squad.get("players") or []:
+            row = {
+                "name": (p.get("name") or "???")[:32],
+                "kills": p.get("kills"),
+                "deaths": p.get("deaths"),
+                "assists": p.get("assists"),
+                "dmg": p.get("dmg"),
+            }
+            for k in EXTRA_STAT_KEYS:
+                if p.get(k) is not None:
+                    row[k] = p[k]
+            squad_rows.append(row)
+
+        # Ищем последнюю squad-комнату с <2 панелями — пара для неё
+        target_room = None
+        if rooms and rooms[-1].get("kind") == "squad":
+            keys = [
+                k for k in (rooms[-1].get("panels") or {})
+                if str(k).startswith("squad")
+            ]
+            if len(keys) < 2 and not (rooms[-1].get("maps") or {}):
+                target_room = rooms[-1]
+
+        if target_room is not None:
+            panels = target_room.setdefault("panels", {})
+            pkey = "squad" if "squad" not in panels else "squad2"
+            panels[pkey] = {"name": "Отряд", "rows": squad_rows}
+            target_room.setdefault("shas", []).append(sha)
+            if squad.get("banner") and not target_room.get("banner"):
+                target_room["banner"] = squad.get("banner")
+            room = target_room
+            merged = True
+        else:
+            # Команда-источник скриншота — команда отправителя комплекта
+            squad_team = None
+            try:
+                t1, t2 = _match_tuple(tournament, match_type, match_index)
+                from views.ocr_match_view import _team_of_user
+
+                squad_team = _team_of_user(
+                    tournament, (t1, t2), session.get("uploaded_by")
+                )
+            except Exception:
+                squad_team = None
+            room = {
+                "room_index": room_index,
+                "sha": sha,
+                "kind": "squad",
+                "squad_team": squad_team,
+                "status": "awaiting_mapping",
+                "panels": {
+                    "squad": {"name": "Отряд", "rows": squad_rows},
+                },
+                "maps": {},
+                "panel_picks": {},
+                "winner_side": None,
+                "banner": squad.get("banner"),
+                "score": None,
+                "top5": False,
+                "message_id": None,
+                "message_ids": [],
+                "uploaded_at": datetime.now().isoformat(),
+            }
+            merged = False
+    else:
+        room = {
+            "room_index": room_index,
+            "sha": sha,
+            "kind": "classic",
+            "status": "awaiting_mapping",
+            "panels": pipe["panels"],
+            "winner_side": pipe.get("winner_side"),
+            "banner": pipe.get("banner"),
+            "score": pipe.get("score"),
+            "top5": pipe.get("top5", False),
+            "maps": {},
+            "panel_picks": {},
+            "message_id": None,
+            "message_ids": [],
+            "uploaded_at": datetime.now().isoformat(),
+        }
     # Держим bytes только до отправки сообщения — в JSON не пишем
-    rooms.append(room)
+    if not merged:
+        rooms.append(room)
+    session["shots_received"] = shots + 1
     session["rooms_received"] = len(rooms)
     store.set(tournament)
 
@@ -1746,7 +1862,7 @@ async def process_room_image(
     if prog_id and stats_channel is not None:
         from views.ocr_match_view import RoomCollectView
 
-        done = len(rooms) >= total
+        done = shots + 1 >= total
         view = None if done else RoomCollectView(
             guild.id, tournament.channel_id, tournament,
             match_type, match_index, session.get("gen", 1),
@@ -1756,13 +1872,13 @@ async def process_room_image(
             replace_emojis(
                 f"**ОБРАБОТКА СКРИНШОТОВ**\n"
                 f"Комнат: {total}\n"
-                f"Обработано: {len(rooms)}/{total}\n"
+                f"Обработано: {shots + 1}/{total}\n"
                 f"Статус: {'Ожидание остальных скриншотов' if not done else 'Комплект полный'}"
             ),
             view=view,
         )
 
-    if len(rooms) >= total:
+    if shots + 1 >= total:
         await _finalize_rooms_if_ready(
             guild, tournament, key, match_type, match_index, stats_channel,
         )
@@ -1971,6 +2087,18 @@ async def create_rooms_session(
     return session
 
 
+def _is_strict_admin(user) -> bool:
+    """Строгий админ для полного отката: server administrator
+    или BOT_OWNER_ID. guild_permissions может отсутствовать у моков
+    и DM-user — тогда False (кроме владельца бота)."""
+    from config import BOT_OWNER_ID
+
+    if getattr(user, "id", 0) == BOT_OWNER_ID:
+        return True
+    perms = getattr(user, "guild_permissions", None)
+    return bool(perms and getattr(perms, "administrator", False))
+
+
 async def cancel_rooms_session(
     guild: discord.Guild,
     user,
@@ -1979,7 +2107,7 @@ async def cancel_rooms_session(
     match_index: int,
 ) -> str:
     """Полный административный откат комплекта. «ok»|«none»|«done»|«forbidden»."""
-    from views.ocr_match_view import is_org_check
+    from config import BOT_OWNER_ID
 
     key = _session_key(match_type, match_index)
     session = tournament.ocr_sessions.get(key)
@@ -1987,7 +2115,9 @@ async def cancel_rooms_session(
         return "none"
     if session.get("status") in ("completed", "cancelled"):
         return "done"
-    if not is_org_check(user, guild):
+    # Строгая проверка: только Discord-администратор сервера или
+    # владелец бота — не роль «организатор» турнира.
+    if not _is_strict_admin(user):
         return "forbidden"
 
     async with _room_lock(key):
@@ -2040,20 +2170,21 @@ async def cancel_rooms_session(
         except Exception as e:
             logger.warning("rooms progress edit failed: %s", e)
         for room in session.get("rooms") or []:
-            mid = room.get("message_id")
-            if not mid:
-                continue
-            try:
-                msg = await channel.fetch_message(mid)
-                await msg.edit(
-                    content=replace_emojis(
-                        f"**Комната {room.get('room_index')}** — "
-                        "❌ комплект отменён администратором."
-                    ),
-                    view=None,
-                )
-            except Exception as e:
-                logger.warning("room message cancel edit failed: %s", e)
+            mids = list(room.get("message_ids") or [])
+            if room.get("message_id"):
+                mids.append(room["message_id"])
+            for mid in dict.fromkeys(mids):
+                try:
+                    msg = await channel.fetch_message(mid)
+                    await msg.edit(
+                        content=replace_emojis(
+                            f"**Комната {room.get('room_index')}** — "
+                            "❌ комплект отменён администратором."
+                        ),
+                        view=None,
+                    )
+                except Exception as e:
+                    logger.warning("room message cancel edit failed: %s", e)
     return "ok"
 
 
