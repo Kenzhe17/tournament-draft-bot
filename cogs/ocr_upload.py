@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import time
 import uuid
 from datetime import datetime
 from typing import Any
@@ -294,9 +295,20 @@ def _roster_mentions(tournament, team_index: int) -> str:
     return " ".join(parts)
 
 
+def _format_duration(seconds: float) -> str:
+    """«10 мин. 25 сек.» / «1 ч. 12 мин.» — длительность матча."""
+    secs = max(0, int(seconds))
+    hours, rem = divmod(secs, 3600)
+    minutes, seconds = divmod(rem, 60)
+    if hours:
+        return f"{hours} ч. {minutes} мин."
+    return f"{minutes} мин. {seconds} сек."
+
+
 def _result_card(
     tournament, match_type: str, match_index: int, t1: int, t2: int,
     match_num: int = 0,
+    duration: str = "",
 ) -> "discord.ui.LayoutView":
     """V2-карточка итога матча: номер, команды, игроки, скриншот.
 
@@ -320,6 +332,8 @@ def _result_card(
         )
     )
     view.sep()
+    if duration:
+        view.text(f"**Длительность матча:** {duration}")
     view.text(muted(f"{name_a}\n{_roster_mentions(tournament, t1)}"))
     view.text(muted(f"{name_b}\n{_roster_mentions(tournament, t2)}"))
     return view
@@ -524,16 +538,35 @@ async def _publish_match_result_card_impl(
             mvp_kda = f"{mvp.kills} / {mvp.deaths} / {mvp.assists}"
             mvp_damage = _fmt_num(mvp.damage)
 
-        # Длительность: от загрузки скриншота до фиксации результата
-        duration = "— : —"
-        created_raw = session.get("created_at")
-        if created_raw:
-            try:
-                created = datetime.fromisoformat(str(created_raw))
-                secs = max(0, int((datetime.now() - created).total_seconds()))
-                duration = f"{secs // 60:02d}:{secs % 60:02d}"
-            except Exception:
-                pass
+        # Длительность матча: «Начало» из карточки матча (started_at
+        # в match_channels) → момент публикации результата. Фолбэк —
+        # created_at OCR-сессии (время загрузки скриншота).
+        duration = "—"
+        start_ts: float | None = None
+        for _ch_id, _m in (tournament.match_channels or {}).items():
+            if (
+                _m.get("match_type") == match_type
+                and _m.get("match_index") == match_index
+                and _m.get("started_at")
+            ):
+                try:
+                    start_ts = float(_m["started_at"])
+                except (TypeError, ValueError):
+                    start_ts = None
+                break
+        if start_ts is None:
+            created_raw = session.get("created_at")
+            if created_raw:
+                try:
+                    created = datetime.fromisoformat(str(created_raw))
+                    start_ts = created.timestamp()
+                except Exception:
+                    start_ts = None
+        if start_ts is not None:
+            end_ts = session.get("result_sent_at")
+            if not end_ts:
+                end_ts = time.time()
+            duration = _format_duration(end_ts - start_ts)
 
         # Счёт раундов: OCR «N VS M» идёт в порядке «левая:правая
         # панель» скриншота — привязываем к реальным командам через
@@ -585,7 +618,8 @@ async def _publish_match_result_card_impl(
         if channel is None:
             return None
         card = _result_card(
-            tournament, match_type, match_index, t1, t2, match_num=match_num
+            tournament, match_type, match_index, t1, t2, match_num=match_num,
+            duration=duration,
         )
         msg_id = session.get("result_message_id")
 
@@ -600,6 +634,9 @@ async def _publish_match_result_card_impl(
                         )
                     ],
                 )
+                if not session.get("result_sent_at"):
+                    session["result_sent_at"] = msg.created_at.timestamp()
+                    store.set(tournament)
                 return msg
             except Exception as e:
                 logger.warning("Result card edit failed: %s", e)
@@ -607,6 +644,7 @@ async def _publish_match_result_card_impl(
         file = discord.File(io.BytesIO(png), filename=SHOT_FILENAME)
         bot_msg = await channel.send(view=card, file=file)
         session["result_message_id"] = bot_msg.id
+        session["result_sent_at"] = bot_msg.created_at.timestamp()
         store.set(tournament)
         return bot_msg
     except Exception:

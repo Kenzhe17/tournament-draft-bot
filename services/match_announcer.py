@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 
 import discord
 
@@ -167,6 +168,7 @@ def _match_started_view(
     winner_name: str = "",
     score: tuple[int, int] | None = None,
     result_url: str = "",
+    started_at: float | None = None,
 ) -> "discord.ui.LayoutView":
     """V2-карточка матча для MM-флоу (без эмодзи).
 
@@ -217,7 +219,7 @@ def _match_started_view(
         "**ИНФОРМАЦИЯ О МАТЧЕ**\n"
         "**Режим:** CS 4×4\n"
         "**Тип:** Ranked\n"
-        f"**Начало:** <t:{int(time.time())}:t>"
+        f"**Начало:** <t:{int(started_at or time.time())}:t>"
     )
     view.sep()
 
@@ -327,6 +329,7 @@ async def update_match_card(
         winner_name=winner_name,
         score=score,
         result_url=result_url,
+        started_at=float(meta.get("started_at") or 0) or None,
     )
     try:
         msg = await channel.fetch_message(int(meta["card_message_id"]))
@@ -403,10 +406,12 @@ async def announce_phase_matches(
         try:
             if channel is not None and is_mm:
                 # V2-карточка «Матч начался» + PNG «Найден матч»
+                started_at = time.time()
                 view = _match_started_view(
                     tournament, number, label, name_a, name_b, t1, t2,
                     match_type, match_index,
                     with_png=card_png is not None,
+                    started_at=started_at,
                 )
                 match_msg = await channel.send(
                     view=view,
@@ -460,6 +465,7 @@ async def announce_phase_matches(
                     "match_index": match_index,
                     "card_message_id": match_msg.id,
                     "has_png": card_png is not None,
+                    "started_at": started_at,
                 })
                 bound = mc_entry.setdefault("matches", [])
                 pair = [match_type, match_index]

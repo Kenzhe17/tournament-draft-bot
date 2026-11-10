@@ -132,7 +132,7 @@ class MatchResultData:
     """Все данные карточки результата — готовые, без пересчёта."""
 
     match_num: str = ""        # "#RZ-1042"
-    duration: str = "— : —"    # "MM:SS"
+    duration: str = "—"          # "10 мин. 25 сек." / "1 ч. 12 мин."
     score_a: int = 0
     score_b: int = 0
     score_label: str = "СЧЁТ МАТЧА"  # "СЧЁТ МАТЧА" | "УБИЙСТВА КОМАНД"

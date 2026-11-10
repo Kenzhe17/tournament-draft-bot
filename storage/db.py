@@ -613,7 +613,7 @@ async def init_db() -> None:
         """)
 
         # K/D/A + damage per match (Hall of Fame per-match records)
-        for _col in ("assists", "damage"):
+        for _col in ("assists", "damage", "duration_seconds"):
             await conn.execute(
                 f"ALTER TABLE match_history ADD COLUMN IF NOT EXISTS {_col} INTEGER DEFAULT 0")
 

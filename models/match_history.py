@@ -35,6 +35,7 @@ class MatchHistory:
     elo_change: int
     assists: int = 0
     damage: int = 0
+    duration_seconds: int = 0  # длительность матча (от «Начало» до результата)
 
     # Ставки (опционально)
     bet_amount: int = 0
@@ -63,6 +64,7 @@ class MatchHistory:
             "elo_change": self.elo_change,
             "assists": self.assists,
             "damage": self.damage,
+            "duration_seconds": self.duration_seconds,
             "bet_amount": self.bet_amount,
             "bet_win": self.bet_win,
             "bet_team": self.bet_team

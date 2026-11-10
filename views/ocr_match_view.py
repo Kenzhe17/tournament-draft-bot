@@ -3558,6 +3558,34 @@ async def _save_match_history(
     """Сохранить MatchHistory для каждого игрока (как в ConfirmFinalWinnerButton)."""
     from storage.match_history_store import match_history_store
     from models.match_history import MatchHistory
+
+    # Длительность матча: от «Начало» в карточке матча до подтверждения
+    # результата. Фолбэк — created_at OCR-сессии.
+    duration_seconds = 0
+    start_ts: float | None = None
+    for _m in (tournament.match_channels or {}).values():
+        if (
+            _m.get("match_type") == match_type
+            and _m.get("match_index") == match_index
+            and _m.get("started_at")
+        ):
+            try:
+                start_ts = float(_m["started_at"])
+            except (TypeError, ValueError):
+                start_ts = None
+            break
+    if start_ts is None:
+        session = tournament.ocr_sessions.get(
+            _session_key(match_type, match_index), {}
+        )
+        created_raw = session.get("created_at")
+        if created_raw:
+            try:
+                start_ts = datetime.fromisoformat(str(created_raw)).timestamp()
+            except Exception:
+                start_ts = None
+    if start_ts is not None:
+        duration_seconds = max(0, int(time.time() - start_ts))
     from storage.player_stats_store import player_stats_store
 
     guild_id = tournament.guild_id
@@ -3632,6 +3660,7 @@ async def _save_match_history(
                 damage=kd_data.get("damage", 0),
                 result="win" if my_idx == winning_team_index else "loss",
                 elo_change=elo_change,
+                duration_seconds=duration_seconds,
             )
         )
 
