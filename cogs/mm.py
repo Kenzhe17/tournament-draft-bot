@@ -23,8 +23,8 @@ from config import (
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
 MATCH_FOUND_CHANNEL_ID = 1549809898643001484
 
-# VAC 30 минут — не нажал «Готов» / нажал «Отказаться» на Ready Check
-MM_NO_SHOW_VAC = timedelta(minutes=30)
+# VAC 10 минут — не нажал «Готов» / нажал «Отказаться» на Ready Check
+MM_NO_SHOW_VAC = timedelta(minutes=10)
 # Пауза между попытками запуска матча после ошибки (антиспам API)
 MATCH_START_RETRY_COOLDOWN = 120.0
 # Сколько считается «живым» запуск матча между LOCKED и Ready Check.
@@ -851,7 +851,7 @@ class MMCog(commands.Cog):
     async def _issue_mm_vacs(
         self, guild_id: int, user_ids, reason: str
     ) -> None:
-        """VAC 30 мин игрокам, не подтвердившим готовность / отказавшимся."""
+        """VAC игрокам, не подтвердившим готовность / отказавшимся."""
         from services.vac_service import issue_vac
         issued_by = getattr(getattr(self.bot, "user", None), "id", 0) or 0
         for uid in {int(u) for u in user_ids if u and int(u) > 0}:
@@ -868,8 +868,9 @@ class MMCog(commands.Cog):
                     expires = row.get("expires_at")
                     ts = int(expires.timestamp()) if hasattr(
                         expires, "timestamp") else 0
+                    vac_minutes = int(MM_NO_SHOW_VAC.total_seconds() // 60)
                     await user.send(
-                        f"Вам выдан VAC на 30 минут: {reason}.\n"
+                        f"Вам выдан VAC на {vac_minutes} минут: {reason}.\n"
                         f"До <t:{ts}:R> вы не можете участвовать "
                         "в турнирах r!z3."
                     )

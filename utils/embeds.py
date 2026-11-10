@@ -11,6 +11,11 @@ from storage.bet_store import bet_store
 from storage.player_stats_store import player_stats_store
 from utils.cosmetics import format_player_name
 
+SCREENSHOT_RULE_LINE = (
+    "📸 Скриншот результатов загружает только капитан победившей "
+    "команды — в формате 16:9."
+)
+
 
 # Helper функции для визуальных улучшений
 def get_rarity_color(rarity: str) -> discord.Color:
@@ -634,7 +639,6 @@ async def build_setup_embed(
             f" Статус регистрации: {status_text}\n\n"
             f" **Пул игроков:**\n"
             f" {players_text}\n\n"
-            f" 📸 Скриншот результатов загружает только капитан победившей команды — в формате 16:9.\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
     else:
@@ -667,7 +671,6 @@ async def build_setup_embed(
             f" Режим формирования: {formation_text}\n"
             f" Статус регистрации: {status_text}\n\n"
             + "\n\n".join(circle_sections) + "\n\n"
-            f" 📸 Скриншот результатов загружает только капитан победившей команды — в формате 16:9.\n\n"
             f" Участники с тегом {get_emoji('guild_tag')}r!z3 могут входить в закрытые турниры при наличии свободных мест."
         )
 
@@ -867,6 +870,7 @@ async def build_qualifiers_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
+        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -960,6 +964,7 @@ async def build_semifinals_embed(
         (embed.description or "")
         + "\n\n **Участники команд:**\n"
         + "\n".join(team_lines)
+        + f"\n\n{SCREENSHOT_RULE_LINE}"
     )
 
     # Add empty field for gap before betting section
@@ -1042,7 +1047,11 @@ async def build_final_embed(
             f"{team_num_emoji(team_idx)} {mentions}" if mentions
             else f"{team_num_emoji(team_idx)} *"
         )
-    embed.description = (embed.description or "") + "\n".join(final_team_lines)
+    embed.description = (
+        (embed.description or "")
+        + "\n".join(final_team_lines)
+        + f"\n\n{SCREENSHOT_RULE_LINE}"
+    )
 
     # Add empty field for gap before betting section
     embed.add_field(name="\u200b", value="\u200b", inline=False)
