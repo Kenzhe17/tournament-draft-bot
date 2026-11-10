@@ -626,6 +626,17 @@ class OCRUploadCog(commands.Cog):
 
         # Сначала проверяем, не является ли канал выделенным каналом матча
         # (MM-флоу): скриншот в нём автоматически привязывается к матчу.
+        # Pending-заявку читаем всегда: в матч-канале лежит и кнопка
+        # «Неправильный скриншот» — без слияния флаг reupload теряется
+        # и повторная загрузка отклоняется как «уже загружен скриншот».
+        pending = pop_pending_upload(
+            message.guild.id, message.channel.id, message.author.id
+        )
+        if pending is None:
+            pending = pop_pending_upload_any(
+                message.guild.id, message.author.id, message.channel.id
+            )
+
         meta = None
         for t in store.get_by_guild(message.guild.id):
             mc = (getattr(t, "match_channels", None) or {}).get(
@@ -638,18 +649,23 @@ class OCRUploadCog(commands.Cog):
                     "tchannel": t.channel_id,
                     "match_channel": True,
                 }
+                # Флаги из pending того же матча (reupload/squad/tchannel)
+                if pending and (
+                    pending.get("match_type") == meta["match_type"]
+                    and pending.get("match_index") == meta["match_index"]
+                ):
+                    for k in ("reupload", "squad_team", "squad_uid"):
+                        if pending.get(k):
+                            meta[k] = pending[k]
+                    meta["tchannel"] = (
+                        pending.get("tchannel") or meta["tchannel"]
+                    )
                 break
 
         # Затем точное совпадение канала, затем любой канал сервера —
         # скриншот можно прислать и в канал турнира, и в канал результатов
         if meta is None:
-            meta = pop_pending_upload(
-                message.guild.id, message.channel.id, message.author.id
-            )
-        if meta is None:
-            meta = pop_pending_upload_any(
-                message.guild.id, message.author.id, message.channel.id
-            )
+            meta = pending
         if not meta:
             return
 

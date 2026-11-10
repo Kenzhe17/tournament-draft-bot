@@ -544,11 +544,11 @@ class MMCog(commands.Cog):
             logger.error(f"Error sending search notification: {e}")
 
     def _start_search_timer(self, guild_id: int, channel_id: int) -> None:
-        """Таймер поиска 10 минут: пинги на 30с / 3мин / 7мин, кик в конце."""
+        """Таймер поиска 10 минут: пинги на 1 мин и 5 мин, кик в конце."""
         async def timer_task():
             try:
-                # Уведомления: 30 сек, 3 мин, 7 мин после первого игрока
-                for delay in (30, 150, 240):
+                # Уведомления: 1 мин и 5 мин после первого игрока
+                for delay in (60, 240):
                     await asyncio.sleep(delay)
                     search = mm_search_store.get(guild_id, channel_id)
                     if not search or not search.players:

@@ -330,14 +330,17 @@ async def acquire_channel(
 def resting_overwrites(guild: discord.Guild) -> dict:
     """Overwrites «покоющегося» канала пула (state=FREE).
 
-    У @everyone отбираются только права на отправку/реакции/voice —
-    видимость канала наследуется от категории. Все персональные
-    overwrites игроков матча при этом полностью снимаются.
+    Свободные каналы пула скрыты от @everyone полностью (view +
+    send + история + voice) — видны только игрокам активного
+    матча через персональные overwrites. Все персональные
+    overwrites предыдущего матча при этом снимаются.
     """
     return {
         guild.default_role: discord.PermissionOverwrite(
+            view_channel=False,
             send_messages=False,
             send_messages_in_threads=False,
+            read_message_history=False,
             add_reactions=False,
             connect=False,
         )

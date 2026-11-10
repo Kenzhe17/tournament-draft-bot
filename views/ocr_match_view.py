@@ -1927,6 +1927,16 @@ class PanelMappingView(View):
         save.callback = self._save
         self.add_item(save)
 
+        # Админ может добавить строку, если OCR распознал не всех
+        # игроков панели (классический двухпанельный экран, до 4 строк)
+        if self.panel in ("left", "right") and len(rows) < 4:
+            add = Button(
+                label="➕ Строка",
+                style=discord.ButtonStyle.secondary,
+            )
+            add.callback = self._make_add_row_callback()
+            self.add_item(add)
+
     def _make_select_callback(self, sel: Select, row_idx: int):
         async def callback(interaction: discord.Interaction) -> None:
             values = getattr(sel, "values", None) or interaction.data.get(
@@ -2010,6 +2020,25 @@ class PanelMappingView(View):
                 self.match_index, self.panel, row_idx,
             )
             await interaction.response.send_modal(modal)
+        return callback
+
+    def _make_add_row_callback(self):
+        async def callback(interaction: discord.Interaction) -> None:
+            if not _is_server_admin(interaction.user):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Добавлять строки может только "
+                        "администратор сервера."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            await interaction.response.send_modal(
+                OcrRowAddModal(
+                    self.guild_id, self.channel_id, self.match_type,
+                    self.match_index, self.panel,
+                )
+            )
         return callback
 
     async def _save(self, interaction: discord.Interaction) -> None:
@@ -2945,6 +2974,156 @@ class OcrRowEditModal(Modal, title="Исправить строку OCR"):
 
         await interaction.response.send_message(
             replace_emojis("✅ Строка обновлена. Не забудьте нажать «Сохранить»."),
+            ephemeral=True,
+        )
+
+
+class OcrRowAddModal(Modal, title="Добавить строку OCR"):
+    """Админ вручную добавляет строку игрока, которую OCR не распознал.
+
+    Дописывает строку в конец panels[panel].rows и в снимок
+    maps[team].rows — индексы остаются согласованными. После добавления
+    нужно переоткрыть окно сопоставления, чтобы появилась новая строка.
+    """
+
+    def __init__(
+        self,
+        guild_id: int,
+        channel_id: int,
+        match_type: str,
+        match_index: int,
+        panel: str,
+    ):
+        super().__init__()
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.panel = panel
+
+        self.name_input = TextInput(
+            label="Игровой ник (OCR)",
+            placeholder="Ник как на экране результатов",
+            required=True,
+            max_length=64,
+        )
+        self.kills_input = TextInput(
+            label="Убийства (K)", required=True, max_length=4,
+        )
+        self.deaths_input = TextInput(
+            label="Смерти (D)", required=True, max_length=4,
+        )
+        self.assists_input = TextInput(
+            label="Ассисты (A)", required=True, max_length=4,
+        )
+        self.dmg_input = TextInput(
+            label="Урон (DMG)", required=True, max_length=8,
+        )
+        for item in (
+            self.name_input, self.kills_input, self.deaths_input,
+            self.assists_input, self.dmg_input,
+        ):
+            self.add_item(item)
+
+    @staticmethod
+    def _to_int(value: str) -> int | None:
+        try:
+            return int((value or "").strip())
+        except (TypeError, ValueError):
+            return None
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not _is_server_admin(interaction.user):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Добавлять строки может только "
+                    "администратор сервера."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        key = _session_key(self.match_type, self.match_index)
+        async with _mapping_lock(key):
+            tournament = store.get(self.guild_id, self.channel_id)
+            session = (
+                tournament.ocr_sessions.get(key)
+                if tournament else None
+            )
+            if not session:
+                await interaction.response.send_message(
+                    replace_emojis("❌ OCR-сессия не найдена."),
+                    ephemeral=True,
+                )
+                return
+            if session.get("status") == "completed":
+                await interaction.response.send_message(
+                    replace_emojis("❌ Сопоставление уже завершено."),
+                    ephemeral=True,
+                )
+                return
+
+            prows = session.setdefault("panels", {}).setdefault(
+                self.panel, {}
+            ).setdefault("rows", [])
+            if len(prows) >= 4:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ На панели уже 4 строки — больше не нужно."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+            kills = self._to_int(self.kills_input.value)
+            deaths = self._to_int(self.deaths_input.value)
+            assists = self._to_int(self.assists_input.value)
+            dmg = self._to_int(self.dmg_input.value)
+            if None in (kills, deaths, assists, dmg):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Статистика должна быть целыми числами."
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+            name = (self.name_input.value or "").strip()[:64]
+            if not name:
+                await interaction.response.send_message(
+                    replace_emojis("❌ Укажите игровой ник."),
+                    ephemeral=True,
+                )
+                return
+
+            prows.append({
+                "name": name,
+                "kills": kills,
+                "deaths": deaths,
+                "assists": assists,
+                "dmg": dmg,
+            })
+            # Снимок maps[team] — та же строка в конец, индексы 1:1
+            for tm in (session.get("maps") or {}).values():
+                if not isinstance(tm, dict) or tm.get("panel") != self.panel:
+                    continue
+                (tm.setdefault("rows", [])).append({
+                    "ocr_name": name,
+                    "kills": kills,
+                    "deaths": deaths,
+                    "assists": assists,
+                    "dmg": dmg,
+                    "discord_name": None,
+                    "discord_id": None,
+                    "source": None,
+                })
+            store.set(tournament)
+
+        await interaction.response.send_message(
+            replace_emojis(
+                "✅ Строка добавлена. Переоткройте сопоставление "
+                "игроков — там появится новый ряд."
+            ),
             ephemeral=True,
         )
 
