@@ -169,8 +169,14 @@ class LeaderboardPageButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         view = self.view
+        # Кнопки переносятся в _ComposedLayoutView — состояние
+        # (page, author_id, refresh_buttons) живёт на исходном View.
+        source = getattr(view, "source_view", None)
+        if source is not None:
+            view = source
 
-        if interaction.user.id != view.author_id:
+        author_id = getattr(view, "author_id", None)
+        if author_id is not None and interaction.user.id != author_id:
             await interaction.response.send_message(
                 replace_emojis("❌ Вы не можете перелистывать чужие страницы!"),
                 ephemeral=True

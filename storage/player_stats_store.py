@@ -222,7 +222,7 @@ class PlayerStatsStore:
                     SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change
                     FROM player_stats
                     WHERE guild_id = $1 AND games > 0 AND user_id > 0
-                    ORDER BY elo DESC
+                    ORDER BY elo DESC, user_id ASC
                     LIMIT $2 OFFSET $3
                     """,
                     guild_id, per_page, offset
@@ -251,7 +251,7 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT COUNT(*) FROM player_stats WHERE guild_id = $1 AND games > 0",
+                    "SELECT COUNT(*) FROM player_stats WHERE guild_id = $1 AND games > 0 AND user_id > 0",
                     guild_id
                 )
                 count = row["count"] if row else 0
@@ -272,7 +272,7 @@ class PlayerStatsStore:
                     SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, best_match_kills, total_elo_change, level, xp, total_earnings
                     FROM player_stats
                     WHERE guild_id = $1 AND games > 0 AND user_id > 0
-                    ORDER BY level DESC, xp DESC
+                    ORDER BY level DESC, xp DESC, user_id ASC
                     LIMIT $2 OFFSET $3
                     """,
                     guild_id, per_page, offset
@@ -306,8 +306,8 @@ class PlayerStatsStore:
                     SELECT ps.guild_id, ps.user_id, ps.name, ps.elo, ps.wins, ps.finals, ps.games, ps.current_streak, ps.best_win_streak, ps.best_loss_streak, ps.total_kills, ps.total_deaths, ps.best_match_kills, ps.total_elo_change, ps.level, ps.xp, ps.total_earnings, COALESCE(ub.balance, 100) as current_balance
                     FROM player_stats ps
                     LEFT JOIN user_balance ub ON ps.guild_id = ub.guild_id AND ps.user_id = ub.user_id
-                    WHERE ps.guild_id = $1 AND ps.games > 0
-                    ORDER BY COALESCE(ub.balance, 100) DESC NULLS LAST
+                    WHERE ps.guild_id = $1 AND ps.games > 0 AND ps.user_id > 0
+                    ORDER BY COALESCE(ub.balance, 100) DESC, ps.user_id ASC
                     LIMIT $2 OFFSET $3
                     """,
                     guild_id, per_page, offset
@@ -342,18 +342,27 @@ class PlayerStatsStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                target = await conn.fetchrow(
+                    "SELECT elo, games FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+                if target is None or target["games"] <= 0:
+                    return None
                 rank = await conn.fetchval(
                     """
                     SELECT COUNT(*) + 1
                     FROM player_stats
-                    WHERE guild_id = $1 AND games > 0 AND elo > (SELECT elo FROM player_stats WHERE guild_id = $1 AND user_id = $2)
+                    WHERE guild_id = $1 AND user_id > 0 AND games > 0 AND (
+                        elo > $2
+                        OR (elo = $2 AND user_id < $3)
+                    )
                     """,
-                    guild_id, user_id
+                    guild_id, target["elo"], user_id
                 )
-                return rank if rank > 0 else None
+                return rank if rank and rank > 0 else None
         else:
-            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
-            sorted_players = sorted(players_with_games, key=lambda p: p.elo, reverse=True)
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id and p.user_id > 0]
+            sorted_players = sorted(players_with_games, key=lambda p: (p.elo, -p.user_id), reverse=True)
             for i, player in enumerate(sorted_players, 1):
                 if player.user_id == user_id:
                     return i
@@ -365,18 +374,28 @@ class PlayerStatsStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                target = await conn.fetchrow(
+                    "SELECT level, xp, games FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+                if target is None or target["games"] <= 0:
+                    return None
                 rank = await conn.fetchval(
                     """
                     SELECT COUNT(*) + 1
                     FROM player_stats
-                    WHERE guild_id = $1 AND games > 0 AND (level > (SELECT level FROM player_stats WHERE guild_id = $1 AND user_id = $2) OR (level = (SELECT level FROM player_stats WHERE guild_id = $1 AND user_id = $2) AND xp > (SELECT xp FROM player_stats WHERE guild_id = $1 AND user_id = $2)))
+                    WHERE guild_id = $1 AND user_id > 0 AND games > 0 AND (
+                        level > $2
+                        OR (level = $2 AND xp > $3)
+                        OR (level = $2 AND xp = $3 AND user_id < $4)
+                    )
                     """,
-                    guild_id, user_id
+                    guild_id, target["level"], target["xp"], user_id
                 )
-                return rank if rank > 0 else None
+                return rank if rank and rank > 0 else None
         else:
-            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
-            sorted_players = sorted(players_with_games, key=lambda p: (p.level, p.xp), reverse=True)
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id and p.user_id > 0]
+            sorted_players = sorted(players_with_games, key=lambda p: (p.level, p.xp, -p.user_id), reverse=True)
             for i, player in enumerate(sorted_players, 1):
                 if player.user_id == user_id:
                     return i
@@ -389,25 +408,34 @@ class PlayerStatsStore:
             from storage.user_balance_store import user_balance_store
             pool = await get_pool()
             async with pool.acquire() as conn:
+                target = await conn.fetchrow(
+                    "SELECT games FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    guild_id, user_id
+                )
+                if target is None or target["games"] <= 0:
+                    return None
                 user_balance = await user_balance_store.get_balance(guild_id, user_id)
                 rank = await conn.fetchval(
                     """
                     SELECT COUNT(*) + 1
                     FROM player_stats ps
                     LEFT JOIN user_balance ub ON ps.guild_id = ub.guild_id AND ps.user_id = ub.user_id
-                    WHERE ps.guild_id = $1 AND ps.games > 0 AND COALESCE(ub.balance, 100) > $2
+                    WHERE ps.guild_id = $1 AND ps.user_id > 0 AND ps.games > 0 AND (
+                        COALESCE(ub.balance, 100) > $2
+                        OR (COALESCE(ub.balance, 100) = $2 AND ps.user_id < $3)
+                    )
                     """,
-                    guild_id, user_balance
+                    guild_id, user_balance, user_id
                 )
-                return rank if rank > 0 else None
+                return rank if rank and rank > 0 else None
         else:
-            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id]
+            players_with_games = [p for p in self._stats.values() if p.games > 0 and p.guild_id == guild_id and p.user_id > 0]
             from storage.user_balance_store import user_balance_store
             player_balances = {}
             for player in players_with_games:
                 balance = await user_balance_store.get_balance(guild_id, player.user_id)
                 player_balances[player.user_id] = balance
-            sorted_players = sorted(players_with_games, key=lambda p: player_balances.get(p.user_id, 0), reverse=True)
+            sorted_players = sorted(players_with_games, key=lambda p: (player_balances.get(p.user_id, 0), -p.user_id), reverse=True)
             for i, player in enumerate(sorted_players, 1):
                 if player.user_id == user_id:
                     return i

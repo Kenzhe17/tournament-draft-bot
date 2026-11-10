@@ -72,6 +72,11 @@ class _ComposedLayoutView(discord.ui.LayoutView):
         super().__init__(**kwargs)
         self._delegate = delegate
 
+    @property
+    def source_view(self):
+        """Исходный discord.ui.View, переданный в compose() (если был)."""
+        return self._delegate
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         delegate = self._delegate
         if delegate is not None and hasattr(delegate,"interaction_check"):
