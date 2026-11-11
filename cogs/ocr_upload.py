@@ -990,7 +990,18 @@ class OCRUploadCog(commands.Cog):
             )
 
             loop = asyncio.get_running_loop()
-            boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
+            # Fast path: anchor-based OCR двух таблиц CS 4×4 —
+            # parsed в формате cs_parser или None → полный OCR.
+            parsed = await _fast_parse_cs(data)
+            boxes = None
+            if parsed is not None:
+                # Боксы fast-пути — для score-fallback и
+                # winner-диагностики (полный det+rec не нужен).
+                boxes = parsed.pop("_rec_boxes", []) or []
+            else:
+                boxes = await loop.run_in_executor(
+                    OCR_EXECUTOR, _ocr_boxes, data
+                )
             if not boxes:
                 async with _room_lock(key):
                     tournament = (
@@ -1027,20 +1038,25 @@ class OCRUploadCog(commands.Cog):
                 return
 
             # Сначала пробуем детальный экран одного отряда
-            squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
-            if squad is not None:
-                # _handle_squad_upload сам держит _room_lock только на
-                # время мутаций сессии — Discord API выполняется вне
-                # лока, чтобы не блокировать финализацию/отмену.
-                await self._handle_squad_upload(
-                    message, tournament, t1, t2, meta,
-                    match_type, match_index, key, existing,
-                    session_active, is_reupload, stats_channel,
-                    data, squad,
+            if parsed is None:
+                squad = await loop.run_in_executor(
+                    OCR_EXECUTOR, _parse_squad, boxes
                 )
-                return
+                if squad is not None:
+                    # _handle_squad_upload сам держит _room_lock только на
+                    # время мутаций сессии — Discord API выполняется вне
+                    # лока, чтобы не блокировать финализацию/отмену.
+                    await self._handle_squad_upload(
+                        message, tournament, t1, t2, meta,
+                        match_type, match_index, key, existing,
+                        session_active, is_reupload, stats_channel,
+                        data, squad,
+                    )
+                    return
 
-            # Классический двух-панельный экран
+            # Классический двух-панельный экран — squad-сессия
+            # классический скриншот не принимает (обе ветки: fast
+            # и полный OCR).
             if session_active and existing.get("mode") == "squad":
                 await message.reply(
                     replace_emojis(
@@ -1052,7 +1068,10 @@ class OCRUploadCog(commands.Cog):
                 )
                 return
 
-            parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
+            if parsed is None:
+                parsed = await loop.run_in_executor(
+                    OCR_EXECUTOR, _parse_classic, boxes
+                )
             if parsed is None:
                 async with _room_lock(key):
                     tournament = (
@@ -1737,6 +1756,25 @@ async def _ocr_boxes_cached(data: bytes) -> list:
     return boxes
 
 
+async def _fast_parse_cs(data: bytes):
+    """Anchor-based fast OCR → parsed dict (формат cs_parser) или None.
+
+    None — fast-путь не применим/не прошёл валидацию → вызывать
+    полный RapidOCR pipeline. Отключается env OCR_FAST_ENABLED=0.
+    """
+    import os
+
+    if os.environ.get("OCR_FAST_ENABLED", "1") != "1":
+        return None
+    try:
+        from services import fast_cs_ocr
+
+        return await fast_cs_ocr.parse_cs_fast(data)
+    except Exception:
+        logger.debug("fast CS OCR failed, fallback to full OCR", exc_info=True)
+        return None
+
+
 async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
     """Targeted re-OCR строк с пропущенными полями (ник/K/D/A/DMG).
 
@@ -1804,21 +1842,31 @@ async def _classic_pipeline(data: bytes, need_score: bool = True) -> dict | None
     )
 
     loop = asyncio.get_running_loop()
-    boxes = await _ocr_boxes_cached(data)
-    if not boxes:
-        return None
 
-    # Сначала пробуем детальный экран одного отряда — rooms-режим
-    # его не поддерживает (нужен двухпанельный экран).
-    from services.cs_squad_parser import parse_squad_results
+    # Fast path: anchor-based OCR (две таблицы ИМЯ|K/D/A|DMG).
+    # Возвращает parsed в формате cs_parser или None → полный OCR.
+    parsed = await _fast_parse_cs(data)
+    boxes = None
+    if parsed is not None:
+        # Распознанные боксы fast-пути — для score-fallback и
+        # winner-диагностики (полный det+rec не нужен).
+        boxes = parsed.pop("_rec_boxes", []) or []
+    else:
+        boxes = await _ocr_boxes_cached(data)
+        if not boxes:
+            return None
 
-    squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
-    if squad is not None:
-        return {"squad": squad}
+        # Сначала пробуем детальный экран одного отряда — rooms-режим
+        # его не поддерживает (нужен двухпанельный экран).
+        from services.cs_squad_parser import parse_squad_results
 
-    parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
-    if parsed is None:
-        return None
+        squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
+        if squad is not None:
+            return {"squad": squad}
+
+        parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
+        if parsed is None:
+            return None
 
     if need_score and parsed.get("score") is None:
         score = await loop.run_in_executor(
