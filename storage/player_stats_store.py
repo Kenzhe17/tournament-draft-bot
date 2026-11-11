@@ -6,7 +6,7 @@ from typing import Any
 
 from models.player_stats import PlayerStats
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 STATS_FILE = DATA_DIR / "player_stats.json"
 
 

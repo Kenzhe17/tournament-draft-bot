@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 BALANCE_FILE = DATA_DIR / "user_balance.json"
 DECAY_FILE = DATA_DIR / "decay_tracking.json"
 DECAY_THRESHOLD = 10000  # Balance above this gets decayed

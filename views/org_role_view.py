@@ -16,8 +16,9 @@ from config import replace_emojis, ORG_ROLE_MAP, TOURNAMENT_CHANNELS
 if TYPE_CHECKING:
     from bot import TournamentBot
 
+from config import DATA_DIR
+
 # File for storing organizer slot state
-DATA_DIR = Path(__file__).parent.parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 ORG_SLOT_FILE = DATA_DIR / "org_slot.json"
 MAX_ORG_ROLE_HOLDERS = 1

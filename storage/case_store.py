@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     pass
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 CASES_FILE = DATA_DIR / "cases.json"
 CASE_HISTORY_FILE = DATA_DIR / "case_history.json"
 

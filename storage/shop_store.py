@@ -9,7 +9,7 @@ from models.shop_item import ShopItem, PlayerCosmetic
 if TYPE_CHECKING:
     pass
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 SHOP_FILE = DATA_DIR / "shop_items.json"
 INVENTORY_FILE = DATA_DIR / "player_inventory.json"
 

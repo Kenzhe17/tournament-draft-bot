@@ -6,7 +6,7 @@ from typing import Any
 
 from models.question import Question, QuestionHistory
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 QUESTIONS_FILE = DATA_DIR / "questions.json"
 HISTORY_FILE = DATA_DIR / "question_history.json"
 

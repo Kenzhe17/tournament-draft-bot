@@ -16,7 +16,9 @@ from storage.db import get_pool, DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
-FALLBACK_PATH = Path(__file__).resolve().parent.parent / "data" / "info_center.json"
+from config import DATA_DIR
+
+FALLBACK_PATH = DATA_DIR / "info_center.json"
 
 
 class InfoStore:

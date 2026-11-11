@@ -7,7 +7,7 @@ from typing import Any
 
 from models.bet import Bet, MatchOdds
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 BETS_FILE = DATA_DIR / "bets.json"
 ODDS_FILE = DATA_DIR / "odds.json"
 

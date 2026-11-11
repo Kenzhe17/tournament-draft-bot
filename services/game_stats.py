@@ -15,7 +15,9 @@ from storage.db import DATABASE_URL, get_pool
 
 logger = logging.getLogger(__name__)
 
-FALLBACK_PATH = Path(__file__).resolve().parent.parent / "data" / "game_stats.json"
+from config import DATA_DIR
+
+FALLBACK_PATH = DATA_DIR / "game_stats.json"
 _mem: dict[int, dict] = {}
 _loaded = False
 

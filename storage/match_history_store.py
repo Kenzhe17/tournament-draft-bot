@@ -7,7 +7,7 @@ from datetime import datetime
 
 from models.match_history import MatchHistory, MatchHistoryList
 
-DATA_DIR = Path("data")
+from config import DATA_DIR  # noqa: E402 — единый путь из config
 HISTORY_FILE = DATA_DIR / "match_history.json"
 
 
