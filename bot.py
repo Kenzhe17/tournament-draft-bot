@@ -119,6 +119,9 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.statistic")
         await self.load_extension("cogs.ocr_upload")
+        # Восстановление OCR-сессий, застрявших в «finalizing» после
+        # перезапуска: PG-гейт гарантирует отсутствие повторного ELO.
+        self.loop.create_task(self._recover_finalizing_sessions())
         await self.load_extension("cogs.wardrobe")
         await self.load_extension("cogs.emoji")
         await self.load_extension("cogs.reputation")
@@ -192,6 +195,21 @@ class TournamentBot(commands.Bot):
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance
         set_bot_instance(self)
+
+        # Критическая проверка целостности JSON-хранилища турниров:
+        # при повреждённых данных без валидного backup стор в
+        # unhealthy-режиме и не перезаписывает файл — требуются
+        # действия администратора.
+        try:
+            if not store.is_healthy():
+                from config import DATA_FILE
+                logger.critical(
+                    "tournaments.json повреждён и не восстановлен — "
+                    "сохранения отключены. Проверьте %s и *.bak/*.corrupt-*",
+                    DATA_FILE,
+                )
+        except Exception as exc:
+            logger.warning("JSON store health check failed: %s", exc)
 
         for tournament in store.all():
             view = self.build_view_for_tournament(tournament)
@@ -712,6 +730,28 @@ class TournamentBot(commands.Bot):
                     )
             except Exception as e:
                 logger.error(f"Birthday greetings error for guild {guild.id}: {e}", exc_info=True)
+
+    async def _recover_finalizing_sessions(self) -> None:
+        """Фоновое восстановление OCR-сессий в статусе finalizing.
+
+        Запускается из setup_hook: для каждой зависшей сессии
+        безопасно доводит finalize_ocr_match до конца — повторное
+        начисление ELO исключено PG-гейтом match_finalizations.
+        """
+        try:
+            from storage.json_store import store
+            from services.ocr_recovery import recover_stuck_finalizing
+
+            for tournament in store.all():
+                try:
+                    await recover_stuck_finalizing(self, tournament)
+                except Exception:
+                    logger.exception(
+                        "OCR finalizing recovery failed for tournament %s",
+                        getattr(tournament, "id", "?"),
+                    )
+        except Exception:
+            logger.exception("OCR finalizing recovery scan failed")
 
     async def on_ready(self) -> None:
         import os
