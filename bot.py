@@ -756,6 +756,7 @@ class TournamentBot(commands.Bot):
         # пока сессия не завершена/не отменена.
         try:
             from services.match_announcer import update_match_card
+            from cogs.ocr_upload import match_button_hidden_for_session
             from views.ocr_match_view import (
                 _stats_complete,
                 match_is_finished,
@@ -778,6 +779,11 @@ class TournamentBot(commands.Bot):
                     if match_is_finished(tournament, mt, mi):
                         continue
                     if _stats_complete(tournament, mt, mi):
+                        continue
+                    # rooms: скрываем кнопку только если файл реально
+                    # принят (0 файлов → кнопка остаётся доступной
+                    # для продолжения сбора).
+                    if not match_button_hidden_for_session(session):
                         continue
                     try:
                         await update_match_card(

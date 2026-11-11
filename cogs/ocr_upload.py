@@ -1647,6 +1647,46 @@ def _rooms_progress_text(session: dict) -> str:
     )
 
 
+def _rooms_files_accepted(session: dict) -> bool:
+    """Хотя бы один файл реально принят в обработку.
+
+    True, если карточка уже переведена в processing (флаг ставится
+    при приёме файлов до OCR) или есть хотя бы одна заполненная
+    комната. Сессия в collecting без файлов → False.
+    """
+    if session.get("card_state") == "processing":
+        return True
+    return _rooms_completed_count(session) > 0
+
+
+def rooms_session_can_continue(session: dict | None) -> bool:
+    """Сессию можно продолжить через основную кнопку: rooms,
+    статус collecting и ещё НИ ОДИН файл не принят."""
+    return bool(
+        session
+        and session.get("mode") == "rooms"
+        and session.get("status") == "collecting"
+        and not _rooms_files_accepted(session)
+    )
+
+
+def match_button_hidden_for_session(session: dict | None) -> bool:
+    """Нужно ли скрывать «Отправить результат» в карточке матча.
+
+    rooms: только если файл принят (0 файлов → кнопка доступна,
+    чтобы продолжить сбор). Остальные режимы: активная сессия
+    всегда означает принятый скриншот → processing.
+    """
+    if not session:
+        return False
+    status = session.get("status")
+    if status in (None, "completed", "cancelled"):
+        return False
+    if session.get("mode") == "rooms":
+        return _rooms_files_accepted(session)
+    return True
+
+
 async def _ensure_processing_card(
     guild, tournament, match_type: str, match_index: int
 ) -> None:
@@ -2401,7 +2441,10 @@ class RoomUploadModal(Modal):
             ),
             "parse_fail": (
                 "❌ Не удалось распознать таблицу результатов — "
-                "проверьте, что это экран CS 4x4."
+                "проверьте, что это экран CS 4x4.\n"
+                "Комната не засчитана: повторите загрузку кнопкой "
+                "«Добавить скриншоты» под сообщением прогресса "
+                "или обратитесь к администратору."
             ),
             "cancelled": "⚠️ Сессия загрузки была отменена.",
         }

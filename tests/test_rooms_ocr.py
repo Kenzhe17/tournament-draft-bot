@@ -568,3 +568,106 @@ class TestCreateRoomsSessionRace:
         assert len(results) == 1
         assert tournament.ocr_sessions["qualifier_0"]["uploaded_by"] == 42
         assert len(sent) == 1
+
+
+class TestFilesAcceptedAndContinue:
+    """Разделение «файл принят» vs «OCR завершён» для кнопки."""
+
+    def _rooms_session(self, **kw):
+        s = {
+            "mode": "rooms",
+            "status": "collecting",
+            "rooms_expected": 3,
+            "rooms": [],
+            "card_state": "active",
+        }
+        s.update(kw)
+        return s
+
+    def test_no_files_not_accepted(self):
+        from cogs.ocr_upload import _rooms_files_accepted
+
+        assert _rooms_files_accepted(self._rooms_session()) is False
+
+    def test_card_state_processing_means_accepted(self):
+        from cogs.ocr_upload import _rooms_files_accepted
+
+        s = self._rooms_session(card_state="processing")
+        assert _rooms_files_accepted(s) is True
+
+    def test_filled_room_means_accepted(self):
+        from cogs.ocr_upload import _rooms_files_accepted
+
+        s = self._rooms_session(
+            rooms=[{"room_index": 1, "panels": {"left": {}}}]
+        )
+        assert _rooms_files_accepted(s) is True
+
+    def test_can_continue_only_before_first_file(self):
+        from cogs.ocr_upload import rooms_session_can_continue
+
+        # 0 файлов → можно продолжить через основную кнопку
+        assert rooms_session_can_continue(self._rooms_session()) is True
+        # файл принят (processing) → нельзя, кнопка скрыта
+        assert rooms_session_can_continue(
+            self._rooms_session(card_state="processing")
+        ) is False
+        # комната заполнена → нельзя
+        assert rooms_session_can_continue(
+            self._rooms_session(
+                rooms=[{"room_index": 1, "panels": {"left": {}}}]
+            )
+        ) is False
+        # не collecting → нельзя
+        assert rooms_session_can_continue(
+            self._rooms_session(status="awaiting_mapping")
+        ) is False
+        assert rooms_session_can_continue(None) is False
+        # классическая сессия → нельзя
+        assert rooms_session_can_continue(
+            {"mode": "classic", "status": "collecting"}
+        ) is False
+
+    def test_match_button_hidden_rules(self):
+        from cogs.ocr_upload import match_button_hidden_for_session
+
+        # rooms: 0 файлов → кнопка ДОСТУПНА
+        assert match_button_hidden_for_session(
+            self._rooms_session()
+        ) is False
+        # rooms: файл принят → скрыта (в т.ч. во время OCR)
+        assert match_button_hidden_for_session(
+            self._rooms_session(card_state="processing")
+        ) is True
+        # rooms: awaiting_mapping с комнатами → скрыта
+        assert match_button_hidden_for_session(
+            self._rooms_session(
+                status="awaiting_mapping",
+                rooms=[{"room_index": 1, "panels": {"left": {}}}],
+            )
+        ) is True
+        # rooms: отменена → кнопка доступна (сессия удалена → None,
+        # но и cancelled-статус не скрывает)
+        assert match_button_hidden_for_session(
+            self._rooms_session(status="cancelled")
+        ) is False
+        assert match_button_hidden_for_session(
+            self._rooms_session(status="completed")
+        ) is False
+        # классическая активная сессия → скрыта
+        assert match_button_hidden_for_session(
+            {"mode": "classic", "status": "awaiting_mapping"}
+        ) is True
+        assert match_button_hidden_for_session(None) is False
+
+    def test_parse_fail_room_stays_retryable(self):
+        """parse_fail не блокирует комнату: room без panels →
+        _rooms_next_index возвращает её же для повтора."""
+        from cogs.ocr_upload import _rooms_next_index, _room_has_panels
+
+        session = self._rooms_session(
+            rooms=[{"room_index": 1, "panels": {}}],
+        )
+        room = session["rooms"][0]
+        assert _room_has_panels(room) is False
+        assert _rooms_next_index(session) == 1  # повтор той же комнаты

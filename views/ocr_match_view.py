@@ -1072,6 +1072,34 @@ class MatchScreenshotButton(Button):
             and session.get("mode") == "squad"
             and session.get("status") not in ("completed", "cancelled")
         )
+        # Rooms-сессия создана, но файлы ещё не приняты (пользователь
+        # закрыл модалку) — разрешаем продолжить сбор через основную
+        # кнопку, не создавая новую сессию и не меняя uploaded_by.
+        if (
+            self.team_index is None
+            and not squad_active
+            and session
+            and session.get("status") not in ("completed", "cancelled")
+        ):
+            from cogs.ocr_upload import (
+                RoomCollectView,
+                rooms_session_can_continue,
+            )
+
+            if rooms_session_can_continue(session):
+                await interaction.response.send_message(
+                    content=replace_emojis(
+                        "▶️ Сессия загрузки уже создана — "
+                        "продолжите отправку скриншотов:"
+                    ),
+                    view=RoomCollectView(
+                        self.guild_id, self.channel_id, tournament,
+                        self.match_type, self.match_index,
+                        int(session.get("gen", 1)),
+                    ),
+                    ephemeral=True,
+                )
+                return
         if (
             session
             and session.get("status") not in ("completed", "cancelled")
