@@ -8,6 +8,7 @@ from datetime import datetime
 from models.match_history import MatchHistory, MatchHistoryList
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 HISTORY_FILE = DATA_DIR / "match_history.json"
 
 
@@ -102,8 +103,7 @@ class MatchHistoryStore:
             }
             for key, h in self._history.items()
         }
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(HISTORY_FILE, data)
 
     async def get(self, guild_id: int, user_id: int) -> List[MatchHistory]:
         """Получить историю матчей игрока, отсортированную по дате (от новых к старым)."""

@@ -11,6 +11,7 @@ import logging
 import time
 
 from config import DATA_DIR
+from storage.json_atomic import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,7 @@ class ProfileCooldownStore:
     def _save(self) -> None:
         try:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            with open(DATA_FILE, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False)
+            atomic_write_json(DATA_FILE, self._data, indent=None)
         except Exception:
             logger.exception("ProfileCooldownStore: failed to save %s", DATA_FILE)
 

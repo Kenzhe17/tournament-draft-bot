@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-from config import DATA_DIR  # noqa: E402 — единый путь из config
+from config import DATA_DIR, MAX_BALANCE  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 BALANCE_FILE = DATA_DIR / "user_balance.json"
 DECAY_FILE = DATA_DIR / "decay_tracking.json"
 DECAY_THRESHOLD = 10000  # Balance above this gets decayed
@@ -45,8 +46,7 @@ class DecayTracker:
             "last_decay_date": self._last_decay_date,
             "processed_users": list(self._processed_users)
         }
-        with open(DECAY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(DECAY_FILE, data)
 
     def should_apply_decay(self, guild_id: int, user_id: int) -> bool:
         """Check if decay should be applied for this user today."""
@@ -94,12 +94,39 @@ class UserBalanceStore:
 
     def save(self) -> None:
         """Сохранить балансы в файл."""
-        with open(BALANCE_FILE, "w", encoding="utf-8") as f:
-            json.dump(self._balances, f, ensure_ascii=False, indent=2)
+        atomic_write_json(BALANCE_FILE, self._balances)
 
     def enable_db(self) -> None:
         """Enable database storage."""
         self._use_db = True
+
+    @staticmethod
+    async def _ensure_row(conn, guild_id: int, user_id: int) -> None:
+        """Гарантировать существование строки баланса (дефолт 100)."""
+        await conn.execute(
+            """
+            INSERT INTO user_balance (guild_id, user_id, balance)
+            VALUES ($1, $2, 100)
+            ON CONFLICT (guild_id, user_id) DO NOTHING
+            """,
+            guild_id, user_id
+        )
+
+    @staticmethod
+    async def _apply_decay(conn, guild_id: int, user_id: int, balance: int) -> int:
+        """Применить дневной decay к балансу внутри транзакции.
+
+        Возвращает актуальный баланс; при decay UPDATE уже выполнен.
+        """
+        if balance > DECAY_THRESHOLD and decay_tracker.should_apply_decay(guild_id, user_id):
+            decay_amount = int(balance * DECAY_PERCENT)
+            balance -= decay_amount
+            await conn.execute(
+                "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                balance, guild_id, user_id
+            )
+            decay_tracker.mark_processed(guild_id, user_id)
+        return balance
 
     async def get_balance(self, guild_id: int, user_id: int) -> int:
         """Get user balance."""
@@ -109,32 +136,12 @@ class UserBalanceStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
+                await self._ensure_row(conn, guild_id, user_id)
                 row = await conn.fetchrow(
                     "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
-                if row:
-                    balance = row["balance"]
-
-                    # Apply daily decay if needed
-                    if balance > DECAY_THRESHOLD and decay_tracker.should_apply_decay(guild_id, user_id):
-                        decay_amount = int(balance * DECAY_PERCENT)
-                        new_balance = balance - decay_amount
-                        await conn.execute(
-                            "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
-                            new_balance, guild_id, user_id
-                        )
-                        decay_tracker.mark_processed(guild_id, user_id)
-                        balance = new_balance
-
-                    return balance
-                else:
-                    # Create default balance
-                    await conn.execute(
-                        "INSERT INTO user_balance (guild_id, user_id, balance) VALUES ($1, $2, 100)",
-                        guild_id, user_id
-                    )
-                    return 100
+                return await self._apply_decay(conn, guild_id, user_id, row["balance"])
         else:
             if key not in self._balances:
                 self._balances[key] = 100
@@ -155,33 +162,31 @@ class UserBalanceStore:
         if amount < 0:
             raise ValueError("Amount must be positive")
 
-        from config import MAX_BALANCE
-
         key = f"{guild_id}:{user_id}"
 
         if self._use_db:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
-                # Check current balance
-                current = await self.get_balance(guild_id, user_id)
-                if current + amount > MAX_BALANCE:
-                    amount = MAX_BALANCE - current  # Cap at max balance
-
-                await conn.execute(
-                    """
-                    INSERT INTO user_balance (guild_id, user_id, balance)
-                    VALUES ($1, $2, 100)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET balance = user_balance.balance + $3
-                    """,
-                    guild_id, user_id, amount
-                )
-                row = await conn.fetchrow(
-                    "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
-                    guild_id, user_id
-                )
-                return row["balance"] if row else 100
+                async with conn.transaction():
+                    # Одна транзакция: decay → cap → начисление.
+                    # SELECT ... FOR UPDATE сериализует конкурентные
+                    # операции над одним балансом.
+                    await self._ensure_row(conn, guild_id, user_id)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id
+                    )
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, row["balance"]
+                    )
+                    add = min(amount, max(0, MAX_BALANCE - balance))
+                    new_balance = balance + add
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                        new_balance, guild_id, user_id
+                    )
+                    return new_balance
         else:
             if key not in self._balances:
                 self._balances[key] = 100
@@ -190,13 +195,14 @@ class UserBalanceStore:
             return self._balances[key]
 
     async def subtract_balance(self, guild_id: int, user_id: int, amount: int) -> int:
-        """Subtract coins from user balance. Returns new balance."""
+        """Subtract coins from user balance. Returns new balance.
+
+        Проверка достаточности и списание выполняются атомарно
+        в одной транзакции под блокировкой строки (FOR UPDATE) —
+        двойное списание и отрицательный баланс исключены.
+        """
         if amount < 0:
             raise ValueError("Amount must be positive")
-
-        current_balance = await self.get_balance(guild_id, user_id)
-        if current_balance < amount:
-            raise ValueError("Insufficient balance")
 
         key = f"{guild_id}:{user_id}"
 
@@ -204,17 +210,37 @@ class UserBalanceStore:
             from storage.db import get_pool
             pool = await get_pool()
             async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE user_balance SET balance = balance - $1 WHERE guild_id = $2 AND user_id = $3",
-                    amount, guild_id, user_id
-                )
-                row = await conn.fetchrow(
-                    "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2",
-                    guild_id, user_id
-                )
-                return row["balance"] if row else current_balance - amount
+                async with conn.transaction():
+                    await self._ensure_row(conn, guild_id, user_id)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id
+                    )
+                    balance = await self._apply_decay(
+                        conn, guild_id, user_id, row["balance"]
+                    )
+                    if balance < amount:
+                        raise ValueError("Insufficient balance")
+                    new_balance = balance - amount
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                        new_balance, guild_id, user_id
+                    )
+                    return new_balance
         else:
-            self._balances[key] -= amount
+            if key not in self._balances:
+                self._balances[key] = 100
+            balance = self._balances[key]
+            # Decay — как в get_balance (сохраняем старую семантику)
+            if balance > DECAY_THRESHOLD and decay_tracker.should_apply_decay(guild_id, user_id):
+                decay_amount = int(balance * DECAY_PERCENT)
+                balance -= decay_amount
+                self._balances[key] = balance
+                self.save()
+                decay_tracker.mark_processed(guild_id, user_id)
+            if balance < amount:
+                raise ValueError("Insufficient balance")
+            self._balances[key] = balance - amount
             self.save()
             return self._balances[key]
 
@@ -272,22 +298,65 @@ class UserBalanceStore:
         
         fee = int(amount * fee_percent)
         total = amount + fee
-        
-        # Check sender has enough balance
+
+        if self._use_db:
+            # Атомарный перевод: одна транзакция, обе строки под
+            # FOR UPDATE — списание и начисление либо обе, либо ни одной.
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    await self._ensure_row(conn, from_guild, from_user)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        from_guild, from_user
+                    )
+                    sender_balance = await self._apply_decay(
+                        conn, from_guild, from_user, row["balance"]
+                    )
+                    if sender_balance < total:
+                        raise ValueError(
+                            f"Insufficient balance. Need {total} but have {sender_balance}"
+                        )
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                        sender_balance - total, from_guild, from_user
+                    )
+
+                    await self._ensure_row(conn, to_guild, to_user)
+                    row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        to_guild, to_user
+                    )
+                    receiver_balance = await self._apply_decay(
+                        conn, to_guild, to_user, row["balance"]
+                    )
+                    receiver_new = min(receiver_balance + amount, MAX_BALANCE)
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $1 WHERE guild_id = $2 AND user_id = $3",
+                        receiver_new, to_guild, to_user
+                    )
+
+                    return {
+                        'amount': amount,
+                        'fee': fee,
+                        'total_deducted': total,
+                        'from_balance': sender_balance - total,
+                        'to_balance': receiver_new,
+                    }
+
+        # JSON fallback: однопроцессный asyncio — проверки и записи
+        # в async-методах без внутренних await атомарны для event loop.
         sender_balance = await self.get_balance(from_guild, from_user)
         if sender_balance < total:
             raise ValueError(f"Insufficient balance. Need {total} but have {sender_balance}")
-        
-        # Deduct from sender
+
         await self.subtract_balance(from_guild, from_user, total)
-        
-        # Add to receiver
         await self.add_balance(to_guild, to_user, amount)
-        
-        # Get new balances
+
         sender_new_balance = await self.get_balance(from_guild, from_user)
         receiver_new_balance = await self.get_balance(to_guild, to_user)
-        
+
         return {
             'amount': amount,
             'fee': fee,

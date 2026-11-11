@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from config import DATA_DIR
 from models.br_tournament import BRTournament
+from storage.json_atomic import atomic_write_json
 
 if TYPE_CHECKING:
     pass
@@ -54,8 +55,7 @@ class BRStore:
         """Сохранить все BR турниры в файл."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         raw = {f"{gid}:{cid}": t.to_dict() for (gid, cid), t in self._tournaments.items()}
-        with open(BR_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False, indent=2)
+        atomic_write_json(BR_DATA_FILE, raw)
 
     def get(self, guild_id: int, channel_id: int) -> BRTournament | None:
         """Получить BR турнир по guild_id и channel_id."""

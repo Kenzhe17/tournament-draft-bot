@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     pass
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 SHOP_FILE = DATA_DIR / "shop_items.json"
 INVENTORY_FILE = DATA_DIR / "player_inventory.json"
 
@@ -42,8 +43,7 @@ class ShopStore:
             item_id: item.to_dict()
             for item_id, item in self._items.items()
         }
-        with open(SHOP_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(SHOP_FILE, data)
 
     def get_item(self, item_id: str) -> ShopItem | None:
         """Получить товар по ID."""
@@ -126,8 +126,7 @@ class InventoryStore:
             key: [cosmetic.to_dict() for cosmetic in cosmetics]
             for key, cosmetics in self._inventory.items()
         }
-        with open(INVENTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(INVENTORY_FILE, data)
         self._mtime = self._file_mtime()
 
     def _get_key(self, guild_id: int, user_id: int) -> str:

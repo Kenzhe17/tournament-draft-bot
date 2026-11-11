@@ -17,6 +17,7 @@ from typing import Any
 
 from config import DATA_DIR, DATABASE_URL
 from models.ready_check import ReadyCheck, ReadyCheckStatus, TERMINAL_STATUSES
+from storage.json_atomic import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class ReadyCheckStore:
     def _save_json(self) -> None:
         try:
             raw = {mid: rc.to_dict() for mid, rc in self._checks.items()}
-            RC_FILE.write_text(json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_json(RC_FILE, raw)
         except Exception as exc:
             logger.error("ReadyCheckStore: ошибка сохранения JSON: %s", exc)
 

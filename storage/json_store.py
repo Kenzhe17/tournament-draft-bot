@@ -1,10 +1,15 @@
 """JSON-хранилище состояния турниров.
 
-Атомарная запись: данные сериализуются в строку, пишутся во временный
-файл в той же директории, fsync, затем os.replace() — читатели никогда
-не видят частично записанный файл. Предыдущая версия сохраняется в
-<name>.bak; при загрузке повреждённого файла оригинал откладывается в
-<name>.corrupt-<ts>, а при наличии валидного .bak он восстанавливается.
+Атомарная запись через storage.json_atomic: данные пишутся во временный
+файл, fsync, os.replace — читатели никогда не видят частичный файл.
+Предыдущая валидная версия хранится в <name>.bak (обновляется
+атомарно и только из валидного JSON).
+
+Защита от порчи: при битом основном файле оригинал откладывается в
+*.corrupt-<ts>, затем пробуется .bak. Если ни одна копия не пригодна,
+стор переходит в unhealthy: save() отказывается перезаписывать файл,
+чтобы пустое состояние не затёрло повреждённые данные — требуется
+ручное восстановление.
 """
 
 from __future__ import annotations
@@ -12,7 +17,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +24,12 @@ from typing import TYPE_CHECKING, Any
 
 from config import DATA_DIR, DATA_FILE
 from models.tournament import Tournament
+from storage.json_atomic import (
+    atomic_write_text,
+    backup_path,
+    load_json_file,
+    rotate_backup,
+)
 
 if TYPE_CHECKING:
     pass
@@ -27,45 +37,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    """Атомарно записать text в path: tmp + flush + fsync + os.replace."""
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+class StoreUnavailableError(RuntimeError):
+    """Хранилище не может надёжно сохранить данные.
 
-
-def _backup_path(path: Path) -> Path:
-    return path.with_name(path.name + ".bak")
+    Выбрасывается из set/delete/save, когда файл повреждён
+    (unhealthy) или запись на диск невозможна. Вызывающий код
+    не должен подтверждать пользователю успешную операцию.
+    """
 
 
 def _corrupt_path(path: Path) -> Path:
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     return path.with_name(f"{path.name}.corrupt-{ts}")
-
-
-def _rotate_backup(path: Path) -> None:
-    """Сохранить текущую версию файла как .bak перед перезаписью."""
-    if not path.exists():
-        return
-    try:
-        shutil.copyfile(path, _backup_path(path))
-    except OSError as exc:
-        logger.warning("Не удалось создать backup %s: %s", path, exc)
-
-
-def _load_json_file(path: Path) -> Any | None:
-    """Прочитать и распарсить JSON. None — файла нет или битый."""
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return None
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
-        logger.error("Файл %s повреждён или нечитаем: %s", path, exc)
-        return None
 
 
 class JsonStore:
@@ -74,83 +57,130 @@ class JsonStore:
     def __init__(self) -> None:
         self._tournaments: dict[tuple[int, int], Tournament] = {}
         self._save_lock = threading.Lock()
+        self._unhealthy = False
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
+
+    def is_healthy(self) -> bool:
+        """False — хранилище повреждено и требует ручного восстановления."""
+        return not self._unhealthy
+
+    def _ensure_writable(self) -> None:
+        """Проверить, что стор может сохранять.
+
+        При unhealthy сначала пробует восстановиться (админ мог
+        подменить файл валидной копией). Если восстановление не
+        удалось — явная ошибка вместо молчаливого no-op.
+        """
+        if not self._unhealthy:
+            return
+        logger.warning(
+            "JsonStore unhealthy — пробую восстановление из %s / %s",
+            DATA_FILE, backup_path(DATA_FILE),
+        )
+        self.load()
+        if self._unhealthy:
+            raise StoreUnavailableError(
+                f"Хранилище турниров повреждено: {DATA_FILE}. "
+                "Сохранение невозможно до ручного восстановления "
+                "из *.bak / *.corrupt-*."
+            )
+        logger.warning("JsonStore восстановлен из резервной копии")
 
     def load(self) -> None:
         """Загрузить все турниры из файла.
 
-        При битом JSON: оригинал сохраняется как *.corrupt-<ts>,
-        затем пробуется *.bak — валидная копия восстанавливается
-        в основной файл. Пустой словарь — только если нет ни одного
-        пригодного источника.
+        Файла нет — первый запуск, пустое состояние (healthy).
+        Файл битый — оригинал в *.corrupt-<ts>, пробуем .bak.
+        Нет пригодных копий — unhealthy: данные не перезаписываются.
+        При успешной загрузке unhealthy-флаг сбрасывается
+        (self-recovery после ручного восстановления файла).
         """
+        self._unhealthy = False
         if not DATA_FILE.exists():
+            # Файла нет: сначала пробуем .bak (основной мог быть
+            # отложен как *.corrupt-* при прошлой порче), затем
+            # отличаем первый запуск от последствий повреждения.
+            if self._restore_from_backup():
+                return
+            if list(DATA_DIR.glob(f"{DATA_FILE.name}.corrupt-*")):
+                self._unhealthy = True
+                logger.critical(
+                    "КРИТИЧНО: %s отсутствует, а файлы *.corrupt-* "
+                    "свидетельствуют о прошлой порче. Стор НЕ будет "
+                    "создавать пустое состояние поверх — требуется "
+                    "ручное восстановление из *.bak / *.corrupt-*.",
+                    DATA_FILE,
+                )
             self._tournaments = {}
             return
 
-        raw = _load_json_file(DATA_FILE)
+        raw = load_json_file(DATA_FILE)
         if raw is None:
             # Сохраняем повреждённый файл для диагностики
             try:
                 os.replace(DATA_FILE, _corrupt_path(DATA_FILE))
             except OSError as exc:
                 logger.error("Не удалось отложить битый файл: %s", exc)
-            # Пробуем backup
-            bak = _backup_path(DATA_FILE)
-            if bak.exists():
-                raw = _load_json_file(bak)
-                if raw is not None:
-                    try:
-                        _atomic_write_text(
-                            DATA_FILE,
-                            json.dumps(raw, ensure_ascii=False, indent=2),
-                        )
-                        logger.warning(
-                            "Восстановлен %s из резервной копии %s",
-                            DATA_FILE.name, bak.name,
-                        )
-                    except OSError as exc:
-                        logger.error("Не удалось восстановить backup: %s", exc)
-            if raw is None:
-                logger.error(
-                    "Нет пригодной копии %s — старт с пустым состоянием",
-                    DATA_FILE.name,
-                )
-                self._tournaments = {}
+            if self._restore_from_backup():
                 return
+            self._unhealthy = True
+            logger.critical(
+                "КРИТИЧНО: %s повреждён и нет валидной резервной "
+                "копии. Стор работает в режиме «только чтение памяти» "
+                "и НЕ будет перезаписывать файл. Требуется ручное "
+                "восстановление из *.corrupt-* / *.bak.",
+                DATA_FILE,
+            )
+            self._tournaments = {}
+            return
 
         migrated = self._migrate(raw)
         if migrated is None:
             # Структура не читается — пробуем backup, как при битом JSON
-            bak = _backup_path(DATA_FILE)
-            if bak.exists():
-                bak_raw = _load_json_file(bak)
-                if bak_raw is not None:
-                    migrated = self._migrate(bak_raw)
-                    if migrated is not None:
-                        try:
-                            _atomic_write_text(
-                                DATA_FILE,
-                                json.dumps(bak_raw, ensure_ascii=False,
-                                           indent=2),
-                            )
-                            logger.warning(
-                                "Восстановлен %s из резервной копии %s",
-                                DATA_FILE.name, bak.name,
-                            )
-                        except OSError as exc:
-                            logger.error("Не удалось восстановить backup: %s", exc)
-            if migrated is None:
-                logger.error(
-                    "Нет пригодной копии %s — старт с пустым состоянием",
-                    DATA_FILE.name,
-                )
-                self._tournaments = {}
+            if self._restore_from_backup():
                 return
+            self._unhealthy = True
+            logger.critical(
+                "КРИТИЧНО: структура %s не читается и нет валидной "
+                "резервной копии. Сохранения отключены до "
+                "восстановления.",
+                DATA_FILE,
+            )
+            self._tournaments = {}
+            return
 
         self._tournaments = migrated
         logger.info("Загружено %d турниров", len(self._tournaments))
+
+    def _restore_from_backup(self) -> bool:
+        """Восстановить DATA_FILE из .bak (проверив JSON и структуру).
+
+        True — файл восстановлен и _tournaments заполнен.
+        """
+        bak = backup_path(DATA_FILE)
+        if not bak.exists():
+            return False
+        raw = load_json_file(bak)
+        if raw is None:
+            return False
+        migrated = self._migrate(raw)
+        if migrated is None:
+            return False
+        try:
+            atomic_write_text(
+                DATA_FILE,
+                json.dumps(raw, ensure_ascii=False, indent=2),
+            )
+        except OSError as exc:
+            logger.error("Не удалось восстановить backup: %s", exc)
+            return False
+        self._tournaments = migrated
+        logger.warning(
+            "Восстановлен %s из резервной копии %s",
+            DATA_FILE.name, bak.name,
+        )
+        return True
 
     @staticmethod
     def _migrate(raw: Any) -> dict[tuple[int, int], Tournament] | None:
@@ -177,7 +207,14 @@ class JsonStore:
             return None
 
     def save(self) -> None:
-        """Сохранить все турниры в файл (атомарно, с backup)."""
+        """Сохранить все турниры в файл (атомарно, с backup).
+
+        В unhealthy-состоянии запись запрещена: пустое состояние
+        не должно затереть повреждённые данные. Перед записью
+        пробуется восстановление; если оно не удалось —
+        StoreUnavailableError.
+        """
+        self._ensure_writable()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         try:
             raw = {
@@ -188,27 +225,38 @@ class JsonStore:
         except (TypeError, ValueError) as exc:
             # Сериализация не удалась — старый файл не трогаем
             logger.error("Не удалось сериализовать турниры: %s", exc)
-            return
+            raise StoreUnavailableError(
+                f"Не удалось сериализовать состояние турниров: {exc}"
+            ) from exc
 
         with self._save_lock:
-            _rotate_backup(DATA_FILE)
+            rotate_backup(DATA_FILE)
             try:
-                _atomic_write_text(DATA_FILE, text)
+                atomic_write_text(DATA_FILE, text)
             except OSError as exc:
                 # .tmp мог остаться — атомарность основного файла сохранена
                 logger.error("Ошибка записи %s: %s", DATA_FILE, exc)
+                raise StoreUnavailableError(
+                    f"Не удалось записать {DATA_FILE}: {exc}"
+                ) from exc
 
     def get(self, guild_id: int, channel_id: int) -> Tournament | None:
         """Получить турнир по guild_id и channel_id."""
         return self._tournaments.get((guild_id, channel_id))
 
     def set(self, tournament: Tournament) -> None:
-        """Сохранить или обновить турнир."""
+        """Сохранить или обновить турнир.
+
+        При недоступном хранилище выбрасывает StoreUnavailableError
+        ДО изменения памяти — состояние не подтверждается ложно.
+        """
+        self._ensure_writable()
         self._tournaments[(tournament.guild_id, tournament.channel_id)] = tournament
         self.save()
 
     def delete(self, guild_id: int, channel_id: int) -> None:
         """Удалить турнир по guild_id и channel_id."""
+        self._ensure_writable()
         self._tournaments.pop((guild_id, channel_id), None)
         self.save()
 
@@ -223,7 +271,7 @@ class JsonStore:
     def get_settings(self) -> dict:
         """Получить настройки бота."""
         SETTINGS_FILE = DATA_DIR / "settings.json"
-        raw = _load_json_file(SETTINGS_FILE)
+        raw = load_json_file(SETTINGS_FILE)
         return raw if isinstance(raw, dict) else {}
 
     def set_settings(self, settings: dict) -> None:
@@ -236,9 +284,9 @@ class JsonStore:
             logger.error("Не удалось сериализовать settings: %s", exc)
             return
         with self._save_lock:
-            _rotate_backup(SETTINGS_FILE)
+            rotate_backup(SETTINGS_FILE)
             try:
-                _atomic_write_text(SETTINGS_FILE, text)
+                atomic_write_text(SETTINGS_FILE, text)
             except OSError as exc:
                 logger.error("Ошибка записи %s: %s", SETTINGS_FILE, exc)
 

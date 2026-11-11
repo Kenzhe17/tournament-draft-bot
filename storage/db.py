@@ -268,9 +268,11 @@ async def init_db() -> None:
         """)
 
         # Add command_name column to minigames if not exists
+        # (таблица может ещё не существовать на свежей БД —
+        # CREATE TABLE ниже)
         try:
             await conn.execute("ALTER TABLE minigames ADD COLUMN IF NOT EXISTS command_name TEXT")
-        except asyncpg.DuplicateColumnError:
+        except (asyncpg.DuplicateColumnError, asyncpg.UndefinedTableError):
             pass
 
         # Create cases table
@@ -409,6 +411,23 @@ async def init_db() -> None:
             )
         """)
 
+        # Журнал расчёта ставок: одна строка на матч.
+        # settlement_key = "tournament_id:match_id" — идемпотентность
+        # и защита от двойной выплаты при повторном вызове/перезапуске.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS bet_settlements (
+                settlement_key TEXT PRIMARY KEY,
+                guild_id BIGINT NOT NULL,
+                tournament_id TEXT NOT NULL,
+                match_id TEXT NOT NULL,
+                winning_team_name TEXT NOT NULL DEFAULT '',
+                winning_team_index INTEGER NOT NULL DEFAULT 0,
+                payouts JSONB NOT NULL DEFAULT '{}'::jsonb,
+                payouts_by_name JSONB NOT NULL DEFAULT '{}'::jsonb,
+                settled_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
         # Create bonus_cooldowns table for tracking daily bonuses
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS bonus_cooldowns (
@@ -501,7 +520,8 @@ async def init_db() -> None:
                 multiplier REAL NOT NULL,
                 is_pvp BOOLEAN DEFAULT FALSE,
                 is_pve BOOLEAN DEFAULT TRUE,
-                is_active BOOLEAN DEFAULT TRUE
+                is_active BOOLEAN DEFAULT TRUE,
+                command_name TEXT
             )
         """)
 

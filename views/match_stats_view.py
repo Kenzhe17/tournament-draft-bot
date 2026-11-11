@@ -1163,17 +1163,10 @@ class AdminConfirmView(View):
             winning_team_index_resolved = 0 if winning_team_index == match[0] else 1
 
             try:
-                payouts, payouts_by_name = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index_resolved)
+                # Выплата выигрышей атомарна внутри resolve_match_bets.
+                _, payouts_by_name = await bet_store.resolve_match_bets(self.guild_id, tournament.id, match_id, winning_team_name, winning_team_index_resolved)
                 import logging
-                logging.info(f"Received payouts from bet resolution: {payouts}")
-                
-                for user_id, payout in payouts.items():
-                    logging.info(f"Adding balance: user_id={user_id}, payout={payout}")
-                    if payout > 0:
-                        await user_balance_store.add_balance(self.guild_id, user_id, payout)
-                        logging.info(f"Balance added successfully for user_id={user_id}")
-                    else:
-                        logging.info(f"Skipping balance addition for user_id={user_id}, payout=0")
+                logging.info(f"Received payouts from bet resolution")
                 # Store payouts in tournament for max payout calculation
                 for user_name, payout in payouts_by_name.items():
                     if payout > 0:

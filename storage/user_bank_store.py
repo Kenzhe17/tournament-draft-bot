@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from config import DATA_DIR
 from storage.db import get_pool
+from storage.json_atomic import atomic_write_json
 
 
 class UserBankStore:
@@ -13,7 +15,7 @@ class UserBankStore:
 
     def __init__(self):
         self._db_mode = bool(os.getenv("DATABASE_URL"))
-        self._data_file = Path("data/user_bank.json")
+        self._data_file = DATA_DIR / "user_bank.json"
         self._data = {}
 
         if not self._db_mode:
@@ -31,8 +33,7 @@ class UserBankStore:
     def _save_to_file(self) -> None:
         """Сохранить данные в JSON файл."""
         self._data_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._data_file, "w", encoding="utf-8") as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(self._data_file, self._data)
 
     def _get_key(self, guild_id: int, user_id: int) -> str:
         """Получить ключ для хранения."""

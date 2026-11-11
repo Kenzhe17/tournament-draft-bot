@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from config import DATA_DIR, DATABASE_URL
+from storage.json_atomic import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +95,7 @@ class MatchNumberStore:
                 "counter": self._counter,
                 "matches": self._numbers,
             }
-            NUM_FILE.write_text(
-                json.dumps(raw, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            atomic_write_json(NUM_FILE, raw)
         except Exception as exc:
             logger.error("MatchNumberStore: ошибка сохранения JSON: %s", exc)
 

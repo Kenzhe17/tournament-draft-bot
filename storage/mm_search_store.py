@@ -15,6 +15,7 @@ from pathlib import Path
 
 from config import DATA_DIR, DATABASE_URL
 from models.mm_search import MMSearch
+from storage.json_atomic import atomic_write_json
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,7 @@ class MMSearchStore:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             raw = {f"{gid}:{cid}": s.to_dict()
                    for (gid, cid), s in self._searches.items()}
-            with open(MM_SEARCH_FILE, "w", encoding="utf-8") as f:
-                json.dump(raw, f, ensure_ascii=False, indent=2)
+            atomic_write_json(MM_SEARCH_FILE, raw)
         except Exception as exc:
             logger.error("MMSearchStore: ошибка сохранения JSON: %s", exc)
 

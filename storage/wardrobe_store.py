@@ -20,6 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 FILE = DATA_DIR / "wardrobes.json"
 
 
@@ -58,10 +59,7 @@ class WardrobeStore:
 
     def _save(self) -> None:
         try:
-            FILE.write_text(
-                json.dumps(self._data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            atomic_write_json(FILE, self._data)
             self._mtime = self._file_mtime()
         except Exception:
             logger.exception("Не удалось сохранить wardrobes.json")

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     pass
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 CASES_FILE = DATA_DIR / "cases.json"
 CASE_HISTORY_FILE = DATA_DIR / "case_history.json"
 
@@ -112,8 +113,7 @@ class CaseStore:
             case_id: case.to_dict()
             for case_id, case in self._cases.items()
         }
-        with open(CASES_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(CASES_FILE, data)
 
     def _initialize_default_cases(self) -> None:
         """Инициализировать кейсы по умолчанию."""
@@ -401,8 +401,7 @@ class CaseStore:
 
     def _save_history(self, history: dict) -> None:
         """Сохранить историю в файл."""
-        with open(CASE_HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        atomic_write_json(CASE_HISTORY_FILE, history)
 
     def get_case_history(self, guild_id: int, user_id: int) -> list[dict]:
         """Получить историю открытий пользователя."""

@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from config import DATA_DIR
+from storage.json_atomic import atomic_write_json
 
 if TYPE_CHECKING:
     pass
@@ -154,8 +155,7 @@ class OrganizerStore:
         """Save organizers to file."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         raw = {f"{gid}:{cid}": org.to_dict() for (gid, cid), org in self._organizers.items()}
-        with open(ORGANIZER_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False, indent=2)
+        atomic_write_json(ORGANIZER_DATA_FILE, raw)
 
     def get(self, guild_id: int, channel_id: int) -> ChannelOrganizers | None:
         """Get organizers for a channel."""

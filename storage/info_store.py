@@ -17,6 +17,7 @@ from storage.db import get_pool, DATABASE_URL
 logger = logging.getLogger(__name__)
 
 from config import DATA_DIR
+from storage.json_atomic import atomic_write_text
 
 FALLBACK_PATH = DATA_DIR / "info_center.json"
 
@@ -57,7 +58,7 @@ class InfoStore:
     def _save_fallback(self) -> None:
         try:
             FALLBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
-            FALLBACK_PATH.write_text(json.dumps(self._mem), encoding="utf-8")
+            atomic_write_text(FALLBACK_PATH, json.dumps(self._mem))
         except Exception:
             logger.warning("info_center fallback save failed", exc_info=True)
 

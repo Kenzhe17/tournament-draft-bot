@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from config import DATA_DIR, DATABASE_URL
 from models.team import Team
+from storage.json_atomic import atomic_write_json
 
 if TYPE_CHECKING:
     pass
@@ -94,8 +95,7 @@ class TeamStore:
         """Сохранить команды в JSON файл."""
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         raw = {team_id: team.to_dict() for team_id, team in self._teams.items()}
-        with open(TEAM_DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(raw, f, ensure_ascii=False, indent=2)
+        atomic_write_json(TEAM_DATA_FILE, raw)
 
     async def _save_to_postgres(self, team: Team) -> None:
         """Сохранить команду в PostgreSQL."""

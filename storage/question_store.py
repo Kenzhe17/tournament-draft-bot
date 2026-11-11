@@ -7,6 +7,7 @@ from typing import Any
 from models.question import Question, QuestionHistory
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 QUESTIONS_FILE = DATA_DIR / "questions.json"
 HISTORY_FILE = DATA_DIR / "question_history.json"
 
@@ -37,8 +38,7 @@ class QuestionStore:
     def save(self) -> None:
         """Сохранить вопросы в файл (fallback)."""
         data = {q_id: q.to_dict() for q_id, q in self._questions.items()}
-        with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(QUESTIONS_FILE, data)
 
     def _initialize_default_questions(self) -> None:
         """Инициализировать вопросы по умолчанию."""
@@ -159,8 +159,7 @@ class QuestionHistoryStore:
     def save(self) -> None:
         """Сохранить историю в файл (fallback)."""
         data = [h.to_dict() for h in self._history]
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(HISTORY_FILE, data)
 
     def add_history(self, history: QuestionHistory) -> None:
         """Добавить запись в историю."""

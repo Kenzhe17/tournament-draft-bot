@@ -93,10 +93,12 @@ class TestAtomicWrite:
             def to_dict(self):
                 return {"bad": object()}  # не сериализуется
 
-        # json.dumps упадёт на object() внутри to_dict? to_dict вернёт
-        # dict с object — json.dumps выбросит TypeError → save() глотает
+        # json.dumps упадёт на object() внутри to_dict → save()
+        # выбрасывает StoreUnavailableError, старый файл не тронут
+        from storage.json_store import StoreUnavailableError
         s._tournaments[(9, 9)] = BadTournament()
-        s.save()
+        with pytest.raises(StoreUnavailableError):
+            s.save()
         assert data_file.read_text(encoding="utf-8") == good
 
 
@@ -194,3 +196,109 @@ class TestSettingsAtomic:
         (data_dir / "settings.json").write_text("{bad", encoding="utf-8")
         s = _new_store()
         assert s.get_settings() == {}
+
+
+class TestUnhealthyNoOverwrite:
+    def test_corrupt_no_bak_is_unhealthy_and_blocks_save(self, store_env):
+        from storage.json_store import StoreUnavailableError
+
+        data_dir, data_file = store_env
+        data_dir.mkdir(parents=True, exist_ok=True)
+        data_file.write_text("{totally broken", encoding="utf-8")
+
+        s = _new_store()
+        assert s.is_healthy() is False
+        assert s.all() == []
+        # set/save выбрасывают явную ошибку — пустое состояние
+        # не может затереть повреждённые данные
+        with pytest.raises(StoreUnavailableError):
+            s.set(Tournament(guild_id=1, channel_id=2))
+        with pytest.raises(StoreUnavailableError):
+            s.save()
+        assert not data_file.exists()
+        # оригинал сохранён для диагностики
+        assert list(data_dir.glob("tournaments.json.corrupt-*"))
+
+    def test_unhealthy_self_recovery_after_admin_fix(self, store_env):
+        """Админ подменил битый файл валидным — стор восстанавливается."""
+        data_dir, data_file = store_env
+        data_dir.mkdir(parents=True, exist_ok=True)
+        data_file.write_text("{broken", encoding="utf-8")
+
+        s = _new_store()
+        assert s.is_healthy() is False
+
+        # Админ восстанавливает файл вручную
+        data_file.write_text("{}", encoding="utf-8")
+        s.set(Tournament(guild_id=1, channel_id=2))
+        assert s.is_healthy() is True
+        assert s.get(1, 2) is not None
+        assert json.loads(data_file.read_text())
+
+    def test_first_run_no_file_is_healthy(self, store_env):
+        data_dir, data_file = store_env
+        s = _new_store()
+        assert s.is_healthy() is True
+        assert s.all() == []
+        s.set(Tournament(guild_id=1, channel_id=2))
+        assert data_file.exists()
+
+    def test_corrupt_with_valid_bak_recovers_and_healthy(self, store_env):
+        data_dir, data_file = store_env
+        s = _new_store()
+        s.set(Tournament(guild_id=1, channel_id=2))
+        s.set(Tournament(guild_id=3, channel_id=4))
+        data_file.write_text("{broken", encoding="utf-8")
+        s2 = _new_store()
+        assert s2.is_healthy() is True
+        assert s2.get(1, 2) is not None
+
+
+class TestAtomicBackup:
+    def test_bak_not_overwritten_by_corrupt_current(self, store_env):
+        """Если текущий файл битый — .bak не обновляется мусором."""
+        from storage.json_atomic import rotate_backup
+
+        data_dir, data_file = store_env
+        data_dir.mkdir(parents=True, exist_ok=True)
+        good = {"a": 1}
+        data_file.write_text(json.dumps(good), encoding="utf-8")
+        assert rotate_backup(data_file) is True
+        bak = data_dir / "tournaments.json.bak"
+        assert json.loads(bak.read_text()) == good
+
+        # Текущий файл портится — rotate_backup не должен его копировать
+        data_file.write_text("{broken", encoding="utf-8")
+        assert rotate_backup(data_file) is False
+        assert json.loads(bak.read_text()) == good  # bak нетронут
+
+    def test_atomic_write_text_leaves_no_tmp(self, store_env):
+        from storage.json_atomic import atomic_write_text
+
+        data_dir, _ = store_env
+        data_dir.mkdir(parents=True, exist_ok=True)
+        target = data_dir / "x.json"
+        atomic_write_text(target, '{"k": 1}')
+        assert json.loads(target.read_text()) == {"k": 1}
+        assert not (data_dir / "x.json.tmp").exists()
+
+
+class TestOtherStoresAtomic:
+    @pytest.mark.asyncio
+    async def test_user_balance_save_atomic(self, store_env, monkeypatch, tmp_path):
+        """user_balance_store пишет JSON атомарно (fallback-режим)."""
+        import storage.user_balance_store as ubs
+
+        bal_file = tmp_path / "ub.json"
+        decay_file = tmp_path / "decay.json"
+        monkeypatch.setattr(ubs, "BALANCE_FILE", bal_file)
+        monkeypatch.setattr(ubs, "DECAY_FILE", decay_file)
+        monkeypatch.setattr(ubs.decay_tracker, "should_apply_decay",
+                            lambda g, u: False)
+        store = ubs.UserBalanceStore()
+        store._use_db = False
+        store._balances = {}
+        new_bal = await store.add_balance(1, 2, 50)
+        assert new_bal == 150
+        assert json.loads(bal_file.read_text()) != {}
+        assert not (tmp_path / "ub.json.tmp").exists()

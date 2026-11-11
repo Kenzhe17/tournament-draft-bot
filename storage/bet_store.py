@@ -8,6 +8,7 @@ from typing import Any
 from models.bet import Bet, MatchOdds
 
 from config import DATA_DIR  # noqa: E402 — единый путь из config
+from storage.json_atomic import atomic_write_json
 BETS_FILE = DATA_DIR / "bets.json"
 ODDS_FILE = DATA_DIR / "odds.json"
 
@@ -88,16 +89,14 @@ class BetStore:
             match_id: [bet.to_dict() for bet in bets]
             for match_id, bets in self._bets.items()
         }
-        with open(BETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(BETS_FILE, data)
 
         # Save odds
         odds_data = {
             match_id: odds.to_dict()
             for match_id, odds in self._odds.items()
         }
-        with open(ODDS_FILE, "w", encoding="utf-8") as f:
-            json.dump(odds_data, f, ensure_ascii=False, indent=2)
+        atomic_write_json(ODDS_FILE, odds_data)
 
     def initialize_match_odds(self, match_id: str, team_a_name: str, team_b_name: str, avg_skill_a: float, avg_skill_b: float) -> None:
         """Initialize odds for a match based on skill rating difference."""
@@ -412,8 +411,12 @@ class BetStore:
                 pool = await get_pool()
                 async with pool.acquire() as conn:
                     # Check if user already has a bet on this match
-                    existing_bet = await self.get_user_bet(bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id)
-                    if existing_bet:
+                    # (на том же conn — без вложенного pool.acquire)
+                    existing = await conn.fetchrow(
+                        "SELECT 1 FROM bets WHERE guild_id = $1 AND user_id = $2 AND tournament_id = $3 AND match_id = $4",
+                        bet.guild_id, bet.user_id, bet.tournament_id, bet.match_id
+                    )
+                    if existing:
                         # Bet already exists - do nothing (only one bet per match)
                         return
 
@@ -549,8 +552,193 @@ class BetStore:
             self.save()
 
     async def resolve_match_bets(self, guild_id: int, tournament_id: str, match_id: str, winning_team_name: str, winning_team_index: int) -> tuple[dict[int, int], dict[str, int]]:
-        """Resolve bets for a match and return payouts (user_id -> amount) and payouts by name (user_name -> amount)."""
+        """Resolve bets for a match and return payouts (user_id -> amount) and payouts by name (user_name -> amount).
+
+        Идемпотентно: расчёт фиксируется в bet_settlements в той же
+        транзакции, что и удаление ставок и начисление выигрышей.
+        Повторный вызов (или вызов после перезапуска между коммитом
+        и выплатой) возвращает пустые payouts — повторного
+        начисления не происходит.
+        """
+        if self._use_db:
+            return await self._resolve_match_bets_db(
+                guild_id, tournament_id, match_id,
+                winning_team_name, winning_team_index,
+            )
+        return await self._resolve_match_bets_fallback(
+            guild_id, tournament_id, match_id,
+            winning_team_name, winning_team_index,
+        )
+
+    async def _resolve_match_bets_db(
+        self, guild_id: int, tournament_id: str, match_id: str,
+        winning_team_name: str, winning_team_index: int,
+    ) -> tuple[dict[int, int], dict[str, int]]:
+        """Атоморный расчёт ставок в PostgreSQL.
+
+        Одна транзакция: проверка bet_settlements → чтение ставок
+        (FOR UPDATE) → начисление выигрышей в user_balance →
+        запись settlement → удаление ставок. Любой сбой откатывает
+        всё — ставка не теряется без выплаты и выплата не
+        дублируется.
+        """
+        import json as _json
+        import logging
+        from config import MAX_BALANCE
+        from storage.db import get_pool
         from storage.betting_stats_store import betting_stats_store
+
+        logger = logging.getLogger(__name__)
+        settlement_key = f"{tournament_id}:{match_id}"
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # Идемпотентность: settlement уже зафиксирован
+                existing = await conn.fetchrow(
+                    "SELECT 1 FROM bet_settlements WHERE settlement_key = $1",
+                    settlement_key
+                )
+                if existing:
+                    logger.info(
+                        "Ставки матча %s уже рассчитаны — пропуск",
+                        match_id,
+                    )
+                    return {}, {}
+
+                rows = await conn.fetch(
+                    """
+                    SELECT guild_id, user_id, user_name, tournament_id,
+                           match_id, team_name, team_index, amount, odds
+                    FROM bets
+                    WHERE tournament_id = $1 AND match_id = $2
+                    FOR UPDATE
+                    """,
+                    tournament_id, match_id
+                )
+                if not rows:
+                    # Гонка: другой воркер мог закоммитить settlement
+                    # между нашей проверкой и SELECT FOR UPDATE.
+                    again = await conn.fetchrow(
+                        "SELECT 1 FROM bet_settlements WHERE settlement_key = $1",
+                        settlement_key
+                    )
+                    if again:
+                        return {}, {}
+                    return {}, {}
+
+                bets = [
+                    Bet(
+                        guild_id=row["guild_id"], user_id=row["user_id"],
+                        user_name=row["user_name"],
+                        tournament_id=row["tournament_id"],
+                        match_id=row["match_id"],
+                        team_name=row["team_name"],
+                        team_index=row.get("team_index", 0),
+                        amount=row["amount"], odds=row["odds"],
+                    )
+                    for row in rows
+                ]
+
+                # Итоговый коэффициент: БД → память → дефолт 1.9
+                winning_odds = 1.9
+                odds_row = await conn.fetchrow(
+                    "SELECT team_a_odds, team_b_odds FROM match_odds WHERE match_id = $1",
+                    match_id
+                )
+                if odds_row:
+                    if winning_team_index == 0:
+                        winning_odds = odds_row["team_a_odds"]
+                    elif winning_team_index == 1:
+                        winning_odds = odds_row["team_b_odds"]
+                else:
+                    mem = self.get_current_odds(match_id)
+                    if mem:
+                        if winning_team_index == 0:
+                            winning_odds = mem.team_a_odds
+                        elif winning_team_index == 1:
+                            winning_odds = mem.team_b_odds
+                winning_odds = max(1.1, min(2.7, winning_odds))
+
+                logger.info(
+                    "Resolving bets (DB): tournament_id=%s, match_id=%s, "
+                    "winning='%s', index=%s, odds=%.2fx, bets=%d",
+                    tournament_id, match_id, winning_team_name,
+                    winning_team_index, winning_odds, len(bets),
+                )
+
+                payouts: dict[int, int] = {}
+                payouts_by_name: dict[str, int] = {}
+                for bet in bets:
+                    if bet.team_name == winning_team_name:
+                        payout = int(bet.amount * winning_odds)
+                        payouts[bet.user_id] = payout
+                        payouts_by_name[bet.user_name] = payout
+                        if payout > 0:
+                            # Атомарное начисление с cap MAX_BALANCE —
+                            # эквивалент user_balance_store.add_balance.
+                            await conn.execute(
+                                """
+                                INSERT INTO user_balance (guild_id, user_id, balance)
+                                VALUES ($1, $2, LEAST(100 + $3, $4))
+                                ON CONFLICT (guild_id, user_id)
+                                DO UPDATE SET balance =
+                                    LEAST(user_balance.balance + $3, $4)
+                                """,
+                                bet.guild_id, bet.user_id, payout, MAX_BALANCE
+                            )
+                    else:
+                        payouts[bet.user_id] = 0
+                        payouts_by_name[bet.user_name] = 0
+
+                # Фиксация расчёта — до удаления ставок, в той же tx
+                await conn.execute(
+                    """
+                    INSERT INTO bet_settlements
+                        (settlement_key, guild_id, tournament_id, match_id,
+                         winning_team_name, winning_team_index,
+                         payouts, payouts_by_name)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+                    """,
+                    settlement_key, guild_id, tournament_id, match_id,
+                    winning_team_name, winning_team_index,
+                    _json.dumps({str(k): v for k, v in payouts.items()}),
+                    _json.dumps(payouts_by_name),
+                )
+                await conn.execute(
+                    "DELETE FROM bets WHERE tournament_id = $1 AND match_id = $2",
+                    tournament_id, match_id
+                )
+
+        # Статистика — после коммита: её сбой не влияет на деньги
+        try:
+            for bet in bets:
+                if bet.team_name == winning_team_name:
+                    profit = payouts[bet.user_id] - bet.amount
+                    await betting_stats_store.record_bet_result(
+                        guild_id, bet.user_id, profit, won=True
+                    )
+                else:
+                    await betting_stats_store.record_bet_result(
+                        guild_id, bet.user_id, bet.amount, won=False
+                    )
+        except Exception as exc:
+            logger.error("betting_stats recording failed: %s", exc)
+
+        logger.info("Final payouts (DB): %s", payouts)
+        return payouts, payouts_by_name
+
+    async def _resolve_match_bets_fallback(
+        self, guild_id: int, tournament_id: str, match_id: str,
+        winning_team_name: str, winning_team_index: int,
+    ) -> tuple[dict[int, int], dict[str, int]]:
+        """JSON-fallback: расчёт в памяти + выплата через balance store.
+
+        Выигрыши начисляются здесь же (единая точка выплаты для
+        обоих режимов — вызывающий код не должен начислять повторно).
+        """
+        from storage.betting_stats_store import betting_stats_store
+        from storage.user_balance_store import user_balance_store
         import logging
 
         bets = await self.get_bets_by_match(tournament_id, match_id)
@@ -560,46 +748,33 @@ class BetStore:
         logging.info(f"Resolving bets for tournament_id={tournament_id}, match_id={match_id}, winning_team_name='{winning_team_name}', winning_team_index={winning_team_index}")
         logging.info(f"Found {len(bets)} bets for this match")
 
-        # Get current odds for the winning team (final odds)
         current_odds = self.get_current_odds(match_id)
         if current_odds:
-            logging.info(f"Current odds: team_a='{current_odds.team_a_name}' ({current_odds.team_a_odds}x), team_b='{current_odds.team_b_name}' ({current_odds.team_b_odds}x)")
-            # Determine which team won based on team index
             if winning_team_index == 0:
                 winning_odds = current_odds.team_a_odds
-                logging.info(f"Matched to team_a (index 0) with odds {winning_odds}x")
             elif winning_team_index == 1:
                 winning_odds = current_odds.team_b_odds
-                logging.info(f"Matched to team_b (index 1) with odds {winning_odds}x")
             else:
-                # Fallback: use default
-                logging.warning(f"Invalid team_index: {winning_team_index}, using default 1.9x")
                 winning_odds = 1.9
         else:
-            logging.warning(f"No odds found for match_id={match_id}, using default 1.9x")
-            winning_odds = 1.9  # Default if no odds stored
+            winning_odds = 1.9
 
-        # Calculate payouts based on final odds (not fixed at betting time)
         for bet in bets:
-            logging.info(f"Checking bet: user_id={bet.user_id}, team_name='{bet.team_name}', team_index={bet.team_index}, amount={bet.amount}, odds={bet.odds}")
             if bet.team_name == winning_team_name:
-                # Winning bet: payout = amount * final odds (includes original bet + profit)
                 payout = int(bet.amount * winning_odds)
                 payouts[bet.user_id] = payout
                 payouts_by_name[bet.user_name] = payout
-                logging.info(f"WINNING bet: user_id={bet.user_id}, team_name='{bet.team_name}' == '{winning_team_name}', payout={payout} (total payout)")
-                # Record as win (profit = payout - bet amount)
+                if payout > 0:
+                    await user_balance_store.add_balance(
+                        bet.guild_id, bet.user_id, payout
+                    )
                 profit = payout - bet.amount
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, profit, won=True)
             else:
-                # Losing bet: no payout
                 payouts[bet.user_id] = 0
                 payouts_by_name[bet.user_name] = 0
-                logging.info(f"LOSING bet: user_id={bet.user_id}, team_name='{bet.team_name}' != '{winning_team_name}'")
-                # Record as loss (bet amount lost)
                 await betting_stats_store.record_bet_result(guild_id, bet.user_id, bet.amount, won=False)
 
-        # Delete bets after resolution
         await self.delete_bets_by_match(tournament_id, match_id)
 
         logging.info(f"Final payouts: {payouts}")
