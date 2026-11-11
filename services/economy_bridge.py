@@ -23,15 +23,21 @@ _TOKEN_ENV = "ECONOMY_BRIDGE_TOKEN"
 _HOST_ENV = "ECONOMY_BRIDGE_HOST"
 _PORT_ENV = "ECONOMY_BRIDGE_PORT"
 
-_RATE_LIMIT = 60          # requests per IP per window
-_RATE_WINDOW = 60.0       # seconds
+_RATE_LIMIT_ENV = "ECONOMY_BRIDGE_RATE_LIMIT"
+_RATE_LIMIT_DEFAULT = 600     # requests per IP per window; all Arcade calls
+                              # share the service's egress IP(s)
+_RATE_WINDOW = 60.0           # seconds
 _hits: dict[str, list[float]] = {}
 
 
 def _rate_limited(ip: str) -> bool:
+    try:
+        limit = int(os.getenv(_RATE_LIMIT_ENV, "") or _RATE_LIMIT_DEFAULT)
+    except ValueError:
+        limit = _RATE_LIMIT_DEFAULT
     now = time.monotonic()
     hits = [t for t in _hits.get(ip, []) if now - t < _RATE_WINDOW]
-    if len(hits) >= _RATE_LIMIT:
+    if len(hits) >= limit:
         _hits[ip] = hits
         return True
     hits.append(now)
