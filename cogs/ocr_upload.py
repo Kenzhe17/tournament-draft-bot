@@ -341,11 +341,10 @@ def _result_card(
     duration: str = "",
     rooms_count: int = 0,
 ) -> "discord.ui.LayoutView":
-    """V2-карточка итога матча: номер, команды, игроки, скриншот.
+    """V2-карточка итога матча: заголовок + скриншот, без составов.
 
-    Состав — мелким текстом (-#). Для MM-турниров заголовок без эмодзи.
+    Для MM-турниров заголовок без эмодзи.
     """
-    from utils.design.formatters import muted
     from utils.design.layouts import DesignView
 
     name_a = _captain_name(tournament, t1)
@@ -362,13 +361,6 @@ def _result_card(
             discord.MediaGalleryItem(media=f"attachment://{SHOT_FILENAME}")
         )
     )
-    view.sep()
-    if duration:
-        view.text(f"**Длительность матча:** {duration}")
-    if rooms_count:
-        view.text(f"**Комнат сыграно:** {rooms_count}")
-    view.text(muted(f"{name_a}\n{_roster_mentions(tournament, t1)}"))
-    view.text(muted(f"{name_b}\n{_roster_mentions(tournament, t2)}"))
     return view
 
 

@@ -1,5 +1,5 @@
-"""Длительность матча: форматирование, «Начало» из карточки матча,
-поле «Длительность матча» в итоговой карточке."""
+"""Длительность матча: форматирование, «Начало» из карточки матча.
+Итоговая карточка — только заголовок «ИТОГ МАТЧА #N: A vs B» + изображение."""
 
 from __future__ import annotations
 
@@ -54,14 +54,18 @@ def _card_texts(view) -> str:
     return "\n".join(parts)
 
 
-def test_result_card_shows_duration():
+def test_result_card_title_only():
     view = _result_card(
         _fake_tournament(), "qualifier", 0, 0, 1, match_num=3,
-        duration="10 мин. 25 сек.",
+        duration="10 мин. 25 сек.", rooms_count=2,
     )
     text = _card_texts(view)
-    assert "Длительность матча" in text
-    assert "10 мин. 25 сек." in text
+    assert "ИТОГ МАТЧА #3" in text
+    assert "CapA vs CapB" in text
+    # Только заголовок и изображение: без составов, длительности, комнат
+    assert "Длительность матча" not in text
+    assert "Комнат сыграно" not in text
+    assert "P1" not in text and "P3" not in text
 
 
 def test_result_card_without_duration_omits_field():
