@@ -1,5 +1,5 @@
 """Enhanced view for mini-games menu with categories and game cards."""
-from config import replace_emojis, get_emoji
+from config import GAMES_CHANNEL_ID, replace_emojis, get_emoji
 
 import discord
 from utils.design import compose
@@ -180,7 +180,7 @@ class GameSelect(Select):
 
         embed = discord.Embed(
             title=f" {game.name.upper()} | Игровой режим",
-            description=f" {game.short_description}\n\n{replace_emojis('•')} **Информация об игре:**\n Канал: <#1561707634938351728>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n{replace_emojis('•')} **Правила и особенности:**\n {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
+            description=f" {game.short_description}\n\n{replace_emojis('•')} **Информация об игре:**\n Канал: <#{GAMES_CHANNEL_ID}>\n Команда: `/{game.command} bet:100`\n Категория: {category_info['name']}\n Множитель: {game.multiplier}x\n Мин. ставка: {game.min_bet} {get_emoji('money')}\n Макс. ставка: {game.max_bet:,} {get_emoji('money')}\n Статус: {status_text}\n\n{replace_emojis('•')} **Правила и особенности:**\n {game.how_to_play}\n\n{replace_emojis('a_dot_smaller')} Нажмите кнопку ниже для запуска игры или вернитесь в меню",
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -256,7 +256,7 @@ class PlayButton(Button):
 
             embed = discord.Embed(
                 title=f"{replace_emojis('📖')} Как начать игру {self.game.name}",
-                description=f"Играйте на канале <#1561707634938351728>\n\n**Команда:** `{command}`\n\n{replace_emojis('💡')} Скопируйте команду, замените значение ставки и отправьте её в чат.",
+                description=f"Играйте на канале <#{GAMES_CHANNEL_ID}>\n\n**Команда:** `{command}`\n\n{replace_emojis('💡')} Скопируйте команду, замените значение ставки и отправьте её в чат.",
                 color=discord.Color.from_rgb(69, 69, 69)
             )
 

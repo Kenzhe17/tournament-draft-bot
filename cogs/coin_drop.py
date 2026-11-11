@@ -11,7 +11,7 @@ from utils.design import compose, smart_view
 from discord import app_commands
 from discord.ext import commands
 
-from config import get_emoji, BOT_OWNER_ID
+from config import get_emoji, BOT_OWNER_ID, NOTIFICATION_CHANNEL_ID
 from storage.user_balance_store import user_balance_store
 
 if TYPE_CHECKING:
@@ -138,7 +138,7 @@ from cogs.groups import admin_group, bind_commands
 class CoinDropCog(commands.Cog):
     def __init__(self, bot: "TournamentBot"):
         self.bot = bot
-        self.target_channel_id = 1200125075156910181
+        self.target_channel_id = NOTIFICATION_CHANNEL_ID
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

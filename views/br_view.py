@@ -10,7 +10,9 @@ from utils.design import compose, text_card, smart_view
 
 from discord.ui import Modal, TextInput, View, Button, button, Select
 
-from config import BOT_OWNER_ID, replace_emojis, get_emoji
+from config import (ADMIN_USER_IDS, BOT_OWNER_ID, BR_DATA_CHANNEL_ID,
+                    BR_TEAM_CHANNEL_ID, NOTIFICATION_CHANNEL_ID,
+                    replace_emojis, get_emoji)
 from models.br_tournament import BRTournamentPhase
 from storage.br_store import br_store
 
@@ -110,7 +112,7 @@ class BROrganizerMenuButton(Button):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         # Check if bot owner or specific user (582145013358657549)
-        if interaction.user.id != BOT_OWNER_ID and interaction.user.id != 582145013358657549:
+        if interaction.user.id != BOT_OWNER_ID and interaction.user.id not in ADMIN_USER_IDS:
             await interaction.response.send_message(
                 "❌ Только владелец бота или организатор могут управлять BR турниром.",
                 ephemeral=True
@@ -644,7 +646,7 @@ class RegisterTeamButton(Button):
         team = team_store.get_by_captain(interaction.user.id)
         if not team:
             await interaction.response.send_message(
-                "❌ Вы не капитан команды! Создайте команду через `/team create` в канале <#1563826579061215332>.",
+                f"❌ Вы не капитан команды! Создайте команду через `/team create` в канале <#{BR_TEAM_CHANNEL_ID}>.",
                 ephemeral=True
             )
             return
@@ -1323,7 +1325,7 @@ class BRDataButton(Button):
 
         # Send room data to channel
         try:
-            channel = interaction.guild.get_channel(1563195265395982466)
+            channel = interaction.guild.get_channel(BR_DATA_CHANNEL_ID)
             if not channel:
                 await interaction.followup.send(
                     "❌ Канал для данных не найден.",
@@ -1348,14 +1350,14 @@ class BRDataButton(Button):
             await channel.send( view=text_card(br_room_card(tournament, map_name, role_mention)))
 
             # Send to general channel
-            general_channel = interaction.guild.get_channel(1200125075156910181)
+            general_channel = interaction.guild.get_channel(NOTIFICATION_CHANNEL_ID)
             if general_channel:
                 team_lines = "\n".join(
                     br_team_line(tournament, team, i)
                     for i, team in enumerate(tournament.teams)
                 )
                 await general_channel.send(
-                    view=text_card(f"{role_mention}\n\n{team_lines}\n\n Комната открыта, данные  <#1563195265395982466>")
+                    view=text_card(f"{role_mention}\n\n{team_lines}\n\n Комната открыта, данные  <#{BR_DATA_CHANNEL_ID}>")
                 )
         except Exception as e:
             logger.error(f"Error sending BR data: {e}")

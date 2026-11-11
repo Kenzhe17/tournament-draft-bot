@@ -1,4 +1,4 @@
-from config import replace_emojis
+from config import NOTIFICATION_CHANNEL_ID, ROOM_DATA_CHANNEL_ID, replace_emojis
 """Modal form for entering room ID and password."""
 
 import logging
@@ -283,10 +283,10 @@ async def send_room_dm_notifications(
 
     # Обычный турнир: данные — в канал результатов, анонс — в канал
     # уведомлений с пингом роли (mention в content, не внутри embed)
-    data_channel = bot.get_channel(1561683314480255057)
+    data_channel = bot.get_channel(ROOM_DATA_CHANNEL_ID)
     if data_channel is None:
         try:
-            data_channel = await bot.fetch_channel(1561683314480255057)
+            data_channel = await bot.fetch_channel(ROOM_DATA_CHANNEL_ID)
         except Exception:
             data_channel = None
     if data_channel is not None:
@@ -300,7 +300,7 @@ async def send_room_dm_notifications(
         )
         await _send_room_data(data_channel, room_id, room_password)
 
-    from config import NOTIFICATION_CHANNEL_ID, NOTIFICATION_ROLE_ID
+    from config import NOTIFICATION_ROLE_ID
     general_channel = bot.get_channel(NOTIFICATION_CHANNEL_ID)
     if general_channel is None:
         try:

@@ -23,7 +23,7 @@ from discord.ui import Button, FileUpload, Modal, Select, View
 from utils.design import compose, text_card
 from discord.ext import commands
 
-from config import get_emoji, replace_emojis, MM_MATCH_CHANNEL_POOL
+from config import get_emoji, replace_emojis, MM_MATCH_CHANNEL_POOL, OCR_RESULT_CHANNEL_ID as _OCR_RESULT_CHANNEL_ID
 from storage.json_store import store
 from views.ocr_match_view import (
     OCR_STATS_CHANNEL_ID,
@@ -46,7 +46,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 SHOT_FILENAME = "match_result.png"
 
 # Канал итоговых результатов матчей (команды + игроки + скриншот)
-RESULT_CHANNEL_ID = 1563149967303118949
+RESULT_CHANNEL_ID = _OCR_RESULT_CHANNEL_ID
 
 
 _KNOWN_TEAM_NAMES = ("хищники", "разрушители")

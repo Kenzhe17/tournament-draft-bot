@@ -15,13 +15,14 @@ from utils.design import compose, text_card
 from discord import app_commands
 from discord.ext import commands
 
+import config as _cfg
 from config import (
     RANKED_READY_TIMEOUT_SECONDS, replace_emojis, ORG_ROLE_ID,
     ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID, MM_MATCH_CHANNEL_POOL,
 )
 
 # Единый канал для карточек «НАЙДЕН МАТЧ» (Ready Check)
-MATCH_FOUND_CHANNEL_ID = 1549809898643001484
+MATCH_FOUND_CHANNEL_ID = _cfg.MATCH_FOUND_CHANNEL_ID
 
 # VAC 10 минут — не нажал «Готов» / нажал «Отказаться» на Ready Check
 MM_NO_SHOW_VAC = timedelta(minutes=10)
@@ -61,7 +62,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Каналы для турниров
-TOURNAMENT_CHANNEL_IDS = [1549809898643001484, 1563149967303118949, 1563149951033151609]
+TOURNAMENT_CHANNEL_IDS = list(_cfg.TOURNAMENT_CHANNELS)
 
 # Заблокированные каналы для поиска
 LOCKED_CHANNELS: dict[int, str] = {}  # channel_id -> search_channel_id

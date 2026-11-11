@@ -2669,9 +2669,22 @@ class TournamentCog(commands.Cog):
     async def welcome(self, interaction: discord.Interaction) -> None:
         """Показать приветственное сообщение с гайдом."""
         # Single embed with image and text
+        import os as _os
+        _guide_desc = (
+            " **Добро пожаловать на сервер!**\n"
+            "Этот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n"
+            "  **НАВИГАЦИЯ ПО КАНАЛАМ:**\n"
+            f"{replace_emojis('a_dot_smaller')} <#1200125075156910181>  Основное общение сообщества\n"
+            f"{replace_emojis('a_dot_smaller')} <#1549809898643001484>  Проведение турниров\n"
+            f"{replace_emojis('a_dot_smaller')} <#1514677029159567604>  Яркие моменты из игр\n"
+            f"{replace_emojis('a_dot_smaller')} <#1551167853741219880>  Команды ботов и спам-игры\n"
+            f"{replace_emojis('a_dot_smaller')} <#1250974603162026024>  Прослушивание треков\n"
+            f"{replace_emojis('a_dot_smaller')} <#1242489553189732373>  Полезные файлы для FF\n\n"
+            f" {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше"
+        )
         embed = discord.Embed(
             title="✧ DISCORD SERVER r1z3 | ПУТЕВОДИТЕЛЬ ✧",
-            description=f" **Добро пожаловать на сервер!**\nЭтот гайд поможет вам сориентироваться по каналам, узнать систему рангов и использовать команды нашего бота.\n\n  **НАВИГАЦИЯ ПО КАНАЛАМ:**\n{replace_emojis('a_dot_smaller')} <#1200125075156910181>  Основное общение сообщества\n{replace_emojis('a_dot_smaller')} <#1549809898643001484>  Проведение турниров\n{replace_emojis('a_dot_smaller')} <#1514677029159567604>  Яркие моменты из игр\n{replace_emojis('a_dot_smaller')} <#1551167853741219880>  Команды ботов и спам-игры\n{replace_emojis('a_dot_smaller')} <#1250974603162026024>  Прослушивание треков\n{replace_emojis('a_dot_smaller')} <#1242489553189732373>  Полезные файлы для FF\n\n {replace_emojis('a_dot_smaller')} Выберите категорию в меню ниже, чтобы узнать больше",
+            description=_os.getenv("GUIDE_NAV_TEXT") or _guide_desc,
             color=discord.Color.from_rgb(69, 69, 69)
         )
         embed.set_image(url="https://cdn.discordapp.com/attachments/1553458753800507532/1554375503572369449/a338360963724ad1957dd13a1730547c.png?ex=6abca87e&is=6abb56fe&hm=ed0782e9cd150cb625960c89d66a581e693c9ec382180e795e765f29c960d21c&")

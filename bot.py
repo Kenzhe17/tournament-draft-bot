@@ -12,7 +12,7 @@ import time
 import discord
 from discord.ext import commands
 
-from config import DATABASE_URL, DISCORD_TOKEN, replace_emojis
+from config import DATABASE_URL, DISCORD_TOKEN, GUILD_ID, guild_allowed, replace_emojis
 from models.tournament import Tournament, TournamentPhase
 from storage.json_store import store
 from storage.player_stats_store import player_stats_store
@@ -331,6 +331,8 @@ class TournamentBot(commands.Bot):
                     guild_ids = [row[0] for row in cursor]
 
                 for guild_id in guild_ids:
+                    if not guild_allowed(guild_id):
+                        continue
                     try:
                         guild_synced = await self.tree.sync(guild=discord.Object(id=guild_id))
                         logger.info(f"Синхронизировано {len(guild_synced)} команд для сервера {guild_id}")
@@ -339,13 +341,13 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Ошибка при получении серверов из БД: {e}")
 
-        # Force sync for main guild to ensure commands are available immediately
-        MAIN_GUILD_ID = 1196165488565289012
-        try:
-            guild_synced = await self.tree.sync(guild=discord.Object(id=MAIN_GUILD_ID))
-            logger.info(f"Синхронизировано {len(guild_synced)} команд для основного сервера {MAIN_GUILD_ID}")
-        except Exception as e:
-            logger.error(f"Ошибка синхронизации для основного сервера: {e}")
+        # Force sync для основного сервера (env GUILD_ID; 0/не разрешён — пропуск)
+        if GUILD_ID and guild_allowed(GUILD_ID):
+            try:
+                guild_synced = await self.tree.sync(guild=discord.Object(id=GUILD_ID))
+                logger.info(f"Синхронизировано {len(guild_synced)} команд для основного сервера {GUILD_ID}")
+            except Exception as e:
+                logger.error(f"Ошибка синхронизации для основного сервера: {e}")
 
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance
@@ -770,6 +772,8 @@ class TournamentBot(commands.Bot):
 
                 # Get all guilds with active tournaments
                 for guild in self.guilds:
+                    if not guild_allowed(guild.id):
+                        continue
                     # Get all tournaments for this guild
                     tournaments = store.get_by_guild(guild.id)
                     for tournament in tournaments:
@@ -806,6 +810,8 @@ class TournamentBot(commands.Bot):
 
                 # Get all guilds with active tournaments
                 for guild in self.guilds:
+                    if not guild_allowed(guild.id):
+                        continue
                     # Get all tournaments for this guild
                     tournaments = store.get_by_guild(guild.id)
                     for tournament in tournaments:
@@ -905,6 +911,8 @@ class TournamentBot(commands.Bot):
 
                 # Get all guilds
                 for guild in self.guilds:
+                    if not guild_allowed(guild.id):
+                        continue
                     try:
                         member_ids = {m.id for m in guild.members}
                         for row in _pets_for_members(all_pet_rows, member_ids):
@@ -953,6 +961,8 @@ class TournamentBot(commands.Bot):
         )
 
         for guild in self.guilds:
+            if not guild_allowed(guild.id):
+                continue
             try:
                 stats_list = await player_stats_store.get_all(guild.id)
                 greeted = 0
@@ -1136,12 +1146,26 @@ class TournamentBot(commands.Bot):
         await super().close()
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
-        """Log when bot is added to a server."""
+        """Log when bot is added to a server; leave foreign guilds
+        при заданном ALLOWED_GUILD_IDS (изоляция test/prod)."""
+        from config import ALLOWED_GUILD_IDS
         from utils.logging import log_guild_join
+        if ALLOWED_GUILD_IDS and guild.id not in ALLOWED_GUILD_IDS:
+            logger.warning(
+                "Бот добавлен в неразрешённую гильдию %s — покидаю",
+                guild.id,
+            )
+            try:
+                await guild.leave()
+            except Exception as exc:
+                logger.error("Не удалось покинуть гильдию %s: %s", guild.id, exc)
+            return
         await log_guild_join(self, guild)
 
     async def on_member_join(self, member: discord.Member) -> None:
         """Welcome-сообщение Components V2 для новых участников."""
+        if not guild_allowed(member.guild.id):
+            return
         from services.welcome_card import send_welcome_message
         await send_welcome_message(self, member)
 

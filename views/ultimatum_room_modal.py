@@ -3,7 +3,7 @@
 import time
 import discord
 from utils.design import compose, text_card
-from config import replace_emojis
+from config import NOTIFICATION_CHANNEL_ID, ULT_ROOM_CHANNEL_ID, replace_emojis
 
 # Cooldown для отправки комнаты (1 секунда)
 ultimatum_room_cooldowns = {}  # (guild_id, match_id) -> timestamp
@@ -157,7 +157,7 @@ async def send_ultimatum_room_notifications(
 ) -> None:
     """Send room info to specific channel for Ultimatum match."""
     # Get specific channel
-    channel = bot.get_channel(1567585136957063229)
+    channel = bot.get_channel(ULT_ROOM_CHANNEL_ID)
     if not channel:
         return
 
@@ -175,6 +175,6 @@ async def send_ultimatum_room_notifications(
     await channel.send( view=text_card("https://cdn.discordapp.com/attachments/1560907251412238396/1561697607770832957/382752-purplelines.gif?ex=6ad74bbc&is=6ad5fa3c&hm=e731b1784d4a8945004feccc0b7ae13373bd92341484f8f9e3cddc3c4c8120ff&"))
 
     # Send to general channel
-    general_channel = bot.get_channel(1200125075156910181)
+    general_channel = bot.get_channel(NOTIFICATION_CHANNEL_ID)
     if general_channel:
-        await general_channel.send( view=text_card(f"{pings}\n\n Комната открыта, данные  <#1567585136957063229>"))
+        await general_channel.send( view=text_card(f"{pings}\n\n Комната открыта, данные  <#{ULT_ROOM_CHANNEL_ID}>"))

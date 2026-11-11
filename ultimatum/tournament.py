@@ -10,6 +10,7 @@ from ultimatum.models import (
 from ultimatum.store import UltimatumStore
 from ultimatum.matchmaking import Matchmaker
 from ultimatum.elo_store import elo_store
+from config import ULT_ROLE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ class UltimatumTournament:
         if bot and tournament.guild_id:
             guild = bot.get_guild(tournament.guild_id)
             if guild:
-                role = guild.get_role(1567580142744895561)
+                role = guild.get_role(ULT_ROLE_ID)
                 if role:
                     for p1_id, p2_id in player_pairs:
                         try:
@@ -395,7 +396,7 @@ class UltimatumTournament:
         if bot and tournament and tournament.guild_id:
             guild = bot.get_guild(tournament.guild_id)
             if guild:
-                role = guild.get_role(1567580142744895561)
+                role = guild.get_role(ULT_ROLE_ID)
                 if role:
                     try:
                         member1 = guild.get_member(direct_pass.discord_id)
@@ -432,7 +433,7 @@ class UltimatumTournament:
         if bot and tournament and tournament.guild_id:
             guild = bot.get_guild(tournament.guild_id)
             if guild:
-                role = guild.get_role(1567580142744895561)
+                role = guild.get_role(ULT_ROLE_ID)
                 if role:
                     try:
                         member = guild.get_member(discord_id)
@@ -492,7 +493,7 @@ class UltimatumTournament:
         if bot and tournament and tournament.guild_id:
             guild = bot.get_guild(tournament.guild_id)
             if guild:
-                role = guild.get_role(1567580142744895561)
+                role = guild.get_role(ULT_ROLE_ID)
                 if role:
                     for player in players:
                         try:

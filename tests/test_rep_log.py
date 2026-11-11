@@ -178,6 +178,8 @@ async def test_existing_channel_reused_and_permissions(monkeypatch):
     existing = _FakeChannel(1569034686691414172)
     guild = _FakeGuild(1, channels={existing.id: existing})
     bot = _FakeBot()
+    # ID канала теперь задаётся через env/конфиг — подменяем для теста
+    monkeypatch.setattr(rep_log, "REP_LOG_CHANNEL_ID", existing.id)
 
     ch = await rep_log.ensure_log_channel(bot, guild)
     assert ch is existing

@@ -8,7 +8,7 @@ from utils.design import compose
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID, replace_emojis, get_emoji
+from config import BOT_OWNER_ID, ULT_ROLE_ID, replace_emojis, get_emoji
 from storage.db import get_pool
 from ultimatum.models import TournamentStatus, PlayerStatus, Tournament
 from ultimatum.store import ultimatum_store
@@ -185,7 +185,7 @@ class UltimatumCog(commands.Cog):
         if tournament.guild_id:
             guild = interaction.guild
             if guild:
-                role = guild.get_role(1567580142744895561)
+                role = guild.get_role(ULT_ROLE_ID)
                 if role:
                     players = await ultimatum_store.get_players(tournament.id)
                     for player in players:

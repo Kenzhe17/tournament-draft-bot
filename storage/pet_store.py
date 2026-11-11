@@ -246,11 +246,12 @@ class PetStore:
                 if not had_runaway_alert and guild_id and bot:
                     try:
                         logger.info(f"Sending runaway alert for pet {pet.pet_name}")
-                        from config import get_emoji
+                        from config import get_emoji, PET_HUNGER_CHANNEL_ID
                         from models.pets_catalog import PETS_CATALOG
                         import os
                         
-                        hunger_channel = bot.get_channel(1551167853741219880)
+                        hunger_channel = (bot.get_channel(PET_HUNGER_CHANNEL_ID)
+                                          if PET_HUNGER_CHANNEL_ID else None)
                         logger.info(f"Got runaway channel: {hunger_channel}")
                         if hunger_channel:
                             # Пинг всех опекунов
@@ -292,11 +293,12 @@ class PetStore:
             if pet.fullness <= 30 and not pet.hunger_warning_sent and guild_id and bot:
                 try:
                     logger.info(f"Pet {pet.pet_name} at {pet.fullness}% fullness, sending warning")
-                    from config import get_emoji
+                    from config import get_emoji, PET_HUNGER_CHANNEL_ID
                     from models.pets_catalog import PETS_CATALOG
                     import os
                     
-                    hunger_channel = bot.get_channel(1551167853741219880)
+                    hunger_channel = (bot.get_channel(PET_HUNGER_CHANNEL_ID)
+                                          if PET_HUNGER_CHANNEL_ID else None)
                     logger.info(f"Got hunger channel: {hunger_channel}")
                     if hunger_channel:
                         # Пинг всех опекунов
@@ -329,7 +331,8 @@ class PetStore:
                         logger.info(f"Successfully sent hunger warning for pet {pet.pet_name}")
                         pet.hunger_warning_sent = True
                     else:
-                        logger.error(f"Could not get hunger channel 1551167853741219880")
+                        if PET_HUNGER_CHANNEL_ID:
+                            logger.error(f"Could not get hunger channel {PET_HUNGER_CHANNEL_ID}")
                 except Exception as e:
                     logger.error(f"Failed to send hunger warning for pet {pet.pet_name}: {e}", exc_info=True)
 

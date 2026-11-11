@@ -8,7 +8,9 @@ import discord
 from utils.design import compose
 from discord.ext import commands
 
-from config import MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_URL
+import os
+
+from config import ADMIN_USER_IDS, MUTE_ROLE_ID, WARN_GIF_URL, UNWARN_GIF_URL, MOD_LOG_WEBHOOK_URL
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +31,11 @@ def format_date(dt: datetime) -> str:
 
 
 # Authorized user IDs for GIF triggers
-AUTHORIZED_GIF_USERS = {
-    1032544122600423427,
-    582145013358657549,
-    575937439147753472
+GIF_TRIGGER_USER_IDS = {
+    int(x) for x in os.getenv("GIF_TRIGGER_USER_IDS", "").split(",")
+    if x.strip().isdigit()
 }
+AUTHORIZED_GIF_USERS = ADMIN_USER_IDS | GIF_TRIGGER_USER_IDS
 
 
 class ModerationCog(commands.Cog):
@@ -43,7 +45,9 @@ class ModerationCog(commands.Cog):
         self.bot = bot
 
     async def send_mod_log(self, embed: discord.Embed):
-        """Send log to webhook."""
+        """Send log to webhook (no-op без MOD_LOG_WEBHOOK_URL)."""
+        if not MOD_LOG_WEBHOOK_URL:
+            return
         try:
             webhook = discord.Webhook.from_url(MOD_LOG_WEBHOOK_URL, client=self.bot)
             await webhook.send( view=compose(embed), username="Модератор")

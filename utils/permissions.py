@@ -3,7 +3,7 @@
 import discord
 from discord import app_commands
 
-from config import BOT_OWNER_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
+from config import ADMIN_USER_IDS, BOT_OWNER_ID, ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
 from storage.organizer_store import organizer_store
 
 
@@ -12,7 +12,7 @@ def is_admin() -> app_commands.check:
 
     async def predicate(interaction: discord.Interaction) -> bool:
         # Проверяем права админа ИЛИ ваш конкретный Discord ID
-        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id == 1032544122600423427:
+        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id in ADMIN_USER_IDS:
             return True
 
         # Check for 'org' role
@@ -40,7 +40,7 @@ def is_org() -> app_commands.check:
 
     async def predicate(interaction: discord.Interaction) -> bool:
         # Проверяем права админа ИЛИ ваш конкретный Discord ID
-        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id == 1032544122600423427:
+        if interaction.user.guild_permissions.administrator or interaction.user.id == BOT_OWNER_ID or interaction.user.id in ADMIN_USER_IDS:
             return True
 
         # Check for 'org' role
@@ -65,7 +65,7 @@ def is_org() -> app_commands.check:
 
 def is_admin_check(user: discord.Member, guild: discord.Guild) -> bool:
     """Проверка: является ли пользователь администратором или имеет роль 'org', ORG-1/2/3."""
-    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id == 1032544122600423427:
+    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id in ADMIN_USER_IDS:
         return True
 
     # Check for 'org' role
@@ -85,7 +85,7 @@ def is_admin_check(user: discord.Member, guild: discord.Guild) -> bool:
 
 def is_org_check(user: discord.Member, guild: discord.Guild) -> bool:
     """Проверка: является ли пользователь организатором (роль 'org', ORG-1/2/3) или администратором."""
-    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id == 1032544122600423427:
+    if user.guild_permissions.administrator or user.id == BOT_OWNER_ID or user.id in ADMIN_USER_IDS:
         return True
 
     # Check for 'org' role

@@ -4,7 +4,7 @@
 финальная строка. Без картинок, кнопок и эмодзи-UI.
 
 send_welcome_message() — полная логика отправки: проверка настройки,
-поиск канала 1569098034325889144. Используется и on_member_join,
+поиск канала WELCOME_CHANNEL_ID (env). Используется и on_member_join,
 и /welcometest.
 """
 
@@ -18,7 +18,7 @@ from utils.design.layouts import DesignView
 
 logger = logging.getLogger(__name__)
 
-WELCOME_CHANNEL_ID = 1569098034325889144
+from config import INFO_CHANNEL_ID, WELCOME_CHANNEL_ID
 
 
 def build_welcome_view(
@@ -81,7 +81,7 @@ async def send_welcome_message(
     client: discord.Client, member: discord.Member
 ) -> bool:
     """Отправить welcome-карточку. True — сообщение отправлено."""
-    if member.bot:
+    if member.bot or not WELCOME_CHANNEL_ID:
         return False
 
     from storage.json_store import store
@@ -100,11 +100,7 @@ async def send_welcome_message(
     # N = текущее количество участников + 1
     number = max(1, (member.guild.member_count or 0) + 1)
 
-    try:
-        from config import INFO_CHANNEL_ID
-        info_channel_id = INFO_CHANNEL_ID or 1468250268041871525
-    except Exception:
-        info_channel_id = 1468250268041871525
+    info_channel_id = INFO_CHANNEL_ID or None
 
     try:
         from services.social.common import BANNER_WELCOME, banner_file

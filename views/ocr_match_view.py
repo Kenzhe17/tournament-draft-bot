@@ -36,7 +36,9 @@ try:
 except ImportError:  # pragma: no cover
     FileUpload = None
 
-from config import BOT_OWNER_ID, replace_emojis
+from config import (BOT_OWNER_ID, OCR_ADMIN_ROLE_ID as _CFG_OCR_ADMIN_ROLE_ID,
+                    OCR_STATS_CHANNEL_ID as _CFG_OCR_STATS_CHANNEL_ID,
+                    replace_emojis)
 from models.tournament import Tournament
 from storage.json_store import store
 from utils.cosmetics import clean_nickname
@@ -48,7 +50,7 @@ PENDING_UPLOAD_TTL = 300  # секунд на отправку скриншот�
 NONE_VALUE = "__none__"
 
 # Канал, куда приходят скриншоты и публикуются результаты OCR
-OCR_STATS_CHANNEL_ID = 1568608461250367569
+OCR_STATS_CHANNEL_ID = _CFG_OCR_STATS_CHANNEL_ID
 
 # Доп. статистика детального экрана отряда ( squad-режим )
 EXTRA_STAT_KEYS = (
@@ -1584,7 +1586,7 @@ class ScreenshotUploadModal(Modal):
             )
 
 
-ADMIN_HELP_ROLE_ID = 1563168378196197397
+ADMIN_HELP_ROLE_ID = _CFG_OCR_ADMIN_ROLE_ID
 
 
 class AdminCallConfirmView(View):

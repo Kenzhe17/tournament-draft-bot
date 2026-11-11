@@ -20,6 +20,30 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 # ID владельца бота (для команды /reset)
 BOT_OWNER_ID = int(os.getenv("BOT_OWNER_ID", "0"))
 
+# Дополнительные пользовательские ID с правами администратора/организатора
+# и доступа к GIF-модерации (env EXTRA_ADMIN_USER_IDS, csv).
+# Продакшен: "1032544122600423427,582145013358657549,575937439147753472"
+EXTRA_ADMIN_USER_IDS = {
+    int(x) for x in os.getenv("EXTRA_ADMIN_USER_IDS", "").split(",")
+    if x.strip().isdigit()
+}
+ADMIN_USER_IDS = ({BOT_OWNER_ID} if BOT_OWNER_ID else set()) | EXTRA_ADMIN_USER_IDS
+
+# Альянсированные гильдии: если задано — бот обрабатывает события
+# только этих серверов и покидает чужие при вступлении.
+# Пусто = все гильдии (поведение production по умолчанию).
+ALLOWED_GUILD_IDS = {
+    int(x) for x in os.getenv("ALLOWED_GUILD_IDS", "").split(",")
+    if x.strip().isdigit()
+}
+
+
+def guild_allowed(guild_id: int | None) -> bool:
+    """True — гильдия разрешена для обработки событий этим ботом."""
+    if not ALLOWED_GUILD_IDS:
+        return True
+    return guild_id in ALLOWED_GUILD_IDS
+
 # PostgreSQL Database
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
@@ -30,51 +54,68 @@ REDIS_URL = os.getenv("REDIS_URL", "")
 ORG_ROLE_ID = int(os.getenv("ORG_ROLE_ID", "0"))
 
 # Manager role ID (for channel organizer management)
-MANAGER_ROLE_ID = int(os.getenv("MANAGER_ROLE_ID", "1551609736258920538"))
+MANAGER_ROLE_ID = int(os.getenv("MANAGER_ROLE_ID", "0"))
 
 # Tournament organizer roles (one per channel)
-ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "1569740403522142258"))
-ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "1569740427668758698"))
-ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "1569740435838992446"))
+ORG_1_ROLE_ID = int(os.getenv("ORG_1_ROLE_ID", "0"))
+ORG_2_ROLE_ID = int(os.getenv("ORG_2_ROLE_ID", "0"))
+ORG_3_ROLE_ID = int(os.getenv("ORG_3_ROLE_ID", "0"))
 
-# Map channel to role
-ORG_ROLE_MAP = {
-    1549809898643001484: ORG_1_ROLE_ID,  # Channel 1 -> ORG-1
-    1563149967303118949: ORG_2_ROLE_ID,  # Channel 2 -> ORG-2
-    1563149951033151609: ORG_3_ROLE_ID,  # Channel 3 -> ORG-3
-}
+
+def _parse_channel_role_map(raw: str) -> dict[int, int]:
+    """'cid:rid,cid:rid,...' → {channel_id: role_id}."""
+    out: dict[int, int] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+        c, _, r = part.partition(":")
+        try:
+            out[int(c.strip())] = int(r.strip())
+        except ValueError:
+            continue
+    return out
+
+
+# Соответствие канал организаторов → роль (env ORG_ROLE_MAP, csv "cid:rid").
+# Production: "1549809898643001484:1569740403522142258,..."
+ORG_ROLE_MAP = _parse_channel_role_map(os.getenv("ORG_ROLE_MAP", ""))
 
 # Пул постоянных каналов MM-матчей: вместо create/delete на каждый
 # матч канал берётся из пула, чистится и переназначается.
 # Переопределяется env MM_MATCH_CHANNEL_POOL (csv id).
 MM_MATCH_CHANNEL_POOL = [
-    int(x) for x in os.getenv(
-        "MM_MATCH_CHANNEL_POOL",
-        "1569279791335608461,1569282744909824061,1569282781270245417,"
-        "1569282801956818965,1569282824966639698",
-    ).split(",") if x.strip()
+    int(x) for x in os.getenv("MM_MATCH_CHANNEL_POOL", "").split(",")
+    if x.strip()
 ]
 
 # Notification role ID for tournament announcements
-NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "1564923985454571560"))
+NOTIFICATION_ROLE_ID = int(os.getenv("NOTIFICATION_ROLE_ID", "0"))
 
 # Notification channel ID for tournament announcements
-NOTIFICATION_CHANNEL_ID = int(os.getenv("NOTIFICATION_CHANNEL_ID", "1200125075156910181"))
+NOTIFICATION_CHANNEL_ID = int(os.getenv("NOTIFICATION_CHANNEL_ID", "0"))
 
 # Tournament channels for organizer management (comma-separated list)
-TOURNAMENT_CHANNELS_RAW = os.getenv("TOURNAMENT_CHANNELS", "1549809898643001484,1563149967303118949,1563149951033151609")
+TOURNAMENT_CHANNELS_RAW = os.getenv("TOURNAMENT_CHANNELS", "")
 TOURNAMENT_CHANNELS = [int(x.strip()) for x in TOURNAMENT_CHANNELS_RAW.split(",") if x.strip()]
 
-# Moderation logging webhook
-MOD_LOG_WEBHOOK_URL = os.getenv("MOD_LOG_WEBHOOK_URL", "https://discord.com/api/webhooks/1564607540896071810/1SEA2o-aTv_ehDshIICfQIRhggNfKtHt4TNAM-wY2IdXxNyUbaIXyjZk_PjKhXeeoiVW")
-MOD_LOG_CHANNEL_ID = int(os.getenv("MOD_LOG_CHANNEL_ID", "1564607469500498031"))
+# Единый канал карточек «НАЙДЕН МАТЧ» (Ready Check) для Ranked MM.
+# По умолчанию — первый турнирный канал, если не задан явно.
+MATCH_FOUND_CHANNEL_ID = int(os.getenv("MATCH_FOUND_CHANNEL_ID", "0")) or (
+    TOURNAMENT_CHANNELS[0] if TOURNAMENT_CHANNELS else 0
+)
+
+# Moderation logging webhook — СЕКРЕТ, только через env.
+# Пустое значение = mod-log отключён (send_mod_log no-op).
+MOD_LOG_WEBHOOK_URL = os.getenv("MOD_LOG_WEBHOOK_URL", "")
+MOD_LOG_CHANNEL_ID = int(os.getenv("MOD_LOG_CHANNEL_ID", "0"))
 
 # Battle Royale settings
 BR_ROLE_ID = int(os.getenv("BR_ROLE_ID", "0"))
 BR_ROOM_CHANNEL_ID = int(os.getenv("BR_ROOM_CHANNEL_ID", "0"))
-
-# Guild ID for server tag checking
-GUILD_ID = int(os.getenv("GUILD_ID", "1196165488565289012"))
+# Канал данных комнат BR и канал создания команд
+BR_DATA_CHANNEL_ID = int(os.getenv("BR_DATA_CHANNEL_ID", "0"))
+BR_TEAM_CHANNEL_ID = int(os.getenv("BR_TEAM_CHANNEL_ID", "0"))
 
 # Welcome banner URL
 WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430577132961823/image.png?ex=6abcdbc9&is=6abb8a49&hm=668a5650450e51905a99ec6ed624eb0cc51c019d91c786d228e5e2f821fc5260&")
@@ -83,11 +124,32 @@ WELCOME_BANNER_URL = os.getenv("WELCOME_BANNER_URL", "https://cdn.discordapp.com
 ORGANIZER_THUMBNAIL_URL = os.getenv("ORGANIZER_THUMBNAIL_URL", "https://cdn.discordapp.com/attachments/1492103238348967988/1554430580442005564/image.png?ex=6abcdbca&is=6abb8a4a&hm=47d04c7fdccae7a3dd3e9b23f84596f471986b77077848b8c29ed9045ce81dc1&")
 
 # GIF-based moderation settings
-MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", "1280620360823345192"))
+MUTE_ROLE_ID = int(os.getenv("MUTE_ROLE_ID", "0"))
 # GIF URLs for temporary mute/unmute via gif replies
 WARN_GIF_URL = os.getenv("WARN_GIF_URL", "https://klipy.com/gifs/h2di-the-dictator")
 UNWARN_GIF_URL = os.getenv("UNWARN_GIF_URL", "https://klipy.com/gifs/slice-execute-4")
-MOD_LOG_WEBHOOK_URL = os.getenv("MOD_LOG_WEBHOOK_URL", "")
+
+# Guild ID сервера (server tag checking, guild sync, welcome-канал).
+# 0 = не задан (тестовый бот без привязки к конкретному серверу).
+GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+
+# Канал приветствий новым участникам (0 = welcome отключён)
+WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID", "0"))
+
+# OCR: канал итоговых результатов матчей и канал статистики
+OCR_RESULT_CHANNEL_ID = int(os.getenv("OCR_RESULT_CHANNEL_ID", "0"))
+OCR_STATS_CHANNEL_ID = int(os.getenv("OCR_STATS_CHANNEL_ID", "0"))
+# Роль для пинга админов при проблемах OCR-маппинга
+OCR_ADMIN_ROLE_ID = int(os.getenv("OCR_ADMIN_ROLE_ID", "0"))
+
+# Ultimatum: роль участников и канал данных комнат
+ULT_ROLE_ID = int(os.getenv("ULT_ROLE_ID", "0"))
+ULT_ROOM_CHANNEL_ID = int(os.getenv("ULT_ROOM_CHANNEL_ID", "0"))
+
+# Прочие серверные каналы
+PET_HUNGER_CHANNEL_ID = int(os.getenv("PET_HUNGER_CHANNEL_ID", "0"))
+ROOM_DATA_CHANNEL_ID = int(os.getenv("ROOM_DATA_CHANNEL_ID", "0"))
+GAMES_CHANNEL_ID = int(os.getenv("GAMES_CHANNEL_ID", "0"))
 
 # Ready Check («Найден матч») для Ranked Matchmaking
 RANKED_READY_TIMEOUT_SECONDS = int(os.getenv("RANKED_READY_TIMEOUT_SECONDS", "90"))
@@ -105,12 +167,12 @@ REP_ONE_BOOST_REWARD_PER_USER = os.getenv("REP_ONE_BOOST_REWARD_PER_USER", "true
 REP_ONE_MANUAL_REP_PER_PAIR = os.getenv("REP_ONE_MANUAL_REP_PER_PAIR", "true").lower() in ("1", "true", "yes")
 
 # Публичный канал логов репутации (создаётся автоматически при отсутствии)
-REP_LOG_CHANNEL_ID = int(os.getenv("REP_LOG_CHANNEL_ID", "1569034686691414172"))
+REP_LOG_CHANNEL_ID = int(os.getenv("REP_LOG_CHANNEL_ID", "0"))
 REP_LOG_CHANNEL_NAME = os.getenv("REP_LOG_CHANNEL_NAME", "репутация-логи")
 
 # Информационный центр: канал по умолчанию для /info publish
 # (если 0 — ищется канал с именем info/информация или задаётся параметром)
-INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "1468250268041871525"))
+INFO_CHANNEL_ID = int(os.getenv("INFO_CHANNEL_ID", "0"))
 
 # Economy limits
 MAX_BALANCE = 100000  # 100k монет максимум

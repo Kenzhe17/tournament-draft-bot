@@ -67,6 +67,18 @@ class _Bot:
         return self._channels.get(cid)
 
 
+@pytest.fixture(autouse=True)
+def _channel_ids(monkeypatch):
+    """ID каналов теперь из env — подменяем для тестов."""
+    monkeypatch.setattr(rm, "ROOM_DATA_CHANNEL_ID", 1561683314480255057)
+    monkeypatch.setattr(rm, "NOTIFICATION_CHANNEL_ID", 1200125075156910181)
+    monkeypatch.setattr(
+        "config.NOTIFICATION_ROLE_ID", 999, raising=False
+    )
+    # room_modal импортирует NOTIFICATION_ROLE_ID локально в функции —
+    # config подмена покрывает его.
+
+
 @pytest.mark.asyncio
 async def test_mm_room_notify_goes_to_match_channel():
     """MM: 1 карточка + 2 отдельных сообщения в канал матча."""
