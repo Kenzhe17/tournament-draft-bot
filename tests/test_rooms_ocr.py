@@ -372,11 +372,84 @@ class TestStrictAdminRollback:
         assert not _is_strict_admin(member)
         assert not _is_strict_admin(no_perms)
 
-    def test_owner_is_admin(self, monkeypatch):
+    def test_owner_without_admin_rights_denied(self, monkeypatch):
         import config
         from cogs.ocr_upload import _is_strict_admin
         from types import SimpleNamespace
 
         monkeypatch.setattr(config, "BOT_OWNER_ID", 777)
-        owner = SimpleNamespace(id=777)  # даже без permissions
-        assert _is_strict_admin(owner)
+        owner_no_perms = SimpleNamespace(id=777)  # нет administrator
+        owner_member = SimpleNamespace(
+            id=777,
+            guild_permissions=SimpleNamespace(administrator=False),
+        )
+        # Владелец бота БЕЗ administrator на сервере — откат запрещён
+        assert not _is_strict_admin(owner_no_perms)
+        assert not _is_strict_admin(owner_member)
+        # Владелец + administrator — разрешено
+        owner_admin = SimpleNamespace(
+            id=777,
+            guild_permissions=SimpleNamespace(administrator=True),
+        )
+        assert _is_strict_admin(owner_admin)
+
+
+class TestFinalizeGate:
+    """Идемпотентность финализации при сбоях (stats_done/done/JSON)."""
+
+    def test_fresh_match_applies_stats(self):
+        from views.ocr_match_view import _finalize_stats_gate
+
+        assert _finalize_stats_gate(None, False) == (False, False)
+        assert _finalize_stats_gate("processing", False) == (False, False)
+
+    def test_stats_done_skips_elo_but_finishes(self):
+        from views.ocr_match_view import _finalize_stats_gate
+
+        # PG stats закоммичены, JSON-флаг потерян при падении:
+        # статистику НЕ трогаем, историю/подтверждение добиваем.
+        assert _finalize_stats_gate("stats_done", False) == (False, True)
+        assert _finalize_stats_gate("stats_done", True) == (False, True)
+
+    def test_done_is_fully_processed(self):
+        from views.ocr_match_view import _finalize_stats_gate
+
+        assert _finalize_stats_gate("done", False) == (True, True)
+        assert _finalize_stats_gate("done", True) == (True, True)
+
+    def test_no_db_falls_back_to_json_flag(self):
+        from views.ocr_match_view import _finalize_stats_gate
+
+        assert _finalize_stats_gate(None, True) == (True, True)
+        assert _finalize_stats_gate("processing", True) == (False, False)
+
+
+class TestRoomBundleHelpers:
+    def test_room_has_panels_and_next_index(self):
+        from cogs.ocr_upload import (
+            _room_has_panels, _rooms_next_index, _rooms_completed_count,
+        )
+
+        session = {
+            "mode": "rooms", "rooms_expected": 3,
+            "rooms": [
+                {"room_index": 1, "panels": {"left": {}, "right": {}}},
+                {"room_index": 2, "panels": {}},
+            ],
+        }
+        assert _rooms_completed_count(session) == 1
+        assert _rooms_next_index(session) == 2
+        session["rooms"][1]["panels"] = {"squad": {}}
+        assert _rooms_next_index(session) == 3
+        session["rooms"].append({"room_index": 3, "panels": {"left": {}}})
+        assert _rooms_next_index(session) is None
+        assert _rooms_completed_count(session) == 3
+
+    def test_all_room_shas_dedup(self):
+        from cogs.ocr_upload import _all_room_shas
+
+        session = {"rooms": [
+            {"sha": "a", "shas": ["b"]},
+            {"sha": "c", "shas": []},
+        ]}
+        assert _all_room_shas(session) == {"a", "b", "c"}

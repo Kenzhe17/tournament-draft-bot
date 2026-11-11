@@ -91,7 +91,7 @@ class TicTacToeGameView(View):
         await interaction.response.edit_message( view=compose(embed, None))
 
 
-class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите клетку"):
+class TicTacToeMoveModal(Modal, title=replace_emojis("🎯 Выберите клетку")):
     """Modal для выбора клетки."""
 
     position = TextInput(label="Клетка (0-8)", placeholder="Введите число от 0 до 8", min_length=1, max_length=1)

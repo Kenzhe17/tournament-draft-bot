@@ -535,10 +535,10 @@ class AddOrganizerSelect(Select):
             # Rebuild embed using multi-channel embed
             embed = build_multi_channel_embed(interaction.guild)
 
-                # Rebuild view
-                view = OrganizerManagementView(self.guild_id, interaction.guild)
+            # Rebuild view
+            view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit( view=compose(embed, view))
+            await message.edit(view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)
 
@@ -646,10 +646,10 @@ class RemoveOrganizerButton(Button):
             # Rebuild embed using multi-channel embed
             embed = build_multi_channel_embed(interaction.guild)
 
-                # Rebuild view
-                view = OrganizerManagementView(self.guild_id, interaction.guild)
+            # Rebuild view
+            view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit( view=compose(embed, view))
+            await message.edit(view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)
 
@@ -820,9 +820,9 @@ class TransferOrganizerSelect(Select):
             # Rebuild embed using multi-channel embed
             embed = build_multi_channel_embed(interaction.guild)
 
-                # Rebuild view
-                view = OrganizerManagementView(self.guild_id, interaction.guild)
+            # Rebuild view
+            view = OrganizerManagementView(self.guild_id, interaction.guild)
 
-                await message.edit( view=compose(embed, view))
+            await message.edit(view=compose(embed, view))
         except Exception as e:
             logger.error("Error updating organizer message: %s", e)

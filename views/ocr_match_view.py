@@ -802,6 +802,29 @@ def _finalize_lock(match_key: str) -> asyncio.Lock:
     return lock
 
 
+def _finalize_stats_gate(
+    fstatus: str | None, json_processed: bool
+) -> tuple[bool, bool]:
+    """Решение финализации по статусу match_finalizations + JSON-флагу.
+
+    Возвращает (already_processed, stats_done):
+    - already_processed=True → вообще ничего не делать (матч завершён);
+    - stats_done=True → статистика/ELO уже закоммичены (в т.ч. до
+      падения) — process_match_result НЕ вызывать, добить только
+      идемпотентные шаги (история/подтверждение/ставки/карточка).
+
+    DB-статус authoritative; fstatus=None (нет DB/записи) — фолбэк
+    на processed_elo_matches, как до введения таблицы.
+    """
+    already_processed = fstatus == "done" or (
+        fstatus is None and json_processed
+    )
+    stats_done = fstatus in ("stats_done", "done") or (
+        fstatus is None and json_processed
+    )
+    return already_processed, stats_done
+
+
 async def _open_panel_mapping(
     interaction: discord.Interaction,
     tournament: Tournament,
@@ -3721,12 +3744,8 @@ async def _finalize_ocr_match_impl(
 
     fstatus = await _fin_get_status(guild_id, match_id)
     json_processed = match_id in tournament.processed_elo_matches
-    # Без DB (fstatus is None) — фолбэк на JSON-флаг, как раньше.
-    already_processed = fstatus == "done" or (
-        fstatus is None and json_processed
-    )
-    stats_done = fstatus == "stats_done" or (
-        fstatus == "done" and json_processed
+    already_processed, stats_done = _finalize_stats_gate(
+        fstatus, json_processed
     )
 
     if not already_processed:
@@ -5649,10 +5668,123 @@ class RoomRowEditModal(Modal):
                 pr["dmg"] = dmg
             store.set(tournament)
 
+        # Если строка не привязана к Discord-игроку — сразу предлагаем
+        # выбор игрока (единый процесс: строка → статы → привязка).
+        _, session = _rooms_session_fresh(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+        )
+        rs = _room_session(session, self.room_index) if session else None
+        tm = _team_map(rs, self.team_index) if rs else None
+        rows = (tm or {}).get("rows") or []
+        row_now = rows[self.row_idx] if self.row_idx < len(rows) else {}
+        if not _row_bound(row_now):
+            tournament = store.get(self.guild_id, self.channel_id)
+            await interaction.response.send_message(
+                content=replace_emojis(
+                    f"✅ Комната {self.room_index}, строка "
+                    f"{self.row_idx + 1} — статистика сохранена. "
+                    "Теперь выберите Discord-игрока:"
+                ),
+                view=RoomRowBindView(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index, self.room_index,
+                    self.team_index, self.row_idx,
+                ),
+                ephemeral=True,
+            )
+            return
         await interaction.response.send_message(
             replace_emojis(
                 f"✅ Комната {self.room_index}, строка "
                 f"{self.row_idx + 1} — статистика обновлена."
+            ),
+            ephemeral=True,
+        )
+
+
+class RoomRowBindView(View):
+    """Привязка добавленной/непривязанной строки комнаты к Discord-игроку."""
+
+    def __init__(
+        self, guild_id, channel_id, tournament, match_type,
+        match_index, room_index, team_index, row_idx,
+    ):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        self.team_index = team_index
+        self.row_idx = row_idx
+        options = [
+            discord.SelectOption(label="— пропустить —", value=""),
+        ]
+        for name in team_roster(tournament, team_index)[:24]:
+            options.append(discord.SelectOption(
+                label=name[:100], value=name[:100],
+            ))
+        self.select = Select(
+            placeholder="Discord-игрок для этой строки",
+            options=options, min_values=1, max_values=1,
+        )
+        self.select.callback = self._on_pick
+        self.add_item(self.select)
+
+    async def _on_pick(self, interaction: discord.Interaction) -> None:
+        values = getattr(self.select, "values", None) or [""]
+        name = values[0]
+        if not name:
+            await interaction.response.send_message(
+                replace_emojis("ℹ️ Привязка отложена — можно назначить "
+                               "позже через маппинг команды."),
+                ephemeral=True,
+            )
+            return
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        async with _mapping_lock(
+            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
+            f"{self.match_index}:room{self.room_index}"
+        ):
+            tournament = store.get(self.guild_id, self.channel_id)
+            _, session = _rooms_session_fresh(
+                self.guild_id, self.channel_id,
+                self.match_type, self.match_index,
+            )
+            rs = _room_session(session, self.room_index) if session else None
+            tm = _team_map(rs, self.team_index) if rs else None
+            rows = (tm or {}).get("rows") or []
+            if self.row_idx >= len(rows):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Строка не найдена."), ephemeral=True
+                )
+                return
+            row = rows[self.row_idx]
+            # Один Discord ID — одна строка в комнате: старые привязки
+            # этого игрока в комнате снимаем.
+            uid = tournament.player_user_ids.get(name)
+            for tk, tm2 in _match_maps(rs or {}).items():
+                for j, r2 in enumerate(tm2.get("rows") or []):
+                    if (str(self.team_index), self.row_idx) == (tk, j):
+                        continue
+                    if r2.get("discord_id") and str(r2["discord_id"]) == str(uid):
+                        r2["discord_name"] = None
+                        r2["discord_id"] = None
+                        r2["source"] = None
+            row["discord_name"] = name
+            row["discord_id"] = uid
+            row["discord_display"] = name
+            row["source"] = "manual"
+            store.set(tournament)
+        await interaction.response.send_message(
+            replace_emojis(
+                f"✅ Строка {self.row_idx + 1} привязана к **{name}**."
             ),
             ephemeral=True,
         )

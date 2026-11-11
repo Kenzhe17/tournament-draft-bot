@@ -829,92 +829,22 @@ class OCRUploadCog(commands.Cog):
         is_reupload = bool(meta.get("reupload")) and session_active
 
         # --- Мультикомнатный сбор (OCR V2) -------------------------------
-        # Активная rooms-сессия в статусе collecting принимает
-        # изображения как комнаты — до rooms_expected штук, по порядку.
+        # Комнаты заполняются ЯВНО по номеру через кнопку «Добавить
+        # скриншоты» на сообщении прогресса — картинка в чат без
+        # указания комнаты не принимается (иначе порядок файлов
+        # неоднозначен).
         if (
             existing
             and existing.get("mode") == "rooms"
             and existing.get("status") == "collecting"
         ):
-            from views.ocr_match_view import _can_use_ocr
-
-            if not _can_use_ocr(message.author, tournament, [t1, t2]):
-                await message.reply(
-                    replace_emojis(
-                        "❌ Скриншоты может отправить капитан команды "
-                        "или организатор."
-                    )
+            await message.reply(
+                replace_emojis(
+                    "📸 Скриншоты загружаются кнопкой «Добавить "
+                    "скриншоты» под сообщением прогресса — там указывается "
+                    "номер комнаты."
                 )
-                return
-            image_atts = [
-                a for a in message.attachments
-                if (a.content_type or "").startswith("image/")
-                or any(a.filename.lower().endswith(e) for e in IMAGE_EXTS)
-            ]
-            if not image_atts:
-                await message.reply(
-                    replace_emojis("❌ Нужны скриншоты — прикрепите изображения.")
-                )
-                return
-            stats_channel = await _stats_channel(message, tournament)
-            session = existing
-            for att in image_atts:
-                if att.size and att.size > MAX_ATTACH:
-                    await message.reply(
-                        replace_emojis("❌ Файл слишком большой (макс. 10 МБ).")
-                    )
-                    continue
-                data = await att.read()
-                res = await process_room_image(
-                    guild=message.guild,
-                    channel=message.channel,
-                    user=message.author,
-                    tournament=tournament,
-                    match_type=match_type,
-                    match_index=match_index,
-                    key=key,
-                    session=session,
-                    stats_channel=stats_channel,
-                    data=data,
-                )
-                if res == "ok":
-                    continue
-                if res == "dup":
-                    await message.reply(
-                        replace_emojis("⚠️ Этот скриншот уже загружен в комплект.")
-                    )
-                elif res == "full":
-                    await message.reply(
-                        replace_emojis(
-                            "⚠️ Комплект уже полон — лишние скриншоты "
-                            "не принимаются до отката администратором."
-                        )
-                    )
-                    break
-                elif res == "parse_fail":
-                    await message.reply(
-                        replace_emojis(
-                            "❌ Не удалось распознать таблицу результатов "
-                            "на скриншоте — проверьте, что это экран CS 4x4."
-                        )
-                    )
-                elif res == "squad":
-                    await message.reply(
-                        replace_emojis(
-                            "⚠️ Детальный экран одного отряда не поддерживается "
-                            "в мультикомнатном режиме — нужен двухпанельный "
-                            "экран результатов."
-                        )
-                    )
-                elif res == "cancelled":
-                    await message.reply(
-                        replace_emojis("⚠️ Сессия загрузки была отменена.")
-                    )
-                    break
-                else:
-                    await message.reply(
-                        replace_emojis("❌ Ошибка обработки скриншота — попробуйте ещё раз.")
-                    )
+            )
             return
 
         # Новый скриншот не должен перезаписывать активную сессию —
@@ -1633,67 +1563,157 @@ async def _update_progress_message(
 
 
 async def _publish_room_message(
-    stats_channel, tournament, message, data: bytes,
+    stats_channel, tournament, message, items: list[dict],
     room: dict, match_type: str, match_index: int, t1: int, t2: int,
 ) -> None:
-    """Сообщение комнаты: скриншот + кнопки сопоставления (RoomView)."""
+    """Сообщение комнаты: скриншот(ы) + кнопки сопоставления (RoomView)."""
     from views.ocr_match_view import RoomView
 
-    file = discord.File(io.BytesIO(data), filename=f"room_{room['room_index']}.png")
+    files = [
+        discord.File(
+            io.BytesIO(it["data"]),
+            filename=f"room_{room['room_index']}_{i}{_img_ext(it['filename'])}",
+        )
+        for i, it in enumerate(items)
+    ]
     view = RoomView(
         message.guild.id, tournament.channel_id, tournament,
         match_type, match_index, room["room_index"],
     )
+    players_n = sum(
+        len(p.get("rows") or [])
+        for p in (room.get("panels") or {}).values()
+    )
     text = (
         f"**Комната {room['room_index']}**\n"
-        f"Распознано игроков: "
-        f"{sum(len(p.get('rows') or []) for p in (room.get('panels') or {}).values())}"
+        f"Распознано игроков: {players_n}"
     )
     bot_msg = await stats_channel.send(
-        content=replace_emojis(text), view=view, file=file
+        content=replace_emojis(text), view=view, files=files
     )
     room["message_id"] = bot_msg.id
     room.setdefault("message_ids", []).append(bot_msg.id)
     store.set(tournament)
 
 
+def _img_ext(filename: str) -> str:
+    import os
+
+    ext = os.path.splitext(filename or "")[1].lower()
+    return ext if ext in IMAGE_EXTS else ".png"
+
+
+def _room_has_panels(room: dict) -> bool:
+    return bool(room.get("panels"))
+
+
+def _rooms_completed_count(session: dict) -> int:
+    return sum(
+        1 for r in session.get("rooms") or [] if _room_has_panels(r)
+    )
+
+
+def _rooms_next_index(session: dict) -> int | None:
+    """Первая комната без скриншотов (явное назначение по номеру)."""
+    expected = int(session.get("rooms_expected") or 0)
+    filled = {
+        int(r.get("room_index", 0))
+        for r in session.get("rooms") or []
+        if _room_has_panels(r)
+    }
+    for i in range(1, expected + 1):
+        if i not in filled:
+            return i
+    return None
+
+
+def _rooms_progress_text(session: dict) -> str:
+    total = int(session.get("rooms_expected") or 0)
+    done = _rooms_completed_count(session)
+    nxt = _rooms_next_index(session)
+    if nxt is None:
+        status = "Комплект полный"
+    else:
+        status = f"Ожидание скриншотов комнаты {nxt}"
+    return (
+        f"**ОБРАБОТКА СКРИНШОТОВ**\n"
+        f"Комнат: {total}\n"
+        f"Заполнено: {done}/{total}\n"
+        f"Статус: {status}"
+    )
+
+
+async def _update_rooms_progress(
+    guild, tournament, key: str, match_type: str, match_index: int,
+    stats_channel,
+) -> None:
+    """Обновить сообщение прогресса; при полном комплекте — финальный
+    статус и переход в awaiting_mapping."""
+    session = tournament.ocr_sessions.get(key)
+    if not session:
+        return
+    prog_id = session.get("progress_message_id")
+    total = int(session.get("rooms_expected") or 0)
+    done = _rooms_completed_count(session)
+    if prog_id and stats_channel is not None:
+        from views.ocr_match_view import RoomCollectView
+
+        complete = done >= total and total > 0
+        view = None if complete else RoomCollectView(
+            guild.id, tournament.channel_id, tournament,
+            match_type, match_index, session.get("gen", 1),
+        )
+        text = (
+            replace_emojis(
+                f"✅ Комплект скриншотов принят: **{done}** комнат.\n"
+                "Сопоставьте игроков кнопками под каждым скриншотом."
+            )
+            if complete else replace_emojis(_rooms_progress_text(session))
+        )
+        await _update_progress_message(stats_channel, prog_id, text, view=view)
+    if done >= total and total > 0:
+        await _finalize_rooms_if_ready(
+            guild, tournament, key, match_type, match_index, stats_channel,
+        )
+
+
 async def _finalize_rooms_if_ready(
     guild, tournament, key: str, match_type: str, match_index: int,
     stats_channel,
 ) -> bool:
-    """Все комнаты получили OCR → перевести сессию в awaiting_mapping
-    и опубликовать/обновить сообщения комнат с кнопками."""
+    """Все комнаты заполнены → перевести сессию в awaiting_mapping."""
     session = tournament.ocr_sessions.get(key)
     if not session or session.get("mode") != "rooms":
         return False
     if session.get("status") != "collecting":
         return False
-    rooms = session.get("rooms") or []
-    # Завершение по числу принятых файлов (shots), не по rooms —
-    # squad-пары объединяются в одну комнату.
-    if int(session.get("shots_received") or 0) < int(
-        session.get("rooms_expected") or 0
-    ):
+    total = int(session.get("rooms_expected") or 0)
+    if total <= 0:
+        return False
+    have = {
+        int(r.get("room_index", 0))
+        for r in session.get("rooms") or []
+        if _room_has_panels(r)
+    }
+    if have != set(range(1, total + 1)):
         return False
 
     session["status"] = "awaiting_mapping"
-    session["rooms_received"] = len(rooms)
+    session["rooms_received"] = len(session.get("rooms") or [])
     store.set(tournament)
-
-    # Прогресс-сообщение → финальный статус
-    prog_id = session.get("progress_message_id")
-    if prog_id and stats_channel is not None:
-        await _update_progress_message(
-            stats_channel, prog_id,
-            replace_emojis(
-                f"✅ Комплект скриншотов принят: **{len(rooms)}** комнат.\n"
-                "Сопоставьте игроков кнопками под каждым скриншотом."
-            ),
-        )
     return True
 
 
-async def process_room_image(
+def _all_room_shas(session: dict) -> set[str]:
+    out: set[str] = set()
+    for r in session.get("rooms") or []:
+        if r.get("sha"):
+            out.add(r["sha"])
+        out.update(r.get("shas") or [])
+    return out
+
+
+async def process_room_bundle(
     guild: discord.Guild,
     channel,
     user,
@@ -1703,35 +1723,71 @@ async def process_room_image(
     key: str,
     session: dict,
     stats_channel,
-    data: bytes,
+    room_index: int,
+    items: list[dict],
 ) -> str:
-    """Обработать один скриншот как комнату матча.
+    """Обработать скриншоты ОДНОЙ явно выбранной комнаты.
 
-    Возвращает код результата: "ok" | "dup" | "full" |
-    "parse_fail" | "cancelled".
+    items: [{"filename": str, "data": bytes}] — 1 файл (полный экран
+    или один отряд) либо 2 файла (по одному скриншоту на команду).
+    Комната определяется room_index, а не порядком загрузки.
+
+    Коды: "ok" | "dup" | "invalid" | "parse_fail" | "room_done" |
+    "cancelled" | "error".
     """
     import hashlib
 
     expected = int(session.get("rooms_expected") or 0)
-    rooms = session.setdefault("rooms", [])
+    if room_index < 1 or room_index > expected:
+        return "invalid"
+    if not items or len(items) > 2:
+        return "invalid"
 
-    sha = hashlib.sha256(data).hexdigest()
-    if any(
-        r.get("sha") == sha or sha in (r.get("shas") or [])
-        for r in rooms
-    ):
+    rooms = session.setdefault("rooms", [])
+    room = next(
+        (r for r in rooms if int(r.get("room_index", 0)) == room_index),
+        None,
+    )
+    if room is not None and _room_has_panels(room):
+        return "room_done"
+    if room is None:
+        room = {
+            "room_index": room_index,
+            "sha": None,
+            "shas": [],
+            "kind": None,
+            "status": "awaiting_mapping",
+            "panels": {},
+            "banners": {},
+            "maps": {},
+            "panel_picks": {},
+            "winner_side": None,
+            "banner": None,
+            "score": None,
+            "top5": False,
+            "message_id": None,
+            "message_ids": [],
+            "uploaded_at": datetime.now().isoformat(),
+        }
+        rooms.append(room)
+        rooms.sort(key=lambda r: int(r.get("room_index", 0)))
+
+    # Дедупликация по sha256 — по всему комплекту
+    shas = [_sha256_bytes(it["data"]) for it in items]
+    known = _all_room_shas(session) - set(room.get("shas") or [])
+    if room.get("sha"):
+        known.discard(room["sha"])
+    if any(s in known for s in shas):
         return "dup"
-    # Лимит — по числу ФАЙЛОВ: два squad-скриншота могут объединиться
-    # в одну комнату, поэтому считаем принятые shots, а не rooms.
-    shots = int(session.get("shots_received") or 0)
-    if shots >= expected:
-        return "full"
 
     gen = session.get("gen", 1)
+    pipes = []
     try:
-        pipe = await _classic_pipeline(data, need_score=False)
+        for it in items:
+            pipe = await _classic_pipeline(it["data"], need_score=False)
+            pipes.append(pipe)
     except Exception:
-        logger.exception("Room OCR pipeline failed")
+        logger.exception("Room bundle OCR pipeline failed")
         return "error"
 
     # Сессия могла быть отменена/пересоздана пока шёл OCR
@@ -1744,145 +1800,81 @@ async def process_room_image(
     ):
         return "cancelled"
 
-    if pipe is None:
+    if any(p is None for p in pipes):
         return "parse_fail"
 
-    room_index = len(rooms) + 1
-    merged = False
-    if pipe.get("squad") is not None:
-        # Тип B: детальный экран ОДНОЙ команды (4 игрока).
-        # Два squad-скриншота одной игровой комнаты объединяем в одну
-        # комнату (panels "squad"/"squad2"); вторая команда без
-        # скриншота заполняется вручную через «Исправить статистику».
-        squad = pipe["squad"]
-        from views.ocr_match_view import EXTRA_STAT_KEYS
+    kinds = ["squad" if p.get("squad") is not None else "classic"
+             for p in pipes]
+    if len(items) == 2 and kinds != ["squad", "squad"]:
+        # Два файла в комнате — только два squad-скриншота команд
+        return "invalid_mix"
+    if len(items) == 1 and kinds[0] not in ("classic", "squad"):
+        return "invalid"
 
-        squad_rows = []
-        for p in squad.get("players") or []:
-            row = {
-                "name": (p.get("name") or "???")[:32],
-                "kills": p.get("kills"),
-                "deaths": p.get("deaths"),
-                "assists": p.get("assists"),
-                "dmg": p.get("dmg"),
-            }
-            for k in EXTRA_STAT_KEYS:
-                if p.get(k) is not None:
-                    row[k] = p[k]
-            squad_rows.append(row)
+    # --- Сборка panels комнаты ---
+    from views.ocr_match_view import EXTRA_STAT_KEYS
 
-        # Ищем последнюю squad-комнату с <2 панелями — пара для неё
-        target_room = None
-        if rooms and rooms[-1].get("kind") == "squad":
-            keys = [
-                k for k in (rooms[-1].get("panels") or {})
-                if str(k).startswith("squad")
-            ]
-            if len(keys) < 2 and not (rooms[-1].get("maps") or {}):
-                target_room = rooms[-1]
-
-        if target_room is not None:
-            panels = target_room.setdefault("panels", {})
-            pkey = "squad" if "squad" not in panels else "squad2"
-            panels[pkey] = {"name": "Отряд", "rows": squad_rows}
-            target_room.setdefault("shas", []).append(sha)
-            if squad.get("banner") and not target_room.get("banner"):
-                target_room["banner"] = squad.get("banner")
-            room = target_room
-            merged = True
-        else:
-            # Команда-источник скриншота — команда отправителя комплекта
-            squad_team = None
-            try:
-                t1, t2 = _match_tuple(tournament, match_type, match_index)
-                from views.ocr_match_view import _team_of_user
-
-                squad_team = _team_of_user(
-                    tournament, (t1, t2), session.get("uploaded_by")
-                )
-            except Exception:
-                squad_team = None
-            room = {
-                "room_index": room_index,
-                "sha": sha,
-                "kind": "squad",
-                "squad_team": squad_team,
-                "status": "awaiting_mapping",
-                "panels": {
-                    "squad": {"name": "Отряд", "rows": squad_rows},
-                },
-                "maps": {},
-                "panel_picks": {},
-                "winner_side": None,
-                "banner": squad.get("banner"),
-                "score": None,
-                "top5": False,
-                "message_id": None,
-                "message_ids": [],
-                "uploaded_at": datetime.now().isoformat(),
-            }
-            merged = False
+    if kinds[0] == "classic":
+        pipe = pipes[0]
+        room["panels"].update(pipe["panels"])
+        room["kind"] = "classic"
+        room["winner_side"] = pipe.get("winner_side")
+        room["banner"] = pipe.get("banner")
+        room["score"] = pipe.get("score")
+        room["top5"] = pipe.get("top5", False)
+        room["sha"] = shas[0]
     else:
-        room = {
-            "room_index": room_index,
-            "sha": sha,
-            "kind": "classic",
-            "status": "awaiting_mapping",
-            "panels": pipe["panels"],
-            "winner_side": pipe.get("winner_side"),
-            "banner": pipe.get("banner"),
-            "score": pipe.get("score"),
-            "top5": pipe.get("top5", False),
-            "maps": {},
-            "panel_picks": {},
-            "message_id": None,
-            "message_ids": [],
-            "uploaded_at": datetime.now().isoformat(),
-        }
-    # Держим bytes только до отправки сообщения — в JSON не пишем
-    if not merged:
-        rooms.append(room)
-    session["shots_received"] = shots + 1
-    session["rooms_received"] = len(rooms)
+        room["kind"] = "squad"
+        panels = room.setdefault("panels", {})
+        banners = room.setdefault("banners", {})
+        for pipe, sha in zip(pipes, shas):
+            squad = pipe["squad"]
+            pkey = "squad" if "squad" not in panels else "squad2"
+            if pkey in panels:
+                return "invalid"  # не должно случиться при max 2 squad
+            rows = []
+            for p in squad.get("players") or []:
+                row = {
+                    "name": (p.get("name") or "???")[:32],
+                    "kills": p.get("kills"),
+                    "deaths": p.get("deaths"),
+                    "assists": p.get("assists"),
+                    "dmg": p.get("dmg"),
+                }
+                for k in EXTRA_STAT_KEYS:
+                    if p.get(k) is not None:
+                        row[k] = p[k]
+                rows.append(row)
+            panels[pkey] = {"name": "Отряд", "rows": rows}
+            banners[pkey] = squad.get("banner")
+            room.setdefault("shas", []).append(sha)
+            if not room.get("banner") and squad.get("banner"):
+                room["banner"] = squad.get("banner")
+        if room.get("sha") is None and room["shas"]:
+            room["sha"] = room["shas"][0]
+
+    session["rooms_received"] = _rooms_completed_count(session)
     store.set(tournament)
 
-    # Сообщение комнаты (скриншот + кнопки — активируются после
-    # приёма полного комплекта, проверка на сервере)
+    # Сообщение комнаты: все её скриншоты + кнопки маппинга
     try:
         await _publish_room_message(
-            stats_channel, tournament, channel, data, room,
-            match_type, match_index, 0, 0,
+            stats_channel, tournament, channel, items, room,
+            match_type, match_index,
         )
     except Exception as e:
-        logger.warning("Room message publish failed: %s", e)
+        logger.warning("Room bundle message publish failed: %s", e)
 
-    # Обновить прогресс
-    prog_id = session.get("progress_message_id")
-    total = int(session.get("rooms_expected") or 0)
-    if prog_id and stats_channel is not None:
-        from views.ocr_match_view import RoomCollectView
-
-        done = shots + 1 >= total
-        view = None if done else RoomCollectView(
-            guild.id, tournament.channel_id, tournament,
-            match_type, match_index, session.get("gen", 1),
-        )
-        await _update_progress_message(
-            stats_channel, prog_id,
-            replace_emojis(
-                f"**ОБРАБОТКА СКРИНШОТОВ**\n"
-                f"Комнат: {total}\n"
-                f"Обработано: {shots + 1}/{total}\n"
-                f"Статус: {'Ожидание остальных скриншотов' if not done else 'Комплект полный'}"
-            ),
-            view=view,
-        )
-
-    if shots + 1 >= total:
-        await _finalize_rooms_if_ready(
-            guild, tournament, key, match_type, match_index, stats_channel,
-        )
+    await _update_rooms_progress(
+        guild, tournament, key, match_type, match_index, stats_channel,
+    )
     return "ok"
+
+
+def _sha256_bytes(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
 
 
 async def _maybe_delete_match_channel(
@@ -2074,11 +2066,7 @@ async def create_rooms_session(
         match_type, match_index, session["gen"],
     )
     msg = await channel.send(
-        content=replace_emojis(
-            "**ОБРАБОТКА СКРИНШОТОВ**\n"
-            f"Комнат: {count}\nОбработано: 0/{count}\n"
-            "Статус: Ожидание скриншотов"
-        ),
+        content=replace_emojis(_rooms_progress_text(session)),
         view=view,
     )
     session["progress_message_id"] = msg.id
@@ -2088,13 +2076,13 @@ async def create_rooms_session(
 
 
 def _is_strict_admin(user) -> bool:
-    """Строгий админ для полного отката: server administrator
-    или BOT_OWNER_ID. guild_permissions может отсутствовать у моков
-    и DM-user — тогда False (кроме владельца бота)."""
-    from config import BOT_OWNER_ID
+    """Строгий админ для полного отката: ТОЛЬКО server administrator.
 
-    if getattr(user, "id", 0) == BOT_OWNER_ID:
-        return True
+    BOT_OWNER_ID намеренно НЕ даёт доступа — владелец бота без
+    administrator-прав на конкретном сервере не может откатывать
+    чужие матчи. guild_permissions может отсутствовать у моков
+    и DM-user — тогда False.
+    """
     perms = getattr(user, "guild_permissions", None)
     return bool(perms and getattr(perms, "administrator", False))
 
@@ -2236,37 +2224,38 @@ class RoomCountSelectView(View):
                 ephemeral=True,
             )
             return
-        # Модалка — первый ответ на select-interaction
+        # Модалка первой комнаты — первый ответ на select-interaction
         await interaction.response.send_modal(
-            RoomsUploadModal(
+            RoomUploadModal(
                 self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index, count, session["gen"],
-                max_files=count,
+                self.match_type, self.match_index, 1, session["gen"],
             )
         )
 
 
-class RoomsUploadModal(Modal):
-    """Загрузка до N скриншотов за раз (FileUpload, порядок = комнаты)."""
+class RoomUploadModal(Modal):
+    """Скриншоты ОДНОЙ явно выбранной комнаты.
+
+    1 файл — полный двухпанельный экран ИЛИ один squad-скриншот
+    команды. 2 файла — по одному squad-скриншоту на каждую команду.
+    """
 
     def __init__(
         self, guild_id: int, channel_id: int, tournament,
-        match_type: str, match_index: int, count: int, gen: int,
-        max_files: int = 10,
+        match_type: str, match_index: int, room_index: int, gen: int,
     ):
-        remaining = max(1, min(int(count), int(max_files)))
         upload = FileUpload(
-            label=f"Скриншоты (до {remaining}, по порядку комнат)",
+            label=f"Скриншоты комнаты {room_index} (1–2 файла)",
             required=True,
             min_values=1,
-            max_values=remaining,
+            max_values=2,
         )
-        super().__init__(title=f"Скриншоты — {remaining} комн.", timeout=600)
+        super().__init__(title=f"Комната {room_index}", timeout=600)
         self.guild_id = guild_id
         self.channel_id = channel_id
         self.match_type = match_type
         self.match_index = match_index
-        self.count = count
+        self.room_index = room_index
         self.gen = gen
         self.add_item(upload)
 
@@ -2302,39 +2291,82 @@ class RoomsUploadModal(Modal):
                 ephemeral=True,
             )
             return
+        # Права — как при загрузке через кнопку
+        from views.ocr_match_view import _can_use_ocr
+
         t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        stats_channel = await _stats_channel(interaction, tournament)
-        if stats_channel is None:
-            stats_channel = interaction.channel
-        results = {"ok": 0, "dup": 0, "full": 0, "fail": 0}
+        if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Скриншоты может отправить капитан команды "
+                    "или организатор."
+                ),
+                ephemeral=True,
+            )
+            return
+        items = []
         for f in files:
             try:
                 data = await f.read()
             except Exception:
-                results["fail"] += 1
-                continue
-            res = await process_room_image(
-                guild=interaction.guild,
-                channel=stats_channel,
-                user=interaction.user,
-                tournament=tournament,
-                match_type=self.match_type,
-                match_index=self.match_index,
-                key=key,
-                session=session,
-                stats_channel=stats_channel,
-                data=data,
-            )
-            results["ok" if res == "ok" else res if res in results else "fail"] += 1
-            if res == "full":
-                break
-        total = int(session.get("rooms_received") or 0)
-        expected = int(session.get("rooms_expected") or self.count)
-        await interaction.followup.send(
-            replace_emojis(
-                f"📸 Принято комнат: **{total}/{expected}** "
-                f"(дубли: {results['dup']}, ошибок: {results['fail'] + results.get('squad',0) + results.get('parse_fail',0) + results.get('cancelled',0)})"
+                data = None
+            if not data:
+                await interaction.followup.send(
+                    replace_emojis("❌ Не удалось прочитать файл."),
+                    ephemeral=True,
+                )
+                return
+            if len(data) > MAX_ATTACH:
+                await interaction.followup.send(
+                    replace_emojis("❌ Файл слишком большой (макс. 10 МБ)."),
+                    ephemeral=True,
+                )
+                return
+            items.append({"filename": f.filename, "data": data})
+        stats_channel = await _stats_channel(interaction, tournament)
+        if stats_channel is None:
+            stats_channel = interaction.channel
+        res = await process_room_bundle(
+            guild=interaction.guild,
+            channel=stats_channel,
+            user=interaction.user,
+            tournament=tournament,
+            match_type=self.match_type,
+            match_index=self.match_index,
+            key=key,
+            session=session,
+            stats_channel=stats_channel,
+            room_index=self.room_index,
+            items=items,
+        )
+        messages = {
+            "ok": (
+                f"✅ Комната {self.room_index} обработана. "
+                "Следующая — кнопкой «Добавить скриншоты»."
             ),
+            "dup": "⚠️ Этот скриншот уже загружен в комплект.",
+            "invalid": (
+                "❌ В одной комнате: либо 1 полный скриншот, либо "
+                "1–2 скриншота отрядов (максимум 2 файла)."
+            ),
+            "invalid_mix": (
+                "❌ Смешанная загрузка не принимается: полный экран "
+                "вместе со скриншотом отряда в одной комнате. "
+                "Загрузите либо один полный скриншот, либо два "
+                "скриншота отрядов."
+            ),
+            "room_done": (
+                f"ℹ️ Комната {self.room_index} уже заполнена — "
+                "замена только через откат администратором."
+            ),
+            "parse_fail": (
+                "❌ Не удалось распознать таблицу результатов — "
+                "проверьте, что это экран CS 4x4."
+            ),
+            "cancelled": "⚠️ Сессия загрузки была отменена.",
+        }
+        await interaction.followup.send(
+            replace_emojis(messages.get(res, "❌ Ошибка обработки — попробуйте ещё раз.")),
             ephemeral=True,
         )
 
@@ -2390,21 +2422,30 @@ class RoomCollectView(View):
                 ephemeral=True,
             )
             return
-        remaining = int(session.get("rooms_expected") or 0) - len(
-            session.get("rooms") or []
-        )
-        if remaining <= 0:
+        nxt = _rooms_next_index(session)
+        if nxt is None:
             await interaction.response.send_message(
                 replace_emojis("✅ Комплект уже полон."), ephemeral=True
             )
             return
+        # Права — капитан/орг (как при отправке скриншота)
+        from views.ocr_match_view import _can_use_ocr
+
+        teams = session.get("teams") or []
+        if not _can_use_ocr(interaction.user, tournament, teams):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Скриншоты может отправить капитан команды "
+                    "или организатор."
+                ),
+                ephemeral=True,
+            )
+            return
         await interaction.response.send_modal(
-            RoomsUploadModal(
+            RoomUploadModal(
                 self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index,
-                int(session.get("rooms_expected") or remaining),
+                self.match_type, self.match_index, nxt,
                 int(session.get("gen", 1)),
-                max_files=remaining,
             )
         )
 
