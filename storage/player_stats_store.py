@@ -131,13 +131,17 @@ class PlayerStatsStore:
             return {}
         if self._use_db:
             from storage.db import get_pool
+            from utils import perf_metrics
+
             pool = await get_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    f"SELECT {self._STATS_COLUMNS} FROM player_stats "
-                    "WHERE guild_id = $1 AND user_id = ANY($2::bigint[])",
-                    guild_id, uids,
-                )
+            async with perf_metrics.async_timing("pg_stats_query_ms"):
+                async with pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        f"SELECT {self._STATS_COLUMNS} FROM player_stats "
+                        "WHERE guild_id = $1 AND user_id = ANY($2::bigint[])",
+                        guild_id, uids,
+                    )
+            perf_metrics.incr("pg_stats_queries")
             return {
                 int(r["user_id"]): self._stats_from_row(r) for r in rows
             }

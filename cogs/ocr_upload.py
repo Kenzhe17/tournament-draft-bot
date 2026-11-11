@@ -1727,7 +1727,18 @@ async def _ocr_boxes_cached(data: bytes) -> list:
     from services.ocr_service import OCR_EXECUTOR
 
     loop = asyncio.get_running_loop()
-    boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
+    import time as _time
+
+    from utils import perf_metrics
+
+    _t0 = _time.perf_counter()
+    try:
+        boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
+    finally:
+        perf_metrics.record(
+            "ocr_boxes_ms", (_time.perf_counter() - _t0) * 1000.0
+        )
+        perf_metrics.incr("ocr_runs")
     _OCR_BOX_CACHE[digest] = boxes
     if len(_OCR_BOX_CACHE) > _OCR_BOX_CACHE_MAX:
         _OCR_BOX_CACHE.pop(next(iter(_OCR_BOX_CACHE)))

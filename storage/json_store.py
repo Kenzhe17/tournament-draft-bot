@@ -217,11 +217,17 @@ class JsonStore:
         self._ensure_writable()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         try:
-            raw = {
-                f"{gid}:{cid}": t.to_dict()
-                for (gid, cid), t in self._tournaments.items()
-            }
-            text = json.dumps(raw, ensure_ascii=False, indent=2)
+            from utils import perf_metrics
+
+            with perf_metrics.timing("json_to_dict_ms"):
+                raw = {
+                    f"{gid}:{cid}": t.to_dict()
+                    for (gid, cid), t in self._tournaments.items()
+                }
+            with perf_metrics.timing("json_dumps_ms"):
+                text = json.dumps(raw, ensure_ascii=False, indent=2)
+            perf_metrics.record("json_payload_bytes", len(text))
+            perf_metrics.incr("json_saves")
         except (TypeError, ValueError) as exc:
             # Сериализация не удалась — старый файл не трогаем
             logger.error("Не удалось сериализовать турниры: %s", exc)
@@ -230,15 +236,16 @@ class JsonStore:
             ) from exc
 
         with self._save_lock:
-            rotate_backup(DATA_FILE)
-            try:
-                atomic_write_text(DATA_FILE, text)
-            except OSError as exc:
-                # .tmp мог остаться — атомарность основного файла сохранена
-                logger.error("Ошибка записи %s: %s", DATA_FILE, exc)
-                raise StoreUnavailableError(
-                    f"Не удалось записать {DATA_FILE}: {exc}"
-                ) from exc
+            with perf_metrics.timing("json_atomic_write_ms"):
+                rotate_backup(DATA_FILE)
+                try:
+                    atomic_write_text(DATA_FILE, text)
+                except OSError as exc:
+                    # .tmp мог остаться — атомарность основного файла сохранена
+                    logger.error("Ошибка записи %s: %s", DATA_FILE, exc)
+                    raise StoreUnavailableError(
+                        f"Не удалось записать {DATA_FILE}: {exc}"
+                    ) from exc
 
     def get(self, guild_id: int, channel_id: int) -> Tournament | None:
         """Получить турнир по guild_id и channel_id."""

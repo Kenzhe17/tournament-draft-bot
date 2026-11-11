@@ -370,8 +370,15 @@ async def render_match_result(data: MatchResultData) -> bytes:
             else:
                 peak = 0
             _mfr._ACTIVE_RENDERS -= 1
+        elapsed = time.perf_counter() - t0
+        try:
+            from utils import perf_metrics
+
+            perf_metrics.record("render_match_result_ms", elapsed * 1000.0)
+        except Exception:
+            pass
         logger.info(
             "Match result rendered: %.2fs, png=%d bytes, peak_rss~%d MB, active=%d",
-            time.perf_counter() - t0, len(png), peak // (1024 * 1024), _mfr._ACTIVE_RENDERS,
+            elapsed, len(png), peak // (1024 * 1024), _mfr._ACTIVE_RENDERS,
         )
         return png

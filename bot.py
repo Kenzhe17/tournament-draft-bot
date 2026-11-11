@@ -160,6 +160,50 @@ class TournamentBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Синхронизация slash-команд и восстановление View."""
+        # Мониторинг производительности (ENABLE_PERF_METRICS).
+        try:
+            from utils import perf_metrics
+
+            perf_metrics.start(self)
+
+            def _ocr_active():
+                return sum(
+                    1
+                    for t in asyncio.all_tasks()
+                    if "ocr" in (t.get_coro().__qualname__ or "").lower()
+                )
+
+            def _ranked_active():
+                try:
+                    return sum(
+                        1
+                        for t in store.all()
+                        if getattr(t, "mm_search_channel_id", 0)
+                    )
+                except Exception:
+                    return None
+
+            def _pg_pool():
+                try:
+                    import storage.db as dbmod
+
+                    pool = dbmod._pool
+                    if pool is None:
+                        return None
+                    return {
+                        "size": pool.get_size(),
+                        "idle": pool.get_idle_size(),
+                        "max": pool.get_max_size(),
+                    }
+                except Exception:
+                    return None
+
+            perf_metrics.register_gauge("ocr_active", _ocr_active)
+            perf_metrics.register_gauge("ranked_matches", _ranked_active)
+            perf_metrics.register_gauge("pg_pool", _pg_pool)
+        except Exception as exc:
+            logger.warning("perf_metrics init failed: %s", exc)
+
         # Start betting timer background task
         self.loop.create_task(self.betting_timer_loop())
         # Start draft timer background task (for auto-random picks)
@@ -642,7 +686,10 @@ class TournamentBot(commands.Bot):
                     logger.error("Канал не найден: %s", exc)
                     return
 
-            embed = await build_embed_for_phase(tournament, guild)
+            from utils import perf_metrics
+
+            async with perf_metrics.async_timing("embed_build_ms"):
+                embed = await build_embed_for_phase(tournament, guild)
             view = self.build_view_for_tournament(tournament)
             self._register_view(view)
             payload = compose(embed, view)
@@ -660,6 +707,7 @@ class TournamentBot(commands.Bot):
                         message = await channel.fetch_message(
                             tournament.message_id
                         )
+                        perf_metrics.incr("discord_fetches")
                     except discord.NotFound:
                         logger.warning(
                             "Сообщение %s не найдено (возможно удалено)",
@@ -694,6 +742,7 @@ class TournamentBot(commands.Bot):
                             "Не удалось обновить сообщение: %s", exc
                         )
                     else:
+                        perf_metrics.incr("discord_edits")
                         if len(_EDIT_CACHE) >= _EDIT_CACHE_MAX:
                             _EDIT_CACHE.pop(next(iter(_EDIT_CACHE)))
                         _EDIT_CACHE[key] = {"sig": sig, "message": message}
@@ -1070,6 +1119,12 @@ class TournamentBot(commands.Bot):
             from utils.match_found_renderer import close_avatar_session
 
             await close_avatar_session()
+        except Exception:
+            pass
+        try:
+            from utils import perf_metrics
+
+            await perf_metrics.stop()
         except Exception:
             pass
         try:

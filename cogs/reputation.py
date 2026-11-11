@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -51,7 +52,9 @@ _SWEEP_INTERVAL = 60  # секунд
 # задержку выдачи REP (process_due_invites идёт каждый sweep),
 # а худший случай — «ambiguous» атрибуция → reject, а не
 # неверное начисление.
-_INVITE_REFRESH_EVERY = 5  # раз в 5 минут
+_INVITE_REFRESH_EVERY = int(
+    os.getenv("REP_INVITE_REFRESH_SWEEPS", "5") or 5
+)  # раз в N sweep'ов (default 5 минут)
 
 _SOURCE_TITLES = {
     SRC_MANUAL: "через /rep",

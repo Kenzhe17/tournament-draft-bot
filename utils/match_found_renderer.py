@@ -265,6 +265,13 @@ async def fetch_avatars(urls: list[str]) -> dict[str, bytes]:
             out[url] = cached
         else:
             misses.append(url)
+    try:
+        from utils import perf_metrics
+
+        perf_metrics.incr("avatar_cache_hits", len(out))
+        perf_metrics.incr("avatar_cache_misses", len(misses))
+    except Exception:
+        pass
     if not misses:
         return out
     session = await _get_avatar_session()
@@ -493,8 +500,15 @@ async def render_match_found(data: MatchFoundData) -> bytes:
             else:
                 peak = 0
             _ACTIVE_RENDERS -= 1
+        elapsed = time.perf_counter() - t0
+        try:
+            from utils import perf_metrics
+
+            perf_metrics.record("render_match_found_ms", elapsed * 1000.0)
+        except Exception:
+            pass
         logger.info(
             "Match found rendered: %.2fs, png=%d bytes, peak_rss~%d MB, active=%d",
-            time.perf_counter() - t0, len(png), peak // (1024 * 1024), _ACTIVE_RENDERS,
+            elapsed, len(png), peak // (1024 * 1024), _ACTIVE_RENDERS,
         )
         return png
