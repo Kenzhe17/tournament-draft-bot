@@ -453,3 +453,118 @@ class TestRoomBundleHelpers:
             {"sha": "c", "shas": []},
         ]}
         assert _all_room_shas(session) == {"a", "b", "c"}
+
+
+class TestProcessingCardState:
+    """Скрытие «Отправить результат» при приёме файлов (не OCR)."""
+
+    def test_progress_text_states(self):
+        from cogs.ocr_upload import _rooms_progress_text
+
+        s = {"rooms_expected": 3, "rooms": []}
+        assert "Сбор скриншотов" in _rooms_progress_text(s)
+        assert "комнату 1" in _rooms_progress_text(s)
+        s["rooms"] = [{"room_index": 1, "panels": {"left": {}}}]
+        txt = _rooms_progress_text(s)
+        assert "Обработка OCR" in txt
+        assert "комнату 2" in txt
+        s["rooms"] += [
+            {"room_index": 2, "panels": {"left": {}}},
+            {"room_index": 3, "panels": {"left": {}}},
+        ]
+        assert "Комплект полный" in _rooms_progress_text(s)
+
+    @pytest.mark.asyncio
+    async def test_ensure_processing_card_hides_once(self, monkeypatch):
+        import cogs.ocr_upload as up
+        from types import SimpleNamespace
+
+        calls = []
+
+        async def fake_update(guild, tournament, mt, mi, state="active", **kw):
+            calls.append(state)
+
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card", fake_update
+        )
+        monkeypatch.setattr(up.store, "set", lambda t: None)
+
+        tournament = SimpleNamespace(
+            ocr_sessions={
+                "qualifier_0": {
+                    "mode": "rooms", "status": "collecting",
+                    "card_state": "active",
+                }
+            },
+            channel_id=1,
+        )
+        guild = SimpleNamespace(id=1)
+        await up._ensure_processing_card(guild, tournament, "qualifier", 0)
+        await up._ensure_processing_card(guild, tournament, "qualifier", 0)
+        assert tournament.ocr_sessions["qualifier_0"]["card_state"] == "processing"
+        assert calls == ["processing"]
+
+    @pytest.mark.asyncio
+    async def test_ensure_processing_card_no_session(self, monkeypatch):
+        import cogs.ocr_upload as up
+        from types import SimpleNamespace
+
+        calls = []
+
+        async def fake_update(*a, **kw):
+            calls.append(1)
+
+        monkeypatch.setattr(
+            "services.match_announcer.update_match_card", fake_update
+        )
+        tournament = SimpleNamespace(ocr_sessions={}, channel_id=1)
+        await up._ensure_processing_card(SimpleNamespace(id=1), tournament,
+                                         "qualifier", 0)
+        assert calls == []
+
+
+class TestCreateRoomsSessionRace:
+    @pytest.mark.asyncio
+    async def test_second_session_rejected(self, monkeypatch):
+        """Два одновременных create → только одна сессия."""
+        import asyncio
+        import cogs.ocr_upload as up
+        from types import SimpleNamespace
+
+        sent = []
+
+        class _Msg:
+            id = 555
+
+        class _Chan:
+            id = 777
+
+            async def send(self, content=None, view=None):
+                sent.append(content)
+                return _Msg()
+
+        class _T(SingleNamespace if False else object):
+            pass
+
+        tournament = SimpleNamespace(
+            ocr_sessions={}, channel_id=1, guild_id=1,
+            qualifier_matches=[(0, 1)],
+        )
+        # store.get должен вернуть тот же объект
+        monkeypatch.setattr(up.store, "get", lambda g, c: tournament)
+        monkeypatch.setattr(up.store, "set", lambda t: None)
+
+        user = SimpleNamespace(id=42, display_name="Cap", name="cap")
+        guild = SimpleNamespace(id=1)
+
+        async def go():
+            return await up.create_rooms_session(
+                guild, _Chan(), user, tournament,
+                "qualifier", 0, 3,
+            )
+
+        r1, r2 = await asyncio.gather(go(), go())
+        results = [r for r in (r1, r2) if r is not None]
+        assert len(results) == 1
+        assert tournament.ocr_sessions["qualifier_0"]["uploaded_by"] == 42
+        assert len(sent) == 1

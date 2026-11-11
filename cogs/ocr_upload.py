@@ -1632,15 +1632,44 @@ def _rooms_progress_text(session: dict) -> str:
     done = _rooms_completed_count(session)
     nxt = _rooms_next_index(session)
     if nxt is None:
-        status = "Комплект полный"
+        status = "Комплект полный — ожидается сопоставление игроков"
+    elif done == 0:
+        status = f"Сбор скриншотов — отправьте комнату {nxt}"
     else:
-        status = f"Ожидание скриншотов комнаты {nxt}"
+        status = f"Обработка OCR / сбор — отправьте комнату {nxt}"
     return (
-        f"**ОБРАБОТКА СКРИНШОТОВ**\n"
+        f"**ОБРАБОТКА РЕЗУЛЬТАТОВ**\n"
         f"Комнат: {total}\n"
         f"Заполнено: {done}/{total}\n"
-        f"Статус: {status}"
+        f"Статус: {status}\n"
+        "Скриншоты приняты. Повторная отправка не требуется — "
+        "продолжайте через «Добавить скриншоты»."
     )
+
+
+async def _ensure_processing_card(
+    guild, tournament, match_type: str, match_index: int
+) -> None:
+    """Перевести карточку матча в состояние «обработка» один раз.
+
+    Вызывается при ПРИЁМЕ файлов (не дожидаясь OCR): кнопка
+    «Отправить результат» исчезает из карточки сразу, повторные
+    нажатия старой кнопки отклоняются сервером.
+    """
+    key = _session_key(match_type, match_index)
+    session = (tournament.ocr_sessions or {}).get(key)
+    if not session or session.get("card_state") == "processing":
+        return
+    session["card_state"] = "processing"
+    store.set(tournament)
+    try:
+        from services.match_announcer import update_match_card
+
+        await update_match_card(
+            guild, tournament, match_type, match_index, state="processing"
+        )
+    except Exception as exc:
+        logger.warning("Match card processing update failed: %s", exc)
 
 
 async def _update_rooms_progress(
@@ -1779,6 +1808,10 @@ async def process_room_bundle(
         known.discard(room["sha"])
     if any(s in known for s in shas):
         return "dup"
+
+    # Файлы приняты в обработку — сразу прячем «Отправить результат»
+    # в карточке матча, не дожидаясь завершения OCR.
+    await _ensure_processing_card(guild, tournament, match_type, match_index)
 
     gen = session.get("gen", 1)
     pipes = []
@@ -2039,40 +2072,47 @@ async def create_rooms_session(
 ):
     """Создать rooms-сессию и сообщение прогресса. None — уже есть сессия."""
     key = _session_key(match_type, match_index)
-    existing = tournament.ocr_sessions.get(key)
-    if existing and existing.get("status") not in ("completed", "cancelled"):
-        return None
-    t1, t2 = _match_tuple(tournament, match_type, match_index)
-    session = {
-        "match_type": match_type,
-        "match_index": match_index,
-        "mode": "rooms",
-        "status": "collecting",
-        "rooms_expected": int(count),
-        "rooms_received": 0,
-        "rooms": [],
-        "gen": 1,
-        "uploaded_by": user.id,
-        "uploaded_by_name": getattr(user, "display_name", user.name),
-        "teams": [t1, t2],
-        "maps": {},
-        "panel_picks": {},
-        "created_at": datetime.now().isoformat(),
-    }
-    tournament.ocr_sessions[key] = session
+    # Лок на матч: два капитана могут нажать «Отправить результат»
+    # одновременно — без лока создались бы две сессии.
+    async with _room_lock(key):
+        tournament = (
+            store.get(guild.id, tournament.channel_id) or tournament
+        )
+        existing = tournament.ocr_sessions.get(key)
+        if existing and existing.get("status") not in ("completed", "cancelled"):
+            return None
+        t1, t2 = _match_tuple(tournament, match_type, match_index)
+        session = {
+            "match_type": match_type,
+            "match_index": match_index,
+            "mode": "rooms",
+            "status": "collecting",
+            "rooms_expected": int(count),
+            "rooms_received": 0,
+            "rooms": [],
+            "gen": 1,
+            "uploaded_by": user.id,
+            "uploaded_by_name": getattr(user, "display_name", user.name),
+            "teams": [t1, t2],
+            "maps": {},
+            "panel_picks": {},
+            "card_state": "active",
+            "created_at": datetime.now().isoformat(),
+        }
+        tournament.ocr_sessions[key] = session
 
-    view = RoomCollectView(
-        guild.id, tournament.channel_id, tournament,
-        match_type, match_index, session["gen"],
-    )
-    msg = await channel.send(
-        content=replace_emojis(_rooms_progress_text(session)),
-        view=view,
-    )
-    session["progress_message_id"] = msg.id
-    session["progress_channel_id"] = channel.id
-    store.set(tournament)
-    return session
+        view = RoomCollectView(
+            guild.id, tournament.channel_id, tournament,
+            match_type, match_index, session["gen"],
+        )
+        msg = await channel.send(
+            content=replace_emojis(_rooms_progress_text(session)),
+            view=view,
+        )
+        session["progress_message_id"] = msg.id
+        session["progress_channel_id"] = channel.id
+        store.set(tournament)
+        return session
 
 
 def _is_strict_admin(user) -> bool:

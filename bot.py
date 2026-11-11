@@ -751,6 +751,47 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Error restoring org role view: {e}")
 
+        # Восстановить состояние карточек матчей с активной OCR-загрузкой:
+        # кнопка «Отправить результат» должна оставаться скрытой,
+        # пока сессия не завершена/не отменена.
+        try:
+            from services.match_announcer import update_match_card
+            from views.ocr_match_view import (
+                _stats_complete,
+                match_is_finished,
+            )
+
+            for tournament in store.all():
+                guild = self.get_guild(tournament.guild_id)
+                if guild is None:
+                    continue
+                for session in (tournament.ocr_sessions or {}).values():
+                    if session.get("status") in (
+                        None, "completed", "cancelled"
+                    ):
+                        continue
+                    mt, mi = session.get("match_type"), session.get(
+                        "match_index"
+                    )
+                    if mt is None or mi is None:
+                        continue
+                    if match_is_finished(tournament, mt, mi):
+                        continue
+                    if _stats_complete(tournament, mt, mi):
+                        continue
+                    try:
+                        await update_match_card(
+                            guild, tournament, mt, mi,
+                            state="processing",
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "OCR card state restore failed for %s %s: %s",
+                            mt, mi, exc,
+                        )
+        except Exception as exc:
+            logger.warning("OCR match card state restore failed: %s", exc)
+
         # Debug: Log all registered commands
         commands = list(self.tree.walk_commands())
         logger.info(f"Зарегистрировано {len(commands)} команд:")
