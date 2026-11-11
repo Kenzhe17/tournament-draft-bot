@@ -91,12 +91,14 @@ async def pg_pool(pg_uri):
     async with pool.acquire() as conn:
         await conn.execute(SCHEMA_DDL)
 
+    prev_url = dbmod.DATABASE_URL
     dbmod.DATABASE_URL = pg_uri
     dbmod._pool = pool
     try:
         yield pool
     finally:
         dbmod._pool = None
+        dbmod.DATABASE_URL = prev_url
         await pool.close()
 
 
@@ -404,6 +406,7 @@ class TestInitDbMigration:
         """Полный init_db() на тестовой БД создаёт нужные таблицы."""
         import storage.db as dbmod
 
+        prev_url = dbmod.DATABASE_URL
         dbmod.DATABASE_URL = pg_uri
         dbmod._pool = None
         try:
@@ -418,3 +421,4 @@ class TestInitDbMigration:
         finally:
             await dbmod.close_pool()
             dbmod._pool = None
+            dbmod.DATABASE_URL = prev_url

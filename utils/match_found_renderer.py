@@ -32,6 +32,15 @@ TEXT_COLOR = (243, 243, 248)       # имена, MATCH #, средние
 VALUE_COLOR = (173, 180, 203)      # значения статистики игроков
 AVATAR_TIMEOUT = 8.0
 
+# Профилирование памяти рендеров — только по явному запросу
+# (ENABLE_RENDER_MEMORY_PROFILING=1), чтобы tracemalloc не замедлял
+# каждую генерацию карточки в проде.
+import os as _os
+
+_PROFILE_MEM = _os.getenv(
+    "ENABLE_RENDER_MEMORY_PROFILING", ""
+).strip().lower() in ("1", "true", "yes", "on")
+
 # --- Геометрия (1920x1080) ---
 # Строки игроков: верх текста ника (y) для строк 1-4, шаг ~125-127
 NAME_TOPS = [402, 528, 652, 779]
@@ -159,8 +168,79 @@ def _load_template() -> Image.Image:
 
 
 # ----------------------------------------------------------------------
-# Скачивание аватарок
+# Скачивание аватарок: переиспользуемая сессия + ограниченный кэш.
+# Аватарки Discord CDN стабильны по URL — кэшируем на TTL, лимит по
+# количеству и суммарному размеру защищает RAM.
 # ----------------------------------------------------------------------
+
+_AVATAR_CACHE: dict[str, tuple[float, bytes]] = {}
+_AVATAR_CACHE_TTL = 3600.0          # 1 час
+_AVATAR_CACHE_MAX = 500             # макс. записей
+_AVATAR_CACHE_BYTES_MAX = 64 * 1024 * 1024  # ~64 МБ
+_avatar_session: aiohttp.ClientSession | None = None
+_avatar_session_lock = asyncio.Lock()
+
+
+async def _get_avatar_session() -> aiohttp.ClientSession:
+    """Общая ClientSession для загрузки аватарок (переиспользование
+    TCP/TLS-соединений вместо новой сессии на каждый рендер)."""
+    global _avatar_session
+    if _avatar_session is not None and not _avatar_session.closed:
+        return _avatar_session
+    async with _avatar_session_lock:
+        if _avatar_session is None or _avatar_session.closed:
+            connector = aiohttp.TCPConnector(
+                limit=16, ttl_dns_cache=300, enable_cleanup_closed=True
+            )
+            _avatar_session = aiohttp.ClientSession(connector=connector)
+        return _avatar_session
+
+
+async def close_avatar_session() -> None:
+    """Закрыть общую сессию при остановке бота (best effort)."""
+    global _avatar_session
+    session = _avatar_session
+    _avatar_session = None
+    if session is not None and not session.closed:
+        try:
+            await session.close()
+        except Exception:
+            pass
+
+
+def _avatar_cache_get(url: str) -> bytes | None:
+    hit = _AVATAR_CACHE.get(url)
+    if hit is None:
+        return None
+    ts, data = hit
+    if time.monotonic() - ts > _AVATAR_CACHE_TTL:
+        _AVATAR_CACHE.pop(url, None)
+        return None
+    return data
+
+
+def _avatar_cache_put(url: str, data: bytes) -> None:
+    # URL сменился (Discord отдаёт новый avatar URL при смене аватара)
+    # — старые записи просто истекают по TTL, новой цене кэш не мешает.
+    _AVATAR_CACHE.pop(url, None)
+    _AVATAR_CACHE[url] = (time.monotonic(), data)
+    _evict_avatar_cache()
+
+
+def _evict_avatar_cache() -> None:
+    total = 0
+    for _, (_, data) in _AVATAR_CACHE.items():
+        total += len(data)
+    # Вытесняем самые старые записи, пока не уложимся в лимиты.
+    for url in list(_AVATAR_CACHE.keys()):
+        if (
+            len(_AVATAR_CACHE) <= _AVATAR_CACHE_MAX
+            and total <= _AVATAR_CACHE_BYTES_MAX
+        ):
+            break
+        _, data = _AVATAR_CACHE.pop(url)
+        total -= len(data)
+
 
 async def _fetch_avatar(session: aiohttp.ClientSession, url: str) -> bytes | None:
     try:
@@ -173,16 +253,27 @@ async def _fetch_avatar(session: aiohttp.ClientSession, url: str) -> bytes | Non
 
 
 async def fetch_avatars(urls: list[str]) -> dict[str, bytes]:
-    """Скачать аватарки параллельно. Возвращает {url: bytes}."""
+    """Скачать аватарки параллельно (с кэшем). {url: bytes}."""
     urls = [u for u in dict.fromkeys(urls) if u]
     if not urls:
         return {}
     out: dict[str, bytes] = {}
-    connector = aiohttp.TCPConnector(limit=16)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        results = await asyncio.gather(*(_fetch_avatar(session, u) for u in urls))
-    for url, data in zip(urls, results):
+    misses: list[str] = []
+    for url in urls:
+        cached = _avatar_cache_get(url)
+        if cached is not None:
+            out[url] = cached
+        else:
+            misses.append(url)
+    if not misses:
+        return out
+    session = await _get_avatar_session()
+    results = await asyncio.gather(
+        *(_fetch_avatar(session, u) for u in misses)
+    )
+    for url, data in zip(misses, results):
         if data:
+            _avatar_cache_put(url, data)
             out[url] = data
     return out
 
@@ -391,12 +482,16 @@ async def render_match_found(data: MatchFoundData) -> bytes:
     async with CARD_RENDER_SEM:
         _ACTIVE_RENDERS += 1
         t0 = time.perf_counter()
-        tracemalloc.start()
+        if _PROFILE_MEM:
+            tracemalloc.start()
         try:
             png = await asyncio.to_thread(render_match_found_sync, data, avatars)
         finally:
-            _current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
+            if _PROFILE_MEM:
+                _current, peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
+            else:
+                peak = 0
             _ACTIVE_RENDERS -= 1
         logger.info(
             "Match found rendered: %.2fs, png=%d bytes, peak_rss~%d MB, active=%d",

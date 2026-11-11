@@ -21,6 +21,9 @@ class _FakeStatsStore:
     async def get(self, guild_id, user_id):
         return None
 
+    async def get_many(self, guild_id, user_ids):
+        return {}
+
 
 @pytest.fixture(autouse=True)
 def _patch_stores(monkeypatch):

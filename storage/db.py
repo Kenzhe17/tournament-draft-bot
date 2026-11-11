@@ -1,6 +1,8 @@
 """Database connection and utilities."""
 
 import logging
+import os
+
 import asyncpg
 from config import DATABASE_URL
 
@@ -9,11 +11,47 @@ logger = logging.getLogger(__name__)
 _pool: asyncpg.Pool | None = None
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, "") or default)
+    except (TypeError, ValueError):
+        return default
+
+
 async def get_pool() -> asyncpg.Pool:
-    """Get or create database connection pool."""
+    """Get or create database connection pool.
+
+    Настройки — через env (Railway Variables), дефолты
+    консервативные и не превышают лимиты Railway PostgreSQL:
+    - PG_POOL_MIN (default 2): всегда тёплые соединения.
+    - PG_POOL_MAX (default 10): не увеличиваем сверх дефолта
+      asyncpg — запросы короткие, очередь acquire дешевле
+      лишних соединений к PG.
+    - PG_COMMAND_TIMEOUT (default 30s): защита от зависших
+      запросов — соединение возвращается в пул по таймауту.
+    - PG_POOL_MAX_INACTIVE (default 300s): рециклинг
+      неактивных соединений.
+    - PG_CONNECT_TIMEOUT (default 10s): таймаут установки
+      новых соединений.
+    """
     global _pool
     if _pool is None:
-        _pool = await asyncpg.create_pool(DATABASE_URL)
+        _pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            min_size=_env_int("PG_POOL_MIN", 2),
+            max_size=_env_int("PG_POOL_MAX", 10),
+            command_timeout=_env_int("PG_COMMAND_TIMEOUT", 30),
+            max_inactive_connection_lifetime=_env_int(
+                "PG_POOL_MAX_INACTIVE", 300
+            ),
+            timeout=_env_int("PG_CONNECT_TIMEOUT", 10),
+        )
+        logger.info(
+            "PostgreSQL pool: min=%s max=%s command_timeout=%ss",
+            _env_int("PG_POOL_MIN", 2),
+            _env_int("PG_POOL_MAX", 10),
+            _env_int("PG_COMMAND_TIMEOUT", 30),
+        )
     return _pool
 
 

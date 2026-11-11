@@ -275,7 +275,20 @@ def build_help_category_embed(category: str) -> discord.Embed:
     return embed
 
 
-async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
+async def _tournament_stats_map(tournament: Tournament) -> dict:
+    """{user_id: PlayerStats} для всех участников турнира — один
+    пакетный запрос вместо N+1 get() на игрока."""
+    uids = [
+        uid for uid in (tournament.player_user_ids or {}).values() if uid
+    ]
+    return await player_stats_store.get_many(tournament.guild_id, uids)
+
+
+async def get_team_avg_elo(
+    team: dict,
+    tournament: Tournament,
+    stats_by_uid: dict | None = None,
+) -> int:
     """Рассчитать среднее ELO команды."""
     total_elo = 0
     player_count = 0
@@ -285,7 +298,15 @@ async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
         if player_name:
             user_id = tournament.player_user_ids.get(player_name)
             if user_id:
-                stats = await player_stats_store.get(tournament.guild_id, user_id)
+                if stats_by_uid is not None:
+                    try:
+                        stats = stats_by_uid.get(int(user_id))
+                    except (TypeError, ValueError):
+                        stats = None
+                else:
+                    stats = await player_stats_store.get(
+                        tournament.guild_id, user_id
+                    )
                 if stats:
                     total_elo += stats.elo
                     player_count += 1
@@ -301,7 +322,11 @@ async def get_team_avg_elo(team: dict, tournament: Tournament) -> int:
     return avg_elo
 
 
-async def get_team_avg_skill(team: dict, tournament: Tournament) -> float:
+async def get_team_avg_skill(
+    team: dict,
+    tournament: Tournament,
+    stats_by_uid: dict | None = None,
+) -> float:
     """Рассчитать средний skill rating команды."""
     total_skill = 0.0
     player_count = 0
@@ -311,7 +336,15 @@ async def get_team_avg_skill(team: dict, tournament: Tournament) -> float:
         if player_name:
             user_id = tournament.player_user_ids.get(player_name)
             if user_id:
-                stats = await player_stats_store.get(tournament.guild_id, user_id)
+                if stats_by_uid is not None:
+                    try:
+                        stats = stats_by_uid.get(int(user_id))
+                    except (TypeError, ValueError):
+                        stats = None
+                else:
+                    stats = await player_stats_store.get(
+                        tournament.guild_id, user_id
+                    )
                 if stats:
                     total_skill += stats.skill_rating
                     player_count += 1
@@ -497,6 +530,7 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
     is_open = tournament.is_betting_open() and tournament.betting_phase == match_type
 
     bet_lines: list[str] = []
+    stats_by_uid = None  # ленивая загрузка — только если нужен fallback
     for i, (team_a, team_b) in enumerate(matches):
         # Get team names
         team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
@@ -515,8 +549,14 @@ async def _add_betting_section_to_embed(embed: discord.Embed, tournament: Tourna
             odds_b = current_odds.team_b_odds
         else:
             # Fallback to skill-based calculation if odds not initialized
-            avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-            avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+            if stats_by_uid is None:
+                stats_by_uid = await _tournament_stats_map(tournament)
+            avg_skill_a = await get_team_avg_skill(
+                team_a_data, tournament, stats_by_uid=stats_by_uid
+            )
+            avg_skill_b = await get_team_avg_skill(
+                team_b_data, tournament, stats_by_uid=stats_by_uid
+            )
             skill_diff = avg_skill_b - avg_skill_a
             # 1.0 skill difference = 0.1x odds difference
             odds_diff = skill_diff * 0.1
@@ -601,10 +641,15 @@ async def build_setup_embed(
     organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
-    # Build ELO dictionary for all registered players
+    # Build ELO dictionary for all registered players — один
+    # пакетный запрос вместо N+1 get() на каждого игрока.
+    stats_by_uid = await _tournament_stats_map(tournament)
     elo_dict = {}
     for player_name, user_id in tournament.player_user_ids.items():
-        stats = await player_stats_store.get(tournament.guild_id, user_id)
+        try:
+            stats = stats_by_uid.get(int(user_id))
+        except (TypeError, ValueError):
+            stats = None
         if stats:
             elo_dict[player_name] = int(stats.elo)
 
@@ -794,6 +839,9 @@ async def build_qualifiers_embed(
     organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
+    # Пакетная загрузка статистики — один запрос на все матчи фазы.
+    stats_by_uid = await _tournament_stats_map(tournament)
+
     # Build matches section
     matches_section = []
     for i, (team_a, team_b) in enumerate(tournament.qualifier_matches):
@@ -806,8 +854,12 @@ async def build_qualifiers_embed(
         name_b = tournament.team_names.get(team_b, captain_b)
 
         # Get average skill rating for each team
-        avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-        avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+        avg_skill_a = await get_team_avg_skill(
+            team_a_data, tournament, stats_by_uid=stats_by_uid
+        )
+        avg_skill_b = await get_team_avg_skill(
+            team_b_data, tournament, stats_by_uid=stats_by_uid
+        )
 
         # Get room info
         # Not added to description anymore - will be added as embed fields later
@@ -890,6 +942,9 @@ async def build_semifinals_embed(
     organizer_id = tournament.organizer_id
     organizer_mention = f"<@{organizer_id}>" if organizer_id else "Не указан"
 
+    # Пакетная загрузка статистики — один запрос на все матчи фазы.
+    stats_by_uid = await _tournament_stats_map(tournament)
+
     # Build matches section
     matches_section = []
     for i, (team_a, team_b) in enumerate(tournament.semifinal_matches):
@@ -902,8 +957,12 @@ async def build_semifinals_embed(
         name_b = tournament.team_names.get(team_b, captain_b)
 
         # Get average skill rating for each team
-        avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-        avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+        avg_skill_a = await get_team_avg_skill(
+            team_a_data, tournament, stats_by_uid=stats_by_uid
+        )
+        avg_skill_b = await get_team_avg_skill(
+            team_b_data, tournament, stats_by_uid=stats_by_uid
+        )
 
         # Get room info
         # Not added to description anymore - will be added as embed fields later
@@ -987,6 +1046,9 @@ async def build_final_embed(
     team_a = tournament.final_teams[0]
     team_b = tournament.final_teams[1]
 
+    # Пакетная загрузка статистики финалистов — один запрос.
+    stats_by_uid = await _tournament_stats_map(tournament)
+
     # Get team names or default to captain names
     team_a_data = tournament.teams[team_a] if team_a < len(tournament.teams) else {}
     team_b_data = tournament.teams[team_b] if team_b < len(tournament.teams) else {}
@@ -996,8 +1058,12 @@ async def build_final_embed(
     name_b = tournament.team_names.get(team_b, captain_b)
 
     # Get average skill rating for each team
-    avg_skill_a = await get_team_avg_skill(team_a_data, tournament)
-    avg_skill_b = await get_team_avg_skill(team_b_data, tournament)
+    avg_skill_a = await get_team_avg_skill(
+        team_a_data, tournament, stats_by_uid=stats_by_uid
+    )
+    avg_skill_b = await get_team_avg_skill(
+        team_b_data, tournament, stats_by_uid=stats_by_uid
+    )
 
     # Get room info (not displayed in embed, only sent via DM)
     room_data = tournament.final_room

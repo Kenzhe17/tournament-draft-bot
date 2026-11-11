@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import sys
 import os
@@ -30,6 +32,66 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Дедупликация обновлений главного сообщения турнира.
+#
+# Таймерные циклы (betting/draft) вызывают update_tournament_message
+# каждые 5 секунд на каждый активный турнир. Раньше каждый вызов
+# делал fetch_message + message.edit — Discord API получал десятки
+# избыточных правок в минуту при неизменном контенте.
+#
+# Теперь: контент (embed + view) рендерится, вычисляется стабильная
+# сигнатура; message.edit выполняется только при реальном изменении.
+# Анонсирование матчей (announce_phase_matches) идемпотентно и
+# вызывается на каждый апдейт — пропускать его при неизменном
+# embed нельзя (смена фазы обязана анонсировать матчи).
+# ---------------------------------------------------------------------------
+
+_EDIT_LOCKS: dict[str, asyncio.Lock] = {}
+_EDIT_LOCKS_MAX = 200
+# channel_key -> {"sig": str, "message": discord.Message}
+_EDIT_CACHE: dict[str, dict] = {}
+_EDIT_CACHE_MAX = 200
+
+
+def _edit_lock(key: str) -> asyncio.Lock:
+    lock = _EDIT_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _EDIT_LOCKS[key] = lock
+        if len(_EDIT_LOCKS) > _EDIT_LOCKS_MAX:
+            _EDIT_LOCKS.pop(next(iter(_EDIT_LOCKS)))
+    return lock
+
+
+def _component_sig(item, parts: list[str]) -> None:
+    """Рекурсивно собрать сигнатуру компонентов View/LayoutView."""
+    parts.append(
+        "|".join(
+            str(getattr(item, attr, ""))
+            for attr in (
+                "custom_id", "label", "disabled", "style", "emoji",
+                "content", "placeholder", "value", "title", "description",
+            )
+        )
+    )
+    for child in getattr(item, "children", []) or []:
+        _component_sig(child, parts)
+
+
+def _message_signature(embed, view) -> str:
+    """Стабильная сигнатура отображаемого контента сообщения.
+
+    Любое изменение embed (title/description/fields/image) или
+    компонентов view (кнопки, тексты, disabled) меняет сигнатуру —
+    пропустить edit можно только когда НИЧЕГО видимого не изменилось.
+    """
+    parts = [embed.to_dict().__repr__()]
+    if view is not None:
+        _component_sig(view, parts)
+    return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
 
 
 class TournamentBot(commands.Bot):
@@ -468,36 +530,88 @@ class TournamentBot(commands.Bot):
     async def update_tournament_message(
         self, guild: discord.Guild, tournament: Tournament
     ) -> None:
-        """Отредактировать главное сообщение турнира."""
+        """Отредактировать главное сообщение турнира.
+
+        Оптимизация P1: контент рендерится и сравнивается по
+        сигнатуре — message.edit выполняется только при реальном
+        изменении отображаемых данных. Сериализация правок одного
+        сообщения — через per-channel lock. Анонс матчей фазы
+        идемпотентен и вызывается на каждый апдейт.
+        """
         if not tournament.message_id:
             logger.warning("Нет message_id для сервера %s", guild.id)
             return
 
-        channel = guild.get_channel(tournament.channel_id)
-        if channel is None:
-            try:
-                channel = await guild.fetch_channel(tournament.channel_id)
-            except discord.HTTPException as exc:
-                logger.error("Канал не найден: %s", exc)
-                return
+        key = f"{guild.id}:{tournament.channel_id}"
+        async with _edit_lock(key):
+            channel = guild.get_channel(tournament.channel_id)
+            if channel is None:
+                try:
+                    channel = await guild.fetch_channel(tournament.channel_id)
+                except discord.HTTPException as exc:
+                    logger.error("Канал не найден: %s", exc)
+                    return
 
-        try:
-            message = await channel.fetch_message(tournament.message_id)
-        except discord.HTTPException as exc:
-            logger.warning("Сообщение не найдено (возможно удалено): %s", exc)
-            return
+            embed = await build_embed_for_phase(tournament, guild)
+            view = self.build_view_for_tournament(tournament)
+            self._register_view(view)
+            payload = compose(embed, view)
+            sig = _message_signature(embed, payload)
 
-        embed = await build_embed_for_phase(tournament, guild)
-        view = self.build_view_for_tournament(tournament)
-        self._register_view(view)
+            cached = _EDIT_CACHE.get(key)
+            message = cached.get("message") if cached else None
 
-        try:
-            await message.edit(view=compose(embed, view))
-        except discord.HTTPException as exc:
-            logger.error("Не удалось обновить сообщение: %s", exc)
-            return
+            if cached is None or cached.get("sig") != sig or message is None:
+                # Контент изменился (или сообщение ещё не закэшировано)
+                # — редактируем. Кэшированный Message.edit не требует
+                # fetch_message: экономим один API-вызов на апдейт.
+                if message is None:
+                    try:
+                        message = await channel.fetch_message(
+                            tournament.message_id
+                        )
+                    except discord.NotFound:
+                        logger.warning(
+                            "Сообщение %s не найдено (возможно удалено)",
+                            tournament.message_id,
+                        )
+                        _EDIT_CACHE.pop(key, None)
+                        message = None
+                    except discord.HTTPException as exc:
+                        logger.warning("Не удалось получить сообщение: %s", exc)
+                        message = None
 
-        # Анонс старта матчей активной фазы в канал результатов
+                if message is not None:
+                    try:
+                        await message.edit(view=payload)
+                    except discord.NotFound:
+                        # Сообщение удалили между кэшем и правкой —
+                        # инвалидируем кэш, следующий апдейт сделает
+                        # fetch_message заново.
+                        logger.warning(
+                            "Сообщение %s удалено во время edit",
+                            tournament.message_id,
+                        )
+                        _EDIT_CACHE.pop(key, None)
+                        message = None
+                    except discord.Forbidden as exc:
+                        logger.error(
+                            "Нет прав на редактирование сообщения "
+                            "турнира %s: %s", tournament.id, exc
+                        )
+                    except discord.HTTPException as exc:
+                        logger.error(
+                            "Не удалось обновить сообщение: %s", exc
+                        )
+                    else:
+                        if len(_EDIT_CACHE) >= _EDIT_CACHE_MAX:
+                            _EDIT_CACHE.pop(next(iter(_EDIT_CACHE)))
+                        _EDIT_CACHE[key] = {"sig": sig, "message": message}
+            # else: sig совпал — контент не изменился, edit пропущен.
+
+        # Анонс старта матчей активной фазы в канал результатов —
+        # идемпотентно (is_announced), выполняется на каждый апдейт,
+        # чтобы не пропустить анонс при смене фазы.
         try:
             from services.match_announcer import announce_phase_matches
 
@@ -844,6 +958,22 @@ class TournamentBot(commands.Bot):
         for cmd in commands:
             cmd_type = cmd.type.__name__ if hasattr(cmd, 'type') else 'Group'
             logger.info(f"  - /{cmd.name} (type: {cmd_type})")
+
+    async def close(self) -> None:
+        """Graceful shutdown: закрыть shared-ресурсы рендеров."""
+        try:
+            from utils.match_found_renderer import close_avatar_session
+
+            await close_avatar_session()
+        except Exception:
+            pass
+        try:
+            from utils.profile_renderer import shutdown_profile_renderer
+
+            await shutdown_profile_renderer()
+        except Exception:
+            pass
+        await super().close()
 
     async def on_guild_join(self, guild: discord.Guild) -> None:
         """Log when bot is added to a server."""

@@ -47,6 +47,50 @@ class PlayerStatsStore:
         data = {name: stats.to_dict() for name, stats in self._stats.items()}
         atomic_write_json(STATS_FILE, data)
 
+    @staticmethod
+    def _stats_from_row(row) -> PlayerStats:
+        """asyncpg.Record -> PlayerStats (общая конвертация)."""
+        return PlayerStats(
+            guild_id=row["guild_id"], user_id=row["user_id"],
+            name=row["name"], elo=int(row["elo"]),
+            wins=row["wins"], finals=row["finals"], games=row["games"],
+            current_streak=row["current_streak"],
+            best_win_streak=row["best_win_streak"],
+            best_loss_streak=row["best_loss_streak"],
+            total_kills=row.get("total_kills", 0),
+            total_deaths=row.get("total_deaths", 0),
+            total_assists=row.get("total_assists", 0),
+            total_damage=row.get("total_damage", 0),
+            best_match_kills=row.get("best_match_kills", 0),
+            total_elo_change=row.get("total_elo_change", 0),
+            last_elo_change=row.get("last_elo_change", 0),
+            xp=row.get("xp", 0), level=row.get("level", 1),
+            xp_to_next_level=PlayerStats._calculate_xp_to_next_level(
+                row.get("level", 1)
+            ),
+            total_earnings=row.get("total_earnings", 0),
+            tournament_participations=row.get(
+                "tournament_participations", 0
+            ),
+            description=row.get("description", ""),
+            daily_tournament_coins=row.get("daily_tournament_coins", 0),
+            daily_coins_date=row.get("daily_coins_date", ""),
+            reputation=row.get("reputation", 0),
+            birthday=row.get("birthday", "") or "",
+            spouse_id=row.get("spouse_id", 0) or 0,
+        )
+
+    _STATS_COLUMNS = (
+        "guild_id, user_id, name, elo, wins, finals, games, "
+        "current_streak, best_win_streak, best_loss_streak, "
+        "total_kills, total_deaths, total_assists, total_damage, "
+        "best_match_kills, total_elo_change, last_elo_change, xp, "
+        "level, xp_to_next_level, total_earnings, "
+        "tournament_participations, description, "
+        "daily_tournament_coins, daily_coins_date, reputation, "
+        "birthday, spouse_id"
+    )
+
     async def get(self, guild_id: int, user_id: int) -> PlayerStats | None:
         """Получить статистику игрока."""
         if self._use_db:
@@ -54,15 +98,55 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id FROM player_stats WHERE guild_id = $1 AND user_id = $2",
+                    f"SELECT {self._STATS_COLUMNS} FROM player_stats "
+                    "WHERE guild_id = $1 AND user_id = $2",
                     guild_id, user_id
                 )
                 if row:
-                    return PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", ""), reputation=row.get("reputation", 0), birthday=row.get("birthday", "") or "", spouse_id=row.get("spouse_id", 0) or 0)
+                    return self._stats_from_row(row)
                 return None
         else:
             key = f"{guild_id}:{user_id}"
             return self._stats.get(key)
+
+    async def get_many(
+        self, guild_id: int, user_ids
+    ) -> dict[int, "PlayerStats"]:
+        """Пакетно получить статистику игроков одним запросом.
+
+        Возвращает {user_id: PlayerStats} только для найденных.
+        Используется embed-билдерами вместо N+1 запросов get().
+        """
+        uids = []
+        seen = set()
+        for u in user_ids:
+            try:
+                iu = int(u)
+            except (TypeError, ValueError):
+                continue
+            if iu and iu not in seen:
+                seen.add(iu)
+                uids.append(iu)
+        if not uids:
+            return {}
+        if self._use_db:
+            from storage.db import get_pool
+            pool = await get_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    f"SELECT {self._STATS_COLUMNS} FROM player_stats "
+                    "WHERE guild_id = $1 AND user_id = ANY($2::bigint[])",
+                    guild_id, uids,
+                )
+            return {
+                int(r["user_id"]): self._stats_from_row(r) for r in rows
+            }
+        out = {}
+        for uid in uids:
+            stats = self._stats.get(f"{guild_id}:{uid}")
+            if stats is not None:
+                out[uid] = stats
+        return out
 
     async def get_all(self, guild_id: int) -> list[PlayerStats]:
         """Получить статистику всех игроков сервера."""
@@ -71,10 +155,11 @@ class PlayerStatsStore:
             pool = await get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT guild_id, user_id, name, elo, wins, finals, games, current_streak, best_win_streak, best_loss_streak, total_kills, total_deaths, total_assists, total_damage, best_match_kills, total_elo_change, last_elo_change, xp, level, xp_to_next_level, total_earnings, tournament_participations, description, daily_tournament_coins, daily_coins_date, reputation, birthday, spouse_id FROM player_stats WHERE guild_id = $1",
+                    f"SELECT {self._STATS_COLUMNS} FROM player_stats "
+                    "WHERE guild_id = $1",
                     guild_id
                 )
-                return [PlayerStats(guild_id=row["guild_id"], user_id=row["user_id"], name=row["name"], elo=int(row["elo"]), wins=row["wins"], finals=row["finals"], games=row["games"], current_streak=row["current_streak"], best_win_streak=row["best_win_streak"], best_loss_streak=row["best_loss_streak"], total_kills=row.get("total_kills", 0), total_deaths=row.get("total_deaths", 0), total_assists=row.get("total_assists", 0), total_damage=row.get("total_damage", 0), best_match_kills=row.get("best_match_kills", 0), total_elo_change=row.get("total_elo_change", 0), last_elo_change=row.get("last_elo_change", 0), xp=row.get("xp", 0), level=row.get("level", 1), xp_to_next_level=PlayerStats._calculate_xp_to_next_level(row.get("level", 1)), total_earnings=row.get("total_earnings", 0), tournament_participations=row.get("tournament_participations", 0), description=row.get("description", ""), daily_tournament_coins=row.get("daily_tournament_coins", 0), daily_coins_date=row.get("daily_coins_date", ""), reputation=row.get("reputation", 0), birthday=row.get("birthday", "") or "", spouse_id=row.get("spouse_id", 0) or 0) for row in rows]
+                return [self._stats_from_row(row) for row in rows]
         else:
             return [p for p in self._stats.values() if p.guild_id == guild_id]
 

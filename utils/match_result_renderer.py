@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw
 
 from utils.match_found_renderer import (
     CARD_RENDER_SEM,
+    _PROFILE_MEM,
     _body_font,
     _cover_resize,
     _display_font,
@@ -358,12 +359,16 @@ async def render_match_result(data: MatchResultData) -> bytes:
     async with CARD_RENDER_SEM:
         _mfr._ACTIVE_RENDERS += 1
         t0 = time.perf_counter()
-        tracemalloc.start()
+        if _PROFILE_MEM:
+            tracemalloc.start()
         try:
             png = await asyncio.to_thread(render_match_result_sync, data, avatars)
         finally:
-            _current, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
+            if _PROFILE_MEM:
+                _current, peak = tracemalloc.get_traced_memory()
+                tracemalloc.stop()
+            else:
+                peak = 0
             _mfr._ACTIVE_RENDERS -= 1
         logger.info(
             "Match result rendered: %.2fs, png=%d bytes, peak_rss~%d MB, active=%d",
