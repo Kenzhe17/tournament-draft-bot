@@ -130,25 +130,52 @@ class TestMigration:
         s3 = js.JsonStore()
         assert len(s3.all()) == 1
 
-    def test_interrupted_migration_recovers(self, shard_env, monkeypatch):
-        """shard-файлы без манифеста (прерванный коммит) → архивируются,
-        миграция перезапускается с legacy."""
+    def test_shards_without_manifest_are_authoritative(self, shard_env, monkeypatch):
+        """Shard-файлы без манифеста = потерянный манифест у
+        работающего хранилища: НЕ архивируются, НЕ замещаются
+        legacy — манифест восстанавливается из самих файлов."""
         monkeypatch.delenv("JSON_STORE_MODE")
         s = js.JsonStore()
         s.set(_t(1, 2, "Safe"))
-        # Имитируем прерванный коммит: shard-файл без манифеста
+        # shard-файл без манифеста (как после потери manifest)
         shard_dir = shard_env / "tournaments"
-        shard_dir.mkdir()
+        shard_dir.mkdir(exist_ok=True)
         (shard_dir / "9_9.json").write_text(
             json.dumps(Tournament(guild_id=9, channel_id=9).to_dict())
         )
+        for p in shard_env.glob("tournaments.manifest.json*"):
+            p.unlink(missing_ok=True)
         monkeypatch.setenv("JSON_STORE_MODE", "sharded")
         s2 = js.JsonStore()
-        # Сирота заархивирован, миграция прошла с legacy
-        assert s2.get(1, 2).team_names.get("0") is None or True
+        # Оба shard'а загружены, legacy НЕ замещает их
+        assert s2.get(9, 9) is not None
+        # legacy содержит 1_2, но shard 1_2 отсутствует → его нет
+        # (shard'ы авторитетны; legacy может быть устаревшим)
+        assert s2.get(1, 2) is None
+        # shard НЕ заархивирован, манифест восстановлен
+        assert (shard_dir / "9_9.json").exists()
+        assert not list(shard_env.glob("tournaments.corrupt-*"))
+        manifest = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        assert manifest["keys"] == ["9_9"]
+
+    def test_staging_without_shards_reruns_migration(
+        self, shard_env, monkeypatch
+    ):
+        """Прерванная ПЕРВОНАЧАЛЬНАЯ миграция: staging есть, shard'ов
+        нет → staging архивируется, миграция перезапускается."""
+        monkeypatch.delenv("JSON_STORE_MODE")
+        s = js.JsonStore()
+        s.set(_t(1, 2, "Safe"))
+        staging = shard_env / "tournaments.staging"
+        staging.mkdir()
+        (staging / "1_2.json").write_text("{}")
+        monkeypatch.setenv("JSON_STORE_MODE", "sharded")
+        s2 = js.JsonStore()
         assert s2.get(1, 2) is not None
-        assert s2.get(9, 9) is None  # сирота не загружен
-        assert list(shard_env.glob("tournaments.corrupt-*"))
+        assert s2.get(1, 2).team_names.get("0") is None or True
+        assert list(shard_env.glob("tournaments.staging.corrupt-*"))
 
     def test_corrupt_legacy_falls_back_to_single(self, shard_env, monkeypatch):
         """Битый legacy → миграция отменяется, single-режим обрабатывает
@@ -252,3 +279,149 @@ class TestModeResolution:
         monkeypatch.delenv("JSON_STORE_MODE", raising=False)
         s = js.JsonStore()
         assert s._mode == "single"
+
+
+class TestManifestLoss:
+    """Phase 4.5: потеря/повреждение манифеста у работающего
+    sharded-хранилища."""
+
+    def _make_sharded(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2, "One"))
+        s.set(_t(3, 4, "Two"))
+        return s
+
+    def test_manifest_deleted_shards_recovered(self, shard_env):
+        self._make_sharded(shard_env)
+        for p in shard_env.glob("tournaments.manifest.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert s2.get(1, 2).team_names["0"] == "One"
+        assert s2.get(3, 4).team_names["0"] == "Two"
+        # манифест восстановлен из фактического набора
+        manifest = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        assert sorted(manifest["keys"]) == ["1_2", "3_4"]
+
+    def test_manifest_corrupt_falls_back_to_bak(self, shard_env):
+        self._make_sharded(shard_env)
+        # Портим primary — .bak должен покрыть
+        (shard_env / "tournaments.manifest.json").write_text("{bad")
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is not None
+        assert s2.get(3, 4) is not None
+
+    def test_manifest_and_bak_lost_rebuilds(self, shard_env):
+        self._make_sharded(shard_env)
+        for p in shard_env.glob("tournaments.manifest.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert len(s2.all()) == 2
+        # legacy отсутствует — rebuild без него
+        assert not (shard_env / "tournaments.json").exists()
+
+    def test_shard_newer_than_legacy_blocks_single_writes(
+        self, shard_env, monkeypatch
+    ):
+        """Single-режим + shard'ы новее legacy → запись запрещена,
+        чтение работает, is_healthy()=False."""
+        # 1) single: legacy с турниром A
+        monkeypatch.delenv("JSON_STORE_MODE")
+        s = js.JsonStore()
+        s.set(_t(1, 2, "Legacy"))
+        # 2) sharded: миграция + новый турнир B (shard'ы новее)
+        monkeypatch.setenv("JSON_STORE_MODE", "sharded")
+        s2 = js.JsonStore()
+        s2.set(_t(5, 6, "Shard"))
+        # 3) обратно в single — legacy устарел
+        monkeypatch.setenv("JSON_STORE_MODE", "single")
+        s3 = js.JsonStore()
+        assert s3._mode == "single"
+        assert s3.is_healthy() is False
+        # чтение устаревшего legacy работает
+        assert s3.get(1, 2) is not None
+        # запись запрещена явной ошибкой
+        from storage.json_store import StoreUnavailableError
+        with pytest.raises(StoreUnavailableError):
+            s3.set(_t(7, 8))
+        with pytest.raises(StoreUnavailableError):
+            s3.delete(1, 2)
+        # legacy не перезаписан
+        raw = json.loads(
+            (shard_env / "tournaments.json").read_text()
+        )
+        assert "7:8" not in raw
+
+    def test_export_then_auto_resolves_single(self, shard_env, monkeypatch):
+        """После export_shards_to_legacy auto-режим выбирает single
+        (legacy новее shard'ов), манифест помечен exported."""
+        self._make_sharded(shard_env)
+        js.export_shards_to_legacy(shard_env)
+        assert not (shard_env / "tournaments.manifest.json").exists()
+        assert list(shard_env.glob("tournaments.manifest.json.exported-*"))
+        monkeypatch.delenv("JSON_STORE_MODE")
+        s = js.JsonStore()
+        assert s._mode == "single"
+        assert len(s.all()) == 2
+        assert s.get(1, 2).team_names["0"] == "One"
+
+    def test_total_shard_loss_goes_unhealthy(self, shard_env):
+        """Манифест заявляет турниры, все shard'ы потеряны →
+        unhealthy, запись запрещена, манифест сохранён."""
+        self._make_sharded(shard_env)
+        for p in (shard_env / "tournaments").glob("*.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert s2.is_healthy() is False
+        assert len(s2.corrupt_keys()) == 2
+        from storage.json_store import StoreUnavailableError
+        with pytest.raises(StoreUnavailableError):
+            s2.set(_t(9, 9))
+        # манифест НЕ затёрт — ключи сохранены для forensics
+        manifest = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        assert sorted(manifest["keys"]) == ["1_2", "3_4"]
+
+    def test_shard_written_manifest_stale_self_heals(self, shard_env):
+        """Shard записан, манифест не обновлён (crash-окно) →
+        при загрузке лишний ключ подхватывается, манифест
+        самолечится."""
+        self._make_sharded(shard_env)
+        # Имитируем crash между _write_shard и _write_manifest:
+        # добавляем валидный shard-файл и убираем его из манифеста.
+        extra = Tournament(guild_id=7, channel_id=8)
+        extra.team_names["0"] = "Extra"
+        (shard_env / "tournaments" / "7_8.json").write_text(
+            json.dumps(extra.to_dict()), encoding="utf-8"
+        )
+        manifest = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        manifest["keys"] = ["1_2", "3_4"]
+        (shard_env / "tournaments.manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        s2 = js.JsonStore()
+        assert s2.get(7, 8) is not None  # лишний shard загружен
+        healed = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        assert sorted(healed["keys"]) == ["1_2", "3_4", "7_8"]
+
+    def test_nested_state_survives_shard_restart(self, shard_env):
+        """Вложенное состояние (команды, пулы, picks) переживает
+        shard-запись + рестарт."""
+        s = js.JsonStore()
+        t = _t(11, 22, "Bracket")
+        t.players_pool = [{"id": 1, "name": "P1"}]
+        t.circle1 = [{"id": 2, "name": "P2"}]
+        t.team_names = {"0": "Alpha", "1": "Beta"}
+        s.set(t)
+        s2 = js.JsonStore()
+        t2 = s2.get(11, 22)
+        assert t2 is not None
+        assert t2.players_pool == [{"id": 1, "name": "P1"}]
+        assert t2.circle1 == [{"id": 2, "name": "P2"}]
+        assert t2.team_names == {"0": "Alpha", "1": "Beta"}

@@ -122,14 +122,21 @@ class JsonStore:
             return "single"
         if mode in ("sharded", "shard"):
             return "sharded"
-        # auto: sharded только если shard-данные уже существуют —
-        # иначе остаёмся на проверенном single-режиме.
-        if self._manifest_path.exists():
+        # auto: sharded, если манифест (или его .bak) есть либо
+        # shard-файлы существуют и не старше legacy. Иначе single —
+        # legacy-файл остаётся источником до явного включения
+        # sharded (миграция только по запросу).
+        if self._manifest_path.exists() or backup_path(
+            self._manifest_path
+        ).exists():
             return "sharded"
-        if self._shard_dir.is_dir() and any(
-            self._shard_dir.glob("*.json")
-        ):
-            return "sharded"
+        shards = self._shard_files()
+        if shards:
+            # Манифест потерян: shard'ы vs legacy — что новее?
+            # Post-rollback (экспорт завершён) → legacy новее →
+            # остаёмся на single. Иначе shard'ы авторитетны.
+            if not self._legacy_newer_than_shards():
+                return "sharded"
         return "single"
 
     def is_healthy(self) -> bool:
@@ -255,8 +262,10 @@ class JsonStore:
         logger.info("Загружено %d турниров", len(self._tournaments))
 
     def _warn_if_shards_newer(self) -> None:
-        """Single-режим при наличии shard-файлов: legacy может быть
-        устаревшим — громкое предупреждение, без молчаливой загрузки."""
+        """Single-режим при shard-файлах новее legacy: legacy
+        устарел — ЗАПРЕЩАЕМ изменяющие операции (unhealthy),
+        чтение памяти продолжает работать. Молчаливого отката
+        состояния нет: set/delete/save → StoreUnavailableError."""
         try:
             shards = [
                 p for p in self._shard_dir.glob("*.json")
@@ -272,11 +281,13 @@ class JsonStore:
         except OSError:
             return
         if newest > legacy_mtime:
+            self._unhealthy = True
             logger.critical(
-                "ВНИМАНИЕ: обнаружены shard-файлы (%s) новее %s — "
-                "single-режим загрузит УСТАРЕВШИЕ данные. "
-                "Для безопасного rollback используйте "
-                "storage.json_store.export_shards_to_legacy().",
+                "КРИТИЧНО: shard-файлы (%s) новее %s — single-режим "
+                "загрузил бы УСТАРЕВШИЕ данные. Изменяющие операции "
+                "ЗАБЛОКИРОВАНЫ. Для безопасного rollback используйте "
+                "storage.json_store.export_shards_to_legacy() "
+                "(только при остановленных записях).",
                 len(shards), DATA_FILE.name,
             )
 
@@ -284,37 +295,98 @@ class JsonStore:
     # Sharded-режим
     # ------------------------------------------------------------------
 
-    def _load_sharded(self) -> None:
-        """Загрузка в sharded-режиме: миграция при необходимости +
-        чтение shard-файлов с .bak-fallback и manifest-контролем."""
-        manifest = self._read_manifest()
-        if manifest is None:
-            # Незавершённые состояния миграции — откладываем в сторону.
-            if self._staging_dir.exists():
-                self._archive_incomplete(self._staging_dir)
-            has_orphan_shards = self._shard_dir.is_dir() and any(
-                _parse_shard_name(p) is not None
-                for p in self._shard_dir.glob("*.json")
-            )
-            if has_orphan_shards:
-                # shard-файлы без манифеста — прерванный коммит
-                # миграции; legacy — последняя подтверждённая версия.
-                self._archive_incomplete(self._shard_dir)
+    def _shard_files(self) -> list[Path]:
+        """Все shard-файлы (parseable имена), без .bak/.tmp."""
+        if not self._shard_dir.is_dir():
+            return []
+        try:
+            return [
+                p for p in self._shard_dir.glob("*.json")
+                if _parse_shard_name(p) is not None
+            ]
+        except OSError:
+            return []
 
-            if DATA_FILE.exists():
-                if self._migrate_legacy_to_shards():
-                    manifest = self._read_manifest()
-                else:
-                    # Миграция не удалась — безопасный fallback на
-                    # single-режим (legacy-файл не тронут).
-                    logger.error(
-                        "Миграция в sharded-режим не удалась — "
-                        "переход на single-режим"
-                    )
-                    self._mode = "single"
-                    self._load_single()
-                    return
-            # else: чистый старт — пустой shard-каталог.
+    def _legacy_newer_than_shards(self) -> bool:
+        """True — legacy tournaments.json новее ВСЕХ shard-файлов.
+
+        Признак завершённого rollback-экспорта (export пишет
+        legacy последним) либо ручной подмены. В этом случае
+        shard'ы устарели и не должны быть источником данных.
+        """
+        try:
+            if not DATA_FILE.exists():
+                return False
+            legacy_mtime = DATA_FILE.stat().st_mtime
+            shards = self._shard_files()
+            if not shards:
+                return False
+            return legacy_mtime > max(p.stat().st_mtime for p in shards)
+        except OSError:
+            return False
+
+    def _load_sharded(self) -> None:
+        """Загрузка в sharded-режиме.
+
+        Манифест — важный, но НЕ единственный источник истины:
+        shard-файлы и есть данные. Различаем два сценария
+        «нет манифеста»:
+        - прерванная ПЕРВОНАЧАЛЬНАЯ миграция: staging-каталог
+          отложен, shard-файлов нет → миграция с legacy;
+        - потеря манифеста у РАБОТАЮЩЕГО хранилища: shard-файлы
+          на месте → манифест восстанавливается из фактического
+          набора файлов, legacy НЕ используется (может быть
+          устаревшим), файлы не архивируются.
+        """
+        # Незавершённый staging — никогда не авторитетен.
+        if self._staging_dir.exists():
+            self._archive_incomplete(self._staging_dir)
+
+        # Post-rollback состояние: legacy экспортирован ПОЗЖЕ всех
+        # shard-файлов → shard'ы устарели при любом манифесте.
+        if self._shard_files() and self._legacy_newer_than_shards():
+            logger.critical(
+                "Shard-файлы старше %s — вероятный завершённый "
+                "rollback; переключаюсь на single-режим",
+                DATA_FILE.name,
+            )
+            self._mode = "single"
+            self._load_single()
+            return
+
+        manifest = self._read_manifest()
+        manifest_source = "primary"
+        if manifest is None:
+            manifest = self._read_manifest_backup()
+            manifest_source = "bak" if manifest is not None else None
+
+        shard_files = self._shard_files()
+        if manifest is None and shard_files:
+            logger.critical(
+                "КРИТИЧНО: манифест %s отсутствует/повреждён — "
+                "восстанавливаю список ключей из %d shard-файлов; "
+                "полнота набора НЕ верифицирована. Legacy %s не "
+                "используется (может быть устаревшим), файлы не "
+                "архивируются.",
+                MANIFEST_NAME, len(shard_files), DATA_FILE.name,
+            )
+        elif manifest is None and not shard_files and DATA_FILE.exists():
+            # Shard-файлов нет вообще — первая миграция или повтор
+            # после архивации staging.
+            if self._migrate_legacy_to_shards():
+                manifest = self._read_manifest()
+                manifest_source = "primary"
+            else:
+                # Миграция не удалась — безопасный fallback на
+                # single-режим (legacy-файл не тронут).
+                logger.error(
+                    "Миграция в sharded-режим не удалась — "
+                    "переход на single-режим"
+                )
+                self._mode = "single"
+                self._load_single()
+                return
+        # else: манифест есть, либо чистый старт без данных.
 
         self._shard_dir.mkdir(parents=True, exist_ok=True)
 
@@ -362,6 +434,7 @@ class JsonStore:
             loaded_keys.add(key_name)
 
         # Manifest-сверка: пропавшие файлы — критично, лишние — info.
+        expected: set[str] = set()
         if manifest:
             expected = set(manifest.get("keys", []))
             missing = expected - loaded_keys - set(self._lost_keys)
@@ -374,9 +447,23 @@ class JsonStore:
                 )
             for k in sorted(extra):
                 logger.info("Shard %s.json не в манифесте — загружен", k)
+        if expected and not loaded_keys:
+            # Манифест заявлял турниры, но не восстановлен ни один —
+            # изменяющие операции запрещены до ручного восстановления.
+            self._unhealthy = True
+            logger.critical(
+                "КРИТИЧНО: ни один из %d ожидавшихся shard-файлов "
+                "не восстановлен — стор в режиме «только чтение», "
+                "сохранения заблокированы",
+                len(expected),
+            )
 
         self._manifest_keys = loaded_keys
-        if manifest is None:
+        # Самолечение манифеста: фиксируем фактический набор
+        # (покрывает shard без записи в манифест и восстановление
+        # из .bak). При тотальной потере (expected>0, loaded=0)
+        # манифест НЕ перезаписываем — сохраняем его для forensics.
+        if loaded_keys or not expected:
             self._write_manifest()
         logger.info(
             "Sharded store: загружено %d турниров, потеряно %d",
@@ -387,6 +474,11 @@ class JsonStore:
         raw = load_json_file(self._manifest_path)
         return raw if isinstance(raw, dict) else None
 
+    def _read_manifest_backup(self) -> dict | None:
+        """Резервная копия манифеста (<manifest>.bak)."""
+        raw = load_json_file(backup_path(self._manifest_path))
+        return raw if isinstance(raw, dict) else None
+
     def _write_manifest(self) -> None:
         manifest = {
             "version": 1,
@@ -395,11 +487,19 @@ class JsonStore:
             "count": len(self._manifest_keys),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
+        text = json.dumps(manifest, ensure_ascii=False, indent=2)
         try:
-            atomic_write_text(
-                self._manifest_path,
-                json.dumps(manifest, ensure_ascii=False, indent=2),
-            )
+            # Предыдущий манифест → .bak до перезаписи: потеря
+            # primary восстанавливается из резервной копии.
+            rotate_backup(self._manifest_path)
+            atomic_write_text(self._manifest_path, text)
+            # Первый манифест не имеет .bak — засеваем его, как у shard'ов.
+            bak = backup_path(self._manifest_path)
+            if not bak.exists():
+                try:
+                    atomic_write_text(bak, text)
+                except OSError:
+                    pass
         except OSError as exc:
             logger.error("Не удалось записать manifest: %s", exc)
 
@@ -789,6 +889,24 @@ def export_shards_to_legacy(data_dir: Path | None = None) -> Path:
         Tournament.from_dict(data)
 
     atomic_write_text(legacy, text)
+    # Фиксируем завершённый rollback: манифест и его .bak
+    # вытесняем — auto-режим и sharded-load больше не считают
+    # shard'ы авторитетными (legacy теперь новее по mtime).
+    # Сами shard-файлы сохраняются для диагностики/аудита.
+    for m in (manifest_path, backup_path(manifest_path)):
+        if m.exists():
+            try:
+                os.replace(
+                    m,
+                    m.with_name(
+                        f"{m.name}.exported-"
+                        f"{datetime.now():%Y%m%d-%H%M%S}"
+                    ),
+                )
+            except OSError as exc:
+                logger.error(
+                    "Не удалось пометить манифест как exported: %s", exc
+                )
     logger.warning(
         "Rollback: экспортировано %d турниров в %s",
         len(tournaments), legacy,
