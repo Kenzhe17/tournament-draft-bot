@@ -1,0 +1,17 @@
+{
+  "match_result.png": {
+    "size": [1441, 777],
+    "team_a": [
+      {"kills": 6, "deaths": 5, "assists": 1, "dmg": 2604},
+      {"kills": 4, "deaths": 3, "assists": 5, "dmg": 1497},
+      {"kills": 3, "deaths": 3, "assists": 2, "dmg": 1185},
+      {"kills": 3, "deaths": 5, "assists": 2, "dmg": 1138}
+    ],
+    "team_b": [
+      {"kills": 6, "deaths": 4, "assists": 3, "dmg": 2348},
+      {"kills": 4, "deaths": 4, "assists": 5, "dmg": 2787},
+      {"kills": 3, "deaths": 4, "assists": 3, "dmg": 1872},
+      {"kills": 3, "deaths": 4, "assists": 1, "dmg": 1297}
+    ]
+  }
+}

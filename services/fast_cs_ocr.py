@@ -73,6 +73,29 @@ def _ratio(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a, b).ratio()
 
 
+# Латинские двойники кириллицы: OCR на игровом шрифте выдаёт
+# смешанную раскладку («ИMA» = кириллическая И + латинские M,A).
+_HOMOGLYPHS = str.maketrans(
+    "abcekmoptxy",
+    "авеекмортху",
+)
+
+
+def _name_like(text: str) -> bool:
+    n = _norm_text(text)
+    if not n:
+        return False
+    folded = n.translate(_HOMOGLYPHS)
+    for cand in (n, folded):
+        if cand in ("имя", "name", "nma", "hma", "има", "нма"):
+            return True
+        if "имя" in cand or _ratio(cand, "имя") >= 0.55:
+            return True
+        if _ratio(cand, "name") >= 0.6 or _ratio(cand, "nma") >= 0.6:
+            return True
+    return False
+
+
 def _header_kind(text: str) -> str | None:
     """Тип заголовка колонки по (возможно искажённому) тексту."""
     n = _norm_text(text)
@@ -89,9 +112,7 @@ def _header_kind(text: str) -> str | None:
     ) >= 0.65:
         return "dmg"
     # ИМЯ / NAME
-    if "имя" in n or n in ("name", "nma", "hma", "имя") or _ratio(
-        n, "имя"
-    ) >= 0.6 or _ratio(n, "name") >= 0.6:
+    if _name_like(text):
         return "name"
     return None
 
@@ -672,35 +693,62 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
             y_lo, y_hi = g["bounds"][ri]
             rh = max(8.0, pitch * 0.45)
 
-            # K/D/A
-            kda_items = []
+            # K/D/A: лучший валидный кандидат среди боксов ячейки.
+            # Мусорные детекции («+», «G») отбрасываются парсером
+            # формата, а не склейкой в одну строку.
+            kda = None
+            kda_best = -1.0
             for b in cell_members[(pi, ri, "kda")]:
                 t, s = _rec_text_for(b)
-                # Низкая уверенность rec — не доверяем числу:
-                # лучше fallback на полный OCR, чем неверная статистика.
-                if t and s >= _REC_SCORE_MIN:
-                    kda_items.append((b["x0"], (t, s)))
-            kda_items.sort()
-            kda_text = " ".join(t for _x, (t, _s) in kda_items)
-            if not kda_text:
-                t, s = rect_results.get((pi, ri, "kda"), ("", 0.0))
-                kda_text = t
-            kda = _parse_kda_cell(kda_text)
+                if not t or s < _REC_SCORE_MIN or s <= kda_best:
+                    continue
+                k = _parse_kda_cell(t)
+                if k is not None:
+                    kda, kda_best = k, s
+            if kda is None:
+                # K/D/A может быть разрезан det'ом на несколько
+                # боксов («6/» + «5/1») — пробуем склейку по x.
+                parts = []
+                for b in sorted(
+                    cell_members[(pi, ri, "kda")], key=lambda b: b["x0"]
+                ):
+                    t, s = _rec_text_for(b)
+                    if t and s >= 0.5:
+                        parts.append(t)
+                if parts:
+                    kda = _parse_kda_cell(" ".join(parts))
+            if kda is None:
+                t, _s = rect_results.get((pi, ri, "kda"), ("", 0.0))
+                kda = _parse_kda_cell(t)
             if kda is not None:
                 n_kda += 1
 
-            # DMG
-            dmg_items = []
+            # DMG: то же — только чистое неотрицательное целое.
+            dmg = None
+            dmg_best = -1.0
             for b in cell_members[(pi, ri, "dmg")]:
                 t, s = _rec_text_for(b)
-                if t and s >= _REC_SCORE_MIN:
-                    dmg_items.append((b["x0"], (t, s)))
-            dmg_items.sort()
-            dmg_text = " ".join(t for _x, (t, _s) in dmg_items)
-            if not dmg_text:
+                if not t or s < _REC_SCORE_MIN or s <= dmg_best:
+                    continue
+                d = _parse_dmg_cell(t)
+                if d is not None:
+                    dmg, dmg_best = d, s
+            if dmg is None:
+                # DMG, разрезанный det'ом на части («26» + «04») —
+                # склейка чисто-цифровых кусков по x.
+                parts = []
+                for b in sorted(
+                    cell_members[(pi, ri, "dmg")], key=lambda b: b["x0"]
+                ):
+                    t, s = _rec_text_for(b)
+                    tt = _WS_RE.sub("", t or "")
+                    if tt and s >= 0.5 and _DMG_FULL_RE.match(tt):
+                        parts.append(tt)
+                if parts:
+                    dmg = _parse_dmg_cell("".join(parts))
+            if dmg is None:
                 t, _s = rect_results.get((pi, ri, "dmg"), ("", 0.0))
-                dmg_text = t
-            dmg = _parse_dmg_cell(dmg_text)
+                dmg = _parse_dmg_cell(t)
             if dmg is not None:
                 n_dmg += 1
 
