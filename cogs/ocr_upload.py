@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 
 import discord
-from discord.ui import Button, FileUpload, Modal, Select, View
+from discord.ui import Button, FileUpload, Label, Modal, Select, View
 from utils.design import compose, text_card
 from discord.ext import commands
 
@@ -2891,13 +2891,34 @@ class RoomCountSelectView(View):
                 ephemeral=True,
             )
             return
-        # Модалка первой комнаты — первый ответ на select-interaction
-        await interaction.response.send_modal(
-            RoomUploadModal(
-                self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index, 1, session["gen"],
+        # Модалка первой комнаты — первый ответ на select-interaction.
+        # При сбое открытия сессия НЕ отменяется: она остаётся
+        # «collecting» и доступна для повтора через «Добавить
+        # скриншоты» / отмены — OCR-комплект не блокируется.
+        try:
+            await interaction.response.send_modal(
+                RoomUploadModal(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index, 1, session["gen"],
+                )
             )
-        )
+        except Exception as exc:
+            logger.error(
+                "Не удалось открыть модалку загрузки комнаты 1 "
+                "(match %s_%s): %s",
+                self.match_type, self.match_index, exc, exc_info=True,
+            )
+            try:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Не удалось открыть окно загрузки файлов — "
+                        "сессия активна, повторите через кнопку "
+                        "«Добавить скриншоты»."
+                    ),
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
 
 
 class RoomUploadModal(Modal):
@@ -2911,11 +2932,15 @@ class RoomUploadModal(Modal):
         self, guild_id: int, channel_id: int, tournament,
         match_type: str, match_index: int, room_index: int, gen: int,
     ):
-        upload = FileUpload(
-            label=f"Скриншоты комнаты {room_index} (1–2 файла)",
-            required=True,
-            min_values=1,
-            max_values=2,
+        # FileUpload в discord.py 2.7 не принимает label — текст
+        # задаётся через Label-обёртку (как в ScreenshotUploadModal).
+        self.upload = Label(
+            text=f"Скриншоты комнаты {room_index} (1–2 файла)",
+            component=FileUpload(
+                required=True,
+                min_values=1,
+                max_values=2,
+            ),
         )
         super().__init__(title=f"Комната {room_index}", timeout=600)
         self.guild_id = guild_id
@@ -2924,10 +2949,10 @@ class RoomUploadModal(Modal):
         self.match_index = match_index
         self.room_index = room_index
         self.gen = gen
-        self.add_item(upload)
+        self.add_item(self.upload)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        upload = self.children[0]
+        upload = self.upload.component
         files = list(getattr(upload, "values", None) or [])
         await interaction.response.defer(ephemeral=True)
         if not files:
@@ -3135,13 +3160,31 @@ class RoomCollectView(View):
                 ephemeral=True,
             )
             return
-        await interaction.response.send_modal(
-            RoomUploadModal(
-                self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index, nxt,
-                int(session.get("gen", 1)),
+        try:
+            await interaction.response.send_modal(
+                RoomUploadModal(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index, nxt,
+                    int(session.get("gen", 1)),
+                )
             )
-        )
+        except Exception as exc:
+            logger.error(
+                "Не удалось открыть модалку загрузки комнаты %s "
+                "(match %s_%s): %s",
+                nxt, self.match_type, self.match_index, exc,
+                exc_info=True,
+            )
+            try:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Не удалось открыть окно загрузки файлов — "
+                        "повторите попытку."
+                    ),
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
         tournament = store.get(self.guild_id, self.channel_id)

@@ -312,6 +312,29 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"Failed to load betting odds from DB: {e}", exc_info=True)
 
+        # Startup-валидация серверной конфигурации: критичные ID
+        # должны быть заданы через env — иначе функции отключены.
+        try:
+            import config as _cfg
+            missing = [
+                name for name in (
+                    "GUILD_ID", "TOURNAMENT_CHANNELS", "ORG_ROLE_MAP",
+                    "NOTIFICATION_CHANNEL_ID", "OCR_STATS_CHANNEL_ID",
+                    "OCR_RESULT_CHANNEL_ID", "MM_MATCH_CHANNEL_POOL",
+                    "REP_LOG_CHANNEL_ID", "WELCOME_CHANNEL_ID",
+                )
+                if not getattr(_cfg, name)
+            ]
+            if missing:
+                logger.warning(
+                    "Конфигурация сервера неполная — не заданы env: %s. "
+                    "Связанные функции будут отключены/использовать "
+                    "fallback-каналы. Проверьте Railway Variables.",
+                    ", ".join(missing),
+                )
+        except Exception as exc:
+            logger.warning("Config validation failed: %s", exc)
+
         # Sync commands globally
         try:
             synced = await self.tree.sync()

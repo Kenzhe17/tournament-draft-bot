@@ -177,15 +177,19 @@ def _process_stats() -> dict[str, float]:
     except Exception:
         try:
             import resource
+            import sys
 
             ru = resource.getrusage(resource.RUSAGE_SELF)
-            # ru_maxrss: Linux — KB, macOS — bytes, Windows — bytes
             rss = ru.ru_maxrss
-            if rss > 1 << 40:
-                rss //= 1024 * 1024  # bytes → MB
-            elif rss > 1 << 30:
-                rss //= 1024  # KB → MB
-            out["rss_mb"] = round(float(rss), 1)
+            # ru_maxrss: Linux — KiB, macOS — bytes.
+            # Порог по платформе, а не по величине: значение в KiB
+            # (~10^5–10^7) на Linux не превышает 1<<30 и раньше
+            # ошибочно трактовалось как «уже MB».
+            if sys.platform == "darwin":
+                rss_mb = rss / (1024 * 1024)
+            else:  # Linux и прочие — KiB
+                rss_mb = rss / 1024
+            out["rss_mb"] = round(float(rss_mb), 1)
         except Exception:
             pass
     return out
