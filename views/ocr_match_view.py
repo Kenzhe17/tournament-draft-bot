@@ -529,13 +529,20 @@ _MAPPING_LOCKS_MAX = 200
 
 
 def _mapping_lock(match_key: str) -> asyncio.Lock:
-    lock = _MAPPING_LOCKS.get(match_key)
-    if lock is None:
-        lock = asyncio.Lock()
-        _MAPPING_LOCKS[match_key] = lock
-        if len(_MAPPING_LOCKS) > _MAPPING_LOCKS_MAX:
-            _MAPPING_LOCKS.pop(next(iter(_MAPPING_LOCKS)))
-    return lock
+    """Лок мутаций OCR-сессии матча — ТОТ ЖЕ per-match лок, что у
+    finalize/cancel/claim (cogs.ocr_upload._room_lock).
+
+    Единая иерархия: все изменения сессии (маппинг, правки статов,
+    комнаты) и финализация сериализуются на одном ключе
+    _session_key(match_type, match_index) — mapping не может
+    перезаписать «finalizing»/«completed», финализация не может
+    начаться поверх незавершённой мутации. Порядок захвата всегда
+    _mapping_lock → (после освобождения) _finalize_lock → _room_lock;
+    обратного порядка нет → deadlock невозможен.
+    """
+    from cogs.ocr_upload import _room_lock
+
+    return _room_lock(match_key)
 
 
 def _room_session(session: dict, room_index: int) -> dict | None:
@@ -695,6 +702,232 @@ def _rooms_stats_complete(session: dict) -> bool:
                     if row.get(f) is None:
                         return False
     return True
+
+
+def check_ocr_session_ready(
+    tournament: Tournament,
+    session: dict | None,
+    t1: int,
+    t2: int,
+    require_winner: bool = True,
+) -> tuple[bool, str, str]:
+    """Готовность rooms-сессии к финализации (ТЗ Ranked MM).
+
+    True только когда: сессия активна (не completed/cancelled), все
+    комнаты присутствуют и полностью сопоставлены, статистика полна
+    и агрегируется по всему ростеру без конфликтов Discord ID, а при
+    require_winner — зафиксирован winning_team_index команды-
+    победителя. OCR-вывод и баннеры на готовность НЕ влияют.
+    Возвращает (ready, reason, detail).
+    """
+    if not session or session.get("mode") != "rooms":
+        return False, "no_session", ""
+    if session.get("status") in ("completed", "cancelled"):
+        return False, "closed", ""
+    if not _rooms_all_mapped(session, t1, t2):
+        return False, "unmapped", ""
+    if not _rooms_stats_complete(session):
+        return False, "stats_incomplete", ""
+    try:
+        agg = _rooms_aggregate_stats(session, tournament, t1, t2)
+    except Exception as e:
+        return False, "agg_error", str(e)
+    missing = [
+        n for idx in (t1, t2)
+        for n in team_roster(tournament, idx)
+        if n not in agg
+    ]
+    if missing:
+        return False, "missing_stats", ", ".join(missing[:8])
+    if require_winner:
+        wti = session.get("winning_team_index")
+        try:
+            wi = int(wti) if wti is not None else None
+        except (TypeError, ValueError):
+            wi = None
+        if wi not in (t1, t2):
+            return False, "winner_unset", ""
+    return True, "ready", ""
+
+
+def _squad_session_ready(
+    tournament: Tournament, session: dict, t1: int, t2: int
+) -> tuple[bool, str]:
+    """Готовность squad-сессии к финализации (Ranked MM).
+
+    Оба отряда назначены командам матча; у каждой команды все строки
+    сопоставлены с Discord ID ИЗ ЕЁ ростера (без повторов между
+    командами), заполнены K/D/A/Damage. Ошибки и незавершённые
+    сопоставления блокируют начисление ELO. Возвращает (ready,
+    reason).
+    """
+    squads = session.get("squads") or {}
+    maps = session.get("maps") or {}
+    for t in (t1, t2):
+        if str(t) not in squads and str(t) not in maps:
+            return False, "squad_missing"
+    seen: set[int] = set()
+    for t in (t1, t2):
+        tm = _team_map(session, t)
+        rows = (tm or {}).get("rows") or []
+        roster = set(team_roster(tournament, t))
+        expected = len(roster)
+        if expected and len(rows) != expected:
+            return False, "roster_mismatch"
+        if not rows:
+            return False, "unmapped"
+        for r in rows:
+            if not _row_bound(r):
+                return False, "unmapped"
+            # Привязка обязана содержать Discord ID и имя из
+            # ростера ЭТОЙ команды — чужой игрок не пройдёт.
+            try:
+                did = int(r.get("discord_id"))
+            except (TypeError, ValueError):
+                return False, "no_discord_id"
+            if did in seen:
+                return False, "duplicate_id"
+            seen.add(did)
+            dname = r.get("discord_name")
+            if roster and dname not in roster:
+                return False, "foreign_player"
+            for k in ("kills", "deaths", "assists", "dmg"):
+                if r.get(k) is None:
+                    return False, "missing_stats"
+    return True, "ready"
+
+
+def _rooms_confirmed_winner(
+    tournament: Tournament, session: dict, t1: int, t2: int
+) -> int | None:
+    """Победитель rooms-матча: зафиксированный winning_team_index
+    (команда отправителя первого принятого файла), для legacy-сессий
+    —fallback на команду uploaded_by. Никогда не выводится из OCR.
+    """
+    wti = session.get("winning_team_index")
+    try:
+        winner = int(wti) if wti is not None else None
+    except (TypeError, ValueError):
+        winner = None
+    if winner in (t1, t2):
+        return winner
+    return _team_of_user(tournament, (t1, t2), session.get("uploaded_by"))
+
+
+def _session_mm_winner(
+    tournament: Tournament, session: dict, t1: int, t2: int
+) -> int | None:
+    """Победитель Ranked MM для classic/squad-режимов.
+
+    Тот же принцип, что у rooms: команда капитана, отправившего
+    первый принятый файл (winning_team_index фиксируется при создании
+    сессии). Fallback — команда uploaded_by; None — комплект админа,
+    команду выбирает организатор явно. OCR-баннеры/статистика не
+    участвуют.
+    """
+    wti = session.get("winning_team_index")
+    try:
+        wi = int(wti) if wti is not None else None
+    except (TypeError, ValueError):
+        wi = None
+    if wi in (t1, t2):
+        return wi
+    return _team_of_user(tournament, (t1, t2), session.get("uploaded_by"))
+
+
+def _rooms_ready_reason_text(reason: str, detail: str = "") -> str:
+    """Пользовательское сообщение о причине неготовности rooms-комплекта."""
+    if reason == "unmapped":
+        return ("⚠️ Не все комнаты сопоставлены — проверьте "
+                "сообщения комнат.")
+    if reason == "stats_incomplete":
+        return ("⚠️ Есть нераспознанные значения статистики — "
+                "исправьте их через «Исправить статистику».")
+    if reason == "agg_error":
+        return ("⚠️ Агрегация статистики содержит ошибки "
+                f"({detail}) — исправьте привязки.")
+    if reason == "missing_stats":
+        return ("⚠️ Нет статистики для игроков: " + detail +
+                ". Заполните вручную через «Исправить статистику».")
+    if reason == "winner_unset":
+        return ("⚠️ Победитель не определён — администратор выберет "
+                "команду при подтверждении.")
+    return "⚠️ OCR-комплект ещё не готов к подтверждению."
+
+
+async def _reply_ephemeral(interaction: discord.Interaction, text: str) -> None:
+    """Эфемерный ответ с учётом уже занятого response (defer/followup)."""
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=True)
+        else:
+            await interaction.response.send_message(text, ephemeral=True)
+    except Exception:
+        pass
+
+
+async def _maybe_auto_finalize_mm_rooms(
+    interaction: discord.Interaction,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> tuple[bool, str, str]:
+    """Ranked MM: автоматическая финализация rooms-комплекта.
+
+    Вызывается после каждого действия, способного завершить
+    подготовку (последнее сопоставление, сохранение исправления
+    статистики). Кнопка «Подтвердить результаты» не обязательна:
+    при полной готовности finalize запускается сразу. Для обычных
+    турниров и не-rooms режимов — no-op (False, "", "").
+    """
+    if not getattr(tournament, "mm_search_channel_id", None):
+        return False, "", ""
+    key = _session_key(match_type, match_index)
+    session = tournament.ocr_sessions.get(key)
+    if not session or session.get("mode") != "rooms":
+        return False, "", ""
+    if session.get("status") in ("completed", "cancelled", "finalizing"):
+        return False, "", ""
+    t1, t2 = _match_tuple(tournament, match_type, match_index)
+    ready, reason, detail = check_ocr_session_ready(
+        tournament, session, t1, t2
+    )
+    if not ready:
+        return False, reason, detail
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+    try:
+        await finalize_ocr_match(
+            interaction, tournament, match_type, match_index,
+            _rooms_confirmed_winner(tournament, session, t1, t2) or t1,
+        )
+        wname = _team_display_name(
+            tournament,
+            _rooms_confirmed_winner(tournament, session, t1, t2) or t1,
+        )
+        await interaction.followup.send(
+            replace_emojis(
+                f"✅ Все комнаты обработаны и сопоставлены — результат "
+                f"**{_match_label(match_type, match_index)}** "
+                f"зафиксирован автоматически. Победитель: **{wname}**."
+            ),
+            ephemeral=True,
+        )
+    except Exception:
+        logger.exception("MM rooms auto-finalize failed")
+        try:
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Автоматическое завершение не удалось — "
+                    "вызовите организатора или нажмите "
+                    "«Подтвердить результаты»."
+                ),
+                ephemeral=True,
+            )
+        except Exception:
+            pass
+        return False, "error", ""
+    return True, "", ""
 
 
 def _ensure_room_panel_map(
@@ -1070,7 +1303,7 @@ class MatchScreenshotButton(Button):
         squad_active = bool(
             session
             and session.get("mode") == "squad"
-            and session.get("status") not in ("completed", "cancelled")
+            and session.get("status") not in ("completed", "cancelled", "finalizing")
         )
         # Rooms-сессия создана, но файлы ещё не приняты (пользователь
         # закрыл модалку) — разрешаем продолжить сбор через основную
@@ -1079,14 +1312,28 @@ class MatchScreenshotButton(Button):
             self.team_index is None
             and not squad_active
             and session
-            and session.get("status") not in ("completed", "cancelled")
+            and session.get("status") not in ("completed", "cancelled", "finalizing")
         ):
             from cogs.ocr_upload import (
                 RoomCollectView,
+                _rooms_file_submit_allowed,
                 rooms_session_can_continue,
             )
 
             if rooms_session_can_continue(session):
+                # Ranked MM: пустой комплект может продолжить любой
+                # капитан/админ — первый файл зафиксирует победителя.
+                if not _rooms_file_submit_allowed(
+                    tournament, session, interaction.user
+                ):
+                    await interaction.response.send_message(
+                        replace_emojis(
+                            "❌ Этот комплект может продолжить только "
+                            "его отправитель или администратор."
+                        ),
+                        ephemeral=True,
+                    )
+                    return
                 await interaction.response.send_message(
                     content=replace_emojis(
                         "▶️ Сессия загрузки уже создана — "
@@ -1102,7 +1349,7 @@ class MatchScreenshotButton(Button):
                 return
         if (
             session
-            and session.get("status") not in ("completed", "cancelled")
+            and session.get("status") not in ("completed", "cancelled", "finalizing")
             and not squad_active
         ):
             await interaction.response.send_message(
@@ -1189,6 +1436,21 @@ class MatchScreenshotButton(Button):
 # ---------------------------------------------------------------------------
 # Публичное сообщение с результатами OCR + кнопки сопоставления
 # ---------------------------------------------------------------------------
+
+async def _respond_cancel_result(
+    interaction: discord.Interaction, res: str
+) -> None:
+    """Единый ephemeral-ответ на результат отмены OCR-комплекта."""
+    if res == "forbidden":
+        msg = "❌ «Неправильный скриншот» доступен только администратору."
+    elif res in ("none", "done"):
+        msg = "ℹ️ Активной загрузки нет."
+    else:
+        msg = "✅ Весь комплект скриншотов отменён — можно загрузить заново."
+    await interaction.response.send_message(
+        replace_emojis(msg), ephemeral=True
+    )
+
 
 async def _register_reupload(
     interaction: discord.Interaction,
@@ -1400,7 +1662,7 @@ class OCRPublicView(View):
         )
         maps = session.get("maps", {})
         t1, t2 = _match_tuple(tournament, match_type, match_index)
-        active = session.get("status") not in ("completed", "cancelled")
+        active = session.get("status") not in ("completed", "cancelled", "finalizing")
 
         for team_index in (t1, t2):
             name = _team_display_name(tournament, team_index)
@@ -1524,7 +1786,7 @@ class OCRPublicView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ OCR-сессия не найдена или завершена."),
                     ephemeral=True,
@@ -1581,7 +1843,7 @@ class OCRPublicView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ Сопоставление уже завершено."),
                     ephemeral=True,
@@ -1663,13 +1925,25 @@ class OCRPublicView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ OCR-сессия не найдена или завершена."),
                     ephemeral=True,
                 )
                 return
 
+            # Ranked MM: админское «Неправильный скриншот» = полный
+            # откат комплекта (не reupload) — победитель и mappings
+            # обнуляются, загрузку начинает победивший капитан заново.
+            if getattr(tournament, "mm_search_channel_id", None):
+                from cogs.ocr_upload import cancel_rooms_session
+
+                res = await cancel_rooms_session(
+                    interaction.guild, interaction.user, tournament,
+                    self.match_type, self.match_index,
+                )
+                await _respond_cancel_result(interaction, res)
+                return
             if FileUpload is not None:
                 modal = ScreenshotUploadModal(
                     self.guild_id, self.channel_id,
@@ -1786,7 +2060,7 @@ class SquadClaimView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ OCR-сессия не найдена или завершена."),
                     ephemeral=True,
@@ -1862,6 +2136,15 @@ class SquadClaimView(View):
                     ephemeral=True,
                 )
                 return
+            if getattr(tournament, "mm_search_channel_id", None):
+                from cogs.ocr_upload import cancel_rooms_session
+
+                res = await cancel_rooms_session(
+                    interaction.guild, interaction.user, tournament,
+                    self.match_type, self.match_index,
+                )
+                await _respond_cancel_result(interaction, res)
+                return
             if FileUpload is not None:
                 modal = ScreenshotUploadModal(
                     self.guild_id, self.channel_id,
@@ -1907,7 +2190,7 @@ class SquadAssignedView(View):
         session = tournament.ocr_sessions.get(
             _session_key(match_type, match_index), {}
         )
-        active = session.get("status") not in ("completed", "cancelled")
+        active = session.get("status") not in ("completed", "cancelled", "finalizing")
         mapped = str(team_index) in session.get("maps", {})
         name = _team_display_name(tournament, team_index)
 
@@ -1960,7 +2243,7 @@ class SquadAssignedView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ OCR-сессия не найдена или завершена."),
                     ephemeral=True,
@@ -2032,11 +2315,20 @@ class SquadAssignedView(View):
             session = tournament.ocr_sessions.get(
                 _session_key(self.match_type, self.match_index)
             )
-            if not session or session.get("status") == "completed":
+            if not session or session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ OCR-сессия не найдена или завершена."),
                     ephemeral=True,
                 )
+                return
+            if getattr(tournament, "mm_search_channel_id", None):
+                from cogs.ocr_upload import cancel_rooms_session
+
+                res = await cancel_rooms_session(
+                    interaction.guild, interaction.user, tournament,
+                    self.match_type, self.match_index,
+                )
+                await _respond_cancel_result(interaction, res)
                 return
             if FileUpload is not None:
                 modal = ScreenshotUploadModal(
@@ -2416,80 +2708,93 @@ class PanelMappingView(View):
             await self._save_hybrid(interaction, tournament, session)
             return
 
-        rows = (session.get("panels", {}).get(self.panel) or {}).get("rows", [])
-        roster = set(team_roster(tournament, self.team_index))
+        key = _session_key(self.match_type, self.match_index)
+        async with _mapping_lock(key):
+            # Свежие объекты под локом + status-guard: запись
+            # маппинга сериализована с finalize/отменой — после
+            # «finalizing»/«completed» состав изменить нельзя.
+            tournament = store.get(self.guild_id, self.channel_id) or tournament
+            session = tournament.ocr_sessions.get(key) or session
+            if session.get("status") in ("completed", "finalizing", "cancelled"):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Сопоставление уже завершено."),
+                    ephemeral=True,
+                )
+                return
+            rows = (session.get("panels", {}).get(self.panel) or {}).get("rows", [])
+            roster = set(team_roster(tournament, self.team_index))
 
-        # Валидация: все распознанные строки сопоставлены, без дублей,
-        # только свой состав
-        chosen = [self.assign.get(i) for i in range(len(rows))]
-        if not rows or any(not c for c in chosen):
-            await interaction.response.send_message(
-                replace_emojis(
-                    "❌ Сопоставьте всех игроков — каждому игровому "
-                    "нику должен соответствовать участник Discord."
-                ),
-                ephemeral=True,
-            )
-            return
-        if len(set(chosen)) != len(chosen):
-            await interaction.response.send_message(
-                replace_emojis("❌ Один игрок не может быть назначен дважды."),
-                ephemeral=True,
-            )
-            return
-        if any(c not in roster for c in chosen):
-            await interaction.response.send_message(
-                replace_emojis("❌ Выбранный игрок не входит в вашу команду."),
-                ephemeral=True,
-            )
-            return
+            # Валидация: все распознанные строки сопоставлены, без дублей,
+            # только свой состав
+            chosen = [self.assign.get(i) for i in range(len(rows))]
+            if not rows or any(not c for c in chosen):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Сопоставьте всех игроков — каждому игровому "
+                        "нику должен соответствовать участник Discord."
+                    ),
+                    ephemeral=True,
+                )
+                return
+            if len(set(chosen)) != len(chosen):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Один игрок не может быть назначен дважды."),
+                    ephemeral=True,
+                )
+                return
+            if any(c not in roster for c in chosen):
+                await interaction.response.send_message(
+                    replace_emojis("❌ Выбранный игрок не входит в вашу команду."),
+                    ephemeral=True,
+                )
+                return
 
-        # Панель закрепляется подтверждением сопоставления: блокируем
-        # только если её фактически заняла другая команда.
-        if _panel_claimed_by_other(
-            session, self.team_index, self.panel
-        ):
-            logger.warning(
-                "OCR panel %s save blocked for team %s "
-                "(match %s/%s)",
-                self.panel, self.team_index,
-                self.match_type, self.match_index,
-            )
-            await interaction.response.send_message(
-                replace_emojis(
-                    "❌ Эта панель уже закреплена за другой командой."
-                ),
-                ephemeral=True,
-            )
-            return
+            # Панель закрепляется подтверждением сопоставления: блокируем
+            # только если её фактически заняла другая команда.
+            if _panel_claimed_by_other(
+                session, self.team_index, self.panel
+            ):
+                logger.warning(
+                    "OCR panel %s save blocked for team %s "
+                    "(match %s/%s)",
+                    self.panel, self.team_index,
+                    self.match_type, self.match_index,
+                )
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "❌ Эта панель уже закреплена за другой командой."
+                    ),
+                    ephemeral=True,
+                )
+                return
 
-        # Запись маппинга (статистика — актуальная из сессии, после правок)
-        mapped_rows = []
-        for i, row in enumerate(rows):
-            mapped = {
-                "discord_name": chosen[i],
-                "ocr_name": row.get("name", "?"),
-                "kills": int(row.get("kills", 0)),
-                "deaths": int(row.get("deaths", 0)),
-                "assists": int(row.get("assists", 0)),
-                "dmg": int(row.get("dmg", 0) or 0),
+            # Запись маппинга (статистика — актуальная из сессии, после правок)
+            mapped_rows = []
+            for i, row in enumerate(rows):
+                mapped = {
+                    "discord_name": chosen[i],
+                    "ocr_name": row.get("name", "?"),
+                    "kills": int(row.get("kills", 0)),
+                    "deaths": int(row.get("deaths", 0)),
+                    "assists": int(row.get("assists", 0)),
+                    "dmg": int(row.get("dmg", 0) or 0),
+                }
+                for k in EXTRA_STAT_KEYS:
+                    if row.get(k) is not None:
+                        mapped[k] = row[k]
+                mapped_rows.append(mapped)
+            session.setdefault("maps", {})[str(self.team_index)] = {
+                "panel": self.panel,
+                "rows": mapped_rows,
+                "confirmed": True,
             }
-            for k in EXTRA_STAT_KEYS:
-                if row.get(k) is not None:
-                    mapped[k] = row[k]
-            mapped_rows.append(mapped)
-        session.setdefault("maps", {})[str(self.team_index)] = {
-            "panel": self.panel,
-            "rows": mapped_rows,
-            "confirmed": True,
-        }
-        session.setdefault("panel_picks", {})[str(self.team_index)] = (
-            self.panel
-        )
-        done = len(session["maps"])
-        auto = done >= 2
-        session["status"] = "ready" if auto else "mapping"
-        store.set(tournament)
+            session.setdefault("panel_picks", {})[str(self.team_index)] = (
+                self.panel
+            )
+            done = len(session["maps"])
+            auto = done >= 2
+            session["status"] = "ready" if auto else "mapping"
+            store.set(tournament)
 
         # Обновляем публичное сообщение (кнопки/прогресс)
         await _refresh_public_message(
@@ -2533,7 +2838,7 @@ class PanelMappingView(View):
             # привязки не должны перетирать друг друга
             tournament = store.get(self.guild_id, self.channel_id) or tournament
             session = tournament.ocr_sessions.get(key) or session
-            if session.get("status") == "completed":
+            if session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ Сопоставление уже завершено."),
                     ephemeral=True,
@@ -2647,53 +2952,53 @@ class PanelMappingView(View):
             )
             store.set(tournament)
 
-            try:
-                await _refresh_public_message(
-                    interaction, tournament,
-                    self.match_type, self.match_index,
-                )
-            except Exception as e:
-                logger.warning("public message refresh failed: %s", e)
-
-            name_team = _team_display_name(tournament, self.team_index)
-            done_n, total_n = _mapping_progress(session, self.team_index)
-
-            if overridden:
-                await _notify_mapping_conflict(
-                    interaction.guild, session,
-                    "⚠️ **OCR mapping override** — "
-                    f"{_match_label(self.match_type, self.match_index)}: "
-                    f"капитан {name_team} переопределил привязки: "
-                    f"{'; '.join(overridden)}.",
-                )
-
-            t1, t2 = _match_tuple(
-                tournament, self.match_type, self.match_index
+        try:
+            await _refresh_public_message(
+                interaction, tournament,
+                self.match_type, self.match_index,
             )
-            if _classic_mapping_complete(session, t1, t2):
-                await _auto_finalize_match(
-                    interaction, tournament,
-                    self.match_type, self.match_index, self.team_index,
-                )
-                return
+        except Exception as e:
+            logger.warning("public message refresh failed: %s", e)
 
-            extra = ""
-            if overridden:
-                extra = (
-                    "\n⚠️ Переопределены привязки: "
-                    + "; ".join(overridden)
-                    + " — организатор уведомлён."
-                )
-            await interaction.response.send_message(
-                replace_emojis(
-                    f"✅ Команда **{name_team}**: сопоставлено "
-                    f"**{done_n}/{total_n}**.\n"
-                    "Осталось сопоставить свободные ники — результат "
-                    "зафиксируется автоматически, когда будут "
-                    "закреплены все." + extra
-                ),
-                ephemeral=True,
+        name_team = _team_display_name(tournament, self.team_index)
+        done_n, total_n = _mapping_progress(session, self.team_index)
+
+        if overridden:
+            await _notify_mapping_conflict(
+                interaction.guild, session,
+                "⚠️ **OCR mapping override** — "
+                f"{_match_label(self.match_type, self.match_index)}: "
+                f"капитан {name_team} переопределил привязки: "
+                f"{'; '.join(overridden)}.",
             )
+
+        t1, t2 = _match_tuple(
+            tournament, self.match_type, self.match_index
+        )
+        if _classic_mapping_complete(session, t1, t2):
+            await _auto_finalize_match(
+                interaction, tournament,
+                self.match_type, self.match_index, self.team_index,
+            )
+            return
+
+        extra = ""
+        if overridden:
+            extra = (
+                "\n⚠️ Переопределены привязки: "
+                + "; ".join(overridden)
+                + " — организатор уведомлён."
+            )
+        await interaction.response.send_message(
+            replace_emojis(
+                f"✅ Команда **{name_team}**: сопоставлено "
+                f"**{done_n}/{total_n}**.\n"
+                "Осталось сопоставить свободные ники — результат "
+                "зафиксируется автоматически, когда будут "
+                "закреплены все." + extra
+            ),
+            ephemeral=True,
+        )
 
 
 async def _auto_finalize_match(
@@ -2736,32 +3041,59 @@ async def _auto_finalize_match(
                 ephemeral=True,
             )
             return
+        # Ranked MM: автоматическая финализация без кнопки
+        # «Подтвердить результаты» — при полной готовности.
+        if getattr(tournament, "mm_search_channel_id", None):
+            done, reason, detail = await _maybe_auto_finalize_mm_rooms(
+                interaction, tournament, match_type, match_index
+            )
+            if done:
+                return
+            # Не готово — причина + карточка с кнопками правки/админа.
+            await _reply_ephemeral(
+                interaction, _rooms_ready_reason_text(reason, detail)
+            )
+            await _rooms_send_confirmation(
+                interaction, tournament, match_type, match_index,
+            )
+            return
         await _rooms_send_confirmation(
             interaction, tournament, match_type, match_index,
         )
         return
 
-    winner = _ocr_winning_team_index(session)
+    is_mm = bool(getattr(tournament, "mm_search_channel_id", None))
+    if is_mm:
+        # Ranked MM: победитель — команда отправителя первого
+        # принятого файла (зафиксирована в сессии), OCR не участвует.
+        winner = _session_mm_winner(tournament, session, t1, t2)
+    else:
+        winner = _ocr_winning_team_index(session)
     name = _team_display_name(tournament, team_index)
 
     if winner is not None and winner in (t1, t2):
         # Скриншот обязан прислать капитан ПОБЕДИВШЕЙ команды
         # (левая панель / баннер win на скриншоте). Чужой или
         # неизвестный загрузивший → блок автоподтверждения + орг.
+        # Для Ranked MM проверка не нужна: победитель уже равен
+        # команде отправителя комплекта по построению.
         if session.get("mode") == "squad":
             sentry = session.get("squads", {}).get(str(winner)) or {}
             uploader_id = sentry.get("uploaded_by")
         else:
             uploader_id = session.get("uploaded_by")
-        uploader_ok = _uploaded_by_is_captain_of(
-            tournament, winner, uploader_id
-        )
-        if not uploader_ok:
-            # Админ/организатор может прислать скриншот за любую
-            # команду — для них проверка капитана не нужна.
-            uploader_ok = await _uploader_is_privileged(
-                interaction.guild, uploader_id
+        if is_mm:
+            uploader_ok = True
+        else:
+            uploader_ok = _uploaded_by_is_captain_of(
+                tournament, winner, uploader_id
             )
+            if not uploader_ok:
+                # Админ/организатор может прислать скриншот за любую
+                # команду — для них проверка капитана не нужна.
+                uploader_ok = await _uploader_is_privileged(
+                    interaction.guild, uploader_id
+                )
         if not uploader_ok:
             await interaction.response.send_message(
                 replace_emojis(
@@ -2802,7 +3134,8 @@ async def _auto_finalize_match(
                     f"✅ Сопоставление завершено — результат "
                     f"**{_match_label(match_type, match_index)}** "
                     f"зафиксирован автоматически. Победитель: **{wname}** "
-                    "(по OCR)."
+                    + ("(по отправителю скриншота)."
+                       if is_mm else "(по OCR).")
                 ),
                 ephemeral=True,
             )
@@ -3083,7 +3416,7 @@ async def _self_bind_row(
             )
             return
         session = tournament.ocr_sessions.get(key)
-        if not session or session.get("status") == "completed":
+        if not session or session.get("status") in ("completed", "finalizing"):
             await interaction.response.send_message(
                 replace_emojis("❌ Сопоставление уже завершено."),
                 ephemeral=True,
@@ -3210,29 +3543,29 @@ async def _self_bind_row(
         row["source"] = "self"
         store.set(tournament)
 
-        try:
-            await _refresh_public_message(
-                interaction, tournament, match_type, match_index,
-            )
-        except Exception as e:
-            logger.warning("public message refresh failed: %s", e)
-
-        t_name = _team_display_name(tournament, team)
-        done_n, total_n = _mapping_progress(session, team)
-
-        if _classic_mapping_complete(session, t1, t2):
-            await _auto_finalize_match(
-                interaction, tournament, match_type, match_index, team,
-            )
-            return
-
-        await interaction.response.send_message(
-            replace_emojis(
-                f"✅ Ваш ник **{row.get('ocr_name', '?')}** закреплён "
-                f"за **{roster_name}** ({t_name}: {done_n}/{total_n})."
-            ),
-            ephemeral=True,
+    try:
+        await _refresh_public_message(
+            interaction, tournament, match_type, match_index,
         )
+    except Exception as e:
+        logger.warning("public message refresh failed: %s", e)
+
+    t_name = _team_display_name(tournament, team)
+    done_n, total_n = _mapping_progress(session, team)
+
+    if _classic_mapping_complete(session, t1, t2):
+        await _auto_finalize_match(
+            interaction, tournament, match_type, match_index, team,
+        )
+        return
+
+    await interaction.response.send_message(
+        replace_emojis(
+            f"✅ Ваш ник **{row.get('ocr_name', '?')}** закреплён "
+            f"за **{roster_name}** ({t_name}: {done_n}/{total_n})."
+        ),
+        ephemeral=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -3439,7 +3772,7 @@ class OcrRowAddModal(Modal, title="Добавить строку OCR"):
                     ephemeral=True,
                 )
                 return
-            if session.get("status") == "completed":
+            if session.get("status") in ("completed", "finalizing"):
                 await interaction.response.send_message(
                     replace_emojis("❌ Сопоставление уже завершено."),
                     ephemeral=True,
@@ -3706,10 +4039,17 @@ async def finalize_ocr_match(
     key = _session_key(match_type, match_index)
     lock = _finalize_lock(key)
     async with lock:
-        await _finalize_ocr_match_impl(
-            interaction, tournament, match_type, match_index,
-            winning_team_index,
-        )
+        # Тот же per-match лок, что у административной отмены комплекта:
+        # финализация и «Неправильный скриншот» не могут идти
+        # одновременно — отмена либо увидит финализированную сессию,
+        # либо удалит её до старта начисления ELO.
+        from cogs.ocr_upload import _room_lock
+
+        async with _room_lock(key):
+            await _finalize_ocr_match_impl(
+                interaction, tournament, match_type, match_index,
+                winning_team_index,
+            )
 
 
 async def _finalize_ocr_match_impl(
@@ -3736,6 +4076,57 @@ async def _finalize_ocr_match_impl(
 
     match_id = f"{tournament.id}_{key}"
     t1, t2 = _match_tuple(tournament, match_type, match_index)
+
+    # Повторная проверка готовности ПОД _room_lock (мы уже внутри
+    # finalize_ocr_match): между ready-check вызывающего и захватом
+    # лока другое действие могло изменить сопоставление или
+    # статистику. Финализируем только актуальный согласованный
+    # снимок. Только Ranked MM — обычные турниры сохраняют прежний
+    # ручной контроль (частичный маппинг допустим при confirm).
+    if getattr(tournament, "mm_search_channel_id", None):
+        if is_rooms:
+            ready, reason, _ = check_ocr_session_ready(
+                tournament, session, t1, t2, require_winner=False
+            )
+        elif session.get("mode") == "squad":
+            # Squad: оба отряда назначены, 4 игрока на команду,
+            # уникальные Discord ID из ростеров, K/D/A/Damage полны.
+            ready, reason = _squad_session_ready(
+                tournament, session, t1, t2
+            )
+        else:
+            ready = _classic_mapping_complete(session, t1, t2)
+            reason = "unmapped"
+        if not ready:
+            raise ValueError(
+                f"OCR-сессия не готова ({reason}) — данные изменились "
+                "после проверки, повторите после исправления"
+            )
+
+    if is_rooms:
+        # Победитель rooms-матча — ТОЛЬКО зафиксированный в сессии
+        # (команда отправителя первого принятого файла). Аргумент
+        # вызывающего не может его переопределить; None (админ-
+        # комплект) → явный выбор организатора, переданный аргументом.
+        pinned = _rooms_confirmed_winner(tournament, session, t1, t2)
+    elif getattr(tournament, "mm_search_channel_id", None):
+        # Ranked MM classic/squad: тот же принцип — победитель
+        # зафиксирован отправителем первого принятого файла.
+        pinned = _session_mm_winner(tournament, session, t1, t2)
+    else:
+        pinned = None
+    if pinned is not None:
+        winning_team_index = pinned
+
+    # Атомарный переход в финализацию: статус фиксируется в store
+    # ДО начисления ELO. Отмена и callbacks сериализованы _room_lock
+    # обёртки; «finalizing» дополнительно отсекает mapping-операции
+    # (их guard пропускает только collecting/awaiting_mapping/mapping).
+    # При падении до stats_done повторный finalize идемпотентен
+    # (PG-гейт), а админ-отмена недоведённого комплекта допустима.
+    if session.get("status") != "finalizing":
+        session["status"] = "finalizing"
+        store.set(tournament)
 
     # Статистика: discord_name -> {kills,deaths,assists,damage,ocr_name[,extra]}
     temp_stats: dict[str, dict[str, Any]] = {}
@@ -4111,7 +4502,6 @@ async def _resolve_match_bets(
 ) -> None:
     """Выплата ставок по матчу (как в ConfirmFinalWinnerButton)."""
     from storage.bet_store import bet_store
-    from storage.user_balance_store import user_balance_store
 
     match_id = f"{tournament.id}_{_session_key(match_type, match_index)}"
     name_a = _team_display_name(tournament, t1)
@@ -4120,15 +4510,11 @@ async def _resolve_match_bets(
     winning_pos = 0 if winning_team_index == t1 else 1
 
     try:
-        payouts, payouts_by_name = await bet_store.resolve_match_bets(
+        # Выплата выигрышей атомарна внутри resolve_match_bets.
+        _, payouts_by_name = await bet_store.resolve_match_bets(
             tournament.guild_id, tournament.id, match_id,
             winning_name, winning_pos,
         )
-        for user_id, payout in payouts.items():
-            if payout > 0:
-                await user_balance_store.add_balance(
-                    tournament.guild_id, user_id, payout
-                )
         for user_name, payout in payouts_by_name.items():
             if payout > 0:
                 tournament.betting_results[user_name] = (
@@ -4190,8 +4576,24 @@ async def _rooms_after_map(
         return
     t1, t2 = _match_tuple(fresh or tournament, match_type, match_index)
     if _rooms_all_mapped(session, t1, t2):
-        # Автоматической финализации НЕТ — отдельное подтверждение
-        # результатов с агрегированной статистикой.
+        # Ranked MM: при полной готовности — автоматическая
+        # финализация без кнопки подтверждения; иначе карточка
+        # с кнопками правки и конкретной причиной.
+        if getattr(fresh or tournament, "mm_search_channel_id", None):
+            done, reason, detail = await _maybe_auto_finalize_mm_rooms(
+                interaction, fresh or tournament, match_type, match_index
+            )
+            if done:
+                return
+            await _reply_ephemeral(
+                interaction, _rooms_ready_reason_text(reason, detail)
+            )
+            await _rooms_send_confirmation(
+                interaction, fresh or tournament, match_type, match_index,
+            )
+            return
+        # Обычные турниры: отдельное подтверждение результатов
+        # с агрегированной статистикой.
         await _rooms_send_confirmation(
             interaction, fresh or tournament, match_type, match_index,
         )
@@ -4804,8 +5206,7 @@ class RoomTeamMapView(View):
                 chosen[i] = vals[0]
 
         async with _mapping_lock(
-            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
-            f"{self.match_index}:room{self.room_index}"
+            _session_key(self.match_type, self.match_index)
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
@@ -4996,8 +5397,7 @@ class RoomSelfMapView(View):
             )
             return
         async with _mapping_lock(
-            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
-            f"{self.match_index}:room{self.room_index}"
+            _session_key(self.match_type, self.match_index)
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
@@ -5083,9 +5483,7 @@ async def _rooms_send_confirmation(
     if not session:
         return
     t1, t2 = _match_tuple(tournament, match_type, match_index)
-    winner = _team_of_user(
-        tournament, (t1, t2), session.get("uploaded_by")
-    )
+    winner = _rooms_confirmed_winner(tournament, session, t1, t2)
     wname = (
         _team_display_name(tournament, winner) if winner is not None else "—"
     )
@@ -5225,62 +5623,30 @@ class RoomsConfirmView(View):
         session = tournament.ocr_sessions.get(
             _session_key(self.match_type, self.match_index)
         )
+        # «finalizing» пропускаем: это либо активная финализация
+        # (повторный вход идемпотентен через PG-гейт), либо восстановление
+        # после падения — подтверждение должно иметь возможность retry.
         if not session or session.get("status") == "completed":
             await interaction.response.send_message(
                 replace_emojis("ℹ️ Результат уже зафиксирован."),
                 ephemeral=True,
             )
             return
-        if not _rooms_all_mapped(session, t1, t2):
-            await interaction.response.send_message(
-                replace_emojis(
-                    "⚠️ Не все комнаты сопоставлены — проверьте "
-                    "сообщения комнат."
-                ),
-                ephemeral=True,
-            )
-            return
-        if not _rooms_stats_complete(session):
-            await interaction.response.send_message(
-                replace_emojis(
-                    "⚠️ Есть нераспознанные значения статистики — "
-                    "исправьте их через «Исправить статистику»."
-                ),
-                ephemeral=True,
-            )
-            return
-        # Каждый игрок ростера должен иметь агрегированную статистику
-        # (досрочный выход — явные нули через ручной ввод, не пропуск).
-        try:
-            agg = _rooms_aggregate_stats(session, tournament, t1, t2)
-        except Exception as e:
-            logger.warning("rooms aggregate on confirm failed: %s", e)
-            await interaction.response.send_message(
-                replace_emojis(
-                    "⚠️ Агрегация статистики содержит ошибки "
-                    f"({e}) — исправьте привязки."
-                ),
-                ephemeral=True,
-            )
-            return
-        missing = [
-            n for idx in (t1, t2)
-            for n in team_roster(tournament, idx)
-            if n not in agg
-        ]
-        if missing:
-            await interaction.response.send_message(
-                replace_emojis(
-                    "⚠️ Нет статистики для игроков: "
-                    + ", ".join(missing[:8])
-                    + ". Заполните вручную через «Исправить статистику»."
-                ),
-                ephemeral=True,
-            )
-            return
-        winner = _team_of_user(
-            tournament, (t1, t2), session.get("uploaded_by")
+        # Единый гейт готовности (ТЗ Ranked MM): комнаты, сопоставление,
+        # полнота статистики, агрегация по всему ростеру. Победитель
+        # проверяется отдельно ниже (может потребоваться ручной выбор).
+        ready, reason, detail = check_ocr_session_ready(
+            tournament, session, t1, t2, require_winner=False
         )
+        if not ready:
+            await interaction.response.send_message(
+                replace_emojis(_rooms_ready_reason_text(reason, detail)),
+                ephemeral=True,
+            )
+            return
+        # Победитель — зафиксированная команда отправителя первого
+        # принятного файла; OCR/баннеры на него не влияют.
+        winner = _rooms_confirmed_winner(tournament, session, t1, t2)
         if winner is None:
             # Отправитель — не участник: ручной выбор организатором
             try:
@@ -5656,14 +6022,23 @@ class RoomRowEditModal(Modal):
             )
             return
         async with _mapping_lock(
-            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
-            f"{self.match_index}:room{self.room_index}"
+            _session_key(self.match_type, self.match_index)
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
                 self.guild_id, self.channel_id,
                 self.match_type, self.match_index,
             )
+            if not session or session.get("status") in (
+                "completed", "cancelled", "finalizing"
+            ):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Сопоставление для этого матча уже завершено."
+                    ),
+                    ephemeral=True,
+                )
+                return
             rs = _room_session(session, self.room_index)
             if rs is None:
                 await interaction.response.send_message(
@@ -5696,6 +6071,18 @@ class RoomRowEditModal(Modal):
                 pr["assists"] = assists
                 pr["dmg"] = dmg
             store.set(tournament)
+
+        # Ranked MM: сохранённая правка может стать последним шагом
+        # готовности — пробуем автоматическую финализацию (без кнопки
+        # «Подтвердить результаты»). Если финализировано — ответ уже
+        # отправлен хелпером, дальше не идём.
+        tournament = store.get(self.guild_id, self.channel_id)
+        if tournament is not None:
+            done, _, _ = await _maybe_auto_finalize_mm_rooms(
+                interaction, tournament, self.match_type, self.match_index
+            )
+            if done:
+                return
 
         # Если строка не привязана к Discord-игроку — сразу предлагаем
         # выбор игрока (единый процесс: строка → статы → привязка).
@@ -5778,14 +6165,23 @@ class RoomRowBindView(View):
             )
             return
         async with _mapping_lock(
-            f"{self.guild_id}:{self.channel_id}:{self.match_type}:"
-            f"{self.match_index}:room{self.room_index}"
+            _session_key(self.match_type, self.match_index)
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
                 self.guild_id, self.channel_id,
                 self.match_type, self.match_index,
             )
+            if not session or session.get("status") in (
+                "completed", "cancelled", "finalizing"
+            ):
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Сопоставление для этого матча уже завершено."
+                    ),
+                    ephemeral=True,
+                )
+                return
             rs = _room_session(session, self.room_index) if session else None
             tm = _team_map(rs, self.team_index) if rs else None
             rows = (tm or {}).get("rows") or []

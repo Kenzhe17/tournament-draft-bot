@@ -277,6 +277,35 @@ async def _update_results_message(
     return msg
 
 
+async def _neutralize_stale_ocr_message(
+    channel, message_id: int | None
+) -> None:
+    """Погасить сообщение OCR-комплекта, чья сессия уже отменена
+    или заменена, пока шёл Discord API-вызов.
+
+    Сообщение не удаляется (сохраняем аудит), но view обнуляется —
+    кнопки маппинга/отмены больше неактивны. Best effort: любая
+    ошибка Discord игнорируется. НЕ вызывать под _room_lock.
+    """
+    if not channel or not message_id:
+        return
+    try:
+        msg = await channel.fetch_message(int(message_id))
+        await msg.edit(
+            content=replace_emojis(
+                "❌ Этот комплект скриншотов был отменён или "
+                "заменён — кнопки больше не активны."
+            ),
+            view=None,
+            attachments=[],
+        )
+    except Exception as e:
+        logger.warning(
+            "Neutralize stale OCR message %s failed: %s",
+            message_id, e,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Итоговый пост в канал результатов (RESULT_CHANNEL_ID)
 # ---------------------------------------------------------------------------
@@ -828,6 +857,26 @@ class OCRUploadCog(commands.Cog):
         )
         is_reupload = bool(meta.get("reupload")) and session_active
 
+        # Ranked MM classic: замену комплекта («Неправильный
+        # скриншот») может выполнить только его отправитель, капитан
+        # зафиксированной команды-победителя или администратор —
+        # чужой капитан не может перехватить загрузку и сбросить
+        # сопоставление. Squad/rooms имеют собственные правила.
+        if (
+            is_reupload
+            and getattr(tournament, "mm_search_channel_id", None)
+            and existing.get("mode") not in ("squad", "rooms")
+            and not _mm_upload_allowed(existing, tournament, message.author)
+        ):
+            await message.reply(
+                replace_emojis(
+                    "❌ Этот комплект может заменить только его "
+                    "отправитель, капитан команды-победителя "
+                    "или администратор."
+                )
+            )
+            return
+
         # --- Мультикомнатный сбор (OCR V2) -------------------------------
         # Комнаты заполняются ЯВНО по номеру через кнопку «Добавить
         # скриншоты» на сообщении прогресса — картинка в чат без
@@ -849,9 +898,13 @@ class OCRUploadCog(commands.Cog):
 
         # Новый скриншот не должен перезаписывать активную сессию —
         # только явная кнопка «Неправильный скриншот» (reupload=True).
-        # Исключение: squad-режим — второй капитан загружает свой отряд.
+        # Исключения: squad-режим — второй капитан загружает свой
+        # отряд; pending-клейм — его владелец может повторно отправить
+        # файл (напр. после рестарта бота во время OCR).
         if session_active and not is_reupload:
-            if existing.get("mode") == "squad":
+            if _is_pending_claim_owner(existing, message.author.id):
+                pass  # владелец клейма — продолжаем как обычно
+            elif existing.get("mode") == "squad":
                 loaded = len(existing.get("squads", {})) + len(
                     existing.get("squad_pool", [])
                 )
@@ -872,6 +925,58 @@ class OCRUploadCog(commands.Cog):
                     )
                 )
                 return
+
+        # Ranked MM: атомарно закрепляем право на новый комплект ДО
+        # длительного OCR — победитель = команда первого ПРИНЯТОГО
+        # файла, а не первого завершившего распознавание. Пустой
+        # pending-клейм снимается при ошибке OCR
+        # (_release_pending_upload_claim), админ-отмена работает как
+        # обычно (статус awaiting_ocr не терминальный).
+        if (
+            getattr(tournament, "mm_search_channel_id", None)
+            and not session_active
+        ):
+            async with _room_lock(key):
+                tournament = (
+                    store.get(message.guild.id, tchannel_id) or tournament
+                )
+                cur = tournament.ocr_sessions.get(key)
+                cur_active = bool(
+                    cur
+                    and cur.get("status")
+                    not in ("completed", "cancelled", "finalizing")
+                )
+                if not cur_active:
+                    tournament.ocr_sessions[key] = {
+                        "match_type": match_type,
+                        "match_index": match_index,
+                        "status": "awaiting_ocr",
+                        "mode": "pending",
+                        "teams": [t1, t2],
+                        "panels": {},
+                        "squads": {},
+                        "squad_pool": [],
+                        "maps": {},
+                        "panel_picks": {},
+                        "uploaded_by": message.author.id,
+                        "uploaded_by_name": message.author.display_name,
+                        "session_id": uuid.uuid4().hex[:16],
+                        "match_id": (
+                            f"{getattr(tournament, 'id', '?')}_{key}"
+                        ),
+                        "guild_id": message.guild.id,
+                        "winner_pending": False,
+                        "winning_team_index": _mm_winner_for_uploader(
+                            tournament, t1, t2, message.author.id
+                        ),
+                        "created_at": datetime.now().isoformat(),
+                        "gen": 1,
+                        "ocr_pending": True,
+                    }
+                    store.set(tournament)
+                    existing = tournament.ocr_sessions[key]
+                    session_active = True
+                    is_reupload = False
 
         stats_channel = await _stats_channel(message, tournament)
 
@@ -895,6 +1000,14 @@ class OCRUploadCog(commands.Cog):
             loop = asyncio.get_running_loop()
             boxes = await loop.run_in_executor(OCR_EXECUTOR, _ocr_boxes, data)
             if not boxes:
+                async with _room_lock(key):
+                    tournament = (
+                        store.get(message.guild.id, tchannel_id)
+                        or tournament
+                    )
+                    _release_pending_upload_claim(
+                        tournament, key, message.author.id
+                    )
                 await message.reply(
                     replace_emojis(
                         "❌ Не удалось распознать таблицу результатов. "
@@ -903,9 +1016,30 @@ class OCRUploadCog(commands.Cog):
                 )
                 return
 
+            # За время OCR сессия могла быть финализирована, отменена
+            # или пересоздана — не перезаписываем терминальное состояние.
+            tournament = store.get(message.guild.id, tchannel_id)
+            cur = (
+                tournament.ocr_sessions.get(key)
+                if tournament else None
+            )
+            if (cur or {}).get("status") in (
+                "completed", "cancelled", "finalizing"
+            ):
+                await message.reply(
+                    replace_emojis(
+                        "⚠️ Результат этого матча уже финализирован "
+                        "или отменён — новый комплект не принимается."
+                    )
+                )
+                return
+
             # Сначала пробуем детальный экран одного отряда
             squad = await loop.run_in_executor(OCR_EXECUTOR, _parse_squad, boxes)
             if squad is not None:
+                # _handle_squad_upload сам держит _room_lock только на
+                # время мутаций сессии — Discord API выполняется вне
+                # лока, чтобы не блокировать финализацию/отмену.
                 await self._handle_squad_upload(
                     message, tournament, t1, t2, meta,
                     match_type, match_index, key, existing,
@@ -928,6 +1062,14 @@ class OCRUploadCog(commands.Cog):
 
             parsed = await loop.run_in_executor(OCR_EXECUTOR, _parse_classic, boxes)
             if parsed is None:
+                async with _room_lock(key):
+                    tournament = (
+                        store.get(message.guild.id, tchannel_id)
+                        or tournament
+                    )
+                    _release_pending_upload_claim(
+                        tournament, key, message.author.id
+                    )
                 await message.reply(
                     replace_emojis(
                         "❌ Не удалось распознать таблицу результатов. "
@@ -1005,19 +1147,89 @@ class OCRUploadCog(commands.Cog):
 
             parsed["winner"] = {"left": "a", "right": "b"}.get(side)
 
-            tournament = (
-                store.get(message.guild.id, tchannel_id) or tournament
-            )
-            view = OCRPublicView(
-                message.guild.id, tournament.channel_id, tournament,
-                match_type, match_index,
-            )
-
-            if is_reupload and existing.get("message_id"):
-                # Обновляем то же сообщение: новый скриншот + сброс маппинга
-                existing.update(
-                    {
+            # _room_lock: создание/замена classic-сессии атомарно
+            # относительно параллельных загрузок, финализации и
+            # административной отмены — «первый принятый файл»
+            # определяет победителя без гонки двух капитанов.
+            # Discord API (ответы, публикация, карточка) — ПОСЛЕ
+            # освобождения лока.
+            reply_text = None
+            plan = None  # ("reupload"|"new", session)
+            async with _room_lock(key):
+                # Состояние могло измениться за время OCR —
+                # перечитываем актуальное под локом.
+                tournament = (
+                    store.get(message.guild.id, tchannel_id) or tournament
+                )
+                existing = tournament.ocr_sessions.get(key)
+                session_active = bool(
+                    existing
+                    and existing.get("status")
+                    not in ("completed", "cancelled", "finalizing")
+                )
+                is_reupload = bool(meta.get("reupload")) and session_active
+                pending_mine = _is_pending_claim_owner(
+                    existing, getattr(message.author, "id", "")
+                )
+                if session_active and not is_reupload and not pending_mine:
+                    if existing.get("mode") == "squad":
+                        reply_text = (
+                            "⚠️ Для этого матча уже загружен "
+                            "отряд-скриншот (squad-режим). "
+                            "Классический двухкомандный экран "
+                            "сюда не подойдёт — замените отряд "
+                            "через «Неправильный скриншот»."
+                        )
+                    else:
+                        reply_text = (
+                            "⚠️ Для этого матча уже загружен "
+                            "скриншот — завершите сопоставление, "
+                            "нажмите «Неправильный скриншот» или "
+                            "вызовите организатора."
+                        )
+                elif is_reupload and existing.get("mode") == "squad":
+                    reply_text = (
+                        "⚠️ Для этого матча загружен "
+                        "отряд-скриншот (squad-режим) — "
+                        "классический скриншот его не заменит."
+                    )
+                elif is_reupload and existing.get("message_id"):
+                    # Обновляем то же сообщение: новый скриншот +
+                    # сброс маппинга (публикация — после лока).
+                    existing.update(
+                        {
+                            "status": "awaiting_mapping",
+                            "panels": panels,
+                            "winner_side": side,
+                            "banner": parsed.get("banner"),
+                            "score": parsed.get("score"),
+                            "top5": parsed.get("top5", False),
+                            "uploaded_by": message.author.id,
+                            "uploaded_by_name": message.author.display_name,
+                            "results_channel_id": stats_channel.id,
+                            "maps": {}, "panel_picks": {},
+                            "reuploaded_at": datetime.now().isoformat(),
+                        }
+                    )
+                    store.set(tournament)
+                    plan = ("reupload", existing)
+                elif session_active and not pending_mine:
+                    # Активная сессия без message_id (reupload до
+                    # публикации или гонка) — перезаписывать её
+                    # новой нельзя: mappings/статистика пропадут.
+                    reply_text = (
+                        "⚠️ Для этого матча уже идёт обработка "
+                        "скриншота — дождитесь завершения или "
+                        "вызовите организатора."
+                    )
+                else:
+                    # Новая сессия (pending-клейм этого же файла
+                    # перезаписывается полной).
+                    tournament.ocr_sessions[key] = {
+                        "match_type": match_type,
+                        "match_index": match_index,
                         "status": "awaiting_mapping",
+                        "teams": [t1, t2],
                         "panels": panels,
                         "winner_side": side,
                         "banner": parsed.get("banner"),
@@ -1025,22 +1237,48 @@ class OCRUploadCog(commands.Cog):
                         "top5": parsed.get("top5", False),
                         "uploaded_by": message.author.id,
                         "uploaded_by_name": message.author.display_name,
+                        # Ranked MM: файл уже принят — победитель
+                        # фиксируется сразу по Discord ID
+                        # отправителя (OCR-баннер не определяет
+                        # победителя). Для обычных турниров поле
+                        # не используется — победитель по OCR.
+                        "session_id": uuid.uuid4().hex[:16],
+                        "match_id": (
+                            f"{getattr(tournament, 'id', '?')}_{key}"
+                        ),
+                        "guild_id": message.guild.id,
+                        "winner_pending": False,
+                        "winning_team_index": _mm_winner_for_uploader(
+                            tournament, t1, t2, message.author.id
+                        ),
+                        "created_at": datetime.now().isoformat(),
                         "results_channel_id": stats_channel.id,
                         "maps": {}, "panel_picks": {},
-                        "reuploaded_at": datetime.now().isoformat(),
                     }
-                )
-                store.set(tournament)
+                    store.set(tournament)
+                    plan = ("new", tournament.ocr_sessions[key])
 
-                # View строим ПОСЛЕ сброса maps — кнопки снова активны
-                view = OCRPublicView(
-                    message.guild.id, tournament.channel_id, tournament,
-                    match_type, match_index,
-                )
-                caption = _mapping_caption(tournament, existing)
+            if reply_text is not None:
+                await message.reply(replace_emojis(reply_text))
+                return
+            if plan is None:
+                return
+
+            kind, session = plan
+            view = OCRPublicView(
+                message.guild.id, tournament.channel_id, tournament,
+                match_type, match_index,
+            )
+            caption = _mapping_caption(tournament, session)
+            # message_id, который может быть переиспользован
+            # edit-путём — цель для нейтрализации при отмене сессии
+            # во время Discord API-вызова.
+            target_mid = session.get("message_id")
+            new_mid = None
+            if kind == "reupload":
                 try:
                     await _update_results_message(
-                        stats_channel, existing["message_id"],
+                        stats_channel, session["message_id"],
                         data, view, caption=caption,
                     )
                     await message.add_reaction("✅")
@@ -1049,49 +1287,34 @@ class OCRUploadCog(commands.Cog):
                     bot_msg = await _send_results_message(
                         stats_channel, data, view, caption=caption
                     )
-                    existing["message_id"] = bot_msg.id
-                    store.set(tournament)
-                try:
-                    from services.match_announcer import update_match_card
+                    new_mid = bot_msg.id
+            else:
+                bot_msg = await _send_results_message(
+                    stats_channel, data, view, caption=caption
+                )
+                new_mid = bot_msg.id
 
-                    await update_match_card(
-                        message.guild, tournament, match_type, match_index,
-                        state="processing",
-                    )
-                except Exception as exc:
-                    logger.warning("Match card processing update failed: %s", exc)
-                return
-
-            # Новая сессия
-            tournament.ocr_sessions[key] = {
-                "match_type": match_type,
-                "match_index": match_index,
-                "status": "awaiting_mapping",
-                "teams": [t1, t2],
-                "panels": panels,
-                "winner_side": side,
-                "banner": parsed.get("banner"),
-                "score": parsed.get("score"),
-                "top5": parsed.get("top5", False),
-                "uploaded_by": message.author.id,
-                "uploaded_by_name": message.author.display_name,
-                "created_at": datetime.now().isoformat(),
-                "results_channel_id": stats_channel.id,
-                "maps": {}, "panel_picks": {},
-            }
-            store.set(tournament)
-
-            bot_msg = await _send_results_message(
-                stats_channel, data, view,
-                caption=_mapping_caption(
-                    tournament, tournament.ocr_sessions[key]
-                ),
-            )
-
-            session = tournament.ocr_sessions.get(key)
-            if session is not None:
-                session["message_id"] = bot_msg.id
-                store.set(tournament)
+            # writeback message_id под локом — только если сессия
+            # всё ещё та же (не отменена/не пересоздана). Если
+            # сессия умерла во время Discord API — гасим
+            # устаревшее сообщение, чтобы кнопки не остались
+            # активными.
+            stale_mid = None
+            async with _room_lock(key):
+                cur = store.get(message.guild.id, tchannel_id)
+                cur_s = (
+                    cur.ocr_sessions.get(key) if cur else None
+                )
+                if cur_s is session:
+                    if new_mid is not None:
+                        session["message_id"] = new_mid
+                        store.set(cur)
+                else:
+                    stale_mid = new_mid or target_mid
+            if stale_mid is not None:
+                await _neutralize_stale_ocr_message(
+                    stats_channel, stale_mid
+                )
 
             # Карточка матча в cs-4x4-match-N → «идёт сопоставление»
             # (кнопка «Отправить результат» исчезает из карточки)
@@ -1104,9 +1327,15 @@ class OCRUploadCog(commands.Cog):
                 )
             except Exception as exc:
                 logger.warning("Match card processing update failed: %s", exc)
-
         except Exception:
             logger.exception("OCR upload processing failed")
+            async with _room_lock(key):
+                tournament = (
+                    store.get(message.guild.id, tchannel_id) or tournament
+                )
+                _release_pending_upload_claim(
+                    tournament, key, message.author.id
+                )
             await message.reply(
                 replace_emojis("❌ Ошибка при обработке скриншота.")
             )
@@ -1163,8 +1392,9 @@ class OCRUploadCog(commands.Cog):
             view=_mapping_layout(view, _SQUAD_MAP_CAPTION),
             file=file,
         )
-        entry["message_id"] = bot_msg.id
-        store.set(tournament)
+        # message_id пишется вызывающим под _room_lock — здесь
+        # только Discord API, без мутации состояния.
+        return bot_msg.id
 
     async def _handle_squad_upload(
         self,
@@ -1183,192 +1413,284 @@ class OCRUploadCog(commands.Cog):
         data: bytes,
         squad: dict[str, Any],
     ) -> None:
-        """Обработать скриншот детального экрана одного отряда."""
-        guild_id = message.guild.id
+        """Обработать скриншот детального экрана одного отряда.
 
-        if session_active and existing.get("mode") != "squad":
-            await message.reply(
-                replace_emojis(
+        Мутации сессии — под _room_lock; Discord API (reply,
+        публикация результата, карточка матча) — ПОСЛЕ
+        освобождения лока: медленный или сбойный Discord не
+        блокирует финализацию и административную отмену.
+        """
+        guild_id = message.guild.id
+        tchannel_id = meta.get("tchannel") or message.channel.id
+        reply_text = None
+        publish = None  # (view, entry)
+        session = None
+
+        async with _room_lock(key):
+            # Состояние могло измениться за время OCR —
+            # перечитываем актуальное под локом.
+            tournament = store.get(guild_id, tchannel_id) or tournament
+            existing = tournament.ocr_sessions.get(key)
+            session_active = bool(
+                existing
+                and existing.get("status")
+                not in ("completed", "cancelled", "finalizing")
+            )
+            is_reupload = bool(meta.get("reupload")) and session_active
+            pending_mine = _is_pending_claim_owner(
+                existing, getattr(message.author, "id", "")
+            )
+            eff_mode = existing.get("mode") if session_active else None
+
+            squad_team = meta.get("squad_team")
+            squad_uid = meta.get("squad_uid")
+
+            if (
+                not is_reupload
+                and squad_team is not None
+                and squad_team not in (t1, t2)
+            ):
+                reply_text = "❌ Эта команда не играет в матче."
+            elif session_active and eff_mode not in ("squad", "pending"):
+                reply_text = (
                     "⚠️ Для этого матча уже загружен скриншот другого "
                     "типа результатов — дождитесь завершения или вызовите "
                     "организатора."
                 )
-            )
-            return
-
-        if session_active:
-            session = existing
-            session.setdefault("squads", {})
-            session.setdefault("squad_pool", [])
-            session.setdefault("panels", {})
-            session.setdefault("maps", {})
-        else:
-            session = {
-                "match_type": match_type,
-                "match_index": match_index,
-                "status": "awaiting_mapping",
-                "mode": "squad",
-                "teams": [t1, t2],
-                "panels": {},
-                "squads": {},
-                "squad_pool": [],
-                "uploaded_by": message.author.id,
-                "uploaded_by_name": message.author.display_name,
-                "created_at": datetime.now().isoformat(),
-                "results_channel_id": stats_channel.id,
-                "maps": {}, "panel_picks": {},
-            }
-            tournament.ocr_sessions[key] = session
-
-        # --- Повторная загрузка по кнопке «Неправильный скриншот» ---
-        squad_team = meta.get("squad_team")
-        squad_uid = meta.get("squad_uid")
-        if is_reupload and squad_team is not None:
-            tkey = str(squad_team)
-            sentry = session["squads"].get(tkey)
-            if sentry is None:
-                await message.reply(
-                    replace_emojis("❌ Отряд для этой команды не найден.")
+            elif (
+                session_active
+                and eff_mode == "pending"
+                and not pending_mine
+            ):
+                reply_text = (
+                    "⚠️ Для этого матча уже идёт обработка скриншота — "
+                    "дождитесь завершения или вызовите организатора."
                 )
-                return
-            sentry["rows"] = squad["players"]
-            sentry["banner"] = squad.get("banner")
-            sentry["reuploaded_at"] = datetime.now().isoformat()
-            panel = session.get("panels", {}).get(f"squad_{squad_team}")
-            if panel is not None:
-                panel["rows"] = squad["players"]
-            # Сопоставление этой команды недействительно — сбрасываем
-            session.get("maps", {}).pop(tkey, None)
-            if len(session.get("maps", {})) < 2:
-                session["status"] = (
-                    "mapping" if session.get("squads")
-                    else "awaiting_mapping"
-                )
-            store.set(tournament)
-            view = SquadAssignedView(
-                guild_id, tournament.channel_id, tournament,
-                match_type, match_index, squad_team,
-            )
-            await self._publish_squad_message(
-                stats_channel, tournament, message, data,
-                view, sentry,
-                match_type=match_type, match_index=match_index,
-                t1=t1, t2=t2,
-            )
-            return
+            else:
+                if session_active:
+                    session = existing
+                    session.setdefault("squads", {})
+                    session.setdefault("squad_pool", [])
+                    session.setdefault("panels", {})
+                    session.setdefault("maps", {})
+                    # Мой pending-клейм (первый принятый файл ещё
+                    # распознаётся) → заполняем его как squad-сессию.
+                    if session.get("status") == "awaiting_ocr":
+                        session["mode"] = "squad"
+                        session["status"] = "awaiting_mapping"
+                else:
+                    session = {
+                        "match_type": match_type,
+                        "match_index": match_index,
+                        "status": "awaiting_mapping",
+                        "mode": "squad",
+                        "teams": [t1, t2],
+                        "panels": {},
+                        "squads": {},
+                        "squad_pool": [],
+                        "uploaded_by": message.author.id,
+                        "uploaded_by_name": message.author.display_name,
+                        # Ranked MM: победитель = команда капитана
+                        # ПЕРВОГО принятого squad-файла; загрузка
+                        # второго отряда его не меняет.
+                        "session_id": uuid.uuid4().hex[:16],
+                        "match_id": (
+                            f"{getattr(tournament, 'id', '?')}_{key}"
+                        ),
+                        "guild_id": message.guild.id,
+                        "winner_pending": False,
+                        "winning_team_index": _mm_winner_for_uploader(
+                            tournament, t1, t2, message.author.id
+                        ),
+                        "created_at": datetime.now().isoformat(),
+                        "results_channel_id": stats_channel.id,
+                        "maps": {}, "panel_picks": {},
+                    }
+                    tournament.ocr_sessions[key] = session
 
-        if is_reupload and squad_uid:
-            entry = next(
-                (
-                    e for e in session["squad_pool"]
-                    if e.get("uid") == squad_uid
-                ),
-                None,
-            )
-            if entry is None:
-                await message.reply(
-                    replace_emojis("❌ Скриншот отряда не найден.")
-                )
-                return
-            entry["rows"] = squad["players"]
-            entry["banner"] = squad.get("banner")
-            entry["reuploaded_at"] = datetime.now().isoformat()
-            store.set(tournament)
-            view = SquadClaimView(
-                guild_id, tournament.channel_id, tournament,
-                match_type, match_index, squad_uid,
-            )
-            await self._publish_squad_message(
-                stats_channel, tournament, message, data,
-                view, entry,
-                match_type=match_type, match_index=match_index,
-                t1=t1, t2=t2,
-            )
-            return
-
-        # --- Автоназначение: скриншот прислан по кнопке капитана ---
-        if not is_reupload and squad_team is not None:
-            if squad_team not in (t1, t2):
-                await message.reply(
-                    replace_emojis("❌ Эта команда не играет в матче.")
-                )
-                return
-            tkey = str(squad_team)
-            if tkey in session.get("squads", {}):
-                await message.reply(
-                    replace_emojis(
-                        "⚠️ У этой команды уже загружен отряд — "
-                        "замените его кнопкой «Неправильный скриншот»."
+                # --- Повторная загрузка по «Неправильный скриншот» ---
+                if is_reupload and squad_team is not None:
+                    tkey = str(squad_team)
+                    sentry = session["squads"].get(tkey)
+                    if sentry is None:
+                        reply_text = "❌ Отряд для этой команды не найден."
+                    else:
+                        sentry["rows"] = squad["players"]
+                        sentry["banner"] = squad.get("banner")
+                        sentry["reuploaded_at"] = (
+                            datetime.now().isoformat()
+                        )
+                        panel = session.get("panels", {}).get(
+                            f"squad_{squad_team}"
+                        )
+                        if panel is not None:
+                            panel["rows"] = squad["players"]
+                        session.get("maps", {}).pop(tkey, None)
+                        if len(session.get("maps", {})) < 2:
+                            session["status"] = (
+                                "mapping"
+                                if session.get("squads")
+                                else "awaiting_mapping"
+                            )
+                        store.set(tournament)
+                        publish = (
+                            SquadAssignedView(
+                                guild_id, tournament.channel_id,
+                                tournament, match_type, match_index,
+                                squad_team,
+                            ),
+                            sentry,
+                        )
+                elif is_reupload and squad_uid:
+                    entry = next(
+                        (
+                            e for e in session["squad_pool"]
+                            if e.get("uid") == squad_uid
+                        ),
+                        None,
                     )
-                )
-                return
-            entry = {
-                "rows": squad["players"],
-                "banner": squad.get("banner"),
-                "uploaded_by": message.author.id,
-                "uploaded_by_name": message.author.display_name,
-                "created_at": datetime.now().isoformat(),
-                "message_id": None,
-            }
-            session["squads"][tkey] = entry
-            session["panels"][f"squad_{squad_team}"] = {
-                "name": _team_display_name(tournament, squad_team),
-                "rows": squad["players"],
-            }
-            if len(session.get("squads", {})) >= 2:
-                session["status"] = "mapping"
-            store.set(tournament)
+                    if entry is None:
+                        reply_text = "❌ Скриншот отряда не найден."
+                    else:
+                        entry["rows"] = squad["players"]
+                        entry["banner"] = squad.get("banner")
+                        entry["reuploaded_at"] = (
+                            datetime.now().isoformat()
+                        )
+                        store.set(tournament)
+                        publish = (
+                            SquadClaimView(
+                                guild_id, tournament.channel_id,
+                                tournament, match_type, match_index,
+                                squad_uid,
+                            ),
+                            entry,
+                        )
+                elif not is_reupload and squad_team is not None:
+                    # --- Автоназначение: кнопка капитана команды ---
+                    tkey = str(squad_team)
+                    if tkey in session.get("squads", {}):
+                        reply_text = (
+                            "⚠️ У этой команды уже загружен отряд — "
+                            "замените его кнопкой "
+                            "«Неправильный скриншот»."
+                        )
+                    else:
+                        entry = {
+                            "rows": squad["players"],
+                            "banner": squad.get("banner"),
+                            "uploaded_by": message.author.id,
+                            "uploaded_by_name": (
+                                message.author.display_name
+                            ),
+                            "created_at": datetime.now().isoformat(),
+                            "message_id": None,
+                        }
+                        session["squads"][tkey] = entry
+                        session["panels"][f"squad_{squad_team}"] = {
+                            "name": _team_display_name(
+                                tournament, squad_team
+                            ),
+                            "rows": squad["players"],
+                        }
+                        if len(session.get("squads", {})) >= 2:
+                            session["status"] = "mapping"
+                        store.set(tournament)
+                        publish = (
+                            SquadAssignedView(
+                                guild_id, tournament.channel_id,
+                                tournament, match_type, match_index,
+                                squad_team,
+                            ),
+                            entry,
+                        )
+                else:
+                    # --- Новая загрузка отряда (без привязки) ---
+                    loaded = len(session.get("squads", {})) + len(
+                        session.get("squad_pool", [])
+                    )
+                    if loaded >= 2:
+                        reply_text = (
+                            "⚠️ Скриншоты обоих отрядов уже загружены — "
+                            "используйте «Неправильный скриншот» "
+                            "для замены."
+                        )
+                    else:
+                        uid = uuid.uuid4().hex[:10]
+                        entry = {
+                            "uid": uid,
+                            "rows": squad["players"],
+                            "banner": squad.get("banner"),
+                            "uploaded_by": message.author.id,
+                            "uploaded_by_name": (
+                                message.author.display_name
+                            ),
+                            "created_at": datetime.now().isoformat(),
+                            "message_id": None,
+                        }
+                        session["squad_pool"].append(entry)
+                        if len(session.get("squads", {})) >= 2:
+                            session["status"] = "mapping"
+                        store.set(tournament)
+                        publish = (
+                            SquadClaimView(
+                                guild_id, tournament.channel_id,
+                                tournament, match_type, match_index, uid,
+                            ),
+                            entry,
+                        )
 
-            view = SquadAssignedView(
-                guild_id, tournament.channel_id, tournament,
-                match_type, match_index, squad_team,
-            )
-            await self._publish_squad_message(
-                stats_channel, tournament, message, data,
-                view, entry,
-                match_type=match_type, match_index=match_index,
-                t1=t1, t2=t2,
-            )
+                # Пустой pending-клейм после неудачной обработки —
+                # освобождаем, чтобы не блокировать других капитанов.
+                if (
+                    session.get("status") == "awaiting_ocr"
+                    and not session.get("squads")
+                    and not session.get("squad_pool")
+                    and not session.get("maps")
+                    and not session.get("panels")
+                ):
+                    tournament.ocr_sessions.pop(key, None)
+                    store.set(tournament)
+                    session = None
+                    publish = None
+
+        # --- Discord API вне _room_lock ---
+        if reply_text is not None:
+            await message.reply(replace_emojis(reply_text))
             return
-
-        # --- Новая загрузка отряда (без привязки — выбор команды кнопкой) ---
-        loaded = len(session.get("squads", {})) + len(
-            session.get("squad_pool", [])
-        )
-        if loaded >= 2:
-            await message.reply(
-                replace_emojis(
-                    "⚠️ Скриншоты обоих отрядов уже загружены — "
-                    "используйте «Неправильный скриншот» для замены."
-                )
-            )
+        if publish is None:
             return
-
-        uid = uuid.uuid4().hex[:10]
-        entry = {
-            "uid": uid,
-            "rows": squad["players"],
-            "banner": squad.get("banner"),
-            "uploaded_by": message.author.id,
-            "uploaded_by_name": message.author.display_name,
-            "created_at": datetime.now().isoformat(),
-            "message_id": None,
-        }
-        session["squad_pool"].append(entry)
-        if len(session.get("squads", {})) >= 2:
-            session["status"] = "mapping"
-        store.set(tournament)
-
-        view = SquadClaimView(
-            guild_id, tournament.channel_id, tournament,
-            match_type, match_index, uid,
-        )
-        await self._publish_squad_message(
+        view, entry = publish
+        # message_id, который мог быть переиспользован edit-путём
+        # внутри _publish_squad_message — цель для нейтрализации,
+        # если сессия была отменена во время Discord API-вызова.
+        target_mid = entry.get("message_id")
+        new_mid = await self._publish_squad_message(
             stats_channel, tournament, message, data,
             view, entry,
             match_type=match_type, match_index=match_index,
             t1=t1, t2=t2,
         )
+        # writeback message_id — короткая мутация под локом,
+        # только если сессия всё ещё та же (не отменена/не
+        # пересоздана параллельным комплектом).
+        stale_mid = None
+        async with _room_lock(key):
+            cur = store.get(guild_id, tchannel_id) or tournament
+            cur_s = cur.ocr_sessions.get(key)
+            if cur_s is session:
+                if new_mid is not None and entry.get("message_id") is None:
+                    entry["message_id"] = new_mid
+                    store.set(cur)
+            else:
+                # Сессия отменена/заменена, пока Discord отвечал —
+                # не сохраняем message_id и гасим устаревшее
+                # сообщение (view → None, кнопки неактивны).
+                stale_mid = new_mid or target_mid
+        if stale_mid is not None:
+            await _neutralize_stale_ocr_message(
+                stats_channel, stale_mid
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2133,6 +2455,15 @@ async def create_rooms_session(
             "gen": 1,
             "uploaded_by": user.id,
             "uploaded_by_name": getattr(user, "display_name", user.name),
+            # Идентификаторы жизненного цикла (ТЗ Ranked MM):
+            # session_id/generation инвалидируют устаревшие callbacks,
+            # winner_pending → winning_team_index фиксируется первым
+            # принятым файлом (_rooms_claim_bundle).
+            "session_id": uuid.uuid4().hex[:16],
+            "match_id": f"{getattr(tournament, 'id', '?')}_{key}",
+            "guild_id": guild.id,
+            "winner_pending": True,
+            "winning_team_index": None,
             "teams": [t1, t2],
             "maps": {},
             "panel_picks": {},
@@ -2167,6 +2498,222 @@ def _is_strict_admin(user) -> bool:
     return bool(perms and getattr(perms, "administrator", False))
 
 
+def _mm_winner_for_uploader(tournament, t1, t2, user_id):
+    """Команда Discord-пользователя среди команд матча (Ranked MM).
+
+    Победитель = команда капитана, отправившего первый принятый
+    файл. Не-участник (админ) → None: команду выберет организатор
+    явно при подтверждении. None и для не-MM турниров.
+    """
+    if not getattr(tournament, "mm_search_channel_id", None):
+        return None
+    try:
+        from views.ocr_match_view import _team_of_user
+
+        return _team_of_user(tournament, (t1, t2), user_id)
+    except Exception:
+        return None
+
+
+def _mm_upload_allowed(existing: dict, tournament, user) -> bool:
+    """Ranked MM classic: замену/дозагрузку может делать только
+    отправитель комплекта, капитан зафиксированной команды-
+    победителя или Discord-администратор — чужой капитан не может
+    перехватить загрузку и сбросить сопоставление."""
+    uid = int(getattr(user, "id", 0) or 0)
+    if uid and uid == int(existing.get("uploaded_by") or 0):
+        return True
+    if _is_strict_admin(user):
+        return True
+    wti = existing.get("winning_team_index")
+    try:
+        wi = int(wti) if wti is not None else None
+    except (TypeError, ValueError):
+        wi = None
+    if wi is not None:
+        try:
+            from views.ocr_match_view import _uploaded_by_is_captain_of
+
+            if _uploaded_by_is_captain_of(tournament, wi, uid):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _release_pending_upload_claim(
+    tournament, key: str, user_id
+) -> bool:
+    """Снять пустой pending-клейм после неудачного OCR.
+
+    Клейм создаётся ДО распознавания, чтобы победителем стал первый
+    ПРИНЯТЫЙ файл, а не первый завершивший OCR. Если OCR/валидация
+    не удалась и данных в сессии нет — клейм снимается: другие
+    капитаны не блокируются навсегда, повторная загрузка возможна.
+    Вызывать под _room_lock. True — клейм снят.
+    """
+    s = tournament.ocr_sessions.get(key)
+    if not s or s.get("status") != "awaiting_ocr":
+        return False
+    try:
+        if int(s.get("uploaded_by") or 0) != int(user_id):
+            return False
+    except (TypeError, ValueError):
+        return False
+    if (
+        s.get("squads")
+        or s.get("squad_pool")
+        or s.get("maps")
+        or s.get("panels")
+    ):
+        return False
+    tournament.ocr_sessions.pop(key, None)
+    store.set(tournament)
+    return True
+
+
+def _is_pending_claim_owner(session, user_id) -> bool:
+    """True — сессия является pending-клеймом, принадлежащим user_id.
+
+    Pending-клейм (status="awaiting_ocr", mode="pending") создаётся
+    до OCR и переживает рестарт: владелец может повторно отправить
+    файл, чужие капитаны — нет. Вызывать под _room_lock.
+    """
+    if not session or session.get("status") != "awaiting_ocr":
+        return False
+    if session.get("mode") != "pending":
+        return False
+    try:
+        return int(session.get("uploaded_by") or 0) == int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+
+def _rooms_bundle_claimed(session: dict) -> bool:
+    """Комплект считается занятым после первого принятого файла.
+
+    До этого любой капитан или администратор может начать/продолжить
+    пустую сессию — победитель зафиксируется отправителем первого
+    файла. Для legacy-сессий без winner_pending занятость выводится
+    из наличия комнат/победителя.
+    """
+    if session.get("winner_pending") is False:
+        return True
+    if session.get("winning_team_index") is not None:
+        return True
+    return bool(session.get("rooms") or session.get("rooms_received"))
+
+
+def _rooms_file_submit_allowed(tournament, session: dict, user) -> bool:
+    """Права на отправку файлов в rooms-комплект.
+
+    Ranked MM (mm_search_channel_id): незанятый комплект могут начать
+    капитан любой из команд или администратор; занятый — только его
+    отправитель, капитан уже зафиксированной команды-победителя или
+    Discord-администратор. Обычные турниры — прежнее правило
+    (капитан/организатор любой из команд матча).
+    """
+    teams = session.get("teams") or []
+    if not getattr(tournament, "mm_search_channel_id", None):
+        from views.ocr_match_view import _can_use_ocr
+
+        return _can_use_ocr(user, tournament, teams)
+    uid = int(getattr(user, "id", 0) or 0)
+    if _rooms_bundle_claimed(session):
+        if uid and uid == int(session.get("uploaded_by") or 0):
+            return True
+        if _is_strict_admin(user):
+            return True
+        wti = session.get("winning_team_index")
+        try:
+            wi = int(wti) if wti is not None else None
+        except (TypeError, ValueError):
+            wi = None
+        if wi is not None:
+            from views.ocr_match_view import _uploaded_by_is_captain_of
+
+            if _uploaded_by_is_captain_of(tournament, wi, uid):
+                return True
+        else:
+            # Комплект занял не-участник (админ/орг): победитель ещё
+            # не зафиксирован — капитаны могут помогать с загрузкой,
+            # команду-победителя явно выберет администратор.
+            from views.ocr_match_view import _is_match_captain
+
+            if any(_is_match_captain(user, tournament, i) for i in teams):
+                return True
+        return False
+    # Незанятый комплект: только капитан одной из команд матча или
+    # Discord-администратор — посторонний «организатор» не должен
+    # занять комплект и заблокировать капитанов до админ-отката.
+    from views.ocr_match_view import _is_match_captain
+
+    if any(_is_match_captain(user, tournament, i) for i in teams):
+        return True
+    return _is_strict_admin(user)
+
+
+async def _rooms_claim_bundle(
+    guild: discord.Guild,
+    tournament,
+    key: str,
+    session: dict,
+    user,
+):
+    """Зафиксировать отправителя первого принятого файла комплекта.
+
+    Возвращает (status, tournament, session): «ok» — можно слать файлы
+    (tournament/session могут быть свежими из store), «forbidden» —
+    чужой занятый комплект, «stale» — сессия устарела/отменена.
+    Победитель = команда отправителя и дальше не меняется.
+    """
+    if _rooms_bundle_claimed(session):
+        if _rooms_file_submit_allowed(tournament, session, user):
+            return "ok", tournament, session
+        return "forbidden", tournament, session
+    async with _room_lock(key):
+        fresh = store.get(guild.id, tournament.channel_id) or tournament
+        s = fresh.ocr_sessions.get(key)
+        if (
+            not s
+            or s.get("mode") != "rooms"
+            or s.get("status") != "collecting"
+            or int(s.get("gen", 0)) != int(session.get("gen", 0))
+        ):
+            return "stale", tournament, session
+        if _rooms_bundle_claimed(s):
+            # Параллельная загрузка успела первой — обычная проверка
+            # прав на уже занятый комплект.
+            if _rooms_file_submit_allowed(fresh, s, user):
+                return "ok", fresh, s
+            return "forbidden", fresh, s
+        # Defense in depth: права перепроверяются и на незанятом
+        # комплекте (вызывающий код уже проверил, но состояние могло
+        # измениться между проверкой и захватом лока).
+        if not _rooms_file_submit_allowed(fresh, s, user):
+            return "forbidden", fresh, s
+        s["winner_pending"] = False
+        s["uploaded_by"] = int(getattr(user, "id", 0) or 0)
+        s["uploaded_by_name"] = (
+            getattr(user, "display_name", None)
+            or getattr(user, "name", "")
+            or str(user.id)
+        )
+        try:
+            from views.ocr_match_view import _team_of_user
+
+            teams = s.get("teams") or []
+            winner = (
+                _team_of_user(fresh, teams, user.id) if teams else None
+            )
+        except Exception:
+            winner = None
+        if winner is not None:
+            s["winning_team_index"] = int(winner)
+        store.set(fresh)
+        return "ok", fresh, s
+
+
 async def cancel_rooms_session(
     guild: discord.Guild,
     user,
@@ -2174,12 +2721,13 @@ async def cancel_rooms_session(
     match_type: str,
     match_index: int,
 ) -> str:
-    """Полный административный откат комплекта. «ok»|«none»|«done»|«forbidden»."""
+    """Полный административный откат OCR-комплекта любого режима
+    (rooms/classic/squad). «ok»|«none»|«done»|«forbidden»."""
     from config import BOT_OWNER_ID
 
     key = _session_key(match_type, match_index)
     session = tournament.ocr_sessions.get(key)
-    if not session or session.get("mode") != "rooms":
+    if not session:
         return "none"
     if session.get("status") in ("completed", "cancelled"):
         return "done"
@@ -2192,9 +2740,16 @@ async def cancel_rooms_session(
         # Повторная проверка под локом — статус мог измениться
         tournament = store.get(guild.id, tournament.channel_id) or tournament
         session = tournament.ocr_sessions.get(key)
-        if not session or session.get("mode") != "rooms":
+        if not session:
             return "none"
         if session.get("status") in ("completed", "cancelled"):
+            return "done"
+        # Финализация держит тот же _room_lock — сюда можно попасть
+        # только до её старта или после полного завершения. Дополнительно
+        # проверяем processed_elo_matches на случай рассинхрона статусов.
+        from views.ocr_match_view import match_is_finished
+
+        if match_is_finished(tournament, match_type, match_index):
             return "done"
         session["gen"] = int(session.get("gen", 1)) + 1
         session["status"] = "cancelled"
@@ -2253,6 +2808,27 @@ async def cancel_rooms_session(
                     )
                 except Exception as e:
                     logger.warning("room message cancel edit failed: %s", e)
+    # Аудит отмены: администратор, match_id, время — в лог и Discord.
+    match_id = f"{tournament.id}_{key}"
+    logger.info(
+        "rooms OCR bundle cancelled by admin: user_id=%s match_id=%s",
+        getattr(user, "id", "?"), match_id,
+    )
+    try:
+        log_ch = guild.get_channel(OCR_STATS_CHANNEL_ID)
+        if log_ch is None:
+            log_ch = await guild.fetch_channel(OCR_STATS_CHANNEL_ID)
+        await log_ch.send(
+            content=replace_emojis(
+                "🛑 **Комплект скриншотов отменён**\n"
+                f"Администратор: {getattr(user, 'mention', None) or user} "
+                f"(`{getattr(user, 'id', '?')}`)\n"
+                f"Матч: `{match_id}`\n"
+                f"Время: {datetime.now():%d.%m.%Y %H:%M:%S}"
+            )
+        )
+    except Exception as e:
+        logger.debug("rooms cancel audit log failed: %s", e)
     return "ok"
 
 
@@ -2371,15 +2947,15 @@ class RoomUploadModal(Modal):
                 ephemeral=True,
             )
             return
-        # Права — как при загрузке через кнопку
-        from views.ocr_match_view import _can_use_ocr
-
-        t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
-        if not _can_use_ocr(interaction.user, tournament, [t1, t2]):
+        # Права — кто может слать файлы в этот комплект
+        if not _rooms_file_submit_allowed(
+            tournament, session, interaction.user
+        ):
             await interaction.followup.send(
                 replace_emojis(
-                    "❌ Скриншоты может отправить капитан команды "
-                    "или организатор."
+                    "❌ Этот комплект может продолжить только его "
+                    "отправитель, капитан команды-победителя "
+                    "или администратор."
                 ),
                 ephemeral=True,
             )
@@ -2403,6 +2979,30 @@ class RoomUploadModal(Modal):
                 )
                 return
             items.append({"filename": f.filename, "data": data})
+        # Первый принятый файл фиксирует отправителя и его команду
+        # как победителя (Ranked MM); у занятого комплекта права
+        # перепроверяются под _room_lock — гонка двух капитанов.
+        status, tournament, session = await _rooms_claim_bundle(
+            interaction.guild, tournament, key, session, interaction.user
+        )
+        if status == "stale":
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Сессия загрузки устарела или отменена — "
+                    "начните заново."
+                ),
+                ephemeral=True,
+            )
+            return
+        if status == "forbidden":
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Этот комплект может продолжить только его "
+                    "отправитель или администратор."
+                ),
+                ephemeral=True,
+            )
+            return
         stats_channel = await _stats_channel(interaction, tournament)
         if stats_channel is None:
             stats_channel = interaction.channel
@@ -2511,15 +3111,15 @@ class RoomCollectView(View):
                 replace_emojis("✅ Комплект уже полон."), ephemeral=True
             )
             return
-        # Права — капитан/орг (как при отправке скриншота)
-        from views.ocr_match_view import _can_use_ocr
-
-        teams = session.get("teams") or []
-        if not _can_use_ocr(interaction.user, tournament, teams):
+        # Права — как при загрузке через кнопку
+        if not _rooms_file_submit_allowed(
+            tournament, session, interaction.user
+        ):
             await interaction.response.send_message(
                 replace_emojis(
-                    "❌ Скриншоты может отправить капитан команды "
-                    "или организатор."
+                    "❌ Этот комплект может продолжить только его "
+                    "отправитель, капитан команды-победителя "
+                    "или администратор."
                 ),
                 ephemeral=True,
             )
