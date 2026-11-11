@@ -7,6 +7,7 @@ import hashlib
 import logging
 import sys
 import os
+import time
 
 import discord
 from discord.ext import commands
@@ -92,6 +93,54 @@ def _message_signature(embed, view) -> str:
     if view is not None:
         _component_sig(view, parts)
     return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+# P1.2: дешёвый «предварительный» кэш для таймерных тиков. Позволяет
+# пропустить build_embed + SQL-запросы, когда отображаемое состояние
+# турнира не менялось. Ключ — tournament id (не channel): у турнира
+# одно главное сообщение.
+_TOURNAMENT_FP_CACHE: dict[str, dict] = {}
+_TOURNAMENT_FP_CACHE_MAX = 200
+# Максимальный возраст кэша: страховка от PG-изменений, которые не
+# проходят через update_tournament_message (например расчёт ставок).
+_TIMER_REBUILD_TTL = 60.0
+
+
+def _tournament_display_fingerprint(tournament) -> str:
+    """Сигнатура состояния, влияющего на отображаемый embed.
+
+    Дешёвая (без SQL и без Discord API): сериализация to_dict()
+    турнира + betting-поля, которых нет в to_dict, и флаг
+    is_betting_open() — он зависит от времени и ловит момент
+    закрытия окна ставок без изменения объекта.
+    """
+    try:
+        extras = {
+            "betting_open": bool(getattr(tournament, "betting_open", False)),
+            "betting_phase": getattr(tournament, "betting_phase", None),
+            "betting_results": getattr(tournament, "betting_results", {}),
+            "betting_open_now": bool(tournament.is_betting_open()),
+        }
+        payload = repr((tournament.to_dict(), extras))
+    except Exception:
+        # Не смогли сериализовать — считаем состояние «грязным»,
+        # пусть идёт полный rebuild.
+        return ""
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _pets_for_members(rows, member_ids):
+    """Отфильтровать строки pets по членству владельца в гильдии.
+
+    pets не имеют guild_id — принадлежность определяется по
+    owner_1_id/owner_2_id. owner_2_id может быть NULL.
+    """
+    for row in rows:
+        if (
+            row["owner_1_id"] in member_ids
+            or row["owner_2_id"] in member_ids
+        ):
+            yield row
 
 
 class TournamentBot(commands.Bot):
@@ -528,7 +577,11 @@ class TournamentBot(commands.Bot):
         return None
 
     async def update_tournament_message(
-        self, guild: discord.Guild, tournament: Tournament
+        self,
+        guild: discord.Guild,
+        tournament: Tournament,
+        *,
+        from_timer: bool = False,
     ) -> None:
         """Отредактировать главное сообщение турнира.
 
@@ -537,10 +590,47 @@ class TournamentBot(commands.Bot):
         изменении отображаемых данных. Сериализация правок одного
         сообщения — через per-channel lock. Анонс матчей фазы
         идемпотентен и вызывается на каждый апдейт.
+
+        P1.2: при from_timer=True (вызовы из betting/draft loops)
+        сначала считается дешёвый fingerprint состояния турнира.
+        Если он совпадает с кэшем и кэшу меньше TTL — пропускаем
+        build_embed и все SQL-запросы, но всё равно выполняем
+        announce_phase_matches (он дешёвый и нужен для анонса
+        матчей при смене фазы). Внешние вызовы (кнопки, модалы,
+        ставки) идут с from_timer=False — они всегда делают
+        полный rebuild, поэтому изменения от пользователя
+        отражаются немедленно.
         """
         if not tournament.message_id:
             logger.warning("Нет message_id для сервера %s", guild.id)
             return
+
+        fp_key = str(tournament.id)
+        fp = _tournament_display_fingerprint(tournament) if from_timer else ""
+        now = time.monotonic()
+        if from_timer and fp:
+            cached_fp = _TOURNAMENT_FP_CACHE.get(fp_key)
+            if (
+                cached_fp is not None
+                and cached_fp.get("fp") == fp
+                and now - cached_fp.get("ts", 0.0) < _TIMER_REBUILD_TTL
+            ):
+                # Состояние не менялось — embed не строим, edit не
+                # нужен. Анонс матчей всё равно проверяем.
+                try:
+                    from services.match_announcer import (
+                        announce_phase_matches,
+                    )
+
+                    await announce_phase_matches(tournament, guild, self)
+                except Exception as exc:
+                    logger.error("Match announce failed: %s", exc)
+                return
+
+        if from_timer and fp:
+            if len(_TOURNAMENT_FP_CACHE) >= _TOURNAMENT_FP_CACHE_MAX:
+                _TOURNAMENT_FP_CACHE.pop(next(iter(_TOURNAMENT_FP_CACHE)))
+            _TOURNAMENT_FP_CACHE[fp_key] = {"fp": fp, "ts": now}
 
         key = f"{guild.id}:{tournament.channel_id}"
         async with _edit_lock(key):
@@ -641,14 +731,18 @@ class TournamentBot(commands.Bot):
 
                         if tournament.is_betting_open():
                             # Update message to show countdown
-                            await self.update_tournament_message(guild, tournament)
+                            await self.update_tournament_message(
+                                guild, tournament, from_timer=True
+                            )
                             # Reset the updated flag since betting is open again
                             if tournament_key in updated_after_close:
                                 updated_after_close.remove(tournament_key)
                         elif tournament.betting_phase_start_time is not None:
                             # Betting was open but now closed - update once to remove timer
                             if tournament_key not in updated_after_close:
-                                await self.update_tournament_message(guild, tournament)
+                                await self.update_tournament_message(
+                                    guild, tournament, from_timer=True
+                                )
                                 updated_after_close.add(tournament_key)
             except Exception as e:
                 logger.error(f"Error in betting timer loop: {e}", exc_info=True)
@@ -682,7 +776,9 @@ class TournamentBot(commands.Bot):
                         remaining_time = tournament.get_draft_pick_remaining_time()
                         if remaining_time > 0:
                             # Update message to show countdown every 5 seconds
-                            await self.update_tournament_message(guild, tournament)
+                            await self.update_tournament_message(
+                                guild, tournament, from_timer=True
+                            )
                         else:
                             # Time expired - make random pick
                             logger.info(f"Draft timer expired for guild {guild.id}, making random pick")
@@ -694,7 +790,9 @@ class TournamentBot(commands.Bot):
                                 store.set(tournament)
 
                                 # Update tournament message
-                                await self.update_tournament_message(guild, tournament)
+                                await self.update_tournament_message(
+                                    guild, tournament, from_timer=True
+                                )
 
                                 # Delete old draft message if exists
                                 if tournament.draft_message_id > 0:
@@ -741,22 +839,29 @@ class TournamentBot(commands.Bot):
                 if not self.is_ready():
                     continue
 
+                # P5: pets не имеют guild_id — вместо запроса с
+                # ANY(все member ids) на каждую гильдию (G запросов
+                # с большими массивами) загружаем таблицу pets один
+                # раз и фильтруем по членству в Python. Таблица pets
+                # мала (питомцы — штучный контент), а
+                # check_fullness_and_energy перечитывает pet по id,
+                # поэтому «устаревшая» строка после удаления
+                # безопасно превращается в no-op.
+                from storage.pet_store import pet_store
+                from storage.db import get_pool
+
+                pool = await get_pool()
+                async with pool.acquire() as conn:
+                    all_pet_rows = await conn.fetch("SELECT * FROM pets")
+
                 # Get all guilds
                 for guild in self.guilds:
                     try:
-                        from storage.pet_store import pet_store
-                        from storage.db import get_pool
-
-                        pool = await get_pool()
-                        async with pool.acquire() as conn:
-                            # Get only pets from this guild
-                            rows = await conn.fetch("SELECT * FROM pets WHERE owner_1_id = ANY($1) OR owner_2_id = ANY($1)", 
-                                                    [member.id for member in guild.members])
-
-                            for row in rows:
-                                pet = pet_store._row_to_pet(row)
-                                # Check hunger for each pet
-                                await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
+                        member_ids = {m.id for m in guild.members}
+                        for row in _pets_for_members(all_pet_rows, member_ids):
+                            pet = pet_store._row_to_pet(row)
+                            # Check hunger for each pet
+                            await pet_store.check_fullness_and_energy(pet.pet_id, guild.id, self)
                     except Exception as e:
                         logger.error(f"Error in pet hunger check for guild {guild.id}: {e}", exc_info=True)
             except Exception as e:

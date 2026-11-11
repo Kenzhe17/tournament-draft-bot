@@ -41,6 +41,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SWEEP_INTERVAL = 60  # секунд
+# P8: кэш инвайтов обновляется не на каждом sweep, а раз в
+# _INVITE_REFRESH_EVERY проходов. Обоснование: invite.uses и
+# vanity.uses меняются ТОЛЬКО при входе участника, а
+# record_member_join сам обновляет кэш после обработки входа
+# (и инвайт create/delete тоже обновляют его через события).
+# Периодический рефреш — лишь страховка от неудачного обновления
+# кэша после join. Увеличение окна до 5 минут не влияет на
+# задержку выдачи REP (process_due_invites идёт каждый sweep),
+# а худший случай — «ambiguous» атрибуция → reject, а не
+# неверное начисление.
+_INVITE_REFRESH_EVERY = 5  # раз в 5 минут
 
 _SOURCE_TITLES = {
     SRC_MANUAL: "через /rep",
@@ -289,12 +300,16 @@ class ReputationCog(commands.Cog):
 
     async def _reward_sweeper(self) -> None:
         """Периодически подтверждать награды за приглашения и бусты."""
+        sweep_count = 0
         while True:
             try:
                 await asyncio.sleep(_SWEEP_INTERVAL)
-                # Поддерживаем кэш инвайтов свежим (invite create/delete)
-                for guild in self.bot.guilds:
-                    await self._refresh_invite_cache(guild)
+                sweep_count += 1
+                # Поддерживаем кэш инвайтов свежим — не чаще, чем
+                # раз в _INVITE_REFRESH_EVERY sweep'ов (см. P8).
+                if sweep_count % _INVITE_REFRESH_EVERY == 1:
+                    for guild in self.bot.guilds:
+                        await self._refresh_invite_cache(guild)
                 await rep_svc.process_due_invites(self.bot)
                 await rep_svc.process_due_boosts(self.bot)
                 # Публикация ожидающих событий в канал логов репутации
