@@ -3082,6 +3082,30 @@ class RoomUploadModal(Modal):
         )
 
 
+async def _rooms_reply(interaction: discord.Interaction, text: str) -> None:
+    """Ответ на rooms-interaction после раннего defer.
+
+    Предпочитает edit_original_response (defer уже выполнен);
+    при недоступности — followup, в крайнем случае send_message.
+    Ошибки отправки логируются, но не пробрасываются — результат
+    отмены уже зафиксирован в store.
+    """
+    content = replace_emojis(text)
+    try:
+        if interaction.response.is_done():
+            await interaction.edit_original_response(content=content)
+            return
+    except Exception:
+        pass
+    try:
+        await interaction.followup.send(content, ephemeral=True)
+    except Exception:
+        try:
+            await interaction.response.send_message(content, ephemeral=True)
+        except Exception:
+            logger.debug("rooms reply failed entirely", exc_info=True)
+
+
 class RoomCollectView(View):
     """Кнопки на сообщении прогресса: дозагрузка + админ-откат."""
 
@@ -3179,34 +3203,49 @@ class RoomCollectView(View):
                 pass
 
     async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        # Отвечаем Discord сразу: cancel_rooms_session делает
+        # JsonStore-записи, редактирование сообщений и аудит —
+        # суммарно может превысить 3-секундное окно interaction
+        # (discord.errors.NotFound 10062 Unknown interaction).
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except Exception:
+            # Interaction уже отвечен/протух — дальше отвечать
+            # всё равно некуда, но отмену выполнять безопасно.
+            pass
         tournament = store.get(self.guild_id, self.channel_id)
         if not tournament:
-            await interaction.response.send_message(
-                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            await _rooms_reply(interaction, "❌ Турнир не найден.")
+            return
+        try:
+            res = await cancel_rooms_session(
+                interaction.guild, interaction.user, tournament,
+                self.match_type, self.match_index,
+            )
+        except Exception:
+            logger.exception(
+                "rooms cancel failed (match %s_%s)",
+                self.match_type, self.match_index,
+            )
+            await _rooms_reply(
+                interaction,
+                "⚠️ Не удалось отменить комплект — попробуйте ещё раз "
+                "или обратитесь к администратору.",
             )
             return
-        res = await cancel_rooms_session(
-            interaction.guild, interaction.user, tournament,
-            self.match_type, self.match_index,
-        )
         if res == "forbidden":
-            await interaction.response.send_message(
-                replace_emojis("❌ Отменить комплект может только администратор."),
-                ephemeral=True,
+            await _rooms_reply(
+                interaction, "❌ Отменить комплект может только администратор."
             )
         elif res == "done":
-            await interaction.response.send_message(
-                replace_emojis("ℹ️ Сессия уже завершена или отменена."),
-                ephemeral=True,
+            await _rooms_reply(
+                interaction, "ℹ️ Сессия уже завершена или отменена."
             )
         elif res == "none":
-            await interaction.response.send_message(
-                replace_emojis("ℹ️ Активной загрузки нет."), ephemeral=True
-            )
+            await _rooms_reply(interaction, "ℹ️ Активной загрузки нет.")
         else:
-            await interaction.response.send_message(
-                replace_emojis("✅ Комплект скриншотов отменён."),
-                ephemeral=True,
+            await _rooms_reply(
+                interaction, "✅ Комплект скриншотов отменён."
             )
 
 

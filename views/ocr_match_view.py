@@ -1364,23 +1364,11 @@ class MatchScreenshotButton(Button):
             )
             return
 
-        # Канал для скриншотов — канал результатов; если его нет,
-        # просим прислать сюда
-        stats_channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
-        if stats_channel is None:
-            try:
-                stats_channel = await interaction.guild.fetch_channel(
-                    OCR_STATS_CHANNEL_ID
-                )
-            except Exception:
-                stats_channel = None
-        upload_channel_id = (
-            stats_channel.id if stats_channel else self.channel_id
-        )
-
         # Главная кнопка (без team_index) → мультикомнатный флоу:
         # сначала «СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?» (1–10), затем
         # загрузка файлов. Кнопки капитанов (team_index) — squad-путь.
+        # stats_channel здесь не нужен — fetch_channel это Discord API
+        # и его латентность входит в 3-секундное окно interaction.
         if self.team_index is None:
             from cogs.ocr_upload import RoomCountSelectView
 
@@ -1398,6 +1386,20 @@ class MatchScreenshotButton(Button):
                 ephemeral=True,
             )
             return
+
+        # Канал для скриншотов — канал результатов; если его нет,
+        # просим прислать сюда
+        stats_channel = interaction.guild.get_channel(OCR_STATS_CHANNEL_ID)
+        if stats_channel is None:
+            try:
+                stats_channel = await interaction.guild.fetch_channel(
+                    OCR_STATS_CHANNEL_ID
+                )
+            except Exception:
+                stats_channel = None
+        upload_channel_id = (
+            stats_channel.id if stats_channel else self.channel_id
+        )
 
         if FileUpload is not None:
             # Основной путь: модалка с загрузкой файла
