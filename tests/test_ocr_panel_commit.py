@@ -24,6 +24,9 @@ from views import ocr_match_view as omv
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     monkeypatch.setattr(omv.store, "save", lambda: None)
+    # sharded-режим: set() пишет shard напрямую, минуя save()
+    monkeypatch.setattr(omv.store, "_write_shard", lambda t: None)
+    monkeypatch.setattr(omv.store, "_delete_shard", lambda k: None)
     omv._REFRESH_SIGS.clear()
     yield
     omv._REFRESH_SIGS.clear()

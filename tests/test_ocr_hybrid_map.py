@@ -25,6 +25,9 @@ from views import ocr_match_view as omv
 def _no_store_save(monkeypatch):
     """JsonStore.set вызывает save() → to_dict; в тестах глушим."""
     monkeypatch.setattr(omv.store, "save", lambda: None)
+    # sharded-режим: set() пишет shard напрямую, минуя save()
+    monkeypatch.setattr(omv.store, "_write_shard", lambda t: None)
+    monkeypatch.setattr(omv.store, "_delete_shard", lambda k: None)
 
 
 def _rows(prefix, n=4):
