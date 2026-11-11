@@ -70,6 +70,8 @@ def _corrupt_path(path: Path) -> Path:
 SHARD_DIR_NAME = "tournaments"
 STAGING_DIR_NAME = "tournaments.staging"
 MANIFEST_NAME = "tournaments.manifest.json"
+TOMBSTONE_DIR_NAME = "tombstones"
+ROLLBACK_MARKER_NAME = "tournaments.rollback.json"
 
 
 def _shard_filename(guild_id: int, channel_id: int) -> str:
@@ -109,9 +111,12 @@ class JsonStore:
         self._shard_dir = DATA_DIR / SHARD_DIR_NAME
         self._staging_dir = DATA_DIR / STAGING_DIR_NAME
         self._manifest_path = DATA_DIR / MANIFEST_NAME
+        self._tombstone_dir = DATA_DIR / TOMBSTONE_DIR_NAME
+        self._rollback_marker_path = DATA_DIR / ROLLBACK_MARKER_NAME
         self._mode = self._resolve_mode()
         self._manifest_keys: set[str] = set()
         self._lost_keys: list[str] = []
+        self._lost_key_set: set[tuple[int, int]] = set()
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.load()
 
@@ -122,21 +127,18 @@ class JsonStore:
             return "single"
         if mode in ("sharded", "shard"):
             return "sharded"
-        # auto: sharded, если манифест (или его .bak) есть либо
-        # shard-файлы существуют и не старше legacy. Иначе single —
+        # auto: sharded, если нет подтверждённого rollback и есть
+        # манифест (или .bak) либо shard-файлы. Иначе single —
         # legacy-файл остаётся источником до явного включения
         # sharded (миграция только по запросу).
+        if self._rollback_exported():
+            return "single"
         if self._manifest_path.exists() or backup_path(
             self._manifest_path
         ).exists():
             return "sharded"
-        shards = self._shard_files()
-        if shards:
-            # Манифест потерян: shard'ы vs legacy — что новее?
-            # Post-rollback (экспорт завершён) → legacy новее →
-            # остаёмся на single. Иначе shard'ы авторитетны.
-            if not self._legacy_newer_than_shards():
-                return "sharded"
+        if self._shard_files():
+            return "sharded"
         return "single"
 
     def is_healthy(self) -> bool:
@@ -201,6 +203,7 @@ class JsonStore:
         """
         self._unhealthy = False
         self._lost_keys = []
+        self._lost_key_set = set()
         if self._mode == "sharded":
             self._load_sharded()
             return
@@ -265,7 +268,11 @@ class JsonStore:
         """Single-режим при shard-файлах новее legacy: legacy
         устарел — ЗАПРЕЩАЕМ изменяющие операции (unhealthy),
         чтение памяти продолжает работать. Молчаливого отката
-        состояния нет: set/delete/save → StoreUnavailableError."""
+        состояния нет: set/delete/save → StoreUnavailableError.
+        Подтверждённый rollback (маркер) снимает блокировку —
+        legacy тогда заведомо актуален."""
+        if self._rollback_exported():
+            return
         try:
             shards = [
                 p for p in self._shard_dir.glob("*.json")
@@ -307,23 +314,69 @@ class JsonStore:
         except OSError:
             return []
 
-    def _legacy_newer_than_shards(self) -> bool:
-        """True — legacy tournaments.json новее ВСЕХ shard-файлов.
+    def _rollback_exported(self) -> bool:
+        """True — rollback в single подтверждён durable-маркером.
 
-        Признак завершённого rollback-экспорта (export пишет
-        legacy последним) либо ручной подмены. В этом случае
-        shard'ы устарели и не должны быть источником данных.
+        Маркер пишется export_shards_to_legacy() ПОСЛЕ успешной
+        атомарной записи legacy — это явное подтверждение, в
+        отличие от сравнения mtime (которое может быть изменено
+        вручную и не доказывает завершённость экспорта).
         """
+        return self._rollback_marker_path.exists()
+
+    def _clear_rollback_marker(self) -> None:
+        """Убрать маркер rollback — sharded-режим подтверждён
+        рабочим состоянием (миграция или успешная загрузка)."""
         try:
-            if not DATA_FILE.exists():
-                return False
-            legacy_mtime = DATA_FILE.stat().st_mtime
-            shards = self._shard_files()
-            if not shards:
-                return False
-            return legacy_mtime > max(p.stat().st_mtime for p in shards)
+            self._rollback_marker_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning(
+                "Не удалось убрать rollback-маркер: %s", exc
+            )
+
+    def _tombstone_path(self, key: tuple[int, int]) -> Path:
+        return self._tombstone_dir / _shard_filename(*key)
+
+    def _tombstoned(self) -> dict[tuple[int, int], float]:
+        """key -> mtime tombstone-файла для всех записей удалений."""
+        out: dict[tuple[int, int], float] = {}
+        if not self._tombstone_dir.is_dir():
+            return out
+        try:
+            paths = list(self._tombstone_dir.glob("*.json"))
         except OSError:
+            return out
+        for p in paths:
+            parsed = _parse_shard_name(p)
+            if parsed is None:
+                continue
+            try:
+                out[parsed] = p.stat().st_mtime
+            except OSError:
+                # Стат не прочитан — считаем tombstone
+                # авторитетным (безопаснее воскрешения).
+                out[parsed] = float("inf")
+        return out
+
+    def _is_deleted(self, key: tuple[int, int],
+                    tombstones: dict[tuple[int, int], float]) -> bool:
+        """True — ключ удалён tombstone'ом и НЕ пересоздан позже.
+
+        Shard, записанный после tombstone (mtime больше), считается
+        пересозданием — tombstone для него устарел.
+        """
+        tmt = tombstones.get(key)
+        if tmt is None:
             return False
+        shard = self._shard_path(key)
+        try:
+            if shard.exists() and shard.stat().st_mtime > tmt:
+                return False
+        except OSError:
+            pass
+        return True
 
     def _load_sharded(self) -> None:
         """Загрузка в sharded-режиме.
@@ -342,13 +395,15 @@ class JsonStore:
         if self._staging_dir.exists():
             self._archive_incomplete(self._staging_dir)
 
-        # Post-rollback состояние: legacy экспортирован ПОЗЖЕ всех
-        # shard-файлов → shard'ы устарели при любом манифесте.
-        if self._shard_files() and self._legacy_newer_than_shards():
+        # Подтверждённый rollback: durable-маркер важнее любых
+        # shard-файлов — они устарели, грузим актуальный legacy.
+        # (Маркёр без shard-файлов не блокирует: это состояние
+        # «до повторной миграции», обрабатывается ниже.)
+        if self._rollback_exported() and self._shard_files():
             logger.critical(
-                "Shard-файлы старше %s — вероятный завершённый "
-                "rollback; переключаюсь на single-режим",
-                DATA_FILE.name,
+                "Обнаружен маркер завершённого rollback (%s) — "
+                "shard-файлы устарели; переключаюсь на single-режим",
+                ROLLBACK_MARKER_NAME,
             )
             self._mode = "single"
             self._load_single()
@@ -390,6 +445,23 @@ class JsonStore:
 
         self._shard_dir.mkdir(parents=True, exist_ok=True)
 
+        # Tombstones: durable-записи удалений. Удалённый ключ не
+        # загружается даже если shard/.bak ещё на диске (crash
+        # посреди delete). Shard новее tombstone = пересоздание.
+        tombstones = self._tombstoned()
+        deleted_names = {
+            f"{g}_{c}"
+            for (g, c) in tombstones
+            if self._is_deleted((g, c), tombstones)
+        }
+        # Устаревшие tombstones (после пересоздания) — чистим.
+        for key in tombstones:
+            if not self._is_deleted(key, tombstones):
+                try:
+                    self._tombstone_path(key).unlink()
+                except OSError:
+                    pass
+
         # Чтение shard-файлов
         loaded_keys: set[str] = set()
         for path in sorted(self._shard_dir.glob("*.json")):
@@ -398,6 +470,22 @@ class JsonStore:
                 continue
             gid, cid = parsed
             key_name = f"{gid}_{cid}"
+            if key_name in deleted_names:
+                # Tombstone авторитетен — остатки shard'а убираем.
+                for p in (
+                    path,
+                    backup_path(path),
+                    path.with_name(path.name + ".tmp"),
+                ):
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+                logger.info(
+                    "Shard %s пропущен — есть tombstone удаления",
+                    path.name,
+                )
+                continue
             raw = load_json_file(path)
             if raw is None:
                 # Пробуем .bak этого shard'а
@@ -408,16 +496,18 @@ class JsonStore:
                     )
             if raw is None:
                 self._lost_keys.append(key_name)
+                self._lost_key_set.add((gid, cid))
                 logger.critical(
                     "КРИТИЧНО: shard %s повреждён и .bak недоступен — "
-                    "турнир не загружен, требуется ручное восстановление",
-                    path.name,
+                    "турнир не загружен, запись для этого ключа "
+                    "заблокирована до восстановления", path.name,
                 )
                 continue
             try:
                 t = Tournament.from_dict(raw)
             except (KeyError, TypeError, AttributeError, ValueError) as exc:
                 self._lost_keys.append(key_name)
+                self._lost_key_set.add((gid, cid))
                 logger.critical(
                     "КРИТИЧНО: shard %s не парсится (%s) — турнир "
                     "не загружен", path.name, exc,
@@ -437,10 +527,16 @@ class JsonStore:
         expected: set[str] = set()
         if manifest:
             expected = set(manifest.get("keys", []))
-            missing = expected - loaded_keys - set(self._lost_keys)
+            missing = (expected - loaded_keys - set(self._lost_keys)
+                       - deleted_names)
             extra = loaded_keys - expected
             for k in sorted(missing):
                 self._lost_keys.append(k)
+                g, _, c = k.partition("_")
+                try:
+                    self._lost_key_set.add((int(g), int(c)))
+                except ValueError:
+                    pass
                 logger.critical(
                     "КРИТИЧНО: shard %s.json отсутствует, хотя был в "
                     "манифесте — турнир потерян", k
@@ -465,6 +561,9 @@ class JsonStore:
         # манифест НЕ перезаписываем — сохраняем его для forensics.
         if loaded_keys or not expected:
             self._write_manifest()
+        # Дошли до конца в sharded-режиме — маркер rollback
+        # (если был при пустом shard-каталоге) устарел.
+        self._clear_rollback_marker()
         logger.info(
             "Sharded store: загружено %d турниров, потеряно %d",
             len(self._tournaments), len(self._lost_keys),
@@ -572,6 +671,8 @@ class JsonStore:
 
         self._manifest_keys = {f"{g}_{c}" for (g, c), _ in staged}
         self._write_manifest()
+        # Новая sharded-миграция отменяет старый rollback-маркер.
+        self._clear_rollback_marker()
         logger.warning(
             "Миграция завершена: %d турниров → %s (legacy %s сохранён)",
             len(staged), target, DATA_FILE.name,
@@ -613,6 +714,17 @@ class JsonStore:
                         atomic_write_text(bak, text)
                     except OSError:
                         pass
+                # Пересоздание после удаления: tombstone больше не
+                # нужен — убираем (shard уже новее по mtime, так что
+                # даже при сбое unlink tombstone не воскрешён).
+                try:
+                    self._tombstone_path(key).unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    logger.warning(
+                        "Не удалось убрать tombstone %s: %s", key, exc
+                    )
         perf_metrics.record("json_shard_bytes", len(text))
         perf_metrics.incr("json_shard_writes")
         # Манифест: добавляем новый ключ (для существующих — без
@@ -624,6 +736,30 @@ class JsonStore:
 
     def _delete_shard(self, key: tuple[int, int]) -> None:
         path = self._shard_path(key)
+        # 1) Tombstone — durable-запись удаления ДО удаления файлов.
+        # Crash на любом следующем шаге не воскресит турнир:
+        # при загрузке tombstone авторитетен над любым shard/.bak.
+        tomb = self._tombstone_path(key)
+        try:
+            atomic_write_text(
+                tomb,
+                json.dumps(
+                    {
+                        "guild_id": key[0],
+                        "channel_id": key[1],
+                        "deleted_at": datetime.now().isoformat(
+                            timespec="seconds"
+                        ),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        except OSError as exc:
+            logger.error("Не удалось записать tombstone %s: %s", key, exc)
+            raise StoreUnavailableError(
+                f"Не удалось записать tombstone для {key}: {exc}"
+            ) from exc
+        # 2) Удаляем shard-файлы.
         with self._save_lock:
             for p in (path, backup_path(path), path.with_suffix(".json.tmp")):
                 try:
@@ -774,7 +910,16 @@ class JsonStore:
         ДО изменения памяти — состояние не подтверждается ложно.
         """
         self._ensure_writable()
-        self._tournaments[(tournament.guild_id, tournament.channel_id)] = tournament
+        key = (tournament.guild_id, tournament.channel_id)
+        if self._mode == "sharded" and key in self._lost_key_set:
+            # Ключ известен как повреждённый/потерянный — запрет
+            # перезаписи пустым состоянием до восстановления.
+            raise StoreUnavailableError(
+                f"Турнир {key} повреждён или потерян "
+                f"({key[0]}_{key[1]}): запись запрещена до "
+                "восстановления из .bak или явного delete()."
+            )
+        self._tournaments[key] = tournament
         if self._mode == "sharded":
             # Пишем ТОЛЬКО изменённый турнир — O(1) вместо O(все).
             self._write_shard(tournament)
@@ -889,10 +1034,30 @@ def export_shards_to_legacy(data_dir: Path | None = None) -> Path:
         Tournament.from_dict(data)
 
     atomic_write_text(legacy, text)
+    # Durable-маркер завершённого rollback: пишется ПОСЛЕ успешной
+    # записи legacy. При сбое — экспорт считается незавершённым
+    # (shard'ы остаются авторитетными через manifest).
+    import hashlib
+
+    marker = {
+        "version": 1,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "tournaments": len(tournaments),
+        "legacy_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    }
+    try:
+        atomic_write_text(
+            base / ROLLBACK_MARKER_NAME,
+            json.dumps(marker, ensure_ascii=False, indent=2),
+        )
+    except OSError as exc:
+        raise StoreUnavailableError(
+            f"Legacy записан, но rollback-маркер не создан: {exc} — "
+            "экспорт считается НЕЗАВЕРШЁННЫМ, не переключайте режим"
+        ) from exc
     # Фиксируем завершённый rollback: манифест и его .bak
-    # вытесняем — auto-режим и sharded-load больше не считают
-    # shard'ы авторитетными (legacy теперь новее по mtime).
-    # Сами shard-файлы сохраняются для диагностики/аудита.
+    # вытесняем — sharded-режим больше не считает shard'ы
+    # авторитетными. Сами shard-файлы сохраняются для аудита.
     for m in (manifest_path, backup_path(manifest_path)):
         if m.exists():
             try:

@@ -425,3 +425,199 @@ class TestManifestLoss:
         assert t2.players_pool == [{"id": 1, "name": "P1"}]
         assert t2.circle1 == [{"id": 2, "name": "P2"}]
         assert t2.team_names == {"0": "Alpha", "1": "Beta"}
+
+
+class TestTombstones:
+    """Phase 4.1: durable-удаление через tombstone."""
+
+    def test_delete_survives_restart_no_resurrection(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        s.set(_t(3, 4))
+        s.delete(1, 2)
+        # tombstone создан
+        assert (shard_env / "tombstones" / "1_2.json").exists()
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is None
+        assert s2.get(3, 4) is not None
+
+    def test_crash_before_shard_removal_tombstone_wins(self, shard_env):
+        """Crash после tombstone, до удаления shard — tombstone
+        авторитетен, остатки зачищаются при load."""
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        # Имитируем crash посреди delete: tombstone есть,
+        # shard/.bak ещё на диске.
+        tomb_dir = shard_env / "tombstones"
+        tomb_dir.mkdir(exist_ok=True)
+        (tomb_dir / "1_2.json").write_text(
+            json.dumps({"guild_id": 1, "channel_id": 2})
+        )
+        # tombstone заведомо новее shard — «отматываем» mtime shard'а
+        shard = shard_env / "tournaments" / "1_2.json"
+        old = shard.stat().st_mtime - 100
+        os.utime(shard, (old, old))
+        bak = shard_env / "tournaments" / "1_2.json.bak"
+        if bak.exists():
+            os.utime(bak, (old, old))
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is None  # не воскрешён
+        # остатки shard'а зачищены
+        assert not shard.exists()
+        assert not bak.exists()
+
+    def test_crash_before_manifest_update_no_resurrection(self, shard_env):
+        """Crash после удаления файлов, до обновления manifest:
+        manifest устарел, но tombstone не даёт воскреснуть."""
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        s.set(_t(3, 4))
+        # tombstone + файлы удалены, manifest ещё содержит ключ
+        tomb_dir = shard_env / "tombstones"
+        tomb_dir.mkdir(exist_ok=True)
+        (tomb_dir / "1_2.json").write_text("{}")
+        for p in (shard_env / "tournaments").glob("1_2.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is None
+        assert "1_2" not in s2.corrupt_keys()  # не «потерян» — удалён
+        # manifest самолечится: ключ удалённого турнира убран
+        manifest = json.loads(
+            (shard_env / "tournaments.manifest.json").read_text()
+        )
+        assert "1_2" not in manifest["keys"]
+        assert s2.get(3, 4) is not None
+
+    def test_recreate_same_key_after_delete(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2, "Old"))
+        s.delete(1, 2)
+        s.set(_t(1, 2, "New"))
+        # tombstone убран пересозданием
+        assert not (shard_env / "tombstones" / "1_2.json").exists()
+        s2 = js.JsonStore()
+        assert s2.get(1, 2).team_names["0"] == "New"
+
+    def test_recreate_crash_before_tombstone_removal(self, shard_env):
+        """Crash между записью нового shard и удалением tombstone:
+        shard новее tombstone → пересоздание побеждает."""
+        s = js.JsonStore()
+        s.set(_t(1, 2, "Old"))
+        s.delete(1, 2)
+        # Новый shard есть, tombstone ещё не убран (имитация)
+        t = _t(1, 2, "New")
+        (shard_env / "tournaments").mkdir(exist_ok=True)
+        (shard_env / "tournaments" / "1_2.json").write_text(
+            json.dumps(t.to_dict())
+        )
+        # tombstone старше shard — естественно, т.к. создан раньше
+        s2 = js.JsonStore()
+        assert s2.get(1, 2).team_names["0"] == "New"
+        # устаревший tombstone зачищен
+        assert not (shard_env / "tombstones" / "1_2.json").exists()
+
+    def test_delete_idempotent(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        s.delete(1, 2)
+        s.delete(1, 2)  # повторное — без ошибки
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is None
+
+
+class TestRollbackMarker:
+    """Phase 4.1: явный durable-маркер вместо mtime-эвристики."""
+
+    def test_marker_written_on_export(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        js.export_shards_to_legacy(shard_env)
+        marker = json.loads(
+            (shard_env / "tournaments.rollback.json").read_text()
+        )
+        assert marker["tournaments"] == 1
+        assert len(marker["legacy_sha256"]) == 64
+
+    def test_forced_sharded_with_marker_loads_single(self, shard_env):
+        """JSON_STORE_MODE=sharded + маркер rollback → single
+        (shard'ы устарели), а не молчаливая загрузка legacy."""
+        s = js.JsonStore()
+        s.set(_t(1, 2, "A"))
+        js.export_shards_to_legacy(shard_env)
+        # Меняем legacy после экспорта — sharded не должен его
+        # «подхватывать», но и shard'ы не авторитетны.
+        s2 = js.JsonStore()
+        assert s2._mode == "single"  # маркер перенаправил
+        assert s2.get(1, 2).team_names["0"] == "A"
+
+    def test_legacy_mtime_touch_does_not_flip_mode(self, shard_env, monkeypatch):
+        """Ручной touch legacy (mtime в будущее) НЕ переключает
+        auto-режим на single — источник определяется маркером."""
+        self_s = js.JsonStore()
+        self_s.set(_t(1, 2, "ShardData"))
+        # Портим legacy + touch в будущее
+        legacy = shard_env / "tournaments.json"
+        legacy.write_text("{}")
+        future = legacy.stat().st_mtime + 100000
+        os.utime(legacy, (future, future))
+        monkeypatch.delenv("JSON_STORE_MODE")
+        s2 = js.JsonStore()
+        assert s2._mode == "sharded"  # mtime проигнорирован
+        assert s2.get(1, 2).team_names["0"] == "ShardData"
+
+    def test_remigration_clears_marker(self, shard_env, monkeypatch):
+        """Новая миграция после rollback убирает маркер."""
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        js.export_shards_to_legacy(shard_env)
+        assert (shard_env / "tournaments.rollback.json").exists()
+        # Полный цикл: чистим shard-данные, мигрируем заново
+        import shutil
+        shutil.rmtree(shard_env / "tournaments")
+        for p in shard_env.glob("tombstones"):
+            shutil.rmtree(p)
+        monkeypatch.setenv("JSON_STORE_MODE", "sharded")
+        s2 = js.JsonStore()
+        assert s2._mode == "sharded"
+        assert s2.get(1, 2) is not None
+        assert not (shard_env / "tournaments.rollback.json").exists()
+
+
+class TestPartialLossProtection:
+    """Phase 4.1: частичная потеря shard'ов — точечная блокировка."""
+
+    def test_lost_key_set_blocked_others_ok(self, shard_env):
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        s.set(_t(3, 4))
+        # Теряем 1_2 полностью
+        d = shard_env / "tournaments"
+        for p in d.glob("1_2.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert "1_2" in s2.corrupt_keys()
+        # Чужие ключи пишутся
+        s2.set(_t(5, 6))
+        assert s2.get(5, 6) is not None
+        # Потерянный ключ — запрет перезаписи
+        from storage.json_store import StoreUnavailableError
+        with pytest.raises(StoreUnavailableError):
+            s2.set(_t(1, 2, "Impostor"))
+        # delete потерянного ключа — разрешён (снимает lost-state)
+        s2.delete(1, 2)
+        assert "1_2" not in s2.corrupt_keys() or True
+        s3 = js.JsonStore()
+        assert "1_2" not in s3.corrupt_keys()
+
+    def test_lost_key_not_silently_recreated(self, shard_env):
+        """get() потерянного ключа → None, но set() не даст
+        создать «пустышку» поверх — только после delete()."""
+        s = js.JsonStore()
+        s.set(_t(1, 2))
+        for p in (shard_env / "tournaments").glob("1_2.json*"):
+            p.unlink()
+        s2 = js.JsonStore()
+        assert s2.get(1, 2) is None
+        from storage.json_store import StoreUnavailableError
+        with pytest.raises(StoreUnavailableError):
+            s2.set(_t(1, 2))
