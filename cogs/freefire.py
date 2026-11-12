@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import BOT_OWNER_ID, get_emoji, replace_emojis
+from config import BOT_OWNER_ID, GUILD_ID, get_emoji, replace_emojis
 from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
 from storage.ff_cooldowns import ff_info_cooldowns, ff_stats_cooldowns
@@ -76,8 +76,23 @@ async def _safe_call(coro):
         return FreeFireError("Внутренняя ошибка при запросе к API.", "INTERNAL")
 
 
+def _has_server_tag(user) -> bool:
+    """Активный тег сервера r!z3 в профиле Discord (primary_guild)."""
+    pg = getattr(user, "primary_guild", None)
+    if pg is None or getattr(pg, "id", None) != GUILD_ID:
+        return False
+    return getattr(pg, "identity_enabled", None) is True
+
+
 async def _check_and_key(interaction: discord.Interaction, uid: str) -> bool:
-    """Валидация UID + API ключ. True — можно продолжать."""
+    """Тег r!z3 + валидация UID + API ключ. True — можно продолжать."""
+    if not _has_server_tag(interaction.user):
+        await interaction.response.send_message(
+            "🚫 Команды `/ff` доступны только участникам "
+            "с тегом **r!z3** в профиле Discord.",
+            ephemeral=True,
+        )
+        return False
     if not _check_uid(uid):
         await interaction.response.send_message( view=compose(_error_embed(
                 FreeFireError("ID игрока должен содержать 5-15 цифр.", "BAD_UID")
