@@ -85,6 +85,7 @@ class _Chan:
 
     def __init__(self):
         self.sent: list = []
+        self.id = 1
         self.guild = SimpleNamespace(id=1)
         self._by_id: dict[int, SimpleNamespace] = {}
 
@@ -151,8 +152,16 @@ def env(monkeypatch):
         qualifier_matches=[(0, 1)],
         id="t1",
         processed_elo_matches=set(),
+        phase=SimpleNamespace(value="qualifiers"),
     )
-    guild = SimpleNamespace(id=1)
+    guild = SimpleNamespace(id=1, roles=[])
+    guild.get_channel = lambda cid: None
+
+    async def _guild_fetch(cid):
+        return None
+
+    guild.fetch_channel = _guild_fetch
+    guild.get_role = lambda rid: None
     stats = _Chan()
 
     monkeypatch.setattr(up.store, "get", lambda gid, cid: tournament)
@@ -1280,3 +1289,167 @@ class TestReuploadOnlyAndStats:
         assert r == "room_full"
         assert len(env.pipe_calls) == pipe_before
         assert len(room["pending"]) == 1
+
+
+# ---------- V6.2: RoomStartModal — одна модалка вместо select ----------
+
+def _start_ix(env, user_id=42, display_name="CapA"):
+    ix = _FakeInteraction(env, user_id=user_id)
+    ix.user.display_name = display_name
+    ix.user.name = display_name
+    ix.user.guild = env.guild
+    ix.user.roles = []
+    ix.user.guild_permissions = SimpleNamespace(administrator=False)
+    return ix
+
+
+def _start_modal(count="1", tag="classic1"):
+    m = up.RoomStartModal(1, 1, "qualifier", 0)
+    m.count_select.component = SimpleNamespace(values=[count])
+    m.upload.component = (
+        SimpleNamespace(values=[_FakeFile(tag)])
+        if tag is not None else SimpleNamespace(values=[])
+    )
+    return m
+
+
+class TestRoomStartModal:
+    @pytest.mark.asyncio
+    async def test_main_button_opens_modal_not_select(self, env):
+        """Основная кнопка «Отправить скриншот» → send_modal
+        (RoomStartModal), БЕЗ ephemeral-сообщения с select."""
+        from views.ocr_match_view import MatchScreenshotButton
+
+        env.tournament.ocr_sessions.clear()
+        btn = MatchScreenshotButton(
+            1, 1, env.tournament, "qualifier", 0, "📸 Скриншот",
+        )
+        ix = _start_ix(env)
+        await btn.callback(ix)
+        assert ix.modal is not None
+        assert isinstance(ix.modal, up.RoomStartModal)
+        # Никакого ephemeral-select сообщения
+        assert ix.messages == []
+        # В модалке: select со значением по умолчанию "1" +
+        # обязательный FileUpload.
+        assert ix.modal.title == "Отправить результат"
+        labels = [
+            getattr(c, "label", None) or getattr(c, "text", None)
+            for c in ix.modal.children
+        ]
+        assert any("Скриншот комнаты 1" in str(x) for x in labels)
+
+    @pytest.mark.asyncio
+    async def test_default_count_is_one(self, env):
+        """Submit без изменения выбора → rooms_expected=1,
+        файл принят в комнату 1."""
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("1")
+        ix = _start_ix(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        env.session = sess
+        assert sess["rooms_expected"] == 1
+        assert sess["status"] == "collecting"
+        assert sess["rooms"][0]["room_index"] == 1
+        assert len(sess["rooms"][0]["pending"]) == 1
+        assert any("принят" in msg for msg in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_count_two_and_three(self, env):
+        for count in ("2", "3"):
+            env.tournament.ocr_sessions.clear()
+            up._SEQ_FILE_CACHE.clear()
+            m = _start_modal(count)
+            ix = _start_ix(env)
+            await m.on_submit(ix)
+            sess = env.tournament.ocr_sessions["qualifier_0"]
+            assert sess["rooms_expected"] == int(count)
+            assert sess["rooms"][0]["room_index"] == 1
+
+    @pytest.mark.asyncio
+    async def test_close_without_submit_no_session(self, env):
+        """Просто открытие модалки сессии не создаёт."""
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("3")
+        assert "qualifier_0" not in env.tournament.ocr_sessions
+
+    @pytest.mark.asyncio
+    async def test_missing_file_no_session(self, env):
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("2", tag=None)
+        ix = _start_ix(env)
+        await m.on_submit(ix)
+        assert "qualifier_0" not in env.tournament.ocr_sessions
+        assert any("Прикрепите" in msg for msg in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_double_submit_single_session(self, env):
+        env.tournament.ocr_sessions.clear()
+        m1 = _start_modal("1")
+        m2 = _start_modal("1")
+        ix1 = _start_ix(env)
+        ix2 = _start_ix(env)
+        await m1.on_submit(ix1)
+        await m2.on_submit(ix2)
+        sess = env.tournament.ocr_sessions.get("qualifier_0")
+        assert sess is not None
+        assert any("уже идёт загрузка" in msg for msg in ix2.messages)
+
+    @pytest.mark.asyncio
+    async def test_two_captains_one_bundle(self, env):
+        """Два капитана отправляют форму одновременно —
+        сериализация _room_lock → один комплект."""
+        env.tournament.ocr_sessions.clear()
+        m1 = _start_modal("1")
+        m2 = _start_modal("1")
+        ix1 = _start_ix(env, user_id=42, display_name="CapA")
+        ix2 = _start_ix(env, user_id=43, display_name="CapB")
+        await asyncio.gather(m1.on_submit(ix1), m2.on_submit(ix2))
+        assert len(env.tournament.ocr_sessions) == 1
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        # Только один комплект: rooms_received не более 1,
+        # pending не дублируется.
+        assert sess["rooms_received"] <= 1
+
+    @pytest.mark.asyncio
+    async def test_unrecognized_first_file_retryable(self, env):
+        """Первый файл не распознан → сессия остаётся collecting,
+        retry через process_room_file работает."""
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("1", tag="FAILx")
+        ix = _start_ix(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions.get("qualifier_0")
+        env.session = sess
+        assert sess is not None
+        assert sess["status"] == "collecting"
+        assert any("Не удалось распознать" in msg for msg in ix.messages)
+        # Повторная загрузка — сессия не заблокирована
+        r = await _file(env, 1, "classic1")
+        assert r == "ok"
+        room = sess["rooms"][0]
+        assert len(room["pending"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_full_classic_only_done_button_via_modal(
+        self, env, monkeypatch,
+    ):
+        """Полный Classic через RoomStartModal → collect-сообщение
+        с одной кнопкой «Завершить комнату»."""
+        async def full_pipe(data, need_score=True):
+            return _full_classic_pipe()
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+        env.tournament.ocr_sessions.clear()
+        m = _start_modal("1", tag="full1")
+        ix = _start_ix(env)
+        await m.on_submit(ix)
+        sess = env.tournament.ocr_sessions["qualifier_0"]
+        room = sess["rooms"][0]
+        cmsg = env.stats._by_id[room["collect_message_id"]]
+        add_btns = [
+            c for c in cmsg.view.children
+            if getattr(c, "custom_id", "").startswith("rooms_file_add")
+        ]
+        assert add_btns == []
+        assert up.room_allows_second_file(room) is False

@@ -4493,128 +4493,357 @@ class RoomUploadModal(Modal):
                 )
                 return
             items.append({"filename": f.filename, "data": data})
-        # Первый принятый файл фиксирует отправителя и его команду
-        # как победителя (Ranked MM); у занятого комплекта права
-        # перепроверяются под _room_lock — гонка двух капитанов.
-        was_unclaimed = not _rooms_bundle_claimed(session)
-        status, tournament, session = await _rooms_claim_bundle(
-            interaction.guild, tournament, key, session, interaction.user
+        await _accept_room_file(
+            interaction, tournament, session, key,
+            self.channel_id, self.match_type, self.match_index,
+            self.room_index, items[0],
         )
-        if status == "stale":
-            await interaction.followup.send(
-                replace_emojis(
-                    "⚠️ Сессия загрузки устарела или отменена — "
-                    "начните заново."
-                ),
-                ephemeral=True,
-            )
-            return
-        if status == "forbidden":
-            await interaction.followup.send(
-                replace_emojis(
-                    "❌ Этот комплект может продолжить только его "
-                    "отправитель или администратор."
-                ),
-                ephemeral=True,
-            )
-            return
-        stats_channel = await _stats_channel(interaction, tournament)
-        if stats_channel is None:
-            stats_channel = interaction.channel
-        res = await process_room_file(
-            guild=interaction.guild,
-            channel=stats_channel,
-            user=interaction.user,
-            tournament=tournament,
-            match_type=self.match_type,
-            match_index=self.match_index,
-            key=key,
-            session=session,
-            stats_channel=stats_channel,
-            room_index=self.room_index,
-            item=items[0],
-        )
-        # Отклонённый ПЕРВЫЙ файл не должен навсегда занимать
-        # комплект: откатываем claim (победитель/права) и убираем
-        # пустую комнату — кнопка «Отправить результат» и загрузка
-        # остаются доступными.
-        if res in _BUNDLE_REJECT_CODES and was_unclaimed:
-            await _rooms_release_claim(
-                interaction.guild, self.channel_id, key, session
-            )
-        messages = {
-            "ok": (
-                f"✅ Скриншот принят в комнату {self.room_index}. "
-                "Добавьте второй скриншот кнопкой «Добавить "
-                "скриншот» или завершите комнату."
-            ),
-            "added": (
-                f"✅ Второй скриншот принят в комнату "
-                f"{self.room_index} — нажмите «Завершить комнату»."
-            ),
-            "shot_pending": (
-                "⚠️ Статистика распознана и сохранена, но "
-                "скриншот не удалось опубликовать в канал — "
-                "отправьте тот же файл ещё раз кнопкой «Добавить "
-                "скриншот» (OCR повторно не запустится)."
-            ),
-            "files_missing": (
-                "⚠️ Часть исходных скриншотов комнаты утеряна "
-                "(сообщение с файлом недоступно) — прикрепите их "
-                "повторно кнопкой «Добавить скриншот»: "
-                "распознанная статистика сохранена."
-            ),
-            "room_full": (
-                f"⚠️ В комнате {self.room_index} достаточно "
-                "скриншотов — больше добавить нельзя. "
-                "Завершите комнату."
-            ),
-            "dup": "⚠️ Этот скриншот уже загружен в комплект.",
-            "invalid": (
-                "❌ Не удалось определить тип скриншота — нужен "
-                "полный экран CS 4x4 или скриншот отряда."
-            ),
-            "invalid_mix": (
-                "❌ Второй полный скриншот в одной комнате не "
-                "принимается — первый файл сохранён. Варианты: "
-                "1 полный скриншот (+ опционально 1 скриншот "
-                "отряда для сверки) или 1–2 скриншота отрядов."
-            ),
-            "room_done": (
-                f"ℹ️ Комната {self.room_index} уже заполнена — "
-                "замена только через откат администратором."
-            ),
-            "republish_partial": (
-                "ℹ️ Скриншот учтён для восстановления интерфейса — "
-                "загрузите остальные файлы этой комнаты."
-            ),
-            "republished": (
-                "✅ Интерфейс комнаты восстановлен — сопоставление "
-                "игроков доступно под сообщением комнаты."
-            ),
-            "parse_fail": (
-                "❌ Не удалось распознать таблицу результатов — "
-                "проверьте, что это экран CS 4x4.\n"
-                "Ранее принятые скриншоты комнаты сохранены — "
-                "повторите загрузку кнопкой «Добавить скриншот»."
-            ),
-            "cancelled": "⚠️ Сессия загрузки была отменена.",
-            "sha_mismatch": (
-                "❌ Файлы не совпадают с исходными скриншотами этой "
-                "комнаты — восстановление интерфейса отклонено, "
-                "статистика не изменена. Загрузите именно те файлы, "
-                "которые распознавались."
-            ),
-            "publish_fail": (
-                "❌ Статистика распознана, но сообщение с кнопками "
-                "не удалось опубликовать. Повторите загрузку тех же "
-                "скриншотов — интерфейс восстановится без повторного "
-                "подсчёта. Если ошибка повторится — администратору."
-            ),
-        }
+
+
+async def _accept_room_file(
+    interaction: discord.Interaction,
+    tournament,
+    session: dict,
+    key: str,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    room_index: int,
+    item: dict,
+) -> None:
+    """Общий код приёма одного файла комнаты: claim отправителя,
+    process_room_file, откат claim при отклонении, ephemeral-
+    результат. Используется RoomUploadModal и RoomStartModal —
+    OCR-пайплайн здесь не дублируется."""
+    # Первый принятый файл фиксирует отправителя и его команду
+    # как победителя (Ranked MM); у занятого комплекта права
+    # перепроверяются под _room_lock — гонка двух капитанов.
+    was_unclaimed = not _rooms_bundle_claimed(session)
+    status, tournament, session = await _rooms_claim_bundle(
+        interaction.guild, tournament, key, session, interaction.user
+    )
+    if status == "stale":
         await interaction.followup.send(
-            replace_emojis(messages.get(res, "❌ Ошибка обработки — попробуйте ещё раз.")),
+            replace_emojis(
+                "⚠️ Сессия загрузки устарела или отменена — "
+                "начните заново."
+            ),
             ephemeral=True,
+        )
+        return
+    if status == "forbidden":
+        await interaction.followup.send(
+            replace_emojis(
+                "❌ Этот комплект может продолжить только его "
+                "отправитель или администратор."
+            ),
+            ephemeral=True,
+        )
+        return
+    stats_channel = await _stats_channel(interaction, tournament)
+    if stats_channel is None:
+        stats_channel = interaction.channel
+    res = await process_room_file(
+        guild=interaction.guild,
+        channel=stats_channel,
+        user=interaction.user,
+        tournament=tournament,
+        match_type=match_type,
+        match_index=match_index,
+        key=key,
+        session=session,
+        stats_channel=stats_channel,
+        room_index=room_index,
+        item=item,
+    )
+    # Отклонённый ПЕРВЫЙ файл не должен навсегда занимать
+    # комплект: откатываем claim (победитель/права) и убираем
+    # пустую комнату — кнопка «Отправить результат» и загрузка
+    # остаются доступными.
+    if res in _BUNDLE_REJECT_CODES and was_unclaimed:
+        await _rooms_release_claim(
+            interaction.guild, channel_id, key, session
+        )
+    # Если комната уже «полная» (классический экран 4×4) —
+    # не предлагаем второй скриншот.
+    ok_extra = ""
+    if res == "ok":
+        try:
+            r = next(
+                (
+                    x for x in session.get("rooms") or []
+                    if int(x.get("room_index", 0)) == room_index
+                ),
+                None,
+            )
+            if r is not None and not room_allows_second_file(r):
+                ok_extra = (
+                    f" Комната {room_index} заполнена — нажмите "
+                    "«Завершить комнату»."
+                )
+        except Exception:
+            pass
+    messages = {
+        "ok": (
+            f"✅ Скриншот принят в комнату {room_index}. "
+            "Добавьте второй скриншот кнопкой «Добавить "
+            "скриншот» или завершите комнату."
+            + ok_extra
+        ),
+        "added": (
+            f"✅ Второй скриншот принят в комнату "
+            f"{room_index} — нажмите «Завершить комнату»."
+        ),
+        "shot_pending": (
+            "⚠️ Статистика распознана и сохранена, но "
+            "скриншот не удалось опубликовать в канал — "
+            "отправьте тот же файл ещё раз кнопкой «Добавить "
+            "скриншот» (OCR повторно не запустится)."
+        ),
+        "files_missing": (
+            "⚠️ Часть исходных скриншотов комнаты утеряна "
+            "(сообщение с файлом недоступно) — прикрепите их "
+            "повторно кнопкой «Добавить скриншот»: "
+            "распознанная статистика сохранена."
+        ),
+        "room_full": (
+            f"⚠️ В комнате {room_index} достаточно "
+            "скриншотов — больше добавить нельзя. "
+            "Завершите комнату."
+        ),
+        "dup": "⚠️ Этот скриншот уже загружен в комплект.",
+        "invalid": (
+            "❌ Не удалось определить тип скриншота — нужен "
+            "полный экран CS 4x4 или скриншот отряда."
+        ),
+        "invalid_mix": (
+            "❌ Второй полный скриншот в одной комнате не "
+            "принимается — первый файл сохранён. Варианты: "
+            "1 полный скриншот (+ опционально 1 скриншот "
+            "отряда для сверки) или 1–2 скриншота отрядов."
+        ),
+        "room_done": (
+            f"ℹ️ Комната {room_index} уже заполнена — "
+            "замена только через откат администратором."
+        ),
+        "republish_partial": (
+            "ℹ️ Скриншот учтён для восстановления интерфейса — "
+            "загрузите остальные файлы этой комнаты."
+        ),
+        "republished": (
+            "✅ Интерфейс комнаты восстановлен — сопоставление "
+            "игроков доступно под сообщением комнаты."
+        ),
+        "parse_fail": (
+            "❌ Не удалось распознать таблицу результатов — "
+            "проверьте, что это экран CS 4x4.\n"
+            "Ранее принятые скриншоты комнаты сохранены — "
+            "повторите загрузку кнопкой «Добавить скриншот»."
+        ),
+        "cancelled": "⚠️ Сессия загрузки была отменена.",
+        "sha_mismatch": (
+            "❌ Файлы не совпадают с исходными скриншотами этой "
+            "комнаты — восстановление интерфейса отклонено, "
+            "статистика не изменена. Загрузите именно те файлы, "
+            "которые распознавались."
+        ),
+        "publish_fail": (
+            "❌ Статистика распознана, но сообщение с кнопками "
+            "не удалось опубликовать. Повторите загрузку тех же "
+            "скриншотов — интерфейс восстановится без повторного "
+            "подсчёта. Если ошибка повторится — администратору."
+        ),
+    }
+    await interaction.followup.send(
+        replace_emojis(
+            messages.get(
+                res, "❌ Ошибка обработки — попробуйте ещё раз."
+            )
+        ),
+        ephemeral=True,
+    )
+
+
+class RoomStartModal(Modal):
+    """Старт rooms-загрузки одним окном: количество комнат
+    (String Select, по умолчанию 1) + скриншот комнаты 1.
+
+    Сессия создаётся ТОЛЬКО при отправке всей формы — выбор в
+    списке сам по себе ничего не запускает, закрытие окна
+    безопасно. OCR-пайплайн не дублируется: файл уходит в общий
+    _accept_room_file → process_room_file.
+    """
+
+    def __init__(
+        self, guild_id: int, channel_id: int,
+        match_type: str, match_index: int,
+    ):
+        options = []
+        for n in range(1, 11):
+            if n == 1:
+                label = "1 комната — обычно"
+            elif n == 2:
+                label = "2 комнаты"
+            elif n == 3:
+                label = "3 комнаты"
+            else:
+                label = f"{n} комнат"
+            options.append(discord.SelectOption(
+                label=label, value=str(n), default=(n == 1),
+            ))
+        self.count_select = Label(
+            text="Сколько комнат было сыграно?",
+            component=Select(
+                placeholder="Количество комнат",
+                options=options,
+                min_values=1,
+                max_values=1,
+            ),
+        )
+        self.upload = Label(
+            text="Скриншот комнаты 1 (1 файл)",
+            component=FileUpload(
+                required=True,
+                min_values=1,
+                max_values=1,
+            ),
+        )
+        super().__init__(title="Отправить результат", timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.add_item(self.count_select)
+        self.add_item(self.upload)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        from views.ocr_match_view import (
+            _can_use_ocr, match_is_finished,
+        )
+
+        await interaction.response.defer(ephemeral=True)
+        # Количество комнат: не меняли выбор → 1; диапазон 1..10.
+        try:
+            count = int(
+                (self.count_select.component.values or ["1"])[0]
+            )
+        except (TypeError, ValueError, IndexError):
+            count = 1
+        count = min(max(count, 1), 10)
+
+        files = list(
+            getattr(self.upload.component, "values", None) or []
+        )
+        if not files:
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Прикрепите скриншот — без файла "
+                    "загрузка не начинается."
+                ),
+                ephemeral=True,
+            )
+            return
+        f = files[0]
+        try:
+            data = await f.read()
+        except Exception:
+            data = None
+        if not data:
+            await interaction.followup.send(
+                replace_emojis("❌ Не удалось прочитать файл."),
+                ephemeral=True,
+            )
+            return
+        if len(data) > MAX_ATTACH:
+            await interaction.followup.send(
+                replace_emojis("❌ Файл слишком большой (макс. 10 МБ)."),
+                ephemeral=True,
+            )
+            return
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        if not tournament:
+            await interaction.followup.send(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        key = _session_key(self.match_type, self.match_index)
+        # Повторная проверка прав и отсутствия активной сессии —
+        # состояние могло измениться после открытия окна.
+        try:
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+        except Exception:
+            t1 = t2 = None
+        phase = getattr(getattr(tournament, "phase", None), "value", "")
+        active = (
+            (self.match_type == "qualifier" and phase == "qualifiers")
+            or (self.match_type == "semifinal" and phase == "semifinals")
+            or (self.match_type == "final" and phase == "final")
+        )
+        if (
+            phase and not active
+        ) or match_is_finished(
+            tournament, self.match_type, self.match_index
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Матч не активен или результат уже "
+                    "зафиксирован."
+                ),
+                ephemeral=True,
+            )
+            return
+        if t1 is not None and not _can_use_ocr(
+            interaction.user, tournament, [t1, t2]
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "❌ Скриншот может отправить капитан команды "
+                    "или организатор."
+                ),
+                ephemeral=True,
+            )
+            return
+        existing = (tournament.ocr_sessions or {}).get(key)
+        if existing and existing.get("status") not in (
+            "completed", "cancelled", "finalizing",
+        ):
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Для этого матча уже идёт загрузка "
+                    "скриншотов — повторная отправка не требуется."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        # Сессия создаётся только здесь — serialize через
+        # _room_lock внутри create_rooms_session: два капитана,
+        # отправившие форму одновременно, получат один комплект.
+        session = await create_rooms_session(
+            interaction.guild, interaction.channel, interaction.user,
+            tournament, self.match_type, self.match_index, count,
+        )
+        if session is None:
+            await interaction.followup.send(
+                replace_emojis(
+                    "⚠️ Для этого матча уже идёт загрузка "
+                    "скриншотов — продолжите через сообщение "
+                    "прогресса."
+                ),
+                ephemeral=True,
+            )
+            return
+        # Свежий tournament после store.set внутри create_...
+        tournament = (
+            store.get(self.guild_id, self.channel_id) or tournament
+        )
+        await _accept_room_file(
+            interaction, tournament, session, key,
+            self.channel_id, self.match_type, self.match_index,
+            1, {"filename": f.filename, "data": data},
         )
 
 

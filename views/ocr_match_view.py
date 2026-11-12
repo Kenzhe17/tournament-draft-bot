@@ -1534,25 +1534,18 @@ class MatchScreenshotButton(Button):
             return
 
         # Главная кнопка (без team_index) → мультикомнатный флоу:
-        # сначала «СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?» (1–10), затем
-        # загрузка файлов. Кнопки капитанов (team_index) — squad-путь.
-        # stats_channel здесь не нужен — fetch_channel это Discord API
-        # и его латентность входит в 3-секундное окно interaction.
+        # ОДНО модальное окно — выбор количества комнат (по
+        # умолчанию 1) + скриншот комнаты 1. Сессия создаётся
+        # только при отправке формы. Кнопки капитанов
+        # (team_index) — squad-путь.
         if self.team_index is None:
-            from cogs.ocr_upload import RoomCountSelectView
+            from cogs.ocr_upload import RoomStartModal
 
-            view = RoomCountSelectView(
-                self.guild_id, self.channel_id, tournament,
-                self.match_type, self.match_index,
-            )
-            await interaction.response.send_message(
-                content=replace_emojis(
-                    "**СКОЛЬКО КОМНАТ БЫЛО СЫГРАНО?**\n"
-                    "Выберите количество — потребуется столько же "
-                    "скриншотов (по одному на комнату)."
-                ),
-                view=view,
-                ephemeral=True,
+            await interaction.response.send_modal(
+                RoomStartModal(
+                    self.guild_id, self.channel_id,
+                    self.match_type, self.match_index,
+                )
             )
             return
 
