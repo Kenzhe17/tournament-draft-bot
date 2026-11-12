@@ -91,7 +91,7 @@ class CardBuilder:
         self._spoiler = spoiler
         if title:
             self._children.append(
-                discord.ui.TextDisplay(content=f"## {truncate(title, 80)}")
+                discord.ui.TextDisplay(content=f"### {truncate(title, 80)}")
             )
             self._children.append(separator())
 

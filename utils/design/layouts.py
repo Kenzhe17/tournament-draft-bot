@@ -49,7 +49,7 @@ class DesignView(discord.ui.LayoutView):
             self.container = discord.ui.Container(spoiler=spoiler)
             if title:
                 self.container.add_item(
-                    discord.ui.TextDisplay(content=f"> ## {title[:80]}")
+                    discord.ui.TextDisplay(content=f"> ### {title[:80]}")
                 )
                 self.container.add_item(separator())
         self.add_item(self.container)

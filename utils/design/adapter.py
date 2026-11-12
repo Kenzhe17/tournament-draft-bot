@@ -400,7 +400,7 @@ def embed_to_section_items(
     # Title
     title_text = strip_title_command(embed.title)
     if title_text:
-        _emit_text(f"## {title_text}")
+        _emit_text(f"### {title_text}")
         if embed.description:
             current.append(separator())
 

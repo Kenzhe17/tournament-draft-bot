@@ -1,4 +1,4 @@
-"""r!z3 Minimal Dark UI — дизайн-система Discord Components V2.
+"""r!z3 2.0 Dark UI — дизайн-система Discord Components V2.
 
 Быстрый старт:
 

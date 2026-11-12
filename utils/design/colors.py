@@ -1,41 +1,50 @@
-"""Цветовая палитра r!z3 Minimal Dark UI.
+"""Цветовая палитра r!z3 2.0 — дизайн-система Discord Components V2.
 
-Используется как accent_color для discord.ui.Container —
-нативная цветная полоса Components V2 (замена цвету Embed).
+Палитра Assets 2.0: тёмный минимализм, фиолетовые акценты.
+- Базовый чёрный: #090516
+- Глубокий фиолетовый: #170A2D
+- Акцентный фиолетовый: #A83FFF
+- Светлый текст: #F8F6FF
+
+Семантические цвета приглушены — акцент используется для смысла,
+а не для декоративной перегрузки. Длинная цветная полоса слева
+(accent_color Container) намеренно не задаётся — см. containers.py.
 """
 
 # --- Базовая палитра ---
-BG = 0x232428            # основной фон
-TEXT = 0xE6E6E8          # основной текст
-TEXT_SECONDARY = 0xA5A5AA  # вторичный текст
-TEXT_MUTED = 0x77777F    # приглушённый текст
-DIVIDER = 0x414146       # разделители
+BG = 0x090516             # основной фон (#090516)
+PANEL = 0x170A2D          # глубокий фиолетовый (#170A2D)
+BRAND = 0xA83FFF          # акцентный фиолетовый (#A83FFF)
+TEXT = 0xF8F6FF           # основной текст (#F8F6FF)
+TEXT_SECONDARY = 0xB7B0D9  # вторичный текст
+TEXT_MUTED = 0x6F6A8F     # приглушённый текст
+DIVIDER = 0x2E2750        # разделители
 
 # --- Цветовые категории (акценты) ---
-SUCCESS = 0x2ECC71
-ERROR = 0xE74C3C
-WARNING = 0xF1C40F
-INFO = 0x5865F2
-ECONOMY = 0xF0B232
-NEUTRAL = 0x747F8D
+SUCCESS = 0x3BA55D        # приглушённый зелёный
+ERROR = 0xE5484D          # красный
+WARNING = 0xE5A93C        # янтарный
+INFO = BRAND              # нейтрально-информационный -> фирменный фиолетовый
+ECONOMY = 0xE8B84B        # золотистый
+NEUTRAL = 0x8A8FA3        # нейтральный
 
 # --- Семантические алиасы для интерфейсов ---
 PRIMARY = INFO
 SECONDARY = NEUTRAL
 DANGER = ERROR
-ACCENT = ECONOMY
+ACCENT = BRAND
 
 # Карты/темы
-TOURNAMENT = 0x8E44AD      # турниры
-DRAFT = 0x3498DB           # драфт
-MATCH = 0xE67E22           # матчи
-PROFILE = 0x1ABC9C         # профиль
-RATING = 0xF39C12          # рейтинг/ELO
-GAME = 0x9B59B6            # мини-игры
-MODERATION = 0xC0392B      # модерация
-FREEFIRE = 0xE74C3C        # Free Fire
-PET = 0xF1C40F             # питомцы
-CASE = 0xF0B232            # кейсы/лут
+TOURNAMENT = 0xA83FFF     # турниры — фирменный фиолетовый
+DRAFT = 0x5B7FD4          # драфт — синий
+MATCH = 0xD98A3D          # матчи — оранжевый
+PROFILE = 0x4DB6AC        # профиль — бирюзовый
+RATING = 0xA83FFF         # рейтинг/ELO — фиолетовый/золотистый (выбран фиолетовый)
+GAME = 0x8E6FF0           # мини-игры — мягкий фиолетовый
+MODERATION = 0xB85C5C     # модерация — сдержанный красный
+FREEFIRE = 0xE0654F       # Free Fire
+PET = 0xE8C86A            # питомцы
+CASE = 0xE8B84B           # кейсы/лут — золотистый
 
 
 def accent_hex(value: int) -> str:
