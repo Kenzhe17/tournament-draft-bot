@@ -1341,7 +1341,10 @@ class TournamentBot(commands.Bot):
             logger.error(f"Ошибка синхронизации команд: {e}")
 
         # Restore org role view if it exists
-        from views.org_role_view import load_state, OrgRoleView
+        from views.org_role_view import (
+            load_state, OrgRoleView, build_org_role_embed,
+        )
+        from utils.design import compose as _compose_v2
         state = load_state()
         if state.message_id > 0 and state.channel_id > 0 and state.guild_id > 0:
             try:
@@ -1353,6 +1356,24 @@ class TournamentBot(commands.Bot):
                             message = await channel.fetch_message(state.message_id)
                             view = OrgRoleView(state)
                             self.add_view(view, message_id=state.message_id)
+                            # Старые панели содержали баннер-картинку —
+                            # пересобираем сообщение в компактном виде
+                            # и снимаем вложение (одноразово при старте).
+                            try:
+                                await message.edit(
+                                    view=_compose_v2(
+                                        build_org_role_embed(guild, state),
+                                        view,
+                                    ),
+                                    attachments=[],
+                                    allowed_mentions=(
+                                        discord.AllowedMentions.none()
+                                    ),
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    "Org panel re-render failed: %s", exc
+                                )
                             logger.info("Org role view restored")
                         except discord.NotFound:
                             logger.warning("Org role message not found, will be recreated")

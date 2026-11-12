@@ -457,3 +457,67 @@ class TestPerRoomMapping:
         view2 = omv.RoomTeamMapView(1, 1, t, "qualifier", 0, 1, 0, "left")
         await view2._on_save(_Ix(env, user_id=1000))
         assert room["maps"]["0"]["rows"][0]["discord_id"] == did
+
+
+# ---------- 📣 Вызвать админа — только капитаны матча ----------
+
+class TestAdminCallCaptainOnly:
+    """room_admin / rooms_confirm admin: нажать могут только
+    капитаны команд ЭТОГО матча (серверная проверка)."""
+
+    def _captain_ix(self, env, user_id=1000):
+        ix = _Ix(env, user_id=user_id)
+        ix.user.display_name = "T0p0"  # капитан команды 0 (pair 0,1)
+        return ix
+
+    def _stranger_ix(self, env):
+        ix = _Ix(env, user_id=5555)
+        ix.user.display_name = "random_player"
+        return ix
+
+    @pytest.mark.asyncio
+    async def test_room_admin_rejects_non_captain(self, env):
+        _attach_session(env)
+        view = omv.RoomView(1, 1, env.tournament, "qualifier", 0, 1)
+        ix = self._stranger_ix(env)
+        await view._on_admin(ix)
+        assert any("только капитаны" in m for m in ix.messages)
+        assert not any("Администратор уведомлён" in m for m in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_room_admin_allows_captain(self, env):
+        _attach_session(env)
+        view = omv.RoomView(1, 1, env.tournament, "qualifier", 0, 1)
+        ix = self._captain_ix(env)
+        await view._on_admin(ix)
+        assert any("Администратор уведомлён" in m for m in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_confirm_admin_rejects_non_captain(self, env):
+        _attach_session(env)
+        view = omv.RoomsConfirmView(1, 1, env.tournament, "qualifier", 0)
+        ix = self._stranger_ix(env)
+        await view._on_admin(ix)
+        assert any("только капитаны" in m for m in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_confirm_admin_allows_captain(self, env):
+        _attach_session(env)
+        view = omv.RoomsConfirmView(1, 1, env.tournament, "qualifier", 0)
+        ix = self._captain_ix(env)
+        await view._on_admin(ix)
+        assert any("Администратор уведомлён" in m for m in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_captain_of_other_match_rejected(self, env):
+        """Капитан команды 2 (другой матч) не может вызвать
+        админа для qualifier_0 (команды 0 и 1)."""
+        t = _attach_session(env)
+        # qualifier_1: команды (2,3), капитан T2p0
+        t.qualifier_matches = [(0, 1), (2, 3)]
+        t.ocr_sessions["qualifier_1"] = _session(_room(2, 3))
+        view = omv.RoomView(1, 1, t, "qualifier", 0, 1)
+        ix = _Ix(env, user_id=1020)
+        ix.user.display_name = "T2p0"
+        await view._on_admin(ix)
+        assert any("только капитаны" in m for m in ix.messages)

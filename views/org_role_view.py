@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from utils.design import compose, smart_view
+from utils.design import compose
 
 if TYPE_CHECKING:
     from bot import TournamentBot
@@ -20,17 +20,22 @@ DATA_DIR.mkdir(exist_ok=True)
 ORG_SLOT_FILE = DATA_DIR / "org_slot.json"
 MAX_ORG_ROLE_HOLDERS = 1
 
-# Баннер как у панели /mm squad — картинка сверху сообщения
-ORG_BANNER_PATH = (
-    Path(__file__).resolve().parent.parent / "assets" / "queue_banner.png"
-)
-ORG_BANNER_MEDIA = "attachment://queue_banner.png"
+# Упоминания владельцев ролей в embed — без пингов
+_NO_MENTIONS = discord.AllowedMentions.none()
+
+_ORG_ROLES = None  # lazy: (role_id, "ORG-N") из config
 
 
-def _org_banner_file() -> discord.File:
-    """Файл баннера для edit-операций: V2-edit не сохраняет
-    attachment:// автоматически — баннер пересылается каждый раз."""
-    return discord.File(ORG_BANNER_PATH, filename="queue_banner.png")
+def _org_roles() -> list[tuple[int, str]]:
+    global _ORG_ROLES
+    if _ORG_ROLES is None:
+        from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
+        _ORG_ROLES = [
+            (ORG_1_ROLE_ID, "ORG-1"),
+            (ORG_2_ROLE_ID, "ORG-2"),
+            (ORG_3_ROLE_ID, "ORG-3"),
+        ]
+    return _ORG_ROLES
 
 
 class OrgSlotState:
@@ -109,6 +114,19 @@ def save_state(state: OrgSlotState) -> None:
         pass
 
 
+async def _edit_panel(
+    interaction: discord.Interaction,
+    state: OrgSlotState,
+    view: discord.ui.View,
+) -> None:
+    """Обновить существующее сообщение панели без баннера и пингов."""
+    await interaction.response.edit_message(
+        view=compose(build_org_role_embed(interaction.guild, state), view),
+        attachments=[],
+        allowed_mentions=_NO_MENTIONS,
+    )
+
+
 class TakeRoleButton(discord.ui.Button):
     """Кнопка для взятия роли организатора."""
 
@@ -120,7 +138,7 @@ class TakeRoleButton(discord.ui.Button):
         is_full = len(holders) >= MAX_ORG_ROLE_HOLDERS
         super().__init__(
             label=f"Взять {role_name}",
-            style=discord.ButtonStyle.green if not is_full else discord.ButtonStyle.red,
+            style=discord.ButtonStyle.primary,
             disabled=is_full,
             # slot-суффикс: при совпадающих/нулевых ORG_*_ROLE_ID
             # custom_id всё равно уникален — Discord не отклоняет
@@ -174,15 +192,10 @@ class TakeRoleButton(discord.ui.Button):
             state.message_id = interaction.message.id
             save_state(state)
 
-            # Rebuild main view with updated state
-            view = OrgRoleView(state)
-
-            # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
-                attachments=[_org_banner_file()],
-            )
+            # Stay on role-selection view: кнопки обновляются
+            # под текущего пользователя (Взять -> Сдать).
+            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
+            await _edit_panel(interaction, state, view)
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -205,7 +218,7 @@ class ReleaseRoleButton(discord.ui.Button):
     ):
         super().__init__(
             label=f"Сдать {role_name}",
-            style=discord.ButtonStyle.red,
+            style=discord.ButtonStyle.danger,
             custom_id=f"org_release_role_{role_id}_{slot}"
         )
         self.state = state
@@ -215,11 +228,14 @@ class ReleaseRoleButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
 
+        member = interaction.user
+        member_role_ids = {r.id for r in getattr(member, "roles", [])}
+        has_discord_role = self.role_id in member_role_ids
         # Check if user has the role or is admin
         is_holder = interaction.user.id in state.get_holders(self.role_id)
         is_admin = interaction.user.guild_permissions.administrator
 
-        if not is_holder and not is_admin:
+        if not is_holder and not has_discord_role and not is_admin:
             await interaction.response.send_message(
                 f"❌ У вас нет роли {self.role_name}!",
                 ephemeral=True
@@ -236,7 +252,7 @@ class ReleaseRoleButton(discord.ui.Button):
         try:
             # Remove role from user (if admin, remove from the holder; if user, remove from self)
             holders = state.get_holders(self.role_id)
-            if not holders:
+            if not holders and not has_discord_role:
                 await interaction.response.send_message(
                     f"❌ Роль {self.role_name} никому не назначена",
                     ephemeral=True
@@ -244,7 +260,11 @@ class ReleaseRoleButton(discord.ui.Button):
                 return
 
             # If admin, remove from the first holder; if user, remove from self
-            target_user_id = interaction.user.id if is_holder else holders[0]
+            target_user_id = (
+                interaction.user.id
+                if (is_holder or has_discord_role)
+                else holders[0]
+            )
             target_member = interaction.guild.get_member(target_user_id)
 
             if target_member:
@@ -256,15 +276,10 @@ class ReleaseRoleButton(discord.ui.Button):
             state.remove_holder(self.role_id, target_user_id)
             save_state(state)
 
-            # Rebuild main view with updated state
-            view = OrgRoleView(state)
-
-            # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
-                attachments=[_org_banner_file()],
-            )
+            # Stay on role-selection view: кнопки обновляются
+            # под текущего пользователя.
+            view = RoleSelectionView(state, interaction.guild, interaction.user.id)
+            await _edit_panel(interaction, state, view)
 
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -276,6 +291,18 @@ class ReleaseRoleButton(discord.ui.Button):
                 f"❌ Ошибка: {e!s}",
                 ephemeral=True
             )
+
+
+class OccupiedRoleButton(discord.ui.Button):
+    """Занятая роль: неактивная кнопка-индикатор для чужих пользователей."""
+
+    def __init__(self, role_id: int, role_name: str, slot: int = 0):
+        super().__init__(
+            label=f"{role_name} · Занята",
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+            custom_id=f"org_occupied_{role_id}_{slot}",
+        )
 
 
 class BackButton(discord.ui.Button):
@@ -291,11 +318,7 @@ class BackButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
         view = OrgRoleView(state)
-        new_embed = build_org_role_embed(interaction.guild, state)
-        await interaction.response.edit_message(
-            view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
-            attachments=[_org_banner_file()],
-        )
+        await _edit_panel(interaction, state, view)
 
 
 class ResetButton(discord.ui.Button):
@@ -338,11 +361,7 @@ class ResetButton(discord.ui.Button):
             view = OrgRoleView(state)
 
             # Update embed
-            new_embed = build_org_role_embed(interaction.guild, state)
-            await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
-                attachments=[_org_banner_file()],
-            )
+            await _edit_panel(interaction, state, view)
 
             await interaction.followup.send(
                 "✅ Все роли организаторов сброшены для всех пользователей",
@@ -386,14 +405,11 @@ class RoleSelectionButton(discord.ui.Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         state = load_state()
         view = RoleSelectionView(state, interaction.guild, interaction.user.id)
-        await interaction.response.edit_message(
-            view=smart_view(interaction.message, view),
-            attachments=[_org_banner_file()],
-        )
+        await _edit_panel(interaction, state, view)
 
 
 class RoleSelectionView(discord.ui.View):
-    """View with 3 role buttons (Take or Release)."""
+    """View with 3 role buttons (Take, Release or Occupied)."""
 
     def __init__(self, state: OrgSlotState, guild: discord.Guild, user_id: int):
         super().__init__(timeout=None)
@@ -401,33 +417,34 @@ class RoleSelectionView(discord.ui.View):
         self.guild = guild
         self.user_id = user_id
 
-        from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
-        roles = [
-            (ORG_1_ROLE_ID, "ORG-1"),
-            (ORG_2_ROLE_ID, "ORG-2"),
-            (ORG_3_ROLE_ID, "ORG-3"),
-        ]
-
         # Get user's roles
         user = guild.get_member(user_id)
         user_role_ids = [role.id for role in user.roles] if user else []
+        is_admin = user.guild_permissions.administrator if user else False
 
-        for slot, (role_id, role_name) in enumerate(roles):
-            # Check if user has this role
-            has_role = role_id in user_role_ids
-            # Check if role is full
+        for slot, (role_id, role_name) in enumerate(_org_roles()):
             holders = state.get_holders(role_id)
             is_full = len(holders) >= MAX_ORG_ROLE_HOLDERS
-            # Check if user is admin
-            is_admin = user.guild_permissions.administrator if user else False
+
+            # has_role: запись в state ИЛИ фактическая Discord-роль
+            # (защита от рассинхрона state/Discord после рестарта).
+            has_role = (
+                role_id in user_role_ids
+                or user_id in holders
+            )
 
             if has_role or (is_admin and len(holders) > 0):
-                # User has role OR admin can release - show release button
+                # Пользователь владеет ролью (или админ может снять
+                # чужую) — показываем действие «Сдать».
                 self.add_item(
                     ReleaseRoleButton(state, role_id, role_name, slot)
                 )
+            elif is_full:
+                # Роль занята другим — неактивный индикатор.
+                self.add_item(
+                    OccupiedRoleButton(role_id, role_name, slot)
+                )
             else:
-                # Always show take button, even if full (will show error in callback)
                 self.add_item(
                     TakeRoleButton(state, role_id, role_name, slot)
                 )
@@ -437,45 +454,38 @@ class RoleSelectionView(discord.ui.View):
 
 
 def build_org_role_embed(guild: discord.Guild, state: OrgSlotState) -> discord.Embed:
-    """Построить embed для управления ролью организатора."""
-    from config import ORG_1_ROLE_ID, ORG_2_ROLE_ID, ORG_3_ROLE_ID
-
-    # Build status section for each role
-    status_section = ""
-    roles = [
-        (ORG_1_ROLE_ID, "ORG-1"),
-        (ORG_2_ROLE_ID, "ORG-2"),
-        (ORG_3_ROLE_ID, "ORG-3"),
-    ]
-
-    for role_id, role_name in roles:
+    """Построить компактный embed панели организатора."""
+    lines = []
+    for role_id, role_name in _org_roles():
         holders = state.get_holders(role_id)
         count = len(holders)
         if count > 0:
-            holder_mentions = [f"<@{holder_id}>" for holder_id in holders]
-            status_section += (
-                f"  **{role_name}:** **Занят** ({count}/{MAX_ORG_ROLE_HOLDERS}) - {', '.join(holder_mentions)}\n"
+            holder_mentions = ", ".join(
+                f"<@{holder_id}>" for holder_id in holders
+            )
+            lines.append(
+                f"`{role_name}` — Занята · {count}/{MAX_ORG_ROLE_HOLDERS}"
+                f" — {holder_mentions}"
             )
         else:
-            status_section += (
-                f"  **{role_name}:** **Свободен** (0/{MAX_ORG_ROLE_HOLDERS})\n"
+            lines.append(
+                f"`{role_name}` — Свободна · 0/{MAX_ORG_ROLE_HOLDERS}"
             )
 
     description = (
-        f" **ПРАВИЛА ИСПОЛЬЗОВАНИЯ:**\n"
-        f" Нажмите **«Взять роль»**, чтобы выбрать роль.\n"
-        f" После завершения нажмите **«Сдать»** на соответствующей роли.\n\n"
-        f" **ТЕКУЩИЙ СТАТУС:**\n"
-        f"{status_section}\n\n"
-        f" *Администрация оставляет за собой право сбросить роли в любой момент.*"
+        "Управление организаторскими ролями\n\n"
+        "**ОРГАНИЗАТОРСКИЕ РОЛИ**\n"
+        + "\n".join(lines)
+        + "\n\nВыберите свободную роль. "
+        "После завершения работы сдайте её."
     )
 
     embed = discord.Embed(
-        title=" Панель Организатора ",
+        title="ПАНЕЛЬ ОРГАНИЗАТОРА",
         description=description,
-        color=discord.Color.from_rgb(69, 69, 69)
+        color=discord.Color.from_rgb(69, 69, 69),
     )
-    embed.set_footer(text="r1z3 Tournament System")
+    embed.set_footer(text="r!z3 • Tournament Management")
 
     return embed
 
@@ -488,7 +498,7 @@ async def setup_org_role_message(
     """Настроить сообщение для управления ролью организатора."""
     state = load_state()
 
-    # Create main embed (image is now embedded)
+    # Create main embed (без баннера — панель компактная)
     main_embed = build_org_role_embed(guild, state)
 
     # Create view
@@ -496,8 +506,8 @@ async def setup_org_role_message(
 
     # Send message
     message = await channel.send(
-        view=compose(main_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
-        file=discord.File(ORG_BANNER_PATH, filename="queue_banner.png"),
+        view=compose(main_embed, view),
+        allowed_mentions=_NO_MENTIONS,
     )
 
     # Save message info

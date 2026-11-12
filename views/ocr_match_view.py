@@ -5325,6 +5325,25 @@ class RoomView(View):
                 interaction, content=replace_emojis("❌ Турнир не найден.")
             )
             return
+        # Вызвать админа могут только капитаны команд ЭТОГО матча.
+        try:
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+        except Exception:
+            t1 = t2 = None
+        if t1 is None or not any(
+            _is_match_captain(interaction.user, tournament, i)
+            for i in (t1, t2)
+        ):
+            await _respond(
+                interaction,
+                content=replace_emojis(
+                    "❌ Вызвать админа могут только капитаны "
+                    "команд этого матча."
+                ),
+            )
+            return
         await _notify_admin_call(
             interaction, tournament,
             self.match_type, self.match_index, self.room_index,
@@ -6382,6 +6401,25 @@ class RoomsConfirmView(View):
     async def _on_admin(self, interaction: discord.Interaction) -> None:
         tournament = await self._fresh()
         if not tournament:
+            return
+        # Вызвать админа могут только капитаны команд ЭТОГО матча.
+        try:
+            t1, t2 = _match_tuple(
+                tournament, self.match_type, self.match_index
+            )
+        except Exception:
+            t1 = t2 = None
+        if t1 is None or not any(
+            _is_match_captain(interaction.user, tournament, i)
+            for i in (t1, t2)
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Вызвать админа могут только капитаны "
+                    "команд этого матча."
+                ),
+                ephemeral=True,
+            )
             return
         await _notify_admin_call(
             interaction, tournament,
