@@ -373,6 +373,14 @@ class TournamentBot(commands.Bot):
             except Exception as e:
                 logger.error(f"Ошибка синхронизации для основного сервера: {e}")
 
+        # Internal economy bridge for r!z3 Arcade (disabled unless
+        # ECONOMY_BRIDGE_TOKEN/PORT are configured; runs on this event loop)
+        try:
+            from services.economy_bridge import start_bridge
+            await start_bridge()
+        except Exception as e:
+            logger.error(f"Failed to start economy bridge: {e}", exc_info=True)
+
         # Store bot instance globally for logging
         from models.tournament import set_bot_instance
         set_bot_instance(self)
