@@ -1265,10 +1265,31 @@ class StartTournamentButton(discord.ui.Button):
                     pass
                 return
 
-        # Handle different formation modes
-        if tournament.formation_mode == FormationMode.RANDOM:
-            # Random mode: distribute randomly and skip draft
-            tournament.distribute_randomly()
+        # Handle automatic formation modes (random / balanced-sr): команды
+        # строятся сразу, драфт пропускается
+        if tournament.formation_mode in (FormationMode.RANDOM, FormationMode.BALANCED_SR):
+            if tournament.formation_mode == FormationMode.BALANCED_SR:
+                # Проверка готовности по кругам (как у ELO/SKILL)
+                if not tournament.is_setup_complete:
+                    captain_count = tournament.captain_count
+                    try:
+                        await interaction.response.send_message(
+                            f"{replace_emojis('❌')} Турнир заполнен не полностью. Нужно {captain_count} игрока в Капитан, минимум {captain_count} игрока в круге 2, минимум {captain_count} игрока в круге 3 и минимум {captain_count} игрока в круге 4.",
+                            ephemeral=True
+                        )
+                    except discord.NotFound:
+                        pass
+                    return
+                error = await tournament.distribute_balanced_sr(self.guild_id)
+                if error:
+                    try:
+                        await interaction.response.send_message(error, ephemeral=True)
+                    except discord.NotFound:
+                        pass
+                    return
+            else:
+                # Random mode: distribute randomly and skip draft
+                tournament.distribute_randomly()
             store.set(tournament)
 
             # Initialize betting odds for matches
@@ -1318,10 +1339,16 @@ class StartTournamentButton(discord.ui.Button):
             await bot.update_tournament_message(interaction.guild, tournament)
 
             try:
-                await interaction.response.send_message(
-                    replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
-                    ephemeral=True
-                )
+                if tournament.formation_mode == FormationMode.BALANCED_SR:
+                    await interaction.response.send_message(
+                        replace_emojis("⚖️ Турнир запущен! Команды сбалансированы по Skill Rating."),
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        replace_emojis("🎲 Турнир запущен! Игроки распределены случайно."),
+                        ephemeral=True
+                    )
             except discord.NotFound:
                 pass
         else:

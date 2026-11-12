@@ -82,7 +82,7 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 8, 16 или 32 игрока", formation="Режим формирования кругов: skill, elo, random или random-auto")
+    @app_commands.describe(size="Размер турнира: 16 или 32 игрока (8 — legacy)", formation="Режим: draft, balanced-sr, skill, elo, random или random-auto")
     @is_org()
     async def tournament_create(
         self, interaction: discord.Interaction, size: str, formation: str = "elo"
@@ -142,7 +142,7 @@ class TournamentCog(commands.Cog):
             formation_mode = FormationMode(formation)
         except ValueError:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный режим формирования. Используйте: skill, elo, random или random-auto."),
+                replace_emojis("❌ Неверный режим формирования. Используйте: draft, balanced-sr, skill, elo, random или random-auto."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))

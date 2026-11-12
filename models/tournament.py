@@ -56,8 +56,8 @@ class FormationMode(str, Enum):
     ELO = "elo"
     RANDOM = "random"
     RANDOM_AUTO = "random-auto"  # Автоматическое распределение по SR
-    BALANCED_SR = "balanced_sr"  # Tournaments 2.0: SR 0–10, 4 группы
-    DRAFT = "draft"  # Tournaments 2.0: выбор капитанами
+    BALANCED_SR = "balanced-sr"  # Tournaments 2.0: 4 группы силы, мин. разница SR
+    DRAFT = "draft"  # Tournaments 2.0: драфт капитанами (как elo/skill)
 
 
 # Порядок выбора по кругам для разного количества капитанов
@@ -218,6 +218,9 @@ class Tournament:
     final_teams: list[int] = field(default_factory=list)
     eliminated_teams: set[int] = field(default_factory=set)  # Индексы команд которые проиграли
 
+    # Кто открывает каждый матч: {(match_type, match_index): user_id}
+    match_openers: dict[tuple[str, int], int] = field(default_factory=dict)
+
     # Данные о комнатах (ID и пароль)
     qualifier_rooms: dict[int, dict[str, str]] = field(default_factory=dict)  # {match_index: {"id": "123", "password": "abc"}}
     semifinal_rooms: dict[int, dict[str, str]] = field(default_factory=dict)  # {match_index: {"id": "123", "password": "abc"}}
@@ -239,13 +242,6 @@ class Tournament:
     # Выделенные каналы матчей (MM-флоу): channel_id -> {"match_type","match_index"}
     # Скриншот, присланный в такой канал, автоматически привязывается к матчу.
     match_channels: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    # --- Tournaments 2.0 (Double Elimination) ---
-    # engine_version=1 — старая Single Elimination система;
-    # engine_version=2 — граф матчей DoubleElimEngine
-    # (services/double_elim.py), состояние в bracket_v2.
-    engine_version: int = 1
-    bracket_v2: dict[str, Any] = field(default_factory=dict)
 
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
@@ -835,6 +831,114 @@ class Tournament:
         logger.info(f"distribute_randomly: calling generate_bracket, current phase={self.phase.value}")
         self.generate_bracket()
         logger.info(f"distribute_randomly: after generate_bracket, new phase={self.phase.value}")
+
+    async def distribute_balanced_sr(self, guild_id: int) -> str | None:
+        """Balanced SR (Tournaments 2.0): команды по 4 игрока, по одному
+        из каждой из четырёх групп силы, минимум разницы суммарного SR.
+
+        Возвращает None при успехе или текст ошибки (дубли Discord ID,
+        недостаточно игроков, невалидный SR-набор).
+        """
+        from storage.player_stats_store import player_stats_store
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Все игроки из кругов (как в distribute_by_skill_rating)
+        all_players: list[tuple[str, int]] = []
+        for circle in range(1, 5):
+            for player_name in self.circle_list(circle):
+                user_id = self.player_user_ids.get(player_name, 0)
+                all_players.append((player_name, user_id))
+
+        if not all_players:
+            return "❌ Нет игроков для распределения."
+
+        # Отказ при дублях Discord ID
+        from utils.balanced_sr import duplicate_user_ids, balanced_sr_teams
+        name_to_uid = {name: uid for name, uid in all_players}
+        dups = duplicate_user_ids(name_to_uid)
+        if dups:
+            dup_names = [n for n, u in name_to_uid.items() if u in dups]
+            return (
+                "❌ Balanced SR: обнаружены дубли Discord ID "
+                f"({', '.join(f'<@{u}>' for u in dups)}): "
+                f"{', '.join(dup_names)}. Удалите дубли и повторите."
+            )
+
+        # Skill Rating для реальных игроков; ботам и новичкам — дефолт
+        players_with_rating: list[tuple[str, int, float]] = []
+        all_ratings: list[float] = []
+        for player_name, user_id in all_players:
+            skill_rating = 1.0
+            if user_id > 0:
+                stats = await player_stats_store.get(guild_id, user_id)
+                if stats is not None:
+                    try:
+                        sr = float(stats.skill_rating)
+                        skill_rating = sr
+                        if getattr(stats, "games", 0) >= 3:
+                            all_ratings.append(sr)
+                    except (AttributeError, TypeError, ValueError):
+                        pass
+            players_with_rating.append((player_name, user_id, skill_rating))
+
+        server_avg_rating = (
+            sum(all_ratings) / len(all_ratings) if all_ratings else 5.0
+        )
+
+        # Игроки с менее чем 3 катками получают средний SR сервера
+        players_with_sr: list[tuple[str, float]] = []
+        for player_name, user_id, skill_rating in players_with_rating:
+            stats = await player_stats_store.get(guild_id, user_id) if user_id > 0 else None
+            if stats is not None and getattr(stats, "games", 0) < 3:
+                players_with_sr.append((player_name, server_avg_rating))
+            else:
+                players_with_sr.append((player_name, skill_rating))
+
+        teams_names = balanced_sr_teams(
+            players_with_sr, self.player_user_ids
+        )
+        if teams_names is None:
+            return "❌ Balanced SR: нужно минимум 8 игроков (число должно делиться на 4)."
+
+        # Команды в стандартном формате (как distribute_randomly)
+        self.teams = []
+        for team_idx, members in enumerate(teams_names):
+            captain_name = members[0]
+            rest = members[1:]
+            team_data = {
+                "captain": captain_name,
+                "players": members,
+                "circle1": captain_name,
+                "circle2": rest[0] if len(rest) > 0 else "",
+                "circle3": rest[1] if len(rest) > 1 else "",
+                "circle4": rest[2] if len(rest) > 2 else "",
+            }
+            self.teams.append(team_data)
+
+        # Круги и пул не используются — команды построены напрямую
+        self.circle1 = []
+        self.circle2 = []
+        self.circle3 = []
+        self.circle4 = []
+        self.players_pool = []
+
+        team_player_names = set()
+        for team in self.teams:
+            team_player_names.add(team["captain"])
+            team_player_names.update(team["players"])
+        self.player_user_ids = {
+            name: uid for name, uid in self.player_user_ids.items()
+            if name in team_player_names
+        }
+
+        logger.info(
+            f"distribute_balanced_sr: {len(self.teams)} teams, "
+            f"players={len(team_player_names)}, tournament_id={self.id}"
+        )
+
+        self.generate_bracket()
+        return None
 
     # --- Драфт ---
 
@@ -1465,9 +1569,9 @@ class Tournament:
     def to_dict(self) -> dict[str, Any]:
         """Преобразовать в словарь для JSON."""
         return {
-            "guild_id": self.guild_id,
             "id": self.id,
             "creation_time": self.creation_time,
+            "guild_id": self.guild_id,
             "channel_id": self.channel_id,
             "message_id": self.message_id,
             "size": self.size.value,
@@ -1488,17 +1592,31 @@ class Tournament:
             "team_names_changed_teams": list(self.team_names_changed_teams),
             "player_user_ids": self.player_user_ids,
             "draft_message_id": self.draft_message_id,
+            "draft_pick_start_time": self.draft_pick_start_time,
+            "draft_pick_duration": self.draft_pick_duration,
             "captain_order": self.captain_order,
             "picks": self.picks,
             "current_circle": self.current_circle,
             "pick_index": self.pick_index,
             "available": self.available if hasattr(self, 'available') else {},
             "teams": self.teams,
+            "match_openers": [
+                [mt, mi, uid]
+                for (mt, mi), uid in getattr(self, "match_openers", {}).items()
+            ],
             "qualifier_matches": [list(m) for m in self.qualifier_matches],
             "qualifier_winners": self.qualifier_winners,
             "semifinal_matches": [list(m) for m in self.semifinal_matches],
             "semifinal_winners": self.semifinal_winners,
+            "semifinal_pending_winners": self.semifinal_pending_winners,
             "final_teams": self.final_teams,
+            "final_pending_winner": self.final_pending_winner,
+            "temp_match_stats": self.temp_match_stats,
+            "betting_results": self.betting_results,
+            "betting_open": self.betting_open,
+            "betting_phase": self.betting_phase,
+            "betting_phase_start_time": self.betting_phase_start_time,
+            "betting_duration": self.betting_duration,
             "qualifier_rooms": self.qualifier_rooms,
             "semifinal_rooms": self.semifinal_rooms,
             "final_room": self.final_room,
@@ -1510,8 +1628,6 @@ class Tournament:
             "processed_elo_matches": list(self.processed_elo_matches),
             "match_channels": self.match_channels,
             "ocr_sessions": self.ocr_sessions,
-            "engine_version": self.engine_version,
-            "bracket_v2": self.bracket_v2,
         }
 
     @classmethod
@@ -1538,12 +1654,22 @@ class Tournament:
             team_names_changed_teams=set(data.get("team_names_changed_teams", [])),
             player_user_ids=data.get("player_user_ids", {}),
             draft_message_id=data.get("draft_message_id", 0),
+            draft_pick_start_time=data.get("draft_pick_start_time", ""),
+            draft_pick_duration=data.get("draft_pick_duration", 60),
             captain_order=data.get("captain_order", []),
             picks=data.get("picks", {}),
             current_circle=data.get("current_circle", 2),
             pick_index=data.get("pick_index", 0),
             available=data.get("available", {}),
             teams=data.get("teams", []),
+            semifinal_pending_winners=data.get("semifinal_pending_winners", []),
+            final_pending_winner=data.get("final_pending_winner"),
+            temp_match_stats=data.get("temp_match_stats", {}),
+            betting_results=data.get("betting_results", {}),
+            betting_open=data.get("betting_open", False),
+            betting_phase=data.get("betting_phase"),
+            betting_phase_start_time=data.get("betting_phase_start_time"),
+            betting_duration=data.get("betting_duration", 180),
             qualifier_matches=[
                 tuple(m) for m in data.get("qualifier_matches", [])
             ],
@@ -1564,18 +1690,16 @@ class Tournament:
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
             match_channels=data.get("match_channels", {}),
             ocr_sessions=data.get("ocr_sessions", {}),
-            engine_version=data.get("engine_version", 1),
-            bracket_v2=data.get("bracket_v2", {}),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())
-        # Восстановить стабильный tournament_id — id/creation_time
-        # init=False и генерируются заново; без этого ключи
-        # processed_elo_matches и OCR-сессий теряют связь.
-        if data.get("creation_time"):
-            t.creation_time = data["creation_time"]
-        if data.get("id"):
-            t.id = data["id"]
-        else:
-            t.id = f"{t.guild_id}_{t.creation_time}"
+        # Restore stable tournament identity — иначе __post_init__
+        # генерирует новый id при каждом рестарте (creation_time init=False).
+        t.creation_time = data.get("creation_time") or t.creation_time
+        t.id = data.get("id") or f"{t.guild_id}_{t.creation_time}"
+        # match_openers: сериализован как [[match_type, match_index, uid], ...]
+        t.match_openers = {
+            (str(mt), int(mi)): int(uid)
+            for mt, mi, uid in data.get("match_openers", [])
+        }
         return t
