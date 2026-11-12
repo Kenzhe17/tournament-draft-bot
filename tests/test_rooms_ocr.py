@@ -295,6 +295,45 @@ class TestRoomsHelpers:
         rooms[0]["maps"]["0"]["rows"][0]["kills"] = 0
         assert _rooms_stats_complete(_session(rooms))
 
+    def test_skeleton_preserves_missing_dmg_as_none(self):
+        """dmg=None («не распознано») доходит до skeleton-строки как
+        None, а не превращается в 0 — иначе финализация прошла бы
+        с фиктивным уроном."""
+        from views.ocr_match_view import _ensure_team_panel
+
+        panel_rows = [
+            {"name": f"N{i}", "kills": 1, "deaths": 1, "assists": 1,
+             "dmg": None if i == 0 else 10}
+            for i in range(4)
+        ]
+        session = {
+            "panels": {"left": {"rows": panel_rows}},
+            "maps": {},
+            "panel_picks": {},
+        }
+        _ensure_team_panel(_tournament(), session, 0, "left")
+        skel = session["maps"]["0"]["rows"]
+        assert skel[0]["dmg"] is None
+        assert skel[1]["dmg"] == 10  # явный 0/число — не трогаем
+
+        # Строка с dmg=None блокирует готовность даже после привязки.
+        from views.ocr_match_view import _rooms_stats_complete
+        for r in skel:
+            r["discord_id"] = 1
+            r["discord_name"] = "P1"
+        other_team = [
+            _bound_row(f"P{i}", "NB", 1, 1, 1, 10, i) for i in (5, 6, 7, 8)
+        ]
+        session["rooms"] = [{
+            "maps": {
+                "0": {"panel": "left", "rows": skel},
+                "1": {"panel": "right", "rows": other_team},
+            }
+        }]
+        assert not _rooms_stats_complete(session)
+        skel[0]["dmg"] = 0
+        assert _rooms_stats_complete(session)
+
     def test_rooms_all_mapped(self):
         from views.ocr_match_view import (
             _rooms_all_mapped, _rooms_unmapped_count,

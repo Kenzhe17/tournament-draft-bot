@@ -1123,7 +1123,9 @@ class OCRUploadCog(commands.Cog):
                             "kills": p["kills"],
                             "deaths": p["deaths"],
                             "assists": p["assists"],
-                            "dmg": p.get("dmg") or 0,
+                            # None = «не распознано» — не превращаем
+                            # в 0: финализация требует все поля.
+                            "dmg": p.get("dmg"),
                         }
                         for p in parsed[players_key]
                     ],
@@ -1892,7 +1894,8 @@ async def _classic_pipeline(
                     "kills": p["kills"],
                     "deaths": p["deaths"],
                     "assists": p["assists"],
-                    "dmg": p.get("dmg") or 0,
+                    # None = «не распознано» — не превращаем в 0.
+                    "dmg": p.get("dmg"),
                 }
                 for p in parsed[players_key]
             ],

@@ -331,6 +331,21 @@ def _row_bound(row: dict) -> bool:
     return bool(row.get("discord_id") or row.get("discord_name"))
 
 
+def _stat_value(v) -> int | None:
+    """Статистика OCR → int или None.
+
+    None («не распознано») сохраняется как None — не подменяем 0:
+    _rooms_stats_complete блокирует финализацию до заполнения
+    всех обязательных показателей.
+    """
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _source_label(source) -> str:
     """Человекочитаемая подпись источника привязки (без 'self')."""
     if source == "self":
@@ -492,14 +507,16 @@ def _ensure_team_panel(
     if panel not in ("left", "right"):
         return None
     # Skeleton rows — снимок OCR-строк панели с полями привязки.
+    # None («не распознано») сохраняется: финализация требует все
+    # обязательные показатели, 0 не подставляем.
     rows = []
     for r in _panel_rows(session, panel):
         row = {
             "ocr_name": r.get("name", "?"),
-            "kills": int(r.get("kills", 0) or 0),
-            "deaths": int(r.get("deaths", 0) or 0),
-            "assists": int(r.get("assists", 0) or 0),
-            "dmg": int(r.get("dmg", 0) or 0),
+            "kills": _stat_value(r.get("kills")),
+            "deaths": _stat_value(r.get("deaths")),
+            "assists": _stat_value(r.get("assists")),
+            "dmg": _stat_value(r.get("dmg")),
             "discord_name": None,
             "discord_id": None,
             "source": None,
@@ -660,10 +677,12 @@ def _rooms_aggregate_stats(
                     "ocr_name": row.get("ocr_name") or "?",
                     "_nicks": [],
                 })
-                entry["kills"] += int(row.get("kills") or 0)
-                entry["deaths"] += int(row.get("deaths") or 0)
-                entry["assists"] += int(row.get("assists") or 0)
-                entry["damage"] += int(row.get("dmg") or 0)
+                # Статистика уже проверена _rooms_stats_complete —
+                # None здесь означает баг, а не «ноль»: падаем явно.
+                entry["kills"] += int(row["kills"])
+                entry["deaths"] += int(row["deaths"])
+                entry["assists"] += int(row["assists"])
+                entry["damage"] += int(row["dmg"])
                 nick = row.get("ocr_name")
                 if nick and nick not in entry["_nicks"]:
                     entry["_nicks"].append(nick)
@@ -2778,10 +2797,10 @@ class PanelMappingView(View):
                 mapped = {
                     "discord_name": chosen[i],
                     "ocr_name": row.get("name", "?"),
-                    "kills": int(row.get("kills", 0)),
-                    "deaths": int(row.get("deaths", 0)),
-                    "assists": int(row.get("assists", 0)),
-                    "dmg": int(row.get("dmg", 0) or 0),
+                    "kills": _stat_value(row.get("kills")),
+                    "deaths": _stat_value(row.get("deaths")),
+                    "assists": _stat_value(row.get("assists")),
+                    "dmg": _stat_value(row.get("dmg")),
                 }
                 for k in EXTRA_STAT_KEYS:
                     if row.get(k) is not None:
