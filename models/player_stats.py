@@ -76,7 +76,7 @@ class PlayerStats:
     description: str = ""  # User profile description
 
     # Социальные поля профиля
-    reputation: int = 0  # Репутация за активность в турнирах
+    reputation: int = 0  # Репутация (Reputation 2.0; игровыми матчами не изменяется)
     birthday: str = ""  # День рождения (ДД.ММ.ГГГГ)
     spouse_id: int = 0  # Discord ID супруга/и (0 = не в браке)
 

@@ -308,9 +308,6 @@ def update_player_stats_from_match(
     if team_won:
         stats.wins += 1
 
-    # Репутация: +1 за участие в матче, +2 бонус за победу
-    stats.reputation = getattr(stats, "reputation", 0) + 1 + (2 if team_won else 0)
-
     # Update streak
     if team_won:
         if stats.current_streak > 0:

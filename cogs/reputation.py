@@ -27,9 +27,11 @@ from services import reputation as rep_svc
 from services import rep_log
 from storage.player_stats_store import player_stats_store
 from storage.reputation_store import (
+    SRC_ADMIN,
     SRC_BOOST,
     SRC_INVITE,
     SRC_MANUAL,
+    SRC_SERVER_TAG,
     reputation_store,
 )
 from utils.design import colors
@@ -60,6 +62,8 @@ _SOURCE_TITLES = {
     SRC_MANUAL: "через /rep",
     SRC_INVITE: "приглашение",
     SRC_BOOST: "буст сервера",
+    SRC_SERVER_TAG: "серверный тег",
+    SRC_ADMIN: "корректировка (админ)",
 }
 
 
