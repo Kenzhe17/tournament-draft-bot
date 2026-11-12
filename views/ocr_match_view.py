@@ -635,15 +635,34 @@ def _room_session(session: dict, room_index: int) -> dict | None:
 
 
 def _rooms_all_mapped(session: dict, t1: int, t2: int) -> bool:
-    """Все комнаты имеют полное сопоставление обеих команд."""
-    rooms = session.get("rooms") or []
-    if not rooms:
+    """Полная готовность rooms-сессии к финализации.
+
+    Требуется РОВНО rooms_expected УНИКАЛЬНЫХ комнат с индексами
+    1..N, каждая завершена (есть panels) и полностью сопоставлена
+    обеими командами. Частично загруженный комплект — False:
+    экран подтверждения, ELO и auto-finalize заблокированы.
+    """
+    expected = int(session.get("rooms_expected") or 0)
+    if expected <= 0:
         return False
+    rooms = session.get("rooms") or []
+    seen: set[int] = set()
     for r in rooms:
-        rs = _room_session(session, r.get("room_index"))
+        try:
+            idx = int(r.get("room_index", 0))
+        except (TypeError, ValueError):
+            return False
+        if idx < 1 or idx > expected or idx in seen:
+            return False
+        seen.add(idx)
+        # Комната обязана быть завершена (panels) — collecting_files
+        # и publish_fail без panels не считаются.
+        if not r.get("panels"):
+            return False
+        rs = _room_session(session, idx)
         if rs is None or not _classic_mapping_complete(rs, t1, t2):
             return False
-    return True
+    return seen == set(range(1, expected + 1))
 
 
 def _rooms_unmapped_count(session: dict) -> int:
@@ -4913,22 +4932,25 @@ class RoomView(View):
                 ),
             )
             return
-        if int(session.get("rooms_received") or 0) < int(
-            session.get("rooms_expected") or 0
-        ):
-            await _respond(
-                interaction,
-                content=replace_emojis(
-                    "⏳ Дождитесь полного комплекта скриншотов."
-                ),
-            )
-            return
+        # Маппинг разрешён для КАЖДОЙ завершённой комнаты сразу —
+        # глобального ожидания rooms_expected нет. Требуется только
+        # чтобы ЭТА комната была финализирована (panels готовы).
+        # Финализация/ELO по-прежнему ждут _rooms_all_mapped.
         room = next(
             (r for r in session.get("rooms") or []
              if int(r.get("room_index", 0)) == int(self.room_index)),
             None,
         )
-        if room is not None and room.get("kind") == "squad":
+        if room is None or not room.get("panels"):
+            await _respond(
+                interaction,
+                content=replace_emojis(
+                    "⏳ Комната ещё не завершена — сначала "
+                    "загрузите и завершите её скриншоты."
+                ),
+            )
+            return
+        if room.get("kind") == "squad":
             # Squad-комната: скриншоты только своих отрядов, вторая
             # команда — вручную. Свободная squad-панель достаётся
             # первому открывшему маппинг.
@@ -4997,12 +5019,19 @@ class RoomView(View):
                 replace_emojis(err), ephemeral=True
             )
             return
-        if int(session.get("rooms_received") or 0) < int(
-            session.get("rooms_expected") or 0
-        ):
+        # Self-маппинг — тоже разрешён для каждой завершённой
+        # комнаты сразу; готовность всей сессии проверяется
+        # отдельно в _rooms_all_mapped.
+        room = next(
+            (r for r in session.get("rooms") or []
+             if int(r.get("room_index", 0)) == int(self.room_index)),
+            None,
+        )
+        if room is None or not room.get("panels"):
             await interaction.response.send_message(
                 replace_emojis(
-                    "⏳ Дождитесь полного комплекта скриншотов."
+                    "⏳ Комната ещё не завершена — сначала "
+                    "загрузите и завершите её скриншоты."
                 ),
                 ephemeral=True,
             )
@@ -5025,11 +5054,6 @@ class RoomView(View):
                 ephemeral=True,
             )
             return
-        room = next(
-            (r for r in session.get("rooms") or []
-             if int(r.get("room_index", 0)) == int(self.room_index)),
-            None,
-        )
         if room is not None and room.get("kind") == "squad":
             maps = room.get("maps") or {}
             tm = maps.get(str(team_index))
@@ -5481,11 +5505,13 @@ class RoomTeamMapView(View):
             )
             return
 
-        chosen: dict[int, str] = {}
+        # values пуст — select не трогали (нет нового выбора);
+        # "__none__" — ЯВНОЕ «— не назначен —» → снять привязку.
+        chosen: dict[int, str | None] = {}
         for i, sel in self.selects.items():
             vals = getattr(sel, "values", None) or []
-            if vals and vals[0] != "__none__":
-                chosen[i] = vals[0]
+            if vals:
+                chosen[i] = None if vals[0] == "__none__" else vals[0]
 
         async with _mapping_lock(
             _session_key(self.match_type, self.match_index)
@@ -5518,10 +5544,30 @@ class RoomTeamMapView(View):
                 for n in team_roster(tournament, self.team_index)
             }
             errors = []
+            cleared = False
             for i, name in chosen.items():
-                if not name or i >= len(rows):
+                if i >= len(rows):
                     continue
                 row = rows[i]
+                if name is None:
+                    # Явное снятие привязки: очищаем строку и
+                    # сбрасываем готовность команды — финализация
+                    # заблокирована до повторного полного
+                    # сопоставления (_classic_mapping_complete).
+                    if (
+                        row.get("discord_name")
+                        or row.get("discord_id")
+                        or row.get("discord_display")
+                        or row.get("source")
+                    ):
+                        row["discord_name"] = None
+                        row["discord_id"] = None
+                        row["discord_display"] = None
+                        row["source"] = None
+                        cleared = True
+                    continue
+                if not name:
+                    continue
                 old_did = row.get("discord_id")
                 uid = uid_by_name.get(name)
                 try:
@@ -5564,7 +5610,10 @@ class RoomTeamMapView(View):
                     content=replace_emojis("❌ " + "\n".join(errors[:5])),
                 )
                 return
-            tm["confirmed"] = True
+            # Снятая привязка обнуляет готовность команды —
+            # до повторного полного сопоставления финализация
+            # закрыта (_classic_mapping_complete → False).
+            tm["confirmed"] = not cleared
             store.set(tournament)
 
         await _respond(

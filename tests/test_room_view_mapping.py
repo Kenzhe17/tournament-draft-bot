@@ -315,3 +315,145 @@ class TestRoomTeamMapView:
         finally:
             omv.store.get = orig_get
         assert ix.messages  # ответ отправлен, не молчание
+
+
+# ---------- Per-room mapping (комната финализирована ≠ весь комплект) ----------
+
+def _partial_session(env, n_rooms=3):
+    """rooms_expected=3: комната 1 завершена+panels, 2–3 собираются."""
+    t = _tournament(pair=(0, 1), n_teams=8)
+    r1 = _room(0, 1)
+    r1["room_index"] = 1
+    rooms = [r1]
+    for i in range(2, n_rooms + 1):
+        rooms.append({
+            "room_index": i, "status": "collecting_files",
+            "pending": [{"sha": f"s{i}", "kind": "classic",
+                         "pipe": {}, "shot_message_id": None}],
+        })
+    t.ocr_sessions["qualifier_0"] = {
+        "mode": "rooms", "status": "collecting", "gen": 1,
+        "rooms_expected": n_rooms, "rooms_received": 1,
+        "rooms": rooms,
+    }
+    env.tournament = t
+    return t
+
+
+class TestPerRoomMapping:
+    @pytest.mark.asyncio
+    async def test_room1_of_3_mapping_allowed(self, env):
+        """Комната 1/3 завершена → кнопка команды открывает
+        mapping, глобального rooms_expected-гейта нет."""
+        t = _partial_session(env)
+        view = omv.RoomView(1, 1, t, "qualifier", 0, 1)
+        btns = _team_buttons(view)
+        assert len(btns) == 2
+        ix = _Ix(env, user_id=1000)  # участник команды 0
+        await btns[0].callback(ix)
+        # Открыт mapping (view) или panel-pick — НЕ «дождитесь
+        # полного комплекта».
+        assert not any("полного комплекта" in m for m in ix.messages)
+        assert ix.last_view is not None or ix.messages
+
+    @pytest.mark.asyncio
+    async def test_unfinished_room_rejected(self, env):
+        """Комната без panels → mapping отклонён."""
+        t = _partial_session(env)
+        view = omv.RoomView(1, 1, t, "qualifier", 0, 2)
+        btns = _team_buttons(view)
+        ix = _Ix(env, user_id=1000)
+        await btns[0].callback(ix)
+        assert any("не завершена" in m for m in ix.messages)
+
+    def test_rooms_all_mapped_partial_false(self, env):
+        """1/3 комнат → _rooms_all_mapped False даже если комната
+        сопоставлена; все 3 → True."""
+        t = _partial_session(env)
+        sess = t.ocr_sessions["qualifier_0"]
+        assert omv._rooms_all_mapped(sess, 0, 1) is False
+        # Финализируем «виртуально» комнаты 2,3 и привязываем всех
+        for i in (2, 3):
+            r = sess["rooms"][i - 1]
+            r["panels"] = {
+                "left": {"name": "L", "rows": [_prow(f"L{i}", j) for j in range(4)]},
+                "right": {"name": "R", "rows": [_prow(f"R{i}", j) for j in range(4)]},
+            }
+            for ti, panel in (("0", "left"), ("1", "right")):
+                r["maps"] = r.get("maps") or {}
+                r["maps"][ti] = {
+                    "panel": panel, "confirmed": True,
+                    "rows": [
+                        {**_map_rows("X")[j],
+                         "discord_name": f"T{ti}p{j}",
+                         "discord_id": str(1000 + int(ti) * 10 + j),
+                         "source": "captain"}
+                        for j in range(4)
+                    ],
+                }
+        # Комната 1 тоже должна быть полностью привязана
+        r1 = sess["rooms"][0]
+        for ti, panel in (("0", "left"), ("1", "right")):
+            r1["maps"][ti]["rows"] = [
+                {**row,
+                 "discord_name": f"T{ti}p{j}",
+                 "discord_id": str(1000 + int(ti) * 10 + j),
+                 "source": "captain"}
+                for j, row in enumerate(r1["maps"][ti]["rows"])
+            ]
+        assert omv._rooms_all_mapped(sess, 0, 1) is True
+        ready, reason, _ = omv.check_ocr_session_ready(
+            t, sess, 0, 1, require_winner=False,
+        )
+        assert reason != "unmapped" or ready
+
+    @pytest.mark.asyncio
+    async def test_unbind_via_none(self, env):
+        """«— не назначен —» (__none__) реально снимает привязку:
+        строка очищается, confirmed=False, _rooms_all_mapped →
+        False до повторного полного сопоставления."""
+        t = _attach_session(env, pair=(0, 1))
+        sess = t.ocr_sessions["qualifier_0"]
+        room = sess["rooms"][0]
+        # Полностью привязать команду 0
+        view = omv.RoomTeamMapView(1, 1, t, "qualifier", 0, 1, 0, "left")
+        for i, sel in view.selects.items():
+            sel._values = [f"T0p{i}"]
+        ix = _Ix(env, user_id=1000)
+        await view._on_save(ix)
+        assert room["maps"]["0"]["confirmed"] is True
+
+        # Снять привязку строки 0 явным __none__
+        view2 = omv.RoomTeamMapView(1, 1, t, "qualifier", 0, 1, 0, "left")
+        for i, sel in view2.selects.items():
+            sel._values = [f"T0p{i}"] if i != 0 else ["__none__"]
+        await view2._on_save(_Ix(env, user_id=1000))
+        rows = room["maps"]["0"]["rows"]
+        assert rows[0].get("discord_id") in (None, "")
+        assert rows[0].get("discord_name") is None
+        assert room["maps"]["0"]["confirmed"] is False
+        # Строки 1..3 остались привязанными
+        assert rows[1].get("discord_id")
+        # Готовность комнаты сломана
+        assert omv._classic_mapping_complete(
+            omv._room_session(sess, 1), 0, 1
+        ) is False
+
+    @pytest.mark.asyncio
+    async def test_untouched_select_does_not_unbind(self, env):
+        """Пустой values (select не трогали) ≠ намеренное снятие:
+        привязка сохраняется."""
+        t = _attach_session(env, pair=(0, 1))
+        sess = t.ocr_sessions["qualifier_0"]
+        room = sess["rooms"][0]
+        view = omv.RoomTeamMapView(1, 1, t, "qualifier", 0, 1, 0, "left")
+        for i, sel in view.selects.items():
+            sel._values = [f"T0p{i}"]
+        await view._on_save(_Ix(env, user_id=1000))
+        did = room["maps"]["0"]["rows"][0]["discord_id"]
+
+        # Новый save: все selects без values (пользователь ничего
+        # не менял) — привязки НЕ должны сброситься.
+        view2 = omv.RoomTeamMapView(1, 1, t, "qualifier", 0, 1, 0, "left")
+        await view2._on_save(_Ix(env, user_id=1000))
+        assert room["maps"]["0"]["rows"][0]["discord_id"] == did

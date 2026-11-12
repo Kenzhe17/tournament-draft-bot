@@ -3145,22 +3145,19 @@ async def finalize_room_collect(
         await _update_rooms_progress(
             guild, fresh_t, key, match_type, match_index, channel,
         )
-    # Collect-сообщение → финальный статус без кнопок сбора.
+    # Техническое collect-сообщение удаляем — в канале остаётся
+    # ОДНА карточка комнаты. Удалять безопасно: оно не несёт
+    # вложений (источник байтов — room-сообщение/shot'ы уже
+    # заархивированы), RoomFilesView на нём устарел.
     try:
         cmid = room.get("collect_message_id")
         if cmid and channel is not None:
             cmsg = await channel.fetch_message(int(cmid))
-            await cmsg.edit(
-                content=replace_emojis(
-                    f"**Комната {room_index}** — ✅ файлы приняты, "
-                    "сопоставление игроков — под сообщением выше."
-                ),
-                view=None,
-            )
+            await cmsg.delete()
             room["collect_message_id"] = None
             store.set(fresh_t)
     except Exception:
-        logger.debug("collect message finalize edit failed",
+        logger.debug("collect message finalize delete failed",
                      exc_info=True)
     # Байты комнаты больше не нужны для republish этой комнаты —
     # источник истины теперь panels + shot-сообщения.

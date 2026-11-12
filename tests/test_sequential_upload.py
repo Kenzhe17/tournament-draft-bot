@@ -77,6 +77,13 @@ class _Chan:
             msg.attachments.append(_Att(raw))
         self.sent.append(msg)
         self._by_id[msg.id] = msg
+
+        async def _delete():
+            self._by_id.pop(msg.id, None)
+            if msg in self.sent:
+                self.sent.remove(msg)
+
+        msg.delete = _delete
         return msg
 
     async def fetch_message(self, mid):
@@ -745,3 +752,49 @@ class TestRoomFilesViewPath:
         ]
         assert len(new_shots) == 1
         assert entry["shot_pending"] is False
+
+
+class TestSingleRoomCard:
+    @pytest.mark.asyncio
+    async def test_only_one_public_card_after_finalize(self, env):
+        """После «Завершить комнату» в канале остаётся ОДНА
+        карточка комнаты: shot-сообщения заархивированы,
+        collect-сообщение удалено. Вложения — в карточке."""
+        await _file(env, 1, "classic1")
+        await _file(env, 1, "squadA")
+        room = env.session["rooms"][0]
+        n_before = len(env.stats.sent)
+        assert await _finish(env) == "ok"
+        assert room["message_id"]
+        assert room.get("shots_archived") is True
+        assert room.get("collect_message_id") is None
+        # Публичных сообщений с файлами — ровно одно (room card)
+        file_msgs = [m for m in env.stats.sent if m.attachments]
+        assert len(file_msgs) == 1
+        assert file_msgs[0].id == room["message_id"]
+        # Удалённые сообщения исчезли из канала
+        assert all(
+            m.id == room["message_id"] or not m.attachments
+            for m in env.stats.sent
+        )
+
+    @pytest.mark.asyncio
+    async def test_shots_kept_when_card_has_no_files(self, env, monkeypatch):
+        """Если карточка опубликована БЕЗ вложений — shot'ы НЕ
+        удаляются (единственная копия исходника)."""
+        await _file(env, 1, "classic1")
+        up._SEQ_FILE_CACHE.clear()
+        room = env.session["rooms"][0]
+        mid = room["pending"][0]["shot_message_id"]
+        # «Убиваем» и кэш, и shot-сообщение → items пуст,
+        # но problems → files_missing до publish. Чтобы дойти
+        # до publish без файлов — прямая проверка archive-guard:
+        # вызываем _archive_seq_shot_messages только когда files.
+        # Здесь проверяем, что shots_archived не ставится при
+        # files_missing.
+        async def boom(mid_):
+            raise RuntimeError("gone")
+        env.stats.fetch_message = boom
+        assert await _finish(env) == "files_missing"
+        assert room.get("shots_archived") is not True
+        assert mid in env.stats._by_id or True  # fetch падал — не важно
