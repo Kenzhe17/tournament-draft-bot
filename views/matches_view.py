@@ -1333,24 +1333,9 @@ class QualifiersView(discord.ui.View):
 
                 self.add_item(RoomButton("qualifier", i, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Одна кнопка «скриншот» на матч — отправить может капитан
-        # любой из двух команд или организатор
-        from views.ocr_match_view import (
-            MatchScreenshotButton,
-            _stats_complete,
-            match_is_finished,
-        )
-        for i in range(len(matches)):
-            if match_is_finished(tournament, "qualifier", i):
-                continue
-            if _stats_complete(tournament, "qualifier", i):
-                continue
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, self.channel_id, tournament,
-                    "qualifier", i, f"📸 Игра {i + 1}"[:80],
-                )
-            )
+        # Комнаты — через RoomButton; скриншоты загружаются
+        # только рабочей карточкой матча в канале результатов
+        # (MatchScreenshotButton из публичной сетки убран).
 
 
 class SemifinalsView(discord.ui.View):
@@ -1384,21 +1369,6 @@ class SemifinalsView(discord.ui.View):
 
                 self.add_item(RoomButton("semifinal", i, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Одна кнопка «скриншот» на матч — отправить может капитан
-        # любой из двух команд или организатор
-        from views.ocr_match_view import (
-            MatchScreenshotButton,
-            _stats_complete,
-            match_is_finished,
-        )
-        for i in range(len(matches)):
-            if match_is_finished(tournament, "semifinal", i):
-                continue
-            if _stats_complete(tournament, "semifinal", i):
-                continue
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, self.channel_id, tournament,
-                    "semifinal", i, f"📸 Игра {i + 1}"[:80],
-                )
-            )
+        # Скриншоты загружаются только рабочей карточкой матча
+        # в канале результатов — кнопок «📸 Игра N» в публичной
+        # сетке нет.

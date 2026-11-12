@@ -105,24 +105,6 @@ class FinalView(discord.ui.View):
 
             self.add_item(RoomButton("final", 0, team_a, team_b, name_a, name_b, is_admin=False))
 
-        # Одна кнопка «скриншот» на финал — отправить может капитан
-        # любой из двух команд или организатор
-        from views.ocr_match_view import (
-            MatchScreenshotButton,
-            _stats_complete,
-            match_is_finished,
-        )
-        # Для MM-турниров скриншот загружается в канале матча
-        # (cs-4x4-match-N) — здесь кнопку не показываем.
-        if (
-            tournament.phase == TournamentPhase.FINAL
-            and not match_is_finished(tournament, "final", 0)
-            and not _stats_complete(tournament, "final", 0)
-            and not getattr(tournament, "mm_search_channel_id", 0)
-        ):
-            self.add_item(
-                MatchScreenshotButton(
-                    guild_id, channel_id, tournament,
-                    "final", 0, "📸 Финал",
-                )
-            )
+        # Скриншот финала загружается только рабочей карточкой
+        # матча в канале результатов — кнопки «📸 Финал» в
+        # публичной сетке нет.
