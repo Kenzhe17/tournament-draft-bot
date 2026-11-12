@@ -593,7 +593,7 @@ def compose(
         # Картинка сверху карточки (MediaGallery — top-level компонент)
         layout.add_item(
             discord.ui.MediaGallery(
-                discord.ui.MediaGalleryItem(media=top_media)
+                discord.MediaGalleryItem(media=top_media)
             )
         )
     for container in sections:
