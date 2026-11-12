@@ -929,7 +929,7 @@ class OCRUploadCog(commands.Cog):
             getattr(tournament, "mm_search_channel_id", None)
             and not session_active
         ):
-            async with _room_lock(key):
+            async with _room_lock(key, getattr(tournament, "id", "") or ""):
                 tournament = (
                     store.get(message.guild.id, tchannel_id) or tournament
                 )
@@ -1004,7 +1004,7 @@ class OCRUploadCog(commands.Cog):
                     OCR_EXECUTOR, _ocr_boxes, data
                 )
             if not boxes:
-                async with _room_lock(key):
+                async with _room_lock(key, getattr(tournament, "id", "") or ""):
                     tournament = (
                         store.get(message.guild.id, tchannel_id)
                         or tournament
@@ -1074,7 +1074,7 @@ class OCRUploadCog(commands.Cog):
                     OCR_EXECUTOR, _parse_classic, boxes
                 )
             if parsed is None:
-                async with _room_lock(key):
+                async with _room_lock(key, getattr(tournament, "id", "") or ""):
                     tournament = (
                         store.get(message.guild.id, tchannel_id)
                         or tournament
@@ -1170,7 +1170,7 @@ class OCRUploadCog(commands.Cog):
             # освобождения лока.
             reply_text = None
             plan = None  # ("reupload"|"new", session)
-            async with _room_lock(key):
+            async with _room_lock(key, getattr(tournament, "id", "") or ""):
                 # Состояние могло измениться за время OCR —
                 # перечитываем актуальное под локом.
                 tournament = (
@@ -1315,7 +1315,7 @@ class OCRUploadCog(commands.Cog):
             # устаревшее сообщение, чтобы кнопки не остались
             # активными.
             stale_mid = None
-            async with _room_lock(key):
+            async with _room_lock(key, getattr(tournament, "id", "") or ""):
                 cur = store.get(message.guild.id, tchannel_id)
                 cur_s = (
                     cur.ocr_sessions.get(key) if cur else None
@@ -1344,7 +1344,7 @@ class OCRUploadCog(commands.Cog):
                 logger.warning("Match card processing update failed: %s", exc)
         except Exception:
             logger.exception("OCR upload processing failed")
-            async with _room_lock(key):
+            async with _room_lock(key, getattr(tournament, "id", "") or ""):
                 tournament = (
                     store.get(message.guild.id, tchannel_id) or tournament
                 )
@@ -1441,7 +1441,7 @@ class OCRUploadCog(commands.Cog):
         publish = None  # (view, entry)
         session = None
 
-        async with _room_lock(key):
+        async with _room_lock(key, getattr(tournament, "id", "") or ""):
             # Состояние могло измениться за время OCR —
             # перечитываем актуальное под локом.
             tournament = store.get(guild_id, tchannel_id) or tournament
@@ -1690,7 +1690,7 @@ class OCRUploadCog(commands.Cog):
         # только если сессия всё ещё та же (не отменена/не
         # пересоздана параллельным комплектом).
         stale_mid = None
-        async with _room_lock(key):
+        async with _room_lock(key, getattr(tournament, "id", "") or ""):
             cur = store.get(guild_id, tchannel_id) or tournament
             cur_s = cur.ocr_sessions.get(key)
             if cur_s is session:
@@ -1721,11 +1721,14 @@ _OCR_BOX_CACHE: dict[str, list] = {}
 _OCR_BOX_CACHE_MAX = 100
 
 
-def _room_lock(match_key: str) -> asyncio.Lock:
-    lock = _ROOM_LOCKS.get(match_key)
+def _room_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
+    """Per-match лок. Ключ включает tournament_id — матчи разных
+    турниров не блокируют друг друга (Tournaments 2.0 §8)."""
+    scoped = f"{tournament_id}|{match_key}" if tournament_id else match_key
+    lock = _ROOM_LOCKS.get(scoped)
     if lock is None:
         lock = asyncio.Lock()
-        _ROOM_LOCKS[match_key] = lock
+        _ROOM_LOCKS[scoped] = lock
         if len(_ROOM_LOCKS) > _ROOM_LOCKS_MAX:
             _ROOM_LOCKS.pop(next(iter(_ROOM_LOCKS)))
     return lock
@@ -2934,7 +2937,7 @@ async def process_room_file(
     # Мутация под _room_lock: параллельные загрузки двух
     # пользователей сериализуются — не больше 2 файлов, без
     # смешения статуса и двойной статистики.
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         fresh = store.get(guild.id, tournament.channel_id) or tournament
         fs = fresh.ocr_sessions.get(key) or {}
         if (
@@ -3037,7 +3040,7 @@ async def _retry_seq_shot(
     Сериализовано _room_lock: отмена сессии и параллельные
     повторы не могут оставить рассинхрон флагов/ID.
     """
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         # Актуальное состояние — store мог обновиться, пока
         # пользователь грузил файл.
         fresh = store.get(guild.id, tournament.channel_id) or tournament
@@ -3258,7 +3261,7 @@ async def finalize_room_collect(
 
     gen = int(session.get("gen", 1))
     fresh_t = None
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         fresh_t = store.get(guild.id, tournament.channel_id) or tournament
         fs = fresh_t.ocr_sessions.get(key) or {}
         if (
@@ -3841,7 +3844,7 @@ async def create_rooms_session(
     key = _session_key(match_type, match_index)
     # Лок на матч: два капитана могут нажать «Отправить результат»
     # одновременно — без лока создались бы две сессии.
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         tournament = (
             store.get(guild.id, tournament.channel_id) or tournament
         )
@@ -4076,7 +4079,7 @@ async def _rooms_claim_bundle(
         if _rooms_file_submit_allowed(tournament, session, user):
             return "ok", tournament, session
         return "forbidden", tournament, session
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         fresh = store.get(guild.id, tournament.channel_id) or tournament
         s = fresh.ocr_sessions.get(key)
         if (
@@ -4139,6 +4142,7 @@ async def _rooms_release_claim(
     channel_id: int,
     key: str,
     session: dict,
+    tournament_id: str = "",
 ) -> None:
     """Откат фиксации комплекта после отклонённой первой загрузки.
 
@@ -4146,7 +4150,7 @@ async def _rooms_release_claim(
     с panels — иначе комплект уже легитимно занят ранее принятым
     файлом и трогать его нельзя.
     """
-    async with _room_lock(key):
+    async with _room_lock(key, tournament_id):
         fresh = store.get(guild.id, channel_id)
         s = (fresh.ocr_sessions.get(key) if fresh else None)
         if (
@@ -4198,7 +4202,7 @@ async def cancel_rooms_session(
     if not _is_strict_admin(user):
         return "forbidden"
 
-    async with _room_lock(key):
+    async with _room_lock(key, getattr(tournament, "id", "") or ""):
         # Повторная проверка под локом — статус мог измениться
         tournament = store.get(guild.id, tournament.channel_id) or tournament
         session = tournament.ocr_sessions.get(key)
@@ -4562,7 +4566,8 @@ async def _accept_room_file(
     # остаются доступными.
     if res in _BUNDLE_REJECT_CODES and was_unclaimed:
         await _rooms_release_claim(
-            interaction.guild, channel_id, key, session
+            interaction.guild, channel_id, key, session,
+            getattr(tournament, "id", "") or "",
         )
     # Если комната уже «полная» (классический экран 4×4) —
     # не предлагаем второй скриншот.

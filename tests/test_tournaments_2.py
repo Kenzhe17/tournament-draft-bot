@@ -11,9 +11,11 @@ from models.tournament import (
     FormationMode,
     PICK_ORDERS,
     SEMIFINAL_PAIRINGS,
+    MatchContext,
     Tournament,
     TournamentPhase,
     TournamentSize,
+    resolve_match_context,
 )
 from utils.balanced_sr import balanced_sr_teams, duplicate_user_ids
 
@@ -419,3 +421,93 @@ class TestSerialization:
         assert t2.player_user_ids == t.player_user_ids
         assert t2.formation_mode == FormationMode.BALANCED_SR
         assert t2.id == t.id
+
+
+# ---------------------------------------------------------------------------
+# MatchContext / resolve_match_context (ТЗ §2)
+# ---------------------------------------------------------------------------
+
+class TestMatchContext:
+    def _tournament_with_match(self, size, formation):
+        t = _mk_tournament(size, formation)
+        n = int(size.value)
+        for i in range(n):
+            t.players_pool.append(f"P{i}")
+            t.player_user_ids[f"P{i}"] = 5000 + i
+        # имитируем уже сформированные команды
+        teams = []
+        for ti in range(n // 4):
+            members = [f"P{ti*4+j}" for j in range(4)]
+            teams.append({
+                "captain": members[0],
+                "players": members,
+                "circle1": members[0], "circle2": members[1],
+                "circle3": members[2], "circle4": members[3],
+            })
+        t.teams = teams
+        if size == TournamentSize.SIXTEEN:
+            t.semifinal_matches = [(0, 1), (2, 3)]
+        else:
+            t.qualifier_matches = [(0, 1), (2, 3), (4, 5), (6, 7)]
+            t.semifinal_matches = [(0, 4), (2, 6)]
+            t.final_teams = [0, 2]
+        return t
+
+    def test_resolve_qualifier(self):
+        t = self._tournament_with_match(TournamentSize.THIRTY_TWO, FormationMode.DRAFT)
+        ctx = resolve_match_context(t, "qualifier", 2)
+        assert isinstance(ctx, MatchContext)
+        assert ctx.tournament_id == t.id
+        assert ctx.session_key == "qualifier_2"
+        assert ctx.match_id == f"{t.id}_qualifier_2"
+        assert (ctx.team_a_index, ctx.team_b_index) == (4, 5)
+        # ростеры — Discord ID 4 игроков каждой команды
+        assert ctx.team_a_player_ids == tuple(5000 + i for i in range(16, 20))
+        assert ctx.team_b_player_ids == tuple(5000 + i for i in range(20, 24))
+
+    def test_resolve_semifinal_and_final(self):
+        t = self._tournament_with_match(TournamentSize.THIRTY_TWO, FormationMode.DRAFT)
+        ctx = resolve_match_context(t, "semifinal", 1)
+        assert (ctx.team_a_index, ctx.team_b_index) == (2, 6)
+        ctx_f = resolve_match_context(t, "final", 0)
+        assert (ctx_f.team_a_index, ctx_f.team_b_index) == (0, 2)
+        assert ctx_f.session_key == "final_0"
+
+    def test_resolve_16_semifinal(self):
+        t = self._tournament_with_match(TournamentSize.SIXTEEN, FormationMode.DRAFT)
+        ctx = resolve_match_context(t, "semifinal", 0)
+        assert ctx.session_key == "semifinal_0"
+        assert len(ctx.team_a_player_ids) == 4
+        assert len(ctx.team_b_player_ids) == 4
+
+    def test_resolve_invalid(self):
+        t = self._tournament_with_match(TournamentSize.SIXTEEN, FormationMode.DRAFT)
+        with pytest.raises(ValueError):
+            resolve_match_context(t, "bogus", 0)
+        with pytest.raises(ValueError):
+            resolve_match_context(t, "semifinal", 5)
+
+    def test_context_uses_fresh_state(self):
+        """Ростеры берутся из переданного (свежего) состояния, не из View."""
+        t = self._tournament_with_match(TournamentSize.SIXTEEN, FormationMode.DRAFT)
+        # Меняем ростер команды 0 после «создания view»
+        t.player_user_ids["P0"] = 9999
+        ctx = resolve_match_context(t, "semifinal", 0)
+        assert 9999 in ctx.team_a_player_ids
+
+
+class TestScopedLocks:
+    def test_room_lock_scoped_by_tournament(self):
+        from cogs.ocr_upload import _room_lock, _ROOM_LOCKS
+        l1 = _room_lock("qualifier_0", "tourn_A")
+        l2 = _room_lock("qualifier_0", "tourn_B")
+        l1b = _room_lock("qualifier_0", "tourn_A")
+        assert l1 is not l2  # разные турниры — разные локи
+        assert l1 is l1b  # один турнир — тот же лок
+        assert _room_lock("qualifier_0") is not l1  # legacy ключ без tid
+
+    def test_finalize_lock_scoped(self):
+        from views.ocr_match_view import _finalize_lock
+        a = _finalize_lock("final_0", "tA")
+        b = _finalize_lock("final_0", "tB")
+        assert a is not b

@@ -624,7 +624,7 @@ _MAPPING_LOCKS: dict[str, asyncio.Lock] = {}
 _MAPPING_LOCKS_MAX = 200
 
 
-def _mapping_lock(match_key: str) -> asyncio.Lock:
+def _mapping_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
     """Лок мутаций OCR-сессии матча — ТОТ ЖЕ per-match лок, что у
     finalize/cancel/claim (cogs.ocr_upload._room_lock).
 
@@ -638,7 +638,7 @@ def _mapping_lock(match_key: str) -> asyncio.Lock:
     """
     from cogs.ocr_upload import _room_lock
 
-    return _room_lock(match_key)
+    return _room_lock(match_key, tournament_id)
 
 
 def _room_session(session: dict, room_index: int) -> dict | None:
@@ -1196,11 +1196,12 @@ _FINALIZE_LOCKS: dict[str, asyncio.Lock] = {}
 _FINALIZE_LOCKS_MAX = 200
 
 
-def _finalize_lock(match_key: str) -> asyncio.Lock:
-    lock = _FINALIZE_LOCKS.get(match_key)
+def _finalize_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
+    scoped = f"{tournament_id}|{match_key}" if tournament_id else match_key
+    lock = _FINALIZE_LOCKS.get(scoped)
     if lock is None:
         lock = asyncio.Lock()
-        _FINALIZE_LOCKS[match_key] = lock
+        _FINALIZE_LOCKS[scoped] = lock
         if len(_FINALIZE_LOCKS) > _FINALIZE_LOCKS_MAX:
             _FINALIZE_LOCKS.pop(next(iter(_FINALIZE_LOCKS)))
     return lock
@@ -2875,7 +2876,7 @@ class PanelMappingView(View):
             return
 
         key = _session_key(self.match_type, self.match_index)
-        async with _mapping_lock(key):
+        async with _mapping_lock(key, getattr(tournament, "id", "") or ""):
             # Свежие объекты под локом + status-guard: запись
             # маппинга сериализована с finalize/отменой — после
             # «finalizing»/«completed» состав изменить нельзя.
@@ -2999,7 +3000,7 @@ class PanelMappingView(View):
         самостоятельного подтверждения; конфликты уходят организатору.
         """
         key = _session_key(self.match_type, self.match_index)
-        async with _mapping_lock(key):
+        async with _mapping_lock(key, getattr(tournament, "id", "") or ""):
             # Свежие объекты под локом — параллельные self/captain
             # привязки не должны перетирать друг друга
             tournament = store.get(self.guild_id, self.channel_id) or tournament
@@ -3574,7 +3575,8 @@ async def _self_bind_row(
     освобождаются (перенос на новый ник).
     """
     key = _session_key(match_type, match_index)
-    async with _mapping_lock(key):
+    _t = store.get(guild_id, channel_id)
+    async with _mapping_lock(key, getattr(_t, "id", "") or ""):
         tournament = store.get(guild_id, channel_id)
         if not tournament:
             await interaction.response.send_message(
@@ -3926,7 +3928,8 @@ class OcrRowAddModal(Modal, title="Добавить строку OCR"):
             return
 
         key = _session_key(self.match_type, self.match_index)
-        async with _mapping_lock(key):
+        _t = store.get(self.guild_id, self.channel_id)
+        async with _mapping_lock(key, getattr(_t, "id", "") or ""):
             tournament = store.get(self.guild_id, self.channel_id)
             session = (
                 tournament.ocr_sessions.get(key)
@@ -4203,7 +4206,7 @@ async def finalize_ocr_match(
 ) -> None:
     """Обёртка финализации с per-match локом (защита от двойного ELO)."""
     key = _session_key(match_type, match_index)
-    lock = _finalize_lock(key)
+    lock = _finalize_lock(key, getattr(tournament, "id", "") or "")
     async with lock:
         # Тот же per-match лок, что у административной отмены комплекта:
         # финализация и «Неправильный скриншот» не могут идти
@@ -4211,7 +4214,7 @@ async def finalize_ocr_match(
         # либо удалит её до старта начисления ELO.
         from cogs.ocr_upload import _room_lock
 
-        async with _room_lock(key):
+        async with _room_lock(key, getattr(tournament, "id", "") or ""):
             await _finalize_ocr_match_impl(
                 interaction, tournament, match_type, match_index,
                 winning_team_index,
@@ -5545,8 +5548,10 @@ class RoomTeamMapView(View):
             if vals:
                 chosen[i] = None if vals[0] == "__none__" else vals[0]
 
+        _lt = getattr(self, "tournament", None)
         async with _mapping_lock(
-            _session_key(self.match_type, self.match_index)
+            _session_key(self.match_type, self.match_index),
+            getattr(_lt, "id", "") or "",
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
@@ -5759,8 +5764,10 @@ class RoomSelfMapView(View):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
+        _lt = getattr(self, "tournament", None)
         async with _mapping_lock(
-            _session_key(self.match_type, self.match_index)
+            _session_key(self.match_type, self.match_index),
+            getattr(_lt, "id", "") or "",
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
@@ -6297,7 +6304,8 @@ async def resolve_room_conflict(
     if source not in ("classic", "squad"):
         return "bad_source"
     key = _session_key(match_type, match_index)
-    async with _mapping_lock(key):
+    _t = store.get(guild_id, channel_id)
+    async with _mapping_lock(key, getattr(_t, "id", "") or ""):
         tournament = store.get(guild_id, channel_id)
         session = (
             tournament.ocr_sessions.get(key) if tournament else None
@@ -6391,7 +6399,8 @@ async def confirm_rooms_aux_review(
     "ok" | "confirmed" | "none" | "closed".
     """
     key = _session_key(match_type, match_index)
-    async with _mapping_lock(key):
+    _t = store.get(guild_id, channel_id)
+    async with _mapping_lock(key, getattr(_t, "id", "") or ""):
         tournament = store.get(guild_id, channel_id)
         session = (
             tournament.ocr_sessions.get(key) if tournament else None
@@ -6986,8 +6995,10 @@ class RoomRowEditModal(Modal):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
+        _lt = getattr(self, "tournament", None)
         async with _mapping_lock(
-            _session_key(self.match_type, self.match_index)
+            _session_key(self.match_type, self.match_index),
+            getattr(_lt, "id", "") or "",
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(
@@ -7129,8 +7140,10 @@ class RoomRowBindView(View):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
+        _lt = getattr(self, "tournament", None)
         async with _mapping_lock(
-            _session_key(self.match_type, self.match_index)
+            _session_key(self.match_type, self.match_index),
+            getattr(_lt, "id", "") or "",
         ):
             tournament = store.get(self.guild_id, self.channel_id)
             _, session = _rooms_session_fresh(

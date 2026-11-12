@@ -120,6 +120,32 @@ SEMIFINAL_PAIRINGS: list[list[tuple[int, int]]] = [
 
 
 @dataclass
+class MatchContext:
+    """Единый контекст одного матча (Tournaments 2.0).
+
+    Определяет актуальные команды и ростеры из свежего состояния
+    турнира. session_key — ключ OCR-сессии внутри турнира
+    ("qualifier_0", "semifinal_1", "final_0"); для глобальных
+    блокировок/логов/PG/ELO используется match_id с tournament_id.
+    """
+
+    tournament_id: str
+    guild_id: int
+    tournament_channel_id: int
+    match_type: str  # "qualifier" | "semifinal" | "final"
+    match_index: int
+    team_a_index: int
+    team_b_index: int
+    team_a_player_ids: tuple[int, ...]
+    team_b_player_ids: tuple[int, ...]
+    session_key: str
+
+    @property
+    def match_id(self) -> str:
+        return f"{self.tournament_id}_{self.session_key}"
+
+
+@dataclass
 class Tournament:
     """Состояние одного турнира на сервере."""
 
@@ -1702,3 +1728,80 @@ class Tournament:
             for mt, mi, uid in data.get("match_openers", [])
         }
         return t
+
+
+def _team_roster_names(team: dict[str, Any]) -> list[str]:
+    """Имена игроков команды: players[] или circle1-4."""
+    players = [p for p in team.get("players", []) if p]
+    if players:
+        return players
+    return [
+        team.get(f"circle{c}") for c in range(1, 5)
+        if team.get(f"circle{c}")
+    ]
+
+
+def resolve_match_context(
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> MatchContext:
+    """Разрешить актуальные команды и ростеры матча из свежего
+    состояния турнира (Tournaments 2.0).
+
+    Args:
+        tournament: актуальный Tournament (перечитанный из store).
+        match_type: "qualifier" | "semifinal" | "final".
+        match_index: индекс матча внутри этапа.
+
+    Returns:
+        MatchContext с team indices, Discord ID ростеров и session_key.
+
+    Raises:
+        ValueError: невалидный match_type/index или отсутствующие команды.
+    """
+    if match_type == "qualifier":
+        matches = tournament.qualifier_matches
+    elif match_type == "semifinal":
+        matches = tournament.semifinal_matches
+    elif match_type == "final":
+        matches = [tuple(tournament.final_teams[:2])] if len(tournament.final_teams) >= 2 else []
+    else:
+        raise ValueError(f"unknown match_type: {match_type}")
+
+    if match_index < 0 or match_index >= len(matches):
+        raise ValueError(
+            f"match_index {match_index} out of range for {match_type} "
+            f"({len(matches)} matches)"
+        )
+
+    team_a_index, team_b_index = matches[match_index]
+    teams = tournament.teams or []
+    if not (0 <= team_a_index < len(teams) and 0 <= team_b_index < len(teams)):
+        raise ValueError(
+            f"team indices ({team_a_index}, {team_b_index}) out of range "
+            f"for {len(teams)} teams"
+        )
+
+    def _roster_ids(team_index: int) -> tuple[int, ...]:
+        team = teams[team_index]
+        ids = []
+        for name in _team_roster_names(team):
+            uid = tournament.player_user_ids.get(name, 0)
+            if uid:
+                ids.append(int(uid))
+        return tuple(ids)
+
+    session_key = f"{match_type}_{match_index}"
+    return MatchContext(
+        tournament_id=tournament.id,
+        guild_id=tournament.guild_id,
+        tournament_channel_id=tournament.channel_id,
+        match_type=match_type,
+        match_index=match_index,
+        team_a_index=team_a_index,
+        team_b_index=team_b_index,
+        team_a_player_ids=_roster_ids(team_a_index),
+        team_b_player_ids=_roster_ids(team_b_index),
+        session_key=session_key,
+    )
