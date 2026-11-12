@@ -376,10 +376,21 @@ async def _notify_admin_call(
     )
     guild = interaction.guild
     targets = []
+    # Rooms-сессия: уведомление — в канал OCR-карточек комнаты
+    # (ocr_channel_id), там же где скриншоты и кнопки.
+    session = (getattr(tournament, "ocr_sessions", None) or {}).get(
+        _session_key(match_type, match_index)
+    ) or {}
+    sess_ch_id = (
+        session.get("ocr_channel_id")
+        if session.get("mode") == "rooms"
+        else None
+    ) or session.get("progress_channel_id")
+    stats_id = sess_ch_id or OCR_STATS_CHANNEL_ID
     try:
-        ch = guild.get_channel(OCR_STATS_CHANNEL_ID)
+        ch = guild.get_channel(stats_id)
         if ch is None:
-            ch = await guild.fetch_channel(OCR_STATS_CHANNEL_ID)
+            ch = await guild.fetch_channel(stats_id)
         if ch is not None:
             targets.append(ch)
     except Exception as exc:
@@ -3437,7 +3448,13 @@ async def _results_channel(
     interaction: discord.Interaction, session: dict | None = None
 ) -> discord.TextChannel | None:
     """Канал, где опубликовано OCR-сообщение (канал результатов)."""
-    channel_id = (session or {}).get("results_channel_id") or OCR_STATS_CHANNEL_ID
+    session = session or {}
+    channel_id = (
+        session.get("results_channel_id")
+        or session.get("ocr_channel_id")
+        or session.get("progress_channel_id")
+        or OCR_STATS_CHANNEL_ID
+    )
     channel = interaction.guild.get_channel(channel_id)
     if channel is None:
         try:
@@ -5922,8 +5939,12 @@ class RoomSelfMapView(View):
 # ---------------------------------------------------------------------------
 
 def _rooms_confirm_channel(guild: discord.Guild, session: dict):
-    """Канал подтверждения — тот же, что у сообщений комнат/прогресса."""
-    ch_id = session.get("progress_channel_id")
+    """Канал подтверждения — тот же, что у сообщений комнат:
+    сохранённый ocr_channel_id, fallback — progress_channel_id
+    для старых сессий."""
+    ch_id = session.get("ocr_channel_id") or session.get(
+        "progress_channel_id"
+    )
     if ch_id:
         try:
             return guild.get_channel(int(ch_id))
@@ -7489,7 +7510,10 @@ class RoomFilesView(View):
         res = await finalize_room_collect(
             interaction.guild, interaction.user, tournament,
             self.match_type, self.match_index, self.room_index,
-            stats_channel=interaction.channel,
+            # Канал берётся из сессии (ocr_channel_id), а не из
+            # interaction — источник файлов должен совпадать с
+            # каналом опубликованных shot-сообщений.
+            stats_channel=None,
         )
         texts = {
             "ok": (

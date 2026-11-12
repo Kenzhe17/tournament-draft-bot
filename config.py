@@ -141,6 +141,12 @@ OCR_RESULT_CHANNEL_ID = int(os.getenv("OCR_RESULT_CHANNEL_ID", "0"))
 OCR_STATS_CHANNEL_ID = int(os.getenv("OCR_STATS_CHANNEL_ID", "0"))
 # Роль для пинга админов при проблемах OCR-маппинга
 OCR_ADMIN_ROLE_ID = int(os.getenv("OCR_ADMIN_ROLE_ID", "0"))
+# Канал OCR-скриншотов/сопоставления для обычных турниров
+# (/tournament create). MM-матчи публикуют OCR в канале матча.
+# Не путать с ROOM_DATA_CHANNEL_ID (ID/пароль игровых комнат).
+OCR_MAPPING_CHANNEL_ID = int(
+    os.getenv("OCR_MAPPING_CHANNEL_ID") or "1570473950218158180"
+)
 
 # Ultimatum: роль участников и канал данных комнат
 ULT_ROLE_ID = int(os.getenv("ULT_ROLE_ID", "0"))

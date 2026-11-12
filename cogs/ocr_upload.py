@@ -23,7 +23,11 @@ from discord.ui import Button, FileUpload, Label, Modal, Select, View
 from utils.design import compose, text_card
 from discord.ext import commands
 
-from config import get_emoji, replace_emojis, MM_MATCH_CHANNEL_POOL, OCR_RESULT_CHANNEL_ID as _OCR_RESULT_CHANNEL_ID
+from config import (
+    get_emoji, replace_emojis, MM_MATCH_CHANNEL_POOL,
+    OCR_MAPPING_CHANNEL_ID,
+    OCR_RESULT_CHANNEL_ID as _OCR_RESULT_CHANNEL_ID,
+)
 from storage.json_store import store
 from views.ocr_match_view import (
     OCR_STATS_CHANNEL_ID,
@@ -2706,6 +2710,41 @@ async def _publish_seq_shot(
         return False
 
 
+def _match_captain_ids(
+    tournament, match_type: str, match_index: int, session: dict
+) -> list[int]:
+    """Discord ID капитанов обеих команд ТЕКУЩЕГО матча.
+
+    Индексы команд — из свежего resolve_match_context (fallback —
+    session["teams"]), имена капитанов → player_user_ids. Только
+    реальные ID, дедупликация, порядок A затем B.
+    """
+    try:
+        from models.tournament import resolve_match_context
+
+        ctx = resolve_match_context(tournament, match_type, match_index)
+        idxs = [ctx.team_a_index, ctx.team_b_index]
+    except Exception:
+        idxs = [int(x) for x in (session.get("teams") or [])]
+    pids = getattr(tournament, "player_user_ids", None) or {}
+    teams = getattr(tournament, "teams", None) or []
+    out: list[int] = []
+    for raw in idxs:
+        try:
+            i = int(raw)
+        except (TypeError, ValueError):
+            continue
+        team = teams[i] if 0 <= i < len(teams) else {}
+        cap = (team or {}).get("captain") or ""
+        try:
+            uid = int(pids.get(cap) or 0)
+        except (TypeError, ValueError):
+            uid = 0
+        if uid and uid not in out:
+            out.append(uid)
+    return out
+
+
 async def _ensure_room_collect_message(
     stats_channel, tournament, session: dict, room: dict,
     match_type: str, match_index: int,
@@ -2736,6 +2775,13 @@ async def _ensure_room_collect_message(
     else:
         head += " — сбор файлов"
     lines = [head]
+    # Пинг капитанов обеих команд матча — один раз при создании
+    # сообщения (edit не генерирует новых уведомлений).
+    cap_ids = _match_captain_ids(tournament, match_type, match_index, session)
+    if cap_ids:
+        lines.append(
+            "Капитаны: " + " ".join(f"<@{u}>" for u in cap_ids)
+        )
     if allow_add and len(pending) < 2:
         lines.append(
             f"Файлов: {len(pending)}/2 — можно добавить ещё "
@@ -2744,6 +2790,11 @@ async def _ensure_room_collect_message(
     elif not allow_add and pending:
         lines.append("Файлы приняты — нажмите «Завершить комнату»")
     text = replace_emojis("\n".join(lines))
+    # В content только <@id> капитанов — пингуются исключительно
+    # они; роли и @everyone отключены.
+    mentions = discord.AllowedMentions(
+        users=True, roles=False, everyone=False
+    )
 
     from views.ocr_match_view import RoomFilesView
 
@@ -2763,16 +2814,22 @@ async def _ensure_room_collect_message(
         if cmid:
             try:
                 msg = await stats_channel.fetch_message(int(cmid))
-                await msg.edit(content=text, view=view)
+                await msg.edit(
+                    content=text, view=view,
+                    allowed_mentions=mentions,
+                )
             except Exception:
-                # Сообщение удалено/недоступно — создаём заново.
+                # Сообщение удалено/недоступно — создаём заново
+                # (повторный пинг допустим: старого сообщения нет).
                 msg = await stats_channel.send(
-                    content=text, view=view
+                    content=text, view=view,
+                    allowed_mentions=mentions,
                 )
                 room["collect_message_id"] = msg.id
         else:
             msg = await stats_channel.send(
-                content=text, view=view
+                content=text, view=view,
+                allowed_mentions=mentions,
             )
             room["collect_message_id"] = msg.id
         room["collect_pending"] = False
@@ -3388,15 +3445,22 @@ async def finalize_room_collect(
 
 
 async def _stats_channel_for(guild, session):
-    """Канал прогресса/результатов комнаты (progress_channel_id)."""
-    ch_id = session.get("progress_channel_id")
-    if ch_id:
-        try:
-            return guild.get_channel(int(ch_id)) or await guild.fetch_channel(
-                int(ch_id)
-            )
-        except Exception:
-            pass
+    """Канал прогресса/результатов комнаты.
+
+    Приоритет — ``ocr_channel_id`` (канал, выбранный при создании
+    сессии: OCR_MAPPING_CHANNEL_ID для турниров, канал матча для
+    MM). Для старых сессий без него — ``progress_channel_id``:
+    опубликованные сообщения НЕ переносятся в другой канал.
+    """
+    for key in ("ocr_channel_id", "progress_channel_id"):
+        ch_id = session.get(key)
+        if ch_id:
+            try:
+                return guild.get_channel(int(ch_id)) or await guild.fetch_channel(
+                    int(ch_id)
+                )
+            except Exception:
+                pass
     return None
 
 
@@ -3902,16 +3966,37 @@ async def create_rooms_session(
         }
         tournament.ocr_sessions[key] = session
 
+        # Канал OCR-сообщений комнаты: MM-матчи — канал матча
+        # (channel), обычные турниры — OCR_MAPPING_CHANNEL_ID.
+        # ID фиксируется в сессии: все shot/collect/карточки
+        # одной комнаты живут в одном канале, старые сессии не
+        # переносятся.
+        ocr_channel = channel
+        if not getattr(tournament, "mm_search_channel_id", 0):
+            try:
+                ocr_channel = (
+                    guild.get_channel(OCR_MAPPING_CHANNEL_ID)
+                    or await guild.fetch_channel(OCR_MAPPING_CHANNEL_ID)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "OCR_MAPPING_CHANNEL_ID resolve failed: %s", exc
+                )
+                ocr_channel = None
+            if ocr_channel is None:
+                ocr_channel = channel
+        session["ocr_channel_id"] = getattr(ocr_channel, "id", channel.id)
+
         view = RoomCollectView(
             guild.id, tournament.channel_id, tournament,
             match_type, match_index, session["gen"],
         )
-        msg = await channel.send(
+        msg = await ocr_channel.send(
             content=replace_emojis(_rooms_progress_text(session)),
             view=view,
         )
         session["progress_message_id"] = msg.id
-        session["progress_channel_id"] = channel.id
+        session["progress_channel_id"] = ocr_channel.id
         store.set(tournament)
         return session
 
@@ -4257,16 +4342,19 @@ async def cancel_rooms_session(
     except Exception as e:
         logger.warning("rooms cancel card update failed: %s", e)
 
-    # Гасим сообщения комнат и прогресса (best effort)
+    # Гасим сообщения комнат и прогресса (best effort).
+    # Канал — сохранённый в сессии (ocr_channel_id), fallback —
+    # progress_channel_id для старых сессий.
     channel = None
-    try:
-        channel = guild.get_channel(
-            int(session.get("progress_channel_id") or 0)
-        ) or await guild.fetch_channel(
-            int(session.get("progress_channel_id") or 0)
-        )
-    except Exception:
-        pass
+    for ck in ("ocr_channel_id", "progress_channel_id"):
+        try:
+            cid = int(session.get(ck) or 0)
+            if cid:
+                channel = guild.get_channel(cid) or await guild.fetch_channel(cid)
+                if channel is not None:
+                    break
+        except Exception:
+            pass
     if channel is not None:
         try:
             prog_id = session.get("progress_message_id")
@@ -4566,7 +4654,12 @@ async def _accept_room_file(
             ephemeral=True,
         )
         return
-    stats_channel = await _stats_channel(interaction, tournament)
+    # Канал комнаты — сохранённый в сессии (ocr_channel_id →
+    # progress_channel_id), а не «текущий» канал interaction:
+    # все shot/collect/карточки одной комнаты в одном канале.
+    stats_channel = await _stats_channel_for(interaction.guild, session)
+    if stats_channel is None:
+        stats_channel = await _stats_channel(interaction, tournament)
     if stats_channel is None:
         stats_channel = interaction.channel
     res = await process_room_file(
