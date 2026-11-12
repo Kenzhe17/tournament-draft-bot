@@ -56,6 +56,8 @@ class FormationMode(str, Enum):
     ELO = "elo"
     RANDOM = "random"
     RANDOM_AUTO = "random-auto"  # Автоматическое распределение по SR
+    BALANCED_SR = "balanced_sr"  # Tournaments 2.0: SR 0–10, 4 группы
+    DRAFT = "draft"  # Tournaments 2.0: выбор капитанами
 
 
 # Порядок выбора по кругам для разного количества капитанов
@@ -237,6 +239,13 @@ class Tournament:
     # Выделенные каналы матчей (MM-флоу): channel_id -> {"match_type","match_index"}
     # Скриншот, присланный в такой канал, автоматически привязывается к матчу.
     match_channels: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # --- Tournaments 2.0 (Double Elimination) ---
+    # engine_version=1 — старая Single Elimination система;
+    # engine_version=2 — граф матчей DoubleElimEngine
+    # (services/double_elim.py), состояние в bracket_v2.
+    engine_version: int = 1
+    bracket_v2: dict[str, Any] = field(default_factory=dict)
 
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
@@ -1457,10 +1466,13 @@ class Tournament:
         """Преобразовать в словарь для JSON."""
         return {
             "guild_id": self.guild_id,
+            "id": self.id,
+            "creation_time": self.creation_time,
             "channel_id": self.channel_id,
             "message_id": self.message_id,
             "size": self.size.value,
             "registration": self.registration.value,
+            "formation_mode": self.formation_mode.value,
             "captains": self.captains,
             "circle1": self.circle1,
             "circle2": self.circle2,
@@ -1498,6 +1510,8 @@ class Tournament:
             "processed_elo_matches": list(self.processed_elo_matches),
             "match_channels": self.match_channels,
             "ocr_sessions": self.ocr_sessions,
+            "engine_version": self.engine_version,
+            "bracket_v2": self.bracket_v2,
         }
 
     @classmethod
@@ -1509,6 +1523,7 @@ class Tournament:
             message_id=data.get("message_id", 0),
             size=TournamentSize(data.get("size", "8")),
             registration=RegistrationState(data.get("registration", "closed")),
+            formation_mode=FormationMode(data.get("formation_mode", "elo")),
             captains=data.get("captains", []),
             circle1=data.get("circle1", []),
             circle2=data.get("circle2", []),
@@ -1549,7 +1564,18 @@ class Tournament:
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
             match_channels=data.get("match_channels", {}),
             ocr_sessions=data.get("ocr_sessions", {}),
+            engine_version=data.get("engine_version", 1),
+            bracket_v2=data.get("bracket_v2", {}),
         )
         # Set created_at after initialization since it's init=False
         t.created_at = data.get("created_at", __import__('datetime').datetime.now().isoformat())
+        # Восстановить стабильный tournament_id — id/creation_time
+        # init=False и генерируются заново; без этого ключи
+        # processed_elo_matches и OCR-сессий теряют связь.
+        if data.get("creation_time"):
+            t.creation_time = data["creation_time"]
+        if data.get("id"):
+            t.id = data["id"]
+        else:
+            t.id = f"{t.guild_id}_{t.creation_time}"
         return t
