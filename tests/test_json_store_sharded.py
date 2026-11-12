@@ -507,9 +507,15 @@ class TestTombstones:
         # Новый shard есть, tombstone ещё не убран (имитация)
         t = _t(1, 2, "New")
         (shard_env / "tournaments").mkdir(exist_ok=True)
-        (shard_env / "tournaments" / "1_2.json").write_text(
-            json.dumps(t.to_dict())
-        )
+        shard_path = shard_env / "tournaments" / "1_2.json"
+        shard_path.write_text(json.dumps(t.to_dict()))
+        # На Windows mtime может совпасть с tombstone (та же
+        # метка времени при быстрой записи) — фиксируем shard
+        # строго новее, иначе тест флаки.
+        import os
+        tomb = shard_env / "tombstones" / "1_2.json"
+        tmt = tomb.stat().st_mtime if tomb.exists() else 0.0
+        os.utime(shard_path, (tmt + 5.0, tmt + 5.0))
         # tombstone старше shard — естественно, т.к. создан раньше
         s2 = js.JsonStore()
         assert s2.get(1, 2).team_names["0"] == "New"

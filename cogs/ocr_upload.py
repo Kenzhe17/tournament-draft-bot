@@ -1941,7 +1941,7 @@ async def _update_progress_message(
 
 async def _publish_room_message(
     stats_channel, tournament, message, items: list[dict],
-    room: dict, match_type: str, match_index: int, t1: int, t2: int,
+    room: dict, match_type: str, match_index: int,
 ) -> None:
     """Сообщение комнаты: скриншот(ы) + кнопки сопоставления (RoomView)."""
     from views.ocr_match_view import RoomView
@@ -2102,8 +2102,8 @@ async def _update_rooms_progress(
     total = int(session.get("rooms_expected") or 0)
     done = _rooms_completed_count(session)
     if prog_id and stats_channel is not None:
-        from views.ocr_match_view import RoomCollectView
-
+        # RoomCollectView определён в этом же модуле (ниже по файлу) —
+        # импорт из views.ocr_match_view здесь невозможен (цикл).
         complete = done >= total and total > 0
         view = None if complete else RoomCollectView(
             guild.id, tournament.channel_id, tournament,
@@ -2179,7 +2179,7 @@ async def process_room_bundle(
     Комната определяется room_index, а не порядком загрузки.
 
     Коды: "ok" | "dup" | "invalid" | "parse_fail" | "room_done" |
-    "cancelled" | "error".
+    "cancelled" | "publish_fail" | "error".
     """
     import hashlib
 
@@ -2194,7 +2194,11 @@ async def process_room_bundle(
         (r for r in rooms if int(r.get("room_index", 0)) == room_index),
         None,
     )
-    if room is not None and _room_has_panels(room):
+    room_done = room is not None and _room_has_panels(room)
+    # Комната распознана, но сообщение с кнопками не опубликовано —
+    # восстанавливаем только интерфейс, без повторного OCR/статистики.
+    needs_republish = room_done and not room.get("message_id")
+    if room_done and not needs_republish:
         return "room_done"
     if room is None:
         room = {
@@ -2225,6 +2229,12 @@ async def process_room_bundle(
         known.discard(room["sha"])
     if any(s in known for s in shas):
         return "dup"
+
+    if needs_republish:
+        return await _republish_room_interface(
+            guild, channel, tournament, key, session, stats_channel,
+            room_index, items, match_type, match_index,
+        )
 
     # Файлы приняты в обработку — сразу прячем «Отправить результат»
     # в карточке матча, не дожидаясь завершения OCR.
@@ -2306,17 +2316,88 @@ async def process_room_bundle(
     session["rooms_received"] = _rooms_completed_count(session)
     store.set(tournament)
 
-    # Сообщение комнаты: все её скриншоты + кнопки маппинга
-    try:
-        await _publish_room_message(
-            stats_channel, tournament, channel, items, room,
-            match_type, match_index,
-        )
-    except Exception as e:
-        logger.warning("Room bundle message publish failed: %s", e)
+    # Сообщение комнаты: все её скриншоты + кнопки маппинга.
+    # Публикация обязательна: без сообщения с кнопками комплект
+    # нельзя завершить — при сбое повторяем один раз, иначе
+    # возвращаем publish_fail (panels уже сохранены, повторная
+    # загрузка тех же файлов восстановит интерфейс через
+    # needs_republish-ветку выше).
+    for attempt in range(2):
+        try:
+            await _publish_room_message(
+                stats_channel, tournament, channel, items, room,
+                match_type, match_index,
+            )
+            break
+        except Exception as e:
+            logger.warning(
+                "Room bundle message publish attempt %d failed: %s",
+                attempt + 1, e,
+            )
+    else:
+        return "publish_fail"
 
     await _update_rooms_progress(
         guild, tournament, key, match_type, match_index, stats_channel,
+    )
+    return "ok"
+
+
+async def _republish_room_interface(
+    guild: discord.Guild,
+    channel,
+    tournament,
+    key: str,
+    session: dict,
+    stats_channel,
+    room_index: int,
+    items: list[dict],
+    match_type: str,
+    match_index: int,
+) -> str:
+    """Повторно опубликовать ТОЛЬКО интерфейс комнаты (скриншоты +
+    кнопки сопоставления), если OCR уже завершён, но сообщение не
+    было отправлено.
+
+    Статистика не пересчитывается и не дублируется: panels/sha уже
+    сохранены в сессии, ELO начисляется только при финализации.
+    Отменённые/финализированные сессии и устаревшие gen пропускаются.
+    """
+    fresh = store.get(guild.id, tournament.channel_id)
+    fs = (fresh.ocr_sessions.get(key) if fresh else None) or {}
+    if (
+        fs.get("mode") != "rooms"
+        or fs.get("status") not in ("collecting", "awaiting_mapping")
+        or fs.get("gen") != session.get("gen", 1)
+    ):
+        return "cancelled"
+    room = next(
+        (
+            r for r in fs.get("rooms") or []
+            if int(r.get("room_index", 0)) == room_index
+        ),
+        None,
+    )
+    if room is None or not _room_has_panels(room) or room.get("message_id"):
+        return "room_done"
+
+    for attempt in range(2):
+        try:
+            await _publish_room_message(
+                stats_channel, fresh, channel, items, room,
+                match_type, match_index,
+            )
+            break
+        except Exception as e:
+            logger.warning(
+                "Room interface republish attempt %d failed: %s",
+                attempt + 1, e,
+            )
+    else:
+        return "publish_fail"
+
+    await _update_rooms_progress(
+        guild, fresh, key, match_type, match_index, stats_channel,
     )
     return "ok"
 
@@ -3127,6 +3208,12 @@ class RoomUploadModal(Modal):
                 "или обратитесь к администратору."
             ),
             "cancelled": "⚠️ Сессия загрузки была отменена.",
+            "publish_fail": (
+                "❌ Статистика распознана, но сообщение с кнопками "
+                "не удалось опубликовать. Повторите загрузку тех же "
+                "скриншотов — интерфейс восстановится без повторного "
+                "подсчёта. Если ошибка повторится — администратору."
+            ),
         }
         await interaction.followup.send(
             replace_emojis(messages.get(res, "❌ Ошибка обработки — попробуйте ещё раз.")),

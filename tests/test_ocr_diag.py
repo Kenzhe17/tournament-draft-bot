@@ -177,7 +177,7 @@ class TestRunModes:
     async def test_fast_success(self, monkeypatch, cog):
         async def fake_fast(data, **kw):
             return _parsed()
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="fast")
         assert ix.embed is not None
@@ -198,7 +198,7 @@ class TestRunModes:
             assert fast is False
             return _pipeline_result()
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         import services.fast_cs_ocr as fco
         monkeypatch.setattr(fco, "last_fallback_reason", lambda: "no_anchor_right")
@@ -220,7 +220,7 @@ class TestRunModes:
             assert fast is False
             return _pipeline_result()
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="full")
@@ -235,7 +235,7 @@ class TestRunModes:
         async def fake_classic(data, need_score=True, fast=True):
             return _pipeline_result(kills=9)  # kills отличаются
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="compare")
@@ -252,7 +252,7 @@ class TestRunModes:
         async def fake_classic(data, need_score=True, fast=True):
             return _pipeline_result()
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="compare")
@@ -266,7 +266,7 @@ class TestRunModes:
         async def fake_classic(data, need_score=True, fast=True):
             return None
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="compare")
@@ -286,7 +286,7 @@ class TestRunModes:
         async def fake_classic(data, need_score=True, fast=True):
             return _pipeline_result()
 
-        monkeypatch.setattr("cogs.ocr_upload._fast_parse_cs", fake_fast)
+        monkeypatch.setattr("services.fast_cs_ocr.parse_cs_fast", fake_fast)
         monkeypatch.setattr("cogs.ocr_upload._classic_pipeline", fake_classic)
         ix = _IX(user_id=111)
         await cog.ocr.callback(cog, ix, image=_Att(), mode="compare")

@@ -212,6 +212,15 @@ def warmup() -> None:
         _get_cyrillic_ocr()(dummy)
     except Exception:
         logger.warning("Cyrillic OCR warmup failed", exc_info=True)
+    # Fast det-only движок — вторая ONNX-сессия; без прогрева первый
+    # матч платил бы ~1–2с на её init.
+    try:
+        from services import fast_cs_ocr
+
+        fast_cs_ocr._get_fast_det()
+        fast_cs_ocr._detect_boxes(dummy[:, :, ::-1])
+    except Exception:
+        logger.warning("Fast det warmup failed", exc_info=True)
 
 
 def ocr_image_region(

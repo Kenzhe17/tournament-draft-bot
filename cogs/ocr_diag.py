@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 import time
 
 import discord
@@ -236,7 +237,7 @@ class OCRDiagCog(commands.Cog):
             )
         img_w, img_h = size
 
-        from cogs.ocr_upload import _classic_pipeline, _fast_parse_cs
+        from cogs.ocr_upload import _classic_pipeline
         from services import fast_cs_ocr
         from services.ocr_service import ocr_score_fallback, OCR_EXECUTOR
 
@@ -247,15 +248,26 @@ class OCRDiagCog(commands.Cog):
         fast_sum = None
         full_sum = None
         score_fb_ms = 0.0
+        fast_enabled = os.environ.get("OCR_FAST_ENABLED", "1") == "1"
 
         async def _fast_once() -> dict | None:
             nonlocal fast_status, fast_reason, score_fb_ms
+            if not fast_enabled:
+                fast_status = "disabled"
+                fast_reason = "OCR_FAST_ENABLED=0"
+                return None
+            reason_box: list[str] = []
             t0 = time.perf_counter()
-            parsed = await _fast_parse_cs(data)
+            parsed = await fast_cs_ocr.parse_cs_fast(data, reason_out=reason_box)
             timings["fast_ms"] = (time.perf_counter() - t0) * 1000.0
             if parsed is None:
                 fast_status = "fallback"
-                fast_reason = fast_cs_ocr.last_fallback_reason() or "validation_failed"
+                fast_reason = (
+                    reason_box[0]
+                    if reason_box
+                    else fast_cs_ocr.last_fallback_reason()
+                    or "validation_failed"
+                )
                 return None
             # Как в боевом pipeline: досчитать счёт при промахе.
             if parsed.get("score") is None:
@@ -277,15 +289,18 @@ class OCRDiagCog(commands.Cog):
             return _result_summary(res)
 
         t_e2e = time.perf_counter()
-        if mode == "fast":
-            fast_sum = await _fast_once()
-            if fast_sum is None:
+        # Семафор: не более 2 параллельных диагностических прогонов —
+        # OCR executor общий с боевым pipeline.
+        async with _OCR_DIAG_SLOTS:
+            if mode == "fast":
+                fast_sum = await _fast_once()
+                if fast_sum is None:
+                    full_sum = await _full_once()
+            elif mode == "full":
                 full_sum = await _full_once()
-        elif mode == "full":
-            full_sum = await _full_once()
-        else:  # compare — независимые прогоны в одинаковых условиях
-            fast_sum = await _fast_once()
-            full_sum = await _full_once()
+            else:  # compare — независимые прогоны в одинаковых условиях
+                fast_sum = await _fast_once()
+                full_sum = await _full_once()
         e2e_ms = (time.perf_counter() - t_e2e) * 1000.0
 
         # Экран/команды — из успешного результата (fast приоритетнее,
@@ -329,6 +344,10 @@ class OCRDiagCog(commands.Cog):
                 fb = f"⚠️ fallback ({fast_reason}) — {timings.get('fast_ms', 0):.0f} мс"
                 if score_fb_ms:
                     fb += f" +score {score_fb_ms:.0f} мс"
+            elif fast_status == "disabled":
+                fb = f"⏭️ disabled ({fast_reason})"
+            else:
+                fb = "—"
             embed.add_field(name="Fast OCR", value=fb, inline=False)
         if mode != "fast" or full_sum is not None:
             fv = "не запускался"

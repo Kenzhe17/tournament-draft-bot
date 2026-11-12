@@ -125,6 +125,109 @@ def _header_kind(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+class _DetOnlyEngine:
+    """Только det-сессия RapidOCR v1 — без cls/rec ONNX-сессий.
+
+    RapidOCR() v1 создаёт TextDetector+TextClassifier+TextRecognizer
+    безусловно — «det-only» движок на нём всё равно грузил все три
+    модели (~лишние сотни МБ RSS и медленный init). Здесь — только
+    TextDetector(config["Det"]) + та же геометрия preprocess/
+    letterbox/origin-points, что у RapidOCR.
+    """
+
+    def __init__(self, max_side_len: int = 640) -> None:
+        import rapidocr_onnxruntime.main as _rom
+        from rapidocr_onnxruntime.ch_ppocr_det import TextDetector
+        from rapidocr_onnxruntime.utils import (
+            UpdateParameters,
+            add_round_letterbox,
+            increase_min_side,
+            read_yaml,
+            reduce_max_side,
+            update_model_path,
+        )
+
+        config = update_model_path(read_yaml(_rom.DEFAULT_CFG_PATH))
+        config = UpdateParameters()(config, max_side_len=max_side_len)
+        g = config["Global"]
+        self.max_side_len = g["max_side_len"]
+        self.min_side_len = g["min_side_len"]
+        self.min_height = g["min_height"]
+        self.width_height_ratio = g["width_height_ratio"]
+        self.text_det = TextDetector(config["Det"])
+        self._reduce_max_side = staticmethod(reduce_max_side)
+        self._increase_min_side = staticmethod(increase_min_side)
+        self._add_round_letterbox = staticmethod(add_round_letterbox)
+
+    def preprocess(self, img: np.ndarray):
+        h, w = img.shape[:2]
+        max_value = max(h, w)
+        ratio_h = ratio_w = 1.0
+        if max_value > self.max_side_len:
+            img, ratio_h, ratio_w = self._reduce_max_side(
+                img, self.max_side_len
+            )
+        h, w = img.shape[:2]
+        min_value = min(h, w)
+        if min_value < self.min_side_len:
+            img, ratio_h, ratio_w = self._increase_min_side(
+                img, self.min_side_len
+            )
+        return img, ratio_h, ratio_w
+
+    def maybe_add_letterbox(self, img: np.ndarray, op_record: dict):
+        from rapidocr_onnxruntime.main import RapidOCR
+
+        h, w = img.shape[:2]
+        if self.width_height_ratio == -1:
+            use_limit_ratio = False
+        else:
+            use_limit_ratio = w / h > self.width_height_ratio
+        if h <= self.min_height or use_limit_ratio:
+            new_h = max(
+                int(w / self.width_height_ratio), self.min_height
+            ) * 2
+            padding_h = int(abs(new_h - h) / 2)
+            block_img = self._add_round_letterbox(
+                img, (padding_h, padding_h, 0, 0)
+            )
+            op_record["padding_1"] = {"top": padding_h, "left": 0}
+            return block_img, op_record
+        op_record["padding_1"] = {"top": 0, "left": 0}
+        return img, op_record
+
+    def auto_text_det(self, img: np.ndarray):
+        from rapidocr_onnxruntime.main import RapidOCR
+
+        dt_boxes, det_elapse = self.text_det(img)
+        if dt_boxes is None or len(dt_boxes) < 1:
+            return None, 0.0
+        dt_boxes = RapidOCR.sorted_boxes(dt_boxes)
+        return dt_boxes, det_elapse
+
+    def _get_origin_points(self, dt_boxes, op_record, raw_h, raw_w):
+        dt_boxes_array = np.array(dt_boxes).astype(np.float32)
+        for op in reversed(list(op_record.keys())):
+            v = op_record[op]
+            if "padding" in op:
+                top, left = v.get("top"), v.get("left")
+                dt_boxes_array[:, :, 0] -= left
+                dt_boxes_array[:, :, 1] -= top
+            elif "preprocess" in op:
+                ratio_h = v.get("ratio_h")
+                ratio_w = v.get("ratio_w")
+                dt_boxes_array[:, :, 0] *= ratio_w
+                dt_boxes_array[:, :, 1] *= ratio_h
+        dt_boxes_array = np.where(dt_boxes_array < 0, 0, dt_boxes_array)
+        dt_boxes_array[..., 0] = np.where(
+            dt_boxes_array[..., 0] > raw_w, raw_w, dt_boxes_array[..., 0]
+        )
+        dt_boxes_array[..., 1] = np.where(
+            dt_boxes_array[..., 1] > raw_h, raw_h, dt_boxes_array[..., 1]
+        )
+        return dt_boxes_array
+
+
 _FAST_DET_ENGINE = None
 
 
@@ -133,18 +236,13 @@ def _get_fast_det():
 
     PP-OCRv6 det_small на ~640px вместо ~960px: на реальных
     скриншотах теряет <5% боксов, но работает заметно быстрее.
-    cls/rec модели не загружаются (use_cls/use_rec=False) —
-    recognition идёт через основной движок на кропах исходного
-    разрешения.
+    cls/rec модели не загружаются — recognition идёт через основной
+    движок на кропах исходного разрешения.
     """
     global _FAST_DET_ENGINE
     if _FAST_DET_ENGINE is None:
         try:
-            from rapidocr_onnxruntime import RapidOCR
-
-            _FAST_DET_ENGINE = RapidOCR(
-                max_side_len=640, use_cls=False, use_rec=False
-            )
+            _FAST_DET_ENGINE = _DetOnlyEngine(max_side_len=640)
         except Exception:
             logger.warning("fast det engine init failed", exc_info=True)
             _FAST_DET_ENGINE = False
@@ -628,13 +726,26 @@ def _parse_name_cell(items: list[tuple[str, float]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _extract_parsed(data: bytes) -> dict[str, Any] | None:
-    """Sync-версия: bytes → parsed dict (формат parse_cs_results)."""
+def _extract_parsed(
+    data: bytes,
+    t_submit: float | None = None,
+    reason_out: list | None = None,
+) -> dict[str, Any] | None:
+    """Sync-версия: bytes → parsed dict (формат parse_cs_results).
+
+    t_submit — метка submit в OCR_EXECUTOR (для queue-wait метрики).
+    reason_out — необязательный list: причина fallback дописывается
+    туда (per-call, без гонки глобального состояния).
+    """
     import cv2
     from PIL import Image
 
     t0 = time.perf_counter()
     timings: dict[str, float] = {}
+    if reason_out is not None:
+        timings["_reason_sink"] = reason_out
+    if t_submit is not None:
+        timings["queue_ms"] = max(0.0, (t0 - t_submit) * 1000.0)
     if _PANEL_DEBUG:
         _PANEL_FAILS.clear()
 
@@ -648,17 +759,19 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
             img = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
         except Exception:
             return None
+    timings["decode_ms"] = (time.perf_counter() - t0) * 1000
     img_h, img_w = img.shape[:2]
     if img_w < 200 or img_h < 200:
         return None
 
     # --- Этап 1: det ---
+    t_det = time.perf_counter()
     det = _detect_boxes(img)
+    timings["det_ms"] = (time.perf_counter() - t_det) * 1000
     if det is None:
         _record_metrics(timings, t0, ok=False, reason="no_det")
         return None
     _img_padded, _dt_boxes, orig = det
-    timings["det_ms"] = (time.perf_counter() - t0) * 1000
 
     boxes = [
         _to_box_dict(orig[i], i) for i in range(len(orig))
@@ -685,6 +798,8 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     rect_rec = _RectRec(eng, img)
 
     # --- Этапы 3–5: anchors/rows/cols для обеих панелей ---
+    # (включает header-rec: распознавание строк-кандидатов заголовков)
+    t_anch = time.perf_counter()
     geoms = []
     for side, pboxes in (("left", left_boxes), ("right", right_boxes)):
         g = _panel_geometry(pboxes, boundary, img_w, img_h, side, rec)
@@ -692,10 +807,11 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
             _record_metrics(timings, t0, ok=False, reason=f"no_anchor_{side}")
             return None
         geoms.append(g)
-    timings["anchors_ms"] = (time.perf_counter() - t0) * 1000
+    timings["anchors_ms"] = (time.perf_counter() - t_anch) * 1000
 
     # --- Этап 6: выбор det-боксов для rec ячеек ---
     # cell_jobs: (panel_i, row_i, col) -> [member boxes]
+    t_cell = time.perf_counter()
     cell_members: dict[tuple, list[dict]] = {}
     for pi, g in enumerate(geoms):
         pboxes = g["panel_boxes"]
@@ -740,7 +856,7 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
             rec.want(b["idx"])
     rec.flush()
     rect_results = rect_rec.flush()
-    timings["cells_ms"] = (time.perf_counter() - t0) * 1000
+    timings["cells_ms"] = (time.perf_counter() - t_cell) * 1000
 
     # --- Этап 7: верхняя/нижняя полосы (счёт, баннер, top5) ---
     # Счёт «N VS M» сидит всего в ~1 pitch над заголовком — полоса
@@ -768,6 +884,7 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     # Счёт «N VS M»: одиночные цифры сена на быстрой det-модели
     # могут не давать det-боксов — добираем rect-rec полосами
     # ±0.16w вокруг «VS» и добавляем как синтетические боксы.
+    t_score = time.perf_counter()
     score_extra: list[dict] = []
     vs_b = None
     for b in boxes:
@@ -842,6 +959,8 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
                         "cx": cx, "cy": vs_b["cy"],
                     }
                 )
+
+    timings["score_ms"] = (time.perf_counter() - t_score) * 1000
 
     # --- Этап 8: сборка players ---
     box_by_idx = {b["idx"]: b for b in boxes}
@@ -1022,6 +1141,12 @@ def last_fallback_reason() -> str:
 def _record_metrics(timings: dict, t0: float, *, ok: bool, reason: str = "") -> None:
     global LAST_FALLBACK_REASON
     LAST_FALLBACK_REASON = "" if ok else reason
+    # Per-call sink: точная причина для конкретного вызова (диагностика),
+    # в отличие от глобальной LAST_FALLBACK_REASON, которая гонится
+    # при параллельных прогонах.
+    sink = timings.pop("_reason_sink", None)
+    if sink is not None and not ok:
+        sink.append(reason)
     try:
         from utils import perf_metrics
 
@@ -1036,15 +1161,23 @@ def _record_metrics(timings: dict, t0: float, *, ok: bool, reason: str = "") -> 
         pass
 
 
-async def parse_cs_fast(data: bytes) -> dict[str, Any] | None:
+async def parse_cs_fast(
+    data: bytes, reason_out: list | None = None
+) -> dict[str, Any] | None:
     """Async-обёртка: anchor-based fast OCR → parsed dict или None.
 
     None = fast-путь не сработал → вызывающий код обязан запустить
     полный RapidOCR pipeline (fallback гарантирует точность).
+    reason_out — per-call список для причины fallback.
     """
     import asyncio
+    import functools
 
     from services.ocr_service import OCR_EXECUTOR
 
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(OCR_EXECUTOR, _extract_parsed, data)
+    t_submit = time.perf_counter()
+    return await loop.run_in_executor(
+        OCR_EXECUTOR,
+        functools.partial(_extract_parsed, data, t_submit, reason_out),
+    )
