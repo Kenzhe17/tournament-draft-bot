@@ -112,14 +112,20 @@ def save_state(state: OrgSlotState) -> None:
 class TakeRoleButton(discord.ui.Button):
     """Кнопка для взятия роли организатора."""
 
-    def __init__(self, state: OrgSlotState, role_id: int, role_name: str):
+    def __init__(
+        self, state: OrgSlotState, role_id: int, role_name: str,
+        slot: int = 0,
+    ):
         holders = state.get_holders(role_id)
         is_full = len(holders) >= MAX_ORG_ROLE_HOLDERS
         super().__init__(
             label=f"Взять {role_name}",
             style=discord.ButtonStyle.green if not is_full else discord.ButtonStyle.red,
             disabled=is_full,
-            custom_id=f"org_take_role_{role_id}"
+            # slot-суффикс: при совпадающих/нулевых ORG_*_ROLE_ID
+            # custom_id всё равно уникален — Discord не отклоняет
+            # сообщение целиком.
+            custom_id=f"org_take_role_{role_id}_{slot}"
         )
         self.state = state
         self.role_id = role_id
@@ -193,11 +199,14 @@ class TakeRoleButton(discord.ui.Button):
 class ReleaseRoleButton(discord.ui.Button):
     """Кнопка для сдачи роли организатора."""
 
-    def __init__(self, state: OrgSlotState, role_id: int, role_name: str):
+    def __init__(
+        self, state: OrgSlotState, role_id: int, role_name: str,
+        slot: int = 0,
+    ):
         super().__init__(
             label=f"Сдать {role_name}",
             style=discord.ButtonStyle.red,
-            custom_id=f"org_release_role_{role_id}"
+            custom_id=f"org_release_role_{role_id}_{slot}"
         )
         self.state = state
         self.role_id = role_id
@@ -403,7 +412,7 @@ class RoleSelectionView(discord.ui.View):
         user = guild.get_member(user_id)
         user_role_ids = [role.id for role in user.roles] if user else []
 
-        for role_id, role_name in roles:
+        for slot, (role_id, role_name) in enumerate(roles):
             # Check if user has this role
             has_role = role_id in user_role_ids
             # Check if role is full
@@ -414,10 +423,14 @@ class RoleSelectionView(discord.ui.View):
 
             if has_role or (is_admin and len(holders) > 0):
                 # User has role OR admin can release - show release button
-                self.add_item(ReleaseRoleButton(state, role_id, role_name))
+                self.add_item(
+                    ReleaseRoleButton(state, role_id, role_name, slot)
+                )
             else:
                 # Always show take button, even if full (will show error in callback)
-                self.add_item(TakeRoleButton(state, role_id, role_name))
+                self.add_item(
+                    TakeRoleButton(state, role_id, role_name, slot)
+                )
 
         # Add back button
         self.add_item(BackButton())
