@@ -675,6 +675,60 @@ class TournamentBot(commands.Bot):
                             session.get("match_type"), e,
                         )
 
+            # Рабочие карточки матчей обычных турниров: кнопка
+            # «Загрузить скриншоты» должна работать после рестарта.
+            # Пропускаем MM, завершённые матчи и матчи с активной
+            # сессией (их сообщение обслуживает progress/confirm view).
+            if not getattr(tournament, "mm_search_channel_id", 0):
+                try:
+                    from services.match_announcer import (
+                        _bracket_winner_index,
+                        match_control_view,
+                    )
+                    from views.ocr_match_view import match_is_finished
+
+                    active_keys = {
+                        k for k, s in (tournament.ocr_sessions or {}).items()
+                        if s.get("status") not in (
+                            None, "completed", "cancelled"
+                        )
+                    }
+                    for mkey, mc in (tournament.match_cards or {}).items():
+                        wid = mc.get("work_message_id")
+                        if not wid or mkey in active_keys:
+                            continue
+                        try:
+                            mt, mi_s = mkey.split("_", 1)
+                            mi = int(mi_s)
+                        except (ValueError, AttributeError):
+                            continue
+                        if match_is_finished(
+                            tournament, mt, mi
+                        ) or _bracket_winner_index(
+                            tournament, mt, mi
+                        ) is not None:
+                            continue
+                        try:
+                            self.add_view(
+                                match_control_view(
+                                    tournament.guild_id,
+                                    tournament.channel_id,
+                                    tournament, mt, mi,
+                                    finished=False,
+                                ),
+                                message_id=int(wid),
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                "Match control view restore failed "
+                                "for %s: %s", mkey, e,
+                            )
+                except Exception as e:
+                    logger.warning(
+                        "Match control views restore failed for %s: %s",
+                        tournament.id, e,
+                    )
+
             # Карточки «🔓 Комната открыта» с card_pending —
             # безопасная переотправка после рестарта: при живом
             # card_message_id только снимается флаг, дублей нет.

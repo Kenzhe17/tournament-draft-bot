@@ -269,6 +269,12 @@ class Tournament:
     # Скриншот, присланный в такой канал, автоматически привязывается к матчу.
     match_channels: dict[str, dict[str, Any]] = field(default_factory=dict)
 
+    # Карточки матчей обычных турниров: "{match_type}_{match_index}" ->
+    # {"public_message_id","public_channel_id","work_message_id",
+    #  "work_channel_id","sig"}. Публичная карточка — в канале турнира,
+    # рабочая — в OCR-канале (одно сообщение на матч, редактируется).
+    match_cards: dict[str, dict[str, Any]] = field(default_factory=dict)
+
     # Betting system - new timer-based system
     betting_phase_start_time: float | None = None  # When betting started for current phase
     betting_phase: str | None = None  # "qualifiers", "semifinal", "final"
@@ -1652,6 +1658,7 @@ class Tournament:
             "mm_preset_channel_id": self.mm_preset_channel_id,
             "processed_elo_matches": list(self.processed_elo_matches),
             "match_channels": self.match_channels,
+            "match_cards": self.match_cards,
             "ocr_sessions": self.ocr_sessions,
         }
 
@@ -1714,6 +1721,7 @@ class Tournament:
             mm_preset_channel_id=data.get("mm_preset_channel_id", 0),
             processed_elo_matches=set(data.get("processed_elo_matches", [])),
             match_channels=data.get("match_channels", {}),
+            match_cards=data.get("match_cards", {}),
             ocr_sessions=data.get("ocr_sessions", {}),
         )
         # Set created_at after initialization since it's init=False

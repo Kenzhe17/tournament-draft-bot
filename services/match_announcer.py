@@ -277,8 +277,20 @@ async def update_match_card(
     """Обновить карточку матча в канале cs-4x4-match-N (MM-флоу).
 
     Ищет канал по tournament.match_channels, пересобирает V2-карточку
-    с новым состоянием результата. Не-MM турниры молча пропускаются.
+    с новым состоянием результата. Не-MM турниры: единая точка
+    обновления публичной карточки матча и рабочего OCR-сообщения.
     """
+    if not getattr(tournament, "mm_search_channel_id", 0):
+        try:
+            await update_public_match_card(
+                guild, tournament, match_type, match_index
+            )
+            await refresh_match_control(
+                guild, tournament, match_type, match_index
+            )
+        except Exception as exc:
+            logger.warning("match card public update failed: %s", exc)
+        return
     channel_id = 0
     meta: dict | None = None
     for ch_id, m in (tournament.match_channels or {}).items():
@@ -335,6 +347,411 @@ async def update_match_card(
         await msg.edit(view=view)
     except Exception as exc:
         logger.warning("Match card update failed: %s", exc)
+
+
+def _mc_key(match_type: str, match_index: int) -> str:
+    return f"{match_type}_{match_index}"
+
+
+def _bracket_winner_index(
+    tournament: Tournament, match_type: str, match_index: int
+) -> int | None:
+    """Зафиксированный победитель матча в сетке (None — не определён)."""
+    try:
+        if match_type == "qualifier":
+            w = (tournament.qualifier_winners or [])[match_index]
+        elif match_type == "semifinal":
+            w = (tournament.semifinal_winners or [])[match_index]
+        elif match_type == "final":
+            w = tournament.winner_team_index
+        else:
+            return None
+    except (IndexError, TypeError):
+        return None
+    try:
+        return int(w) if w is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _rooms_played(tournament: Tournament, match_type: str,
+                  match_index: int) -> int:
+    """Количество сыгранных комнат матча (для публичной карточки)."""
+    session = (tournament.ocr_sessions or {}).get(
+        _mc_key(match_type, match_index)
+    ) or {}
+    rooms = session.get("rooms") or []
+    if rooms:
+        return len(rooms)
+    if session.get("mode") in ("squad", "classic") or session.get(
+        "message_id"
+    ):
+        return 1
+    return 0
+
+
+def _public_match_state(
+    tournament: Tournament, match_type: str, match_index: int
+) -> str:
+    """active | processing | done — публичный статус карточки матча."""
+    from views.ocr_match_view import match_is_finished
+
+    if _bracket_winner_index(tournament, match_type, match_index) is not None:
+        return "done"
+    if match_is_finished(tournament, match_type, match_index):
+        return "done"
+    session = (tournament.ocr_sessions or {}).get(
+        _mc_key(match_type, match_index)
+    )
+    if session and session.get("status") not in (
+        None, "completed", "cancelled"
+    ):
+        return "processing"
+    return "active"
+
+
+def _public_match_text(
+    tournament: Tournament, match_type: str, match_index: int
+) -> str:
+    """Текст публичной карточки матча (обычные турниры, без пингов)."""
+    from cogs.ocr_upload import _captain_name, _match_label
+    from views.ocr_match_view import _match_tuple
+
+    t1, t2 = _match_tuple(tournament, match_type, match_index)
+    name_a = _captain_name(tournament, t1)
+    name_b = _captain_name(tournament, t2)
+    label = _match_label(match_type, match_index)
+    state = _public_match_state(tournament, match_type, match_index)
+
+    lines = [
+        f"**{label} — {name_a} vs {name_b}**",
+        "",
+        f"**{name_a}**",
+        _roster_names(tournament, t1),
+        "",
+        f"**{name_b}**",
+        _roster_names(tournament, t2),
+    ]
+    if state == "done":
+        winner = _bracket_winner_index(tournament, match_type, match_index)
+        wname = (
+            _captain_name(tournament, winner)
+            if winner is not None else "—"
+        )
+        lines += [
+            "",
+            f"**Победитель:** {wname}",
+            f"**Комнат сыграно:** {_rooms_played(tournament, match_type, match_index)}",
+            "**Статус:** Завершён",
+        ]
+    elif state == "processing":
+        lines += ["", "**Статус:** Проверка результатов"]
+    else:
+        lines += ["", "**Статус:** Ожидание результатов"]
+    return "\n".join(lines)
+
+
+async def update_public_match_card(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> None:
+    """Создать/обновить ЕДИНСТВЕННОЕ публичное сообщение матча
+    в канале турнира. Идемпотентно: без изменений контента
+    редактирование не выполняется (sig-кэш), удалённое сообщение
+    пересоздаётся с сохранением ID."""
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    key = _mc_key(match_type, match_index)
+    try:
+        channel = guild.get_channel(tournament.channel_id)
+        if channel is None:
+            channel = await guild.fetch_channel(tournament.channel_id)
+    except Exception:
+        return
+    if channel is None:
+        return
+    mcards = getattr(tournament, "match_cards", None)
+    if mcards is None:
+        mcards = {}
+        try:
+            tournament.match_cards = mcards
+        except Exception:
+            pass
+    entry = mcards.setdefault(key, {})
+    try:
+        text = _public_match_text(tournament, match_type, match_index)
+    except Exception as exc:
+        logger.warning("public match card text failed: %s", exc)
+        return
+    import hashlib
+
+    sig = hashlib.sha1(text.encode()).hexdigest()[:16]
+    mid = entry.get("public_message_id")
+    msg = None
+    if mid:
+        try:
+            msg = await channel.fetch_message(int(mid))
+        except Exception:
+            msg = None
+    created = False
+    if msg is None:
+        try:
+            msg = await channel.send(
+                content=replace_emojis_safe(text),
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            entry["public_message_id"] = msg.id
+            entry["public_channel_id"] = channel.id
+            created = True
+        except Exception as exc:
+            logger.warning("public match card send failed: %s", exc)
+            return
+    if not created and entry.get("sig") != sig:
+        try:
+            await msg.edit(
+                content=replace_emojis_safe(text), view=None
+            )
+        except Exception as exc:
+            logger.warning("public match card edit failed: %s", exc)
+    entry["sig"] = sig
+    try:
+        store.set(tournament)
+    except Exception:
+        pass
+
+
+def replace_emojis_safe(text: str) -> str:
+    try:
+        from config import replace_emojis
+
+        return replace_emojis(text)
+    except Exception:
+        return text
+
+
+def _control_content(
+    tournament: Tournament, match_type: str, match_index: int
+) -> tuple[str, bool]:
+    """(текст, finished) рабочего сообщения матча в OCR-канале."""
+    from cogs.ocr_upload import _captain_name, _match_label
+    from views.ocr_match_view import _match_tuple, match_is_finished
+
+    t1, t2 = _match_tuple(tournament, match_type, match_index)
+    name_a = _captain_name(tournament, t1)
+    name_b = _captain_name(tournament, t2)
+    label = _match_label(match_type, match_index)
+    finished = (
+        _bracket_winner_index(tournament, match_type, match_index)
+        is not None
+        or match_is_finished(tournament, match_type, match_index)
+    )
+    session = (tournament.ocr_sessions or {}).get(
+        _mc_key(match_type, match_index)
+    )
+    if finished:
+        status = "Завершён"
+        rooms_str = str(_rooms_played(tournament, match_type, match_index))
+    elif session and session.get("rooms_expected"):
+        done = sum(
+            1 for r in session.get("rooms") or []
+            if r.get("panels") or r.get("pending")
+        )
+        rooms_str = f"{done}/{int(session['rooms_expected'])}"
+        status = {
+            "collecting": "Сбор скриншотов",
+            "awaiting_mapping": "Сопоставление игроков",
+        }.get(str(session.get("status")), "Обработка OCR")
+    else:
+        rooms_str = "—"
+        status = "Ожидание скриншотов"
+
+    # Капитаны — только реальные Discord ID, один пинг на создание.
+    cap_ids: list[int] = []
+    try:
+        from cogs.ocr_upload import _match_captain_ids
+
+        cap_ids = _match_captain_ids(
+            tournament, match_type, match_index, session or {}
+        )
+    except Exception:
+        cap_ids = []
+    lines = [
+        f"**{label} — {name_a} vs {name_b}**",
+        "",
+        f"Комнаты: {rooms_str}",
+        f"Статус: {status}",
+    ]
+    if cap_ids:
+        lines.append(
+            "Капитаны: " + " ".join(f"<@{u}>" for u in cap_ids)
+        )
+    return "\n".join(lines), finished
+
+
+def match_control_view(
+    guild_id: int,
+    channel_id: int,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    finished: bool = False,
+):
+    """Persistent view рабочего сообщения: кнопка «Загрузить
+    скриншоты» (MatchScreenshotButton → RoomStartModal)."""
+    from discord.ui import View
+    from views.ocr_match_view import MatchScreenshotButton
+
+    view = View(timeout=None)
+    if not finished:
+        view.add_item(
+            MatchScreenshotButton(
+                guild_id, channel_id, tournament,
+                match_type, match_index,
+                "📸 Загрузить скриншоты",
+            )
+        )
+    return view
+
+
+async def _ocr_work_channel(guild: discord.Guild):
+    from config import OCR_MAPPING_CHANNEL_ID
+
+    try:
+        ch = guild.get_channel(OCR_MAPPING_CHANNEL_ID)
+        if ch is None:
+            ch = await guild.fetch_channel(OCR_MAPPING_CHANNEL_ID)
+        return ch
+    except Exception:
+        return None
+
+
+async def send_match_control(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    bot=None,
+) -> None:
+    """Создать рабочее сообщение матча в OCR-канале (одно на матч).
+
+    Идемпотентно: при существующем work_message_id сообщение
+    только обновляется, дубль не отправляется.
+    """
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    key = _mc_key(match_type, match_index)
+    mcards = getattr(tournament, "match_cards", None)
+    if mcards is None:
+        mcards = {}
+        try:
+            tournament.match_cards = mcards
+        except Exception:
+            pass
+    entry = mcards.setdefault(key, {})
+    channel = await _ocr_work_channel(guild)
+    if channel is None:
+        return
+    try:
+        text, finished = _control_content(
+            tournament, match_type, match_index
+        )
+    except Exception as exc:
+        logger.warning("match control text failed: %s", exc)
+        return
+    view = match_control_view(
+        tournament.guild_id, tournament.channel_id, tournament,
+        match_type, match_index, finished=finished,
+    )
+    mentions = discord.AllowedMentions(
+        users=True, roles=False, everyone=False
+    )
+    import hashlib
+
+    csig = hashlib.sha1(text.encode()).hexdigest()[:16]
+    mid = entry.get("work_message_id")
+    msg = None
+    if mid:
+        try:
+            msg = await channel.fetch_message(int(mid))
+        except Exception:
+            msg = None
+    try:
+        if msg is not None:
+            if entry.get("control_sig") != csig:
+                await msg.edit(
+                    content=replace_emojis_safe(text), view=view,
+                    allowed_mentions=mentions,
+                )
+                entry["control_sig"] = csig
+        else:
+            msg = await channel.send(
+                content=replace_emojis_safe(text), view=view,
+                allowed_mentions=mentions,
+            )
+            entry["work_message_id"] = msg.id
+            entry["work_channel_id"] = channel.id
+            entry["control_sig"] = csig
+            if bot is not None:
+                try:
+                    bot.add_view(view, message_id=msg.id)
+                except Exception:
+                    pass
+    except Exception as exc:
+        logger.warning("match control send failed: %s", exc)
+        return
+    try:
+        store.set(tournament)
+    except Exception:
+        pass
+
+
+async def refresh_match_control(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+) -> None:
+    """Актуализировать рабочее сообщение матча.
+
+    Пропускается, пока жива активная OCR-сессия — тогда сообщение
+    принадлежит progress/confirm-флоу. Без сессии показывает
+    «Ожидание скриншотов» + кнопку (после отката) или «Завершён».
+    """
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    key = _mc_key(match_type, match_index)
+    entry = (getattr(tournament, "match_cards", None) or {}).get(key)
+    session = (tournament.ocr_sessions or {}).get(key)
+    if session and session.get("status") not in (
+        None, "completed", "cancelled"
+    ):
+        return
+    if entry and entry.get("work_message_id"):
+        await send_match_control(guild, tournament, match_type,
+                                 match_index)
+    else:
+        # Legacy-матч без карточки — создаём рабочее сообщение,
+        # только если матч актуален (фаза живая, не завершён).
+        from views.ocr_match_view import match_is_finished
+
+        phase = getattr(getattr(tournament, "phase", None), "value", "")
+        phase_ok = (
+            (match_type == "qualifier" and phase == "qualifiers")
+            or (match_type == "semifinal" and phase == "semifinals")
+            or (match_type == "final" and phase == "final")
+        )
+        if not phase_ok:
+            return
+        if match_is_finished(
+            tournament, match_type, match_index
+        ) or _bracket_winner_index(
+            tournament, match_type, match_index
+        ) is not None:
+            return
+        await send_match_control(guild, tournament, match_type,
+                                 match_index)
 
 
 async def announce_phase_matches(
@@ -508,6 +925,23 @@ async def announce_phase_matches(
                 result_ch = await _result_channel(guild, None)
                 if result_ch is not None:
                     await result_ch.send(embed=embed)
+            else:
+                # Обычный турнир: одно публичное сообщение матча
+                # в канале турнира + одно рабочее сообщение в
+                # OCR-канале (кнопка «Загрузить скриншоты»).
+                try:
+                    await update_public_match_card(
+                        guild, tournament, match_type, match_index
+                    )
+                    await send_match_control(
+                        guild, tournament, match_type, match_index,
+                        bot=bot,
+                    )
+                    store.set(tournament)
+                except Exception as exc:
+                    logger.warning(
+                        "match cards announce failed: %s", exc
+                    )
 
             await match_number_store.mark_announced(key)
             logger.info(
