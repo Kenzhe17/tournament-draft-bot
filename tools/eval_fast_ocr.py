@@ -108,6 +108,10 @@ def _score_of(parsed):
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("img_dir")
     ap.add_argument("--ref", required=True)

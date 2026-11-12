@@ -135,7 +135,11 @@ class _DetOnlyEngine:
     letterbox/origin-points, что у RapidOCR.
     """
 
-    def __init__(self, max_side_len: int = 640) -> None:
+    def __init__(
+        self,
+        max_side_len: int = 640,
+        intra_op_num_threads: int = -1,
+    ) -> None:
         import rapidocr_onnxruntime.main as _rom
         from rapidocr_onnxruntime.ch_ppocr_det import TextDetector
         from rapidocr_onnxruntime.utils import (
@@ -148,7 +152,11 @@ class _DetOnlyEngine:
         )
 
         config = update_model_path(read_yaml(_rom.DEFAULT_CFG_PATH))
-        config = UpdateParameters()(config, max_side_len=max_side_len)
+        config = UpdateParameters()(
+            config,
+            max_side_len=max_side_len,
+            intra_op_num_threads=intra_op_num_threads,
+        )
         g = config["Global"]
         self.max_side_len = g["max_side_len"]
         self.min_side_len = g["min_side_len"]
@@ -242,7 +250,12 @@ def _get_fast_det():
     global _FAST_DET_ENGINE
     if _FAST_DET_ENGINE is None:
         try:
-            _FAST_DET_ENGINE = _DetOnlyEngine(max_side_len=640)
+            _FAST_DET_ENGINE = _DetOnlyEngine(
+                max_side_len=640,
+                intra_op_num_threads=int(
+                    os.environ.get("FAST_DET_THREADS", "-1")
+                ),
+            )
         except Exception:
             logger.warning("fast det engine init failed", exc_info=True)
             _FAST_DET_ENGINE = False
@@ -387,6 +400,11 @@ class _RecCache:
         self.dt_boxes = dt_boxes
         self.cache: dict[int, tuple[str, float]] = {}
         self._pending: list[int] = []
+        # Профилирование rec-стадии: вызовы/кропы/время prep и rec.
+        self.stats = {
+            "calls": 0, "crops": 0, "prep_ms": 0.0, "rec_ms": 0.0,
+            "max_crop_w": 0,
+        }
 
     def want(self, idx: int) -> None:
         if idx not in self.cache and idx not in self._pending:
@@ -398,10 +416,26 @@ class _RecCache:
             return
         idxs = self._pending
         self._pending = []
+        t_prep = time.perf_counter()
         crops = self.eng.get_crop_img_list(
             self.img_padded, [self.dt_boxes[i] for i in idxs]
         )
+        crops = _cap_crop_ratios(crops or [])
+        prep_ms = (time.perf_counter() - t_prep) * 1000
+        t_rec = time.perf_counter()
         res, _ = self.eng.text_rec(crops)
+        rec_ms = (time.perf_counter() - t_rec) * 1000
+        self.stats["calls"] += 1
+        self.stats["crops"] += len(crops or [])
+        self.stats["prep_ms"] += prep_ms
+        self.stats["rec_ms"] += rec_ms
+        for c in crops or []:
+            try:
+                self.stats["max_crop_w"] = max(
+                    self.stats["max_crop_w"], int(c.shape[1])
+                )
+            except Exception:
+                pass
         for i, r in zip(idxs, res or []):
             try:
                 text, score = r[0], float(r[1])
@@ -411,6 +445,28 @@ class _RecCache:
 
     def get(self, idx: int) -> tuple[str, float]:
         return self.cache.get(idx, ("", 0.0))
+
+
+# rec_img_shape [3,48,320] → нативный max aspect = 320/48 ≈ 6.67.
+# Шире — text_rec всё равно падает до height=48, но тензор батча
+# растягивается до 48*ratio: один широкий баннер-кроп раздувает
+# весь batch. Кропы с ratio > лимита дожимаем по ширине —
+# вертикальное разрешение (главное для CTC) не меняется.
+_REC_MAX_WH_RATIO = 320.0 / 48.0
+
+
+def _cap_crop_ratios(crops: list) -> list:
+    import cv2
+
+    out = []
+    for c in crops:
+        h, w = c.shape[:2]
+        ratio = w / max(1, h)
+        if ratio > _REC_MAX_WH_RATIO:
+            nw = max(8, int(h * _REC_MAX_WH_RATIO))
+            c = cv2.resize(c, (nw, h), interpolation=cv2.INTER_AREA)
+        out.append(c)
+    return out
 
 
 def _rec_crop_rect(img_bgr: np.ndarray, rect, min_h: int = 36):
@@ -441,6 +497,10 @@ class _RectRec:
         self.eng = eng
         self.img_bgr = img_bgr
         self.jobs: list[tuple] = []  # (key, rect)
+        self.stats = {
+            "calls": 0, "crops": 0, "prep_ms": 0.0, "rec_ms": 0.0,
+            "max_crop_w": 0,
+        }
 
     def add(self, key, rect):
         self.jobs.append((key, rect))
@@ -448,15 +508,28 @@ class _RectRec:
     def flush(self):
         crops = []
         keys = []
+        t_prep = time.perf_counter()
         for key, rect in self.jobs:
             c = _rec_crop_rect(self.img_bgr, rect)
             if c is not None:
                 crops.append(c)
                 keys.append(key)
+        prep_ms = (time.perf_counter() - t_prep) * 1000
         self.jobs = []
+        crops = _cap_crop_ratios(crops)
         if not crops:
             return {}
+        t_rec = time.perf_counter()
         res, _ = self.eng.text_rec(crops)
+        rec_ms = (time.perf_counter() - t_rec) * 1000
+        self.stats["calls"] += 1
+        self.stats["crops"] += len(crops)
+        self.stats["prep_ms"] += prep_ms
+        self.stats["rec_ms"] += rec_ms
+        for c in crops:
+            self.stats["max_crop_w"] = max(
+                self.stats["max_crop_w"], int(c.shape[1])
+            )
         out = {}
         for key, r in zip(keys, res or []):
             try:
@@ -811,6 +884,8 @@ def _extract_parsed(
 
     # --- Этап 6: выбор det-боксов для rec ячеек ---
     # cell_jobs: (panel_i, row_i, col) -> [member boxes]
+    rec_s0 = dict(rec.stats)
+    rect_s0 = dict(rect_rec.stats)
     t_cell = time.perf_counter()
     cell_members: dict[tuple, list[dict]] = {}
     for pi, g in enumerate(geoms):
@@ -857,12 +932,21 @@ def _extract_parsed(
     rec.flush()
     rect_results = rect_rec.flush()
     timings["cells_ms"] = (time.perf_counter() - t_cell) * 1000
+    for prefix, st, s0 in (
+        ("cells_det", rec.stats, rec_s0),
+        ("cells_rect", rect_rec.stats, rect_s0),
+    ):
+        for k in ("calls", "crops", "prep_ms", "rec_ms", "max_crop_w"):
+            v = st[k] - (s0.get(k) or 0)
+            timings[f"{prefix}_{k}"] = v
 
     # --- Этап 7: верхняя/нижняя полосы (счёт, баннер, top5) ---
     # Счёт «N VS M» сидит всего в ~1 pitch над заголовком — полоса
     # должна доставать до него, но не захватывать строки игроков.
     # Берём ближайшие к заголовку боксы (desc cy), чтобы верхний
     # мусор (CJK-шум по краям) не вытеснял счёт из лимита rec.
+    bands_s0 = dict(rec.stats)
+    t_band = time.perf_counter()
     extra_idxs: list[int] = []
     top_limit = min(g["header_cy"] for g in geoms) - 0.4 * max(
         g["pitch"] for g in geoms
@@ -880,6 +964,9 @@ def _extract_parsed(
         rec.want(b["idx"])
         extra_idxs.append(b["idx"])
     rec.flush()
+    timings["bands_ms"] = (time.perf_counter() - t_band) * 1000
+    for k in ("calls", "crops", "prep_ms", "rec_ms", "max_crop_w"):
+        timings[f"bands_det_{k}"] = rec.stats[k] - (bands_s0.get(k) or 0)
 
     # Счёт «N VS M»: одиночные цифры сена на быстрой det-модели
     # могут не давать det-боксов — добираем rect-rec полосами

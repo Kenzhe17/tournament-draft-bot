@@ -12,8 +12,10 @@ import asyncio
 import concurrent.futures
 import io
 import logging
+import os
 import re
 import threading
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -47,7 +49,14 @@ def _get_ocr():
             if _ocr_instance is None:
                 from rapidocr_onnxruntime import RapidOCR
 
-                _ocr_instance = RapidOCR()
+                _ocr_instance = RapidOCR(
+                    intra_op_num_threads=int(
+                        os.environ.get("OCR_INTRA_OP_THREADS", "-1")
+                    ),
+                    inter_op_num_threads=int(
+                        os.environ.get("OCR_INTER_OP_THREADS", "-1")
+                    ),
+                )
                 logger.info("RapidOCR initialized")
     return _ocr_instance
 
@@ -195,6 +204,40 @@ async def ocr_cyrillic_region(
     )
 
 
+_MODEL_FILES = (
+    # v1 движок (rapidocr_onnxruntime) — det/cls/rec
+    ("rapidocr_onnxruntime", "models/ch_PP-OCRv4_det_infer.onnx"),
+    ("rapidocr_onnxruntime", "models/ch_PP-OCRv4_rec_infer.onnx"),
+    ("rapidocr_onnxruntime", "models/ch_ppocr_mobile_v2.0_cls_infer.onnx"),
+    # v3 движок (rapidocr) — det/cls/rec + cyrillic rec
+    ("rapidocr", "models/PP-OCRv6_det_small.onnx"),
+    ("rapidocr", "models/PP-OCRv6_rec_small.onnx"),
+    ("rapidocr", "models/ch_ppocr_mobile_v2.0_cls_mobile.onnx"),
+    ("rapidocr", "models/cyrillic_PP-OCRv5_rec_mobile.onnx"),
+)
+
+
+def verify_model_files() -> list[str]:
+    """Проверить наличие всех ONNX-моделей в site-packages.
+
+    RapidOCR при отсутствии файла молча скачивает его по сети —
+    в проде это недопустимо в критическом пути матча. Возвращает
+    список отсутствующих путей (пустой = всё на месте).
+    """
+    import importlib.util
+
+    missing = []
+    for pkg, rel in _MODEL_FILES:
+        spec = importlib.util.find_spec(pkg)
+        if spec is None or not spec.submodule_search_locations:
+            missing.append(f"{pkg}:{rel} (package missing)")
+            continue
+        p = Path(list(spec.submodule_search_locations)[0]) / rel
+        if not p.is_file():
+            missing.append(str(p))
+    return missing
+
+
 def warmup() -> None:
     """Прогреть обе OCR-модели на пустом кадре (старт бота).
 
@@ -203,6 +246,12 @@ def warmup() -> None:
     """
     import numpy as np
 
+    missing = verify_model_files()
+    if missing:
+        logger.error(
+            "OCR model files missing — RapidOCR will try network "
+            "download at runtime: %s", "; ".join(missing)
+        )
     dummy = np.zeros((64, 64, 3), dtype=np.uint8)
     try:
         _get_ocr()(dummy[:, :, ::-1])
