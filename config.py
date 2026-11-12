@@ -206,9 +206,17 @@ RANK_EMOJIS = {
     "Gold": os.getenv("EMOJI_GOLD", ""),
     "Platinum": os.getenv("EMOJI_PLATINUM", ""),
     "Diamond": os.getenv("EMOJI_DIAMOND", ""),
-    "Elite": os.getenv("EMOJI_ELITE", ""),
+    "Heroic": os.getenv("EMOJI_HEROIC", os.getenv("EMOJI_ELITE", "")),
+    "Elite Heroic": os.getenv(
+        "EMOJI_ELITE_HEROIC", os.getenv("EMOJI_ELITE", "")
+    ),
     "Master": os.getenv("EMOJI_MASTER", ""),
-    "Legend": os.getenv("EMOJI_LEGEND", ""),
+    "Elite Master": os.getenv(
+        "EMOJI_ELITE_MASTER", os.getenv("EMOJI_MASTER", "")
+    ),
+    "Grandmaster": os.getenv(
+        "EMOJI_GRANDMASTER", os.getenv("EMOJI_LEGEND", "")
+    ),
 }
 
 # Custom emoji IDs for other game elements
@@ -394,15 +402,17 @@ ICON_EMOJIS = {
 
 # Standard emojis as fallback when custom emojis are not set
 STANDARD_EMOJIS = {
-    # Ranks
+    # Ranks (тиры; поддивизионы наследуют эмодзи тира)
     "Bronze": "🥉",
     "Silver": "🥈",
     "Gold": "🥇",
     "Platinum": "💠",
     "Diamond": "🔷",
-    "Elite": "⚡",
+    "Heroic": "⚔️",
+    "Elite Heroic": "🔥",
     "Master": "🎖️",
-    "Legend": "👑",
+    "Elite Master": "🏅",
+    "Grandmaster": "👑",
     
     # Games
     "game": "🎮",

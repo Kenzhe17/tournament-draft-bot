@@ -2901,10 +2901,10 @@ class TournamentCog(commands.Cog):
 def get_rank_emoji(level: int) -> str:
     """Получить эмодзи и название ранга по уровню (utils.ranks)."""
     from config import get_emoji
-    from utils.ranks import rank_name
+    from utils.ranks import rank_name, rank_tier_name
 
     name = rank_name(level)
-    emoji = get_emoji(name)
+    emoji = get_emoji(rank_tier_name(level))
     return f"{emoji} {name}"
 
 
@@ -2944,9 +2944,17 @@ def _help_category_embed(value: str) -> discord.Embed | None:
     org_color = discord.Color.from_rgb(100, 38, 56)
     footer = f"\n\n{dot}  Используйте выпадающее меню ниже для перехода в другие разделы "
 
+    # Тиры (без поддивизионов): первая ступень каждого тира
+    from utils.ranks import rank_tier_name
+
+    tier_first: dict[str, tuple[str, int]] = {}
+    for _rank_name, min_level_, _badge in RANKS:
+        tier_ = rank_tier_name(min_level_)
+        if tier_ not in tier_first:
+            tier_first[tier_] = (tier_, min_level_)
     rank_lines = "\n".join(
-        f"{dot} {get_emoji(name)} **{name}:** `{min_level}+ lvl`"
-        for name, min_level, _badge in reversed(RANKS)
+        f"{dot} {get_emoji(tier)} **{tier}:** `{min_level}+ lvl`"
+        for tier, min_level in reversed(list(tier_first.values()))
     )
 
     if value == "tournaments":
