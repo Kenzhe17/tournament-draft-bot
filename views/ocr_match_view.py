@@ -1539,6 +1539,36 @@ class MatchScreenshotButton(Button):
             )
             return
 
+        # Устаревшая дублирующая рабочая карточка: если для матча
+        # сохранён актуальный work_message_id и нажатие пришло с
+        # другого сообщения — отклоняем, чтобы старые кнопки не
+        # запускали второй OCR-флоу. При активной сессии ниже
+        # срабатывают штатные session-guard'ы.
+        _mcards = getattr(tournament, "match_cards", None) or {}
+        _ctrl = _mcards.get(f"{self.match_type}_{self.match_index}") or {}
+        _canonical = _ctrl.get("work_message_id")
+        _sess = tournament.ocr_sessions.get(
+            _session_key(self.match_type, self.match_index)
+        )
+        _sess_active = bool(
+            _sess
+            and _sess.get("status")
+            not in ("completed", "cancelled", "finalizing")
+        )
+        if (
+            _canonical
+            and not _sess_active
+            and getattr(interaction.message, "id", None) != int(_canonical)
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Эта карточка устарела. Используйте "
+                    "актуальную карточку матча в канале результатов."
+                ),
+                ephemeral=True,
+            )
+            return
+
         t1, t2 = _match_tuple(tournament, self.match_type, self.match_index)
         if self.team_index is not None:
             # Кнопка конкретного капитана — только он или организатор

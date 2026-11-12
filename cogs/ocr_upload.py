@@ -4115,44 +4115,33 @@ async def create_rooms_session(
             match_type, match_index, session["gen"],
         )
         prog_text = replace_emojis(_rooms_progress_text(session))
-        # Переиспользуем рабочее сообщение матча (match_cards) как
-        # progress — одно сообщение на матч, без дублей. Для MM и
-        # legacy-матчей без карточки отправляем новое.
-        msg = None
-        mcards = getattr(tournament, "match_cards", None)
-        if mcards is None:
-            mcards = {}
-            try:
-                tournament.match_cards = mcards
-            except Exception:
-                pass
-        ctrl = (mcards or {}).get(f"{match_type}_{match_index}")
+        # Переиспользуем рабочее сообщение матча через единую точку
+        # ensure_work_card — одно сообщение на матч, дубли
+        # исключены per-match lock'ом и reconciliation-сканом.
+        # Для MM отправляем новое в канале матча.
         is_plain = not getattr(tournament, "mm_search_channel_id", 0)
-        if is_plain and ctrl is None:
-            ctrl = {}
-            mcards[f"{match_type}_{match_index}"] = ctrl
-        if is_plain and ctrl.get("work_message_id"):
-            try:
-                cm = await ocr_channel.fetch_message(
-                    int(ctrl["work_message_id"])
-                )
-                await cm.edit(content=prog_text, view=view)
-                msg = cm
-            except Exception:
-                msg = None
-        if msg is None:
+        if is_plain:
+            from services.match_announcer import ensure_work_card
+
+            _f, ctrl, msg, created = await ensure_work_card(
+                guild, tournament, match_type, match_index,
+                ocr_channel, view=view, text=prog_text,
+            )
+            if not created and msg is not None:
+                try:
+                    await msg.edit(content=prog_text, view=view)
+                except Exception:
+                    pass
+            if ctrl is not None:
+                # Сообщение перешло под управление progress-флоу —
+                # sig контрольного текста недействителен, после
+                # завершения/отката refresh обязан отредактировать.
+                ctrl.pop("control_sig", None)
+        else:
             msg = await ocr_channel.send(
                 content=prog_text,
                 view=view,
             )
-            if is_plain:
-                ctrl["work_message_id"] = msg.id
-                ctrl["work_channel_id"] = ocr_channel.id
-        if is_plain:
-            # Сообщение перешло под управление progress-флоу —
-            # sig контрольного текста недействителен, после
-            # завершения/отката refresh обязан отредактировать.
-            ctrl.pop("control_sig", None)
         session["progress_message_id"] = msg.id
         session["progress_channel_id"] = ocr_channel.id
         store.set(tournament)

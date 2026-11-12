@@ -50,6 +50,7 @@ class _Chan:
         self.id = cid
         self.sent = []
         self._by_id = {}
+        self._hist = []
 
     async def send(self, content=None, view=None, embed=None,
                    embeds=None, files=None, allowed_mentions=None,
@@ -61,7 +62,23 @@ class _Chan:
         msg.allowed_mentions = allowed_mentions
         self.sent.append(msg)
         self._by_id[msg.id] = msg
+        self._hist.append(msg)
         return msg
+
+    def inject(self, msg):
+        """Поместить сообщение в историю канала (существующий
+        orphan/duplicate, не созданный через send)."""
+        self._hist.append(msg)
+        self._by_id[msg.id] = msg
+
+    def history(self, limit=100, **kw):
+        msgs = list(reversed(self._hist))[: int(limit)]
+
+        async def _gen():
+            for m in msgs:
+                yield m
+
+        return _gen()
 
     async def fetch_message(self, mid):
         import discord
@@ -735,3 +752,273 @@ class TestSerialization:
         # from_dict требует много полей — вместо полного
         # roundtrip проверяем, что поле объявлено и сериализуется.
         assert "match_cards" in Tournament.__dataclass_fields__
+
+
+def _tournament_4teams(**kw):
+    """Турнир с 4 командами — два матча в одной фазе."""
+    teams = [
+        {"captain": f"Cap{i}", "players": [f"Cap{i}", f"P{i}a", f"P{i}b", f"P{i}c"]}
+        for i in range(4)
+    ]
+    uids = {}
+    for i in range(4):
+        for n in teams[i]["players"]:
+            uids[n] = 100 + i * 10 + len(uids)
+    base = dict(
+        teams=teams,
+        team_names={i: f"Team{i}" for i in range(4)},
+        player_user_ids=uids,
+        qualifier_matches=[(0, 1), (2, 3)],
+        semifinal_matches=[],
+        phase=__import__(
+            "models.tournament", fromlist=["TournamentPhase"]
+        ).TournamentPhase.QUALIFIERS,
+        qualifier_winners=[None, None],
+    )
+    base.update(kw)
+    t = _tournament(**base)
+    # _tournament() уже задал qualifier_matches — переопределяем явно.
+    t.qualifier_matches = [(0, 1), (2, 3)]
+    return t
+
+
+class TestSingleWorkCard:
+    """Ровно одна рабочая OCR-карточка на матч: конкурентные
+    вызовы, повторные события, рестарт и дубли."""
+
+    @pytest.mark.asyncio
+    async def test_two_matches_two_cards(self, monkeypatch):
+        from services import match_announcer as ma
+
+        _fake_match_number_store(monkeypatch)
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament_4teams()
+
+        await ma.announce_phase_matches(tournament, guild, bot=None)
+
+        assert len(ochan.sent) == 2
+        assert set(tournament.match_cards) == {
+            "qualifier_0", "qualifier_1",
+        }
+        ids = {
+            e["work_message_id"]
+            for e in tournament.match_cards.values()
+        }
+        assert len(ids) == 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_announce_and_refresh(self, monkeypatch):
+        """announce_phase_matches ×2 + refresh_match_control
+        одновременно — всё равно одна карточка."""
+        import asyncio
+
+        from services import match_announcer as ma
+
+        _fake_match_number_store(monkeypatch)
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+
+        await asyncio.gather(
+            ma.announce_phase_matches(tournament, guild, bot=None),
+            ma.announce_phase_matches(tournament, guild, bot=None),
+            ma.refresh_match_control(
+                guild, tournament, "qualifier", 0
+            ),
+            ma.update_match_card(
+                guild, tournament, "qualifier", 0
+            ),
+        )
+        assert len(ochan.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_rerun_phase_no_new_card(self, monkeypatch):
+        """Повторный запуск обработчика стадии — карточка
+        переиспользуется, send() не вызывается."""
+        from services import match_announcer as ma
+
+        _fake_match_number_store(monkeypatch)
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+
+        await ma.announce_phase_matches(tournament, guild)
+        await ma.send_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        await ma.refresh_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        assert len(ochan.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_session_creation_single_progress(
+        self, monkeypatch
+    ):
+        """Два одновременных «Загрузить скриншоты» — одна
+        rooms-сессия, одно progress-сообщение."""
+        import asyncio
+
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        monkeypatch.setattr(up.store, "get", lambda g, c: tournament)
+        monkeypatch.setattr(up.store, "set", lambda t: None)
+        user = SimpleNamespace(
+            id=42, display_name="CapA", name="capa"
+        )
+
+        s1, s2 = await asyncio.gather(
+            up.create_rooms_session(
+                guild, tchan, user, tournament, "qualifier", 0, 1
+            ),
+            up.create_rooms_session(
+                guild, tchan, user, tournament, "qualifier", 0, 1
+            ),
+        )
+        sessions = [s for s in (s1, s2) if s is not None]
+        assert len(sessions) == 1
+        # Одно сообщение прогресса на матч.
+        assert len(ochan.sent) == 1
+
+    @pytest.mark.asyncio
+    async def test_send_persist_failure_adopts_orphan(self):
+        """Сбой между send() и сохранением work_message_id:
+        сирота в канале принимается за карточку, дубль не
+        создаётся."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+
+        # «Сирота»: сообщение бота с сигнатурой матча уже в
+        # канале, но work_message_id не сохранился (состояние
+        # до send — match_cards пуст).
+        sig = await ma._work_card_signature(
+            tournament, "qualifier", 0
+        )
+        orphan = _Msg(channel=ochan)
+        orphan.content = sig
+        ochan.inject(orphan)
+
+        await ma.send_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        # Новый send() не вызывался — принята существующая.
+        assert ochan.sent == []
+        assert (
+            tournament.match_cards["qualifier_0"]["work_message_id"]
+            == orphan.id
+        )
+
+    @pytest.mark.asyncio
+    async def test_reconcile_removes_duplicate_keeps_card(self):
+        """Sweep после рестарта: дубль с сигнатурой матча
+        удаляется, актуальная карточка и чужие сообщения
+        не затрагиваются."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+
+        await ma.send_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        work = ochan.sent[0]
+        wid = tournament.match_cards["qualifier_0"]["work_message_id"]
+
+        sig = await ma._work_card_signature(
+            tournament, "qualifier", 0
+        )
+        dup = _Msg(channel=ochan)
+        dup.content = sig
+        ochan.inject(dup)
+        # Чужое сообщение без сигнатуры — не трогаем.
+        other = _Msg(channel=ochan)
+        other.content = "**Совсем другой матч**"
+        ochan.inject(other)
+
+        await ma.reconcile_work_cards(guild, tournament)
+        assert dup.deleted is True
+        assert other.deleted is False
+        assert work.deleted is False
+        assert (
+            tournament.match_cards["qualifier_0"]["work_message_id"]
+            == wid
+        )
+
+    @pytest.mark.asyncio
+    async def test_stale_duplicate_button_rejected(self, monkeypatch):
+        """Кнопка на устаревшем дубле не запускает OCR-флоу."""
+        import views.ocr_match_view as vm
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        tournament.match_cards["qualifier_0"] = {
+            "work_message_id": 1234,
+            "work_channel_id": OCR_MAPPING_CHANNEL_ID,
+        }
+        monkeypatch.setattr(vm.store, "get", lambda g, c: tournament)
+
+        sent = []
+
+        async def _send(*a, **kw):
+            sent.append((a, kw))
+
+        interaction = SimpleNamespace(
+            message=SimpleNamespace(id=9999),
+            response=SimpleNamespace(send_message=_send),
+            user=SimpleNamespace(id=1),
+            guild=guild,
+        )
+        btn = vm.MatchScreenshotButton(
+            1, 42, tournament, "qualifier", 0, "Загрузить",
+        )
+        await btn.callback(interaction)
+        assert sent, "ожидался ephemeral-ответ"
+        text = str(sent[0])
+        assert "устарел" in text
+
+    @pytest.mark.asyncio
+    async def test_completed_match_no_new_card(self, monkeypatch):
+        """После завершения OCR карточка не пересоздаётся —
+        остаётся одна финальная."""
+        from services import match_announcer as ma
+
+        _fake_match_number_store(monkeypatch)
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament(
+            qualifier_winners=[1],
+            ocr_sessions={
+                "qualifier_0": {
+                    "mode": "rooms", "status": "completed",
+                    "rooms": [{"room_index": 1}],
+                }
+            },
+        )
+
+        await ma.send_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        await ma.refresh_match_control(
+            guild, tournament, "qualifier", 0
+        )
+        await ma.update_match_card(
+            guild, tournament, "qualifier", 0
+        )
+        assert len(ochan.sent) == 1

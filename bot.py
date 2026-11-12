@@ -748,7 +748,23 @@ class TournamentBot(commands.Bot):
                             "for %s: %s", tournament.id, e,
                         )
 
-            # Восстановление очистки OCR после рестарта: сессии
+                    # Дубли рабочих OCR-карточек: в канале результатов
+                    # оставляем ровно одну карточку на матч —
+                    # актуальный work_message_id, остальные (бот,
+                    # сигнатура матча) удаляются.
+                    try:
+                        from services.match_announcer import (
+                            reconcile_work_cards,
+                        )
+
+                        asyncio.create_task(
+                            reconcile_work_cards(guild_obj, tournament)
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Work cards reconcile failed "
+                            "for %s: %s", tournament.id, e,
+                        )
             # со статусом completed, но без cleanup_done —
             # продолжаем удаление технических сообщений любого
             # режима (rooms/squad/classic). Идемпотентно.

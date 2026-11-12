@@ -720,6 +720,244 @@ async def _ocr_work_channel(guild: discord.Guild):
         return None
 
 
+async def _work_card_signature(
+    tournament: Tournament, match_type: str, match_index: int
+) -> str:
+    """Первая строка рабочей карточки — сигнатура для поиска
+    существующего/дублирующего сообщения в канале."""
+    try:
+        from cogs.ocr_upload import _captain_name, _match_label
+        from views.ocr_match_view import _match_tuple
+
+        t1, t2 = _match_tuple(tournament, match_type, match_index)
+        return (
+            f"**{_match_label(match_type, match_index)} — "
+            f"{_captain_name(tournament, t1)} vs "
+            f"{_captain_name(tournament, t2)}**"
+        )
+    except Exception:
+        return ""
+
+
+async def ensure_work_card(
+    guild: discord.Guild,
+    tournament: Tournament,
+    match_type: str,
+    match_index: int,
+    channel,
+    *,
+    view=None,
+    text: str = "",
+    bot=None,
+):
+    """ЕДИНАЯ точка создания рабочей OCR-карточки матча.
+
+    Под per-match asyncio.Lock: читает актуальный work_message_id
+    из сохранённого турнира, при отсутствии сначала ищет уже
+    опубликованное сообщение бота с сигнатурой матча
+    (reconciliation после сбоя send→save), затем создаёт новое.
+    Дублирующие сообщения того же матча в канале удаляются —
+    актуальной остаётся самая свежая карточка.
+
+    Возвращает (tournament, entry, msg, created).
+    """
+    key = _mc_key(match_type, match_index)
+    lock_key = f"{getattr(tournament, 'id', '?')}:{key}"
+    mentions = discord.AllowedMentions(
+        users=True, roles=False, everyone=False
+    )
+    async with _card_lock(lock_key):
+        fresh = store.get(tournament.guild_id, tournament.channel_id)
+        if fresh is None:
+            fresh = tournament
+        mcards = getattr(fresh, "match_cards", None)
+        if mcards is None:
+            mcards = {}
+            try:
+                fresh.match_cards = mcards
+            except Exception:
+                pass
+        entry = mcards.setdefault(key, {})
+        mid = entry.get("work_message_id")
+        msg = None
+        if mid:
+            try:
+                msg = await channel.fetch_message(int(mid))
+            except Exception:
+                msg = None
+            if msg is None:
+                # Ссылка протухла — чистим и идём дальше.
+                for f in ("work_message_id", "work_channel_id",
+                          "control_sig"):
+                    entry.pop(f, None)
+        created = False
+        if msg is None:
+            sig = await _work_card_signature(
+                fresh, match_type, match_index
+            )
+            candidates: list = []
+            if sig:
+                try:
+                    async for m in channel.history(limit=100):
+                        author = getattr(m, "author", None)
+                        if author is not None and not getattr(
+                            author, "bot", False
+                        ):
+                            continue
+                        if sig in (m.content or ""):
+                            candidates.append(m)
+                except Exception:
+                    pass
+            if candidates:
+                # История идёт от новых к старым: первый —
+                # актуальный, остальные — дубли, удаляем.
+                msg = candidates[0]
+                entry["work_message_id"] = msg.id
+                entry["work_channel_id"] = channel.id
+                for dup in candidates[1:]:
+                    try:
+                        await dup.delete()
+                        logger.info(
+                            "Work card duplicate removed mid=%s "
+                            "match=%s", dup.id, key,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Work card duplicate delete failed "
+                            "mid=%s: %s", dup.id, exc,
+                        )
+            else:
+                try:
+                    msg = await channel.send(
+                        content=replace_emojis_safe(text), view=view,
+                        allowed_mentions=mentions,
+                    )
+                except TypeError:
+                    # Каналы/обёртки без allowed_mentions.
+                    msg = await channel.send(
+                        content=replace_emojis_safe(text), view=view,
+                    )
+                entry["work_message_id"] = msg.id
+                entry["work_channel_id"] = channel.id
+                created = True
+                if bot is not None:
+                    try:
+                        bot.add_view(view, message_id=msg.id)
+                    except Exception:
+                        pass
+        # Зеркалим id в объект вызывающего — если store.get вернул
+        # другой экземпляр турнира.
+        caller_cards = getattr(tournament, "match_cards", None)
+        if caller_cards is not None and caller_cards is not mcards:
+            centry = caller_cards.setdefault(key, {})
+            for f in ("work_message_id", "work_channel_id"):
+                if entry.get(f):
+                    centry[f] = entry[f]
+        try:
+            store.set(fresh)
+        except Exception:
+            pass
+        return fresh, entry, msg, created
+
+
+async def reconcile_work_cards(
+    guild: discord.Guild,
+    tournament: Tournament,
+) -> None:
+    """Sweep после рестарта: для каждой рабочей карточки матча
+    проверить канал на дубли (сообщения бота с сигнатурой матча)
+    и удалить всё, кроме актуального work_message_id."""
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    mcards = getattr(tournament, "match_cards", None) or {}
+    if not mcards:
+        return
+    try:
+        channel = await _ocr_work_channel(guild)
+    except Exception:
+        channel = None
+    if channel is None:
+        return
+    # Собираем сигнатуры всех матчей с карточками.
+    sigs: dict[str, str] = {}
+    for mkey in mcards:
+        try:
+            mt, mi_s = mkey.rsplit("_", 1)
+            sig = await _work_card_signature(
+                tournament, mt, int(mi_s)
+            )
+            if sig:
+                sigs[mkey] = sig
+        except Exception:
+            continue
+    if not sigs:
+        return
+    try:
+        history = [
+            m async for m in channel.history(limit=200)
+        ]
+    except Exception as exc:
+        logger.warning("work card reconcile history failed: %s", exc)
+        return
+    # Карточки, belonging to other systems, не трогаем:
+    # progress/result/confirm id сессий.
+    protected: set[int] = set()
+    for sess in (tournament.ocr_sessions or {}).values():
+        for f in ("progress_message_id", "result_message_id",
+                  "confirm_message_id"):
+            if sess.get(f):
+                protected.add(int(sess[f]))
+    for mkey, entry in mcards.items():
+        if entry.get("work_message_id"):
+            protected.add(int(entry["work_message_id"]))
+    seen: dict[str, discord.Message] = {}
+    for m in history:
+        author = getattr(m, "author", None)
+        if author is not None and not getattr(author, "bot", False):
+            continue
+        if m.id in protected:
+            continue
+        content = m.content or ""
+        for mkey, sig in sigs.items():
+            if sig in content:
+                seen.setdefault(mkey, []).append(m)
+                break
+    for mkey, dups in seen.items():
+        # Новейшее (history идёт от новых) оставляем только если
+        # у матча нет сохранённого work_message_id — тогда
+        # принимаем его как актуальный; остальные удаляем.
+        entry = mcards.get(mkey) or {}
+        keep = entry.get("work_message_id")
+        ordered = sorted(dups, key=lambda m: m.id, reverse=True)
+        for m in ordered:
+            if keep and int(m.id) == int(keep):
+                continue
+            if not keep:
+                # Принимаем новейший как work_message_id.
+                entry["work_message_id"] = m.id
+                entry["work_channel_id"] = channel.id
+                keep = m.id
+                logger.info(
+                    "Work card adopted mid=%s match=%s", m.id, mkey,
+                )
+                continue
+            try:
+                await m.delete()
+                logger.info(
+                    "Work card duplicate removed mid=%s match=%s",
+                    m.id, mkey,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Work card duplicate delete failed mid=%s: %s",
+                    m.id, exc,
+                )
+    try:
+        store.set(tournament)
+    except Exception:
+        pass
+
+
 async def send_match_control(
     guild: discord.Guild,
     tournament: Tournament,
@@ -727,22 +965,17 @@ async def send_match_control(
     match_index: int,
     bot=None,
 ) -> None:
-    """Создать рабочее сообщение матча в OCR-канале (одно на матч).
+    """Создать/актуализировать рабочее сообщение матча в
+    OCR-канале (одно на матч).
 
-    Идемпотентно: при существующем work_message_id сообщение
-    только обновляется, дубль не отправляется.
+    Делегирует единой точке ensure_work_card: под per-match
+    lock существующая карточка редактируется, новая создаётся
+    только при реальном отсутствии — параллельные вызовы не
+    могут создать дубликат.
     """
     if getattr(tournament, "mm_search_channel_id", 0):
         return
     key = _mc_key(match_type, match_index)
-    mcards = getattr(tournament, "match_cards", None)
-    if mcards is None:
-        mcards = {}
-        try:
-            tournament.match_cards = mcards
-        except Exception:
-            pass
-    entry = mcards.setdefault(key, {})
     channel = await _ocr_work_channel(guild)
     if channel is None:
         return
@@ -757,42 +990,36 @@ async def send_match_control(
         tournament.guild_id, tournament.channel_id, tournament,
         match_type, match_index, finished=finished,
     )
-    mentions = discord.AllowedMentions(
-        users=True, roles=False, everyone=False
-    )
     import hashlib
 
     csig = hashlib.sha1(text.encode()).hexdigest()[:16]
-    mid = entry.get("work_message_id")
-    msg = None
-    if mid:
-        try:
-            msg = await channel.fetch_message(int(mid))
-        except Exception:
-            msg = None
     try:
-        if msg is not None:
-            if entry.get("control_sig") != csig:
+        _fresh, entry, msg, created = await ensure_work_card(
+            guild, tournament, match_type, match_index, channel,
+            view=view, text=replace_emojis_safe(text), bot=bot,
+        )
+    except Exception as exc:
+        logger.warning("match control ensure failed: %s", exc)
+        return
+    if msg is None:
+        return
+    mentions = discord.AllowedMentions(
+        users=True, roles=False, everyone=False
+    )
+    try:
+        if entry.get("control_sig") != csig:
+            if created:
+                # Сообщение только что отправлено с этим же
+                # текстом и view — edit не нужен, фиксируем sig.
+                entry["control_sig"] = csig
+            else:
                 await msg.edit(
                     content=replace_emojis_safe(text), view=view,
                     allowed_mentions=mentions,
                 )
                 entry["control_sig"] = csig
-        else:
-            msg = await channel.send(
-                content=replace_emojis_safe(text), view=view,
-                allowed_mentions=mentions,
-            )
-            entry["work_message_id"] = msg.id
-            entry["work_channel_id"] = channel.id
-            entry["control_sig"] = csig
-            if bot is not None:
-                try:
-                    bot.add_view(view, message_id=msg.id)
-                except Exception:
-                    pass
     except Exception as exc:
-        logger.warning("match control send failed: %s", exc)
+        logger.warning("match control edit failed: %s", exc)
         return
     try:
         store.set(tournament)
