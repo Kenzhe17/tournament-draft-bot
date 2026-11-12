@@ -6,6 +6,7 @@ import asyncio
 import io
 import logging
 import time
+from collections import deque
 from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -134,6 +135,13 @@ class MMCog(commands.Cog):
         # Sweeper не должен «разблокировать» поиск, пока _begin_match
         # между LOCKED и созданием Ready Check (секунды API-работы).
         self._begin_inflight: dict[tuple[int, int], float] = {}
+        # Коалесинг UI-обновлений Ready Check: match_id -> поколение
+        # правки и живая задача-воркер. Серия быстрых кликов «Готов»
+        # схлопывается в одно актуальное обновление карточки.
+        self._rc_ui_dirty: dict[str, int] = {}
+        self._rc_ui_tasks: dict[str, asyncio.Task] = {}
+        # Метрики задержек Ready Check (последние N значений, мс)
+        self._ready_metrics: dict[str, deque] = {}
         self.bot.mm_cog = self  # Регистрация для доступа из view
 
     async def cog_load(self) -> None:
@@ -783,8 +791,21 @@ class MMCog(commands.Cog):
             except Exception:
                 pass
 
+    def _ready_metric(self, name: str, ms: float, match_id: str | None = None) -> None:
+        """Записать замер задержки Ready Check (для диагностики)."""
+        q = self._ready_metrics.setdefault(name, deque(maxlen=500))
+        q.append(ms)
+        logger.info(
+            "ready_metric %s=%.1fms match_id=%s", name, ms, match_id
+        )
+
     async def _update_ready_message(self, rc: ReadyCheck) -> None:
-        """Обновить основное сообщение Ready Check (без спама)."""
+        """Обновить основное сообщение Ready Check (без спама).
+
+        Карточка матча и панель очереди обновляются независимо:
+        сбой одного не отменяет второй, каждый сегмент замеряется.
+        """
+        t0 = time.perf_counter()
         try:
             channel = self.bot.get_channel(rc.channel_id) or await self.bot.fetch_channel(rc.channel_id)
             if channel is None:
@@ -792,23 +813,106 @@ class MMCog(commands.Cog):
             message = await channel.fetch_message(rc.message_id)
             disabled = rc.status != ReadyCheckStatus.READY_CHECK
             await message.edit(view=ready_card(rc, self.bot, disabled=disabled))
-
-            # Обновить и панель очереди — живой счётчик готовности
-            try:
-                search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
-                if search is not None and search.is_locked:
-                    await self._update_queue_panel(search)
-            except Exception:
-                pass
+            self._ready_metric(
+                "ready_message_update_ms",
+                (time.perf_counter() - t0) * 1000, rc.match_id,
+            )
         except discord.NotFound:
             logger.warning("Ready check message %s not found", rc.message_id)
         except Exception as exc:
             logger.error("Failed to update ready check message: %s", exc)
 
-    async def _confirm_ready(self, match_id: str, user_id: int) -> str:
+        # Обновить и панель очереди — живой счётчик готовности
+        t1 = time.perf_counter()
+        try:
+            search = mm_search_store.get(rc.guild_id, rc.search_channel_id)
+            if search is not None and search.is_locked:
+                await self._update_queue_panel(search)
+        except Exception:
+            pass
+        self._ready_metric(
+            "ready_queue_update_ms",
+            (time.perf_counter() - t1) * 1000, rc.match_id,
+        )
+
+    # ------------------------------------------------------ UI coalescing
+
+    def _schedule_ready_ui(self, match_id: str) -> None:
+        """Поставить обновление карточки Ready Check в фоновую очередь.
+
+        Серия быстрых нажатий «Готов» увеличивает поколение — воркер
+        перечитывает актуальное состояние и делает одно обновление,
+        поэтому устаревший «2/8» не публикуется после «3/8».
+        """
+        self._rc_ui_dirty[match_id] = self._rc_ui_dirty.get(match_id, 0) + 1
+        task = self._rc_ui_tasks.get(match_id)
+        if task is None or task.done():
+            task = asyncio.create_task(self._ready_ui_worker(match_id))
+            self._rc_ui_tasks[match_id] = task
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+
+    async def _ready_ui_worker(self, match_id: str) -> None:
+        """Фоновый воркер: debounce + актуальное состояние на момент flush."""
+        processed = 0
+        cancelled = False
+        try:
+            while True:
+                await asyncio.sleep(0.25)  # окно склейки быстрых кликов
+                dirty = self._rc_ui_dirty.get(match_id, 0)
+                if dirty <= processed:
+                    return
+                processed = dirty
+                rc = await ready_check_store.get(match_id)
+                if rc is not None:
+                    await self._update_ready_message(rc)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        finally:
+            self._rc_ui_tasks.pop(match_id, None)
+            if not cancelled:
+                try:
+                    if self._rc_ui_dirty.get(match_id, 0) > processed:
+                        # Пометили новую правку, пока воркер завершался
+                        self._schedule_ready_ui(match_id)
+                    else:
+                        self._rc_ui_dirty.pop(match_id, None)
+                except RuntimeError:
+                    # Цикл событий уже закрывается (shutdown) —
+                    # следующая правка создаст воркер заново.
+                    pass
+
+    def _spawn_ready_launch(self, match_id: str) -> None:
+        """Запустить матч фоновой задачей (после ответа пользователю)."""
+        task = asyncio.create_task(self._ready_launch_bg(match_id))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def _ready_launch_bg(self, match_id: str) -> None:
+        """Фоновый запуск: под _rc_lock, только если статус позволяет."""
+        async with self._rc_lock(match_id):
+            fresh = await ready_check_store.get(match_id)
+            if fresh is not None and fresh.status in (
+                ReadyCheckStatus.ALL_READY,
+                ReadyCheckStatus.LAUNCHING,
+            ):
+                await self._launch_ready_check(fresh)
+
+    async def _confirm_ready(
+        self,
+        match_id: str,
+        user_id: int,
+        timings: dict[str, float] | None = None,
+    ) -> str:
         """Отметить игрока готовым и при 8/8 запустить матч. Возвращает текст ответа.
 
         Вызывать под self._rc_lock(match_id). Общий путь для кнопки и автотеста.
+        Обновления Discord-сообщений НЕ выполняются синхронно — они
+        ставятся в коалесцируемую фоновую очередь (_schedule_ready_ui),
+        а запуск матча при 8/8 — в фоновую задачу (_spawn_ready_launch),
+        поэтому пользовательский ответ не ждёт Discord API.
+        timings — опциональный dict для сбора ready_pg_save_ms.
         """
         rc = await ready_check_store.get(match_id)
         if rc is None:
@@ -825,8 +929,22 @@ class MMCog(commands.Cog):
 
         player.is_ready = True
         player.ready_at = time.time()
-        await ready_check_store.save(rc)
-        await self._update_ready_message(rc)
+        t_save = time.perf_counter()
+        try:
+            await ready_check_store.save(rc)
+        except Exception:
+            # Не показывать ложное подтверждение: откатываем флаг
+            player.is_ready = False
+            player.ready_at = None
+            raise
+        if timings is not None:
+            timings["pg_save_ms"] = (
+                timings.get("pg_save_ms", 0.0)
+                + (time.perf_counter() - t_save) * 1000
+            )
+        # Карточку и панель очереди обновит фоновый воркер —
+        # пользовательский ответ от Discord API не зависит.
+        self._schedule_ready_ui(match_id)
 
         if rc.ready_count >= len(rc.players):
             # Атомарный переход READY_CHECK -> ALL_READY -> LAUNCHING
@@ -834,25 +952,56 @@ class MMCog(commands.Cog):
                 match_id, ReadyCheckStatus.READY_CHECK, ReadyCheckStatus.ALL_READY
             ):
                 rc = await ready_check_store.get(match_id)
-                await self._update_ready_message(rc)
                 rc.status = ReadyCheckStatus.LAUNCHING
+                t_save = time.perf_counter()
                 await ready_check_store.save(rc)
-                await self._launch_ready_check(rc)
+                if timings is not None:
+                    timings["pg_save_ms"] = (
+                        timings.get("pg_save_ms", 0.0)
+                        + (time.perf_counter() - t_save) * 1000
+                    )
+                self._schedule_ready_ui(match_id)
+                self._spawn_ready_launch(match_id)
                 return "✅ Все игроки готовы — матч запускается."
         return f"✅ Готовность подтверждена. Ожидаем остальных игроков ({rc.ready_count}/8)."
 
     async def handle_ready_click(self, interaction: discord.Interaction, match_id: str) -> None:
         """Кнопка «Готов»."""
+        t0 = time.perf_counter()
         try:
-            await interaction.response.defer(ephemeral=True, thinking=True)
+            # defer() без thinking → DEFERRED_MESSAGE_UPDATE: мгновенный
+            # ack без индикатора «бот думает…».
+            await interaction.response.defer()
         except Exception:
             pass
-        async with self._rc_lock(match_id):
-            text = await self._confirm_ready(match_id, interaction.user.id)
+        ack_ms = (time.perf_counter() - t0) * 1000
+
+        timings: dict[str, float] = {}
+        t_lock = time.perf_counter()
+        text: str
+        try:
+            async with self._rc_lock(match_id):
+                lock_ms = (time.perf_counter() - t_lock) * 1000
+                text = await self._confirm_ready(
+                    match_id, interaction.user.id, timings
+                )
+        except Exception:
+            logger.exception("Ready check confirm failed: %s", match_id)
+            lock_ms = (time.perf_counter() - t_lock) * 1000
+            text = "❌ Не удалось сохранить готовность. Попробуйте ещё раз."
         try:
             await interaction.followup.send(text, ephemeral=True)
         except Exception:
             pass
+        total_ms = (time.perf_counter() - t0) * 1000
+
+        self._ready_metric("ready_click_ack_ms", ack_ms, match_id)
+        self._ready_metric("ready_lock_wait_ms", lock_ms, match_id)
+        if "pg_save_ms" in timings:
+            self._ready_metric(
+                "ready_pg_save_ms", timings["pg_save_ms"], match_id
+            )
+        self._ready_metric("ready_user_response_ms", total_ms, match_id)
 
     async def _issue_mm_vacs(
         self, guild_id: int, user_ids, reason: str
@@ -1000,6 +1149,20 @@ class MMCog(commands.Cog):
             logger.error("Error updating queue panel after ready-check cancel: %s", e)
 
     async def _launch_ready_check(self, rc: ReadyCheck) -> None:
+        """8/8 — запустить существующий турнирный флоу ровно один раз.
+
+        Обёртка с метрикой ready_launch_ms; вся логика — в _impl.
+        """
+        t0 = time.perf_counter()
+        try:
+            await self._launch_ready_check_impl(rc)
+        finally:
+            self._ready_metric(
+                "ready_launch_ms",
+                (time.perf_counter() - t0) * 1000, rc.match_id,
+            )
+
+    async def _launch_ready_check_impl(self, rc: ReadyCheck) -> None:
         """8/8 — запустить существующий турнирный флоу ровно один раз."""
         guild_id = rc.guild_id
         # Повторная проверка актуального статуса: объект rc мог устареть
@@ -1076,6 +1239,8 @@ class MMCog(commands.Cog):
             await ready_check_store.save(rc)
             await self._update_ready_message(rc)
             self._rc_locks.pop(rc.match_id, None)
+            self._rc_ui_dirty.pop(rc.match_id, None)
+            self._rc_ui_tasks.pop(rc.match_id, None)
             logger.info("Ready check %s launched tournament", rc.match_id)
         except Exception as exc:
             logger.error("Failed to launch tournament from ready check %s: %s", rc.match_id, exc, exc_info=True)

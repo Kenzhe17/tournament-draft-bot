@@ -50,12 +50,13 @@ def _sample_rc(match_id="rc_test_1", n=8, deadline=None) -> ReadyCheck:
 class _FakeResponse:
     def __init__(self):
         self.sent: list[tuple] = []
+        self.defer_calls: list[tuple] = []
 
     async def send_message(self, *args, **kwargs):
         self.sent.append((args, kwargs))
 
     async def defer(self, *args, **kwargs):
-        pass
+        self.defer_calls.append((args, kwargs))
 
     async def edit_message(self, *args, **kwargs):
         pass
@@ -321,8 +322,18 @@ async def test_full_ready_launches_once(tmp_path, monkeypatch):
     outsider = await click(7777)
     assert "не участвуете" in outsider.followup.sent[0][0][0].lower()
 
+    # defer без thinking — мгновенный ack без «бот думает…»
+    assert outsider.response.defer_calls
+    assert not outsider.response.defer_calls[0][1].get("thinking")
+
     # 8 готовых параллельно
     await asyncio.gather(*[click(1000 + i) for i in range(8)])
+
+    # Запуск матча — фоновая задача: ждём завершения
+    for _ in range(200):
+        if not cog._bg_tasks:
+            break
+        await asyncio.sleep(0.01)
 
     rc = await store.get(rc.match_id)
     assert rc.status == ReadyCheckStatus.LAUNCHED
@@ -330,6 +341,7 @@ async def test_full_ready_launches_once(tmp_path, monkeypatch):
 
     # повторный клик после завершения — не запускает повторно
     await click(1000)
+    await asyncio.sleep(0.05)
     assert len(launched) == 1
 
 
@@ -420,3 +432,183 @@ async def test_start_ready_check_creates_card(tmp_path, monkeypatch):
 
     # persistent view зарегистрирован
     assert len(cog.bot.views) >= 1
+
+
+# ------------------------------------------------- latency / coalescing
+
+
+async def _wait_bg(cog, timeout=3.0):
+    """Дождаться завершения фоновых задач cog."""
+    for _ in range(int(timeout / 0.01)):
+        if not cog._bg_tasks:
+            return
+        await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_ready_response_does_not_wait_for_discord_api(
+    tmp_path, monkeypatch
+):
+    """Медленный Discord API не задерживает ответ пользователю."""
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+
+    gate = asyncio.Event()
+
+    async def slow_update(rc):
+        await gate.wait()
+
+    monkeypatch.setattr(cog, "_update_ready_message", slow_update)
+
+    rc = _sample_rc()
+    await store.create(rc)
+
+    inter = _FakeInteraction(1000)
+    await cog.handle_ready_click(inter, rc.match_id)
+
+    # Ответ отправлен, хотя обновление сообщения ещё заблокировано
+    assert inter.followup.sent
+    assert "Готовность подтверждена" in inter.followup.sent[0][0][0]
+    gate.set()
+    await _wait_bg(cog)
+
+
+@pytest.mark.asyncio
+async def test_ready_ui_updates_coalesced(tmp_path, monkeypatch):
+    """Серия быстрых кликов → меньше обновлений, последнее актуально."""
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+
+    updates: list[int] = []
+
+    async def record(rc):
+        updates.append(rc.ready_count)
+
+    monkeypatch.setattr(cog, "_update_ready_message", record)
+
+    rc = _sample_rc()
+    await store.create(rc)
+
+    for i in range(4):
+        inter = _FakeInteraction(1000 + i)
+        await cog.handle_ready_click(inter, rc.match_id)
+
+    await _wait_bg(cog)
+    # Не 4 отдельных обновления; последнее отражает актуальное 4/8
+    assert len(updates) < 4
+    assert updates[-1] == 4
+
+
+@pytest.mark.asyncio
+async def test_ready_metrics_recorded(tmp_path, monkeypatch):
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+    monkeypatch.setattr(cog, "_update_ready_message", AsyncMock())
+
+    rc = _sample_rc()
+    await store.create(rc)
+
+    inter = _FakeInteraction(1000)
+    await cog.handle_ready_click(inter, rc.match_id)
+    await _wait_bg(cog)
+
+    for name in (
+        "ready_click_ack_ms",
+        "ready_lock_wait_ms",
+        "ready_pg_save_ms",
+        "ready_user_response_ms",
+    ):
+        assert name in cog._ready_metrics, name
+        assert cog._ready_metrics[name]
+
+
+@pytest.mark.asyncio
+async def test_last_player_fast_response_while_launch_runs(
+    tmp_path, monkeypatch
+):
+    """8/8: ответ «запускается» до завершения создания турнира."""
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+
+    gate = asyncio.Event()
+    launched = asyncio.Event()
+
+    async def slow_tourney(search_arg, channel):
+        await gate.wait()
+        launched.set()
+
+    monkeypatch.setattr(cog, "_create_tournament_from_search", slow_tourney)
+    monkeypatch.setattr(cog, "_update_ready_message", AsyncMock())
+
+    rc = _sample_rc()
+    await store.create(rc)
+    for p in rc.players[:7]:
+        p.is_ready = True
+        p.ready_at = time.time()
+    await store.save(rc)
+
+    inter = _FakeInteraction(1007)
+    await cog.handle_ready_click(inter, rc.match_id)
+
+    # Пользователь уже получил ответ, запуск ещё идёт
+    assert "запускается" in inter.followup.sent[0][0][0]
+    fresh = await store.get(rc.match_id)
+    assert fresh.status == ReadyCheckStatus.LAUNCHING
+    assert not launched.is_set()
+
+    gate.set()
+    await _wait_bg(cog)
+    fresh = await store.get(rc.match_id)
+    assert fresh.status == ReadyCheckStatus.LAUNCHED
+
+
+@pytest.mark.asyncio
+async def test_ready_save_failure_no_false_confirm(
+    tmp_path, monkeypatch
+):
+    """Ошибка сохранения → ошибка пользователю, флаг откачен."""
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+    monkeypatch.setattr(cog, "_update_ready_message", AsyncMock())
+
+    rc = _sample_rc()
+    await store.create(rc)
+
+    async def boom(rc_arg):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(store, "save", boom)
+
+    inter = _FakeInteraction(1000)
+    await cog.handle_ready_click(inter, rc.match_id)
+
+    assert "не удалось" in inter.followup.sent[0][0][0].lower()
+    fresh = await store.get(rc.match_id)
+    assert fresh.ready_count == 0  # is_ready откачен
+
+
+@pytest.mark.asyncio
+async def test_ready_launch_recovers_via_sweeper_path(
+    tmp_path, monkeypatch
+):
+    """ALL_READY/LAUNCHING без фоновой задачи — запускает sweeper/recovery."""
+    cog, store, _search = _make_cog(monkeypatch, tmp_path)
+
+    launched: list[int] = []
+
+    async def fake_launch(search_arg, channel):
+        launched.append(search_arg.guild_id)
+
+    monkeypatch.setattr(cog, "_create_tournament_from_search", fake_launch)
+    monkeypatch.setattr(cog, "_update_ready_message", AsyncMock())
+
+    # Имитируем рестарт: статус ALL_READY в сторе, фоновой задачи нет
+    rc = _sample_rc()
+    for p in rc.players:
+        p.is_ready = True
+    rc.status = ReadyCheckStatus.ALL_READY
+    await store.create(rc)
+
+    # Путь recovery: прямой вызов _launch_ready_check под lock
+    async with cog._rc_lock(rc.match_id):
+        fresh = await store.get(rc.match_id)
+        await cog._launch_ready_check(fresh)
+
+    rc = await store.get(rc.match_id)
+    assert rc.status == ReadyCheckStatus.LAUNCHED
+    assert len(launched) == 1
