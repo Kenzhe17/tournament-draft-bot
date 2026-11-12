@@ -1152,10 +1152,12 @@ class TestCaptainOnlyFinalize:
         assert not room.get("panels")
 
     @pytest.mark.asyncio
-    async def test_admin_without_captain_forbidden(self, env):
+    async def test_admin_without_captain_allowed(self, env):
+        """Discord-администратор сервера может завершить комнату
+        без статуса капитана (Tournaments 2.0 rights update)."""
         await _file(env, 1, "classic1")
         res = await self._try_finish(env, _admin(777))
-        assert res == "forbidden"
+        assert res == "ok"
 
     @pytest.mark.asyncio
     async def test_organizer_without_captain_forbidden(self, env):

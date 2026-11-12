@@ -286,6 +286,25 @@ def _is_room_finalize_captain(
     return False
 
 
+def _is_room_finalize_admin(user) -> bool:
+    """Строгий Discord-администратор сервера для «Завершить комнату».
+
+    Только guild_permissions.administrator == True. BOT_OWNER_ID и
+    организатор без admin-прав НЕ проходят — права проверяются по
+    реальным Discord permissions, не по никам/статусу.
+    """
+    perms = getattr(user, "guild_permissions", None)
+    return bool(perms and getattr(perms, "administrator", False))
+
+
+def _can_finalize_room(user, tournament: Tournament, team_indexes) -> bool:
+    """«Завершить комнату»: капитан одной из команд матча ИЛИ
+    Discord-администратор сервера. Все остальные — отказ."""
+    if _is_room_finalize_admin(user):
+        return True
+    return _is_room_finalize_captain(user, tournament, team_indexes)
+
+
 async def _uploader_is_privileged(guild: discord.Guild, user_id) -> bool:
     """Загрузивший — админ сервера / владелец бота / организатор.
 
@@ -7419,13 +7438,13 @@ class RoomFilesView(View):
                 )
             except Exception:
                 teams = []
-        if not _is_room_finalize_captain(
+        if not _can_finalize_room(
             interaction.user, tournament, teams
         ):
             await interaction.response.send_message(
                 replace_emojis(
                     "❌ Завершить комнату может только капитан "
-                    "одной из команд матча."
+                    "одной из команд матча или администратор сервера."
                 ),
                 ephemeral=True,
             )
@@ -7463,7 +7482,7 @@ class RoomFilesView(View):
             ),
             "forbidden": (
                 "❌ Завершить комнату может только капитан "
-                "одной из команд матча."
+                "одной из команд матча или администратор сервера."
             ),
             "invalid": "❌ Не удалось собрать комнату — проверьте файлы.",
         }

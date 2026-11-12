@@ -31,7 +31,7 @@ from views.ocr_match_view import (
     SquadAssignedView,
     SquadClaimView,
     _match_tuple,
-    _is_room_finalize_captain,
+    _can_finalize_room,
     _session_key,
     _team_display_name,
     pop_pending_upload,
@@ -3198,10 +3198,11 @@ async def finalize_room_collect(
     if session.get("status") in ("completed", "cancelled"):
         _seq_purge_session(guild.id, tournament.channel_id, key)
         return "closed"
-    # «Завершить комнату» — ТОЛЬКО капитану одной из команд
-    # матча (Discord ID). Отправитель комплекта, обычные
-    # участники, организатор и администратор без статуса
-    # капитана — forbidden. Повторная проверка под _room_lock.
+    # «Завершить комнату» — капитану одной из команд матча
+    # (Discord ID) ИЛИ Discord-администратору сервера.
+    # Отправитель комплекта, обычные участники и организатор
+    # без admin-прав — forbidden. Повторная проверка под
+    # _room_lock на свежем состоянии.
     teams = list(session.get("teams") or [])
     if not teams:
         try:
@@ -3213,7 +3214,7 @@ async def finalize_room_collect(
                 teams = list(_match_tuple(tournament, match_type, match_index))
             except Exception:
                 teams = []
-    if not _is_room_finalize_captain(user, tournament, teams):
+    if not _can_finalize_room(user, tournament, teams):
         return "forbidden"
 
     # Сначала восстанавливаем и верифицируем исходные файлы —
@@ -3294,7 +3295,7 @@ async def finalize_room_collect(
             return "empty"
         # Повторная проверка прав ПОД локом на свежем состоянии:
         # между pre-check и локом сессия/команда могли измениться.
-        if not _is_room_finalize_captain(
+        if not _can_finalize_room(
             user, fresh_t, fs.get("teams") or teams
         ):
             return "forbidden"

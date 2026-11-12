@@ -549,3 +549,82 @@ class TestScopedLocks:
         store2 = {f"k{i}": asyncio.Lock() for i in range(5)}
         _evict_idle_locks(store2, 3)
         assert len(store2) == 3
+
+
+# ---------------------------------------------------------------------------
+# «Завершить комнату»: капитаны команд матча + Discord-администратор
+# ---------------------------------------------------------------------------
+
+def _mk_match_tournament():
+    """Турнир с 2 командами: P0-P3 (cap P0), P4-P7 (cap P4)."""
+    t = _mk_tournament(TournamentSize.SIXTEEN, FormationMode.DRAFT)
+    teams = []
+    for ti in range(2):
+        members = [f"P{ti*4+j}" for j in range(4)]
+        teams.append({
+            "captain": members[0],
+            "players": members,
+            "circle1": members[0], "circle2": members[1],
+            "circle3": members[2], "circle4": members[3],
+        })
+        for m in members:
+            t.player_user_ids[m] = 7000 + ti * 4 + int(m[1:])
+    t.teams = teams
+    return t
+
+
+def _user(uid, admin=False, name="user"):
+    return SimpleNamespace(
+        id=uid,
+        display_name=name,
+        guild_permissions=SimpleNamespace(administrator=admin),
+    )
+
+
+class TestFinalizeRoomPermissions:
+    """Кнопка «Завершить комнату»: капитан team A / team B /
+    серверный админ — разрешено; остальные — отказ."""
+
+    def _check(self, user, teams=(0, 1)):
+        from views.ocr_match_view import _can_finalize_room
+        return _can_finalize_room(user, _mk_match_tournament(), teams)
+
+    def test_captain_team_a_allowed(self):
+        # капитан команды 0 — P0 → discord id 7000
+        assert self._check(_user(7000)) is True
+
+    def test_captain_team_b_allowed(self):
+        # капитан команды 1 — P4 → discord id 7008
+        assert self._check(_user(7008)) is True
+
+    def test_admin_allowed(self):
+        assert self._check(_user(9999, admin=True)) is True
+
+    def test_regular_player_denied(self):
+        # обычный участник команды (не капитан) — P1 → 7001
+        assert self._check(_user(7001)) is False
+
+    def test_org_without_admin_denied(self):
+        # «организатор» без administrator-прав — обычный user
+        assert self._check(_user(8888, admin=False, name="org")) is False
+
+    def test_captain_of_other_match_denied(self):
+        # капитан, которого нет в teams=(0,1) — его id не в ростерах
+        t = _mk_match_tournament()
+        # добавим третью команду с капитаном P8
+        t.teams.append({
+            "captain": "P8", "players": ["P8"],
+            "circle1": "P8",
+        })
+        t.player_user_ids["P8"] = 7999
+        from views.ocr_match_view import _can_finalize_room
+        assert _can_finalize_room(_user(7999), t, [0, 1]) is False
+
+    def test_admin_flag_must_be_true(self):
+        # guild_permissions без administrator → отказ
+        u = SimpleNamespace(id=1, display_name="x",
+                            guild_permissions=SimpleNamespace())
+        from views.ocr_match_view import _is_room_finalize_admin
+        assert _is_room_finalize_admin(u) is False
+        u2 = _user(2, admin=True)
+        assert _is_room_finalize_admin(u2) is True
