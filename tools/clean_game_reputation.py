@@ -17,6 +17,12 @@ utils/rating_calculator.py без записи в reputation_transactions.
 Требуется DATABASE_URL. Скрипт НЕ запускается автоматически и НЕ
 выполняет списание без --confirm. Повторный запуск — no-op
 (уникальный op_id rep_game_cleanup_v1 в rep_cleanup_runs).
+
+Если rep_given.json отсутствует на сервере, без флага вся
+неучтённая REP уходит в disputed и ничего не списывается.
+--assume-no-legacy-manual-rep — явное подтверждение оператора,
+что legacy /rep не использовался: тогда списывается
+min(estimate match_history, remainder) на игрока.
 """
 
 from __future__ import annotations
@@ -61,11 +67,22 @@ async def run(args: argparse.Namespace) -> int:
         # --- Сбор данных ---
         legacy = rep_cleanup.load_legacy_manual_rep()
         if legacy is None:
-            log.warning(
-                "rep_given.json not found/unreadable — legacy /rep "
-                "считается недоказанным, положительная неучтённая REP "
-                "уйдёт в disputed без авто-списания."
-            )
+            if args.assume_no_legacy_manual_rep:
+                # Оператор подтверждает: legacy /rep (rep_given.json)
+                # на этом развёртывании не использовался/утерян,
+                # считаем его вклад = 0. Остаток всё равно ограничен
+                # match_history-оценкой; лишнее уходит в disputed.
+                legacy = {}
+                log.warning(
+                    "--assume-no-legacy-manual-rep: rep_given.json "
+                    "отсутствует, legacy /rep принят за 0."
+                )
+            else:
+                log.warning(
+                    "rep_given.json not found/unreadable — legacy /rep "
+                    "считается недоказанным, положительная неучтённая REP "
+                    "уйдёт в disputed без авто-списания."
+                )
         inputs = await rep_cleanup.fetch_cleanup_inputs(conn)
         plan = rep_cleanup.build_cleanup_plan(
             inputs["stats_rows"],
@@ -146,7 +163,6 @@ async def run(args: argparse.Namespace) -> int:
             inputs = await rep_cleanup.fetch_cleanup_inputs(
                 conn, for_update=True
             )
-            legacy = rep_cleanup.load_legacy_manual_rep()
             plan = rep_cleanup.build_cleanup_plan(
                 inputs["stats_rows"],
                 inputs["tx_sums"],
@@ -182,6 +198,9 @@ def main() -> int:
     ap.add_argument("--report", type=Path, default=None)
     ap.add_argument("--restore", action="store_true",
                     help="Откатить списание, вернув deducted из rep_cleanup_items")
+    ap.add_argument("--assume-no-legacy-manual-rep", action="store_true",
+                    help="rep_given.json отсутствует -> считать legacy /rep = 0 "
+                         "(явное решение оператора; иначе вся неучтённая REP disputed)")
     args = ap.parse_args()
     args.dry_run = args.dry_run or not args.confirm
     return asyncio.run(run(args))
