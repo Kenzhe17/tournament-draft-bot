@@ -2491,9 +2491,19 @@ def _find_seq_room(session: dict, room_index: int):
 async def _publish_seq_shot(
     stats_channel, room: dict, pending_entry: dict,
     item: dict,
-) -> None:
+) -> bool:
     """Сообщение с принятым скриншотом — хранит байты в Discord
-    для восстановления после рестарта и показывает прогресс."""
+    для восстановления после рестарта и показывает прогресс.
+
+    True — файл надёжно сохранён в Discord (единственный
+    долговременный источник после рестарта). False — отправка
+    не удалась: вызывающий код помечает entry shot_pending и
+    НЕ сообщает пользователю об успехе.
+    """
+    # Идемпотентность: shot уже опубликован — не дублируем
+    # сообщение при повторных вызовах.
+    if pending_entry.get("shot_message_id"):
+        return True
     kind_label = (
         "полный экран" if pending_entry.get("kind") == "classic"
         else "скриншот отряда"
@@ -2523,8 +2533,10 @@ async def _publish_seq_shot(
         ids = room.setdefault("shot_message_ids", [])
         if msg.id not in ids:
             ids.append(msg.id)
+        return True
     except Exception as e:
         logger.warning("seq shot message publish failed: %s", e)
+        return False
 
 
 async def _ensure_room_collect_message(
@@ -2587,6 +2599,7 @@ async def _seq_pending_items(
     комнаты публикуется без вложений, статистика не теряется.
     """
     items: list[dict] = []
+    problems: list[dict] = []
     cache = _SEQ_FILE_CACHE.get(cache_key) or {}
     for p in pending_entries or []:
         sha = p.get("sha")
@@ -2604,12 +2617,20 @@ async def _seq_pending_items(
                     data = await att.read()
             except Exception:
                 logger.debug("seq shot fetch failed", exc_info=True)
-        if data:
-            items.append({
-                "filename": p.get("filename") or f"{sha}.png",
-                "data": data,
-            })
-    return items
+        if not data:
+            problems.append({"sha": sha, "reason": "missing"})
+            continue
+        # Верификация: восстановленные байты обязаны совпадать
+        # с sha256, зафиксированным при OCR — иначе нельзя
+        # публиковать комплект с чужой/повреждённой картинкой.
+        if _sha256_bytes(data) != sha:
+            problems.append({"sha": sha, "reason": "sha_mismatch"})
+            continue
+        items.append({
+            "filename": p.get("filename") or f"{sha}.png",
+            "data": data,
+        })
+    return items, problems
 
 
 async def process_room_file(
@@ -2661,16 +2682,31 @@ async def process_room_file(
         )
 
     # Дедупликация: sha не должен встречаться в других комнатах
-    # и в pending этой комнаты.
-    known = _all_room_shas(session)
-    for p in room.get("pending") or []:
-        known.discard(p.get("sha"))
-    if room.get("sha"):
-        known.discard(room["sha"])
-    if sha in known or sha in _pending_shas(room):
+    # и в pending этой комнаты. Исключение — повторная отправка
+    # ТОГО ЖЕ файла, когда Discord-копия не сохранена
+    # (shot_pending) или утеряна (needs_reupload): OCR не
+    # повторяем — восстанавливаем только публикацию вложения.
+    pend_entries = room.get("pending") or []
+    dup_entry = next(
+        (p for p in pend_entries if p.get("sha") == sha), None
+    )
+    if dup_entry is not None:
+        if dup_entry.get("shot_pending") or dup_entry.get(
+            "needs_reupload"
+        ):
+            return await _retry_seq_shot(
+                guild, stats_channel, tournament, key, session,
+                room, dup_entry, item,
+            )
         _drop_empty_room(rooms, room)
         return "dup"
-    if len(room.get("pending") or []) >= 2:
+    known = _all_room_shas(session)
+    if room.get("sha"):
+        known.discard(room["sha"])
+    if sha in known:
+        _drop_empty_room(rooms, room)
+        return "dup"
+    if len(pend_entries) >= 2:
         return "room_full"
 
     gen = session.get("gen", 1)
@@ -2689,6 +2725,7 @@ async def process_room_file(
         or fs.get("status") != "collecting"
         or fs.get("gen") != gen
     ):
+        _seq_purge_session(guild.id, tournament.channel_id, key)
         return "cancelled"
 
     if pipe is None:
@@ -2716,6 +2753,7 @@ async def process_room_file(
             or fs.get("status") != "collecting"
             or int(fs.get("gen", 0)) != int(gen)
         ):
+            _seq_purge_session(guild.id, tournament.channel_id, key)
             return "cancelled"
         room = _find_seq_room(fs, room_index)
         if room is None or _room_has_panels(room):
@@ -2750,7 +2788,11 @@ async def process_room_file(
     }
 
     # Shot-сообщение (байты в Discord) + сообщение сбора комнаты.
-    await _publish_seq_shot(stats_channel, room, entry, item)
+    # Без успешной отправки вложения файл не считается надёжно
+    # сохранённым: entry помечается shot_pending, пользователю
+    # уходит НЕ «ok», а предложение повторить отправку.
+    shot_ok = await _publish_seq_shot(stats_channel, room, entry, item)
+    entry["shot_pending"] = not shot_ok
     store.set(tournament)
     await _ensure_room_collect_message(
         stats_channel, tournament, session, room,
@@ -2762,7 +2804,44 @@ async def process_room_file(
     await _update_rooms_progress(
         guild, tournament, key, match_type, match_index, stats_channel,
     )
+    if not shot_ok:
+        return "shot_pending"
     return "ok" if was_first else "added"
+
+
+async def _retry_seq_shot(
+    guild, stats_channel, tournament, key, session,
+    room, entry, item,
+) -> str:
+    """Повторная отправка того же файла для восстановления
+    Discord-копии (shot_pending/needs_reupload). OCR не
+    перезапускается — pipe уже сохранён в pending."""
+    ck = _seq_cache_key(
+        guild.id, tournament.channel_id, key,
+        int(room.get("room_index", 0)),
+    )
+    _SEQ_FILE_CACHE.setdefault(ck, {})[entry["sha"]] = {
+        "filename": entry.get("filename") or item.get("filename"),
+        "data": item["data"],
+    }
+    ok = await _publish_seq_shot(stats_channel, room, entry, item)
+    entry["shot_pending"] = not ok
+    if ok:
+        entry["needs_reupload"] = False
+    store.set(tournament)
+    if ok:
+        return "ok"
+    return "shot_pending"
+
+
+def _seq_purge_session(guild_id, channel_id, key: str) -> None:
+    """Очистить байтовые кэши последовательной загрузки сессии —
+    при отмене/завершении/устаревании, чтобы RAM не копил
+    изображения после серии неудачных матчей."""
+    prefix = (int(guild_id), int(channel_id), key)
+    for cache in (_SEQ_FILE_CACHE, _REPUBLISH_FILE_CACHE):
+        for ck in [k for k in cache if k[:3] == prefix]:
+            cache.pop(ck, None)
 
 
 async def _process_republish_file(
@@ -2834,16 +2913,56 @@ async def finalize_room_collect(
     awaiting_mapping. Идемпотентно под _room_lock.
 
     Коды: "ok" | "publish_fail" | "done" | "empty" | "closed" |
-    "forbidden" | "invalid".
+    "forbidden" | "invalid" | "files_missing".
     """
     key = _session_key(match_type, match_index)
     session = (tournament.ocr_sessions or {}).get(key)
     if not session or session.get("mode") != "rooms":
         return "closed"
     if session.get("status") in ("completed", "cancelled"):
+        _seq_purge_session(guild.id, tournament.channel_id, key)
         return "closed"
     if not _rooms_file_submit_allowed(tournament, session, user):
         return "forbidden"
+
+    # Сначала восстанавливаем и верифицируем исходные файлы —
+    # merge в panels выполняем только когда ВСЕ байты на месте
+    # и совпадают по sha256. Иначе комната остаётся в
+    # collecting_files с needs_reupload — статистика не теряется,
+    # пользователь может прикрепить файлы повторно.
+    if stats_channel is None:
+        stats_channel = await _stats_channel_for(guild, session)
+    pre_t = store.get(guild.id, tournament.channel_id) or tournament
+    pre_room = _find_seq_room(
+        pre_t.ocr_sessions.get(key) or {}, room_index
+    )
+    # Идемпотентность до проверки файлов: уже завершённая
+    # комната → "done", а не "empty".
+    if pre_room is not None and _room_has_panels(pre_room):
+        return "done"
+    pend_pre = (pre_room or {}).get("pending") or []
+    if not pend_pre:
+        return "empty"
+    ck = _seq_cache_key(
+        guild.id, tournament.channel_id, key, room_index
+    )
+    items, problems = await _seq_pending_items(
+        stats_channel, pend_pre, ck
+    )
+    if problems:
+        bad = {p["sha"] for p in problems}
+        for p in pend_pre:
+            if p.get("sha") in bad:
+                p["needs_reupload"] = True
+                p["shot_pending"] = True
+        store.set(pre_t)
+        logger.warning(
+            "seq finalize room %s: %d file(s) unrecoverable "
+            "(%s) — awaiting reupload",
+            room_index, len(problems),
+            ",".join(sorted(bad)),
+        )
+        return "files_missing"
 
     gen = int(session.get("gen", 1))
     fresh_t = None
@@ -2855,6 +2974,7 @@ async def finalize_room_collect(
             or fs.get("status") != "collecting"
             or int(fs.get("gen", 0)) != gen
         ):
+            _seq_purge_session(guild.id, tournament.channel_id, key)
             return "closed"
         room = _find_seq_room(fs, room_index)
         if room is None:
@@ -2864,6 +2984,10 @@ async def finalize_room_collect(
         pend = room.get("pending") or []
         if not pend:
             return "empty"
+        # Pending мог измениться между проверкой файлов и локом —
+        # сливаем только тот же набор sha.
+        if _pending_shas(room) != _pending_shas(pre_room or {}):
+            return "files_missing"
         pend_snapshot = [dict(p) for p in pend]
         pipes = [p.get("pipe") or {} for p in pend]
         shas = _pending_shas(room)
@@ -2882,15 +3006,9 @@ async def finalize_room_collect(
         fs["rooms_received"] = _rooms_completed_count(fs)
         store.set(fresh_t)
         session, room = fs, room
-        pending_for_items = pend_snapshot
 
     # Публикация сообщения комнаты с кнопками сопоставления —
-    # байты берём из памяти или Discord shot-сообщений.
-    if stats_channel is None:
-        stats_channel = await _stats_channel_for(guild, session)
-    ck = _seq_cache_key(guild.id, tournament.channel_id, key, room_index)
-    items = await _seq_pending_items(stats_channel, pending_for_items, ck)
-    _SEQ_FILE_CACHE.pop(ck, None)
+    # байты уже верифицированы выше.
     channel = stats_channel
     ok = False
     if channel is not None:
@@ -2929,6 +3047,9 @@ async def finalize_room_collect(
     except Exception:
         logger.debug("collect message finalize edit failed",
                      exc_info=True)
+    # Байты комнаты больше не нужны для republish этой комнаты —
+    # источник истины теперь panels + shot-сообщения.
+    _SEQ_FILE_CACHE.pop(ck, None)
     return "ok" if ok or room.get("message_id") else "publish_fail"
 
 
@@ -3774,6 +3895,7 @@ async def cancel_rooms_session(
         # Удаляем сессию целиком — поздние OCR-задачи увидят
         # отсутствие/несовпадение gen и не запишут результат.
         tournament.ocr_sessions.pop(key, None)
+        _seq_purge_session(guild.id, tournament.channel_id, key)
         store.set(tournament)
 
     # Карточка матча → обратно в активное состояние
@@ -4085,6 +4207,18 @@ class RoomUploadModal(Modal):
             "added": (
                 f"✅ Второй скриншот принят в комнату "
                 f"{self.room_index} — нажмите «Завершить комнату»."
+            ),
+            "shot_pending": (
+                "⚠️ Статистика распознана и сохранена, но "
+                "скриншот не удалось опубликовать в канал — "
+                "отправьте тот же файл ещё раз кнопкой «Добавить "
+                "скриншот» (OCR повторно не запустится)."
+            ),
+            "files_missing": (
+                "⚠️ Часть исходных скриншотов комнаты утеряна "
+                "(сообщение с файлом недоступно) — прикрепите их "
+                "повторно кнопкой «Добавить скриншот»: "
+                "распознанная статистика сохранена."
             ),
             "room_full": (
                 f"⚠️ В комнате {self.room_index} уже 2 скриншота — "

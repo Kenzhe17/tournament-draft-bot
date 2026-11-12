@@ -373,3 +373,141 @@ class TestSequentialRepublish:
         # OCR не запускался повторно
         assert len(env.pipe_calls) == calls_before
         assert room["message_id"]
+
+
+class _FailOnceChan(_Chan):
+    """Канал, падающий на первой отправке shot-сообщения."""
+
+    def __init__(self):
+        super().__init__()
+        self.fail_next = True
+
+    async def send(self, content=None, view=None, files=None, **kw):
+        if self.fail_next and files:
+            self.fail_next = False
+            raise RuntimeError("discord send failed")
+        return await super().send(
+            content=content, view=view, files=files, **kw
+        )
+
+
+class TestShotReliability:
+    @pytest.mark.asyncio
+    async def test_shot_send_fail_then_retry(self, env):
+        """Discord send shot-сообщения упал → shot_pending,
+        ответ НЕ 'ok'; повторная отправка того же файла
+        восстанавливает Discord-копию без повторного OCR."""
+        env.stats = _FailOnceChan()
+        r1 = await _file(env, 1, "classic1")
+        assert r1 == "shot_pending"
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        assert entry["shot_pending"] is True
+        assert entry["shot_message_id"] is None
+        # Статистика сохранена — pending не потерян
+        assert entry["pipe"]["panels"]
+
+        # Повторная отправка того же файла — только shot publish
+        calls = len(env.pipe_calls)
+        r2 = await _file(env, 1, "classic1")
+        assert r2 == "ok"
+        assert len(env.pipe_calls) == calls  # OCR не повторялся
+        assert entry["shot_pending"] is False
+        assert entry["shot_message_id"]
+
+    @pytest.mark.asyncio
+    async def test_restart_then_second_file(self, env):
+        """Первый файл принят → «рестарт» (кэш пуст) → второй
+        файл → finalize: байты первого — из Discord shot."""
+        assert await _file(env, 1, "classic1") == "ok"
+        up._SEQ_FILE_CACHE.clear()  # рестарт
+        assert await _file(env, 1, "squadA") == "added"
+        assert await _finish(env) == "ok"
+        assert env.session["rooms"][0]["kind"] == "mixed"
+
+    @pytest.mark.asyncio
+    async def test_attachment_lost_files_missing(self, env):
+        """Shot-сообщение недоступно после рестарта →
+        files_missing, комната остаётся collecting_files,
+        panels НЕ слиты, статистика не потеряна."""
+        await _file(env, 1, "classic1")
+        await _file(env, 1, "squadA")
+        up._SEQ_FILE_CACHE.clear()
+        # Discord «забыл» сообщение — fetch падает
+        async def boom(mid):
+            raise RuntimeError("Unknown Message")
+        env.stats.fetch_message = boom
+        res = await _finish(env)
+        assert res == "files_missing"
+        room = env.session["rooms"][0]
+        assert room["status"] == "collecting_files"
+        assert not room["panels"]
+        assert len(room["pending"]) == 2
+        assert all(p.get("needs_reupload") for p in room["pending"])
+
+        # Повторная прикрепка того же файла восстанавливает shot
+        # без повторного OCR.
+        calls = len(env.pipe_calls)
+        env.stats = _Chan()  # «новое» сообщение shot отправится
+        # fetch_message в _seq_pending_items использует stats_channel
+        # финализации; для повторной загрузки канал — env.stats.
+        r = await _file(env, 1, "classic1")
+        assert r == "ok"
+        assert len(env.pipe_calls) == calls
+        p0 = room["pending"][0]
+        assert p0["shot_pending"] is False
+        assert p0["needs_reupload"] is False
+
+    @pytest.mark.asyncio
+    async def test_sha_mismatch_on_recovery(self, env):
+        """Discord attachment вернул другие байты → sha mismatch →
+        files_missing, комплект не публикуется как успешный."""
+        await _file(env, 1, "classic1")
+        up._SEQ_FILE_CACHE.clear()
+        room = env.session["rooms"][0]
+        mid = room["pending"][0]["shot_message_id"]
+        # Подменяем байты в «сообщении»
+        env.stats._by_id[mid].attachments[0]._data = b"EVIL"
+        res = await _finish(env)
+        assert res == "files_missing"
+        assert room["status"] == "collecting_files"
+
+    @pytest.mark.asyncio
+    async def test_cancel_clears_caches(self, env):
+        """Отмена комплекта → _SEQ/_REPUBLISH кэши сессии пусты."""
+        await _file(env, 1, "classic1")
+        ck = up._seq_cache_key(1, 1, "qualifier_0", 1)
+        assert ck in up._SEQ_FILE_CACHE
+        # cancel_rooms_session требует strict admin
+        admin = SimpleNamespace(
+            id=1, display_name="a", name="a",
+            guild_permissions=SimpleNamespace(administrator=True),
+        )
+        env.tournament.id = "t1"
+        env.tournament.processed_elo_matches = set()
+        res = await up.cancel_rooms_session(
+            env.guild, admin, env.tournament, "qualifier", 0,
+        )
+        assert res == "ok"
+        assert ck not in up._SEQ_FILE_CACHE
+        assert not any(
+            k[:3] == (1, 1, "qualifier_0")
+            for k in up._SEQ_FILE_CACHE
+        )
+
+
+class TestConfirmViewRestore:
+    def test_counts_from_session(self, env):
+        """bot.py restore вычисляет counts из сессии — те же
+        helpers, что и при создании view."""
+        from views import ocr_match_view as omv
+
+        room = env.session["rooms"][0] if env.session["rooms"] else {
+            "stat_conflicts": [{"resolved": False}],
+            "aux_review": [{"name": "x"}],
+        }
+        env.session["rooms"] = [room]
+        n_conf = len(omv._rooms_unresolved_conflicts(env.session))
+        n_aux = omv._rooms_aux_review_pending(env.session)
+        assert n_conf == 1
+        assert n_aux == 1

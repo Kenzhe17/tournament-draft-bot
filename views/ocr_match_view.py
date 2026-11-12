@@ -4313,6 +4313,13 @@ async def _finalize_ocr_match_impl(
     session["status"] = "completed"
     session["winning_team_index"] = winning_team_index
     store.set(tournament)
+    # Освобождаем байтовые кэши последовательной загрузки —
+    # сессия завершена, исходники больше не нужны.
+    try:
+        from cogs.ocr_upload import _seq_purge_session
+        _seq_purge_session(guild_id, channel_id, key)
+    except Exception:
+        pass
 
     # 5.1. Финальная карточка результата в канал MATCH_RESULTS.
     # Перечитываем tournament/session: store.set выше мог подменить
@@ -7053,6 +7060,11 @@ class RoomFilesView(View):
                 "сначала отправьте скриншот."
             ),
             "closed": "⚠️ Сессия загрузки завершена или отменена.",
+            "files_missing": (
+                "⚠️ Часть исходных скриншотов утеряна — прикрепите "
+                "их повторно кнопкой «Добавить скриншот», затем "
+                "нажмите «Завершить комнату» ещё раз."
+            ),
             "forbidden": (
                 "❌ Завершить комнату может только отправитель "
                 "комплекта, капитан команды-победителя или "

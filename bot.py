@@ -561,12 +561,26 @@ class TournamentBot(commands.Bot):
                     cmid = session.get("confirm_message_id")
                     if cmid:
                         try:
-                            from views.ocr_match_view import RoomsConfirmView
+                            from views.ocr_match_view import (
+                                RoomsConfirmView,
+                                _rooms_aux_review_pending,
+                                _rooms_unresolved_conflicts,
+                            )
+                            # Актуальные счётчики из сессии —
+                            # кнопки «Конфликты»/«Игнорировать
+                            # доп. данные» должны работать после
+                            # перезапуска так же, как до него.
                             self.add_view(
                                 RoomsConfirmView(
                                     tournament.guild_id,
                                     tournament.channel_id,
                                     tournament, mt, mi,
+                                    conflicts_count=len(
+                                        _rooms_unresolved_conflicts(session)
+                                    ),
+                                    aux_review_count=(
+                                        _rooms_aux_review_pending(session)
+                                    ),
                                 ),
                                 message_id=cmid,
                             )
