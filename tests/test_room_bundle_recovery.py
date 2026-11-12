@@ -657,7 +657,7 @@ class TestMixedRoomBundle:
         assert row["stat_conflict"] is True
         assert room["stat_conflicts"] == [
             {"side": "left", "row": 0, "name": "A1", "field": "dmg",
-             "classic": 100, "squad": 200}
+             "classic": 100, "squad": 200, "resolved": False}
         ]
         # Предупреждение в сообщении комнаты
         assert "расходится" in stats.sent[0].content

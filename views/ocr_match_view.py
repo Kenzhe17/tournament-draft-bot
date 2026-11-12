@@ -702,6 +702,23 @@ def _rooms_aggregate_stats(
     return temp_stats
 
 
+def _room_unresolved_conflicts(room: dict) -> list[dict]:
+    """Неразрешённые конфликты classic/squad одной комнаты."""
+    return [
+        c for c in (room.get("stat_conflicts") or [])
+        if isinstance(c, dict) and not c.get("resolved")
+    ]
+
+
+def _rooms_unresolved_conflicts(session: dict) -> list[tuple[int, dict]]:
+    """Все неразрешённые конфликты комплекта: (room_index, conflict)."""
+    out: list[tuple[int, dict]] = []
+    for room in session.get("rooms") or []:
+        for c in _room_unresolved_conflicts(room):
+            out.append((int(room.get("room_index") or 0), c))
+    return out
+
+
 def _rooms_stats_complete(session: dict) -> bool:
     """Все привязанные строки всех комнат имеют K/D/A/DMG.
 
@@ -745,6 +762,11 @@ def check_ocr_session_ready(
         return False, "no_session", ""
     if session.get("status") in ("completed", "cancelled"):
         return False, "closed", ""
+    # Неразрешённые конфликты classic/squad блокируют финализацию
+    # и начисление ELO — источник каждого значения выбирает
+    # администратор на этапе проверки итогов.
+    if _rooms_unresolved_conflicts(session):
+        return False, "conflicts_unresolved", ""
     if not _rooms_all_mapped(session, t1, t2):
         return False, "unmapped", ""
     if not _rooms_stats_complete(session):
@@ -858,6 +880,10 @@ def _session_mm_winner(
 
 def _rooms_ready_reason_text(reason: str, detail: str = "") -> str:
     """Пользовательское сообщение о причине неготовности rooms-комплекта."""
+    if reason == "conflicts_unresolved":
+        return ("⚠️ Есть неразрешённые расхождения между полным "
+                "скриншотом и скриншотом отряда — администратор "
+                "выбирает источник кнопкой «Конфликты».")
     if reason == "unmapped":
         return ("⚠️ Не все комнаты сопоставлены — проверьте "
                 "сообщения комнат.")
@@ -5536,6 +5562,14 @@ async def _rooms_send_confirmation(
             "\n\n⚠️ Есть нераспознанные значения (K/D/A/DMG) — "
             "подтверждение будет отклонено до их исправления."
         )
+    n_conflicts = len(_rooms_unresolved_conflicts(session))
+    if n_conflicts:
+        embed.description += (
+            f"\n\n⚠️ **{n_conflicts}** неразрешённых расхождений "
+            "между полным скриншотом и скриншотом отряда — "
+            "подтверждение заблокировано до выбора источника "
+            "администратором (кнопка «Конфликты»)."
+        )
     for team_index in (t1, t2):
         tname = _team_display_name(tournament, team_index)
         lines = []
@@ -5563,6 +5597,7 @@ async def _rooms_send_confirmation(
     view = RoomsConfirmView(
         tournament.guild_id, tournament.channel_id, tournament,
         match_type, match_index,
+        conflicts_count=n_conflicts,
     )
     msg = await channel.send(
         content=replace_emojis(
@@ -5592,6 +5627,7 @@ class RoomsConfirmView(View):
     def __init__(
         self, guild_id: int, channel_id: int, tournament,
         match_type: str, match_index: int,
+        conflicts_count: int = 0,
     ):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -5599,11 +5635,16 @@ class RoomsConfirmView(View):
         self.match_type = match_type
         self.match_index = match_index
         cid = f"{guild_id}:{channel_id}:{match_type}:{match_index}"
-        specs = (
+        specs = [
             ("✅ Подтвердить результаты", discord.ButtonStyle.success, "ok"),
             ("✏️ Исправить статистику", discord.ButtonStyle.primary, "edit"),
             ("📣 Вызвать администратора", discord.ButtonStyle.secondary, "admin"),
-        )
+        ]
+        if conflicts_count:
+            specs.append((
+                f"⚠️ Конфликты ({conflicts_count})",
+                discord.ButtonStyle.danger, "conflicts",
+            ))
         for label, style, suffix in specs:
             b = Button(
                 label=label, style=style,
@@ -5618,9 +5659,54 @@ class RoomsConfirmView(View):
                 await self._on_confirm(interaction)
             elif suffix == "edit":
                 await self._on_edit(interaction)
+            elif suffix == "conflicts":
+                await self._on_conflicts(interaction)
             else:
                 await self._on_admin(interaction)
         return _cb
+
+    async def _on_conflicts(self, interaction: discord.Interaction) -> None:
+        """Открыть разрешение конфликтов classic/squad (admin/org)."""
+        tournament = await self._fresh()
+        if not tournament:
+            await interaction.response.send_message(
+                replace_emojis("❌ Турнир не найден."), ephemeral=True
+            )
+            return
+        session = tournament.ocr_sessions.get(
+            _session_key(self.match_type, self.match_index)
+        )
+        # Выбор источника значения — только администратор сервера
+        # или организатор: обычным игрокам менять числа нельзя.
+        allowed = session and (
+            _is_server_admin(interaction.user)
+            or is_org_check(interaction.user, interaction.guild)
+        )
+        if not allowed:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет прав на выбор источника."),
+                ephemeral=True,
+            )
+            return
+        if not _rooms_unresolved_conflicts(session or {}):
+            await interaction.response.send_message(
+                replace_emojis("✅ Все конфликты уже разрешены."),
+                ephemeral=True,
+            )
+            return
+        view = RoomConflictsView(
+            tournament.guild_id, tournament.channel_id, tournament,
+            self.match_type, self.match_index,
+        )
+        await interaction.response.send_message(
+            content=replace_emojis(
+                "⚠️ **Конфликты скриншотов** — для каждого значения "
+                "выберите источник: полный экран (Classic) или "
+                "скриншот отряда (Squad). Решение фиксируется "
+                "с вашим ID и временем."
+            ),
+            view=view, ephemeral=True,
+        )
 
     async def _fresh(self):
         return store.get(self.guild_id, self.channel_id)
@@ -5767,6 +5853,314 @@ class RoomsConfirmView(View):
             logger.warning("rooms confirm call-admin failed: %s", e)
         await interaction.response.send_message(
             replace_emojis("📣 Администратор уведомлён."), ephemeral=True
+        )
+
+
+_CONFLICT_FIELD_LABELS = {
+    "kills": "Убийства (K)",
+    "deaths": "Смерти (D)",
+    "assists": "Ассисты (A)",
+    "dmg": "Урон (DMG)",
+}
+
+
+async def resolve_room_conflict(
+    guild_id: int,
+    channel_id: int,
+    match_type: str,
+    match_index: int,
+    room_index: int,
+    conflict_index: int,
+    source: str,
+    user,
+) -> str:
+    """Применить выбранный источник к конфликту classic/squad.
+
+    source: "classic" | "squad". Под _mapping_lock (= _room_lock):
+    перечитывает свежую сессию, проверяет статус и resolved,
+    пишет выбранное значение в classic-строку панели (единственный
+    источник статистики), фиксирует решение с ID/именем админа
+    и временем. Коды: "ok" | "bad_source" | "closed" |
+    "missing" | "resolved".
+    """
+    if source not in ("classic", "squad"):
+        return "bad_source"
+    key = _session_key(match_type, match_index)
+    async with _mapping_lock(key):
+        tournament = store.get(guild_id, channel_id)
+        session = (
+            tournament.ocr_sessions.get(key) if tournament else None
+        )
+        if (
+            not session
+            or session.get("mode") != "rooms"
+            or session.get("status") in ("completed", "cancelled",
+                                         "finalizing")
+        ):
+            return "closed"
+        room = next(
+            (
+                r for r in session.get("rooms") or []
+                if int(r.get("room_index") or 0) == int(room_index)
+            ),
+            None,
+        )
+        conflicts = (room or {}).get("stat_conflicts") or []
+        if room is None or not (0 <= conflict_index < len(conflicts)):
+            return "missing"
+        c = conflicts[conflict_index]
+        if not isinstance(c, dict) or c.get("resolved"):
+            return "resolved"
+        field = c.get("field")
+        if field not in ("kills", "deaths", "assists", "dmg"):
+            return "missing"
+        rows = (
+            ((room.get("panels") or {}).get(c.get("side")) or {})
+            .get("rows") or []
+        )
+        ri = c.get("row")
+        if not isinstance(ri, int) or not (0 <= ri < len(rows)):
+            return "missing"
+        value = c.get("classic") if source == "classic" else c.get("squad")
+        row = rows[ri]
+        row[field] = value
+        # Та же строка может уже быть сопоставлена: skeleton/mapped
+        # rows — отдельные копии panel rows (индекс-в-индекс),
+        # агрегат читает именно их — обновляем и их.
+        for tm in (room.get("maps") or {}).values():
+            if (
+                not isinstance(tm, dict)
+                or tm.get("panel") != c.get("side")
+            ):
+                continue
+            mrows = tm.get("rows") or []
+            if isinstance(ri, int) and 0 <= ri < len(mrows):
+                mrows[ri][field] = value
+        c.update({
+            "resolved": True,
+            "source": source,
+            "value": value,
+            "by": int(getattr(user, "id", 0) or 0),
+            "by_name": str(
+                getattr(user, "display_name", None)
+                or getattr(user, "name", "")
+                or getattr(user, "id", "")
+            ),
+            "at": datetime.now().isoformat(),
+        })
+        # Флаг строки снимается, когда на ней не осталось
+        # неразрешённых конфликтов.
+        still = any(
+            cc for cc in conflicts
+            if cc is not c and isinstance(cc, dict)
+            and not cc.get("resolved")
+            and cc.get("side") == c.get("side")
+            and cc.get("row") == c.get("row")
+        )
+        if still:
+            row["stat_conflict"] = True
+        else:
+            row.pop("stat_conflict", None)
+        store.set(tournament)
+        return "ok"
+
+
+class RoomConflictsView(View):
+    """Постраничный выбор источника для конфликтов classic/squad.
+
+    Открывается кнопкой «Конфликты» на экране подтверждения —
+    только администратору/организатору. Каждый конфликт: Classic
+    или Squad; решение фиксируется resolve_room_conflict.
+    """
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int,
+    ):
+        super().__init__(timeout=600)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self._page = 0
+        self._render()
+
+    def _session(self):
+        t = store.get(self.guild_id, self.channel_id)
+        session = (
+            t.ocr_sessions.get(
+                _session_key(self.match_type, self.match_index)
+            ) if t else None
+        ) or {}
+        return t, session
+
+    def _unresolved(self, session) -> list[tuple[int, int, dict]]:
+        out = []
+        for room in session.get("rooms") or []:
+            for i, c in enumerate(room.get("stat_conflicts") or []):
+                if isinstance(c, dict) and not c.get("resolved"):
+                    out.append(
+                        (int(room.get("room_index") or 0), i, c)
+                    )
+        return out
+
+    def _current(self):
+        _, session = self._session()
+        items = self._unresolved(session)
+        if not items:
+            return None, 0
+        self._page = max(0, min(self._page, len(items) - 1))
+        return items[self._page], len(items)
+
+    def page_content(self) -> str:
+        cur, total = self._current()
+        if cur is None:
+            return replace_emojis("✅ Все конфликты разрешены.")
+        (ridx, _, c), _ = cur, total
+        field = _CONFLICT_FIELD_LABELS.get(
+            c.get("field"), str(c.get("field"))
+        )
+        side_name = {"left": "левая", "right": "правая"}.get(
+            c.get("side"), str(c.get("side"))
+        )
+        return replace_emojis(
+            f"**Конфликт {self._page + 1}/{total}** — комната "
+            f"{ridx}, {side_name} панель, строка "
+            f"{(c.get('row') or 0) + 1}, игрок «{c.get('name')}», "
+            f"**{field}**:\n"
+            f"• Classic (полный экран): **{c.get('classic')}**\n"
+            f"• Squad (скриншот отряда): **{c.get('squad')}**\n"
+            "Выберите источник значения:"
+        )
+
+    def _render(self):
+        self.clear_items()
+        cur, total = self._current()
+        if cur is None:
+            return
+        ridx, cidx, c = cur
+
+        async def _choice(interaction, source):
+            await self._resolve(interaction, ridx, cidx, source)
+
+        async def _classic_cb(interaction):
+            await _choice(interaction, "classic")
+
+        async def _squad_cb(interaction):
+            await _choice(interaction, "squad")
+
+        async def _prev_cb(interaction):
+            self._page = max(0, self._page - 1)
+            self._render()
+            await interaction.response.edit_message(
+                content=self.page_content(), view=self
+            )
+
+        async def _next_cb(interaction):
+            self._page += 1
+            self._render()
+            await interaction.response.edit_message(
+                content=self.page_content(), view=self
+            )
+
+        b = Button(
+            label=f"Classic: {c.get('classic')}",
+            style=discord.ButtonStyle.primary,
+            custom_id=f"room_conflict:classic:{self._cid()}",
+            row=0,
+        )
+        b.callback = _classic_cb
+        self.add_item(b)
+        b = Button(
+            label=f"Squad: {c.get('squad')}",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"room_conflict:squad:{self._cid()}",
+            row=0,
+        )
+        b.callback = _squad_cb
+        self.add_item(b)
+        b = Button(
+            label="◀", style=discord.ButtonStyle.gray,
+            custom_id=f"room_conflict:prev:{self._cid()}",
+            disabled=self._page <= 0, row=0,
+        )
+        b.callback = _prev_cb
+        self.add_item(b)
+        b = Button(
+            label="▶", style=discord.ButtonStyle.gray,
+            custom_id=f"room_conflict:next:{self._cid()}",
+            disabled=self._page >= total - 1, row=0,
+        )
+        b.callback = _next_cb
+        self.add_item(b)
+
+    def _cid(self) -> str:
+        return (
+            f"{self.guild_id}:{self.channel_id}:"
+            f"{self.match_type}:{self.match_index}"
+        )
+
+    async def _resolve(
+        self, interaction: discord.Interaction,
+        room_index: int, conflict_index: int, source: str,
+    ) -> None:
+        tournament = store.get(self.guild_id, self.channel_id)
+        session = (
+            tournament.ocr_sessions.get(
+                _session_key(self.match_type, self.match_index)
+            ) if tournament else None
+        ) or {}
+        # Те же права, что при открытии: admin/org — обычным
+        # игрокам выбор источника недоступен.
+        allowed = (
+            _is_server_admin(interaction.user)
+            or is_org_check(interaction.user, interaction.guild)
+        )
+        if not allowed:
+            await interaction.response.send_message(
+                replace_emojis("❌ Нет прав на выбор источника."),
+                ephemeral=True,
+            )
+            return
+        res = await resolve_room_conflict(
+            self.guild_id, self.channel_id,
+            self.match_type, self.match_index,
+            room_index, conflict_index, source, interaction.user,
+        )
+        if res == "ok":
+            # Следующий неразрешённый конфликт на этой же странице
+            # или конец списка.
+            _, session = self._session()
+            if not self._unresolved(session):
+                self._page = 0
+                self.clear_items()
+                await interaction.response.edit_message(
+                    content=(
+                        "✅ Конфликт разрешён — это был последний. "
+                        "Все расхождения закрыты, финализация "
+                        "разблокирована."
+                    ),
+                    view=self,
+                )
+                return
+        elif res == "resolved":
+            pass  # уже решён другим админом — просто обновляем вид
+        elif res == "closed":
+            await interaction.response.send_message(
+                replace_emojis("⚠️ Сессия уже завершена/отменена."),
+                ephemeral=True,
+            )
+            return
+        else:
+            await interaction.response.send_message(
+                replace_emojis("⚠️ Конфликт не найден — обновите "
+                               "экран проверки итогов."),
+                ephemeral=True,
+            )
+            return
+        self._render()
+        await interaction.response.edit_message(
+            content=self.page_content(), view=self
         )
 
 

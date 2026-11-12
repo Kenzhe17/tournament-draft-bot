@@ -1979,10 +1979,18 @@ async def _publish_room_message(
         f"Распознано игроков: {players_n}"
     )
     if room.get("stat_conflicts"):
+        n = sum(
+            1 for c in room["stat_conflicts"] if not c.get("resolved")
+        )
         text += (
-            "\n⚠️ Скриншот отряда расходится с полным экраном — "
-            "статистика взята с полного экрана. Проверьте значения "
-            "на этапе итогов."
+            f"\n⚠️ Скриншот отряда расходится с полным экраном "
+            f"({n} неразрешённых) — финализация заблокирована до "
+            "выбора источника администратором."
+        )
+    if room.get("aux_review"):
+        text += (
+            f"\n👁 {len(room['aux_review'])} игр. отряда требуют "
+            "ручной проверки (нет уверенного совпадения)."
         )
     bot_msg = await stats_channel.send(
         content=replace_emojis(text), view=view, files=files
@@ -2248,12 +2256,14 @@ def _reconcile_mixed_squad(room: dict) -> None:
 
     Classic — единственный источник статистики (ничего не суммируем).
     Squad-скриншот используется только для:
-    - заполнения None-полей classic-строки при УНИКАЛЬНОМ совпадении
-      имени игрока (безопасное сопоставление);
+    - заполнения None-полей classic-строки при УВЕРЕННОМ совпадении
+      игрока: уникальный _norm_player_key И все уникальные совпадения
+      отряда — в пределах ОДНОЙ панели (squad = одна команда);
     - фиксации расхождений непустых значений в room["stat_conflicts"]
-      + флаг stat_conflict на строке — решение принимает этап
-      проверки итогов (ручная правка/админ-откат), автоматического
-      выбора источника нет.
+      — финализация блокируется до разрешения администратором;
+    - неоднозначные случаи (нет уникального совпадения, имя
+      встречается на обеих панелях, отряд «размазался» по командам)
+      → room["aux_review"] для ручной проверки, автозаполнения нет.
     """
     panels = room.get("panels") or {}
     index: dict[str, list] = {}
@@ -2267,15 +2277,51 @@ def _reconcile_mixed_squad(room: dict) -> None:
 
     conflicts = room.setdefault("stat_conflicts", [])
     filled = room.setdefault("aux_filled", [])
-    unmatched = room.setdefault("aux_unmatched", [])
+    review = room.setdefault("aux_review", [])
+
+    def _review(p, reason, candidates=None):
+        review.append({
+            "name": p.get("name"),
+            "reason": reason,
+            "squad": {
+                f: p.get(f)
+                for f in ("kills", "deaths", "assists", "dmg")
+            },
+            "candidates": candidates or [],
+        })
+
     for aux in room.get("aux_squads") or []:
-        for p in aux.get("players") or []:
+        players = aux.get("players") or []
+        # Squad-скриншот — ОДИН отряд одной команды: все уникальные
+        # совпадения должны лежать в одной панели. Если нет —
+        # принадлежность к команде не подтверждена, автозаполнение
+        # отключаем для всего aux.
+        unique_sides = set()
+        unique_matches = {}
+        for p in players:
             key = _norm_player_key(p.get("name"))
-            matches = index.get(key) or []
-            if len(matches) != 1:
-                unmatched.append(p.get("name"))
+            ms = index.get(key) or []
+            if len(ms) == 1:
+                unique_matches[key] = ms[0]
+                unique_sides.add(ms[0][0])
+        if len(unique_sides) > 1:
+            for p in players:
+                _review(p, "squad_spans_both_teams")
+            continue
+
+        for p in players:
+            key = _norm_player_key(p.get("name"))
+            ms = index.get(key) or []
+            if len(ms) != 1:
+                _review(
+                    p, "no_unique_match",
+                    [
+                        {"side": s, "row": i, "name": r.get("name")}
+                        for s, i, r in ms
+                    ],
+                )
                 continue
-            side, i, row = matches[0]
+            side, i, row = ms[0]
             for f in ("kills", "deaths", "assists", "dmg"):
                 sv = p.get(f)
                 if sv is None:
@@ -2294,8 +2340,9 @@ def _reconcile_mixed_squad(room: dict) -> None:
                         "side": side, "row": i,
                         "name": row.get("name"), "field": f,
                         "classic": cv, "squad": sv,
+                        "resolved": False,
                     })
-    for k in ("stat_conflicts", "aux_filled", "aux_unmatched"):
+    for k in ("stat_conflicts", "aux_filled", "aux_review"):
         if not room.get(k):
             room.pop(k, None)
 
