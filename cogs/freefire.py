@@ -11,7 +11,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from config import get_emoji, replace_emojis
+from config import BOT_OWNER_ID, get_emoji, replace_emojis
 from services import ff_catalog
 from services.freefire_service import FreeFireError, freefire_service
 from storage.ff_cooldowns import ff_info_cooldowns, ff_stats_cooldowns
@@ -105,14 +105,15 @@ async def ff_info(
     if not await _check_and_key(interaction, uid):
         return
 
-    remaining = ff_info_cooldowns.seconds_left(interaction.user.id)
-    if remaining > 0:
-        ready_at = int(time.time()) + remaining
-        await interaction.response.send_message(
-            f"⏳ `/ff info` доступна через <t:{ready_at}:R>.",
-            ephemeral=True,
-        )
-        return
+    if interaction.user.id != BOT_OWNER_ID:
+        remaining = ff_info_cooldowns.seconds_left(interaction.user.id)
+        if remaining > 0:
+            ready_at = int(time.time()) + remaining
+            await interaction.response.send_message(
+                f"⏳ `/ff info` доступна через <t:{ready_at}:R>.",
+                ephemeral=True,
+            )
+            return
 
     await interaction.response.defer()
     result = await _safe_call(freefire_service.get_info(region.value, uid))
@@ -144,14 +145,15 @@ async def ff_stats(
     if not await _check_and_key(interaction, uid):
         return
 
-    remaining = ff_stats_cooldowns.seconds_left(interaction.user.id)
-    if remaining > 0:
-        ready_at = int(time.time()) + remaining
-        await interaction.response.send_message(
-            f"⏳ `/ff stats` доступна через <t:{ready_at}:R>.",
-            ephemeral=True,
-        )
-        return
+    if interaction.user.id != BOT_OWNER_ID:
+        remaining = ff_stats_cooldowns.seconds_left(interaction.user.id)
+        if remaining > 0:
+            ready_at = int(time.time()) + remaining
+            await interaction.response.send_message(
+                f"⏳ `/ff stats` доступна через <t:{ready_at}:R>.",
+                ephemeral=True,
+            )
+            return
 
     async def _fetch(mode: str) -> dict[str, Any]:
         gamemode, matchmode, _ = MODE_BY_KEY[mode]
