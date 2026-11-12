@@ -505,14 +505,25 @@ class TournamentBot(commands.Bot):
                     continue
                 try:
                     from views.ocr_match_view import RoomView
-                    from cogs.ocr_upload import RoomCollectView
+                    from cogs.ocr_upload import (
+                        RoomCollectView, _rooms_republish_index,
+                    )
 
                     mt, mi = session["match_type"], session["match_index"]
-                    # Прогресс-сообщение (только пока идёт сбор)
-                    if session.get("status") == "collecting":
-                        prog_id = session.get("progress_message_id")
+                    # Прогресс-сообщение: сбор (collecting) и
+                    # восстановление интерфейса (awaiting_mapping +
+                    # комната без message_id — publish_fail).
+                    rep_needed = (
+                        _rooms_republish_index(session) is not None
+                    )
+                    if prog_id := session.get("progress_message_id"):
                         prog_ch = session.get("progress_channel_id")
-                        if prog_id and prog_ch:
+                        status = session.get("status")
+                        if prog_ch and (
+                            status == "collecting"
+                            or (status == "awaiting_mapping"
+                                and rep_needed)
+                        ):
                             self.add_view(
                                 RoomCollectView(
                                     tournament.guild_id,

@@ -84,6 +84,13 @@ class _Chan:
                 self.sent.remove(msg)
 
         msg.delete = _delete
+
+        async def _edit(content=None, view=None, **kw):
+            msg.content = content
+            msg.view = view
+            return msg
+
+        msg.edit = _edit
         return msg
 
     async def fetch_message(self, mid):
@@ -798,3 +805,99 @@ class TestSingleRoomCard:
         assert await _finish(env) == "files_missing"
         assert room.get("shots_archived") is not True
         assert mid in env.stats._by_id or True  # fetch падал — не важно
+
+
+class TestPublishFailRecovery:
+    @pytest.mark.asyncio
+    async def test_publish_fail_keeps_recovery_path(
+        self, env, monkeypatch,
+    ):
+        """Последняя комната: OCR ok, _publish_room_message падает
+        дважды → publish_fail. collect_message_id НЕ удаляется,
+        progress-view не снимается, republish по тем же SHA без
+        OCR восстанавливает карточку."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        cmid = room.get("collect_message_id")
+        assert cmid
+
+        orig_publish = up._publish_room_message
+
+        async def boom(*a, **k):
+            raise RuntimeError("discord 500")
+
+        monkeypatch.setattr(up, "_publish_room_message", boom)
+        res = await _finish(env)
+        assert res == "publish_fail"
+        assert room.get("message_id") is None
+        # collect_message_id сохранён, кнопки сняты (мёртвые)
+        assert room.get("collect_message_id") == cmid
+        cmsg = env.stats._by_id.get(cmid)
+        assert cmsg is not None and cmsg.view is None
+        # progress-message: RoomCollectView НЕ снят
+        prog = env.stats._by_id.get(
+            env.session.get("progress_message_id")
+        )
+        # progress_message_id может быть None в фикстуре —
+        # _update_progress_message молча пропускает. Проверяем
+        # логику через _rooms_republish_index напрямую.
+        assert up._rooms_republish_index(env.session) == 1
+        # Статус комнаты — awaiting_mapping, panels на месте
+        assert room["status"] == "awaiting_mapping"
+        assert room["panels"]
+        # SHA зафиксированы для republish-верификации
+        assert room.get("sha") or room.get("shas")
+
+        # «Рестарт»: кэши пусты, republish-кэш тоже
+        up._SEQ_FILE_CACHE.clear()
+        up._REPUBLISH_FILE_CACHE.clear()
+        # Возвращаем настоящий publish — только этот patch;
+        # monkeypatch.undo() снял бы и store.set/store.get фикстуры.
+        monkeypatch.setattr(up, "_publish_room_message", orig_publish)
+
+        # Повторная загрузка ТЕХ ЖЕ файлов → republish без OCR
+        pipe_before = len(env.pipe_calls)
+        r1 = await _file(env, 1, "classic1")
+        assert r1 == "republished"
+        assert len(env.pipe_calls) == pipe_before  # OCR не гонялся
+        assert room.get("message_id")
+        # После успешного восстановления техническое
+        # collect-сообщение удалено — одна публичная карточка.
+        assert room.get("collect_message_id") is None
+        assert cmid not in env.stats._by_id
+        assert up._rooms_republish_index(env.session) is None
+        # На опубликованной карточке — RoomView с кнопками
+        # сопоставления; скриншот восстановлен.
+        card = env.stats._by_id.get(room["message_id"])
+        assert card is not None and card.view is not None
+        assert card.attachments
+
+    @pytest.mark.asyncio
+    async def test_publish_fail_needs_all_shas(self, env, monkeypatch):
+        """Mixed-комната publish_fail: republish требует ОБА sha —
+        один файл → republish_partial, не «ok»."""
+        await _file(env, 1, "classic1")
+        await _file(env, 1, "squadA")
+        room = env.session["rooms"][0]
+
+        orig_publish = up._publish_room_message
+
+        async def boom(*a, **k):
+            raise RuntimeError("discord 500")
+
+        monkeypatch.setattr(up, "_publish_room_message", boom)
+        assert await _finish(env) == "publish_fail"
+        monkeypatch.setattr(up, "_publish_room_message", orig_publish)
+        up._SEQ_FILE_CACHE.clear()
+        up._REPUBLISH_FILE_CACHE.clear()
+
+        pipe_before = len(env.pipe_calls)
+        # Только один файл — неполный комплект
+        r = await _file(env, 1, "classic1")
+        assert r == "republish_partial"
+        assert room.get("message_id") is None
+        # Второй файл → republished
+        r = await _file(env, 1, "squadA")
+        assert r == "republished"
+        assert len(env.pipe_calls) == pipe_before
+        assert room.get("message_id")

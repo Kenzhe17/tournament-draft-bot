@@ -2081,13 +2081,21 @@ def _rooms_next_index(session: dict) -> int | None:
 def _rooms_progress_text(session: dict) -> str:
     total = int(session.get("rooms_expected") or 0)
     done = _rooms_completed_count(session)
+    rep = _rooms_republish_index(session)
     nxt = _rooms_next_index(session)
     if nxt is None:
-        status = "ожидание сопоставления"
+        base = "ожидание сопоставления"
     elif done == 0:
-        status = f"загрузка · комната {nxt}"
+        base = f"загрузка · комната {nxt}"
     else:
-        status = f"обработка · комната {nxt}"
+        base = f"обработка · комната {nxt}"
+    # Комната распознана, но интерфейс не опубликован (publish_fail)
+    # — recover-путь через «Добавить скриншот» важнее основного
+    # статуса, показываем его отдельным суффиксом.
+    status = (
+        f"{base} · восстановление интерфейса · комната {rep}"
+        if rep is not None else base
+    )
     return (
         f"**Результаты матча**\n"
         f"Комнаты: {done}/{total}"
@@ -2179,7 +2187,13 @@ async def _update_rooms_progress(
     if prog_id and stats_channel is not None:
         # RoomCollectView определён в этом же модуле (ниже по файлу) —
         # импорт из views.ocr_match_view здесь невозможен (цикл).
-        complete = done >= total and total > 0
+        # Кнопки восстановления («Добавить скриншот») живут, пока
+        # идёт сбор ИЛИ есть комната с panels без message_id
+        # (publish_fail) — иначе recover-путь теряется.
+        rep_needed = _rooms_republish_index(session) is not None
+        complete = (
+            done >= total and total > 0 and not rep_needed
+        )
         view = None if complete else RoomCollectView(
             guild.id, tournament.channel_id, tournament,
             match_type, match_index, session.get("gen", 1),
@@ -3145,19 +3159,33 @@ async def finalize_room_collect(
         await _update_rooms_progress(
             guild, fresh_t, key, match_type, match_index, channel,
         )
-    # Техническое collect-сообщение удаляем — в канале остаётся
-    # ОДНА карточка комнаты. Удалять безопасно: оно не несёт
-    # вложений (источник байтов — room-сообщение/shot'ы уже
-    # заархивированы), RoomFilesView на нём устарел.
+    # Техническое collect-сообщение удаляем ТОЛЬКО когда карточка
+    # комнаты реально опубликована — в канале остаётся одна
+    # карточка. При publish_fail сообщение НЕ трогаем как источник
+    # восстановления: убираем лишь его кнопки (RoomFilesView в
+    # awaiting_mapping уже нерабочие — recover идёт через
+    # progress-message «Добавить скриншот»).
+    published = ok or bool(room.get("message_id"))
     try:
         cmid = room.get("collect_message_id")
         if cmid and channel is not None:
             cmsg = await channel.fetch_message(int(cmid))
-            await cmsg.delete()
-            room["collect_message_id"] = None
+            if published:
+                await cmsg.delete()
+                room["collect_message_id"] = None
+            else:
+                await cmsg.edit(
+                    content=replace_emojis(
+                        f"**Комната {room_index}** — ⏳ интерфейс "
+                        "не опубликован. Восстановление: кнопка "
+                        "«Добавить скриншот» в сообщении прогресса "
+                        "(те же файлы, без повторного OCR)."
+                    ),
+                    view=None,
+                )
             store.set(fresh_t)
     except Exception:
-        logger.debug("collect message finalize delete failed",
+        logger.debug("collect message finalize cleanup failed",
                      exc_info=True)
     # Байты комнаты больше не нужны для republish этой комнаты —
     # источник истины теперь panels + shot-сообщения.
@@ -3453,6 +3481,20 @@ async def _republish_room_interface(
             )
     else:
         return "publish_fail"
+
+    # Карточка восстановлена — техническое collect-сообщение
+    # (publish_fail-ветка finalize его сохраняла) больше не нужно:
+    # удаляем, в канале остаётся одна публичная карточка комнаты.
+    cmid = room.get("collect_message_id")
+    if cmid and stats_channel is not None:
+        try:
+            cmsg = await stats_channel.fetch_message(int(cmid))
+            await cmsg.delete()
+            room["collect_message_id"] = None
+            store.set(fresh)
+        except Exception:
+            logger.debug("republish collect cleanup failed",
+                         exc_info=True)
 
     await _update_rooms_progress(
         guild, fresh, key, match_type, match_index, stats_channel,
