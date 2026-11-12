@@ -1756,15 +1756,16 @@ async def _ocr_boxes_cached(data: bytes) -> list:
     return boxes
 
 
-async def _fast_parse_cs(data: bytes):
+async def _fast_parse_cs(data: bytes, *, enabled: bool = True):
     """Anchor-based fast OCR → parsed dict (формат cs_parser) или None.
 
     None — fast-путь не применим/не прошёл валидацию → вызывать
-    полный RapidOCR pipeline. Отключается env OCR_FAST_ENABLED=0.
+    полный RapidOCR pipeline. Отключается env OCR_FAST_ENABLED=0
+    или параметром enabled=False (диагностика /ocr mode=full).
     """
     import os
 
-    if os.environ.get("OCR_FAST_ENABLED", "1") != "1":
+    if not enabled or os.environ.get("OCR_FAST_ENABLED", "1") != "1":
         return None
     try:
         from services import fast_cs_ocr
@@ -1826,13 +1827,16 @@ async def _refine_parsed_rows(data: bytes, parsed: dict) -> None:
                     p["kd"] = round(p["kills"] / p["deaths"], 2)
 
 
-async def _classic_pipeline(data: bytes, need_score: bool = True) -> dict | None:
+async def _classic_pipeline(
+    data: bytes, need_score: bool = True, fast: bool = True
+) -> dict | None:
     """Общий классический пайплайн: OCR → parse → score fallback →
     winner detect → cyrillic names → refine строк. Возвращает
     {"panels","score","banner","top5","winner_side"} или None.
 
     need_score=False (rooms/Ranked): счёт раундов в итогах не
     используется — пропускаем лишний OCR-проход шапки.
+    fast=False — только полный RapidOCR (диагностика /ocr mode=full).
     """
     from services.ocr_service import (
         OCR_EXECUTOR,
@@ -1845,7 +1849,7 @@ async def _classic_pipeline(data: bytes, need_score: bool = True) -> dict | None
 
     # Fast path: anchor-based OCR (две таблицы ИМЯ|K/D/A|DMG).
     # Возвращает parsed в формате cs_parser или None → полный OCR.
-    parsed = await _fast_parse_cs(data)
+    parsed = await _fast_parse_cs(data, enabled=fast)
     boxes = None
     if parsed is not None:
         # Распознанные боксы fast-пути — для score-fallback и

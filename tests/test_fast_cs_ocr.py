@@ -160,9 +160,25 @@ def _png_bytes(w=1920, h=1080):
     return buf.tobytes()
 
 
-def _build_fake_engine(texts: dict[int, tuple[str, float]]):
+def _box_key(arr) -> tuple | None:
+    """Ключ бокса по координатам (x0,y0,x1,y1) — для fake text_rec.
+
+    _RecCache теперь передаёт orig-координаты (rec из исходного
+    кадра), а не dt-тайлы — id() объектов не совпадает.
+    """
+    a = np.asarray(arr)
+    if a.ndim != 2 or a.shape[0] < 4:
+        return None  # image crop из _RectRec — текста нет
+    pts = a.reshape(-1, 2)
+    x0, y0 = pts[0]
+    x1, y1 = pts[2]
+    return (int(round(x0)), int(round(y0)),
+            int(round(x1)), int(round(y1)))
+
+
+def _build_fake_engine(texts: dict[tuple, tuple[str, float]]):
     """Fake RapidOCR: get_crop_img_list → сами боксы;
-    text_rec → текст по id массива (тест сам задаёт id→text)."""
+    text_rec → текст по координатам бокса."""
 
     class FakeEng:
         def get_crop_img_list(self, img, boxes):
@@ -171,7 +187,7 @@ def _build_fake_engine(texts: dict[int, tuple[str, float]]):
         def text_rec(self, crops):
             out = []
             for c in crops:
-                out.append(texts.get(id(c), ("", 0.0)))
+                out.append(texts.get(_box_key(c), ("", 0.0)))
             return out, 0.0
 
     return FakeEng()
@@ -180,17 +196,17 @@ def _build_fake_engine(texts: dict[int, tuple[str, float]]):
 def _run_extract(monkeypatch, boxes_spec):
     """boxes_spec: [(x0,y0,x1,y1,text)] → parsed или None."""
     dt_list = []
-    texts: dict[int, tuple[str, float]] = {}
+    texts: dict[tuple, tuple[str, float]] = {}
     orig_pts = []
     for x0, y0, x1, y1, text in boxes_spec:
         arr = np.array(
             [[0, 0], [10, 0], [10, 10], [0, 10]], dtype=np.float32
         )
         dt_list.append(arr)
-        texts[id(arr)] = (text, 0.9)
         orig_pts.append(
             [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
         )
+        texts[(int(x0), int(y0), int(x1), int(y1))] = (text, 0.9)
     orig = np.asarray(orig_pts, dtype=np.float32)
     padded = np.zeros((1080, 1920, 3), dtype=np.uint8)
 

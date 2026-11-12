@@ -42,7 +42,9 @@ from services.cs_parser import (
     KDA_DMG_GLUED_RE,
     KDA_RE,
     NUM_RE,
+    SCORE_NUM_RE,
     SKIP_WORDS,
+    VS_RE,
     _has_name_chars,
     parse_match_score,
 )
@@ -123,14 +125,42 @@ def _header_kind(text: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+_FAST_DET_ENGINE = None
+
+
+def _get_fast_det():
+    """Отдельный det-only движок с уменьшенным max_side_len.
+
+    PP-OCRv6 det_small на ~640px вместо ~960px: на реальных
+    скриншотах теряет <5% боксов, но работает заметно быстрее.
+    cls/rec модели не загружаются (use_cls/use_rec=False) —
+    recognition идёт через основной движок на кропах исходного
+    разрешения.
+    """
+    global _FAST_DET_ENGINE
+    if _FAST_DET_ENGINE is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+
+            _FAST_DET_ENGINE = RapidOCR(
+                max_side_len=640, use_cls=False, use_rec=False
+            )
+        except Exception:
+            logger.warning("fast det engine init failed", exc_info=True)
+            _FAST_DET_ENGINE = False
+    if _FAST_DET_ENGINE is False:
+        from services.ocr_service import _get_ocr
+
+        return _get_ocr()
+    return _FAST_DET_ENGINE
+
+
 def _detect_boxes(img_bgr: np.ndarray):
     """RapidOCR det без cls/rec → (padded_img, dt_boxes, orig_boxes).
 
     orig_boxes — np.array (N,4,2) в координатах исходного кадра.
     """
-    from services.ocr_service import _get_ocr
-
-    eng = _get_ocr()
+    eng = _get_fast_det()
     raw_h, raw_w = img_bgr.shape[:2]
     op_record: dict[str, Any] = {}
     img, ratio_h, ratio_w = eng.preprocess(img_bgr)
@@ -627,7 +657,7 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     if det is None:
         _record_metrics(timings, t0, ok=False, reason="no_det")
         return None
-    img_padded, dt_boxes, orig = det
+    _img_padded, _dt_boxes, orig = det
     timings["det_ms"] = (time.perf_counter() - t0) * 1000
 
     boxes = [
@@ -649,7 +679,9 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     from services.ocr_service import _get_ocr
 
     eng = _get_ocr()
-    rec = _RecCache(eng, img_padded, dt_boxes)
+    # Rec-кропы — из исходного кадра по orig-координатам (полное
+    # разрешение), а не из уменьшенного det-входа fast-движка.
+    rec = _RecCache(eng, img, orig)
     rect_rec = _RectRec(eng, img)
 
     # --- Этапы 3–5: anchors/rows/cols для обеих панелей ---
@@ -732,6 +764,84 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
         rec.want(b["idx"])
         extra_idxs.append(b["idx"])
     rec.flush()
+
+    # Счёт «N VS M»: одиночные цифры сена на быстрой det-модели
+    # могут не давать det-боксов — добираем rect-rec полосами
+    # ±0.16w вокруг «VS» и добавляем как синтетические боксы.
+    score_extra: list[dict] = []
+    vs_b = None
+    for b in boxes:
+        t, s = rec.get(b["idx"])
+        # «VS» — короткий латинский маркер, rec-score у него часто
+        # низкий; само совпадение текста достаточно специфично.
+        if VS_RE.match(t.strip()) and (s >= 0.15 or t.strip().upper() == "VS"):
+            vs_b = b
+            break
+    score_rect: dict = {}
+    if vs_b is not None:
+        # Если цифра счёта уже есть как det-бокс рядом с «VS», strip-rec
+        # для этой стороны не нужен — он может подхватить мусор.
+        have_left = have_right = False
+        for b in boxes:
+            if abs(b["cy"] - vs_b["cy"]) > 20:
+                continue
+            t, s = rec.get(b["idx"])
+            if s < _REC_SCORE_MIN or not SCORE_NUM_RE.match(t.strip()):
+                continue
+            if b["cx"] < vs_b["cx"] - 15:
+                have_left = True
+            elif b["cx"] > vs_b["cx"] + 15:
+                have_right = True
+        sides = {}
+        if not have_left:
+            sides[("score", "sl")] = (
+                max(0.0, vs_b["cx"] - 160.0), vs_b["cx"] - 25.0
+            )
+        if not have_right:
+            sides[("score", "sr")] = (
+                vs_b["cx"] + 25.0, min(float(img_w), vs_b["cx"] + 160.0)
+            )
+        bands: list[float] = []
+        if sides:
+            # Цифра счёта — одного размера с «VS»; узкое окно ±25–160px
+            # отсекает соседний UI. band's от pitch строки (высота «VS»-
+            # бокса может быть завышена склейкой) — rec на полосе
+            # нестабилен, берём лучший валидный результат.
+            pitch = max(g["pitch"] for g in geoms)
+            bands = sorted({
+                min(max(0.45 * pitch, 24.0), 64.0),
+                min(max(0.60 * pitch, 30.0), 64.0),
+                min(max(0.75 * pitch, 36.0), 64.0),
+            })
+            for (key, (x0, x1)), band in (
+                (kv, band) for kv in sides.items() for band in bands
+            ):
+                if x1 - x0 >= 8.0:
+                    rect_rec.add((key[0], key[1], int(band)),
+                                 (x0, vs_b["cy"] - band, x1, vs_b["cy"] + band))
+            score_rect = rect_rec.flush()
+        for side, cx in (
+            ("sl", (max(0.0, vs_b["cx"] - 160.0) + vs_b["cx"] - 25.0) / 2),
+            ("sr", (vs_b["cx"] + 25.0 + min(float(img_w), vs_b["cx"] + 160.0)) / 2),
+        ):
+            best: tuple[str, float] | None = None
+            for band in bands:
+                t, s = score_rect.get(("score", side, int(band)), ("", 0.0))
+                t = (t or "").strip()
+                # Только целое ≤30 с rec-score ≥0.5 — отсекает склейки
+                # вида «55»/«41» и мусорные чтения на краях полосы.
+                if (SCORE_NUM_RE.match(t) and int(t) <= 30
+                        and s >= 0.5 and (best is None or s > best[1])):
+                    best = (t, s)
+            if best is not None:
+                band = bands[0]
+                score_extra.append(
+                    {
+                        "text": best[0], "x0": cx - 5, "y0": vs_b["cy"] - band,
+                        "x1": cx + 5, "y1": vs_b["cy"] + band,
+                        "cx": cx, "cy": vs_b["cy"],
+                    }
+                )
 
     # --- Этап 8: сборка players ---
     box_by_idx = {b["idx"]: b for b in boxes}
@@ -859,6 +969,10 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
             }
         )
 
+    # Синтетические боксы счёта из score-полос (когда det пропустил
+    # мелкие цифры) — parse_match_score сам выберет ближайшие.
+    rec_boxes.extend(score_extra)
+
     # Score «N VS M» — из верхней полосы
     score = parse_match_score(rec_boxes) if rec_boxes else None
 
@@ -897,7 +1011,17 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     return parsed
 
 
+LAST_FALLBACK_REASON = ""
+
+
+def last_fallback_reason() -> str:
+    """Причина последнего fallback'а fast-пути (для диагностики)."""
+    return LAST_FALLBACK_REASON
+
+
 def _record_metrics(timings: dict, t0: float, *, ok: bool, reason: str = "") -> None:
+    global LAST_FALLBACK_REASON
+    LAST_FALLBACK_REASON = "" if ok else reason
     try:
         from utils import perf_metrics
 

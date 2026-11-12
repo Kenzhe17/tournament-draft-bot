@@ -274,6 +274,7 @@ class TournamentBot(commands.Bot):
         await self.load_extension("cogs.freefire")
         await self.load_extension("cogs.statistic")
         await self.load_extension("cogs.ocr_upload")
+        await self.load_extension("cogs.ocr_diag")
         # Восстановление OCR-сессий, застрявших в «finalizing» после
         # перезапуска: PG-гейт гарантирует отсутствие повторного ELO.
         self.loop.create_task(self._recover_finalizing_sessions())

@@ -2,24 +2,35 @@
 
 Использование:
     python tools/eval_fast_ocr.py <img_dir> --ref <ref.json> [--iters N]
+        [--executor]
 
 ref.json: {"<basename>": {"team_a":[{kills,deaths,assists,dmg}x4],
-"team_b":[...], "score":[a,b]}}. Сопоставление по имени файла;
-если не найдено — по совпадению aspect ratio (size в ref может быть
-нормализованным).
+"team_b":[...], "score":[a,b], "size":[w,h]}}.
+
+Сопоставление эталона:
+- точное совпадение имени файла — основной путь;
+- иначе — точное совпадение PIL-размера (size в ref);
+- иначе — SKIP с явным сообщением (без тихого aspect-fallback).
 
 Для каждого уникального изображения:
-- fast parse + full parse, время, fallback;
-- точность 32 числовых значений (8 K/D/A + 8 DMG) и счёта;
-- имена (для ручной сверки — эталона по именам нет).
+- fast parse и full parse отдельно (без чередования — исключаем
+  взаимное влияние ONNX-инференсов на замеры);
+- при fallback fast измеряется fast_attempt + full + parse
+  (реальный end-to-end);
+- точность 32 числовых значений и счёта — по ручному эталону;
+  при fallback точность считается по результату full OCR
+  (конечный результат pipeline);
+- имена — для ручной сверки (эталона по именам нет).
 
-N итераций после warmup; отдельно fast_success / fallback_e2e /
-full_only / e2e latency.
+--executor: дополнительно прогоняет parse_cs_fast через реальный
+OCR_EXECUTOR (asyncio) с 1/2/4 параллельными задачами — включает
+время ожидания в очереди executor.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 import time
@@ -34,20 +45,22 @@ def _load_refs(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _match_ref(name: str, refs: dict, img_size) -> tuple[str | None, dict | None]:
+def _match_ref(
+    name: str, refs: dict, img_size
+) -> tuple[str | None, dict | None, str]:
+    """→ (ref_key, entry, status). status: ok|skip."""
     if name in refs:
-        return name, refs[name]
-    # по aspect ratio (size в ref может быть даунскейлнут)
+        return name, refs[name], "ok"
     if img_size:
-        ar = img_size[0] / img_size[1]
-        cands = []
-        for k, v in refs.items():
-            s = v.get("size")
-            if s and abs(s[0] / s[1] - ar) < 0.01:
-                cands.append(k)
-        if len(cands) == 1:
-            return cands[0], refs[cands[0]]
-    return None, None
+        exact = [
+            k for k, v in refs.items()
+            if v.get("size") and list(v["size"]) == list(img_size)
+        ]
+        if len(exact) == 1:
+            return exact[0], refs[exact[0]], "ok(size)"
+        if len(exact) > 1:
+            return None, None, f"skip: {len(exact)} ref с тем же size"
+    return None, None, "skip: нет эталона"
 
 
 def _stats(players, key):
@@ -60,13 +73,13 @@ def _stats(players, key):
 
 
 def _ref_stats(entry):
-    out = {}
-    for key in ("team_a", "team_b"):
-        out[key] = [
+    return {
+        key: [
             (p.get("kills"), p.get("deaths"), p.get("assists"), p.get("dmg"))
             for p in entry.get(key) or []
         ]
-    return out
+        for key in ("team_a", "team_b")
+    }
 
 
 def _names(players, key):
@@ -80,11 +93,26 @@ def _pct(vals, q):
     return s[min(len(s) - 1, int(round(q / 100 * (len(s) - 1))))]
 
 
+def _fmt(vals):
+    if not vals:
+        return "-"
+    return (f"p50={_pct(vals,50):.2f} p95={_pct(vals,95):.2f} "
+            f"max={max(vals):.2f}")
+
+
+def _score_of(parsed):
+    if not parsed:
+        return None
+    s = parsed.get("score")
+    return tuple(s) if isinstance(s, (list, tuple)) else s
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("img_dir")
     ap.add_argument("--ref", required=True)
     ap.add_argument("--iters", type=int, default=5)
+    ap.add_argument("--executor", action="store_true")
     args = ap.parse_args()
 
     from PIL import Image
@@ -100,109 +128,160 @@ def main() -> int:
     )
 
     rows = []
-    all_fast, all_fb, all_full, all_e2e = [], [], [], []
-    tot_num_ok = tot_num = 0
-    n_fast_ok = n_fb = 0
+    agg = {"fast": [], "fb": [], "full": [], "e2e": []}
+    n_fast_ok = n_fb = n_full_ok = 0
+    num_ok = num_tot = 0
+    score_ok = score_tot = 0
 
     for p in files:
         data = p.read_bytes()
         with Image.open(p) as im:
             size = im.size
-        ref_key, ref = _match_ref(p.name, refs, size)
-        fast_t, fb_t, full_t, e2e_t = [], [], [], []
-        num_ok = num_tot = 0
-        score_ok = None
-        last_fast = last_full = None
+        ref_key, ref, st = _match_ref(p.name, refs, size)
+
+        # --- fast iters (подряд, без full между ними) ---
+        fast_t, fast_res = [], []
         for _ in range(args.iters):
             t0 = time.perf_counter()
             fp = fast_cs_ocr._extract_parsed(data)
-            tf = time.perf_counter() - t0
+            fast_t.append(time.perf_counter() - t0)
+            fast_res.append(fp)
+        last_fast = fast_res[-1]
+        n_ok_iter = sum(1 for x in fast_res if x is not None)
+        n_fast_ok += n_ok_iter
+        n_fb += args.iters - n_ok_iter
+        agg["fast"] += fast_t
+
+        # --- full iters ---
+        full_t, full_res = [], []
+        for _ in range(args.iters):
             t0 = time.perf_counter()
             boxes = _run_ocr(data) or []
             pf = cs_parser.parse_cs_results(boxes) if boxes else None
-            tl = time.perf_counter() - t0
-            last_fast, last_full = fp, pf
-            full_t.append(tl)
-            if fp is None:
-                n_fb += 1
-                fb_t.append(tf + tl)
-                e2e_t.append(tf + tl)
+            full_t.append(time.perf_counter() - t0)
+            full_res.append(pf)
+        last_full = full_res[-1]
+        n_full_ok += sum(1 for x in full_res if x is not None)
+        agg["full"] += full_t
+
+        # --- e2e: fast_attempt + (fallback? full) ---
+        e2e = []
+        for i in range(args.iters):
+            if fast_res[i] is None:
+                e2e.append(fast_t[i] + full_t[i])
             else:
-                n_fast_ok += 1
-                fast_t.append(tf)
-                e2e_t.append(tf)
-            if ref:
-                want = _ref_stats(ref)
+                e2e.append(fast_t[i])
+        agg["e2e"] += e2e
+        agg["fb"] += [fast_t[i] + full_t[i] for i in range(args.iters)
+                      if fast_res[i] is None]
+
+        # --- точность по финальному результату каждого iter ---
+        fnum_ok = fnum_tot = 0
+        fscore_ok = fscore_tot = 0
+        if ref:
+            want = _ref_stats(ref)
+            for i in range(args.iters):
+                final = fast_res[i] if fast_res[i] is not None else full_res[i]
                 for key in ("team_a", "team_b"):
-                    got = _stats(fp or {}, key)
-                    for i in range(4):
+                    got = _stats(final or {}, key)
+                    for r in range(4):
                         for f in range(4):
-                            num_tot += 1
-                            g = got[i][f] if i < len(got) else None
-                            w = want[key][i][f] if i < len(want[key]) else None
+                            fnum_tot += 1
+                            g = got[r][f] if r < len(got) else None
+                            w = want[key][r][f] if r < len(want[key]) else None
                             if g == w:
-                                num_ok += 1
-                if fp and ref.get("score") and fp.get("score") == ref["score"]:
-                    score_ok = True
-                elif fp is None:
-                    score_ok = False
-        tot_num_ok += num_ok
-        tot_num += num_tot
+                                fnum_ok += 1
+                if ref.get("score"):
+                    fscore_tot += 1
+                    sc = _score_of(final)
+                    if sc == tuple(ref["score"]):
+                        fscore_ok += 1
+            num_ok += fnum_ok
+            num_tot += fnum_tot
+            score_ok += fscore_ok
+            score_tot += fscore_tot
 
-        fb_rate = len(fb_t) / args.iters
-        rows.append(
-            {
-                "file": p.name,
-                "size": f"{size[0]}x{size[1]}",
-                "ref": ref_key or "-",
-                "fast_ok": n_fast_ok and last_fast is not None,
-                "fast_p50": _pct(fast_t, 50) if fast_t else None,
-                "fb_e2e_p50": _pct(fb_t, 50) if fb_t else None,
-                "full_p50": _pct(full_t, 50),
-                "e2e_p50": _pct(e2e_t, 50),
-                "fb_rate": fb_rate,
-                "num_acc": f"{num_ok}/{num_tot}" if ref else "-",
-                "score": score_ok,
-                "names_a": _names(last_fast or last_full or {}, "team_a"),
-                "names_b": _names(last_fast or last_full or {}, "team_b"),
-            }
-        )
-        all_fast += fast_t
-        all_fb += fb_t
-        all_full += full_t
-        all_e2e += e2e_t
+        rows.append({
+            "file": p.name, "size": f"{size[0]}x{size[1]}",
+            "ref": ref_key or st, "iters": args.iters,
+            "fast_ok": f"{n_ok_iter}/{args.iters}",
+            "full_ok": f"{sum(1 for x in full_res if x is not None)}/{args.iters}",
+            "fast": _fmt(fast_t), "fb_e2e": _fmt(
+                [fast_t[i] + full_t[i] for i in range(args.iters)
+                 if fast_res[i] is None]),
+            "full": _fmt(full_t), "e2e": _fmt(e2e),
+            "num": f"{fnum_ok}/{fnum_tot}" if ref else "-",
+            "score": f"{fscore_ok}/{fscore_tot}" if ref else "-",
+            "names_a": _names(last_fast or {}, "team_a"),
+            "names_b": _names(last_fast or {}, "team_b"),
+            "full_names_a": _names(last_full or {}, "team_a"),
+            "full_names_b": _names(last_full or {}, "team_b"),
+        })
 
-    print(f"{'file':<58} {'size':<11} {'fast':<5} {'full':<5} {'fb%':<5} "
-          f"{'num':<11} {'fast_p50':<9} {'e2e_p50':<9} {'full_p50':<9}")
+    print(f"{'file':<56} {'size':<10} {'fast':<7} {'full':<7} "
+          f"{'num':<9} {'score':<7} {'fast_p50':<7} {'e2e_p50':<7}")
     for r in rows:
-        print(
-            f"{r['file']:<58} {r['size']:<11} "
-            f"{'Y' if r['fast_ok'] else 'N':<5} "
-            f"{'Y' if r['fast_ok'] or r['fb_rate']==0 else '?':<5} "
-            f"{r['fb_rate']*100:>4.0f}% "
-            f"{r['num_acc']:<11} "
-            f"{(f'{r['fast_p50']:.2f}' if r['fast_p50'] is not None else '-'):<9} "
-            f"{r['e2e_p50']:.2f}{'':<6} "
-            f"{r['full_p50']:.2f}"
-        )
-        print(f"    ref={r['ref']} score_ok={r['score']}")
-        print(f"    A: {r['names_a']}")
-        print(f"    B: {r['names_b']}")
+        print(f"{r['file']:<56} {r['size']:<10} {r['fast_ok']:<7} "
+              f"{r['full_ok']:<7} {r['num']:<9} {r['score']:<7} "
+              f"{r['fast']:<22} {r['e2e']}")
+        print(f"    ref={r['ref']}")
+        print(f"    fast A: {r['names_a']}")
+        print(f"    fast B: {r['names_b']}")
+        if r["full_names_a"] != r["names_a"] or r["full_names_b"] != r["names_b"]:
+            print(f"    full A: {r['full_names_a']}")
+            print(f"    full B: {r['full_names_b']}")
 
-    n = args.iters * len(files)
-    print(f"\n=== TOTAL {len(files)} unique images × {args.iters} iters ===")
-    print(f"fast success : {n_fast_ok}/{n}  fallback: {n_fb}/{n} "
-          f"({n_fb/n*100:.0f}%)")
-    print(f"numeric acc  : {tot_num_ok}/{tot_num}")
-    for name, vals in (
-        ("fast_success", all_fast), ("fallback_e2e", all_fb),
-        ("full_only", all_full), ("e2e", all_e2e),
-    ):
-        if vals:
-            print(f"{name:14}: p50={_pct(vals,50):.2f}s "
-                  f"p95={_pct(vals,95):.2f}s max={max(vals):.2f}s "
-                  f"mean={sum(vals)/len(vals):.2f}s n={len(vals)}")
+    n_runs = args.iters * len(files)
+    print(f"\n=== {len(files)} unique images × {args.iters} iters ===")
+    print(f"fast ok: {n_fast_ok}/{n_runs}  fallback: {n_fb}/{n_runs} "
+          f"({n_fb/n_runs*100:.0f}%)  full ok: {n_full_ok}/{n_runs}")
+    print(f"final-result numeric acc: {num_ok}/{num_tot}  "
+          f"score acc: {score_ok}/{score_tot}")
+    for name in ("fast", "fb", "full", "e2e"):
+        if agg[name]:
+            print(f"{name:10}: {_fmt(agg[name])} n={len(agg[name])}")
+
+    if args.executor:
+        _run_executor_probe(args.img_dir)
     return 0
+
+
+def _run_executor_probe(img_dir: str):
+    """parse_cs_fast через реальный OCR_EXECUTOR: 1/2/4 параллельных.
+
+    Включает ожидание в очереди executor — как в проде.
+    """
+    from services import fast_cs_ocr
+    from services.ocr_service import warmup
+
+    warmup()
+    first = sorted(
+        p for p in Path(img_dir).iterdir()
+        if p.suffix.lower() in IMG_EXT
+    )[0]
+    data = first.read_bytes()
+    print(f"executor probe on {first.name}")
+
+    async def _probe(conc):
+        async def one():
+            t0 = time.perf_counter()
+            r = await fast_cs_ocr.parse_cs_fast(data)
+            return (time.perf_counter() - t0) * 1000, r is not None
+        t0 = time.perf_counter()
+        res = await asyncio.gather(*[one() for _ in range(conc)])
+        wall = (time.perf_counter() - t0) * 1000
+        return [r[0] for r in res], wall, all(r[1] for r in res)
+
+    async def _main():
+        for conc in (1, 2, 4):
+            # прогрев
+            await _probe(1)
+            lat, wall, ok = await _probe(conc)
+            print(f"executor conc={conc}: latencies={['%.0f'%x for x in lat]} "
+                  f"wall={wall:.0f}ms ok={ok} "
+                  f"(queue wait ≈ lat - solo)")
+
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":
