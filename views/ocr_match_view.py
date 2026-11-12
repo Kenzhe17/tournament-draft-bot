@@ -247,6 +247,45 @@ def _uploaded_by_is_captain_of(
         return False
 
 
+def _is_room_finalize_captain(
+    user, tournament: Tournament, team_indexes
+) -> bool:
+    """Завершать комнату может ТОЛЬКО капитан одной из команд
+    текущего матча — проверка по Discord ID через
+    player_user_ids (имя капитана → id), не по display_name.
+
+    Fallback на сравнение ника — только когда у капитана вообще
+    нет привязанного Discord ID (legacy-туры без маппинга):
+    иначе однофамилец/тёзка не должен проходить как капитан.
+    """
+    uid = getattr(user, "id", None)
+    pids = getattr(tournament, "player_user_ids", None) or {}
+    tlist = getattr(tournament, "teams", None) or []
+    for raw in team_indexes or []:
+        try:
+            i = int(raw)
+        except (TypeError, ValueError):
+            continue
+        try:
+            if _uploaded_by_is_captain_of(tournament, i, uid):
+                return True
+            team = tlist[i] if 0 <= i < len(tlist) else {}
+        except Exception:
+            continue
+        captain = (team or {}).get("captain") or ""
+        try:
+            name_ok = bool(
+                captain
+                and not pids.get(captain)
+                and _is_match_captain(user, tournament, i)
+            )
+        except Exception:
+            name_ok = False
+        if name_ok:
+            return True
+    return False
+
+
 async def _uploader_is_privileged(guild: discord.Guild, user_id) -> bool:
     """Загрузивший — админ сервера / владелец бота / организатор.
 
@@ -7159,6 +7198,7 @@ class RoomFilesView(View):
     def __init__(
         self, guild_id: int, channel_id: int, tournament,
         match_type: str, match_index: int, room_index: int, gen: int,
+        allow_add: bool | None = None,
     ):
         super().__init__(timeout=None)
         self.guild_id = guild_id
@@ -7167,17 +7207,22 @@ class RoomFilesView(View):
         self.match_index = match_index
         self.room_index = room_index
         self.gen = gen
-        b_add = Button(
-            label="📸 Добавить скриншот",
-            style=discord.ButtonStyle.primary,
-            custom_id=(
-                f"rooms_file_add:{guild_id}:{channel_id}:{match_type}:"
-                f"{match_index}:{room_index}:{gen}"
-            ),
-            row=0,
-        )
-        b_add.callback = self._on_add
-        self.add_item(b_add)
+        if allow_add is None:
+            # Восстановление после рестарта: состояние кнопок
+            # вычисляем из АКТУАЛЬНОГО pending комнаты.
+            allow_add = self._room_allows_add(tournament)
+        if allow_add:
+            b_add = Button(
+                label="📸 Добавить скриншот",
+                style=discord.ButtonStyle.primary,
+                custom_id=(
+                    f"rooms_file_add:{guild_id}:{channel_id}:{match_type}:"
+                    f"{match_index}:{room_index}:{gen}"
+                ),
+                row=0,
+            )
+            b_add.callback = self._on_add
+            self.add_item(b_add)
         b_done = Button(
             label="✅ Завершить комнату",
             style=discord.ButtonStyle.success,
@@ -7210,6 +7255,33 @@ class RoomFilesView(View):
         )
         return session, room
 
+    def _room_allows_add(self, tournament) -> bool:
+        """Нужен ли ещё один скриншот этой комнате — по pending.
+
+        Используется при построении кнопок (в т.ч. восстановление
+        после рестарта): полный Classic без флагов повторной
+        загрузки → кнопка «Добавить скриншот» не нужна.
+        """
+        try:
+            from cogs.ocr_upload import room_allows_second_file
+
+            sess = (getattr(tournament, "ocr_sessions", None) or {}).get(
+                _session_key(self.match_type, self.match_index)
+            )
+            room = next(
+                (
+                    r for r in (sess or {}).get("rooms") or []
+                    if int(r.get("room_index", 0) or 0)
+                    == int(self.room_index)
+                ),
+                None,
+            )
+            if room is None:
+                return True
+            return room_allows_second_file(room)
+        except Exception:
+            return True
+
     async def _on_add(self, interaction: discord.Interaction) -> None:
         from cogs.ocr_upload import (
             RoomUploadModal, _rooms_file_submit_allowed,
@@ -7225,22 +7297,29 @@ class RoomFilesView(View):
                 ephemeral=True,
             )
             return
-        pending = room.get("pending") or []
-        # Комната «заполнена» (2 файла) — модалку открываем только
-        # для повторной отправки файла с needs_reupload/
-        # shot_pending. Новый (третий) SHA process_room_file
-        # отклонит как room_full — уже распознанные pipe не меняются.
-        reupload_needed = any(
-            p.get("needs_reupload") or p.get("shot_pending")
-            for p in pending
-        )
-        if room.get("status") != "collecting_files" or (
-            len(pending) >= 2 and not reupload_needed
-        ):
+        if room.get("status") != "collecting_files":
             await interaction.response.send_message(
                 replace_emojis(
                     "ℹ️ Комната уже заполнена — используйте "
                     "«Завершить комнату»."
+                ),
+                ephemeral=True,
+            )
+            return
+        # Серверная проверка: даже устаревшая/поддельная кнопка
+        # не добавит лишний файл в комнату, где второй скриншот
+        # не нужен (полный Classic) или уже есть 2 файла.
+        from cogs.ocr_upload import room_allows_second_file
+
+        if not room_allows_second_file(room):
+            pending = room.get("pending") or []
+            await interaction.response.send_message(
+                replace_emojis(
+                    "ℹ️ Комната уже заполнена — используйте "
+                    "«Завершить комнату»."
+                    if len(pending) >= 2
+                    else "ℹ️ Для этой комнаты второй скриншот "
+                    "не требуется — нажмите «Завершить комнату»."
                 ),
                 ephemeral=True,
             )
@@ -7289,6 +7368,30 @@ class RoomFilesView(View):
                 ephemeral=True,
             )
             return
+        # «Завершить комнату» — только капитану одной из команд
+        # матча (Discord ID через player_user_ids). Проверка
+        # дублируется внутри finalize_room_collect под _room_lock.
+        teams = list(session.get("teams") or [])
+        if not teams:
+            try:
+                teams = list(
+                    _match_tuple(
+                        tournament, self.match_type, self.match_index
+                    )
+                )
+            except Exception:
+                teams = []
+        if not _is_room_finalize_captain(
+            interaction.user, tournament, teams
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Завершить комнату может только капитан "
+                    "одной из команд матча."
+                ),
+                ephemeral=True,
+            )
+            return
         try:
             await interaction.response.defer(ephemeral=True, thinking=True)
         except Exception:
@@ -7321,9 +7424,8 @@ class RoomFilesView(View):
                 "нажмите «Завершить комнату» ещё раз."
             ),
             "forbidden": (
-                "❌ Завершить комнату может только отправитель "
-                "комплекта, капитан команды-победителя или "
-                "администратор."
+                "❌ Завершить комнату может только капитан "
+                "одной из команд матча."
             ),
             "invalid": "❌ Не удалось собрать комнату — проверьте файлы.",
         }

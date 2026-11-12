@@ -112,13 +112,22 @@ def env(monkeypatch):
         "rooms_received": 0,
         "progress_message_id": None,
         "progress_channel_id": 1,
+        "teams": [0, 1],
     }
     tournament = SimpleNamespace(
         channel_id=1,
         guild_id=1,
         ocr_sessions={"qualifier_0": session},
-        player_user_ids={},
+        player_user_ids={"CapA": 42, "CapB": 43},
         match_channels={},
+        teams=[
+            {"captain": "CapA"},
+            {"captain": "CapB"},
+        ],
+        team_names={0: "Alpha", 1: "Beta"},
+        qualifier_matches=[(0, 1)],
+        id="t1",
+        processed_elo_matches=set(),
     )
     guild = SimpleNamespace(id=1)
     stats = _Chan()
@@ -901,3 +910,268 @@ class TestPublishFailRecovery:
         assert r == "republished"
         assert len(env.pipe_calls) == pipe_before
         assert room.get("message_id")
+
+
+
+# ---------- V6.1: отмена удаляет скриншоты, динамические кнопки,
+# ---------- «Завершить комнату» — только капитанам ----------
+
+def _admin(user_id=1):
+    return SimpleNamespace(
+        id=user_id, display_name="Admin",
+        mention=f"<@{user_id}>",
+        guild_permissions=SimpleNamespace(administrator=True),
+    )
+
+
+async def _cancel(env, user=None):
+    env.guild.get_channel = lambda cid: env.stats
+    env.guild.fetch_channel = lambda cid: _noop_chan(env.stats)
+    return await up.cancel_rooms_session(
+        env.guild, user or _admin(), env.tournament,
+        "qualifier", 0,
+    )
+
+
+class TestCancelCleanup:
+    @pytest.mark.asyncio
+    async def test_cancel_deletes_classic_shot(self, env):
+        """Отмена после одного Classic → shot-сообщение с
+        изображением удалено из канала."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        shot_mid = room["pending"][0]["shot_message_id"]
+        assert shot_mid in env.stats._by_id
+        assert env.stats._by_id[shot_mid].attachments
+
+        assert await _cancel(env) == "ok"
+        assert env.session.get("status") == "cancelled"
+        # Скриншот удалён — не остался в канале
+        assert shot_mid not in env.stats._by_id
+        file_msgs = [
+            m for m in env.stats.sent if m.attachments
+        ]
+        assert file_msgs == []
+        # Audit-log отправлен (без самих скриншотов)
+        assert any("отмен" in (m.content or "") for m in env.stats.sent)
+
+    @pytest.mark.asyncio
+    async def test_cancel_deletes_both_squad_shots(self, env):
+        await _file(env, 1, "squadA")
+        await _file(env, 1, "squadB")
+        room = env.session["rooms"][0]
+        mids = [p["shot_message_id"] for p in room["pending"]]
+        assert len(mids) == 2
+        assert await _cancel(env) == "ok"
+        for mid in mids:
+            assert mid not in env.stats._by_id
+        assert not [m for m in env.stats.sent if m.attachments]
+
+    @pytest.mark.asyncio
+    async def test_cancel_after_publish_deletes_card(self, env):
+        """Отмена после публикации карточки → карточка с кнопками
+        и скриншотом удалена, audit-log сохранён."""
+        await _file(env, 1, "classic1")
+        assert await _finish(env) == "ok"
+        room = env.session["rooms"][0]
+        card_mid = room["message_id"]
+        assert card_mid in env.stats._by_id
+        assert env.stats._by_id[card_mid].attachments
+
+        assert await _cancel(env) == "ok"
+        assert card_mid not in env.stats._by_id
+        assert not [m for m in env.stats.sent if m.attachments]
+        # Audit в лог-канал (тот же fake stats)
+        assert any(
+            "отмен" in (m.content or "") and "Матч" in (m.content or "")
+            for m in env.stats.sent
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_twice_and_missing_msgs_safe(self, env):
+        """Повторная отмена → 'done'; отсутствующие сообщения
+        не ломают откат."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        env.stats._by_id.pop(
+            room["pending"][0]["shot_message_id"], None
+        )
+        assert await _cancel(env) == "ok"
+        # Сессия удалена из ocr_sessions — повторная отмена
+        # не находит её («none»), повторного удаления нет.
+        assert await _cancel(env) in ("done", "none")
+
+
+class TestDynamicRoomButtons:
+    @pytest.mark.asyncio
+    async def test_full_classic_only_done_button(self, env, monkeypatch):
+        """Одна комната + полный Classic (4+4 игрока) → collect-
+        сообщение показывает только «Завершить комнату», без
+        «Добавить скриншот» и без «1/2»."""
+        async def full_pipe(data, need_score=True):
+            return {
+                "panels": {
+                    "left": {"name": "L", "rows": [
+                        {"name": f"L{i}", "kills": 1} for i in range(4)
+                    ]},
+                    "right": {"name": "R", "rows": [
+                        {"name": f"R{i}", "kills": 1} for i in range(4)
+                    ]},
+                },
+                "score": [4, 3], "banner": None,
+                "top5": False, "winner_side": "left",
+            }
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+
+        await _file(env, 1, "full1")
+        room = env.session["rooms"][0]
+        # process_room_file отклонил бы второй файл —
+        # проверяем и через view, и напрямую.
+        assert up.room_allows_second_file(room) is False
+        r = await _file(env, 1, "squadA")
+        assert r == "room_full"
+        assert len(room["pending"]) == 1
+
+        # Кнопки collect-сообщения: только «Завершить».
+        cmid = room["collect_message_id"]
+        cmsg = env.stats._by_id[cmid]
+        assert cmsg.view is not None
+        add_btns = [
+            c for c in cmsg.view.children
+            if getattr(c, "custom_id", "").startswith("rooms_file_add")
+        ]
+        done_btns = [
+            c for c in cmsg.view.children
+            if getattr(c, "custom_id", "").startswith("rooms_file_done")
+        ]
+        assert add_btns == [] and len(done_btns) == 1
+        # Текст не содержит «1/2»
+        assert "1/2" not in (cmsg.content or "")
+        assert "игроки 8" in (cmsg.content or "")
+
+        # «Завершить комнату» работает — полный Classic мапится.
+        assert await _finish(env) == "ok"
+        assert room["panels"]["left"]["rows"]
+
+    @pytest.mark.asyncio
+    async def test_single_squad_keeps_add_button(self, env):
+        """Один squad → кнопка второго скриншота остаётся."""
+        await _file(env, 1, "squadA")
+        room = env.session["rooms"][0]
+        assert up.room_allows_second_file(room) is True
+        cmsg = env.stats._by_id[room["collect_message_id"]]
+        add_btns = [
+            c for c in cmsg.view.children
+            if getattr(c, "custom_id", "").startswith("rooms_file_add")
+        ]
+        assert len(add_btns) == 1
+        assert "1/2" in (cmsg.content or "")
+
+    @pytest.mark.asyncio
+    async def test_incomplete_classic_allows_second(self, env):
+        """Classic с 1 строкой на панель (неполный) → второй
+        файл допустим (сверка)."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        assert up.room_allows_second_file(room) is True
+        assert await _file(env, 1, "squadA") == "added"
+
+    @pytest.mark.asyncio
+    async def test_reupload_flag_keeps_add(self, env):
+        """needs_reupload → кнопка добавления сохраняется даже
+        для полного Classic."""
+        async def full_pipe(data, need_score=True):
+            return {
+                "panels": {
+                    "left": {"name": "L", "rows": [
+                        {"name": f"L{i}"} for i in range(4)]},
+                    "right": {"name": "R", "rows": [
+                        {"name": f"R{i}"} for i in range(4)]},
+                },
+                "score": [4, 3], "banner": None,
+                "top5": False, "winner_side": "left",
+            }
+        orig = up._classic_pipeline
+        up._classic_pipeline = full_pipe
+        try:
+            await _file(env, 1, "full1")
+        finally:
+            up._classic_pipeline = orig
+        room = env.session["rooms"][0]
+        room["pending"][0]["needs_reupload"] = True
+        assert up.room_allows_second_file(room) is True
+        view = _room_view(env)
+        add_btns = [
+            c for c in view.children
+            if getattr(c, "custom_id", "").startswith("rooms_file_add")
+        ]
+        assert len(add_btns) == 1
+
+
+class TestCaptainOnlyFinalize:
+    async def _try_finish(self, env, user):
+        return await up.finalize_room_collect(
+            env.guild, user, env.tournament,
+            "qualifier", 0, 1, stats_channel=env.stats,
+        )
+
+    @pytest.mark.asyncio
+    async def test_captain_team0_allowed(self, env):
+        await _file(env, 1, "classic1")
+        res = await self._try_finish(env, SimpleNamespace(id=42))
+        assert res == "ok"
+
+    @pytest.mark.asyncio
+    async def test_captain_team1_allowed(self, env):
+        await _file(env, 1, "classic1")
+        res = await self._try_finish(env, SimpleNamespace(id=43))
+        assert res == "ok"
+
+    @pytest.mark.asyncio
+    async def test_member_forbidden(self, env):
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        res = await self._try_finish(env, SimpleNamespace(id=999))
+        assert res == "forbidden"
+        # Комната не закрыта, состояние не изменилось
+        assert room["status"] == "collecting_files"
+        assert len(room["pending"]) == 1
+        assert env.session["rooms_received"] == 0
+        assert not room.get("panels")
+
+    @pytest.mark.asyncio
+    async def test_admin_without_captain_forbidden(self, env):
+        await _file(env, 1, "classic1")
+        res = await self._try_finish(env, _admin(777))
+        assert res == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_organizer_without_captain_forbidden(self, env):
+        await _file(env, 1, "classic1")
+        org = SimpleNamespace(
+            id=555, display_name="Организатор",
+            guild_permissions=SimpleNamespace(administrator=False),
+        )
+        res = await self._try_finish(env, org)
+        assert res == "forbidden"
+
+    @pytest.mark.asyncio
+    async def test_on_done_member_rejected_before_finalize(self, env):
+        """RoomFilesView._on_done: не-капитан получает отказ ДО
+        запуска finalize — pending/panels не меняются."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        view = _room_view(env)
+        ix = _FakeInteraction(env, user_id=999)
+        await view._on_done(ix)
+        assert any("капитан" in m for m in ix.messages)
+        assert room["status"] == "collecting_files"
+        assert not room.get("panels")
+
+    @pytest.mark.asyncio
+    async def test_double_finish_counts_once(self, env):
+        await _file(env, 1, "classic1")
+        assert await _finish(env) == "ok"
+        room = env.session["rooms"][0]
+        assert await _finish(env) == "done"
+        assert env.session["rooms_received"] == 1

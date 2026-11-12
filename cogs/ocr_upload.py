@@ -31,6 +31,7 @@ from views.ocr_match_view import (
     SquadAssignedView,
     SquadClaimView,
     _match_tuple,
+    _is_room_finalize_captain,
     _session_key,
     _team_display_name,
     pop_pending_upload,
@@ -2497,6 +2498,72 @@ def _seq_kind_compat(existing: list[str], new_kind: str) -> bool:
     return not (kinds.count("classic") > 1)
 
 
+def _classic_pipe_complete(pipe: dict) -> bool:
+    """Classic-скриншот распознал обе команды по 4 игрока —
+    второй файл для сверки не требуется."""
+    panels = (pipe or {}).get("panels") or {}
+    left = ((panels.get("left") or {}).get("rows")) or []
+    right = ((panels.get("right") or {}).get("rows")) or []
+    return len(left) >= 4 and len(right) >= 4
+
+
+def room_allows_second_file(room: dict) -> bool:
+    """Можно ли добавить ещё один скриншот в collecting-комнату.
+
+    - needs_reupload/shot_pending → повторная отправка того же
+      файла разрешена всегда;
+    - пустая комната / один squad / неполный classic → второй
+      файл допустим (второй отряд или сверка);
+    - полный classic (обе панели по 4 строки) и 2 файла → False.
+    """
+    pending = room.get("pending") or []
+    if any(
+        p.get("needs_reupload") or p.get("shot_pending")
+        for p in pending
+    ):
+        return True
+    if not pending:
+        return True
+    if len(pending) >= 2:
+        return False
+    kinds = [p.get("kind") for p in pending]
+    if "classic" in kinds:
+        pipe = next(
+            (
+                p.get("pipe") or {}
+                for p in pending
+                if p.get("kind") == "classic"
+            ),
+            {},
+        )
+        return not _classic_pipe_complete(pipe)
+    if kinds == ["squad"]:
+        return True
+    return False
+
+
+def _room_pending_summary(pending: list) -> tuple[list[str], int]:
+    """(виды файлов, распознанные игроки) для текста collect-
+    сообщения: 'экран'/'отряд' + сумма строк panels/squad."""
+    kinds: list[str] = []
+    players = 0
+    for p in pending or []:
+        pipe = p.get("pipe") or {}
+        if p.get("kind") == "classic":
+            kinds.append("экран")
+            for side in ("left", "right"):
+                players += len(
+                    ((pipe.get("panels") or {}).get(side) or {})
+                    .get("rows") or []
+                )
+        else:
+            kinds.append("отряд")
+            players += len(
+                (pipe.get("squad") or {}).get("players") or []
+            )
+    return kinds, players
+
+
 def _new_seq_room(room_index: int) -> dict:
     return {
         "room_index": room_index,
@@ -2592,22 +2659,40 @@ async def _ensure_room_collect_message(
     match_type: str, match_index: int,
 ) -> None:
     """Сообщение комнаты в режиме сбора: статус файлов + кнопки
-    «Добавить скриншот» / «Завершить комнату». Идемпотентно."""
-    if room.get("collect_message_id") or room.get("collect_pending"):
+    «Добавить скриншот» / «Завершить комнату».
+
+    Upsert: после каждого принятого файла СУЩЕСТВУЮЩЕЕ сообщение
+    редактируется (текст + актуальный набор кнопок — полный
+    Classic не предлагает второй скриншот), новых сообщений
+    не создаётся. Приглашение «collect_pending» сериализует
+    параллельные обновления.
+    """
+    if room.get("collect_pending"):
         return
     room["collect_pending"] = True
     store.set(tournament)
     pending = room.get("pending") or []
-    # Компактный статус: одна строка + счётчик файлов.
-    kinds = ", ".join(
-        "экран" if p.get("kind") == "classic" else "отряд"
-        for p in pending
+    kinds, players = _room_pending_summary(pending)
+    allow_add = room_allows_second_file(room)
+    detail = " · ".join(
+        ([" · ".join(dict.fromkeys(kinds))] if kinds else [])
+        + ([f"игроки {players}"] if players else [])
     )
-    lines = [
-        f"**Комната {room['room_index']}** · сбор файлов "
-        f"({len(pending)}/2)"
-        + (f" — {kinds}" if kinds else "")
-    ]
+    head = f"**Комната {room['room_index']}**"
+    if detail:
+        head += f" — {detail}"
+    else:
+        head += " — сбор файлов"
+    lines = [head]
+    if allow_add and len(pending) < 2:
+        lines.append(
+            f"Файлов: {len(pending)}/2 — можно добавить ещё "
+            "скриншот"
+        )
+    elif not allow_add and pending:
+        lines.append("Файлы приняты — нажмите «Завершить комнату»")
+    text = replace_emojis("\n".join(lines))
+
     from views.ocr_match_view import RoomFilesView
 
     gid = (
@@ -2619,12 +2704,25 @@ async def _ensure_room_collect_message(
         gid, tournament.channel_id, tournament,
         match_type, match_index, int(room["room_index"]),
         int(session.get("gen", 1)),
+        allow_add=allow_add,
     )
+    cmid = room.get("collect_message_id")
     try:
-        msg = await stats_channel.send(
-            content=replace_emojis("\n".join(lines)), view=view
-        )
-        room["collect_message_id"] = msg.id
+        if cmid:
+            try:
+                msg = await stats_channel.fetch_message(int(cmid))
+                await msg.edit(content=text, view=view)
+            except Exception:
+                # Сообщение удалено/недоступно — создаём заново.
+                msg = await stats_channel.send(
+                    content=text, view=view
+                )
+                room["collect_message_id"] = msg.id
+        else:
+            msg = await stats_channel.send(
+                content=text, view=view
+            )
+            room["collect_message_id"] = msg.id
         room["collect_pending"] = False
         store.set(tournament)
     except Exception as e:
@@ -2752,6 +2850,13 @@ async def process_room_file(
         return "dup"
     if len(pend_entries) >= 2:
         return "room_full"
+    # Полный Classic (обе команды по 4 строки) — второй скриншот
+    # не нужен: устаревшая кнопка/прямой вызов не должны добавлять
+    # лишний файл. needs_reupload/shot_pending уже учтены внутри
+    # room_allows_second_file (повторная отправка разрешена).
+    if pend_entries and not room_allows_second_file(room):
+        _drop_empty_room(rooms, room)
+        return "room_full"
 
     gen = session.get("gen", 1)
     try:
@@ -2808,6 +2913,10 @@ async def process_room_file(
         pshas = _pending_shas(room)
         if sha in pshas or len(pend) >= 2:
             return "dup" if sha in pshas else "room_full"
+        # Гонка: состояние комнаты изменилось между проверкой и
+        # локом — полный Classic не принимает второй файл.
+        if pend and not room_allows_second_file(room):
+            return "room_full"
         ek = [p.get("kind") for p in pend]
         if not _seq_kind_compat(ek, kind):
             return "invalid_mix"
@@ -3029,7 +3138,17 @@ async def finalize_room_collect(
     if session.get("status") in ("completed", "cancelled"):
         _seq_purge_session(guild.id, tournament.channel_id, key)
         return "closed"
-    if not _rooms_file_submit_allowed(tournament, session, user):
+    # «Завершить комнату» — ТОЛЬКО капитану одной из команд
+    # матча (Discord ID). Отправитель комплекта, обычные
+    # участники, организатор и администратор без статуса
+    # капитана — forbidden. Повторная проверка под _room_lock.
+    teams = list(session.get("teams") or [])
+    if not teams:
+        try:
+            teams = list(_match_tuple(tournament, match_type, match_index))
+        except Exception:
+            teams = []
+    if not _is_room_finalize_captain(user, tournament, teams):
         return "forbidden"
 
     # Сначала восстанавливаем и верифицируем исходные файлы —
@@ -3108,6 +3227,12 @@ async def finalize_room_collect(
         room = _find_seq_room(fs, room_index)
         if room is None:
             return "empty"
+        # Повторная проверка прав ПОД локом на свежем состоянии:
+        # между pre-check и локом сессия/команда могли измениться.
+        if not _is_room_finalize_captain(
+            user, fresh_t, fs.get("teams") or teams
+        ):
+            return "forbidden"
         if _room_has_panels(room):
             return "done"
         pend = room.get("pending") or []
@@ -4079,30 +4204,51 @@ async def cancel_rooms_session(
                 prog = await channel.fetch_message(prog_id)
                 await prog.edit(
                     content=replace_emojis(
-                        "❌ Комплект скриншотов отменён администратором. "
-                        "Можно загрузить заново."
+                        "❌ Комплект отменён · можно загрузить заново."
                     ),
                     view=None,
                 )
         except Exception as e:
             logger.warning("rooms progress edit failed: %s", e)
         for room in session.get("rooms") or []:
+            # Все сообщения комнаты: карточка результата, shot-
+            # сообщения со скриншотами, техническое collect-
+            # сообщение. Скриншоты отменённого комплекта не
+            # должны оставаться в канале — сообщения с
+            # вложениями удаляем; если удалить нельзя — снимаем
+            # вложения и кнопки, оставляя короткий статус.
             mids = list(room.get("message_ids") or [])
             mids += list(room.get("shot_message_ids") or [])
+            # V5: до финализации shot-id лежат в pending —
+            # без них скриншоты collecting-комнаты остались бы.
+            for p in room.get("pending") or []:
+                if p.get("shot_message_id"):
+                    mids.append(p["shot_message_id"])
             if room.get("message_id"):
                 mids.append(room["message_id"])
+            if room.get("collect_message_id"):
+                mids.append(room["collect_message_id"])
             for mid in dict.fromkeys(mids):
                 try:
                     msg = await channel.fetch_message(mid)
+                    if getattr(msg, "attachments", None):
+                        try:
+                            await msg.delete()
+                            continue
+                        except Exception:
+                            pass
                     await msg.edit(
                         content=replace_emojis(
                             f"**Комната {room.get('room_index')}** — "
-                            "❌ комплект отменён администратором."
+                            "❌ комплект отменён."
                         ),
                         view=None,
+                        attachments=[],
                     )
                 except Exception as e:
-                    logger.warning("room message cancel edit failed: %s", e)
+                    logger.warning(
+                        "room message cancel cleanup failed: %s", e
+                    )
     # Аудит отмены: администратор, match_id, время — в лог и Discord.
     match_id = f"{tournament.id}_{key}"
     logger.info(
@@ -4375,8 +4521,9 @@ class RoomUploadModal(Modal):
                 "распознанная статистика сохранена."
             ),
             "room_full": (
-                f"⚠️ В комнате {self.room_index} уже 2 скриншота — "
-                "больше нельзя. Завершите комнату."
+                f"⚠️ В комнате {self.room_index} достаточно "
+                "скриншотов — больше добавить нельзя. "
+                "Завершите комнату."
             ),
             "dup": "⚠️ Этот скриншот уже загружен в комплект.",
             "invalid": (
