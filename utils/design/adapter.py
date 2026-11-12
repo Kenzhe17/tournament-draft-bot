@@ -603,6 +603,7 @@ def compose(
     accent: int | None = None,
     text: str | None = None,
     top_media: str | None = None,
+    top_media_inside: bool = False,
 ) -> discord.ui.LayoutView:
     """Собрать LayoutView из Embed и/или View.
 
@@ -638,12 +639,25 @@ def compose(
         timeout=getattr(view,"timeout", 180.0),
     )
     if top_media:
-        # Картинка сверху карточки (MediaGallery — top-level компонент)
-        layout.add_item(
-            discord.ui.MediaGallery(
-                discord.MediaGalleryItem(media=top_media)
-            )
+        gallery = discord.ui.MediaGallery(
+            discord.MediaGalleryItem(media=top_media)
         )
+        if top_media_inside and sections and isinstance(
+            sections[0], discord.ui.Container
+        ):
+            # Картинка внутри карточки — первым компонентом,
+            # над заголовком и текстом embed.
+            card = sections[0]
+            kids = list(card.children)
+            for child in kids:
+                card.remove_item(child)
+            card.add_item(gallery)
+            for child in kids:
+                card.add_item(child)
+        else:
+            # Картинка сверху карточки (MediaGallery — top-level
+            # компонент LayoutView).
+            layout.add_item(gallery)
     for container in sections:
         layout.add_item(container)
     target = sections[-1]

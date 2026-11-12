@@ -174,7 +174,7 @@ class TakeRoleButton(discord.ui.Button):
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
                 attachments=[_org_banner_file()],
             )
 
@@ -253,7 +253,7 @@ class ReleaseRoleButton(discord.ui.Button):
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
                 attachments=[_org_banner_file()],
             )
 
@@ -284,7 +284,7 @@ class BackButton(discord.ui.Button):
         view = OrgRoleView(state)
         new_embed = build_org_role_embed(interaction.guild, state)
         await interaction.response.edit_message(
-            view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+            view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
             attachments=[_org_banner_file()],
         )
 
@@ -331,7 +331,7 @@ class ResetButton(discord.ui.Button):
             # Update embed
             new_embed = build_org_role_embed(interaction.guild, state)
             await interaction.response.edit_message(
-                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA),
+                view=compose(new_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
                 attachments=[_org_banner_file()],
             )
 
@@ -483,7 +483,7 @@ async def setup_org_role_message(
 
     # Send message
     message = await channel.send(
-        view=compose(main_embed, view, top_media=ORG_BANNER_MEDIA),
+        view=compose(main_embed, view, top_media=ORG_BANNER_MEDIA, top_media_inside=True),
         file=discord.File(ORG_BANNER_PATH, filename="queue_banner.png"),
     )
 
