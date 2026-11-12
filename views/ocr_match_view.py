@@ -6892,3 +6892,187 @@ class RoomRowBindView(View):
             ),
             ephemeral=True,
         )
+
+
+class RoomFilesView(View):
+    """V5 sequential: кнопки сообщения сбора одной комнаты —
+    «Добавить скриншот» / «Завершить комнату».
+
+    Живёт на сообщении комнаты в статусе collecting_files;
+    устаревшие нажатия (другая gen/статус/уже завершена) отклоняются.
+    """
+
+    def __init__(
+        self, guild_id: int, channel_id: int, tournament,
+        match_type: str, match_index: int, room_index: int, gen: int,
+    ):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.channel_id = channel_id
+        self.match_type = match_type
+        self.match_index = match_index
+        self.room_index = room_index
+        self.gen = gen
+        b_add = Button(
+            label="📸 Добавить скриншот",
+            style=discord.ButtonStyle.primary,
+            custom_id=(
+                f"rooms_file_add:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}:{gen}"
+            ),
+            row=0,
+        )
+        b_add.callback = self._on_add
+        self.add_item(b_add)
+        b_done = Button(
+            label="✅ Завершить комнату",
+            style=discord.ButtonStyle.success,
+            custom_id=(
+                f"rooms_file_done:{guild_id}:{channel_id}:{match_type}:"
+                f"{match_index}:{room_index}:{gen}"
+            ),
+            row=0,
+        )
+        b_done.callback = self._on_done
+        self.add_item(b_done)
+
+    def _session_room(self, tournament):
+        session = (tournament.ocr_sessions or {}).get(
+            _session_key(self.match_type, self.match_index)
+        )
+        if (
+            not session
+            or session.get("mode") != "rooms"
+            or session.get("status") != "collecting"
+            or int(session.get("gen", 0)) != int(self.gen)
+        ):
+            return None, None
+        room = next(
+            (
+                r for r in session.get("rooms") or []
+                if int(r.get("room_index", 0)) == self.room_index
+            ),
+            None,
+        )
+        return session, room
+
+    async def _on_add(self, interaction: discord.Interaction) -> None:
+        from cogs.ocr_upload import (
+            RoomUploadModal, _rooms_file_submit_allowed,
+        )
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        session, room = self._session_room(tournament) if tournament else (None, None)
+        if session is None or room is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Сессия загрузки устарела или отменена."
+                ),
+                ephemeral=True,
+            )
+            return
+        if (
+            room.get("status") != "collecting_files"
+            or len(room.get("pending") or []) >= 2
+        ):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "ℹ️ Комната уже заполнена — используйте "
+                    "«Завершить комнату»."
+                ),
+                ephemeral=True,
+            )
+            return
+        if not _rooms_file_submit_allowed(tournament, session, interaction.user):
+            await interaction.response.send_message(
+                replace_emojis(
+                    "❌ Этот комплект может продолжить только его "
+                    "отправитель, капитан команды-победителя "
+                    "или администратор."
+                ),
+                ephemeral=True,
+            )
+            return
+        try:
+            await interaction.response.send_modal(
+                RoomUploadModal(
+                    self.guild_id, self.channel_id, tournament,
+                    self.match_type, self.match_index, self.room_index,
+                    int(session.get("gen", 1)),
+                )
+            )
+        except Exception as exc:
+            logger.error("RoomFilesView modal failed: %s", exc, exc_info=True)
+            try:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        "⚠️ Не удалось открыть окно загрузки — "
+                        "повторите попытку."
+                    ),
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+
+    async def _on_done(self, interaction: discord.Interaction) -> None:
+        from cogs.ocr_upload import finalize_room_collect
+
+        tournament = store.get(self.guild_id, self.channel_id)
+        session, room = self._session_room(tournament) if tournament else (None, None)
+        if session is None or room is None:
+            await interaction.response.send_message(
+                replace_emojis(
+                    "⚠️ Сессия загрузки устарела или отменена."
+                ),
+                ephemeral=True,
+            )
+            return
+        try:
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        except Exception:
+            pass
+        res = await finalize_room_collect(
+            interaction.guild, interaction.user, tournament,
+            self.match_type, self.match_index, self.room_index,
+            stats_channel=interaction.channel,
+        )
+        texts = {
+            "ok": (
+                f"✅ Комната {self.room_index} завершена — "
+                "игроки сопоставляются под сообщением комнаты."
+            ),
+            "publish_fail": (
+                f"⚠️ Комната {self.room_index} распознана, но "
+                "сообщение не опубликовано — повторите через "
+                "«Добавить скриншоты» (интерфейс восстановится "
+                "без повторного OCR)."
+            ),
+            "done": f"ℹ️ Комната {self.room_index} уже завершена.",
+            "empty": (
+                f"⚠️ В комнате {self.room_index} нет файлов — "
+                "сначала отправьте скриншот."
+            ),
+            "closed": "⚠️ Сессия загрузки завершена или отменена.",
+            "forbidden": (
+                "❌ Завершить комнату может только отправитель "
+                "комплекта, капитан команды-победителя или "
+                "администратор."
+            ),
+            "invalid": "❌ Не удалось собрать комнату — проверьте файлы.",
+        }
+        try:
+            if interaction.response.is_done():
+                await interaction.edit_original_response(
+                    content=replace_emojis(
+                        texts.get(res, "❌ Ошибка — попробуйте ещё раз.")
+                    )
+                )
+            else:
+                await interaction.response.send_message(
+                    replace_emojis(
+                        texts.get(res, "❌ Ошибка — попробуйте ещё раз.")
+                    ),
+                    ephemeral=True,
+                )
+        except Exception:
+            pass

@@ -50,9 +50,16 @@ COPY assets_ds_server/ assets_ds_server/
 
 COPY content/ content/
 
-# Pre-download RapidOCR ONNX models into the image
+# Pre-download RapidOCR ONNX models into the image.
+# v1 (rapidocr_onnxruntime) создаёт сессии eagerly — warmup хватает.
+# v3 (rapidocr, кириллица) — ЛЕНИВО: rec-сессия создаётся только при
+# первом распознанном боксе, поэтому warmup на пустом кадре модель
+# не скачивал → в Railway она докачивалась в рантайме. Качаем
+# детерминированно через штатный download_task + проверяем.
+COPY tools/download_ocr_models.py tools/
 RUN python -c "from rapidocr_onnxruntime import RapidOCR; import numpy as np; o=RapidOCR(); o(np.zeros((64,64,3),dtype='uint8'))"
-RUN python -c "from services.ocr_service import _get_cyrillic_ocr; import numpy as np; _get_cyrillic_ocr()(np.zeros((64,64,3),dtype='uint8'))"
+RUN python tools/download_ocr_models.py
+RUN python -c "import sys; from services.ocr_service import verify_model_files; m=verify_model_files(); print('missing models:', m); sys.exit(1 if m else 0)"
 
 
 

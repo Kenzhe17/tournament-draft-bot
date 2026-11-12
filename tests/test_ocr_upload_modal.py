@@ -98,14 +98,15 @@ def modal_env(monkeypatch):
         return interaction.channel
 
     async def fake_process(**kw):
-        captured["items"] = kw["items"]
+        captured["item"] = kw.get("item")
+        captured["items"] = kw.get("items")
         return "ok"
 
     monkeypatch.setattr(ou, "store", SimpleNamespace(get=lambda g, c: tournament))
     monkeypatch.setattr(ou, "_rooms_file_submit_allowed", lambda *a: True)
     monkeypatch.setattr(ou, "_rooms_claim_bundle", fake_bundle)
     monkeypatch.setattr(ou, "_stats_channel", fake_stats)
-    monkeypatch.setattr(ou, "process_room_bundle", fake_process)
+    monkeypatch.setattr(ou, "process_room_file", fake_process)
     return tournament, key, session, captured
 
 
@@ -119,9 +120,10 @@ class TestRoomUploadModalReal:
         assert isinstance(upload, Label)
         assert isinstance(upload.component, FileUpload)
         assert upload.component.min_values == 1
-        assert upload.component.max_values == 2
+        # V5 sequential: строго один файл за загрузку
+        assert upload.component.max_values == 1
         assert upload.component.required is True
-        assert "1–2 файла" in upload.text
+        assert "1 файл" in upload.text
         # add_item сохранил Label как единственный child
         assert modal.children[0] is upload
 
@@ -132,13 +134,13 @@ class TestRoomUploadModalReal:
         modal.upload.component._values = [_attachment("room1.png", b"PNG1")]
         inter = _interaction()
         await modal.on_submit(inter)
-        assert captured["items"] == [
-            {"filename": "room1.png", "data": b"PNG1"}
-        ]
+        assert captured["item"] == {"filename": "room1.png", "data": b"PNG1"}
         assert inter.followup.sent  # финальное сообщение отправлено
 
     @pytest.mark.asyncio
-    async def test_submit_reads_two_attachments(self, modal_env):
+    async def test_submit_passes_first_of_values(self, modal_env):
+        """V5: модалка принимает 1 файл; даже если values вернул
+        несколько — в process_room_file уходит только первый."""
         _, key, session, captured = modal_env
         modal = ou.RoomUploadModal(1, 2, SimpleNamespace(), "qualifier", 0, 2, 1)
         modal.upload.component._values = [
@@ -147,8 +149,7 @@ class TestRoomUploadModalReal:
         ]
         inter = _interaction()
         await modal.on_submit(inter)
-        assert [i["filename"] for i in captured["items"]] == ["a.png", "b.png"]
-        assert [i["data"] for i in captured["items"]] == [b"AAA", b"BBB"]
+        assert captured["item"] == {"filename": "a.png", "data": b"AAA"}
 
     @pytest.mark.asyncio
     async def test_submit_no_files_notifies(self, modal_env):

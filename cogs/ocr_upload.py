@@ -2075,7 +2075,10 @@ def _rooms_files_accepted(session: dict) -> bool:
     """
     if session.get("card_state") == "processing":
         return True
-    return _rooms_completed_count(session) > 0
+    if _rooms_completed_count(session) > 0:
+        return True
+    # V5: принятый, но ещё не финализированный файл — тоже «принято».
+    return any(r.get("pending") for r in session.get("rooms") or [])
 
 
 def rooms_session_can_continue(session: dict | None) -> bool:
@@ -2198,17 +2201,23 @@ def _all_room_shas(session: dict) -> set[str]:
         if r.get("sha"):
             out.add(r["sha"])
         out.update(r.get("shas") or [])
+        # V5: sha ещё не финализированных файлов тоже заняты —
+        # один и тот же скриншот не должен попасть в две комнаты.
+        out.update(_pending_shas(r))
+        rep = r.get("republish") or {}
+        out.update(rep.get("shas") or [])
     return out
 
 
 def _drop_empty_room(rooms: list, room: dict | None) -> None:
-    """Убрать комнату без panels после отклонённой загрузки.
+    """Убрать комнату без panels/pending после отклонённой загрузки.
 
     Пустая запись не должна оставаться в session["rooms"]:
     иначе она выглядит как «комната в работе» и засоряет
-    republish/next-index логику.
+    republish/next-index логику. Комната с принятыми, но ещё не
+    финализированными файлами (V5 pending) — НЕ пустая.
     """
-    if room is None or _room_has_panels(room):
+    if room is None or _room_has_panels(room) or room.get("pending"):
         return
     rooms[:] = [r for r in rooms if r is not room]
 
@@ -2347,6 +2356,595 @@ def _reconcile_mixed_squad(room: dict) -> None:
             room.pop(k, None)
 
 
+def _merge_room_pipes(
+    room: dict, pipes: list[dict], shas: list[str]
+) -> str | None:
+    """Перенести распознанные pipes в panels комнаты.
+
+    Общая логика bundle- и sequential-загрузки (V5): classic —
+    основной источник, squad — aux/вторая команда, смешанная пара
+    идёт через _reconcile_mixed_squad. Возвращает код ошибки
+    ("invalid") или None. Вызывать под _room_lock.
+    """
+    classic_idx = next(
+        (i for i, p in enumerate(pipes) if p.get("squad") is None), None
+    )
+    if classic_idx is not None:
+        # Classic — основной источник статистики обеих команд.
+        # Смешанная загрузка (classic + squad): squad-скриншот
+        # сохраняется как aux для сверки/заполнения пропусков,
+        # статистику повторно НЕ суммирует.
+        pipe = pipes[classic_idx]
+        room["panels"].update(pipe["panels"])
+        room["kind"] = "classic" if len(pipes) == 1 else "mixed"
+        room["winner_side"] = pipe.get("winner_side")
+        room["banner"] = pipe.get("banner")
+        room["score"] = pipe.get("score")
+        room["top5"] = pipe.get("top5", False)
+        room["sha"] = shas[classic_idx]
+        for p, sha in zip(pipes, shas):
+            if p.get("squad") is None:
+                continue
+            room.setdefault("aux_squads", []).append(
+                _squad_aux_entry(p["squad"], sha)
+            )
+            room.setdefault("shas", []).append(sha)
+        _reconcile_mixed_squad(room)
+        return None
+
+    # Только squad-скриншоты: каждый — отдельный отряд.
+    if len(pipes) > 2:
+        return "invalid"
+    room["kind"] = "squad"
+    panels = room.setdefault("panels", {})
+    banners = room.setdefault("banners", {})
+    for pipe, sha in zip(pipes, shas):
+        squad = pipe["squad"]
+        pkey = "squad" if "squad" not in panels else "squad2"
+        if pkey in panels:
+            return "invalid"  # не должно случиться при max 2 squad
+        rows = _squad_player_rows(squad)
+        panels[pkey] = {"name": "Отряд", "rows": rows}
+        banners[pkey] = squad.get("banner")
+        room.setdefault("shas", []).append(sha)
+        if not room.get("banner") and squad.get("banner"):
+            room["banner"] = squad.get("banner")
+    if room.get("sha") is None and room["shas"]:
+        room["sha"] = room["shas"][0]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# V5: последовательная загрузка — один скриншот за раз
+# ---------------------------------------------------------------------------
+#
+# Сырые байты изображений в JSON-состояние НЕ пишутся. Байты живут:
+# 1) в памяти процесса — _SEQ_FILE_CACHE до «Завершить комнату»;
+# 2) в Discord — вложение shot-сообщения (room["pending"][*]
+#    ["shot_message_id"]), откуда они читаются после рестарта.
+# 3) для republish — _REPUBLISH_FILE_CACHE (там файлы уже
+#    публиковались ранее, байты нужны только для повторной отправки).
+
+_SEQ_FILE_CACHE: dict[tuple, dict[str, dict]] = {}
+_REPUBLISH_FILE_CACHE: dict[tuple, dict[str, dict]] = {}
+
+
+def _seq_cache_key(guild_id, channel_id, key: str, room_index: int):
+    return (int(guild_id), int(channel_id), key, int(room_index))
+
+
+def _pending_shas(room: dict) -> list[str]:
+    return [
+        str(p.get("sha"))
+        for p in room.get("pending") or []
+        if p.get("sha")
+    ]
+
+
+def _seq_kind_compat(existing: list[str], new_kind: str) -> bool:
+    """Допустима ли пара «уже принятые виды + новый».
+
+    Classic — не более одного на комнату; squad — максимум два;
+    смешанная пара classic+squad — через aux-сверку. Всего ≤2 файла.
+    """
+    kinds = list(existing) + [new_kind]
+    if len(kinds) > 2:
+        return False
+    return not (kinds.count("classic") > 1)
+
+
+def _new_seq_room(room_index: int) -> dict:
+    return {
+        "room_index": room_index,
+        "sha": None,
+        "shas": [],
+        "kind": None,
+        "status": "collecting_files",
+        "pending": [],
+        "collect_message_id": None,
+        "collect_pending": False,
+        "panels": {},
+        "banners": {},
+        "maps": {},
+        "panel_picks": {},
+        "winner_side": None,
+        "banner": None,
+        "score": None,
+        "top5": False,
+        "message_id": None,
+        "message_ids": [],
+        "shot_message_ids": [],
+        "uploaded_at": datetime.now().isoformat(),
+    }
+
+
+def _find_seq_room(session: dict, room_index: int):
+    return next(
+        (
+            r for r in session.get("rooms") or []
+            if int(r.get("room_index", 0)) == room_index
+        ),
+        None,
+    )
+
+
+async def _publish_seq_shot(
+    stats_channel, room: dict, pending_entry: dict,
+    item: dict,
+) -> None:
+    """Сообщение с принятым скриншотом — хранит байты в Discord
+    для восстановления после рестарта и показывает прогресс."""
+    kind_label = (
+        "полный экран" if pending_entry.get("kind") == "classic"
+        else "скриншот отряда"
+    )
+    n = len(room.get("pending") or [])
+    try:
+        msg = await stats_channel.send(
+            content=replace_emojis(
+                f"📸 **Комната {room['room_index']}** — принят "
+                f"{kind_label} ({n}/2).\n"
+                "Для смешанной комнаты можно добавить скриншот "
+                "отряда или завершить кнопку «Завершить комнату»."
+            ),
+            files=[
+                discord.File(
+                    io.BytesIO(item["data"]),
+                    filename=(
+                        f"room_{room['room_index']}_shot{n}"
+                        f"{_img_ext(item.get('filename') or '')}"
+                    ),
+                )
+            ],
+        )
+        pending_entry["shot_message_id"] = msg.id
+        # shot-сообщения — не message_ids: на них не вешается
+        # RoomView (кнопки сопоставления), только метка отмены.
+        ids = room.setdefault("shot_message_ids", [])
+        if msg.id not in ids:
+            ids.append(msg.id)
+    except Exception as e:
+        logger.warning("seq shot message publish failed: %s", e)
+
+
+async def _ensure_room_collect_message(
+    stats_channel, tournament, session: dict, room: dict,
+    match_type: str, match_index: int,
+) -> None:
+    """Сообщение комнаты в режиме сбора: статус файлов + кнопки
+    «Добавить скриншот» / «Завершить комнату». Идемпотентно."""
+    if room.get("collect_message_id") or room.get("collect_pending"):
+        return
+    room["collect_pending"] = True
+    store.set(tournament)
+    pending = room.get("pending") or []
+    lines = [f"**Комната {room['room_index']}** — сбор скриншотов"]
+    for i, p in enumerate(pending, 1):
+        kind_label = (
+            "полный экран" if p.get("kind") == "classic"
+            else "скриншот отряда"
+        )
+        lines.append(f"• {i}. {kind_label} — ✅ принят")
+    if not pending:
+        lines.append("• Пока файлов нет — отправьте первый скриншот.")
+    else:
+        lines.append(
+            "\nМожно завершить комнату или добавить "
+            "второй скриншот (для сверки)."
+        )
+    from views.ocr_match_view import RoomFilesView
+
+    gid = (
+        getattr(tournament, "guild_id", None)
+        or session.get("guild_id")
+        or 0
+    )
+    view = RoomFilesView(
+        gid, tournament.channel_id, tournament,
+        match_type, match_index, int(room["room_index"]),
+        int(session.get("gen", 1)),
+    )
+    try:
+        msg = await stats_channel.send(
+            content=replace_emojis("\n".join(lines)), view=view
+        )
+        room["collect_message_id"] = msg.id
+        room["collect_pending"] = False
+        store.set(tournament)
+    except Exception as e:
+        room["collect_pending"] = False
+        store.set(tournament)
+        logger.warning("room collect message failed: %s", e)
+
+
+async def _seq_pending_items(
+    stats_channel, pending_entries: list, cache_key: tuple
+) -> list[dict]:
+    """Собрать items (filename+bytes) для _publish_room_message.
+
+    Источники байтов: память → Discord shot-сообщение. Если оба
+    недоступны (старые комнаты/сбой) — файл пропускается; сообщение
+    комнаты публикуется без вложений, статистика не теряется.
+    """
+    items: list[dict] = []
+    cache = _SEQ_FILE_CACHE.get(cache_key) or {}
+    for p in pending_entries or []:
+        sha = p.get("sha")
+        data = None
+        centry = cache.get(sha)
+        if centry:
+            data = centry.get("data")
+        if data is None and p.get("shot_message_id") and stats_channel:
+            try:
+                msg = await stats_channel.fetch_message(
+                    int(p["shot_message_id"])
+                )
+                att = (getattr(msg, "attachments", None) or [None])[0]
+                if att is not None:
+                    data = await att.read()
+            except Exception:
+                logger.debug("seq shot fetch failed", exc_info=True)
+        if data:
+            items.append({
+                "filename": p.get("filename") or f"{sha}.png",
+                "data": data,
+            })
+    return items
+
+
+async def process_room_file(
+    guild: discord.Guild,
+    channel,
+    user,
+    tournament,
+    match_type: str,
+    match_index: int,
+    key: str,
+    session: dict,
+    stats_channel,
+    room_index: int,
+    item: dict,
+) -> str:
+    """Принять ОДИН скриншот в комнату (V5 sequential).
+
+    Файл OCR'ится сразу, результат складывается в room["pending"]
+    (без panels — комната «считается» только после «Завершить
+    комнату»). Байты — в памяти и в shot-сообщении Discord.
+
+    Коды: "ok" (первый файл) | "added" (второй) | "dup" |
+    "invalid" | "invalid_mix" | "room_full" | "parse_fail" |
+    "room_done" | "cancelled" | "publish_fail" | "error".
+    """
+    expected = int(session.get("rooms_expected") or 0)
+    if room_index < 1 or room_index > expected:
+        return "invalid"
+
+    rooms = session.setdefault("rooms", [])
+    room = _find_seq_room(session, room_index)
+    room_done = room is not None and _room_has_panels(room)
+    needs_republish = room_done and not room.get("message_id")
+    if room_done and not needs_republish:
+        return "room_done"
+    if room is None:
+        room = _new_seq_room(room_index)
+        rooms.append(room)
+        rooms.sort(key=lambda r: int(r.get("room_index", 0)))
+
+    sha = _sha256_bytes(item["data"])
+
+    # Republish-ветка: комната уже распознана, не хватает только
+    # сообщения с кнопками — копим исходные файлы по sha.
+    if needs_republish:
+        return await _process_republish_file(
+            guild, stats_channel, tournament, key, session,
+            match_type, match_index, room_index, room, item, sha,
+        )
+
+    # Дедупликация: sha не должен встречаться в других комнатах
+    # и в pending этой комнаты.
+    known = _all_room_shas(session)
+    for p in room.get("pending") or []:
+        known.discard(p.get("sha"))
+    if room.get("sha"):
+        known.discard(room["sha"])
+    if sha in known or sha in _pending_shas(room):
+        _drop_empty_room(rooms, room)
+        return "dup"
+    if len(room.get("pending") or []) >= 2:
+        return "room_full"
+
+    gen = session.get("gen", 1)
+    try:
+        pipe = await _classic_pipeline(item["data"], need_score=False)
+    except Exception:
+        logger.exception("Seq room file OCR pipeline failed")
+        _drop_empty_room(rooms, room)
+        return "error"
+
+    # Сессия могла быть отменена/пересоздана пока шёл OCR
+    fresh = store.get(guild.id, tournament.channel_id)
+    fs = (fresh.ocr_sessions.get(key) if fresh else None) or {}
+    if (
+        fs.get("mode") != "rooms"
+        or fs.get("status") != "collecting"
+        or fs.get("gen") != gen
+    ):
+        return "cancelled"
+
+    if pipe is None:
+        # Первый файл отклонён — пустую комнату убираем; при наличии
+        # pending комната и ранее принятые файлы сохраняются.
+        _drop_empty_room(fs.get("rooms") or [], room)
+        return "parse_fail"
+
+    kind = "squad" if pipe.get("squad") is not None else "classic"
+    existing_kinds = [
+        p.get("kind") for p in room.get("pending") or []
+    ]
+    if not _seq_kind_compat(existing_kinds, kind):
+        _drop_empty_room(fs.get("rooms") or [], room)
+        return "invalid_mix"
+
+    # Мутация под _room_lock: параллельные загрузки двух
+    # пользователей сериализуются — не больше 2 файлов, без
+    # смешения статуса и двойной статистики.
+    async with _room_lock(key):
+        fresh = store.get(guild.id, tournament.channel_id) or tournament
+        fs = fresh.ocr_sessions.get(key) or {}
+        if (
+            fs.get("mode") != "rooms"
+            or fs.get("status") != "collecting"
+            or int(fs.get("gen", 0)) != int(gen)
+        ):
+            return "cancelled"
+        room = _find_seq_room(fs, room_index)
+        if room is None or _room_has_panels(room):
+            return "room_done"
+        if room.get("status") != "collecting_files":
+            return "closed"
+        pend = room.setdefault("pending", [])
+        pshas = _pending_shas(room)
+        if sha in pshas or len(pend) >= 2:
+            return "dup" if sha in pshas else "room_full"
+        ek = [p.get("kind") for p in pend]
+        if not _seq_kind_compat(ek, kind):
+            return "invalid_mix"
+        entry = {
+            "sha": sha,
+            "kind": kind,
+            "filename": item.get("filename") or f"{sha[:12]}.png",
+            "pipe": pipe,
+            "shot_message_id": None,
+        }
+        pend.append(entry)
+        room["status"] = "collecting_files"
+        room["uploaded_at"] = datetime.now().isoformat()
+        fs["rooms_received"] = _rooms_completed_count(fs)
+        store.set(fresh)
+        tournament, session = fresh, fs
+
+    was_first = len(room.get("pending") or []) == 1
+    ck = _seq_cache_key(guild.id, tournament.channel_id, key, room_index)
+    _SEQ_FILE_CACHE.setdefault(ck, {})[sha] = {
+        "filename": entry["filename"], "data": item["data"],
+    }
+
+    # Shot-сообщение (байты в Discord) + сообщение сбора комнаты.
+    await _publish_seq_shot(stats_channel, room, entry, item)
+    store.set(tournament)
+    await _ensure_room_collect_message(
+        stats_channel, tournament, session, room,
+        match_type, match_index,
+    )
+    # Файл принят — карточка матча переходит в processing
+    # (кнопка «Отправить результат» скрывается).
+    await _ensure_processing_card(guild, tournament, match_type, match_index)
+    await _update_rooms_progress(
+        guild, tournament, key, match_type, match_index, stats_channel,
+    )
+    return "ok" if was_first else "added"
+
+
+async def _process_republish_file(
+    guild, stats_channel, tournament, key, session,
+    match_type, match_index, room_index, room, item, sha,
+) -> str:
+    """Последовательный republish: копим файлы по sha, пока не
+    наберётся исходный комплект — затем _republish_room_interface.
+
+    Байты — только в памяти (файлы уже публиковались при OCR);
+    после рестарта пользователь просто загружает их заново.
+    """
+    expected = list(room.get("shas") or [])
+    if room.get("sha") and room["sha"] not in expected:
+        expected.append(room["sha"])
+    rep = room.setdefault("republish", {"shas": []})
+    got = list(rep.get("shas") or [])
+
+    ck = _seq_cache_key(
+        guild.id, tournament.channel_id, key, room_index
+    )
+    cache = _REPUBLISH_FILE_CACHE.setdefault(ck, {})
+    if sha not in expected:
+        return "sha_mismatch"
+    if sha in got and sha in cache:
+        return "dup"
+    if sha not in got:
+        got.append(sha)
+        rep["shas"] = got
+        store.set(tournament)
+    cache[sha] = {"filename": item.get("filename"), "data": item["data"]}
+
+    if sorted(got) != sorted(expected):
+        return "republish_partial"
+
+    items = [
+        {"filename": cache[s].get("filename") or f"{s}.png",
+         "data": cache[s]["data"]}
+        for s in expected if s in cache
+    ]
+    if len(items) != len(expected):
+        # Часть байтов потеряна (другой рестарт/инстанс) — ждём
+        # повторной загрузки недостающих файлов.
+        return "republish_partial"
+    res = await _republish_room_interface(
+        guild, stats_channel, tournament, key, session,
+        stats_channel, room_index, items, match_type, match_index,
+        list(expected),
+    )
+    if res == "ok":
+        room.pop("republish", None)
+        _REPUBLISH_FILE_CACHE.pop(ck, None)
+        store.set(tournament)
+        return "republished"
+    return res
+
+
+async def finalize_room_collect(
+    guild: discord.Guild,
+    user,
+    tournament,
+    match_type: str,
+    match_index: int,
+    room_index: int,
+    stats_channel=None,
+) -> str:
+    """«Завершить комнату» (V5): слить pending → panels, опубликовать
+    сообщение комнаты с кнопками сопоставления, status →
+    awaiting_mapping. Идемпотентно под _room_lock.
+
+    Коды: "ok" | "publish_fail" | "done" | "empty" | "closed" |
+    "forbidden" | "invalid".
+    """
+    key = _session_key(match_type, match_index)
+    session = (tournament.ocr_sessions or {}).get(key)
+    if not session or session.get("mode") != "rooms":
+        return "closed"
+    if session.get("status") in ("completed", "cancelled"):
+        return "closed"
+    if not _rooms_file_submit_allowed(tournament, session, user):
+        return "forbidden"
+
+    gen = int(session.get("gen", 1))
+    fresh_t = None
+    async with _room_lock(key):
+        fresh_t = store.get(guild.id, tournament.channel_id) or tournament
+        fs = fresh_t.ocr_sessions.get(key) or {}
+        if (
+            fs.get("mode") != "rooms"
+            or fs.get("status") != "collecting"
+            or int(fs.get("gen", 0)) != gen
+        ):
+            return "closed"
+        room = _find_seq_room(fs, room_index)
+        if room is None:
+            return "empty"
+        if _room_has_panels(room):
+            return "done"
+        pend = room.get("pending") or []
+        if not pend:
+            return "empty"
+        pend_snapshot = [dict(p) for p in pend]
+        pipes = [p.get("pipe") or {} for p in pend]
+        shas = _pending_shas(room)
+        err = _merge_room_pipes(room, pipes, shas)
+        if err is not None:
+            return err
+        room["status"] = "awaiting_mapping"
+        # shot-сообщения сохраняем отдельным списком — для метки
+        # отмены; RoomView на них не вешается.
+        sids = room.setdefault("shot_message_ids", [])
+        for p in pend:
+            mid = p.get("shot_message_id")
+            if mid and mid not in sids:
+                sids.append(mid)
+        room["pending"] = []
+        fs["rooms_received"] = _rooms_completed_count(fs)
+        store.set(fresh_t)
+        session, room = fs, room
+        pending_for_items = pend_snapshot
+
+    # Публикация сообщения комнаты с кнопками сопоставления —
+    # байты берём из памяти или Discord shot-сообщений.
+    if stats_channel is None:
+        stats_channel = await _stats_channel_for(guild, session)
+    ck = _seq_cache_key(guild.id, tournament.channel_id, key, room_index)
+    items = await _seq_pending_items(stats_channel, pending_for_items, ck)
+    _SEQ_FILE_CACHE.pop(ck, None)
+    channel = stats_channel
+    ok = False
+    if channel is not None:
+        for attempt in range(2):
+            try:
+                await _publish_room_message(
+                    channel, fresh_t, channel, items, room,
+                    match_type, match_index,
+                )
+                ok = True
+                break
+            except Exception as e:
+                logger.warning(
+                    "seq room publish attempt %d failed: %s",
+                    attempt + 1, e,
+                )
+    await _ensure_processing_card(guild, fresh_t, match_type, match_index)
+    if channel is not None:
+        await _update_rooms_progress(
+            guild, fresh_t, key, match_type, match_index, channel,
+        )
+    # Collect-сообщение → финальный статус без кнопок сбора.
+    try:
+        cmid = room.get("collect_message_id")
+        if cmid and channel is not None:
+            cmsg = await channel.fetch_message(int(cmid))
+            await cmsg.edit(
+                content=replace_emojis(
+                    f"**Комната {room_index}** — ✅ файлы приняты, "
+                    "сопоставление игроков — под сообщением выше."
+                ),
+                view=None,
+            )
+            room["collect_message_id"] = None
+            store.set(fresh_t)
+    except Exception:
+        logger.debug("collect message finalize edit failed",
+                     exc_info=True)
+    return "ok" if ok or room.get("message_id") else "publish_fail"
+
+
+async def _stats_channel_for(guild, session):
+    """Канал прогресса/результатов комнаты (progress_channel_id)."""
+    ch_id = session.get("progress_channel_id")
+    if ch_id:
+        try:
+            return guild.get_channel(int(ch_id)) or await guild.fetch_channel(
+                int(ch_id)
+            )
+        except Exception:
+            pass
+    return None
+
+
 async def process_room_bundle(
     guild: discord.Guild,
     channel,
@@ -2462,49 +3060,10 @@ async def process_room_bundle(
         return "invalid"
 
     # --- Сборка panels комнаты ---
-    from views.ocr_match_view import EXTRA_STAT_KEYS
-
-    classic_idx = next(
-        (i for i, p in enumerate(pipes) if p.get("squad") is None), None
-    )
-    if classic_idx is not None:
-        # Classic — основной источник статистики обеих команд.
-        # Смешанная загрузка (classic + squad): squad-скриншот
-        # сохраняется как aux для сверки/заполнения пропусков,
-        # статистику повторно НЕ суммирует.
-        pipe = pipes[classic_idx]
-        room["panels"].update(pipe["panels"])
-        room["kind"] = "classic" if len(items) == 1 else "mixed"
-        room["winner_side"] = pipe.get("winner_side")
-        room["banner"] = pipe.get("banner")
-        room["score"] = pipe.get("score")
-        room["top5"] = pipe.get("top5", False)
-        room["sha"] = shas[classic_idx]
-        for i, (p, sha) in enumerate(zip(pipes, shas)):
-            if p.get("squad") is None:
-                continue
-            room.setdefault("aux_squads", []).append(
-                _squad_aux_entry(p["squad"], sha)
-            )
-            room.setdefault("shas", []).append(sha)
-        _reconcile_mixed_squad(room)
-    else:
-        room["kind"] = "squad"
-        panels = room.setdefault("panels", {})
-        banners = room.setdefault("banners", {})
-        for pipe, sha in zip(pipes, shas):
-            squad = pipe["squad"]
-            pkey = "squad" if "squad" not in panels else "squad2"
-            if pkey in panels:
-                return "invalid"  # не должно случиться при max 2 squad
-            rows = _squad_player_rows(squad)
-            panels[pkey] = {"name": "Отряд", "rows": rows}
-            banners[pkey] = squad.get("banner")
-            room.setdefault("shas", []).append(sha)
-            if not room.get("banner") and squad.get("banner"):
-                room["banner"] = squad.get("banner")
-        if room.get("sha") is None and room["shas"]:
-            room["sha"] = room["shas"][0]
+    err = _merge_room_pipes(room, pipes, shas)
+    if err is not None:
+        _drop_empty_room(rooms, room)
+        return err
 
     session["rooms_received"] = _rooms_completed_count(session)
     store.set(tournament)
@@ -3154,10 +3713,15 @@ async def _rooms_release_claim(
         ):
             return
         rooms = s.get("rooms") or []
-        if any(_room_has_panels(r) for r in rooms):
+        if any(
+            _room_has_panels(r) or r.get("pending") for r in rooms
+        ):
             return
         # Убираем пустые комнаты-огрызки отклонённых попыток.
-        s["rooms"] = [r for r in rooms if _room_has_panels(r)]
+        s["rooms"] = [
+            r for r in rooms
+            if _room_has_panels(r) or r.get("pending")
+        ]
         s["rooms_received"] = _rooms_completed_count(s)
         s["winner_pending"] = True
         s["winning_team_index"] = None
@@ -3248,6 +3812,7 @@ async def cancel_rooms_session(
             logger.warning("rooms progress edit failed: %s", e)
         for room in session.get("rooms") or []:
             mids = list(room.get("message_ids") or [])
+            mids += list(room.get("shot_message_ids") or [])
             if room.get("message_id"):
                 mids.append(room["message_id"])
             for mid in dict.fromkeys(mids):
@@ -3365,10 +3930,11 @@ class RoomCountSelectView(View):
 
 
 class RoomUploadModal(Modal):
-    """Скриншоты ОДНОЙ явно выбранной комнаты.
+    """Один скриншот ОДНОЙ явно выбранной комнаты (V5 sequential).
 
-    1 файл — полный двухпанельный экран ИЛИ один squad-скриншот
-    команды. 2 файла — по одному squad-скриншоту на каждую команду.
+    За раз принимается ровно 1 файл; второй скриншот той же комнаты
+    добавляется отдельной загрузкой через «Добавить скриншот»,
+    завершение — кнопкой «Завершить комнату».
     """
 
     def __init__(
@@ -3378,11 +3944,11 @@ class RoomUploadModal(Modal):
         # FileUpload в discord.py 2.7 не принимает label — текст
         # задаётся через Label-обёртку (как в ScreenshotUploadModal).
         self.upload = Label(
-            text=f"Скриншоты комнаты {room_index} (1–2 файла)",
+            text=f"Скриншот комнаты {room_index} (1 файл)",
             component=FileUpload(
                 required=True,
                 min_values=1,
-                max_values=2,
+                max_values=1,
             ),
         )
         super().__init__(title=f"Комната {room_index}", timeout=600)
@@ -3489,7 +4055,7 @@ class RoomUploadModal(Modal):
         stats_channel = await _stats_channel(interaction, tournament)
         if stats_channel is None:
             stats_channel = interaction.channel
-        res = await process_room_bundle(
+        res = await process_room_file(
             guild=interaction.guild,
             channel=stats_channel,
             user=interaction.user,
@@ -3500,7 +4066,7 @@ class RoomUploadModal(Modal):
             session=session,
             stats_channel=stats_channel,
             room_index=self.room_index,
-            items=items,
+            item=items[0],
         )
         # Отклонённый ПЕРВЫЙ файл не должен навсегда занимать
         # комплект: откатываем claim (победитель/права) и убираем
@@ -3512,30 +4078,46 @@ class RoomUploadModal(Modal):
             )
         messages = {
             "ok": (
-                f"✅ Комната {self.room_index} обработана. "
-                "Следующая — кнопкой «Добавить скриншоты»."
+                f"✅ Скриншот принят в комнату {self.room_index}. "
+                "Добавьте второй скриншот кнопкой «Добавить "
+                "скриншот» или завершите комнату."
+            ),
+            "added": (
+                f"✅ Второй скриншот принят в комнату "
+                f"{self.room_index} — нажмите «Завершить комнату»."
+            ),
+            "room_full": (
+                f"⚠️ В комнате {self.room_index} уже 2 скриншота — "
+                "больше нельзя. Завершите комнату."
             ),
             "dup": "⚠️ Этот скриншот уже загружен в комплект.",
             "invalid": (
-                "❌ В одной комнате: либо 1 полный скриншот, либо "
-                "1–2 скриншота отрядов (максимум 2 файла)."
+                "❌ Не удалось определить тип скриншота — нужен "
+                "полный экран CS 4x4 или скриншот отряда."
             ),
             "invalid_mix": (
-                "❌ Два полных скриншота в одной комнате не "
-                "принимаются. Варианты: 1 полный скриншот "
-                "(+ опционально 1 скриншот отряда для сверки) "
-                "или 1–2 скриншота отрядов."
+                "❌ Второй полный скриншот в одной комнате не "
+                "принимается — первый файл сохранён. Варианты: "
+                "1 полный скриншот (+ опционально 1 скриншот "
+                "отряда для сверки) или 1–2 скриншота отрядов."
             ),
             "room_done": (
                 f"ℹ️ Комната {self.room_index} уже заполнена — "
                 "замена только через откат администратором."
             ),
+            "republish_partial": (
+                "ℹ️ Скриншот учтён для восстановления интерфейса — "
+                "загрузите остальные файлы этой комнаты."
+            ),
+            "republished": (
+                "✅ Интерфейс комнаты восстановлен — сопоставление "
+                "игроков доступно под сообщением комнаты."
+            ),
             "parse_fail": (
                 "❌ Не удалось распознать таблицу результатов — "
                 "проверьте, что это экран CS 4x4.\n"
-                "Комната не засчитана: повторите загрузку кнопкой "
-                "«Добавить скриншоты» под сообщением прогресса "
-                "или обратитесь к администратору."
+                "Ранее принятые скриншоты комнаты сохранены — "
+                "повторите загрузку кнопкой «Добавить скриншот»."
             ),
             "cancelled": "⚠️ Сессия загрузки была отменена.",
             "sha_mismatch": (

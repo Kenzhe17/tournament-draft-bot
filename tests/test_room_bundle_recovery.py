@@ -350,7 +350,7 @@ class TestRoomRecoveryUI:
         assert room["message_id"] == 1000
         assert len(stats.sent) == 1
         assert len(env.pipe_calls) == n_pipes  # повторного OCR нет
-        assert any("обработана" in (m or "") for m in ix.followup.sent)
+        assert any("восстановлен" in (m or "") for m in ix.followup.sent)
 
     @pytest.mark.asyncio
     async def test_modal_republish_wrong_file_rejected(self, env, monkeypatch):
@@ -392,17 +392,23 @@ class TestRoomRecoveryUI:
             return stats
         monkeypatch.setattr(up, "_stats_channel", fake_stats_channel)
 
-        # Файлы в обратном порядке — sha-мультимножество совпадает
-        modal = _modal_for(env, 1, [
-            _fake_file("b.png", b"squad-b"),
-            _fake_file("a.png", b"squad-a"),
-        ])
+        # V5 sequential: файлы отправляются по одному — два
+        # последовательных submit'а модалки в любом порядке.
+        async def fake_stats_channel(interaction, tournament):
+            return stats
+        monkeypatch.setattr(up, "_stats_channel", fake_stats_channel)
+
+        modal_b = _modal_for(env, 1, [_fake_file("b.png", b"squad-b")])
+        await modal_b.on_submit(_IXUI(user_id=42))
+        assert env.session["rooms"][0].get("republish", {}).get("shas")
+        modal_a = _modal_for(env, 1, [_fake_file("a.png", b"squad-a")])
         ix = _IXUI(user_id=42)
-        await modal.on_submit(ix)
+        await modal_a.on_submit(ix)
         room = env.session["rooms"][0]
         assert room["message_id"] is not None
         assert len(stats.sent) == 1
         assert len(env.pipe_calls) == 0  # OCR не запускался
+        assert any("восстановлен" in (m or "") for m in ix.followup.sent)
 
     @pytest.mark.asyncio
     async def test_modal_cancelled_session_rejected(self, env, monkeypatch):
@@ -766,4 +772,5 @@ class TestBundleClaimRelease:
         assert s["winner_pending"] is False
         assert s["uploaded_by"] == 42
         assert len(s["rooms"]) == 1
-        assert s["rooms"][0]["panels"]
+        # V5: файл принят в pending — panels после «Завершить»
+        assert s["rooms"][0]["pending"]

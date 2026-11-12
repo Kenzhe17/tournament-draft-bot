@@ -313,28 +313,88 @@ class TournamentBot(commands.Bot):
         except Exception as e:
             logger.error(f"Failed to load betting odds from DB: {e}", exc_info=True)
 
-        # Startup-валидация серверной конфигурации: критичные ID
-        # должны быть заданы через env — иначе функции отключены.
+        # Startup-валидация серверной конфигурации.
+        # Обязательные переменные → feature отключена без них.
+        # Необязательные → fallback/автосоздание, не пугаем ERROR.
+        # Формат ORG_ROLE_MAP: "channel_id:role_id,..." (csv).
         try:
             import config as _cfg
-            missing = [
-                name for name in (
-                    "GUILD_ID", "TOURNAMENT_CHANNELS", "ORG_ROLE_MAP",
-                    "NOTIFICATION_CHANNEL_ID", "OCR_STATS_CHANNEL_ID",
-                    "OCR_RESULT_CHANNEL_ID", "MM_MATCH_CHANNEL_POOL",
-                    "REP_LOG_CHANNEL_ID", "WELCOME_CHANNEL_ID",
-                )
-                if not getattr(_cfg, name)
-            ]
-            if missing:
+
+            # (env attr, env var, функция, обязательна?, fallback)
+            _ENV_VARS = (
+                ("GUILD_ID", "GUILD_ID", "привязка к серверу/tag-check", True, "нет"),
+                ("TOURNAMENT_CHANNELS", "TOURNAMENT_CHANNELS", "каналы организаторов", True, "нет"),
+                ("ORG_ROLE_MAP", "ORG_ROLE_MAP", "роли организаторов по каналам (cid:rid,...)", True, "нет"),
+                ("OCR_STATS_CHANNEL_ID", "OCR_STATS_CHANNEL_ID", "публикация OCR-скриншотов/статистики и маппинга", True, "канал сообщения (может быть неверным)"),
+                ("OCR_RESULT_CHANNEL_ID", "OCR_RESULT_CHANNEL_ID", "канал итоговых результатов OCR", False, "канал статистики/сообщения"),
+                ("NOTIFICATION_CHANNEL_ID", "NOTIFICATION_CHANNEL_ID", "анонсы турниров", False, "канал матчей/турниров"),
+                ("MM_MATCH_CHANNEL_POOL", "MM_MATCH_CHANNEL_POOL", "пул каналов MM-матчей", False, "create/delete каналов на матч"),
+                ("REP_LOG_CHANNEL_ID", "REP_LOG_CHANNEL_ID", "публичный лог репутации", False, "канал создаётся автоматически"),
+                ("WELCOME_CHANNEL_ID", "WELCOME_CHANNEL_ID", "приветствия новым участникам", False, "welcome отключён"),
+            )
+            missing_required = []
+            missing_optional = []
+            for attr, env_name, feature, required, fallback in _ENV_VARS:
+                if getattr(_cfg, attr):
+                    continue
+                entry = f"{env_name} ({feature}; fallback: {fallback})"
+                (missing_required if required else missing_optional).append(entry)
+            for entry in missing_required:
                 logger.warning(
-                    "Конфигурация сервера неполная — не заданы env: %s. "
-                    "Связанные функции будут отключены/использовать "
-                    "fallback-каналы. Проверьте Railway Variables.",
-                    ", ".join(missing),
+                    "Обязательная переменная не задана — функция "
+                    "отключена: %s. Задайте в Railway Variables.",
+                    entry,
+                )
+            if missing_optional:
+                logger.info(
+                    "Необязательные переменные не заданы (fallback "
+                    "или отключено): %s",
+                    "; ".join(missing_optional),
                 )
         except Exception as exc:
             logger.warning("Config validation failed: %s", exc)
+
+        # Startup-диагностика окружения и OCR (без секретов).
+        try:
+            import os as _os
+            import importlib.metadata as _im
+
+            def _pkg_ver(name: str) -> str:
+                try:
+                    return _im.version(name)
+                except Exception:
+                    return "?"
+
+            commit = (
+                _os.getenv("RAILWAY_GIT_COMMIT_SHA")
+                or _os.getenv("GIT_COMMIT_SHA")
+                or "unknown"
+            )
+            env_name = (
+                _os.getenv("RAILWAY_ENVIRONMENT_NAME")
+                or _os.getenv("APP_ENV")
+                or "local/unknown"
+            )
+            logger.info(
+                "Startup: env=%s commit=%s ocr=v1(rapidocr_onnxruntime "
+                "%s)+v3(rapidocr %s, cyrillic) upload=v5-sequential "
+                "discord.py>=2.7",
+                env_name, commit[:10],
+                _pkg_ver("rapidocr_onnxruntime"), _pkg_ver("rapidocr"),
+            )
+            from services.ocr_service import verify_model_files
+
+            missing_models = verify_model_files()
+            if missing_models:
+                logger.error(
+                    "OCR model files missing — RapidOCR may try "
+                    "network download at runtime: %s",
+                    "; ".join(missing_models),
+                )
+            else:
+                logger.info("OCR model files: all present (no network)")
+        except Exception as exc:
+            logger.warning("Startup diagnostics failed: %s", exc)
 
         # Sync commands globally
         try:
@@ -477,6 +537,24 @@ class TournamentBot(commands.Bot):
                                         tournament, mt, mi, int(ridx),
                                     ),
                                     message_id=mid,
+                                )
+                        # V5: сообщение сбора комнаты (collecting_files)
+                        cmid = room.get("collect_message_id")
+                        if cmid and ridx and room.get("status") == "collecting_files":
+                            try:
+                                from views.ocr_match_view import RoomFilesView
+                                self.add_view(
+                                    RoomFilesView(
+                                        tournament.guild_id,
+                                        tournament.channel_id,
+                                        tournament, mt, mi, int(ridx),
+                                        int(session.get("gen", 1)),
+                                    ),
+                                    message_id=cmid,
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    "RoomFilesView restore failed: %s", e,
                                 )
                     # Сообщение подтверждения результатов (после
                     # полного сопоставления всех комнат)

@@ -205,15 +205,17 @@ async def ocr_cyrillic_region(
 
 
 _MODEL_FILES = (
-    # v1 движок (rapidocr_onnxruntime) — det/cls/rec
-    ("rapidocr_onnxruntime", "models/ch_PP-OCRv4_det_infer.onnx"),
-    ("rapidocr_onnxruntime", "models/ch_PP-OCRv4_rec_infer.onnx"),
-    ("rapidocr_onnxruntime", "models/ch_ppocr_mobile_v2.0_cls_infer.onnx"),
-    # v3 движок (rapidocr) — det/cls/rec + cyrillic rec
-    ("rapidocr", "models/PP-OCRv6_det_small.onnx"),
-    ("rapidocr", "models/PP-OCRv6_rec_small.onnx"),
-    ("rapidocr", "models/ch_ppocr_mobile_v2.0_cls_mobile.onnx"),
-    ("rapidocr", "models/cyrillic_PP-OCRv5_rec_mobile.onnx"),
+    # (метка пайплайна, пакет, относительный путь)
+    # v1 движок (rapidocr_onnxruntime) — det/cls/rec, основной OCR
+    ("v1-full", "rapidocr_onnxruntime", "models/ch_PP-OCRv4_det_infer.onnx"),
+    ("v1-full", "rapidocr_onnxruntime", "models/ch_PP-OCRv4_rec_infer.onnx"),
+    ("v1-full", "rapidocr_onnxruntime", "models/ch_ppocr_mobile_v2.0_cls_infer.onnx"),
+    # v3 движок (rapidocr) — det/cls + cyrillic rec (названия команд).
+    # PP-OCRv6_rec_small НЕ нужен: Rec.* перекрыт на PPOCRV5+
+    # cyrillic+mobile в _get_cyrillic_ocr.
+    ("v3-cyrillic", "rapidocr", "models/PP-OCRv6_det_small.onnx"),
+    ("v3-cyrillic", "rapidocr", "models/ch_ppocr_mobile_v2.0_cls_mobile.onnx"),
+    ("v3-cyrillic", "rapidocr", "models/cyrillic_PP-OCRv5_rec_mobile.onnx"),
 )
 
 
@@ -222,19 +224,20 @@ def verify_model_files() -> list[str]:
 
     RapidOCR при отсутствии файла молча скачивает его по сети —
     в проде это недопустимо в критическом пути матча. Возвращает
-    список отсутствующих путей (пустой = всё на месте).
+    список «метка: путь» отсутствующих файлов (пустой = всё на
+    месте). Вызывается при старте (warmup) и в Dockerfile-сборке.
     """
     import importlib.util
 
     missing = []
-    for pkg, rel in _MODEL_FILES:
+    for label, pkg, rel in _MODEL_FILES:
         spec = importlib.util.find_spec(pkg)
         if spec is None or not spec.submodule_search_locations:
-            missing.append(f"{pkg}:{rel} (package missing)")
+            missing.append(f"{label}: {pkg}:{rel} (package missing)")
             continue
         p = Path(list(spec.submodule_search_locations)[0]) / rel
         if not p.is_file():
-            missing.append(str(p))
+            missing.append(f"{label}: {p}")
     return missing
 
 
