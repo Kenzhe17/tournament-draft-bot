@@ -598,9 +598,14 @@ class MMCog(commands.Cog):
                     notification_channel, search_channel)
                 self._finish_notification(search, kind, 0)
                 return
-            guild_obj = self.bot.get_guild(search.guild_id)
-            role = guild_obj.get_role(NOTIFICATION_ROLE_ID) if guild_obj else None
-            role_mention = role.mention if role else ""
+            # Упоминание роли — прямо в карточке уведомления
+            # (TextDisplay внутри Container): в CV2 текст пингует
+            # даже внутри контейнера. role.mention не нужен —
+            # строка строится из ID, работает и при сбое get_role.
+            role_mention = (
+                f"<@&{NOTIFICATION_ROLE_ID}>"
+                if NOTIFICATION_ROLE_ID else ""
+            )
 
             count = len(search.players)
             required = search.required_players
@@ -663,10 +668,28 @@ class MMCog(commands.Cog):
                 if fresh is not None and getattr(fresh, attr) == "sending":
                     self._finish_notification(search, kind, 0)
                 return
+            # Embed -> Container; упоминание роли — первой строкой
+            # внутри карточки, чтобы пинг был частью сообщения,
+            # а не отдельным content.
+            from utils.design.adapter import embed_to_container
+
+            card = embed_to_container(embed)
+            if role_mention:
+                kids = list(card.children)
+                for child in kids:
+                    card.remove_item(child)
+                card.add_item(
+                    discord.ui.TextDisplay(content=role_mention)
+                )
+                for child in kids:
+                    card.add_item(child)
+            layout = discord.ui.LayoutView(timeout=None)
+            layout.add_item(card)
             msg = await notification_channel.send(
-                content=role_mention,
-                embed=embed,
-                allowed_mentions=discord.AllowedMentions(roles=True)
+                view=layout,
+                allowed_mentions=discord.AllowedMentions(
+                    roles=True, users=False, everyone=False
+                )
             )
             self._finish_notification(search, kind, msg.id)
         except Exception as e:
