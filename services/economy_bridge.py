@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS arcade_ledger (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS arcade_ledger_op_idx ON arcade_ledger (op_id);
+-- Overflow winnings that did not fit under MAX_BALANCE stay claimable here
+-- until the player's balance has room; nothing is ever silently destroyed.
+CREATE TABLE IF NOT EXISTS arcade_pending_credit (
+    id BIGSERIAL PRIMARY KEY,
+    op_id TEXT NOT NULL,
+    guild_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    amount INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS arcade_pending_credit_op_idx ON arcade_pending_credit (op_id);
 """
 
 
@@ -279,13 +290,21 @@ async def settle(request: web.Request) -> web.Response:
                 if escrow_row is None:
                     return web.json_response({"error": "not_found"}, status=404)
                 if escrow_row["state"] == "settled":
-                    return web.json_response({"ok": True, "op_id": op_id, "state": "settled", "replayed": True})
+                    # Replay returns the persisted financial result so Arcade
+                    # can reconstruct credited/overflow after a lost response.
+                    stored = json.loads(escrow_row["payouts"]) if escrow_row["payouts"] else []
+                    return web.json_response({"ok": True, "op_id": op_id, "state": "settled", "replayed": True, "payouts": stored})
                 if escrow_row["state"] != "reserved":
                     return web.json_response({"error": "conflict", "state": escrow_row["state"]}, status=409)
-                held = sum(int(e["amount"]) for e in json.loads(escrow_row["entries"]))
+                entries = json.loads(escrow_row["entries"])
+                held = sum(int(e["amount"]) for e in entries)
+                participants = {int(e["user_id"]) for e in entries}
                 paid = sum(p["amount"] for p in clean)
-                if paid > held:
-                    return web.json_response({"error": "payout_exceeds_pool"}, status=400)
+                payout_users = {p["user_id"] for p in clean}
+                # Only a complete, authorized distribution is accepted: every
+                # coin of the pool must be allocated to reserved participants.
+                if paid != held or not payout_users <= participants:
+                    return web.json_response({"error": "invalid_distribution"}, status=400)
                 results: list[dict] = []
                 for payout in clean:
                     await conn.execute(
@@ -314,6 +333,10 @@ async def settle(request: web.Request) -> web.Response:
                         await conn.execute(
                             "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'payout_overflow',$4,$5)",
                             op_id, guild_id, payout["user_id"], overflow, after,
+                        )
+                        await conn.execute(
+                            "INSERT INTO arcade_pending_credit (op_id, guild_id, user_id, amount) VALUES ($1,$2,$3,$4)",
+                            op_id, guild_id, payout["user_id"], overflow,
                         )
                     results.append({"user_id": str(payout["user_id"]), "requested": payout["amount"], "credited": actual, "overflow": overflow})
                 await conn.execute(
@@ -401,6 +424,70 @@ async def escrows(request: web.Request) -> web.Response:
     return web.json_response({"escrows": [{"op_id": r["op_id"], "created_at": r["created_at"].isoformat()} for r in rows]})
 
 
+async def claim_pending(request: web.Request) -> web.Response:
+    """Credit pending overflow winnings up to the balance cap. Durable and
+    idempotent: each call pays out whatever still fits, the remainder stays
+    pending until a later claim succeeds."""
+    denied = _authorized(request)
+    if denied is not None:
+        return denied
+    guild_id = _snowflake(request.query.get("guild_id"))
+    body = await _body(request)
+    if guild_id is None or body is None or not isinstance(body.get("op_id"), str):
+        return web.json_response({"error": "invalid_parameters"}, status=400)
+    op_id = body["op_id"]
+
+    from storage.db import get_pool
+    pool = await get_pool()
+    await _ensure_schema(pool)
+    claimed: list[dict] = []
+    async with pool.acquire() as conn:
+        try:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", "claim:" + op_id)
+                credits = await conn.fetch(
+                    "SELECT id, user_id, amount FROM arcade_pending_credit WHERE op_id = $1 AND guild_id = $2 ORDER BY id FOR UPDATE",
+                    op_id, guild_id,
+                )
+                for credit in credits:
+                    user_id, amount = int(credit["user_id"]), int(credit["amount"])
+                    await conn.execute(
+                        "INSERT INTO user_balance (guild_id, user_id, balance) VALUES ($1, $2, 100) ON CONFLICT (guild_id, user_id) DO NOTHING",
+                        guild_id, user_id,
+                    )
+                    before_row = await conn.fetchrow(
+                        "SELECT balance FROM user_balance WHERE guild_id = $1 AND user_id = $2 FOR UPDATE",
+                        guild_id, user_id,
+                    )
+                    before = int(before_row["balance"])
+                    credited = min(amount, max(0, _MAX_BALANCE - before))
+                    if credited <= 0:
+                        claimed.append({"user_id": str(user_id), "credited": 0, "remaining": amount})
+                        continue
+                    after = before + credited
+                    await conn.execute(
+                        "UPDATE user_balance SET balance = $3 WHERE guild_id = $1 AND user_id = $2",
+                        guild_id, user_id, after,
+                    )
+                    remaining = amount - credited
+                    if remaining > 0:
+                        await conn.execute(
+                            "UPDATE arcade_pending_credit SET amount = $2 WHERE id = $1",
+                            int(credit["id"]), remaining,
+                        )
+                    else:
+                        await conn.execute("DELETE FROM arcade_pending_credit WHERE id = $1", int(credit["id"]))
+                    await conn.execute(
+                        "INSERT INTO arcade_ledger (op_id, guild_id, user_id, kind, amount, balance_after) VALUES ($1,$2,$3,'pending_credit',$4,$5)",
+                        op_id, guild_id, user_id, credited, after,
+                    )
+                    claimed.append({"user_id": str(user_id), "credited": credited, "remaining": remaining})
+        except Exception:
+            logger.exception("Arcade pending-credit claim failed for op %s", op_id)
+            return web.json_response({"error": "claim_failed"}, status=500)
+    return web.json_response({"ok": True, "op_id": op_id, "claimed": claimed})
+
+
 async def start_bridge() -> web.AppRunner | None:
     """Start the internal HTTP listener. Returns None when not configured."""
     token = os.getenv(_TOKEN_ENV, "")
@@ -416,6 +503,7 @@ async def start_bridge() -> web.AppRunner | None:
     app.router.add_post("/internal/economy/settle", settle)
     app.router.add_post("/internal/economy/refund", refund)
     app.router.add_get("/internal/economy/escrows", escrows)
+    app.router.add_post("/internal/economy/claim_pending", claim_pending)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, host, port).start()
