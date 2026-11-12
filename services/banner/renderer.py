@@ -30,14 +30,19 @@ TW, TH = 1920, 1080
 SX = VW / TW
 SY = VH / TH
 
-# Динамические зоны в координатах шаблона 1920x1080 (OCR-разметка)
-AVATAR_CX, AVATAR_CY, AVATAR_R = 1020, 662, 80    # внутри кольца r~90
-NICK_X, NICK_TOP = 1137, 580                      # верх текста ника
-NICK_FONT = 60
-NICK_MAX_W = 620                                  # до правого края карточки
-SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1141, 658, 34
-VOICE_X, VOICE_TOP, STAT_FONT = 999, 838, 52
-MATCHES_X = 1507
+# Динамические зоны в координатах шаблона 1920x1080.
+# Шаблон пересобран под обрезку Discord: карточка поднята и уменьшена
+# (патч x790-1905 y432-990 -> scale 0.95 -> вставка 818,342), логотип
+# опущен, описание под логотипом удалено. Координаты ниже — уже в новой
+# системе координат (преобразование T: x'=818+(x-790)*0.95,
+# y'=342+(y-432)*0.95 применено к исходной OCR-разметке).
+AVATAR_CX, AVATAR_CY, AVATAR_R = 1037, 560, 76   # внутри кольца r~85
+NICK_X, NICK_TOP = 1148, 483                      # верх текста ника
+NICK_FONT = 57
+NICK_MAX_W = 589                                  # до правого края карточки
+SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1151, 557, 32
+VOICE_X, VOICE_TOP, STAT_FONT = 1017, 728, 49
+MATCHES_X = 1509
 
 RENDER_TIMEOUT = 20
 RENDER_SEM = asyncio.Semaphore(2)
@@ -234,7 +239,7 @@ def build_banner_html(
           f"font-size:{round(STAT_FONT*SY)}px;color:#8F7FB0;'>—</div>")
 
     if report_day_label:
-        a(f"<div class='subtitle' style='right:60px;bottom:14px;font-size:20px;"
+        a(f"<div class='subtitle' style='right:60px;bottom:56px;font-size:20px;"
           f"color:#7E6C9C;letter-spacing:1px;'>{_esc(report_day_label)}</div>")
 
     a("</div></body></html>")

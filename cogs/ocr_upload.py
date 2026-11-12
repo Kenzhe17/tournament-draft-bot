@@ -1943,8 +1943,16 @@ async def _publish_room_message(
     stats_channel, tournament, message, items: list[dict],
     room: dict, match_type: str, match_index: int,
 ) -> None:
-    """Сообщение комнаты: скриншот(ы) + кнопки сопоставления (RoomView)."""
+    """Сообщение комнаты: скриншот(ы) + кнопки сопоставления (RoomView).
+
+    Идемпотентно: повторный вызов при уже сохранённом message_id
+    ничего не отправляет — защита от дублей при частичном сбое
+    (send успешен, store.set упал).
+    """
     from views.ocr_match_view import RoomView
+
+    if room.get("message_id"):
+        return
 
     files = [
         discord.File(
@@ -1969,7 +1977,9 @@ async def _publish_room_message(
         content=replace_emojis(text), view=view, files=files
     )
     room["message_id"] = bot_msg.id
-    room.setdefault("message_ids", []).append(bot_msg.id)
+    ids = room.setdefault("message_ids", [])
+    if bot_msg.id not in ids:
+        ids.append(bot_msg.id)
     store.set(tournament)
 
 
@@ -1988,6 +1998,19 @@ def _rooms_completed_count(session: dict) -> int:
     return sum(
         1 for r in session.get("rooms") or [] if _room_has_panels(r)
     )
+
+
+def _rooms_republish_index(session: dict) -> int | None:
+    """Первая комната с panels, но без message_id — требуется
+    восстановление интерфейса (publish_fail), а не новый OCR."""
+    rooms = sorted(
+        session.get("rooms") or [],
+        key=lambda r: int(r.get("room_index") or 0),
+    )
+    for r in rooms:
+        if _room_has_panels(r) and not r.get("message_id"):
+            return int(r.get("room_index") or 0)
+    return None
 
 
 def _rooms_next_index(session: dict) -> int | None:
@@ -2233,7 +2256,7 @@ async def process_room_bundle(
     if needs_republish:
         return await _republish_room_interface(
             guild, channel, tournament, key, session, stats_channel,
-            room_index, items, match_type, match_index,
+            room_index, items, match_type, match_index, shas,
         )
 
     # Файлы приняты в обработку — сразу прячем «Отправить результат»
@@ -2335,12 +2358,46 @@ async def process_room_bundle(
                 attempt + 1, e,
             )
     else:
+        # Комната заполнена — прогресс/финализация комплекта
+        # выполняются и при publish_fail (восстановление интерфейса
+        # доступно и в awaiting_mapping).
+        await _update_rooms_progress(
+            guild, tournament, key, match_type, match_index,
+            stats_channel,
+        )
         return "publish_fail"
 
     await _update_rooms_progress(
         guild, tournament, key, match_type, match_index, stats_channel,
     )
     return "ok"
+
+
+async def _find_room_message_id(
+    stats_channel, guild_id: int, channel_id: int,
+    match_type: str, match_index: int, room_index: int,
+) -> int | None:
+    """Найти уже опубликованное сообщение комнаты по custom_id
+    кнопок маппинга (room_map:gid:cid:mt:mi:room:team).
+
+    Сценарий: Discord send успешен, но store.set(message_id)
+    упал — при повторной попытке нельзя слать дубль. Ищем в
+    истории канала сообщение с кнопками этой комнаты.
+    """
+    prefix = (
+        f"room_map:{guild_id}:{channel_id}:{match_type}:"
+        f"{match_index}:{room_index}:"
+    )
+    try:
+        async for msg in stats_channel.history(limit=100):
+            for row in getattr(msg, "components", None) or []:
+                for comp in getattr(row, "children", []) or []:
+                    cid = getattr(comp, "custom_id", "") or ""
+                    if cid.startswith(prefix):
+                        return msg.id
+    except Exception:
+        logger.debug("room message lookup failed", exc_info=True)
+    return None
 
 
 async def _republish_room_interface(
@@ -2354,6 +2411,7 @@ async def _republish_room_interface(
     items: list[dict],
     match_type: str,
     match_index: int,
+    shas: list[str],
 ) -> str:
     """Повторно опубликовать ТОЛЬКО интерфейс комнаты (скриншоты +
     кнопки сопоставления), если OCR уже завершён, но сообщение не
@@ -2380,6 +2438,38 @@ async def _republish_room_interface(
     )
     if room is None or not _room_has_panels(room) or room.get("message_id"):
         return "room_done"
+
+    # SHA-верификация: восстанавливаем ТОЛЬКО исходный комплект
+    # файлов — иначе можно опубликовать чужой скриншот со старой
+    # статистикой. Classic: room["sha"]; squad: room["shas"]
+    # (1–2 файла, порядок не важен).
+    expected = list(room.get("shas") or [])
+    if room.get("sha") and room["sha"] not in expected:
+        expected.append(room["sha"])
+    if sorted(shas) != sorted(expected):
+        logger.warning(
+            "Room %s republish rejected: sha mismatch "
+            "(got %s, expected %s)",
+            room_index, shas, expected,
+        )
+        return "sha_mismatch"
+
+    # Идемпотентность: если send прошёл, а сохранение message_id
+    # упало — сообщение уже есть в канале, дубль не нужен.
+    existing = await _find_room_message_id(
+        stats_channel, guild.id, tournament.channel_id,
+        match_type, match_index, room_index,
+    )
+    if existing is not None:
+        room["message_id"] = existing
+        ids = room.setdefault("message_ids", [])
+        if existing not in ids:
+            ids.append(existing)
+        store.set(fresh)
+        await _update_rooms_progress(
+            guild, fresh, key, match_type, match_index, stats_channel,
+        )
+        return "ok"
 
     for attempt in range(2):
         try:
@@ -3094,10 +3184,13 @@ class RoomUploadModal(Modal):
             return
         key = _session_key(self.match_type, self.match_index)
         session = tournament.ocr_sessions.get(key)
+        # awaiting_mapping допускаем: модалка открывается только для
+        # комнаты, требующей восстановления интерфейса (publish_fail) —
+        # process_room_bundle проверит SHA и опубликует без OCR.
         if (
             not session
             or session.get("mode") != "rooms"
-            or session.get("status") != "collecting"
+            or session.get("status") not in ("collecting", "awaiting_mapping")
             or int(session.get("gen", 0)) != int(self.gen)
         ):
             await interaction.followup.send(
@@ -3208,6 +3301,12 @@ class RoomUploadModal(Modal):
                 "или обратитесь к администратору."
             ),
             "cancelled": "⚠️ Сессия загрузки была отменена.",
+            "sha_mismatch": (
+                "❌ Файлы не совпадают с исходными скриншотами этой "
+                "комнаты — восстановление интерфейса отклонено, "
+                "статистика не изменена. Загрузите именно те файлы, "
+                "которые распознавались."
+            ),
             "publish_fail": (
                 "❌ Статистика распознана, но сообщение с кнопками "
                 "не удалось опубликовать. Повторите загрузку тех же "
@@ -3285,21 +3384,38 @@ class RoomCollectView(View):
         tournament = store.get(self.guild_id, self.channel_id)
         key = _session_key(self.match_type, self.match_index)
         session = (tournament.ocr_sessions.get(key) if tournament else None)
-        if (
-            not session
-            or session.get("mode") != "rooms"
-            or session.get("status") != "collecting"
-            or int(session.get("gen", 0)) != int(self.gen)
-        ):
+        rep = _rooms_republish_index(session) if session else None
+        status = session.get("status") if session else None
+        # collecting — обычный сбор; awaiting_mapping — только если
+        # есть комната, требующая восстановления интерфейса.
+        allowed = bool(
+            session
+            and session.get("mode") == "rooms"
+            and int(session.get("gen", 0)) == int(self.gen)
+            and (
+                status == "collecting"
+                or (status == "awaiting_mapping" and rep is not None)
+            )
+        )
+        if not allowed:
             await interaction.response.send_message(
                 replace_emojis("⚠️ Сессия загрузки завершена или отменена."),
                 ephemeral=True,
             )
             return
-        nxt = _rooms_next_index(session)
+        # Комната без опубликованного интерфейса — приоритетнее
+        # следующей пустой: иначе пользователь не сможет восстановить
+        # publish_fail-комнату (она считается «заполненной»).
+        nxt = rep if rep is not None else _rooms_next_index(session)
         if nxt is None:
             await interaction.response.send_message(
-                replace_emojis("✅ Комплект уже полон."), ephemeral=True
+                replace_emojis(
+                    "✅ Комплект заполнен — продолжайте сопоставление "
+                    "игроков под сообщениями комнат."
+                    if status == "awaiting_mapping"
+                    else "✅ Комплект уже полон."
+                ),
+                ephemeral=True,
             )
             return
         # Права — как при загрузке через кнопку
