@@ -1727,23 +1727,26 @@ def _room_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
     scoped = f"{tournament_id}|{match_key}" if tournament_id else match_key
     lock = _ROOM_LOCKS.get(scoped)
     if lock is None:
-        lock = asyncio.Lock()
+        from utils.locks import TrackedLock
+        lock = TrackedLock()
         _ROOM_LOCKS[scoped] = lock
         _evict_idle_locks(_ROOM_LOCKS, _ROOM_LOCKS_MAX)
     return lock
 
 
 def _evict_idle_locks(store: dict, max_size: int) -> None:
-    """Вытеснить только СВОБОДНЫЕ локи. Занятый (locked) лок нельзя
-    удалять — иначе для того же ключа создастся второй объект лока
-    и сериализация сломается (P0)."""
+    """Вытеснить только по-настоящему СВОБОДНЫЕ локи: не удерживаемые
+    и без ожидающих acquire-задач (TrackedLock._pending). Занятый
+    или ожидающий лок нельзя удалять — иначе для того же ключа
+    создастся второй объект лока и сериализация сломается (P0)."""
+    from utils.locks import lock_is_idle
     if len(store) <= max_size:
         return
     for k in list(store.keys()):
         if len(store) <= max_size:
             break
         lock = store.get(k)
-        if lock is not None and not lock.locked():
+        if lock_is_idle(lock):
             del store[k]
 
 

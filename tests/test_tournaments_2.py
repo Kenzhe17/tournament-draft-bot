@@ -628,3 +628,197 @@ class TestFinalizeRoomPermissions:
         assert _is_room_finalize_admin(u) is False
         u2 = _user(2, admin=True)
         assert _is_room_finalize_admin(u2) is True
+
+
+# ---------------------------------------------------------------------------
+# P1: waiter-safe вытеснение локов + параллельные операции
+# ---------------------------------------------------------------------------
+
+class TestLockEvictionAsync:
+    """Реальные async-тесты: занятый лок + waiter + переполнение."""
+
+    @pytest.mark.asyncio
+    async def test_held_lock_with_waiter_survives_eviction(self):
+        """Лок с держателем И ожидающим waiter не вытесняется даже
+        когда locked()==False в окне между release и захватом waiter'ом."""
+        import asyncio
+        from cogs.ocr_upload import _ROOM_LOCKS, _ROOM_LOCKS_MAX, _room_lock
+        _ROOM_LOCKS.clear()
+        try:
+            lock = _room_lock("qualifier_0", "tidHeld")
+            order = []
+
+            async def holder():
+                async with lock:
+                    await asyncio.sleep(0.05)
+                    order.append("release")
+
+            async def waiter():
+                async with lock:
+                    order.append("waiter")
+
+            h = asyncio.ensure_future(holder())
+            await asyncio.sleep(0.01)
+            w = asyncio.ensure_future(waiter())
+            await asyncio.sleep(0.01)  # waiter встал в очередь
+
+            # Переполняем словарь — held-лок обязан уцелеть
+            for i in range(_ROOM_LOCKS_MAX + 10):
+                _room_lock(f"flood{i}", "tidFlood")
+
+            assert _ROOM_LOCKS.get("tidHeld|qualifier_0") is lock
+            await asyncio.gather(h, w)
+            assert order == ["release", "waiter"]
+            # после завершения — тот же объект, дубля не создано
+            assert _room_lock("qualifier_0", "tidHeld") is lock
+        finally:
+            _ROOM_LOCKS.clear()
+
+    @pytest.mark.asyncio
+    async def test_release_before_waiter_resumes_keeps_lock(self):
+        """Окно release→waiter-resume: лок unlocked, но waiter ещё
+        внутри acquire (_pending>0) — вытеснение не должно его тронуть.
+        Эвикт вызывается синхронно сразу после release, до того как
+        event loop возобновит waiter."""
+        import asyncio
+        from utils.locks import TrackedLock
+        from cogs.ocr_upload import _evict_idle_locks
+
+        lock = TrackedLock()
+        store = {"held": lock}
+        store.update({f"k{i}": TrackedLock() for i in range(5)})
+        resumed = asyncio.Event()
+
+        async def holder():
+            async with lock:
+                await asyncio.sleep(0.01)
+            # лок отпущен, но waiter ещё не возобновлён —
+            # вызываем эвикт СИНХРОННО в этом окне
+            _evict_idle_locks(store, 3)
+            assert store.get("held") is lock  # waiter ещё pending
+
+        async def waiter():
+            async with lock:
+                resumed.set()
+
+        h = asyncio.ensure_future(holder())
+        await asyncio.sleep(0.005)  # holder захватил
+        w = asyncio.ensure_future(waiter())
+        await asyncio.sleep(0.005)  # waiter в очереди (_pending=1)
+        await asyncio.gather(h, w)
+        assert resumed.is_set()
+        # waiter завершился на ТОМ ЖЕ объекте лока — дубля не создано
+        assert store.get("held") is lock
+
+    @pytest.mark.asyncio
+    async def test_no_two_locks_for_same_key(self):
+        """После вытеснений _room_lock всегда возвращает ОДИН объект
+        на scoped-ключ — параллельные операции сериализуются."""
+        from cogs.ocr_upload import _ROOM_LOCKS, _ROOM_LOCKS_MAX, _room_lock
+        _ROOM_LOCKS.clear()
+        try:
+            held = _room_lock("qualifier_0", "tidA")
+            async with held:  # реально удерживаемый лок
+                for i in range(_ROOM_LOCKS_MAX + 5):
+                    _room_lock(f"x{i}", "tidB")
+                    assert _room_lock("qualifier_0", "tidA") is held
+        finally:
+            _ROOM_LOCKS.clear()
+
+    @pytest.mark.asyncio
+    async def test_parallel_mapping_and_finalize_serialize(self):
+        """mapping (_mapping_lock → _room_lock) и finalize
+        (_room_lock внутри) на одном матче — один лок, порядок
+        сохраняется."""
+        import asyncio
+        from cogs.ocr_upload import _ROOM_LOCKS, _room_lock
+        from views.ocr_match_view import _mapping_lock, _finalize_lock
+        _ROOM_LOCKS.clear()
+        try:
+            tid, key = "tidPar", "semifinal_0"
+            shared = _mapping_lock(key, tid)
+            assert shared is _room_lock(key, tid)
+            fl = _finalize_lock(key, tid)
+            assert fl is not shared  # finalize-уровень отдельный,
+            # но внутренний room_lock общий → сериализация есть
+            order = []
+
+            async def mapping_op():
+                async with shared:
+                    await asyncio.sleep(0.02)
+                    order.append("mapping")
+
+            async def finalize_op():
+                async with fl:
+                    async with _room_lock(key, tid):
+                        await asyncio.sleep(0.01)
+                        order.append("finalize")
+
+            # mapping держит room_lock → finalize ждёт на внутреннем
+            async def mapping_first():
+                async with shared:
+                    await asyncio.sleep(0.03)
+                    order.append("mapping")
+
+            m = asyncio.ensure_future(mapping_first())
+            await asyncio.sleep(0.005)
+            f = asyncio.ensure_future(finalize_op())
+            await asyncio.gather(m, f)
+            assert order == ["mapping", "finalize"]
+        finally:
+            _ROOM_LOCKS.clear()
+
+    @pytest.mark.asyncio
+    async def test_parallel_cancel_and_self_bind_serialize(self):
+        """cancel и self-bind одного матча — общий scoped-лок."""
+        import asyncio
+        from cogs.ocr_upload import _ROOM_LOCKS, _room_lock
+        from views.ocr_match_view import _mapping_lock
+        _ROOM_LOCKS.clear()
+        try:
+            tid, key = "tidCB", "qualifier_2"
+            assert _mapping_lock(key, tid) is _room_lock(key, tid)
+            order = []
+
+            async def cancel():
+                async with _room_lock(key, tid):
+                    await asyncio.sleep(0.02)
+                    order.append("cancel")
+
+            async def self_bind():
+                async with _mapping_lock(key, tid):
+                    await asyncio.sleep(0.01)
+                    order.append("self_bind")
+
+            c = asyncio.ensure_future(cancel())
+            await asyncio.sleep(0.005)
+            s = asyncio.ensure_future(self_bind())
+            await asyncio.gather(c, s)
+            assert order == ["cancel", "self_bind"]
+        finally:
+            _ROOM_LOCKS.clear()
+
+    @pytest.mark.asyncio
+    async def test_two_tournaments_same_qualifier_0_independent(self):
+        """Два турнира с одинаковым ключом qualifier_0 — разные
+        локи, операции идут параллельно без блокировки."""
+        import asyncio
+        from cogs.ocr_upload import _ROOM_LOCKS, _room_lock
+        _ROOM_LOCKS.clear()
+        try:
+            l1 = _room_lock("qualifier_0", "tournament_A")
+            l2 = _room_lock("qualifier_0", "tournament_B")
+            assert l1 is not l2
+            done = []
+
+            async def op(lock, name):
+                async with lock:
+                    await asyncio.sleep(0.02)
+                    done.append(name)
+
+            await asyncio.gather(
+                op(l1, "A"), op(l2, "B")
+            )
+            assert sorted(done) == ["A", "B"]
+        finally:
+            _ROOM_LOCKS.clear()

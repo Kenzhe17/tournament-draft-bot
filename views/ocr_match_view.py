@@ -1219,22 +1219,24 @@ def _finalize_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
     scoped = f"{tournament_id}|{match_key}" if tournament_id else match_key
     lock = _FINALIZE_LOCKS.get(scoped)
     if lock is None:
-        lock = asyncio.Lock()
+        from utils.locks import TrackedLock
+        lock = TrackedLock()
         _FINALIZE_LOCKS[scoped] = lock
         _evict_idle_finalize_locks()
     return lock
 
 
 def _evict_idle_finalize_locks() -> None:
-    """Вытеснять только свободные локи — занятый лок нельзя удалять,
-    иначе для того же ключа появится второй объект лока."""
+    """Вытеснять только по-настоящему свободные локи — не удерживаемые
+    и без ожидающих acquire-задач (TrackedLock._pending)."""
+    from utils.locks import lock_is_idle
     if len(_FINALIZE_LOCKS) <= _FINALIZE_LOCKS_MAX:
         return
     for k in list(_FINALIZE_LOCKS.keys()):
         if len(_FINALIZE_LOCKS) <= _FINALIZE_LOCKS_MAX:
             break
         lock = _FINALIZE_LOCKS.get(k)
-        if lock is not None and not lock.locked():
+        if lock_is_idle(lock):
             del _FINALIZE_LOCKS[k]
 
 
@@ -4280,22 +4282,19 @@ async def _finalize_ocr_match_impl(
     # MatchContext (Tournaments 2.0 §2): финализируем только если
     # зафиксированная в сессии пара команд совпадает с АКТУАЛЬНОЙ
     # парой из свежего состояния турнира — защита от устаревшей
-    # сессии после изменения сетки/команд.
-    try:
-        from models.tournament import resolve_match_context
-        ctx = resolve_match_context(tournament, match_type, match_index)
-        sess_teams = [int(x) for x in (session.get("teams") or [])]
-        if sess_teams:
-            cur = {ctx.team_a_index, ctx.team_b_index}
-            if set(sess_teams[:2]) != cur:
-                raise ValueError(
-                    "сессия матча устарела — пары команд изменились, "
-                    "обратитесь к организатору"
-                )
-    except ValueError:
-        raise
-    except Exception:
-        pass  # MatchContext — дополнительная проверка, не ломаем поток
+    # сессии после изменения сетки/команд. Ошибки resolve
+    # (ValueError на невалидной сетке) НЕ замалчиваются —
+    # финализация падает явно, а не молча пропускает проверку.
+    from models.tournament import resolve_match_context
+    ctx = resolve_match_context(tournament, match_type, match_index)
+    sess_teams = [int(x) for x in (session.get("teams") or [])]
+    if sess_teams:
+        cur = {ctx.team_a_index, ctx.team_b_index}
+        if set(sess_teams[:2]) != cur:
+            raise ValueError(
+                "сессия матча устарела — пары команд изменились, "
+                "обратитесь к организатору"
+            )
 
     # Повторная проверка готовности ПОД _room_lock (мы уже внутри
     # finalize_ocr_match): между ready-check вызывающего и захватом
