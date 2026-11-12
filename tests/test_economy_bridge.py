@@ -68,7 +68,9 @@ class FakeConn:
             self.db.pending = [c for c in self.db.pending if c["id"] != args[0]]
             return "DELETE 1"
         if "INSERT INTO arcade_ledger" in s:
-            self.db.ledger.append(args)
+            # kind is a SQL literal, amount/balance_after are bound args.
+            kind = next((k for k in ("hold", "payout_overflow", "payout", "refund", "pending_credit") if f"'{k}'" in s), "?")
+            self.db.ledger.append((kind, args[3], args[4]))
             return "INSERT 0 1"
         if "INSERT INTO arcade_escrow" in s:
             op_id, guild, entries, _state = args[0], args[1], args[2], args[3] if len(args) > 3 else "reserved"
@@ -131,8 +133,8 @@ class FakeDB:
 class FakeRequest:
     def __init__(self, body=None, query=None, token="tok") -> None:
         self._body = body
-        self.query = {"get": lambda k, d=None: (query or {}).get(k, d)}
-        self.headers = {"get": lambda k, d=None: token if k == "X-Bridge-Token" else d}
+        self.query = query or {}
+        self.headers = {"X-Bridge-Token": token}
         self.remote = "127.0.0.1"
 
     async def json(self):
@@ -184,7 +186,7 @@ async def test_escrow_settle_settle_replay_credits_once(env):
 
     # Replay must not credit again.
     r2 = await settle(FakeRequest(body, {"guild_id": str(GUILD)}))
-    assert json.loads(await r2.text())["replayed"] is True
+    assert json.loads(r2.text)["replayed"] is True
     assert env.balances[(GUILD, int(U1))] == 600
 
 
@@ -212,7 +214,7 @@ async def test_refund_refund_replay_and_full_amount(env):
     assert r1.status == 200
     assert env.balances[(GUILD, int(U1))] == 50_000  # full restitution
     r2 = await refund(FakeRequest({"op_id": "op1"}, {"guild_id": str(GUILD)}))
-    assert json.loads(await r2.text())["replayed"] is True
+    assert json.loads(r2.text)["replayed"] is True
     assert env.balances[(GUILD, int(U1))] == 50_000  # not double-refunded
 
 
@@ -234,11 +236,11 @@ async def test_payout_cap_overflow_is_reported_and_ledgered(env):
     await escrow(FakeRequest(_stakes_payload("op2", [{"user_id": U1, "amount": 1000}]), {"guild_id": str(GUILD)}))
     env.balances[(GUILD, int(U1))] = 99_500  # near cap when payout lands
     r = await settle(FakeRequest({"op_id": "op2", "payouts": [{"user_id": U1, "amount": 1000}]}, {"guild_id": str(GUILD)}))
-    data = json.loads(await r.text())
+    data = json.loads(r.text)
     assert data["payouts"][0]["credited"] == 500
     assert data["payouts"][0]["overflow"] == 500
     assert env.balances[(GUILD, int(U1))] == 100_000
-    kinds = [entry[3] for entry in env.ledger]
+    kinds = [entry[0] for entry in env.ledger]
     assert "payout_overflow" in kinds
 
 
@@ -249,7 +251,7 @@ async def test_insufficient_balance_rolls_everything_back(env):
     env.balances[(GUILD, int(U2))] = 10_000
     r = await escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
     assert r.status == 409
-    body = json.loads(await r.text())
+    body = json.loads(r.text)
     assert body["error"] == "insufficient"
     assert env.balances[(GUILD, int(U2))] == 10_000  # no partial debit
     assert "op1" not in env.escrows
@@ -261,7 +263,7 @@ async def test_escrow_replay_and_op_conflict(env):
     await escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
     before = dict(env.balances)
     r = await escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
-    assert json.loads(await r.text())["replayed"] is True
+    assert json.loads(r.text)["replayed"] is True
     assert env.balances == before  # replay never re-debits
     # Same op_id with a different roster is a conflict, not a silent replay.
     r2 = await escrow(FakeRequest(_stakes_payload(stakes=[{"user_id": U3, "amount": 100}]), {"guild_id": str(GUILD)}))
@@ -282,7 +284,7 @@ async def test_escrows_listing_and_auth(env):
 
     await escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
     r = await escrows(FakeRequest(query={"guild_id": str(GUILD)}))
-    data = json.loads(await r.text())
+    data = json.loads(r.text)
     assert [e["op_id"] for e in data["escrows"]] == ["op1"]
     denied = await escrows(FakeRequest(query={"guild_id": str(GUILD)}, token="wrong"))
     assert denied.status == 401
@@ -296,11 +298,11 @@ async def test_settle_replay_returns_persisted_payouts(env):
     env.balances[(GUILD, int(U1))] = 99_500
     body = {"op_id": "op3", "payouts": [{"user_id": U1, "amount": 1000}]}
     r1 = await settle(FakeRequest(body, {"guild_id": str(GUILD)}))
-    first = json.loads(await r1.text())
+    first = json.loads(r1.text)
     assert first["payouts"][0]["overflow"] == 500
     # A retried settle after a lost response returns the same financial result.
     r2 = await settle(FakeRequest(body, {"guild_id": str(GUILD)}))
-    replay = json.loads(await r2.text())
+    replay = json.loads(r2.text)
     assert replay["replayed"] is True
     assert replay["payouts"][0]["credited"] == 500
     assert replay["payouts"][0]["overflow"] == 500
@@ -314,7 +316,7 @@ async def test_settle_rejects_partial_or_foreign_distribution(env):
     # Pool is 200; allocating only 100 must be rejected — the pool is conserved.
     r = await settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 100}]}, {"guild_id": str(GUILD)}))
     assert r.status == 400
-    assert json.loads(await r.text())["error"] == "invalid_distribution"
+    assert json.loads(r.text)["error"] == "invalid_distribution"
     # A recipient who never escrowed cannot receive pool coins.
     r2 = await settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 100}, {"user_id": U3, "amount": 100}]}, {"guild_id": str(GUILD)}))
     assert r2.status == 400
@@ -334,13 +336,13 @@ async def test_pending_credit_claim_pays_when_balance_has_room(env):
     assert len(env.pending) == 1 and env.pending[0]["amount"] == 500
     # At the cap nothing is credited but the credit stays queued.
     r = await claim_pending(FakeRequest({"op_id": "op4"}, {"guild_id": str(GUILD)}))
-    data = json.loads(await r.text())
+    data = json.loads(r.text)
     assert data["claimed"][0]["credited"] == 0
     assert env.pending[0]["amount"] == 500
     # Once balance drops, the remainder is claimable — never destroyed.
     env.balances[(GUILD, int(U1))] = 90_000
     r2 = await claim_pending(FakeRequest({"op_id": "op4"}, {"guild_id": str(GUILD)}))
-    data2 = json.loads(await r2.text())
+    data2 = json.loads(r2.text)
     assert data2["claimed"][0]["credited"] == 500
     assert env.balances[(GUILD, int(U1))] == 90_500
     assert env.pending == []
