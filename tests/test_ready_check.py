@@ -303,7 +303,7 @@ async def test_full_ready_launches_once(tmp_path, monkeypatch):
 
     launched: list[str] = []
 
-    async def fake_launch(search_arg, channel):
+    async def fake_launch(search_arg, channel, teams=None):
         launched.append(search_arg.guild_id)
 
     monkeypatch.setattr(cog, "_create_tournament_from_search", fake_launch)
@@ -529,7 +529,7 @@ async def test_last_player_fast_response_while_launch_runs(
     gate = asyncio.Event()
     launched = asyncio.Event()
 
-    async def slow_tourney(search_arg, channel):
+    async def slow_tourney(search_arg, channel, teams=None):
         await gate.wait()
         launched.set()
 
@@ -591,7 +591,7 @@ async def test_ready_launch_recovers_via_sweeper_path(
 
     launched: list[int] = []
 
-    async def fake_launch(search_arg, channel):
+    async def fake_launch(search_arg, channel, teams=None):
         launched.append(search_arg.guild_id)
 
     monkeypatch.setattr(cog, "_create_tournament_from_search", fake_launch)

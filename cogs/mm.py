@@ -1219,6 +1219,26 @@ class MMCog(commands.Cog):
                 await self._finish_cancelled(rc, {p.user_id for p in rc.players})
                 return
 
+            # ЕДИНЫЙ снимок составов: берём команды из ReadyCheck
+            # (player.user_id + team), а не пересчитываем баланс —
+            # повторный smart_balance_4v4 недетерминирован при
+            # равных метриках и давал другой состав, чем на
+            # карточке «НАЙДЕН МАТЧ».
+            teams = self._teams_from_ready_check(rc, search)
+            if teams is None:
+                logger.error(
+                    "Invalid team snapshot for ready check %s — "
+                    "match NOT launched", rc.match_id,
+                )
+                rc.status = ReadyCheckStatus.CANCELLED
+                rc.cancel_reason = "невалидный снимок составов команд"
+                await ready_check_store.save(rc)
+                await self._update_ready_message(rc)
+                await self._finish_cancelled(
+                    rc, {p.user_id for p in rc.players}
+                )
+                return
+
             # Прокинуть в турнирный флоу номер/канал/PNG карточки матча
             search.mm_match_num = rc.match_num
             search.mm_match_channel_id = rc.match_channel_id
@@ -1233,7 +1253,9 @@ class MMCog(commands.Cog):
             if channel is None:
                 raise RuntimeError("search channel not found")
 
-            await self._create_tournament_from_search(search, channel)
+            await self._create_tournament_from_search(
+                search, channel, teams=teams
+            )
 
             rc.status = ReadyCheckStatus.LAUNCHED
             await ready_check_store.save(rc)
@@ -1397,8 +1419,75 @@ class MMCog(commands.Cog):
         except Exception as exc:
             logger.error("Ready check recovery failed: %s", exc)
 
-    async def _create_tournament_from_search(self, search: MMSearch, interaction_channel: discord.TextChannel) -> None:
-        """Создать обычный турнир из поиска."""
+    @staticmethod
+    def _teams_from_ready_check(
+        rc: ReadyCheck, search: MMSearch
+    ) -> tuple[list[str], list[str]] | None:
+        """Восстановить составы команд из снимка Ready Check.
+
+        ReadyCheck.players — единственный источник истины:
+        каждый игрок привязан к Discord user_id и команде ("A"/"B"),
+        порядок = порядок на карточке «НАЙДЕН МАТЧ» (капитан первым).
+        Имена берём из очереди по user_id (не по display_name).
+
+        Возвращает (team_a_names, team_b_names) либо None при
+        нарушении целостности: !=8 уникальных ID, не 4+4, пересечения.
+        """
+        uid_to_name = {
+            uid: name for name, uid in search.player_user_ids.items()
+        }
+        team_a: list[str] = []
+        team_b: list[str] = []
+        seen_uids: set[int] = set()
+        for p in rc.players:
+            uid = int(p.user_id)
+            if uid in seen_uids:
+                logger.error(
+                    "Duplicate user_id %s in ready check %s",
+                    uid, rc.match_id,
+                )
+                return None
+            seen_uids.add(uid)
+            name = uid_to_name.get(uid) or p.name
+            if p.team == "B":
+                team_b.append(name)
+            else:
+                team_a.append(name)
+        if (
+            len(rc.players) != 8
+            or len(team_a) != 4
+            or len(team_b) != 4
+            or len(seen_uids) != 8
+        ):
+            logger.error(
+                "Bad team snapshot in ready check %s: players=%d "
+                "A=%d B=%d uids=%d",
+                rc.match_id, len(rc.players),
+                len(team_a), len(team_b), len(seen_uids),
+            )
+            return None
+        # Все имена обязаны существовать в очереди поиска
+        known = set(search.player_user_ids.keys())
+        if any(n not in known for n in team_a + team_b):
+            logger.error(
+                "Team snapshot names missing from queue: rc=%s",
+                rc.match_id,
+            )
+            return None
+        return team_a, team_b
+
+    async def _create_tournament_from_search(
+        self,
+        search: MMSearch,
+        interaction_channel: discord.TextChannel,
+        teams: tuple[list[str], list[str]] | None = None,
+    ) -> None:
+        """Создать обычный турнир из поиска.
+
+        teams — зафиксированный снимок составов из Ready Check
+        (обязателен для MM-флоу): повторная балансировка для этого
+        матча запрещена. Без teams — только legacy-фолбэк.
+        """
         guild = interaction_channel.guild or self.bot.get_guild(search.guild_id)
         
         # Канал турнира — созданный ботом канал матча cs-4x4-match-N;
@@ -1437,7 +1526,7 @@ class MMCog(commands.Cog):
             user_id = search.player_user_ids.get(player_name, 0)
             tournament.players_pool.append(player_name)
             tournament.player_user_ids[player_name] = user_id
-            
+
             # Получить SR игрока
             from storage.player_stats_store import player_stats_store
             stats = await player_stats_store.get(guild.id, user_id)
@@ -1447,13 +1536,23 @@ class MMCog(commands.Cog):
         # Закрыть регистрацию
         tournament.registration = RegistrationState.CLOSED
 
-        # Распределить игроков: Smart Balance 4×4 по SR,
-        # фолбэк — старый distribute_players_random_auto
-        from utils.smart_balance import smart_balance_4v4
-        teams = smart_balance_4v4(players_with_sr, tournament.player_user_ids)
-        if teams is None:
-            teams = tournament.distribute_players_random_auto(players_with_sr)
-        
+        # Составы: если передан снимок из Ready Check — используем
+        # его БЕЗ повторной балансировки (она недетерминирована при
+        # равных метриках и уже выполнялась при создании RC).
+        # Фолбэк на Smart Balance — только для вызовов без снимка.
+        team_lists: list[list[str]]
+        if teams is not None:
+            team_lists = [list(teams[0]), list(teams[1])]
+        else:
+            from utils.smart_balance import smart_balance_4v4
+            team_lists = smart_balance_4v4(
+                players_with_sr, tournament.player_user_ids
+            )
+            if team_lists is None:
+                team_lists = tournament.distribute_players_random_auto(
+                    players_with_sr
+                )
+
         # НЕ заполнять круги - команды создаются напрямую
         # Для random-auto круги не используются, только teams
 
@@ -1461,10 +1560,10 @@ class MMCog(commands.Cog):
         tournament.phase = TournamentPhase.QUALIFIERS
         tournament.is_test = True  # Отключить ставки для random-auto
         tournament.betting_open = False  # Явно отключить ставки
-        
+
         # Создать команды из распределенных игроков
         tournament.teams = []
-        for i, team_players in enumerate(teams):
+        for i, team_players in enumerate(team_lists):
             team_data = {
                 "players": team_players,
                 "captain": team_players[0] if team_players else None,
