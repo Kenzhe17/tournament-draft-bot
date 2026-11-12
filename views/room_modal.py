@@ -326,39 +326,6 @@ def _roster_line(
     return " ".join(names) if names else "—"
 
 
-async def _display_names(tournament: Any, guild: Any) -> dict:
-    """Discord-имена игроков по ID (player_user_ids), fallback —
-    сохранённый ник. Для турнирных карточек без упоминаний."""
-    if guild is None:
-        return {}
-    pids = getattr(tournament, "player_user_ids", None) or {}
-    get_member = getattr(guild, "get_member", None)
-    fetch_member = getattr(guild, "fetch_member", None)
-    out: dict[str, str] = {}
-    for name, uid in pids.items():
-        try:
-            uid_i = int(uid)
-        except (TypeError, ValueError):
-            continue
-        member = None
-        try:
-            if get_member is not None:
-                member = get_member(uid_i)
-        except Exception:
-            member = None
-        if member is None and fetch_member is not None:
-            try:
-                member = await fetch_member(uid_i)
-            except Exception:
-                member = None
-        dn = getattr(member, "display_name", None) or getattr(
-            member, "name", None
-        )
-        if dn:
-            out[name] = dn
-    return out
-
-
 def _room_card_view(
     tournament: Any,
     team1_data: dict,
@@ -604,10 +571,9 @@ async def send_room_dm_notifications(
         return True
 
     # Обычный турнир (/tournament create): карточка — строго в
-    # ROOM_DATA_CHANNEL_ID, имена БЕЗ <@id>-упоминаний (пинги
-    # не нужны), AllowedMentions.none() — гарантия отсутствия
-    # случайных уведомлений. Актуальные Discord-имена по ID
-    # с fallback на сохранённый ник.
+    # ROOM_DATA_CHANNEL_ID, <@id>-упоминания игроков пингуют
+    # участников матча (users=True, roles/everyone выключены).
+    # Актуальные Discord-имена подставляет сам Discord.
     data_channel = bot.get_channel(ROOM_DATA_CHANNEL_ID)
     if data_channel is None:
         try:
@@ -617,16 +583,16 @@ async def send_room_dm_notifications(
     card_sent = False
     if data_channel is not None:
         try:
-            guild_obj = getattr(data_channel, "guild", None)
-            display = await _display_names(tournament, guild_obj)
             card = _room_card_view(
                 tournament, team1_data, team2_data, name1, name2,
                 match_type, match_index, team1_index, team2_index,
-                ping=False, display=display,
+                ping=True,
             )
             msg = await data_channel.send(
                 view=card,
-                allowed_mentions=discord.AllowedMentions.none(),
+                allowed_mentions=discord.AllowedMentions(
+                    users=True, roles=False, everyone=False
+                ),
             )
             card_sent = True
             card_msg_id = getattr(msg, "id", 0) or 0

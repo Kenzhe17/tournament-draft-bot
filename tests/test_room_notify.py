@@ -140,13 +140,14 @@ async def test_tournament_room_notify_two_places():
     assert kw.get("view") is not None
     assert kw.get("embed") is None
     assert "🔓 Комната открыта" in _view_text(kw["view"])
-    # Обычный турнир: без <@id>-упоминаний и AllowedMentions.none()
+    # Обычный турнир: <@id>-упоминания игроков пингуют участников
+    # матча; roles/everyone выключены.
     text = _view_text(kw["view"])
-    assert "<@111>" not in text and "<@222>" not in text
-    assert "CapA" in text and "CapB" in text
+    assert "<@111>" in text and "<@222>" in text
     am = kw.get("allowed_mentions")
     assert am is not None
-    assert getattr(am, "users", True) is False
+    assert getattr(am, "users", False) is True
+    assert getattr(am, "roles", True) is False
     assert getattr(am, "everyone", True) is False
     # Канал уведомлений: 1 сообщение, role mention в content
     assert len(general.sent) == 1
