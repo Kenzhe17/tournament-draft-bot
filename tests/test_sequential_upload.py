@@ -511,3 +511,237 @@ class TestConfirmViewRestore:
         n_aux = omv._rooms_aux_review_pending(env.session)
         assert n_conf == 1
         assert n_aux == 1
+
+
+# ---------- Fake interaction для реальных callback-путей ----------
+
+class _FakeFile:
+    def __init__(self, tag: str):
+        self.filename = f"{tag}.png"
+        self._data = tag.encode()
+
+    async def read(self):
+        return self._data
+
+
+class _FakeResponse:
+    def __init__(self, ix):
+        self._ix = ix
+        self._done = False
+
+    async def defer(self, **kw):
+        self._done = True
+
+    async def send_message(self, content=None, **kw):
+        self._done = True
+        self._ix.messages.append(str(content))
+
+    async def send_modal(self, modal=None, **kw):
+        self._done = True
+        self._ix.modal = modal
+
+    async def edit_original_response(self, content=None, **kw):
+        self._ix.messages.append(str(content))
+
+    def is_done(self):
+        return self._done
+
+
+class _FakeFollowup:
+    def __init__(self, ix):
+        self._ix = ix
+
+    async def send(self, content=None, **kw):
+        self._ix.messages.append(str(content))
+
+
+class _FakeInteraction:
+    def __init__(self, env, user_id=42):
+        self.user = SimpleNamespace(id=user_id)
+        self.guild = env.guild
+        self.channel = env.stats
+        self.response = _FakeResponse(self)
+        self.followup = _FakeFollowup(self)
+        self.modal = None
+        self.messages: list[str] = []
+
+    async def edit_original_response(self, content=None, **kw):
+        self.messages.append(str(content))
+
+
+async def _noop_chan(stats):
+    return stats
+
+
+def _room_view(env, room_index=1):
+    from views.ocr_match_view import RoomFilesView
+    return RoomFilesView(
+        1, 1, env.tournament, "qualifier", 0, room_index, 1,
+    )
+
+
+async def _submit_modal(modal, env, tag: str):
+    """Имитировать submit модалки с одним файлом tag."""
+    # FileUpload.values — read-only property; подменяем component
+    # целиком фейком с тем же интерфейсом (.values).
+    modal.upload.component = SimpleNamespace(
+        values=[_FakeFile(tag)]
+    )
+    ix = _FakeInteraction(env)
+    await modal.on_submit(ix)
+    return ix
+
+
+class TestRoomFilesViewPath:
+    @pytest.mark.asyncio
+    async def test_full_recovery_via_view_callbacks(self, env):
+        """2 файла → рестарт → вложение удалено → files_missing →
+        «Добавить скриншот» открывает модалку даже при полном
+        pending → повтор того же SHA → finish без OCR."""
+        env.guild.get_channel = lambda cid: env.stats
+        env.guild.fetch_channel = lambda cid: _noop_chan(env.stats)
+
+        await _file(env, 1, "classic1")
+        await _file(env, 1, "squadA")
+        room = env.session["rooms"][0]
+        shots = [p["shot_message_id"] for p in room["pending"]]
+        up._SEQ_FILE_CACHE.clear()  # рестарт
+
+        # Вложение первой shot-карточки «удалено»
+        env.stats._by_id.pop(shots[0], None)
+
+        # «Завершить комнату» через реальный callback → files_missing
+        view = _room_view(env)
+        ix_done = _FakeInteraction(env)
+        await view._on_done(ix_done)
+        assert any("утеряна" in m for m in ix_done.messages), ix_done.messages
+        assert room["status"] == "collecting_files"
+        # needs_reupload — только у реально утерянного файла,
+        # второй shot жив и проверку прошёл.
+        assert sum(1 for p in room["pending"] if p.get("needs_reupload")) == 1
+
+        # «Добавить скриншот» — модалка ОТКРЫВАЕТСЯ несмотря на
+        # len(pending)==2, т.к. есть needs_reupload.
+        ix_add = _FakeInteraction(env)
+        await view._on_add(ix_add)
+        assert ix_add.modal is not None
+        assert ix_add.modal.room_index == 1
+
+        # Submit модалки тем же файлом → retry shot, без OCR.
+        calls = len(env.pipe_calls)
+        ix_sub = await _submit_modal(ix_add.modal, env, "classic1")
+        assert not any("устарела" in m for m in ix_sub.messages)
+        assert len(env.pipe_calls) == calls
+
+        # «Завершить комнату» → ok, без повторного OCR.
+        ix_done2 = _FakeInteraction(env)
+        await view._on_done(ix_done2)
+        assert any("завершена" in m for m in ix_done2.messages)
+        assert room["status"] == "awaiting_mapping"
+        assert len(env.pipe_calls) == calls
+
+    @pytest.mark.asyncio
+    async def test_add_blocked_when_room_full_no_reupload(self, env):
+        """Полная комната без needs_reupload → модалка НЕ открывается."""
+        await _file(env, 1, "squadA")
+        await _file(env, 1, "squadB")
+        view = _room_view(env)
+        ix = _FakeInteraction(env)
+        await view._on_add(ix)
+        assert ix.modal is None
+        assert any("заполнена" in m for m in ix.messages)
+
+    @pytest.mark.asyncio
+    async def test_stale_shot_message_id_republished(self, env):
+        """shot_message_id указывает на удалённое сообщение →
+        needs_reupload → retry проверяет вложение и публикует
+        заново, обновляя ID. Без OCR."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        mid = entry["shot_message_id"]
+        env.stats._by_id.pop(mid, None)  # сообщение удалено
+        entry["needs_reupload"] = True
+        entry["shot_pending"] = True
+
+        calls = len(env.pipe_calls)
+        r = await _file(env, 1, "classic1")
+        assert r == "ok"
+        assert len(env.pipe_calls) == calls
+        assert entry["shot_message_id"] != mid
+        assert entry["shot_message_id"] in env.stats._by_id
+        assert entry["needs_reupload"] is False
+        assert entry["shot_pending"] is False
+
+    @pytest.mark.asyncio
+    async def test_stale_id_but_attachment_alive_verified(self, env):
+        """needs_reupload, но сообщение живо и sha совпадает →
+        флаги снимаются БЕЗ повторной публикации (нет дубля)."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        mid = entry["shot_message_id"]
+        n_sent = len(env.stats.sent)
+        entry["needs_reupload"] = True
+        entry["shot_pending"] = True
+
+        calls = len(env.pipe_calls)
+        r = await _file(env, 1, "classic1")
+        assert r == "ok"
+        assert len(env.pipe_calls) == calls
+        assert len(env.stats.sent) == n_sent  # дубль не создан
+        assert entry["shot_message_id"] == mid
+        assert entry["needs_reupload"] is False
+
+    @pytest.mark.asyncio
+    async def test_parallel_second_upload_and_finish(self, env):
+        """Второй файл и «Завершить комнату» одновременно:
+        либо файл принят и комната смешанная, либо комната
+        завершена classic-only и файл отклонён room_done.
+        Двойной статистики нет."""
+        await _file(env, 1, "classic1")
+        r_file, r_fin = await asyncio.gather(
+            _file(env, 1, "squadA"),
+            _finish(env),
+        )
+        room = env.session["rooms"][0]
+        if r_file == "added":
+            assert r_fin == "ok"
+            assert room["kind"] == "mixed"
+        else:
+            # finish успел первым — комната classic-only
+            assert r_file == "room_done"
+            assert r_fin == "ok"
+            assert room["kind"] == "classic"
+        assert len(room["pending"]) <= 2
+        assert env.session["rooms_received"] == 1
+
+    @pytest.mark.asyncio
+    async def test_parallel_retries_same_file(self, env):
+        """Два параллельных повтора одного shot_pending файла:
+        _room_lock сериализует — одна публикация, оба 'ok',
+        без дубля сообщения и без OCR."""
+        await _file(env, 1, "classic1")
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        entry["shot_pending"] = True
+        entry["shot_message_id"] = None
+
+        calls = len(env.pipe_calls)
+        n_shots_before = len(env.stats.sent)
+        r1, r2 = await asyncio.gather(
+            _file(env, 1, "classic1"),
+            _file(env, 1, "classic1"),
+        )
+        # Оба пути безопасны: либо второй увидел восстановленный
+        # shot → "ok", либо проверил dup уже после успеха → "dup".
+        # Дубля shot-сообщения и повторного OCR быть не должно.
+        assert sorted([r1, r2]) in (["dup", "ok"], ["ok", "ok"])
+        assert len(env.pipe_calls) == calls
+        # Ровно одно новое shot-сообщение с файлом
+        new_shots = [
+            m for m in env.stats.sent[n_shots_before:]
+            if m.attachments
+        ]
+        assert len(new_shots) == 1
+        assert entry["shot_pending"] is False

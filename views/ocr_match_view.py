@@ -6978,9 +6978,17 @@ class RoomFilesView(View):
                 ephemeral=True,
             )
             return
-        if (
-            room.get("status") != "collecting_files"
-            or len(room.get("pending") or []) >= 2
+        pending = room.get("pending") or []
+        # Комната «заполнена» (2 файла) — модалку открываем только
+        # для повторной отправки файла с needs_reupload/
+        # shot_pending. Новый (третий) SHA process_room_file
+        # отклонит как room_full — уже распознанные pipe не меняются.
+        reupload_needed = any(
+            p.get("needs_reupload") or p.get("shot_pending")
+            for p in pending
+        )
+        if room.get("status") != "collecting_files" or (
+            len(pending) >= 2 and not reupload_needed
         ):
             await interaction.response.send_message(
                 replace_emojis(

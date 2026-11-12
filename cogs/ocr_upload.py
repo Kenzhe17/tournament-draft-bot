@@ -2500,9 +2500,13 @@ async def _publish_seq_shot(
     не удалась: вызывающий код помечает entry shot_pending и
     НЕ сообщает пользователю об успехе.
     """
-    # Идемпотентность: shot уже опубликован — не дублируем
-    # сообщение при повторных вызовах.
-    if pending_entry.get("shot_message_id"):
+    # Идемпотентность: shot уже опубликован и не помечен к
+    # повторной заливке — не дублируем сообщение. При
+    # needs_reupload старый ID не доверяем: сообщение могло быть
+    # удалено — публикуем заново и перезаписываем ID.
+    if pending_entry.get("shot_message_id") and not pending_entry.get(
+        "needs_reupload"
+    ):
         return True
     kind_label = (
         "полный экран" if pending_entry.get("kind") == "classic"
@@ -2809,29 +2813,92 @@ async def process_room_file(
     return "ok" if was_first else "added"
 
 
+async def _seq_shot_attachment_ok(stats_channel, entry: dict) -> bool:
+    """Проверить, что shot-сообщение живо и его вложение
+    соответствует sha256 записи — иначе старый ID недоверенный
+    (сообщение могло быть удалено/изменено)."""
+    mid = entry.get("shot_message_id")
+    sha = entry.get("sha")
+    if not mid or not sha or stats_channel is None:
+        return False
+    try:
+        msg = await stats_channel.fetch_message(int(mid))
+        att = (getattr(msg, "attachments", None) or [None])[0]
+        if att is None:
+            return False
+        data = await att.read()
+        return bool(data) and _sha256_bytes(data) == sha
+    except Exception:
+        logger.debug("seq shot verify failed", exc_info=True)
+        return False
+
+
 async def _retry_seq_shot(
     guild, stats_channel, tournament, key, session,
     room, entry, item,
 ) -> str:
     """Повторная отправка того же файла для восстановления
     Discord-копии (shot_pending/needs_reupload). OCR не
-    перезапускается — pipe уже сохранён в pending."""
-    ck = _seq_cache_key(
-        guild.id, tournament.channel_id, key,
-        int(room.get("room_index", 0)),
-    )
-    _SEQ_FILE_CACHE.setdefault(ck, {})[entry["sha"]] = {
-        "filename": entry.get("filename") or item.get("filename"),
-        "data": item["data"],
-    }
-    ok = await _publish_seq_shot(stats_channel, room, entry, item)
-    entry["shot_pending"] = not ok
-    if ok:
-        entry["needs_reupload"] = False
-    store.set(tournament)
-    if ok:
-        return "ok"
-    return "shot_pending"
+    перезапускается — pipe уже сохранён в pending.
+
+    Сериализовано _room_lock: отмена сессии и параллельные
+    повторы не могут оставить рассинхрон флагов/ID.
+    """
+    async with _room_lock(key):
+        # Актуальное состояние — store мог обновиться, пока
+        # пользователь грузил файл.
+        fresh = store.get(guild.id, tournament.channel_id) or tournament
+        fs = fresh.ocr_sessions.get(key) or {}
+        if (
+            fs.get("mode") != "rooms"
+            or fs.get("status") != "collecting"
+            or int(fs.get("gen", 0)) != int(session.get("gen", 0))
+        ):
+            _seq_purge_session(guild.id, tournament.channel_id, key)
+            return "cancelled"
+        fresh_room = _find_seq_room(fs, int(room.get("room_index", 0)))
+        if fresh_room is None:
+            return "closed"
+        # Entry ищем по sha в АКТУАЛЬНОМ списке — объект room
+        # мог быть подменён store.set.
+        entry = next(
+            (
+                p for p in fresh_room.get("pending") or []
+                if p.get("sha") == entry.get("sha")
+            ),
+            None,
+        )
+        if entry is None:
+            return "closed"
+        tournament, session, room = fresh, fs, fresh_room
+
+        # 1) ID есть и не needs_reupload — уже надёжно.
+        if entry.get("shot_message_id") and not entry.get(
+            "needs_reupload"
+        ):
+            return "ok"
+        # 2) needs_reupload/shot_pending, но сообщение живо и
+        #    sha совпадает — просто снимаем флаги, без репоста.
+        if await _seq_shot_attachment_ok(stats_channel, entry):
+            entry["shot_pending"] = False
+            entry["needs_reupload"] = False
+            store.set(tournament)
+            return "ok"
+        # 3) Реальная потеря — публикуем тот же файл заново.
+        ck = _seq_cache_key(
+            guild.id, tournament.channel_id, key,
+            int(room.get("room_index", 0)),
+        )
+        _SEQ_FILE_CACHE.setdefault(ck, {})[entry["sha"]] = {
+            "filename": entry.get("filename") or item.get("filename"),
+            "data": item["data"],
+        }
+        ok = await _publish_seq_shot(stats_channel, room, entry, item)
+        entry["shot_pending"] = not ok
+        if ok:
+            entry["needs_reupload"] = False
+        store.set(tournament)
+        return "ok" if ok else "shot_pending"
 
 
 def _seq_purge_session(guild_id, channel_id, key: str) -> None:
@@ -2943,6 +3010,11 @@ async def finalize_room_collect(
     pend_pre = (pre_room or {}).get("pending") or []
     if not pend_pre:
         return "empty"
+    # НЕЗАВИСИМЫЙ снимок sha ДО асинхронного восстановления
+    # файлов: pre_room может разделять состояние с объектом,
+    # который будет перечитан под локом — сравнение «объект с
+    # самим собой» ничего не ловит. Снимок — плоский список.
+    sha_snapshot = list(_pending_shas(pre_room or {}))
     ck = _seq_cache_key(
         guild.id, tournament.channel_id, key, room_index
     )
@@ -2984,11 +3056,11 @@ async def finalize_room_collect(
         pend = room.get("pending") or []
         if not pend:
             return "empty"
-        # Pending мог измениться между проверкой файлов и локом —
-        # сливаем только тот же набор sha.
-        if _pending_shas(room) != _pending_shas(pre_room or {}):
+        # Pending мог измениться между снимком и локом (параллельная
+        # загрузка/повтор/отмена) — сверяем АКТУАЛЬНЫЙ набор sha
+        # с независимым снимком, снятым до await восстановления.
+        if _pending_shas(room) != sha_snapshot:
             return "files_missing"
-        pend_snapshot = [dict(p) for p in pend]
         pipes = [p.get("pipe") or {} for p in pend]
         shas = _pending_shas(room)
         err = _merge_room_pipes(room, pipes, shas)
