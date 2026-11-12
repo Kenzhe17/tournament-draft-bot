@@ -4588,78 +4588,53 @@ async def _finalize_ocr_match_impl(
     except Exception:
         channel = None
 
-    # Публичное OCR-сообщение: гасим кнопки, оставляем скриншот и
-    # короткий финальный статус. Итог с именем победителя уходит
-    # только инициатору — ephemeral.
-    from cogs.ocr_upload import _mapping_layout
+    # Публичное OCR-сообщение: технические сообщения завершённого
+    # матча удаляются по сохранённым ID — дублирующих
+    # «Матч завершён» не создаём. Итоговая рабочая карточка уже
+    # отрендерена финальным статусом через update_match_card выше
+    # и НЕ перезаписывается. Кнопки старых View блокируются
+    # серверными проверками статуса сессии.
+    cleaned = False
+    try:
+        from cogs.ocr_upload import cleanup_rooms_ocr_messages
 
-    done_caption = "✅ Матч завершён — результат в канале результатов."
-    done_view = _mapping_layout(None, done_caption)
+        cleaned = await cleanup_rooms_ocr_messages(
+            interaction.guild, tournament,
+            match_type, match_index, session,
+        )
+    except Exception as e:
+        logger.warning("OCR technical cleanup failed: %s", e)
 
-    async def _strip_buttons(mid: int) -> None:
-        if channel is None or not mid:
-            return
-        try:
-            msg = await channel.fetch_message(mid)
-            await msg.edit(view=done_view)
-        except Exception as e:
-            logger.warning("OCR message finalize edit failed: %s", e)
+    if not cleaned:
+        # Fallback: канал недоступен — гасим кнопки только на
+        # главном OCR-сообщении сессии (не дублируя caption на
+        # каждое сообщение), чтобы старые View не принимали
+        # действия. Серверные проверки статуса — вторая линия.
+        from cogs.ocr_upload import _mapping_layout
 
-    if session.get("mode") == "squad":
-        # У каждого отряда своё сообщение — гасим кнопки на всех
-        mids = [
-            s.get("message_id") for s in session.get("squads", {}).values()
-        ] + [
-            e.get("message_id") for e in session.get("squad_pool", [])
-        ]
-        for mid in mids:
-            await _strip_buttons(mid)
-    elif is_rooms:
-        # Гасим кнопки на сообщениях всех комнат + прогресс
-        mids = []
-        for r in session.get("rooms") or []:
-            mids.extend(r.get("message_ids") or [])
-            if r.get("message_id"):
-                mids.append(r["message_id"])
-        prog_ch_id = session.get("progress_channel_id")
-        prog_id = session.get("progress_message_id")
-        for mid in dict.fromkeys(mids):
-            await _strip_buttons(mid)
-        if prog_ch_id and prog_id and channel is not None:
-            try:
-                pmsg = await channel.fetch_message(prog_id)
-                await pmsg.edit(
-                    content=replace_emojis(done_caption), view=None
-                )
-            except Exception as e:
-                logger.warning("rooms progress finalize edit failed: %s", e)
-        # Сообщение подтверждения результатов — гасим кнопки
-        cmid = session.get("confirm_message_id")
-        if cmid and channel is not None:
-            try:
-                cmsg = await channel.fetch_message(cmid)
-                await cmsg.edit(
-                    content=replace_emojis(done_caption), view=None
-                )
-            except Exception as e:
-                logger.warning("rooms confirm finalize edit failed: %s", e)
-    else:
-        await _strip_buttons(session.get("message_id"))
-
-    # Очистка технических OCR-сообщений (rooms-режим): после
-    # фиксации результата удаляем карточки комнат, collect и
-    # confirm-сообщения. Прогресс/рабочая карточка остаётся
-    # итоговым сообщением. Идемпотентно, cleanup_done в сессии.
-    if is_rooms:
-        try:
-            from cogs.ocr_upload import cleanup_rooms_ocr_messages
-
-            await cleanup_rooms_ocr_messages(
-                interaction.guild, tournament,
-                match_type, match_index, session,
-            )
-        except Exception as e:
-            logger.warning("rooms OCR cleanup failed: %s", e)
+        done_caption = (
+            "✅ Матч завершён — результат в канале результатов."
+        )
+        done_view = _mapping_layout(None, done_caption)
+        if channel is not None:
+            if session.get("mode") == "squad":
+                fallback_mids = [
+                    s.get("message_id")
+                    for s in session.get("squads", {}).values()
+                ] + [
+                    e.get("message_id")
+                    for e in session.get("squad_pool", [])
+                ]
+            else:
+                fallback_mids = [session.get("message_id")]
+            for mid in dict.fromkeys(fallback_mids):
+                if not mid:
+                    continue
+                try:
+                    msg = await channel.fetch_message(mid)
+                    await msg.edit(view=done_view)
+                except Exception:
+                    pass
 
     # Уведомление о победителе — только тому, кто подтвердил результат
     try:
@@ -5595,19 +5570,14 @@ class RoomTeamMapView(View):
 
     def _make_row_cb(self, i: int):
         async def _cb(interaction: discord.Interaction) -> None:
-            values = getattr(self.selects[i], "values", None) or []
-            picked = values[0] if values else ""
-            if picked == "__none__":
-                picked = "—"
-            await interaction.response.defer(ephemeral=True)
-            await interaction.followup.send(
-                replace_emojis(
-                    f"Строка {i + 1} → "
-                    f"**{picked}** "
-                    "(сохранится по кнопке ниже)"
-                ),
-                ephemeral=True,
-            )
+            # Выбор строки — промежуточный шаг: значение сохраняется
+            # в selects[i] и применяется кнопкой «Сохранить
+            # сопоставление». Информационное ephemeral-сообщение
+            # не нужно — подтверждаем interaction молча.
+            try:
+                await interaction.response.defer()
+            except Exception:
+                pass
         return _cb
 
     async def _on_save(self, interaction: discord.Interaction) -> None:
@@ -5854,15 +5824,13 @@ class RoomSelfMapView(View):
         self.add_item(confirm)
 
     async def _on_pick(self, interaction: discord.Interaction) -> None:
-        values = getattr(self.select, "values", None) or []
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(
-            replace_emojis(
-                f"Выбрана строка {values[0] if values else '?'} — "
-                "нажмите «Это я» для подтверждения."
-            ),
-            ephemeral=True,
-        )
+        # Промежуточный выбор строки — информационное ephemeral не
+        # нужно: значение остаётся в select.values до нажатия
+        # «Это я». Подтверждаем interaction молча.
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
 
     async def _on_confirm(self, interaction: discord.Interaction) -> None:
         if int(interaction.user.id) != int(self.user_id):

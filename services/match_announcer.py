@@ -408,89 +408,17 @@ def _rooms_played(tournament: Tournament, match_type: str,
     return 0
 
 
-def _public_match_state(
-    tournament: Tournament, match_type: str, match_index: int
-) -> str:
-    """active | processing | done — публичный статус карточки матча."""
-    from views.ocr_match_view import match_is_finished
-
-    if _bracket_winner_index(tournament, match_type, match_index) is not None:
-        return "done"
-    if match_is_finished(tournament, match_type, match_index):
-        return "done"
-    session = (tournament.ocr_sessions or {}).get(
-        _mc_key(match_type, match_index)
-    )
-    if session and session.get("status") not in (
-        None, "completed", "cancelled"
-    ):
-        return "processing"
-    return "active"
-
-
-def _public_match_embed(
-    tournament: Tournament, match_type: str, match_index: int
-) -> discord.Embed:
-    """Embed публичной карточки матча (стиль r!z3, без пингов).
-
-    Составы не дублируются — они доступны через кнопки матчей
-    в основном сообщении турнира; карточка показывает команды,
-    статус и итог.
-    """
-    from cogs.ocr_upload import _captain_name, _match_label
-    from views.ocr_match_view import _match_tuple
-
-    t1, t2 = _match_tuple(tournament, match_type, match_index)
-    name_a = _captain_name(tournament, t1)
-    name_b = _captain_name(tournament, t2)
-    label = _match_label(match_type, match_index).upper()
-    state = _public_match_state(tournament, match_type, match_index)
-
-    embed = discord.Embed(
-        title=f"⚔️ {label}",
-        description=f"**{name_a} vs {name_b}**",
-        color=discord.Color.blurple(),
-    )
-    if state == "done":
-        winner = _bracket_winner_index(tournament, match_type, match_index)
-        wname = (
-            _captain_name(tournament, winner)
-            if winner is not None else "—"
-        )
-        embed.title = f"✅ {label} — ЗАВЕРШЁН"
-        embed.color = discord.Color.dark_green()
-        embed.add_field(
-            name="Победитель", value=wname, inline=True
-        )
-        embed.add_field(
-            name="Комнат сыграно",
-            value=str(
-                _rooms_played(tournament, match_type, match_index)
-            ),
-            inline=True,
-        )
-        embed.add_field(
-            name="Статус", value="Результат подтверждён", inline=True
-        )
-    elif state == "processing":
-        embed.add_field(
-            name="Статус", value="Проверка результатов", inline=False
-        )
-    else:
-        embed.add_field(
-            name="Статус", value="Ожидание результатов", inline=False
-        )
-    return embed
-
-
 async def update_public_match_card(
     guild: discord.Guild,
     tournament: Tournament,
     match_type: str,
     match_index: int,
 ) -> None:
-    """Публичная карточка матча под per-match lock — защита от
-    конкурентного создания дубликата одним матчем."""
+    """Legacy-очистка: отдельные публичные карточки матчей больше
+    не публикуются — результаты показываются в основном embed
+    турнирной сетки. Если в match_cards сохранился
+    public_message_id, подтверждённое сообщение бота в канале
+    турнира удаляется, поля очищаются."""
     if getattr(tournament, "mm_search_channel_id", 0):
         return
     key = _mc_key(match_type, match_index)
@@ -501,74 +429,103 @@ async def update_public_match_card(
         )
 
 
+async def cleanup_public_match_cards(
+    guild: discord.Guild,
+    tournament: Tournament,
+) -> None:
+    """Удалить все legacy публичные карточки матчей турнира —
+    sweep для восстановления после рестарта."""
+    if getattr(tournament, "mm_search_channel_id", 0):
+        return
+    for mkey in list((getattr(tournament, "match_cards", None) or {})):
+        try:
+            mt, mi_s = mkey.rsplit("_", 1)
+            await update_public_match_card(
+                guild, tournament, mt, int(mi_s)
+            )
+        except Exception as exc:
+            logger.warning(
+                "public card cleanup failed for %s: %s", mkey, exc
+            )
+
+
 async def _update_public_match_card_impl(
     guild: discord.Guild,
     tournament: Tournament,
     match_type: str,
     match_index: int,
 ) -> None:
-    """Создать/обновить ЕДИНСТВЕННОЕ публичное сообщение матча
-    в канале турнира. Идемпотентно: без изменений контента
-    редактирование не выполняется (sig-кэш), удалённое сообщение
-    пересоздаётся с сохранением ID."""
+    """Удалить сохранённую legacy публичную карточку матча.
+
+    Новые публичные карточки НЕ создаются. Удаление выполняется
+    только для сообщения бота в канале турнира, не совпадающего
+    с основным сообщением сетки. При ошибке API ID сохраняется
+    для повторной попытки."""
     if getattr(tournament, "mm_search_channel_id", 0):
         return
     key = _mc_key(match_type, match_index)
-    try:
-        channel = guild.get_channel(tournament.channel_id)
-        if channel is None:
-            channel = await guild.fetch_channel(tournament.channel_id)
-    except Exception:
-        return
-    if channel is None:
-        return
     mcards = getattr(tournament, "match_cards", None)
-    if mcards is None:
-        mcards = {}
-        try:
-            tournament.match_cards = mcards
-        except Exception:
-            pass
-    entry = mcards.setdefault(key, {})
-    try:
-        embed = _public_match_embed(tournament, match_type, match_index)
-    except Exception as exc:
-        logger.warning("public match card embed failed: %s", exc)
+    if not mcards:
         return
-    import hashlib
-
-    sig_src = (
-        embed.title or ""
-    ) + "|" + (embed.description or "") + "|" + "|".join(
-        f"{f.name}:{f.value}" for f in embed.fields
-    )
-    sig = hashlib.sha1(sig_src.encode()).hexdigest()[:16]
+    entry = mcards.get(key)
+    if not entry:
+        return
     mid = entry.get("public_message_id")
-    msg = None
-    if mid:
+    if not mid:
+        return
+    channel_id = int(
+        entry.get("public_channel_id") or tournament.channel_id or 0
+    )
+    try:
+        channel = guild.get_channel(channel_id)
+        if channel is None:
+            channel = await guild.fetch_channel(channel_id)
+    except Exception:
+        channel = None
+    if channel is not None:
         try:
             msg = await channel.fetch_message(int(mid))
-        except Exception:
+        except discord.NotFound:
             msg = None
-    created = False
-    if msg is None:
-        try:
-            msg = await channel.send(
-                embed=embed,
-                allowed_mentions=discord.AllowedMentions.none(),
+        except Exception as exc:
+            # Временная ошибка API — ID сохраняем для retry.
+            logger.warning(
+                "legacy public card fetch failed mid=%s: %s", mid, exc
             )
-            entry["public_message_id"] = msg.id
-            entry["public_channel_id"] = channel.id
-            created = True
-        except Exception as exc:
-            logger.warning("public match card send failed: %s", exc)
             return
-    if not created and entry.get("sig") != sig:
-        try:
-            await msg.edit(embed=embed, view=None)
-        except Exception as exc:
-            logger.warning("public match card edit failed: %s", exc)
-    entry["sig"] = sig
+        if msg is not None:
+            author = getattr(msg, "author", None)
+            is_own = author is None or getattr(author, "bot", False)
+            is_main = (
+                int(getattr(tournament, "message_id", 0) or 0)
+                == int(mid)
+            )
+            if not is_own or is_main:
+                logger.warning(
+                    "legacy public card mid=%s skipped: "
+                    "not a bot match card", mid,
+                )
+                entry.pop("public_message_id", None)
+                entry.pop("public_channel_id", None)
+                entry.pop("sig", None)
+                try:
+                    store.set(tournament)
+                except Exception:
+                    pass
+                return
+            try:
+                await msg.delete()
+            except discord.NotFound:
+                pass
+            except Exception as exc:
+                logger.warning(
+                    "legacy public card delete failed mid=%s: %s",
+                    mid, exc,
+                )
+                return
+    entry.pop("public_message_id", None)
+    entry.pop("public_channel_id", None)
+    entry.pop("sig", None)
     try:
         store.set(tournament)
     except Exception:
@@ -636,6 +593,15 @@ def _control_content(
         f"Комнаты: {rooms_str}",
         f"Статус: {status}",
     ]
+    if finished:
+        winner_idx = _bracket_winner_index(
+            tournament, match_type, match_index
+        )
+        if winner_idx is not None:
+            lines.append(
+                f"🏆 Победитель: "
+                f"{_captain_name(tournament, winner_idx)}"
+            )
     if cap_ids:
         lines.append(
             "Капитаны: " + " ".join(f"<@{u}>" for u in cap_ids)

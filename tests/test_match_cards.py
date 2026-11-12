@@ -15,16 +15,21 @@ import pytest
 from config import OCR_MAPPING_CHANNEL_ID
 
 
+def _fake_response(status):
+    return SimpleNamespace(status=status, reason=None)
+
+
 class _Msg:
     _next = 1000
 
-    def __init__(self, mid=None, channel=None):
+    def __init__(self, mid=None, channel=None, bot=True):
         self.id = mid or _Msg._next
         _Msg._next += 1
         self._channel = channel
         self.edits = []
         self.deleted = False
         self.embed = None
+        self.author = SimpleNamespace(bot=bot, id=999)
 
     async def edit(self, content=None, view=None, embed=None,
                    embeds=None, allowed_mentions=None, **kw):
@@ -59,9 +64,13 @@ class _Chan:
         return msg
 
     async def fetch_message(self, mid):
+        import discord
+
         msg = self._by_id.get(int(mid))
         if msg is None:
-            raise Exception("not found")
+            raise discord.NotFound(
+                _fake_response(404), "not found"
+            )
         return msg
 
     async def fetch_channel(self, cid):  # pragma: no cover
@@ -154,7 +163,9 @@ def _fake_match_number_store(monkeypatch):
 
 class TestAnnounceCreatesCards:
     @pytest.mark.asyncio
-    async def test_public_and_control_messages(self, monkeypatch):
+    async def test_only_control_message_no_public_card(self, monkeypatch):
+        """Публичных карточек матчей нет — только рабочее
+        сообщение в OCR-канале; матч виден в основной сетке."""
         from services import match_announcer as ma
 
         _fake_match_number_store(monkeypatch)
@@ -165,18 +176,8 @@ class TestAnnounceCreatesCards:
 
         await ma.announce_phase_matches(tournament, guild, bot=None)
 
-        # Публичная карточка — в канале турнира (embed, без пингов).
-        assert len(tchan.sent) == 1
-        pub = tchan.sent[0]
-        assert pub.embed is not None
-        assert "#1" in (pub.embed.title or "")
-        assert "CapA" in (pub.embed.description or "")
-        assert "CapB" in (pub.embed.description or "")
-        assert any(
-            "Ожидание результатов" in (f.value or "")
-            for f in pub.embed.fields
-        )
-        assert pub.allowed_mentions is not None
+        # В канал турнира НИЧЕГО не отправляется.
+        assert tchan.sent == []
         # Рабочее сообщение — в OCR-канале.
         assert len(ochan.sent) == 1
         work = ochan.sent[0]
@@ -187,9 +188,9 @@ class TestAnnounceCreatesCards:
         assert "📸 Загрузить скриншоты" in labels
         assert "Капитаны: <@42> <@43>" in work.content
         assert "Ожидание скриншотов" in work.content
-        # ID сохранены в match_cards.
+        # ID сохранены в match_cards — только рабочие.
         entry = tournament.match_cards["qualifier_0"]
-        assert entry["public_message_id"] == pub.id
+        assert "public_message_id" not in entry
         assert entry["work_message_id"] == work.id
         assert entry["work_channel_id"] == OCR_MAPPING_CHANNEL_ID
 
@@ -206,69 +207,47 @@ class TestAnnounceCreatesCards:
         await ma.announce_phase_matches(tournament, guild)
         # Повторный анонс того же матча — is_announced → ничего.
         await ma.announce_phase_matches(tournament, guild)
-        assert len(tchan.sent) == 1
+        assert tchan.sent == []
         assert len(ochan.sent) == 1
 
 
-class TestPublicCardUpdates:
-    @pytest.mark.asyncio
-    async def test_state_transitions_and_dedup(self):
-        from services import match_announcer as ma
+class TestLegacyPublicCardCleanup:
+    """update_public_match_card больше не создаёт карточки —
+    только удаляет подтверждённые legacy-сообщения бота."""
 
-        tchan = _Chan(42)
-        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
-        guild = _guild(tchan, ochan)
-        tournament = _tournament()
-
-        await ma.update_public_match_card(
-            guild, tournament, "qualifier", 0
-        )
-        pub = tchan.sent[0]
-        assert any(
-            "Ожидание результатов" in (f.value or "")
-            for f in pub.embed.fields
-        )
-        entry = tournament.match_cards["qualifier_0"]
-
-        # processing: активная сессия
-        tournament.ocr_sessions["qualifier_0"] = {
-            "mode": "rooms", "status": "collecting",
-            "rooms_expected": 1, "rooms": [],
+    def _seed_legacy(self, tournament, tchan, mid=None):
+        msg = _Msg(channel=tchan)
+        tchan._by_id[msg.id] = msg
+        tournament.match_cards["qualifier_0"] = {
+            "public_message_id": msg.id,
+            "public_channel_id": tchan.id,
+            "sig": "old",
         }
-        await ma.update_public_match_card(
-            guild, tournament, "qualifier", 0
-        )
-        assert len(pub.edits) == 1
-        e1 = pub.edits[0]["embed"]
-        assert any(
-            "Проверка результатов" in (f.value or "")
-            for f in e1.fields
-        )
-
-        # Повтор без изменений — edit не вызывается (sig-дедуп).
-        await ma.update_public_match_card(
-            guild, tournament, "qualifier", 0
-        )
-        assert len(pub.edits) == 1
-
-        # done: победитель в сетке
-        tournament.ocr_sessions["qualifier_0"]["status"] = "completed"
-        tournament.qualifier_winners[0] = 1
-        tournament.ocr_sessions["qualifier_0"]["rooms"] = [
-            {"room_index": 1, "panels": {"left": {}}}
-        ]
-        await ma.update_public_match_card(
-            guild, tournament, "qualifier", 0
-        )
-        assert len(pub.edits) == 2
-        done_embed = pub.edits[1]["embed"]
-        assert any(
-            "Победитель" in (f.name or "") for f in done_embed.fields
-        )
-        assert "ЗАВЕРШ" in (done_embed.title or "")
+        return msg
 
     @pytest.mark.asyncio
-    async def test_deleted_message_recreated(self):
+    async def test_legacy_card_deleted_fields_cleared(self):
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        msg = self._seed_legacy(tournament, tchan)
+
+        await ma.update_public_match_card(
+            guild, tournament, "qualifier", 0
+        )
+        assert msg.deleted is True
+        entry = tournament.match_cards["qualifier_0"]
+        assert "public_message_id" not in entry
+        assert "public_channel_id" not in entry
+        assert "sig" not in entry
+        # Новых сообщений не создано.
+        assert tchan.sent == []
+
+    @pytest.mark.asyncio
+    async def test_no_public_id_is_noop(self):
         from services import match_announcer as ma
 
         tchan = _Chan(42)
@@ -279,14 +258,86 @@ class TestPublicCardUpdates:
         await ma.update_public_match_card(
             guild, tournament, "qualifier", 0
         )
-        first = tchan.sent[0]
-        await first.delete()
+        assert tchan.sent == []
+        assert ochan.sent == []
+
+    @pytest.mark.asyncio
+    async def test_main_message_never_deleted(self):
+        """public_message_id, совпадающий с основным сообщением
+        сетки, не удаляется — защита от ошибочной ссылки."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        main = _Msg(channel=tchan)
+        tchan._by_id[main.id] = main
+        tournament.message_id = main.id
+        tournament.match_cards["qualifier_0"] = {
+            "public_message_id": main.id,
+            "public_channel_id": tchan.id,
+        }
+
         await ma.update_public_match_card(
             guild, tournament, "qualifier", 0
         )
-        assert len(tchan.sent) == 2
-        entry = tournament.match_cards["qualifier_0"]
-        assert entry["public_message_id"] == tchan.sent[1].id
+        assert main.deleted is False
+        assert "public_message_id" not in (
+            tournament.match_cards["qualifier_0"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_bot_message_not_deleted(self):
+        """Сообщение не от бота не удаляется — ID очищается,
+        сообщение остаётся."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        msg = _Msg(channel=tchan, bot=False)
+        tchan._by_id[msg.id] = msg
+        tournament.match_cards["qualifier_0"] = {
+            "public_message_id": msg.id,
+            "public_channel_id": tchan.id,
+        }
+
+        await ma.update_public_match_card(
+            guild, tournament, "qualifier", 0
+        )
+        assert msg.deleted is False
+        assert "public_message_id" not in (
+            tournament.match_cards["qualifier_0"]
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_failure_keeps_id_for_retry(self):
+        """Временная ошибка API — public_message_id сохраняется
+        для повторной попытки."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        tournament.match_cards["qualifier_0"] = {
+            "public_message_id": 555,
+            "public_channel_id": tchan.id,
+        }
+
+        async def _boom(mid):
+            raise RuntimeError("api down")
+
+        tchan.fetch_message = _boom
+        await ma.update_public_match_card(
+            guild, tournament, "qualifier", 0
+        )
+        assert (
+            tournament.match_cards["qualifier_0"]["public_message_id"]
+            == 555
+        )
 
     @pytest.mark.asyncio
     async def test_mm_tournament_skipped(self):
@@ -304,6 +355,31 @@ class TestPublicCardUpdates:
         )
         assert tchan.sent == []
         assert ochan.sent == []
+
+    @pytest.mark.asyncio
+    async def test_cleanup_public_match_cards_sweep(self):
+        """Sweep удаляет legacy-карточки всех матчей турнира."""
+        from services import match_announcer as ma
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament(
+            semifinal_matches=[(0, 1)],
+        )
+        m1 = self._seed_legacy(tournament, tchan)
+        m2 = _Msg(channel=tchan)
+        tchan._by_id[m2.id] = m2
+        tournament.match_cards["semifinal_0"] = {
+            "public_message_id": m2.id,
+            "public_channel_id": tchan.id,
+        }
+
+        await ma.cleanup_public_match_cards(guild, tournament)
+        assert m1.deleted is True
+        assert m2.deleted is True
+        for entry in tournament.match_cards.values():
+            assert "public_message_id" not in entry
 
 
 class TestControlMessage:
@@ -528,6 +604,114 @@ class TestRoomsCleanup:
         assert 9101 in ochan._by_id
         assert 9103 in ochan._by_id
         assert not sess1.get("cleanup_done")
+
+    @pytest.mark.asyncio
+    async def test_cleanup_squad_mode(self):
+        """Squad-сессия: удаляются сообщения отрядов, итоговая
+        карточка сохраняется."""
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = {
+            "mode": "squad",
+            "status": "completed",
+            "ocr_channel_id": OCR_MAPPING_CHANNEL_ID,
+            "progress_message_id": 9001,
+            "squads": {"0": {"message_id": 9003}, "1": {"message_id": 9004}},
+            "squad_pool": [{"message_id": 9005}],
+        }
+        tournament.ocr_sessions["qualifier_0"] = sess
+        for mid in (9001, 9003, 9004, 9005):
+            ochan._by_id[mid] = _Msg(mid=mid, channel=ochan)
+
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is True
+        assert sess["cleanup_done"] is True
+        for mid in (9003, 9004, 9005):
+            assert mid not in ochan._by_id
+        assert 9001 in ochan._by_id
+
+    @pytest.mark.asyncio
+    async def test_cleanup_classic_mode(self):
+        """Classic-сессия: общее OCR-сообщение удаляется."""
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = {
+            "status": "completed",
+            "ocr_channel_id": OCR_MAPPING_CHANNEL_ID,
+            "progress_message_id": 9001,
+            "message_id": 9003,
+        }
+        tournament.ocr_sessions["qualifier_0"] = sess
+        for mid in (9001, 9003):
+            ochan._by_id[mid] = _Msg(mid=mid, channel=ochan)
+
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is True
+        assert 9003 not in ochan._by_id
+        assert 9001 in ochan._by_id
+
+    @pytest.mark.asyncio
+    async def test_cleanup_done_not_set_on_forbidden(self):
+        """discord.Forbidden — cleanup_done НЕ ставится, возврат
+        False для повторной попытки recovery."""
+        import discord
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = self._session()
+        tournament.ocr_sessions["qualifier_0"] = sess
+        bad = _Msg(mid=9003, channel=ochan)
+
+        async def _forbidden():
+            raise discord.Forbidden(
+                _fake_response(403), "no perms"
+            )
+
+        bad.delete = _forbidden
+        ochan._by_id[9003] = bad
+
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is False
+        assert not sess.get("cleanup_done")
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_non_bot_message(self):
+        """Сообщение не от бота не удаляется и не считается
+        сбоем — cleanup завершается."""
+        import cogs.ocr_upload as up
+
+        tchan = _Chan(42)
+        ochan = _Chan(OCR_MAPPING_CHANNEL_ID)
+        guild = _guild(tchan, ochan)
+        tournament = _tournament()
+        sess = self._session()
+        tournament.ocr_sessions["qualifier_0"] = sess
+        user_msg = _Msg(mid=9003, channel=ochan, bot=False)
+        ochan._by_id[9003] = user_msg
+
+        ok = await up.cleanup_rooms_ocr_messages(
+            guild, tournament, "qualifier", 0, sess
+        )
+        assert ok is True
+        assert user_msg.deleted is False
+        assert sess["cleanup_done"] is True
 
 
 class TestSerialization:

@@ -729,9 +729,29 @@ class TournamentBot(commands.Bot):
                         tournament.id, e,
                     )
 
-            # Восстановление очистки OCR после рестарта: rooms-сессии
-            # со статусом completed, но без cleanup_done — продолжаем
-            # удаление технических сообщений. Идемпотентно.
+                # Legacy публичные карточки матчей больше не нужны —
+                # удаляем подтверждённые сообщения бота из канала
+                # турнира (основное сообщение сетки не трогаем).
+                guild_obj = self.get_guild(tournament.guild_id)
+                if guild_obj is not None:
+                    try:
+                        from services.match_announcer import (
+                            cleanup_public_match_cards,
+                        )
+
+                        await cleanup_public_match_cards(
+                            guild_obj, tournament
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Public match cards cleanup failed "
+                            "for %s: %s", tournament.id, e,
+                        )
+
+            # Восстановление очистки OCR после рестарта: сессии
+            # со статусом completed, но без cleanup_done —
+            # продолжаем удаление технических сообщений любого
+            # режима (rooms/squad/classic). Идемпотентно.
             try:
                 from cogs.ocr_upload import cleanup_rooms_ocr_messages
 
@@ -739,8 +759,7 @@ class TournamentBot(commands.Bot):
                 if guild_obj is not None:
                     for _ck, _sess in (tournament.ocr_sessions or {}).items():
                         if (
-                            _sess.get("mode") == "rooms"
-                            and _sess.get("status") == "completed"
+                            _sess.get("status") == "completed"
                             and not _sess.get("cleanup_done")
                         ):
                             try:

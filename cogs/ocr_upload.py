@@ -3451,68 +3451,118 @@ async def cleanup_rooms_ocr_messages(
     match_index: int,
     session: dict | None = None,
 ) -> bool:
-    """Удалить технические OCR-сообщения завершённого rooms-матча.
+    """Удалить технические OCR-сообщения завершённого матча.
 
-    Удаляются ТОЛЬКО сообщения, привязанные к этому матчу:
-    карточки комнат (скриншоты+кнопки сопоставления), сообщение
-    подтверждения, collect-сообщения, shot-остатки. Рабочее
-    сообщение (progress/control) и публичная карточка НЕ
-    трогаются. Идемпотентно: флаг cleanup_done в сессии.
+    Режимы: rooms (карточки комнат, collect, shot-остатки,
+    confirm), squad (сообщения отрядов), classic/прочие
+    (общее OCR-сообщение сессии). Удаляются ТОЛЬКО сообщения,
+    привязанные к этому матчу и созданные ботом; итоговая
+    рабочая карточка (progress/work_message_id) и карточка
+    результата НЕ трогаются. Идемпотентно: cleanup_done
+    ставится только при полном успехе — при частичном сбое
+    возвращается False и recovery повторит попытку.
     """
     key = _session_key(match_type, match_index)
     sess = session or (tournament.ocr_sessions or {}).get(key)
-    if not sess or sess.get("mode") != "rooms":
+    if not sess or sess.get("status") != "completed":
         return False
     if sess.get("cleanup_done"):
         return True
+    mode = sess.get("mode")
     channel = await _stats_channel_for(guild, sess)
     if channel is None:
         return False
     mids: list[int] = []
-    for r in sess.get("rooms") or []:
-        mids.extend(r.get("message_ids") or [])
-        if r.get("message_id"):
-            mids.append(int(r["message_id"]))
-        if r.get("collect_message_id"):
-            mids.append(int(r["collect_message_id"]))
-        for p in r.get("pending") or []:
-            if p.get("shot_message_id"):
-                mids.append(int(p["shot_message_id"]))
-        for sid in r.get("shot_message_ids") or []:
-            mids.append(int(sid))
-    # shot_message_ids уже заархивированы/удалены при публикации
-    # карточки — удаление по NotFound безопасно.
+    if mode == "rooms" or sess.get("rooms"):
+        for r in sess.get("rooms") or []:
+            mids.extend(r.get("message_ids") or [])
+            if r.get("message_id"):
+                mids.append(int(r["message_id"]))
+            if r.get("collect_message_id"):
+                mids.append(int(r["collect_message_id"]))
+            for p in r.get("pending") or []:
+                if p.get("shot_message_id"):
+                    mids.append(int(p["shot_message_id"]))
+            for sid in r.get("shot_message_ids") or []:
+                mids.append(int(sid))
     if sess.get("confirm_message_id"):
         mids.append(int(sess["confirm_message_id"]))
-    # Прогресс/рабочее сообщение НЕ удаляем — это итоговая
-    # карточка матча.
+    if mode == "squad":
+        for sentry in (sess.get("squads") or {}).values():
+            if sentry.get("message_id"):
+                mids.append(int(sentry["message_id"]))
+        for entry in sess.get("squad_pool") or []:
+            if entry.get("message_id"):
+                mids.append(int(entry["message_id"]))
+    elif mode != "rooms":
+        # Classic/одиночное OCR-сообщение сессии.
+        if sess.get("message_id"):
+            mids.append(int(sess["message_id"]))
+    for sid in sess.get("shot_message_ids") or []:
+        mids.append(int(sid))
+    # Итоговые сообщения НЕ удаляем: прогресс/рабочая карточка
+    # матча и карточка результата в канале результатов.
     keep = {
         int(sess.get("progress_message_id") or 0),
+        int(sess.get("result_message_id") or 0),
     }
+    ctrl = (getattr(tournament, "match_cards", None) or {}).get(key) or {}
+    if ctrl.get("work_message_id"):
+        keep.add(int(ctrl["work_message_id"]))
     deleted = 0
+    failed = False
     for mid in dict.fromkeys(mids):
         if mid in keep or not mid:
             continue
         try:
             msg = await channel.fetch_message(mid)
+        except discord.NotFound:
+            continue
+        except Exception as exc:
+            failed = True
+            logger.warning(
+                "OCR cleanup fetch failed mid=%s match=%s: %s",
+                mid, key, exc,
+            )
+            continue
+        # Удаляем только сообщения бота — пользовательские
+        # и чужие карточки не трогаем.
+        author = getattr(msg, "author", None)
+        if author is not None and not getattr(author, "bot", False):
+            logger.warning(
+                "OCR cleanup skip non-bot message mid=%s match=%s",
+                mid, key,
+            )
+            continue
+        try:
             await msg.delete()
             deleted += 1
         except discord.NotFound:
             pass
         except discord.Forbidden:
+            failed = True
             logger.warning(
                 "rooms cleanup forbidden mid=%s match=%s",
                 mid, key,
             )
-        except Exception:
-            logger.debug("rooms cleanup delete failed mid=%s", mid)
+        except Exception as exc:
+            failed = True
+            logger.warning(
+                "OCR cleanup delete failed mid=%s match=%s: %s",
+                mid, key, exc,
+            )
+    if failed:
+        # Частичный сбой — cleanup_done НЕ ставим: recovery
+        # после рестарта повторит удаление оставшихся сообщений.
+        return False
     sess["cleanup_done"] = True
     try:
         store.set(tournament)
     except Exception:
         pass
     logger.info(
-        "rooms OCR cleanup done: match=%s deleted=%d", key, deleted
+        "OCR cleanup done: match=%s mode=%s deleted=%d",
+        key, mode, deleted,
     )
     return True
 
