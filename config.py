@@ -557,6 +557,12 @@ STANDARD_EMOJIS = {
     "a_dot_smaller": "⋮",
 }
 
+def _emoji_tag(emoji_name: str, custom_id: str) -> str:
+    """Discord custom emoji tag. Имена эмодзи не могут содержать пробелы."""
+    safe_name = emoji_name.replace(" ", "_")
+    return f"<:{safe_name}:{custom_id}>"
+
+
 def get_emoji(emoji_name: str) -> str:
     """Get custom emoji with ID or fallback to standard emoji."""
 
@@ -564,7 +570,7 @@ def get_emoji(emoji_name: str) -> str:
     if emoji_name in RANK_EMOJIS:
         custom_id = RANK_EMOJIS[emoji_name]
         if custom_id:
-            return f"<:{emoji_name}:{custom_id}>"
+            return _emoji_tag(emoji_name, custom_id)
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
         return result
 
@@ -572,7 +578,7 @@ def get_emoji(emoji_name: str) -> str:
     if emoji_name in ICON_EMOJIS:
         custom_id = ICON_EMOJIS[emoji_name]
         if custom_id:
-            return f"<:{emoji_name}:{custom_id}>"
+            return _emoji_tag(emoji_name, custom_id)
         result = STANDARD_EMOJIS.get(emoji_name, emoji_name)
         return result
 
@@ -580,7 +586,7 @@ def get_emoji(emoji_name: str) -> str:
     if emoji_name in GAME_EMOJIS:
         custom_id = GAME_EMOJIS[emoji_name]
         if custom_id:
-            return f"<:{emoji_name}:{custom_id}>"
+            return _emoji_tag(emoji_name, custom_id)
         # Don't fallback to standard emoji for custom emoji names like 'money'
         # Return empty string if custom ID is not set
         return ""

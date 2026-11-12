@@ -2489,7 +2489,7 @@ class TournamentCog(commands.Cog):
         
         # Test rank formatting
         test_emoji = get_rank_emoji(100)
-        embed.add_field(name=replace_emojis("🧪 Тест (Legend)"), value=f"`{test_emoji}`", inline=False)
+        embed.add_field(name=replace_emojis("🧪 Тест (Grandmaster)"), value=f"`{test_emoji}`", inline=False)
         
         await interaction.response.send_message( view=compose(embed), ephemeral=True)
 

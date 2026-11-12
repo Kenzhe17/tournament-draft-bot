@@ -270,8 +270,9 @@ def build_profile_svg(data: dict, avatar_png: bytes | None = None,
     bstr, bsize = _fit_text(bio, 340, 19, 450, min_size=12)
     _txt(272, 330, bstr, bsize, "#A2A8BD", 450)
     rname = rank["cur_name"]
+    chip, chip_size = _fit_text(rname, 124, 19, 700, min_size=9)
     _rect(269, 356, 132, 42, "#2C2148", 10, "#7450AA", 1)
-    _txt(335, 384, rname, 19, "#B17BFF", 700, anchor="middle")
+    _txt(335, 384, chip, chip_size, "#B17BFF", 700, anchor="middle")
     _txt(418, 384, f"УРОВЕНЬ {level}", 16, "#97A1B8", 650)
 
     # --- hero: ELO ---
@@ -291,16 +292,16 @@ def build_profile_svg(data: dict, avatar_png: bytes | None = None,
     _circle(1176, 316, 60, "#2E2049", "#8A5BD0", 1)
     badge_uri = _data_uri(badge_png)
     if badge_uri:
-        # Арт рангов — тонкий тёмный line-art: осветляем через CSS-фильтр,
-        # иначе на тёмной подложке эмблема не читается.
+        # Эмблемы FF CS — полноцветные оригинальные PNG, фильтр не нужен.
         _img(
             1116, 256, 120, 120, badge_uri,
-            extra='style="filter:brightness(1.9) saturate(1.25)"',
             preserve="xMidYMid meet",
         )
     else:
         _txt(1176, 330, rname[:1], 44, "#DDBDFF", 780, anchor="middle")
-    _txt(1281, 279, rank["cur_name"], 35, "#DDBDFF", 780)
+    # Длинные названия («GRANDMASTER II») не должны вылезти за панель (правый край ~1860)
+    rstr, rsize = _fit_text(rank["cur_name"], 545, 35, 780, min_size=20)
+    _txt(1281, 279, rstr, rsize, "#DDBDFF", 780)
     _txt(1282, 312, f"Текущий ранг  ·  Ур. {level}", 17, "#AFB9D1", 450)
     _line(1281, 343, 1827, 343, "#303951", 1)
     if rank["max_tier"]:

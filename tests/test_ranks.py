@@ -66,3 +66,91 @@ def test_progression_semantics():
     assert ranks.rank_name(51) == "Diamond I"     # новый тир
     assert ranks.rank_name(0) == "Bronze I"       # clamp
     assert ranks.rank_name(999) == "Grandmaster II"
+
+
+def test_custom_emoji_names_have_no_spaces(monkeypatch):
+    """Discord custom emoji names не могут содержать пробелы:
+    'Elite Heroic' → '<:Elite_Heroic:ID>'."""
+    import config
+
+    for i, tier in enumerate(ranks.RANK_TIERS):
+        monkeypatch.setitem(config.RANK_EMOJIS, tier, str(1000 + i))
+        tag = config.get_emoji(tier)
+        assert tag.startswith("<:") and tag.endswith(f":{1000 + i}>")
+        name = tag[2:].split(":")[0]
+        assert " " not in name, (tier, tag)
+
+    monkeypatch.setitem(config.RANK_EMOJIS, "Elite Heroic", "111")
+    monkeypatch.setitem(config.RANK_EMOJIS, "Elite Master", "222")
+    monkeypatch.setitem(config.RANK_EMOJIS, "Grandmaster", "333")
+    assert config.get_emoji("Elite Heroic") == "<:Elite_Heroic:111>"
+    assert config.get_emoji("Elite Master") == "<:Elite_Master:222>"
+    assert config.get_emoji("Grandmaster") == "<:Grandmaster:333>"
+
+
+def test_get_rank_emoji_uses_tier_and_full_name(monkeypatch):
+    """get_rank_emoji: эмодзи тира + полное имя ступени."""
+    import config
+    from cogs.tournament import get_rank_emoji
+
+    monkeypatch.setitem(config.RANK_EMOJIS, "Elite Heroic", "999")
+    out = get_rank_emoji(70)  # Elite Heroic
+    assert "<:Elite_Heroic:999>" in out
+    assert "Elite Heroic" in out
+
+    monkeypatch.setitem(config.RANK_EMOJIS, "Grandmaster", "888")
+    out = get_rank_emoji(95)  # Grandmaster II
+    assert "<:Grandmaster:888>" in out
+    assert "Grandmaster II" in out
+
+
+def _sample_profile_data(level: int) -> dict:
+    return {
+        "name": "Тест Игрок", "status": "проверка рангов",
+        "level": level, "elo": 1523, "last_elo_change": 24,
+        "skill_rating": 7.4,
+        "matches": 128, "wins": 74, "winrate": 57.8, "kda": 1.9,
+        "avg_kills": 4.2, "avg_damage": 1820, "max_kills": 12,
+        "elo_history": [1400, 1420, 1450, 1440, 1480, 1523],
+        "hist_start_elo": 1400, "chart_delta": 60,
+        "balance": 12500, "items": 320, "reputation": 45,
+        "partner": "—", "birthday": "—",
+        "ult_matches": 12, "ult_wins": 7, "ult_elo": 1600,
+        "ult_status": "В норме",
+    }
+
+
+def test_long_rank_names_fit_in_profile():
+    """GRANDMASTER II / ELITE HEROIC / ELITE MASTER не вылезают
+    ни за чип в панели игрока, ни за заголовок ранга."""
+    from utils.profile_renderer import _fit_text, _rank_info, build_profile_svg
+
+    for level in (25, 44, 49, 51, 63, 81, 94, 100):
+        info = _rank_info(level)
+        # заголовок ранга: x=1281, правый край панели ~1860
+        big, big_size = _fit_text(info["cur_name"], 545, 35, 780, min_size=20)
+        assert big_size >= 20, (level, info["cur_name"])
+        # чип в панели игрока: ширина 124px
+        chip, chip_size = _fit_text(info["cur_name"], 124, 19, 700, min_size=9)
+        assert chip_size >= 12, (level, info["cur_name"], chip)
+        # «ДО NEXT» тоже проверяем по той же ширине
+        if info["next_name"]:
+            nxt, _ = _fit_text(f"ДО {info['next_name']}", 545, 15, 750,
+                               min_size=10)
+            assert nxt
+
+
+def test_profile_svg_contains_subrank_and_next():
+    """SVG содержит полное имя подранга и следующий дивизион."""
+    from utils.profile_renderer import build_profile_svg
+
+    badge = (ranks.BADGE_DIR / ranks.rank_badge_filename(44)).read_bytes()
+    svg = build_profile_svg(_sample_profile_data(44), badge_png=badge)
+    assert "PLATINUM III" in svg
+    assert "ДО PLATINUM IV" in svg
+    # CSS-фильтр, искажавший цвета эмблем, удалён
+    assert "brightness(1.9)" not in svg
+
+    svg100 = build_profile_svg(_sample_profile_data(100), badge_png=badge)
+    assert "GRANDMASTER II" in svg100
+    assert "MAX TIER" in svg100
