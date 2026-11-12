@@ -1132,7 +1132,9 @@ class TournamentBot(commands.Bot):
                                 picker_pos, player = random_pick
                                 tournament.pick_player(picker_pos, player)
                                 draft_complete = tournament.advance_after_pick()
-                                store.set(tournament)
+                                # store.set — синхронный файловый I/O,
+                                # выносим из event loop.
+                                await asyncio.to_thread(store.set, tournament)
 
                                 # Update tournament message
                                 await self.update_tournament_message(
@@ -1162,7 +1164,9 @@ class TournamentBot(commands.Bot):
                                         else:
                                             new_message = await channel.send(f"⏱️ Время вышло! Случайный выбор: {player} был выбран.\n {next_captain_name} - ваша очередь выбирать!")
                                         tournament.draft_message_id = new_message.id
-                                        store.set(tournament)
+                                        await asyncio.to_thread(
+                                            store.set, tournament
+                                        )
                             else:
                                 # Draft complete
                                 logger.info(f"Draft completed automatically for guild {guild.id}")

@@ -2823,25 +2823,30 @@ async def _ensure_room_collect_message(
         lines.append(
             "Капитаны: " + " ".join(f"<@{u}>" for u in cap_ids)
         )
-    # Единый счётчик: «Скриншоты: X/Y» — Y = сколько необходимо
-    # (classic 1 / squad 2), а не максимум слотов.
+    # Счётчики разделены явно: «Комнаты» — прогресс по комнатам
+    # матча (rooms_expected), «Скриншоты комнаты N» — файлы
+    # ТЕКУЩЕЙ комнаты (required зависит от типа: classic 1 /
+    # squad 2). Без разделения «Скриншоты: 1/1» выглядело как
+    # завершение всего матча при нескольких комнатах.
+    sess_done = _rooms_completed_count(session)
+    sess_total = int(session.get("rooms_expected") or 0)
+    rooms_part = (
+        f"Комнаты: {sess_done}/{sess_total} · " if sess_total > 0 else ""
+    )
     if can_finish:
         if allow_add:
-            lines.append(
-                f"Скриншоты: {accepted}/{required} — все "
-                "обязательные загружены, можно завершить "
+            suffix = (
+                "все обязательные загружены, можно завершить "
                 "или добавить ещё для сверки"
             )
         else:
-            lines.append(
-                f"Скриншоты: {accepted}/{required} — все "
-                "загружены. Нажмите «Завершить комнату»"
-            )
+            suffix = "все загружены. Нажмите «Завершить комнату»"
     else:
-        lines.append(
-            f"Скриншоты: {accepted}/{required} — осталось "
-            f"загрузить: {remaining}"
-        )
+        suffix = f"осталось загрузить: {remaining}"
+    lines.append(
+        f"{rooms_part}Скриншоты комнаты {room['room_index']}: "
+        f"{accepted}/{required} — {suffix}"
+    )
     text = replace_emojis("\n".join(lines))
     # В content только <@id> капитанов — пингуются исключительно
     # они; роли и @everyone отключены.
