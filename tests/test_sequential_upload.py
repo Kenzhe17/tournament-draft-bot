@@ -49,6 +49,29 @@ def _squad_pipe(tag="S"):
     }
 
 
+def _full_classic_pipe(dmg_missing=False):
+    """Полный Classic: 4+4 игрока. dmg_missing=True → у всех
+    строк dmg=None (статистика неполная → нужна squad-сверка)."""
+    def row(name, i):
+        return {
+            "name": name, "kills": i + 1, "deaths": 1,
+            "assists": 1,
+            "dmg": None if dmg_missing else 100 + i,
+        }
+    return {
+        "panels": {
+            "left": {"name": "L", "rows": [
+                row(f"L{i}", i) for i in range(4)
+            ]},
+            "right": {"name": "R", "rows": [
+                row(f"R{i}", i) for i in range(4)
+            ]},
+        },
+        "score": [4, 3], "banner": None,
+        "top5": False, "winner_side": "left",
+    }
+
+
 class _Att:
     def __init__(self, data: bytes):
         self._data = data
@@ -1009,18 +1032,7 @@ class TestDynamicRoomButtons:
         сообщение показывает только «Завершить комнату», без
         «Добавить скриншот» и без «1/2»."""
         async def full_pipe(data, need_score=True):
-            return {
-                "panels": {
-                    "left": {"name": "L", "rows": [
-                        {"name": f"L{i}", "kills": 1} for i in range(4)
-                    ]},
-                    "right": {"name": "R", "rows": [
-                        {"name": f"R{i}", "kills": 1} for i in range(4)
-                    ]},
-                },
-                "score": [4, 3], "banner": None,
-                "top5": False, "winner_side": "left",
-            }
+            return _full_classic_pipe()
         monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
 
         await _file(env, 1, "full1")
@@ -1081,16 +1093,7 @@ class TestDynamicRoomButtons:
         """needs_reupload → кнопка добавления сохраняется даже
         для полного Classic."""
         async def full_pipe(data, need_score=True):
-            return {
-                "panels": {
-                    "left": {"name": "L", "rows": [
-                        {"name": f"L{i}"} for i in range(4)]},
-                    "right": {"name": "R", "rows": [
-                        {"name": f"R{i}"} for i in range(4)]},
-                },
-                "score": [4, 3], "banner": None,
-                "top5": False, "winner_side": "left",
-            }
+            return _full_classic_pipe()
         orig = up._classic_pipeline
         up._classic_pipeline = full_pipe
         try:
@@ -1175,3 +1178,105 @@ class TestCaptainOnlyFinalize:
         room = env.session["rooms"][0]
         assert await _finish(env) == "done"
         assert env.session["rooms_received"] == 1
+
+
+class TestReuploadOnlyAndStats:
+    """V6.1 edge cases: reupload принимает только исходный SHA;
+    Classic без полного K/D/A/DMG оставляет squad-сверку."""
+
+    @pytest.mark.asyncio
+    async def test_reupload_only_rejects_new_sha(self, env, monkeypatch):
+        """Полный Classic + needs_reupload → новый SHA отклонён
+        ДО OCR, pending не изменён; тот же SHA → retry."""
+        async def full_pipe(data, need_score=True):
+            return _full_classic_pipe()
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+        await _file(env, 1, "full1")
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        entry["needs_reupload"] = True
+        entry["shot_pending"] = True
+        # «Потеряли» shot-сообщение — retry реально репостит
+        env.stats._by_id.pop(entry["shot_message_id"], None)
+        assert up._room_reupload_only(room) is True
+        assert up.room_allows_second_file(room) is True
+
+        pipe_before = len(env.pipe_calls)
+        # Новый SHA → room_full, OCR не запускался
+        r = await _file(env, 1, "squadNEW")
+        assert r == "room_full"
+        assert len(env.pipe_calls) == pipe_before
+        assert len(room["pending"]) == 1
+        assert room["pending"][0]["sha"] != up._sha256_bytes(
+            b"squadNEW"
+        )
+
+        # Тот же SHA → восстановление shot без OCR и без
+        # изменения pending.
+        r = await _file(env, 1, "full1")
+        assert r in ("ok", "added")
+        assert len(env.pipe_calls) == pipe_before
+        assert len(room["pending"]) == 1
+        assert room["pending"][0].get("needs_reupload") in (
+            None, False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_reupload_only_accepts_same_sha(self, env, monkeypatch):
+        """Полный Classic + needs_reupload: повторный submit
+        исходного файла восстанавливает вложение (shot_pending
+        снимается), новый pending не создаётся."""
+        async def full_pipe(data, need_score=True):
+            return _full_classic_pipe()
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+        await _file(env, 1, "full1")
+        room = env.session["rooms"][0]
+        entry = room["pending"][0]
+        entry["needs_reupload"] = True
+        entry["shot_pending"] = True
+        old_shots = env.stats.sent.count(
+            env.stats._by_id.get(entry["shot_message_id"])
+        )
+        pipe_before = len(env.pipe_calls)
+        r = await _file(env, 1, "full1")
+        assert r in ("ok", "added")
+        assert len(env.pipe_calls) == pipe_before
+        assert len(room["pending"]) == 1
+        assert entry.get("shot_pending") in (None, False)
+
+    @pytest.mark.asyncio
+    async def test_classic_missing_dmg_allows_squad(self, env, monkeypatch):
+        """8 игроков найдены, но dmg=None у всех → classic НЕ
+        «полный»: squad-сверка доступна, кнопка add остаётся."""
+        async def pipe(data, need_score=True):
+            tag = data.decode()
+            if tag.startswith("squad"):
+                return _squad_pipe(tag)
+            return _full_classic_pipe(dmg_missing=True)
+        monkeypatch.setattr(up, "_classic_pipeline", pipe)
+        await _file(env, 1, "full1")
+        room = env.session["rooms"][0]
+        assert up.room_allows_second_file(room) is True
+        assert up._room_reupload_only(room) is False
+        r = await _file(env, 1, "squadA")
+        assert r == "added"
+        assert len(room["pending"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_classic_full_stats_blocks_second(self, env, monkeypatch):
+        """8 игроков + все K/D/A/DMG → только «Завершить»,
+        второй файл отклонён ещё до OCR."""
+        async def full_pipe(data, need_score=True):
+            return _full_classic_pipe()
+        monkeypatch.setattr(up, "_classic_pipeline", full_pipe)
+        await _file(env, 1, "full1")
+        room = env.session["rooms"][0]
+        assert up.room_allows_second_file(room) is False
+        assert up._classic_pipe_complete(
+            room["pending"][0]["pipe"]
+        ) is True
+        pipe_before = len(env.pipe_calls)
+        r = await _file(env, 1, "squadA")
+        assert r == "room_full"
+        assert len(env.pipe_calls) == pipe_before
+        assert len(room["pending"]) == 1

@@ -2499,12 +2499,45 @@ def _seq_kind_compat(existing: list[str], new_kind: str) -> bool:
 
 
 def _classic_pipe_complete(pipe: dict) -> bool:
-    """Classic-скриншот распознал обе команды по 4 игрока —
-    второй файл для сверки не требуется."""
+    """Classic-скриншот ПОЛНОСТЬЮ распознан: обе команды по 4
+    игрока И у всех восьми заполнены K/D/A/DMG.
+
+    8 игроков найдены, но часть полей None → False: команде
+    нужна дополнительная Squad-сверка для дозаполнения —
+    второй файл остаётся доступен.
+    """
     panels = (pipe or {}).get("panels") or {}
     left = ((panels.get("left") or {}).get("rows")) or []
     right = ((panels.get("right") or {}).get("rows")) or []
-    return len(left) >= 4 and len(right) >= 4
+    if len(left) < 4 or len(right) < 4:
+        return False
+    for r in list(left) + list(right):
+        for f in ("kills", "deaths", "assists", "dmg"):
+            if (r or {}).get(f) is None:
+                return False
+    return True
+
+
+def _room_reupload_only(room: dict) -> bool:
+    """Загрузка разрешена ИСКЛЮЧИТЕЛЬНО из-за флагов
+    needs_reupload/shot_pending — без них комната уже «полная»
+    (полный Classic или 2 файла). В этом режиме принимается
+    только повторная отправка ранее сохранённого SHA."""
+    pending = room.get("pending") or []
+    if not pending:
+        return False
+    if not any(
+        p.get("needs_reupload") or p.get("shot_pending")
+        for p in pending
+    ):
+        return False
+    stripped = []
+    for p in pending:
+        q = dict(p)
+        q.pop("needs_reupload", None)
+        q.pop("shot_pending", None)
+        stripped.append(q)
+    return not room_allows_second_file({**room, "pending": stripped})
 
 
 def room_allows_second_file(room: dict) -> bool:
@@ -2850,11 +2883,18 @@ async def process_room_file(
         return "dup"
     if len(pend_entries) >= 2:
         return "room_full"
-    # Полный Classic (обе команды по 4 строки) — второй скриншот
-    # не нужен: устаревшая кнопка/прямой вызов не должны добавлять
-    # лишний файл. needs_reupload/shot_pending уже учтены внутри
-    # room_allows_second_file (повторная отправка разрешена).
+    # Полный Classic (обе команды по 4 строки, все K/D/A/DMG)
+    # — второй скриншот не нужен: устаревшая кнопка/прямой
+    # вызов не должны добавлять лишний файл. needs_reupload/
+    # shot_pending уже учтены внутри room_allows_second_file.
     if pend_entries and not room_allows_second_file(room):
+        _drop_empty_room(rooms, room)
+        return "room_full"
+    # Загрузка открыта ТОЛЬКО для повтора утерянного файла
+    # (reupload-флаги — единственная причина): новый SHA
+    # отклоняем ДО OCR, pending не меняется. Тот же SHA уже
+    # ушёл в _retry_seq_shot по dup_entry выше.
+    if _room_reupload_only(room):
         _drop_empty_room(rooms, room)
         return "room_full"
 
@@ -2914,8 +2954,12 @@ async def process_room_file(
         if sha in pshas or len(pend) >= 2:
             return "dup" if sha in pshas else "room_full"
         # Гонка: состояние комнаты изменилось между проверкой и
-        # локом — полный Classic не принимает второй файл.
+        # локом — полный Classic не принимает второй файл, а
+        # reupload-only комната — только уже известный SHA
+        # (новый здесь быть не может: sha in pshas → dup выше).
         if pend and not room_allows_second_file(room):
+            return "room_full"
+        if pend and _room_reupload_only(room):
             return "room_full"
         ek = [p.get("kind") for p in pend]
         if not _seq_kind_compat(ek, kind):
