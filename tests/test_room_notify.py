@@ -264,11 +264,20 @@ async def test_room_data_admin_allowed(_store_tournament):
 
 
 @pytest.mark.asyncio
-async def test_room_data_regular_player_denied(_store_tournament):
+async def test_room_data_regular_player_allowed(_store_tournament):
+    """Обычный участник матча (не капитан) — данные доступны."""
     ix = _FakeInteraction(_room_custom_id("id"), _user(113), _guild())
     await rm._room_data_press(ix)
+    assert ix.response.messages[0][0] == "38765135"
+
+
+@pytest.mark.asyncio
+async def test_room_data_outsider_denied(_store_tournament):
+    """Посторонний пользователь — отказ."""
+    ix = _FakeInteraction(_room_custom_id("id"), _user(7777), _guild())
+    await rm._room_data_press(ix)
     content = ix.response.messages[0][0]
-    assert "капитаны, организаторы или администраторы" in content
+    assert "участники матча" in content
     assert "38765135" not in content
 
 

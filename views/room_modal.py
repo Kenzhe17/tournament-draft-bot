@@ -218,7 +218,7 @@ _ROOM_DATA_TEMPLATE = (
 )
 
 _ROOM_DATA_DENIED = (
-    "❌ Получить данные комнаты могут только капитаны, "
+    "❌ Получить данные комнаты могут только участники матча, "
     "организаторы или администраторы."
 )
 
@@ -396,7 +396,8 @@ async def _room_data_press(interaction: discord.Interaction) -> None:
         except Exception:
             allowed = False
 
-    # Капитаны команд матча — по Discord ID, свежая пара из
+    # Участники матча — ЛЮБОЙ из 8 игроков обеих команд, проверка
+    # по Discord ID из player_user_ids. Пара команд — свежая из
     # resolve_match_context; при неудаче — индексы из custom_id.
     if not allowed:
         try:
@@ -406,11 +407,21 @@ async def _room_data_press(interaction: discord.Interaction) -> None:
         except Exception:
             team_ids = [enc_t1, enc_t2]
         try:
-            from views.ocr_match_view import _uploaded_by_is_captain_of
-            allowed = any(
-                _uploaded_by_is_captain_of(tournament, i, uid)
-                for i in team_ids
-            )
+            from views.ocr_match_view import team_roster
+            pids = getattr(tournament, "player_user_ids", None) or {}
+            teams = getattr(tournament, "teams", None) or []
+            participant_ids = set()
+            for i in team_ids:
+                if not (0 <= int(i) < len(teams)):
+                    continue
+                for name in team_roster(tournament, int(i)):
+                    mapped = pids.get(name)
+                    try:
+                        if mapped:
+                            participant_ids.add(int(mapped))
+                    except (TypeError, ValueError):
+                        continue
+            allowed = uid in participant_ids
         except Exception:
             allowed = False
 
