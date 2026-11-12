@@ -56,6 +56,17 @@ class FakeConn:
             guild, user, balance = args
             self.db.balances[(guild, user)] = balance
             return "UPDATE 1"
+        if "INSERT INTO arcade_pending_credit" in s:
+            self.db.pending.append({"id": len(self.db.pending) + 1, "op_id": args[0], "guild_id": args[1], "user_id": args[2], "amount": args[3]})
+            return "INSERT 0 1"
+        if "UPDATE arcade_pending_credit SET amount" in s:
+            for credit in self.db.pending:
+                if credit["id"] == args[0]:
+                    credit["amount"] = args[1]
+            return "UPDATE 1"
+        if "DELETE FROM arcade_pending_credit" in s:
+            self.db.pending = [c for c in self.db.pending if c["id"] != args[0]]
+            return "DELETE 1"
         if "INSERT INTO arcade_ledger" in s:
             self.db.ledger.append(args)
             return "INSERT 0 1"
@@ -100,6 +111,8 @@ class FakeConn:
                 for r in self.db.escrows.values()
                 if r["guild_id"] == args[0] and r["state"] == "reserved"
             ]
+        if "FROM arcade_pending_credit" in s:
+            return [dict(c) for c in self.db.pending if c["op_id"] == args[0] and c["guild_id"] == args[1]]
         raise AssertionError("unexpected fetch: " + s[:80])
 
 
@@ -108,6 +121,7 @@ class FakeDB:
         self.balances: dict = {}
         self.escrows: dict = {}
         self.ledger: list = []
+        self.pending: list = []
 
     @asynccontextmanager
     async def acquire(self):
@@ -272,3 +286,61 @@ async def test_escrows_listing_and_auth(env):
     assert [e["op_id"] for e in data["escrows"]] == ["op1"]
     denied = await escrows(FakeRequest(query={"guild_id": str(GUILD)}, token="wrong"))
     assert denied.status == 401
+
+
+async def test_settle_replay_returns_persisted_payouts(env):
+    from services.economy_bridge import escrow, settle
+
+    env.balances[(GUILD, int(U1))] = 100_000
+    await escrow(FakeRequest(_stakes_payload("op3", [{"user_id": U1, "amount": 1000}]), {"guild_id": str(GUILD)}))
+    env.balances[(GUILD, int(U1))] = 99_500
+    body = {"op_id": "op3", "payouts": [{"user_id": U1, "amount": 1000}]}
+    r1 = await settle(FakeRequest(body, {"guild_id": str(GUILD)}))
+    first = json.loads(await r1.text())
+    assert first["payouts"][0]["overflow"] == 500
+    # A retried settle after a lost response returns the same financial result.
+    r2 = await settle(FakeRequest(body, {"guild_id": str(GUILD)}))
+    replay = json.loads(await r2.text())
+    assert replay["replayed"] is True
+    assert replay["payouts"][0]["credited"] == 500
+    assert replay["payouts"][0]["overflow"] == 500
+    assert env.balances[(GUILD, int(U1))] == 100_000  # credited exactly once
+
+
+async def test_settle_rejects_partial_or_foreign_distribution(env):
+    from services.economy_bridge import escrow, settle
+
+    await escrow(FakeRequest(_stakes_payload(), {"guild_id": str(GUILD)}))
+    # Pool is 200; allocating only 100 must be rejected — the pool is conserved.
+    r = await settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 100}]}, {"guild_id": str(GUILD)}))
+    assert r.status == 400
+    assert json.loads(await r.text())["error"] == "invalid_distribution"
+    # A recipient who never escrowed cannot receive pool coins.
+    r2 = await settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 100}, {"user_id": U3, "amount": 100}]}, {"guild_id": str(GUILD)}))
+    assert r2.status == 400
+    assert env.escrows["op1"]["state"] == "reserved"
+    # The correct full distribution still settles.
+    r3 = await settle(FakeRequest({"op_id": "op1", "payouts": [{"user_id": U1, "amount": 200}]}, {"guild_id": str(GUILD)}))
+    assert r3.status == 200
+
+
+async def test_pending_credit_claim_pays_when_balance_has_room(env):
+    from services.economy_bridge import claim_pending, escrow, settle
+
+    env.balances[(GUILD, int(U1))] = 100_000
+    await escrow(FakeRequest(_stakes_payload("op4", [{"user_id": U1, "amount": 1000}]), {"guild_id": str(GUILD)}))
+    env.balances[(GUILD, int(U1))] = 99_500
+    await settle(FakeRequest({"op_id": "op4", "payouts": [{"user_id": U1, "amount": 1000}]}, {"guild_id": str(GUILD)}))
+    assert len(env.pending) == 1 and env.pending[0]["amount"] == 500
+    # At the cap nothing is credited but the credit stays queued.
+    r = await claim_pending(FakeRequest({"op_id": "op4"}, {"guild_id": str(GUILD)}))
+    data = json.loads(await r.text())
+    assert data["claimed"][0]["credited"] == 0
+    assert env.pending[0]["amount"] == 500
+    # Once balance drops, the remainder is claimable — never destroyed.
+    env.balances[(GUILD, int(U1))] = 90_000
+    r2 = await claim_pending(FakeRequest({"op_id": "op4"}, {"guild_id": str(GUILD)}))
+    data2 = json.loads(await r2.text())
+    assert data2["claimed"][0]["credited"] == 500
+    assert env.balances[(GUILD, int(U1))] == 90_500
+    assert env.pending == []
