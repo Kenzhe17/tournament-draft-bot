@@ -254,9 +254,7 @@ class RoomDataDynamicItem(
     @classmethod
     async def from_custom_id(cls, interaction, item, match):
         what = match.group("what")
-        label = (
-            "📋 Получить ID" if what == "id" else "🔑 Получить пароль"
-        )
+        label = "📋 ID" if what == "id" else "🔑 Пароль"
         concrete = getattr(item, "custom_id", None) or str(
             interaction.data.get("custom_id") or ""
         )
@@ -300,12 +298,12 @@ def _room_data_buttons(
     return [
         discord.ui.Button(
             style=discord.ButtonStyle.secondary,
-            label="📋 Получить ID",
+            label="📋 ID",
             custom_id=f"{base}:id",
         ),
         discord.ui.Button(
             style=discord.ButtonStyle.secondary,
-            label="🔑 Получить пароль",
+            label="🔑 Пароль",
             custom_id=f"{base}:pass",
         ),
     ]
