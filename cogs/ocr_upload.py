@@ -1729,9 +1729,22 @@ def _room_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
     if lock is None:
         lock = asyncio.Lock()
         _ROOM_LOCKS[scoped] = lock
-        if len(_ROOM_LOCKS) > _ROOM_LOCKS_MAX:
-            _ROOM_LOCKS.pop(next(iter(_ROOM_LOCKS)))
+        _evict_idle_locks(_ROOM_LOCKS, _ROOM_LOCKS_MAX)
     return lock
+
+
+def _evict_idle_locks(store: dict, max_size: int) -> None:
+    """Вытеснить только СВОБОДНЫЕ локи. Занятый (locked) лок нельзя
+    удалять — иначе для того же ключа создастся второй объект лока
+    и сериализация сломается (P0)."""
+    if len(store) <= max_size:
+        return
+    for k in list(store.keys()):
+        if len(store) <= max_size:
+            break
+        lock = store.get(k)
+        if lock is not None and not lock.locked():
+            del store[k]
 
 
 async def _ocr_boxes_cached(data: bytes) -> list:
@@ -3192,9 +3205,14 @@ async def finalize_room_collect(
     teams = list(session.get("teams") or [])
     if not teams:
         try:
-            teams = list(_match_tuple(tournament, match_type, match_index))
+            from models.tournament import resolve_match_context
+            ctx = resolve_match_context(tournament, match_type, match_index)
+            teams = [ctx.team_a_index, ctx.team_b_index]
         except Exception:
-            teams = []
+            try:
+                teams = list(_match_tuple(tournament, match_type, match_index))
+            except Exception:
+                teams = []
     if not _is_room_finalize_captain(user, tournament, teams):
         return "forbidden"
 

@@ -1202,9 +1202,21 @@ def _finalize_lock(match_key: str, tournament_id: str = "") -> asyncio.Lock:
     if lock is None:
         lock = asyncio.Lock()
         _FINALIZE_LOCKS[scoped] = lock
-        if len(_FINALIZE_LOCKS) > _FINALIZE_LOCKS_MAX:
-            _FINALIZE_LOCKS.pop(next(iter(_FINALIZE_LOCKS)))
+        _evict_idle_finalize_locks()
     return lock
+
+
+def _evict_idle_finalize_locks() -> None:
+    """Вытеснять только свободные локи — занятый лок нельзя удалять,
+    иначе для того же ключа появится второй объект лока."""
+    if len(_FINALIZE_LOCKS) <= _FINALIZE_LOCKS_MAX:
+        return
+    for k in list(_FINALIZE_LOCKS.keys()):
+        if len(_FINALIZE_LOCKS) <= _FINALIZE_LOCKS_MAX:
+            break
+        lock = _FINALIZE_LOCKS.get(k)
+        if lock is not None and not lock.locked():
+            del _FINALIZE_LOCKS[k]
 
 
 def _finalize_stats_gate(
@@ -4246,6 +4258,26 @@ async def _finalize_ocr_match_impl(
     match_id = f"{tournament.id}_{key}"
     t1, t2 = _match_tuple(tournament, match_type, match_index)
 
+    # MatchContext (Tournaments 2.0 §2): финализируем только если
+    # зафиксированная в сессии пара команд совпадает с АКТУАЛЬНОЙ
+    # парой из свежего состояния турнира — защита от устаревшей
+    # сессии после изменения сетки/команд.
+    try:
+        from models.tournament import resolve_match_context
+        ctx = resolve_match_context(tournament, match_type, match_index)
+        sess_teams = [int(x) for x in (session.get("teams") or [])]
+        if sess_teams:
+            cur = {ctx.team_a_index, ctx.team_b_index}
+            if set(sess_teams[:2]) != cur:
+                raise ValueError(
+                    "сессия матча устарела — пары команд изменились, "
+                    "обратитесь к организатору"
+                )
+    except ValueError:
+        raise
+    except Exception:
+        pass  # MatchContext — дополнительная проверка, не ломаем поток
+
     # Повторная проверка готовности ПОД _room_lock (мы уже внутри
     # finalize_ocr_match): между ready-check вызывающего и захватом
     # лока другое действие могло изменить сопоставление или
@@ -5548,7 +5580,7 @@ class RoomTeamMapView(View):
             if vals:
                 chosen[i] = None if vals[0] == "__none__" else vals[0]
 
-        _lt = getattr(self, "tournament", None)
+        _lt = store.get(self.guild_id, self.channel_id)
         async with _mapping_lock(
             _session_key(self.match_type, self.match_index),
             getattr(_lt, "id", "") or "",
@@ -5764,7 +5796,7 @@ class RoomSelfMapView(View):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
-        _lt = getattr(self, "tournament", None)
+        _lt = store.get(self.guild_id, self.channel_id)
         async with _mapping_lock(
             _session_key(self.match_type, self.match_index),
             getattr(_lt, "id", "") or "",
@@ -6995,7 +7027,7 @@ class RoomRowEditModal(Modal):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
-        _lt = getattr(self, "tournament", None)
+        _lt = store.get(self.guild_id, self.channel_id)
         async with _mapping_lock(
             _session_key(self.match_type, self.match_index),
             getattr(_lt, "id", "") or "",
@@ -7140,7 +7172,7 @@ class RoomRowBindView(View):
                 replace_emojis("❌ Турнир не найден."), ephemeral=True
             )
             return
-        _lt = getattr(self, "tournament", None)
+        _lt = store.get(self.guild_id, self.channel_id)
         async with _mapping_lock(
             _session_key(self.match_type, self.match_index),
             getattr(_lt, "id", "") or "",

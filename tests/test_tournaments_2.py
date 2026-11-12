@@ -511,3 +511,41 @@ class TestScopedLocks:
         a = _finalize_lock("final_0", "tA")
         b = _finalize_lock("final_0", "tB")
         assert a is not b
+
+    def test_mapping_finalize_cancel_share_one_lock(self):
+        """mapping / self-bind / row-edit / finalize / cancel одного
+        матча одного турнира — ОДИН scoped-лок (P0 регрессия)."""
+        from cogs.ocr_upload import _room_lock
+        from views.ocr_match_view import _mapping_lock, _finalize_lock
+        tid = "guild_123"
+        key = "qualifier_0"
+        assert _mapping_lock(key, tid) is _room_lock(key, tid)
+        assert _mapping_lock(key, tid) is _room_lock(key, tid)
+        fl = _finalize_lock(key, tid)
+        # finalize держит _finalize_lock снаружи и _room_lock внутри —
+        # room_lock обязан совпадать с mapping_lock
+        assert _room_lock(key, tid) is _mapping_lock(key, tid)
+        # другой турнир — другой лок
+        assert _mapping_lock(key, "other_tid") is not _mapping_lock(key, tid)
+        # тот же лок для semifinal/final ключей не пересекается
+        assert _room_lock("semifinal_0", tid) is not _room_lock("qualifier_0", tid)
+
+    def test_lock_eviction_never_removes_locked(self):
+        """Занятый лок не вытесняется при переполнении словаря."""
+        import asyncio
+        from cogs.ocr_upload import _evict_idle_locks
+
+        class _FakeLocked(asyncio.Lock):
+            def locked(self):
+                return True
+
+        store = {f"k{i}": asyncio.Lock() for i in range(5)}
+        store["held"] = _FakeLocked()
+        # лимит 3 → должно удалить только свободные, held остаётся
+        _evict_idle_locks(store, 3)
+        assert "held" in store
+        assert store["held"].locked() is True
+        # если все свободны — вытеснение работает
+        store2 = {f"k{i}": asyncio.Lock() for i in range(5)}
+        _evict_idle_locks(store2, 3)
+        assert len(store2) == 3
