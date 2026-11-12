@@ -36,7 +36,8 @@ STRICT_TOP, STRICT_BOTTOM = 330, 760   # ~40% по центру — запасн
 def _element_boxes():
     try:
         from services.banner import renderer as r
-    except Exception:
+    except Exception as e:  # noqa: BLE001 - превью не должно падать без пакета
+        print(f"warn: element boxes unavailable: {e}")
         return []
     return [
         ("logo", 1040, 150, 1760, 330),
@@ -55,7 +56,7 @@ def _band(im: Image.Image, top: int, bottom: int) -> Image.Image:
 def _diagnostic(im: Image.Image, bands) -> Image.Image:
     out = im.convert("RGBA")
     d = ImageDraw.Draw(out, "RGBA")
-    W, H = out.size
+    W = out.size[0]
     for name, top, bottom, color in bands:
         d.rectangle([0, top, W - 1, bottom - 1], outline=color, width=4)
         d.rectangle([0, top, W - 1, min(top + 26, bottom)],

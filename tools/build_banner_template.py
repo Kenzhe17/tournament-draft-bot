@@ -53,7 +53,6 @@ def _mask_for(rect, shape):
 
 def inpaint(img: np.ndarray, rect) -> np.ndarray:
     """Telea-inpaint прямоугольника с мягкими краями маски."""
-    x0, y0, x1, y1 = rect
     mask = _mask_for(rect, img.shape)
     # soften mask edges, чтобы не было резкой границы inpaint-зоны
     k = 31
@@ -124,8 +123,8 @@ def main() -> None:
     # 3. карточка: вырезать -> inpaint дырки -> уменьшить и поднять
     card = extract(img, CARD_RECT)
     img = inpaint(img, CARD_RECT)
-    new_w = int(round(card.shape[1] * CARD_SCALE))
-    new_h = int(round(card.shape[0] * CARD_SCALE))
+    new_w = round(card.shape[1] * CARD_SCALE)
+    new_h = round(card.shape[0] * CARD_SCALE)
     card_r = cv2.resize(card, (new_w, new_h), interpolation=cv2.INTER_AREA)
     cx = CARD_CENTER_X - new_w // 2
     cy = CARD_BOTTOM - new_h

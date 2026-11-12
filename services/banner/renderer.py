@@ -35,13 +35,13 @@ SY = VH / TH
 # (патч x790-1905 y432-990 -> scale 0.95 -> вставка 818,342), логотип
 # опущен, описание под логотипом удалено. Координаты ниже — уже в новой
 # системе координат (преобразование T: x'=818+(x-790)*0.95,
-# y'=342+(y-432)*0.95 применено к исходной OCR-разметке).
-AVATAR_CX, AVATAR_CY, AVATAR_R = 1037, 560, 76   # внутри кольца r~85
-NICK_X, NICK_TOP = 1148, 483                      # верх текста ника
+# y'=338+(y-432)*0.95 применено к исходной OCR-разметке).
+AVATAR_CX, AVATAR_CY, AVATAR_R = 1037, 557, 76   # внутри кольца r~85
+NICK_X, NICK_TOP = 1148, 479                      # верх текста ника
 NICK_FONT = 57
 NICK_MAX_W = 589                                  # до правого края карточки
-SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1151, 557, 32
-VOICE_X, VOICE_TOP, STAT_FONT = 1017, 728, 49
+SUBTITLE_X, SUBTITLE_TOP, SUBTITLE_FONT = 1151, 553, 32
+VOICE_X, VOICE_TOP, STAT_FONT = 1017, 724, 49
 MATCHES_X = 1509
 
 RENDER_TIMEOUT = 20
