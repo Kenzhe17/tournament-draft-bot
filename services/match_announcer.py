@@ -87,17 +87,15 @@ def _match_key(tournament: Tournament, match_type: str, match_index: int) -> str
     return f"{tournament.id}_{match_type}_{match_index}"
 
 
-def _match_mentions(tournament: Tournament, t1: int, t2: int) -> str:
-    """Ментions всех игроков матча."""
+def _roster_names(tournament: Tournament, team_index: int) -> str:
+    """Состав команды обычными никами — БЕЗ <@id>-упоминаний.
+
+    Для карточек обычных турниров (/tournament create): пинги
+    игрокам не нужны, Discord-упоминания не используются.
+    """
     from views.ocr_match_view import team_roster
 
-    parts = []
-    for idx in (t1, t2):
-        for name in team_roster(tournament, idx):
-            uid = tournament.player_user_ids.get(name)
-            if uid and uid > 0:
-                parts.append(f"<@{uid}>")
-    return " ".join(dict.fromkeys(parts))
+    return " ".join(team_roster(tournament, team_index))
 
 
 async def _create_match_channel(
@@ -388,12 +386,15 @@ async def announce_phase_matches(
         name_a = _captain_name(tournament, t1)
         name_b = _captain_name(tournament, t2)
         label = _match_label(match_type, match_index)
+        # Обычные турниры — состав обычными никами без <@id>;
+        # MM сохраняет упоминания (пинги нужны для поиска матча).
+        roster_fn = _roster_mentions if is_mm else _roster_names
         embed = discord.Embed(
             title=f" ⚔️ МАТЧ #{number} НАЧАЛСЯ — {label}",
             description=(
                 f"**{name_a}** vs **{name_b}**\n\n"
-                f"**{name_a}**\n{_roster_mentions(tournament, t1)}\n\n"
-                f"**{name_b}**\n{_roster_mentions(tournament, t2)}\n\n"
+                f"**{name_a}**\n{roster_fn(tournament, t1)}\n\n"
+                f"**{name_b}**\n{roster_fn(tournament, t2)}\n\n"
                 "Матч идёт — по окончании капитан загружает скриншот статистики."
             ),
             color=discord.Color.blurple(),
@@ -478,11 +479,11 @@ async def announce_phase_matches(
                     number, channel.id, label,
                 )
             elif channel is not None:
-                mentions = _match_mentions(tournament, t1, t2)
+                # Обычный турнир: без пингов — только embed с
+                # обычными никами, allowed_mentions полностью off.
                 await channel.send(
-                    content=mentions or None,
                     embed=embed,
-                    allowed_mentions=discord.AllowedMentions(users=True),
+                    allowed_mentions=discord.AllowedMentions.none(),
                 )
                 mc_entry = tournament.match_channels.get(str(channel.id), {})
                 mc_entry.update({

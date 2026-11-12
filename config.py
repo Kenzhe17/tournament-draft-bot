@@ -148,7 +148,11 @@ ULT_ROOM_CHANNEL_ID = int(os.getenv("ULT_ROOM_CHANNEL_ID", "0"))
 
 # Прочие серверные каналы
 PET_HUNGER_CHANNEL_ID = int(os.getenv("PET_HUNGER_CHANNEL_ID", "0"))
-ROOM_DATA_CHANNEL_ID = int(os.getenv("ROOM_DATA_CHANNEL_ID", "0"))
+# Канал публикации карточки «🔓 Комната открыта» для обычных
+# турниров (/tournament create). MM-матчи шлют в свой канал матча.
+ROOM_DATA_CHANNEL_ID = int(
+    os.getenv("ROOM_DATA_CHANNEL_ID") or "1561683314480255057"
+)
 GAMES_CHANNEL_ID = int(os.getenv("GAMES_CHANNEL_ID", "0"))
 
 # Ready Check («Найден матч») для Ranked Matchmaking

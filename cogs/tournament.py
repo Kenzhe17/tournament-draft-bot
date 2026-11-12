@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import discord
 from utils.design import compose, text_card, smart_view
@@ -46,6 +46,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Tournaments 2.0: /tournament create разрешает только эти режимы.
+# Legacy-значения FormationMode (elo/skill/random/random-auto)
+# остаются валидными для уже созданных турниров и /mmsquad.
+ALLOWED_CREATE_FORMATIONS = (FormationMode.DRAFT, FormationMode.BALANCED_SR)
+
+
+def parse_create_formation(raw: str) -> FormationMode | None:
+    """Режим формирования для /tournament create или None.
+
+    Возвращает FormationMode только для draft/balanced-sr;
+    неизвестные и legacy-значения → None (серверная валидация
+    дублирует Literal-выбор в UI).
+    """
+    try:
+        mode = FormationMode(raw)
+    except (ValueError, TypeError):
+        return None
+    return mode if mode in ALLOWED_CREATE_FORMATIONS else None
+
+
 # Список «опасных» прав для проверки 2FA
 DANGEROUS_PERMS = {
     "administrator": "Администратор",
@@ -82,10 +102,13 @@ class TournamentCog(commands.Cog):
     tournament_group = app_commands.Group(name="tournament", description="Управление турнирами")
 
     @tournament_group.command(name="create", description="Создать новый турнир")
-    @app_commands.describe(size="Размер турнира: 16 или 32 игрока (8 — legacy)", formation="Режим: draft, balanced-sr, skill, elo, random или random-auto")
+    @app_commands.describe(size="Размер турнира: 16 или 32 игрока (8 — legacy)", formation="Режим: draft (ручной драфт) или balanced-sr (балансировка по SR)")
     @is_org()
     async def tournament_create(
-        self, interaction: discord.Interaction, size: str, formation: str = "elo"
+        self,
+        interaction: discord.Interaction,
+        size: str,
+        formation: Literal["draft", "balanced-sr"] = "draft",
     ) -> None:
         """Создать турнир с указанным размером."""
         # Проверить если канал заблокирован поиском (только если есть активные игроки)
@@ -137,12 +160,14 @@ class TournamentCog(commands.Cog):
             asyncio.create_task(_delete_ephemeral_later(interaction))
             return
 
-        # Validate formation mode
-        try:
-            formation_mode = FormationMode(formation)
-        except ValueError:
+        # Validate formation mode — Tournaments 2.0: только draft и
+        # balanced-sr. Legacy-значения FormationMode сохраняются для
+        # старых турниров и /mmsquad, но создание через /tournament
+        # create ими запрещено (проверка и на сервере, не только в UI).
+        formation_mode = parse_create_formation(formation)
+        if formation_mode is None:
             await interaction.response.send_message(
-                replace_emojis("❌ Неверный режим формирования. Используйте: draft, balanced-sr, skill, elo, random или random-auto."),
+                replace_emojis("❌ Неверный режим формирования. Доступны: draft, balanced-sr."),
                 ephemeral=True,
             )
             asyncio.create_task(_delete_ephemeral_later(interaction))

@@ -136,15 +136,31 @@ class RoomModal(discord.ui.Modal, title="Комната игры"):
         await bot.update_tournament_message(interaction.guild, tournament)
 
         # Send DM notifications to team members
-        await send_room_dm_notifications(
+        card_ok = await send_room_dm_notifications(
             bot, tournament, self.match_type, self.match_index,
             self.team1_index, self.team2_index,
             self.room_id.value, self.room_password.value,
         )
 
-        # Confirm to user
+        # Confirm to user — ТОЛЬКО при успешной публикации карточки.
+        # При неудаче данные комнаты уже сохранены и выставлен
+        # card_pending — карточка будет переотправлена без
+        # создания второй комнаты (bot.setup_hook recovery).
         try:
-            await interaction.followup.send(replace_emojis("✅ Комната создана и данные отправлены."), ephemeral=True)
+            if card_ok:
+                await interaction.followup.send(
+                    replace_emojis("✅ Комната создана и данные отправлены."),
+                    ephemeral=True,
+                )
+            else:
+                await interaction.followup.send(
+                    replace_emojis(
+                        "⚠️ Комната создана, данные сохранены, но "
+                        "карточка не опубликована — она будет "
+                        "отправлена автоматически."
+                    ),
+                    ephemeral=True,
+                )
         except (discord.NotFound, discord.DiscordServerError):
             pass
 
@@ -295,6 +311,56 @@ def _room_data_buttons(
     ]
 
 
+def _roster_line(
+    tournament: Any,
+    team_data: dict,
+    *,
+    ping: bool,
+    display: dict | None = None,
+) -> str:
+    """Строка ростера: ping=True → <@id>-упоминания (MM);
+    ping=False → отображаемые имена без упоминаний (турниры)."""
+    if ping:
+        return _room_mentions(tournament, team_data) or "—"
+    names = _team_roster(tournament, team_data)
+    if display:
+        names = [display.get(n, n) for n in names]
+    return " ".join(names) if names else "—"
+
+
+async def _display_names(tournament: Any, guild: Any) -> dict:
+    """Discord-имена игроков по ID (player_user_ids), fallback —
+    сохранённый ник. Для турнирных карточек без упоминаний."""
+    if guild is None:
+        return {}
+    pids = getattr(tournament, "player_user_ids", None) or {}
+    get_member = getattr(guild, "get_member", None)
+    fetch_member = getattr(guild, "fetch_member", None)
+    out: dict[str, str] = {}
+    for name, uid in pids.items():
+        try:
+            uid_i = int(uid)
+        except (TypeError, ValueError):
+            continue
+        member = None
+        try:
+            if get_member is not None:
+                member = get_member(uid_i)
+        except Exception:
+            member = None
+        if member is None and fetch_member is not None:
+            try:
+                member = await fetch_member(uid_i)
+            except Exception:
+                member = None
+        dn = getattr(member, "display_name", None) or getattr(
+            member, "name", None
+        )
+        if dn:
+            out[name] = dn
+    return out
+
+
 def _room_card_view(
     tournament: Any,
     team1_data: dict,
@@ -305,14 +371,18 @@ def _room_card_view(
     match_index: int,
     team1_index: int,
     team2_index: int,
+    *,
+    ping: bool = True,
+    display: dict | None = None,
 ) -> discord.ui.LayoutView:
     """Components V2 карточка «🔓 Комната открыта».
 
-    Структура: заголовок, имя команды 1, её ростер (<@id> — реальные
-    Discord ID пингуют через allowed_mentions users=True при send),
-    имя команды 2, её ростер. ID/пароль — только по кнопкам.
-    Одна отправка = один пинг каждому из 8 игроков; сообщение
-    не редактируется и не пересылается → повторных пингов нет.
+    Структура: заголовок, имя команды 1, её ростер, имя команды 2,
+    её ростер. ID/пароль — только по кнопкам.
+    ping=True (MM): <@id> пингуют игроков через allowed_mentions.
+    ping=False (турниры): обычные имена, AllowedMentions.none().
+    Одна отправка = одно уведомление; сообщение не редактируется
+    и не пересылается → повторных пингов после рестарта нет.
     """
     from utils.design.layouts import DesignView
 
@@ -321,10 +391,10 @@ def _room_card_view(
         "🔓 Комната открыта",
         "",
         name1,
-        _room_mentions(tournament, team1_data) or "—",
+        _roster_line(tournament, team1_data, ping=ping, display=display),
         "",
         name2,
-        _room_mentions(tournament, team2_data) or "—",
+        _roster_line(tournament, team2_data, ping=ping, display=display),
     ]
     view.lines(*lines)
     view.row(
@@ -448,13 +518,14 @@ async def send_room_dm_notifications(
     team2_index: int,
     room_id: str,
     room_password: str,
-) -> None:
-    """Уведомление об открытой комнате.
+) -> bool:
+    """Уведомление об открытой комнате. True — карточка опубликована.
 
-    MM (/mm squad): 1 карточка + ID/пароль отдельными сообщениями —
-    всё в канал матча, общий канал не трогаем.
-    Обычный турнир (/tournament create): карточка с данными в канал
-    результатов + анонс с пингом роли в канал уведомлений.
+    MM (/mm squad): карточка в канал матча, пинги <@id> работают.
+    Обычный турнир (/tournament create): карточка в ROOM_DATA_CHANNEL_ID
+    без упоминаний + анонс с пингом роли в канал уведомлений.
+    При неудаче публикации выставляется room_data["card_pending"] —
+    восстановление после рестарта в bot.setup_hook.
     """
     team1_data = tournament.teams[team1_index] if team1_index < len(tournament.teams) else {}
     team2_data = tournament.teams[team2_index] if team2_index < len(tournament.teams) else {}
@@ -463,13 +534,47 @@ async def send_room_dm_notifications(
     name1 = team1_data.get("captain", f"Team {team1_index}")
     name2 = team2_data.get("captain", f"Team {team2_index}")
 
-    card = _room_card_view(
-        tournament, team1_data, team2_data, name1, name2,
-        match_type, match_index, team1_index, team2_index,
-    )
-    mentions = discord.AllowedMentions(users=True, roles=False, everyone=False)
+    is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
 
-    if getattr(tournament, "mm_search_channel_id", 0):
+    def _room_entry() -> dict | None:
+        """Запись room_data этого матча — для флага card_pending."""
+        try:
+            if match_type == "qualifier":
+                return (tournament.qualifier_rooms or {}).get(match_index)
+            if match_type == "semifinal":
+                return (tournament.semifinal_rooms or {}).get(match_index)
+            if match_type == "final":
+                return tournament.final_room or None
+        except Exception:
+            return None
+        return None
+
+    def _update_room_entry(update) -> None:
+        entry = _room_entry()
+        if entry is None:
+            return
+        try:
+            update(entry)
+            from storage.json_store import store
+            store.set(tournament)
+        except Exception as exc:
+            logger.warning("room card state mark failed: %s", exc)
+
+    def _mark_pending(pending: bool) -> None:
+        def _u(e):
+            if pending:
+                e["card_pending"] = True
+            else:
+                e.pop("card_pending", None)
+        _update_room_entry(_u)
+
+    def _mark_sent(message_id: int) -> None:
+        def _u(e):
+            e["card_message_id"] = int(message_id)
+            e.pop("card_pending", None)
+        _update_room_entry(_u)
+
+    if is_mm:
         channel = await _resolve_mm_match_channel(
             bot, tournament, match_type, match_index
         )
@@ -479,21 +584,60 @@ async def send_room_dm_notifications(
                 "(%s/%s, tournament %s)",
                 match_type, match_index, getattr(tournament, "id", "?"),
             )
-            return
-        await channel.send(view=card, allowed_mentions=mentions)
-        return
+            _mark_pending(True)
+            return False
+        card = _room_card_view(
+            tournament, team1_data, team2_data, name1, name2,
+            match_type, match_index, team1_index, team2_index,
+            ping=True,
+        )
+        try:
+            msg = await channel.send(
+                view=card,
+                allowed_mentions=discord.AllowedMentions(
+                    users=True, roles=False, everyone=False
+                ),
+            )
+        except Exception as exc:
+            logger.warning("MM room card send failed: %s", exc)
+            _mark_pending(True)
+            return False
+        _mark_sent(getattr(msg, "id", 0) or 0)
+        return True
 
-    # Обычный турнир: карточка с кнопками — в канал результатов,
-    # анонс — в канал уведомлений с пингом роли (mention в content,
-    # не внутри embed)
+    # Обычный турнир (/tournament create): карточка — строго в
+    # ROOM_DATA_CHANNEL_ID, имена БЕЗ <@id>-упоминаний (пинги
+    # не нужны), AllowedMentions.none() — гарантия отсутствия
+    # случайных уведомлений. Актуальные Discord-имена по ID
+    # с fallback на сохранённый ник.
     data_channel = bot.get_channel(ROOM_DATA_CHANNEL_ID)
     if data_channel is None:
         try:
             data_channel = await bot.fetch_channel(ROOM_DATA_CHANNEL_ID)
         except Exception:
             data_channel = None
+    card_sent = False
     if data_channel is not None:
-        await data_channel.send(view=card, allowed_mentions=mentions)
+        try:
+            guild_obj = getattr(data_channel, "guild", None)
+            display = await _display_names(tournament, guild_obj)
+            card = _room_card_view(
+                tournament, team1_data, team2_data, name1, name2,
+                match_type, match_index, team1_index, team2_index,
+                ping=False, display=display,
+            )
+            msg = await data_channel.send(
+                view=card,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+            card_sent = True
+            card_msg_id = getattr(msg, "id", 0) or 0
+        except Exception as exc:
+            logger.warning("Tournament room card send failed: %s", exc)
+    if card_sent:
+        _mark_sent(card_msg_id)
+    else:
+        _mark_pending(True)
 
     from config import NOTIFICATION_ROLE_ID
     general_channel = bot.get_channel(NOTIFICATION_CHANNEL_ID)
@@ -502,7 +646,7 @@ async def send_room_dm_notifications(
             general_channel = await bot.fetch_channel(NOTIFICATION_CHANNEL_ID)
         except Exception:
             general_channel = None
-    if general_channel is not None and data_channel is not None:
+    if general_channel is not None and card_sent:
         guild_obj = getattr(general_channel, "guild", None)
         role = (
             guild_obj.get_role(NOTIFICATION_ROLE_ID)
@@ -518,3 +662,89 @@ async def send_room_dm_notifications(
                 users=False, roles=True, everyone=False
             ),
         )
+    return card_sent
+
+def pending_room_cards(tournament: Any) -> list[tuple[str, int]]:
+    """Матчи с room_data.card_pending — для recovery после рестарта."""
+    out: list[tuple[str, int]] = []
+    try:
+        for mtype, rooms in (
+            ("qualifier", tournament.qualifier_rooms),
+            ("semifinal", tournament.semifinal_rooms),
+        ):
+            for midx, rd in (rooms or {}).items():
+                if isinstance(rd, dict) and rd.get("card_pending"):
+                    out.append((mtype, int(midx)))
+        fr = tournament.final_room
+        if isinstance(fr, dict) and fr.get("card_pending"):
+            out.append(("final", 0))
+    except Exception:
+        pass
+    return out
+
+
+async def retry_pending_room_card(
+    bot: Any,
+    tournament: Any,
+    match_type: str,
+    match_index: int,
+) -> bool:
+    """Переотправка карточки «Комната открыта» после рестарта.
+
+    Если card_message_id сохранён и сообщение живо — только
+    снимаем card_pending (БЕЗ дубля). Иначе — полная отправка.
+    """
+    from storage.json_store import store
+
+    if match_type == "qualifier":
+        entry = (tournament.qualifier_rooms or {}).get(match_index)
+    elif match_type == "semifinal":
+        entry = (tournament.semifinal_rooms or {}).get(match_index)
+    else:
+        entry = tournament.final_room or None
+    if not isinstance(entry, dict) or not entry.get("card_pending"):
+        return False
+
+    is_mm = bool(getattr(tournament, "mm_search_channel_id", 0))
+    channel = None
+    if is_mm:
+        channel = await _resolve_mm_match_channel(
+            bot, tournament, match_type, match_index
+        )
+    else:
+        channel = bot.get_channel(ROOM_DATA_CHANNEL_ID)
+        if channel is None:
+            try:
+                channel = await bot.fetch_channel(ROOM_DATA_CHANNEL_ID)
+            except Exception:
+                channel = None
+
+    # Сообщение уже опубликовано до падения — только снимаем флаг.
+    mid = entry.get("card_message_id")
+    if mid and channel is not None:
+        try:
+            await channel.fetch_message(int(mid))
+        except Exception:
+            pass  # сообщения нет — переотправляем ниже
+        else:
+            entry.pop("card_pending", None)
+            try:
+                store.set(tournament)
+            except Exception as exc:
+                logger.warning("room card_pending clear failed: %s", exc)
+            return True
+
+    # Полная переотправка (идемпотентно: флаг снимается только
+    # при успешной публикации, card_message_id обновляется).
+    try:
+        from views.ocr_match_view import _match_tuple
+        t1, t2 = _match_tuple(tournament, match_type, match_index)
+    except Exception:
+        logger.warning(
+            "retry room card: cannot resolve teams %s/%s",
+            match_type, match_index,
+        )
+        return False
+    return await send_room_dm_notifications(
+        bot, tournament, match_type, match_index, t1, t2, "", ""
+    )

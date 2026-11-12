@@ -54,10 +54,13 @@ class TestNoProdDefaults:
             "OCR_STATS_CHANNEL_ID", "OCR_ADMIN_ROLE_ID",
             "ULT_ROLE_ID", "ULT_ROOM_CHANNEL_ID",
             "WELCOME_CHANNEL_ID", "PET_HUNGER_CHANNEL_ID",
-            "ROOM_DATA_CHANNEL_ID", "GAMES_CHANNEL_ID",
+            "GAMES_CHANNEL_ID",
             "INFO_CHANNEL_ID", "REP_LOG_CHANNEL_ID",
         ):
             assert getattr(cfg, name) == 0, f"{name} имеет дефолт"
+        # Исключение: канал данных комнаты — единый канал сервера
+        # по требованию Tournaments 2.0 (ROOM_DATA_CHANNEL_ID).
+        assert cfg.ROOM_DATA_CHANNEL_ID == 1561683314480255057
 
     def test_collections_empty_without_env(self, clean_env):
         cfg = clean_env

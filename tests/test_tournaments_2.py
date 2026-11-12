@@ -981,3 +981,29 @@ class TestAdminCallNotify:
         text = stats.sent[0][0]
         assert "<@&1563168378196197397>" in text
         assert "Полуфинал #2" in text and "комната 2" in text
+
+
+class TestCreateFormationRestriction:
+    """Tournaments 2.0: /tournament create — только draft/balanced-sr."""
+
+    def test_allowed_formations(self):
+        from cogs.tournament import parse_create_formation
+        from models.tournament import FormationMode
+        assert parse_create_formation("draft") == FormationMode.DRAFT
+        assert parse_create_formation("balanced-sr") == FormationMode.BALANCED_SR
+
+    def test_legacy_formations_rejected_for_create(self):
+        from cogs.tournament import parse_create_formation
+        for legacy in ("elo", "skill", "random", "random-auto"):
+            assert parse_create_formation(legacy) is None, legacy
+        assert parse_create_formation("bogus") is None
+        assert parse_create_formation("") is None
+        assert parse_create_formation(None) is None
+
+    def test_command_default_is_draft(self):
+        """ formation по умолчанию — draft; Literal даёт choices."""
+        import inspect
+        from cogs.tournament import TournamentCog
+        cb = TournamentCog.tournament_create.callback
+        sig = inspect.signature(cb)
+        assert sig.parameters["formation"].default == "draft"

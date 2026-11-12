@@ -38,6 +38,9 @@ def _tournament(mm: bool = True):
         qualifier_rooms={},
         semifinal_rooms={},
         final_room=None,
+        qualifier_matches=[(0, 1)],
+        semifinal_matches=[],
+        final_teams=[],
         match_channels={
             "900": {
                 "match_type": "qualifier",
@@ -137,6 +140,14 @@ async def test_tournament_room_notify_two_places():
     assert kw.get("view") is not None
     assert kw.get("embed") is None
     assert "🔓 Комната открыта" in _view_text(kw["view"])
+    # Обычный турнир: без <@id>-упоминаний и AllowedMentions.none()
+    text = _view_text(kw["view"])
+    assert "<@111>" not in text and "<@222>" not in text
+    assert "CapA" in text and "CapB" in text
+    am = kw.get("allowed_mentions")
+    assert am is not None
+    assert getattr(am, "users", True) is False
+    assert getattr(am, "everyone", True) is False
     # Канал уведомлений: 1 сообщение, role mention в content
     assert len(general.sent) == 1
     content = general.sent[0][1].get("content") or (
@@ -295,3 +306,81 @@ async def test_room_data_missing_room(_store_tournament):
     ix = _FakeInteraction(_room_custom_id("id", midx=3), _user(111), _guild())
     await rm._room_data_press(ix)
     assert "не найдены" in ix.response.messages[0][0]
+
+
+# ---------------------------------------------------------------------------
+# card_pending: безопасный повтор публикации без дублей
+# ---------------------------------------------------------------------------
+
+class _FailChan(_Chan):
+    def __init__(self, cid, fail=False):
+        super().__init__(cid)
+        self.fail = fail
+        self.next_id = 1000
+
+    async def send(self, *a, **kw):
+        if self.fail:
+            raise RuntimeError("discord down")
+        self.sent.append((a, kw))
+        self.next_id += 1
+        return SimpleNamespace(id=self.next_id)
+
+    async def fetch_message(self, mid):
+        for _a, _kw in self.sent:
+            pass
+        # «живое» сообщение — всегда успешно
+        return SimpleNamespace(id=mid)
+
+
+@pytest.mark.asyncio
+async def test_room_card_failure_marks_pending(monkeypatch):
+    monkeypatch.setattr(rm, "ROOM_DATA_CHANNEL_ID", 1561683314480255057)
+    t = _tournament(mm=False)
+    t.qualifier_rooms[0] = {"id": "1", "password": "2"}
+    data_ch = _FailChan(1561683314480255057, fail=True)
+    bot = _Bot({1561683314480255057: data_ch,
+                1200125075156910181: _Chan(1200125075156910181)})
+    ok = await rm.send_room_dm_notifications(
+        bot, t, "qualifier", 0, 0, 1, "1", "2"
+    )
+    assert ok is False
+    assert t.qualifier_rooms[0].get("card_pending") is True
+
+
+@pytest.mark.asyncio
+async def test_pending_retry_with_live_message_no_dup(monkeypatch):
+    """card_message_id жив → retry только снимает флаг, без send."""
+    monkeypatch.setattr(rm, "ROOM_DATA_CHANNEL_ID", 1561683314480255057)
+    t = _tournament(mm=False)
+    t.qualifier_rooms[0] = {
+        "id": "1", "password": "2",
+        "card_pending": True, "card_message_id": 555,
+    }
+    data_ch = _FailChan(1561683314480255057)  # send не вызывается
+    bot = _Bot({1561683314480255057: data_ch})
+    ok = await rm.retry_pending_room_card(bot, t, "qualifier", 0)
+    assert ok is True
+    assert "card_pending" not in t.qualifier_rooms[0]
+    assert data_ch.sent == []  # НИКАКИХ повторных отправок
+
+
+@pytest.mark.asyncio
+async def test_pending_retry_resends_when_message_gone(monkeypatch):
+    monkeypatch.setattr(rm, "ROOM_DATA_CHANNEL_ID", 1561683314480255057)
+    t = _tournament(mm=False)
+    t.qualifier_rooms[0] = {
+        "id": "1", "password": "2",
+        "card_pending": True, "card_message_id": 999,
+    }
+    data_ch = _FailChan(1561683314480255057)
+    # fetch_message падает → сообщения нет → переотправка
+    async def _missing(mid):
+        raise Exception("Unknown Message")
+    data_ch.fetch_message = _missing
+    bot = _Bot({1561683314480255057: data_ch,
+                1200125075156910181: _Chan(1200125075156910181)})
+    ok = await rm.retry_pending_room_card(bot, t, "qualifier", 0)
+    assert ok is True
+    assert len(data_ch.sent) == 1  # ровно одна переотправка
+    assert "card_pending" not in t.qualifier_rooms[0]
+    assert t.qualifier_rooms[0].get("card_message_id")

@@ -675,6 +675,27 @@ class TournamentBot(commands.Bot):
                             session.get("match_type"), e,
                         )
 
+            # Карточки «🔓 Комната открыта» с card_pending —
+            # безопасная переотправка после рестарта: при живом
+            # card_message_id только снимается флаг, дублей нет.
+            try:
+                from views.room_modal import (
+                    pending_room_cards,
+                    retry_pending_room_card,
+                )
+
+                for _pmt, _pmi in pending_room_cards(tournament):
+                    asyncio.create_task(
+                        retry_pending_room_card(
+                            self, tournament, _pmt, _pmi
+                        )
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Pending room card recovery failed for %s: %s",
+                    tournament.id, exc,
+                )
+
         # «📜 Правила» на карточках матчей — статичная кнопка,
         # регистрируем persistent view глобально (custom_id совпадает).
         try:
