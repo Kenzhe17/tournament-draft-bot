@@ -31,6 +31,7 @@ from __future__ import annotations
 import difflib
 import io
 import logging
+import os
 import re
 import time
 from typing import Any
@@ -167,32 +168,45 @@ def _find_panel_split(boxes: list[dict], w: int, h: int) -> float | None:
     «текстовых» боксов нижней ~80% кадра. None — разрыв неуверенный
     (например, детальный squad-экран — одна широкая таблица).
     """
+    # Только «табличная» полоса (cy > ~0.385h): счёт «VS», баннер и
+    # прочие элементы верхней зоны создают ложные разрывы по cx
+    # (например, между именами правой таблицы и её K/D/A).
+    # Во всех наблюдаемых layouts header ≈0.41–0.44h, счёт ≤0.37h.
     cand = [
         b for b in boxes
-        if b["cy"] > 0.16 * h and 6.0 <= b["h"] <= 0.14 * h
+        if 0.385 * h < b["cy"] and 6.0 <= b["h"] <= 0.14 * h
     ]
     if len(cand) < 2 * _MIN_SIDE_BOXES:
         return None
-    cxs = sorted(b["cx"] for b in cand)
-    best_gap, best_x = 0.0, None
-    lo, hi = 0.28 * w, 0.72 * w
-    for i in range(len(cxs) - 1):
-        mid = (cxs[i] + cxs[i + 1]) / 2
-        if not (lo < mid < hi):
-            continue
-        gap = cxs[i + 1] - cxs[i]
-        if gap > best_gap:
-            best_gap, best_x = gap, mid
-    if best_x is None:
-        return None
+    # Граница — по структуре строк, а не по глобальному cx-разрыву:
+    # внутренние колонки (имя|K/D/A|DMG) тоже дают чистые разрывы,
+    # и на части скриншотов они шире межтабличного. В каждой
+    # строке таблицы (header + 4 игрока) самый широкий разрыв
+    # между соседними членами — это канал между таблицами.
+    # Оцениваем все строки и берём медиану — устойчиво к строкам,
+    # где склейка det-боксов меняет ширину разрыва.
+    lo, hi = 0.22 * w, 0.78 * w
     min_gap = max(_MIN_PANEL_GAP_PX, _MIN_PANEL_GAP_FRAC * w)
-    if best_gap < min_gap:
+    lines = _cluster_lines(cand)
+    mids: list[float] = []
+    for ln in lines:
+        mem = sorted(ln["members"], key=lambda b: b["cx"])
+        if len(mem) < 6:
+            continue
+        best_gap, best_mid = 0.0, None
+        for i in range(len(mem) - 1):
+            gap = mem[i + 1]["cx"] - mem[i]["cx"]
+            mid = (mem[i]["cx"] + mem[i + 1]["cx"]) / 2
+            if not (lo < mid < hi) or gap < min_gap:
+                continue
+            if gap > best_gap:
+                best_gap, best_mid = gap, mid
+        if best_mid is not None:
+            mids.append(best_mid)
+    if len(mids) < 3:
         return None
-    left = sum(1 for b in cand if b["cx"] < best_x)
-    right = len(cand) - left
-    if left < _MIN_SIDE_BOXES or right < _MIN_SIDE_BOXES:
-        return None
-    return best_x
+    mids.sort()
+    return mids[len(mids) // 2]
 
 
 def _cluster_lines(boxes: list[dict]) -> list[dict]:
@@ -344,6 +358,16 @@ def _match_header_line(line: dict, rec: _RecCache) -> dict | None:
     return found
 
 
+_PANEL_FAILS: list[str] = []
+_PANEL_DEBUG = os.environ.get("FAST_OCR_DEBUG") == "1"
+
+
+def _panel_fail(side: str, why: str) -> None:
+    # Диагностика только при FAST_OCR_DEBUG=1 — иначе no-op.
+    if _PANEL_DEBUG:
+        _PANEL_FAILS.append(f"{side}:{why}")
+
+
 def _panel_geometry(
     panel_boxes: list[dict],
     boundary_x: float,
@@ -361,7 +385,7 @@ def _panel_geometry(
     lines = _cluster_lines(panel_boxes)
     # Минимум: header + 4 строки игроков = 5 линий
     if len(lines) < 5:
-        return None
+        _panel_fail(side, "few_lines"); return None
 
     header = None
     header_li = -1
@@ -370,15 +394,26 @@ def _panel_geometry(
         if probed >= _MAX_HEADER_PROBES:
             break
         # Кандидат: ≥3 боксов и ниже ≥4 строк (4 игрока)
-        if len(ln["members"]) < 3 or li + 4 >= len(lines):
+        if len(ln["members"]) < 3:
             continue
-        # Строки под кандидатом должны иметь регулярный шаг
-        pitch = _line_pitch(lines, li + 1, 4)
+        # «Контентные» строки под кандидатом: ≥2 боксов — у stat-строки
+        # всегда K/D/A + DMG (+ник), а однобоксовые линии — это вторая
+        # строка доп. текста под ником («GHTERRA», «Republic KZ»),
+        # которая ломала проверку шага и давала no_anchor.
+        sub = [
+            l for l in lines[li + 1 :] if len(l["members"]) >= 2
+        ][:8]
+        if len(sub) < 4:
+            continue
+        # Строки под кандидатом должны иметь регулярный шаг.
+        # Оцениваем только первые 4 контентные строки — дальше
+        # могут быть посторонние линии (топ-5, вторая строка низа).
+        pitch = _line_pitch(sub, 0, 3)
         if pitch <= 0:
             continue
         ok = True
-        for j in range(li + 1, min(li + 5, len(lines))):
-            d = lines[j]["cy"] - lines[j - 1]["cy"]
+        for j in range(1, min(4, len(sub))):
+            d = sub[j]["cy"] - sub[j - 1]["cy"]
             if d <= 0.4 * pitch or d > 2.2 * pitch:
                 ok = False
                 break
@@ -393,7 +428,7 @@ def _panel_geometry(
             header_li = li
             break
     if header is None:
-        return None
+        _panel_fail(side, "no_header"); return None
 
     header_cy = lines[header_li]["cy"]
 
@@ -414,31 +449,46 @@ def _panel_geometry(
         if len(row_lines) >= 6:
             break
     if len(row_lines) < 4:
-        return None
+        _panel_fail(side, "few_rows"); return None
 
     # Ровно 4 строки: pitch по первым 4, снап к регулярной сетке
     cys = [ln["cy"] for ln in row_lines[:6]]
-    diffs = [cys[i + 1] - cys[i] for i in range(len(cys) - 1) if cys[i + 1] > cys[i]]
-    if not diffs:
-        return None
-    pitch = sorted(diffs)[len(diffs) // 2]
-    if pitch <= 0:
-        return None
-    # Якорь сетки: cy_j - j*pitch, min суммарное отклонение (как _pad_rows)
-    best_top, best_err = None, float("inf")
-    for j, cy in enumerate(cys):
-        top = cy - j * pitch
-        err = sum(
-            min(abs(cy2 - (top + i * pitch)) for i in range(4))
-            for cy2 in cys
-        )
-        if err < best_err:
-            best_err, best_top = err, top
+    # Под таблицей могут быть посторонние боксы в K/D/A-колонке
+    # (футер, вторая строка низа) — выбираем скользящим окном 4
+    # строки с минимальной ошибкой регулярной сетки.
+    best = None  # (score, top, pitch)
+    for w0 in range(0, max(1, len(cys) - 3)):
+        wc = cys[w0 : w0 + 4]
+        if len(wc) < 4:
+            break
+        diffs = [
+            wc[i + 1] - wc[i] for i in range(3) if wc[i + 1] > wc[i]
+        ]
+        if len(diffs) < 2:
+            continue
+        p = sorted(diffs)[len(diffs) // 2]
+        if p <= 0:
+            continue
+        bt, be = None, float("inf")
+        for j, cy in enumerate(wc):
+            top = cy - j * p
+            err = sum(
+                min(abs(c2 - (top + i * p)) for i in range(4))
+                for c2 in wc
+            )
+            if err < be:
+                be, bt = err, top
+        score = be / 4.0
+        if best is None or score < best[0]:
+            best = (score, bt, p)
+    if best is None or best[0] > 0.45 * best[2]:
+        _panel_fail(side, "bad_grid"); return None
+    _score, best_top, pitch = best
     rows_cy = [best_top + i * pitch for i in range(4)]
     # Строка существует только если рядом есть реальная линия (±0.45 pitch)
     for rc in rows_cy:
         if not any(abs(ln["cy"] - rc) <= 0.45 * pitch for ln in row_lines):
-            return None
+            _panel_fail(side, "grid_snap"); return None
 
     # Границы строк — середины между cy; концы ±0.5 pitch
     bounds = []
@@ -555,6 +605,8 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
 
     t0 = time.perf_counter()
     timings: dict[str, float] = {}
+    if _PANEL_DEBUG:
+        _PANEL_FAILS.clear()
 
     try:
         img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
@@ -659,15 +711,19 @@ def _extract_parsed(data: bytes) -> dict[str, Any] | None:
     timings["cells_ms"] = (time.perf_counter() - t0) * 1000
 
     # --- Этап 7: верхняя/нижняя полосы (счёт, баннер, top5) ---
+    # Счёт «N VS M» сидит всего в ~1 pitch над заголовком — полоса
+    # должна доставать до него, но не захватывать строки игроков.
+    # Берём ближайшие к заголовку боксы (desc cy), чтобы верхний
+    # мусор (CJK-шум по краям) не вытеснял счёт из лимита rec.
     extra_idxs: list[int] = []
-    top_limit = min(g["header_cy"] for g in geoms) - 1.6 * max(
+    top_limit = min(g["header_cy"] for g in geoms) - 0.4 * max(
         g["pitch"] for g in geoms
     )
     bot_limit = max(g["rows_cy"][-1] for g in geoms) + 1.4 * max(
         g["pitch"] for g in geoms
     )
     top_c = sorted(
-        (b for b in boxes if b["cy"] < top_limit), key=lambda b: b["cy"]
+        (b for b in boxes if b["cy"] < top_limit), key=lambda b: -b["cy"]
     )[:_MAX_EXTRA_TOP]
     bot_c = sorted(
         (b for b in boxes if b["cy"] > bot_limit), key=lambda b: -b["cy"]
